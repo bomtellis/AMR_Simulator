@@ -5,178 +5,18 @@ import json
 import math
 import threading
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-
-# ============================================================
-# AMR Delivery Route Simulator
-# ------------------------------------------------------------
-# Features
-# - Multi-floor building with named locations
-# - Lift resources with capacity, speed, and door/boarding timings
-# - AMRs with payload, speed, and quantity configurable from JSON
-# - Task list can be loaded initially and added at runtime
-# - Uses datetimes for release/start/finish timestamps
-# - Supports accelerated simulation time via a tick rate
-# - Discrete-event simulation for estimated completion times
-#
-# Run examples:
-#   python amr_delivery_simulator.py --config config.json
-#   python amr_delivery_simulator.py --config config.json --interactive
-#
-# While running with --interactive, paste JSON task objects such as:
-#   {"id":"T9","pickup":"Stores","dropoff":"Ward-3A","payload":"food_trolley","release_time":120}
-#
-# Type:
-#   status
-#   quit
-# ============================================================
-
-
-@dataclass(order=True)
-class Event:
-    time: float
-    priority: int
-    event_type: str = field(compare=False)
-    payload: dict = field(compare=False, default_factory=dict)
-
-
-@dataclass
-class Location:
-    name: str
-    floor: int
-    x: float
-    y: float
-
-
-@dataclass
-class PayloadType:
-    name: str
-    weight_kg: float
-    size_units: float = 1.0
-
-
-@dataclass
-class Task:
-    id: str
-    pickup: str
-    dropoff: str
-    payload: str
-    release_time: float = 0.0
-    quantity: int = 1
-    priority: int = 100
-    created_during_runtime: bool = False
-
-
-class SimulationClock:
-    def __init__(self, start_datetime: datetime, tick_rate: float = 60.0):
-        self.start_datetime = start_datetime
-        self.tick_rate = tick_rate
-
-    def sim_seconds_to_datetime(self, seconds: float) -> datetime:
-        return self.start_datetime + timedelta(seconds=seconds)
-
-    def format_sim_time(self, seconds: float) -> str:
-        return self.sim_seconds_to_datetime(seconds).isoformat(
-            sep=" ", timespec="seconds"
-        )
-
-
-def parse_datetime(value: str) -> datetime:
-    return datetime.fromisoformat(value)
-
-
-def format_duration(seconds: float) -> str:
-    total_seconds = int(round(seconds))
-    days, remainder = divmod(total_seconds, 86400)
-    hours, remainder = divmod(remainder, 3600)
-    minutes, secs = divmod(remainder, 60)
-    if days > 0:
-        return f"{days}d {hours:02}:{minutes:02}:{secs:02}"
-    return f"{hours:02}:{minutes:02}:{secs:02}"
-
-
-def parse_release_time(task_dict: dict, start_datetime: datetime) -> float:
-    if "release_datetime" in task_dict:
-        dt = parse_datetime(task_dict["release_datetime"])
-        return max(0.0, (dt - start_datetime).total_seconds())
-    return float(task_dict.get("release_time", 0.0))
-
-
-@dataclass
-class Lift:
-    id: str
-    served_floors: List[int]
-    speed_floors_per_sec: float
-    door_time_sec: float
-    boarding_time_sec: float
-    capacity_size_units: float = 1.0
-    current_floor: int = 0
-    available_time: float = 0.0
-
-    def can_serve(self, floor_a: int, floor_b: int) -> bool:
-        return floor_a in self.served_floors and floor_b in self.served_floors
-
-    def estimate_trip(
-        self, ready_time: float, from_floor: int, to_floor: int, load_size: float
-    ) -> Tuple[float, float]:
-        if not self.can_serve(from_floor, to_floor):
-            return math.inf, math.inf
-        if load_size > self.capacity_size_units:
-            return math.inf, math.inf
-
-        start_time = max(ready_time, self.available_time)
-        reposition = abs(self.current_floor - from_floor) / max(
-            self.speed_floors_per_sec, 1e-9
-        )
-        loaded_travel = abs(to_floor - from_floor) / max(
-            self.speed_floors_per_sec, 1e-9
-        )
-        duration = (
-            reposition
-            + self.door_time_sec
-            + self.boarding_time_sec
-            + loaded_travel
-            + self.door_time_sec
-            + self.boarding_time_sec
-        )
-        finish_time = start_time + duration
-        return start_time, finish_time
-
-    def reserve_trip(
-        self, ready_time: float, from_floor: int, to_floor: int, load_size: float
-    ) -> Tuple[float, float]:
-        start_time, finish_time = self.estimate_trip(
-            ready_time, from_floor, to_floor, load_size
-        )
-        if math.isinf(finish_time):
-            raise ValueError(
-                f"Lift {self.id} cannot serve trip {from_floor}->{to_floor} for load size {load_size}."
-            )
-        self.available_time = finish_time
-        self.current_floor = to_floor
-        return start_time, finish_time
-
-
-@dataclass
-class AMR:
-    id: str
-    payload_capacity_kg: float
-    payload_size_capacity: float
-    speed_m_per_sec: float
-    available_time: float = 0.0
-    location_name: str = ""
-    completed_tasks: int = 0
-    total_busy_time: float = 0.0
-
-    def can_carry(self, payload: PayloadType) -> bool:
-        return (
-            payload.weight_kg <= self.payload_capacity_kg
-            and payload.size_units <= self.payload_size_capacity
-        )
+from amr_sim_energy import requires_recharge_before_route, total_route_energy_kwh
+from amr_sim_models import AMR, Event, Lift, Location, PayloadType, Task
+from amr_sim_time_utils import (
+    SimulationClock,
+    format_duration,
+    parse_datetime,
+    parse_release_time,
+)
 
 
 class Simulation:
@@ -206,9 +46,12 @@ class Simulation:
         self.completed_task_records: List[dict] = []
         self.failed_tasks: List[dict] = []
 
-        self.floor_height_m = float(config["building"].get("floor_height_m", 4.0))
         self.load_unload_time_sec = float(
             config["building"].get("load_unload_time_sec", 20.0)
+        )
+        self.floor_height_m = float(config["building"].get("floor_height_m", 4.0))
+        self.charge_location_name = config["building"].get(
+            "charge_location", config["locations"][0]["name"]
         )
 
         self.locations: Dict[str, Location] = {
@@ -230,18 +73,37 @@ class Simulation:
             for p in config["payloads"]
         }
 
-        self.lifts: List[Lift] = [
-            Lift(
+        self.lifts: List[Lift] = []
+        for item in config["lifts"]:
+            floor_locations = {
+                int(floor): (float(coords["x"]), float(coords["y"]))
+                for floor, coords in item.get("floor_locations", {}).items()
+            }
+
+            lift = Lift(
                 id=item["id"],
                 served_floors=list(item["served_floors"]),
                 speed_floors_per_sec=float(item["speed_floors_per_sec"]),
                 door_time_sec=float(item.get("door_time_sec", 4.0)),
                 boarding_time_sec=float(item.get("boarding_time_sec", 5.0)),
+                floor_locations=floor_locations,
                 capacity_size_units=float(item.get("capacity_size_units", 1.0)),
                 current_floor=int(item.get("start_floor", 0)),
             )
-            for item in config["lifts"]
-        ]
+
+            for floor in lift.served_floors:
+                if floor not in lift.floor_locations:
+                    raise ValueError(
+                        f"Lift {lift.id} is missing floor_locations for floor {floor}"
+                    )
+
+            self.lifts.append(lift)
+
+        self.graph_nodes: Dict[str, Location] = {}
+        self.floor_graphs: Dict[int, Dict[str, List[dict]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
+        self._build_floor_graphs(config.get("corridors", {}))
 
         self.amrs: List[AMR] = []
         for amr_type in config["amrs"]:
@@ -255,6 +117,19 @@ class Simulation:
                             amr_type.get("payload_size_capacity", 1.0)
                         ),
                         speed_m_per_sec=float(amr_type["speed_m_per_sec"]),
+                        motor_power_w=float(amr_type.get("motor_power_w", 750.0)),
+                        battery_capacity_kwh=float(
+                            amr_type.get("battery_capacity_kwh", 5.0)
+                        ),
+                        battery_charge_rate_kw=float(
+                            amr_type.get("battery_charge_rate_kw", 1.5)
+                        ),
+                        recharge_threshold_percent=float(
+                            amr_type.get("recharge_threshold_percent", 20.0)
+                        ),
+                        battery_soc_percent=float(
+                            amr_type.get("battery_soc_percent", 100.0)
+                        ),
                         location_name=amr_type.get(
                             "start_location", config["locations"][0]["name"]
                         ),
@@ -273,7 +148,139 @@ class Simulation:
         for task in initial_tasks:
             self.schedule_task_release(task)
 
-    # ------------------------- Core Utilities -------------------------
+    def _build_floor_graphs(self, corridor_cfg: dict):
+        for location in self.locations.values():
+            self.graph_nodes[location.name] = location
+            self.floor_graphs[location.floor][location.name]
+
+        for lift in self.lifts:
+            for floor in lift.served_floors:
+                node = lift.location_on_floor(floor)
+                self.graph_nodes[node.name] = node
+                self.floor_graphs[floor][node.name]
+
+        for node_data in corridor_cfg.get("nodes", []):
+            node = Location(
+                name=node_data["name"],
+                floor=int(node_data["floor"]),
+                x=float(node_data["x"]),
+                y=float(node_data["y"]),
+            )
+            self.graph_nodes[node.name] = node
+            self.floor_graphs[node.floor][node.name]
+
+        def add_edge(
+            a_name: str,
+            b_name: str,
+            distance_m: Optional[float] = None,
+            bidirectional: bool = True,
+        ):
+            if a_name not in self.graph_nodes or b_name not in self.graph_nodes:
+                raise ValueError(
+                    f"Corridor edge references unknown node: {a_name} -> {b_name}"
+                )
+            a = self.graph_nodes[a_name]
+            b = self.graph_nodes[b_name]
+            if a.floor != b.floor:
+                raise ValueError(
+                    f"Same-floor graph edge crosses floors: {a_name} -> {b_name}"
+                )
+            dist = (
+                distance_m
+                if distance_m is not None
+                else self._distance_same_floor(a, b)
+            )
+            self.floor_graphs[a.floor][a_name].append(
+                {"to": b_name, "distance_m": dist}
+            )
+            if bidirectional:
+                self.floor_graphs[b.floor][b_name].append(
+                    {"to": a_name, "distance_m": dist}
+                )
+
+        for edge in corridor_cfg.get("edges", []):
+            add_edge(
+                edge["from"],
+                edge["to"],
+                edge.get("distance_m"),
+                edge.get("bidirectional", True),
+            )
+
+        # Optional: connect locations/lifts to nearby graph nodes when explicit edges are not supplied
+        auto_connect = corridor_cfg.get("auto_connect", True)
+        if auto_connect:
+            for floor, nodes in self.floor_graphs.items():
+                existing_names = list(nodes.keys())
+                corridor_names = [
+                    name
+                    for name in existing_names
+                    if name not in self.locations
+                    and not name.startswith(tuple(l.id + "-F" for l in self.lifts))
+                ]
+                if not corridor_names:
+                    continue
+                for loc in self.locations.values():
+                    if loc.floor != floor:
+                        continue
+                    if nodes[loc.name]:
+                        continue
+                    nearest = min(
+                        corridor_names,
+                        key=lambda n: self._distance_same_floor(
+                            loc, self.graph_nodes[n]
+                        ),
+                    )
+                    add_edge(loc.name, nearest)
+                for lift in self.lifts:
+                    lift_name = f"{lift.id}-F{floor}"
+                    if lift_name not in nodes or nodes[lift_name]:
+                        continue
+                    lift_node = self.graph_nodes[lift_name]
+                    nearest = min(
+                        corridor_names,
+                        key=lambda n: self._distance_same_floor(
+                            lift_node, self.graph_nodes[n]
+                        ),
+                    )
+                    add_edge(lift_name, nearest)
+
+    def _shortest_path_same_floor(
+        self, floor: int, start_name: str, end_name: str
+    ) -> Optional[dict]:
+        graph = self.floor_graphs.get(floor, {})
+        if start_name not in graph or end_name not in graph:
+            return None
+
+        heap = [(0.0, start_name, [])]
+        best = {start_name: 0.0}
+
+        while heap:
+            dist, node, path = heapq.heappop(heap)
+            if node == end_name:
+                return {"distance_m": dist, "edges": path}
+            if dist > best.get(node, math.inf):
+                continue
+            for edge in graph[node]:
+                nxt = edge["to"]
+                new_dist = dist + edge["distance_m"]
+                if new_dist < best.get(nxt, math.inf):
+                    best[nxt] = new_dist
+                    heapq.heappush(
+                        heap,
+                        (
+                            new_dist,
+                            nxt,
+                            path
+                            + [
+                                {
+                                    "from": node,
+                                    "to": nxt,
+                                    "distance_m": edge["distance_m"],
+                                }
+                            ],
+                        ),
+                    )
+        return None
 
     def push_event(
         self, time_value: float, event_type: str, payload: Optional[dict] = None
@@ -291,24 +298,11 @@ class Simulation:
         self.log_step(
             event_time=time_value,
             event_type="event_scheduled",
-            task_id=(
-                (payload or {}).get("task").id if (payload or {}).get("task") else ""
-            ),
-            amr_id=(payload or {}).get("amr_id", ""),
             details=f"Scheduled event '{event_type}'",
         )
 
     def schedule_task_release(self, task: Task):
         self.push_event(task.release_time, "task_release", {"task": task})
-        self.log_step(
-            event_time=task.release_time,
-            event_type="task_release_planned",
-            task_id=task.id,
-            details=f"Task {task.id} will release at {self.clock.format_sim_time(task.release_time)}",
-            from_location=task.pickup,
-            to_location=task.dropoff,
-            payload_name=task.payload,
-        )
 
     def add_runtime_task(self, task_dict: dict):
         task_data = dict(task_dict)
@@ -331,161 +325,307 @@ class Simulation:
             self.pending_tasks,
             (task.priority, task.release_time, self.pending_task_counter, task),
         )
-        self.log_step(
-            event_time=max(self.current_time, task.release_time),
-            event_type="task_queued",
-            task_id=task.id,
-            details=f"Task queued with priority {task.priority}",
-            from_location=task.pickup,
-            to_location=task.dropoff,
-            payload_name=task.payload,
-        )
 
     def _distance_same_floor(self, a: Location, b: Location) -> float:
         return math.hypot(b.x - a.x, b.y - a.y)
 
     def _travel_same_floor(self, amr: AMR, start: Location, end: Location) -> float:
-        return self._distance_same_floor(start, end) / max(amr.speed_m_per_sec, 1e-9)
+        route = self._shortest_path_same_floor(start.floor, start.name, end.name)
+        if route is None:
+            return math.inf
+        return route["distance_m"] / max(amr.speed_m_per_sec, 1e-9)
+
+    def _same_floor_segments(
+        self, amr: AMR, start: Location, end: Location
+    ) -> Optional[Tuple[List[dict], float, float]]:
+        route = self._shortest_path_same_floor(start.floor, start.name, end.name)
+        if route is None:
+            return None
+        segments = []
+        total_duration = 0.0
+        for edge in route["edges"]:
+            duration = edge["distance_m"] / max(amr.speed_m_per_sec, 1e-9)
+            total_duration += duration
+            segments.append(
+                {
+                    "type": "corridor",
+                    "from": edge["from"],
+                    "to": edge["to"],
+                    "duration": duration,
+                    "distance_m": edge["distance_m"],
+                }
+            )
+        return segments, total_duration, route["distance_m"]
+
+    def _lift_location_on_floor(self, lift: Lift, floor: int) -> Location:
+        return lift.location_on_floor(floor)
 
     def _nearest_compatible_lift_plan(
         self,
         ready_time: float,
-        from_floor: int,
-        to_floor: int,
+        amr: AMR,
+        from_loc: Location,
+        to_loc: Location,
         payload: PayloadType,
-    ) -> Tuple[Optional[Lift], float, float]:
-        best_lift = None
-        best_start = math.inf
+    ) -> Optional[dict]:
+        best_plan = None
         best_finish = math.inf
+
         for lift in self.lifts:
-            start_time, finish_time = lift.estimate_trip(
-                ready_time,
-                from_floor,
-                to_floor,
-                payload.size_units,
+            if not lift.can_serve(from_loc.floor, to_loc.floor):
+                continue
+            if payload.size_units > lift.capacity_size_units:
+                continue
+
+            origin_lift = self._lift_location_on_floor(lift, from_loc.floor)
+            destination_lift = self._lift_location_on_floor(lift, to_loc.floor)
+
+            to_lift_route = self._same_floor_segments(amr, from_loc, origin_lift)
+            from_lift_route = self._same_floor_segments(amr, destination_lift, to_loc)
+            if to_lift_route is None or from_lift_route is None:
+                continue
+
+            to_lift_segments, to_lift_sec, to_lift_distance_m = to_lift_route
+            from_lift_segments, from_lift_sec, from_lift_distance_m = from_lift_route
+
+            arrival_at_lift = ready_time + to_lift_sec
+            lift_start = max(arrival_at_lift, lift.available_time)
+
+            reposition = abs(lift.current_floor - from_loc.floor) / max(
+                lift.speed_floors_per_sec, 1e-9
             )
-            if finish_time < best_finish:
-                best_lift = lift
-                best_start = start_time
-                best_finish = finish_time
-        return best_lift, best_start, best_finish
+            loaded_travel = abs(to_loc.floor - from_loc.floor) / max(
+                lift.speed_floors_per_sec, 1e-9
+            )
+
+            lift_duration = (
+                reposition
+                + lift.door_time_sec
+                + lift.boarding_time_sec
+                + loaded_travel
+                + lift.door_time_sec
+                + lift.boarding_time_sec
+            )
+
+            lift_finish = lift_start + lift_duration
+            final_finish = lift_finish + from_lift_sec
+
+            if final_finish < best_finish:
+                best_finish = final_finish
+                best_plan = {
+                    "lift": lift,
+                    "origin_lift": origin_lift,
+                    "destination_lift": destination_lift,
+                    "to_lift_segments": to_lift_segments,
+                    "from_lift_segments": from_lift_segments,
+                    "to_lift_distance_m": to_lift_distance_m,
+                    "from_lift_distance_m": from_lift_distance_m,
+                    "to_lift_sec": to_lift_sec,
+                    "from_lift_sec": from_lift_sec,
+                    "lift_start": lift_start,
+                    "lift_finish": lift_finish,
+                    "wait_time": max(0.0, lift_start - arrival_at_lift),
+                    "vertical_distance_m": abs(to_loc.floor - from_loc.floor)
+                    * self.floor_height_m,
+                    "final_finish": final_finish,
+                }
+
+        return best_plan
+
+    def _plan_charge_cycle_if_needed(
+        self,
+        amr: AMR,
+        payload: PayloadType,
+        to_pickup_sec: float,
+        loaded_sec: float,
+        ready_time: float,
+    ) -> Tuple[float, List[dict], float]:
+        required_energy_kwh = total_route_energy_kwh(
+            amr, payload, to_pickup_sec, loaded_sec
+        )
+        extra_segments: List[dict] = []
+        adjusted_ready_time = ready_time
+
+        if requires_recharge_before_route(amr, required_energy_kwh):
+            charge_duration = amr.charge_duration_sec_to_full()
+            extra_segments.append(
+                {
+                    "type": "charge",
+                    "location": amr.location_name,
+                    "duration": charge_duration,
+                    "battery_soc_before": amr.battery_soc_percent,
+                    "battery_soc_after": 100.0,
+                }
+            )
+            adjusted_ready_time += charge_duration
+
+        return adjusted_ready_time, extra_segments, required_energy_kwh
 
     def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False):
-        if task.pickup not in self.locations or task.dropoff not in self.locations:
-            return None
-        if task.payload not in self.payloads:
-            return None
+        try:
+            if task.pickup not in self.locations or task.dropoff not in self.locations:
+                return None
+            if task.payload not in self.payloads:
+                return None
 
-        payload = self.payloads[task.payload]
-        if not amr.can_carry(payload):
-            return None
+            payload = self.payloads[task.payload]
+            if not amr.can_carry(payload):
+                return None
 
-        amr_loc = self.locations[amr.location_name]
-        pickup_loc = self.locations[task.pickup]
-        dropoff_loc = self.locations[task.dropoff]
+            amr_loc = self.locations[amr.location_name]
+            pickup_loc = self.locations[task.pickup]
+            dropoff_loc = self.locations[task.dropoff]
 
-        t = max(self.current_time, amr.available_time, task.release_time)
-        total = 0.0
-        segments = []
-        current_location = amr_loc
+            to_pickup_est = (
+                self._same_floor_segments(amr, amr_loc, pickup_loc)
+                if amr_loc.floor == pickup_loc.floor
+                else None
+            )
+            loaded_est = (
+                self._same_floor_segments(amr, pickup_loc, dropoff_loc)
+                if pickup_loc.floor == dropoff_loc.floor
+                else None
+            )
+            to_pickup_sec = to_pickup_est[1] if to_pickup_est else 0.0
+            loaded_sec = loaded_est[1] if loaded_est else 0.0
 
-        def move_between(
-            location_a: Location, location_b: Location, current_time_value: float
-        ) -> Tuple[float, Location, Optional[dict]]:
-            nonlocal total
-            if location_a.floor == location_b.floor:
-                walk = self._travel_same_floor(amr, location_a, location_b)
-                total += walk
-                return (
-                    current_time_value + walk,
-                    location_b,
+            t = max(self.current_time, amr.available_time, task.release_time)
+            charge_ready_time, charge_segments, _ = self._plan_charge_cycle_if_needed(
+                amr, payload, to_pickup_sec, loaded_sec, t
+            )
+            t = charge_ready_time
+            total = sum(seg["duration"] for seg in charge_segments)
+            segments = list(charge_segments)
+            current_location = amr_loc
+
+            def move_between(
+                location_a: Location, location_b: Location, current_time_value: float
+            ) -> Tuple[float, Location, Optional[List[dict]], float]:
+                nonlocal total
+
+                if location_a.floor == location_b.floor:
+                    route = self._same_floor_segments(amr, location_a, location_b)
+                    if route is None:
+                        return math.inf, location_b, None, 0.0
+                    same_segments, route_duration, _ = route
+                    total += route_duration
+                    return (
+                        current_time_value + route_duration,
+                        location_b,
+                        same_segments,
+                        route_duration,
+                    )
+
+                plan = self._nearest_compatible_lift_plan(
+                    current_time_value, amr, location_a, location_b, payload
+                )
+                if plan is None:
+                    return math.inf, location_b, None, 0.0
+
+                segment_duration = plan["final_finish"] - current_time_value
+                total += segment_duration
+
+                if reserve:
+                    plan["lift"].available_time = plan["lift_finish"]
+                    plan["lift"].current_floor = location_b.floor
+
+                transfer_segments = list(plan["to_lift_segments"])
+                transfer_segments.append(
                     {
-                        "type": "corridor",
-                        "from": location_a.name,
-                        "to": location_b.name,
-                        "duration": walk,
-                        "distance_m": self._distance_same_floor(location_a, location_b),
-                    },
+                        "type": "lift_transfer",
+                        "lift_id": plan["lift"].id,
+                        "from": plan["origin_lift"].name,
+                        "to": plan["destination_lift"].name,
+                        "from_floor": location_a.floor,
+                        "to_floor": location_b.floor,
+                        "wait_time": plan["wait_time"],
+                        "duration": plan["lift_finish"] - plan["lift_start"],
+                        "distance_m": plan["vertical_distance_m"],
+                        "vertical_distance_m": plan["vertical_distance_m"],
+                    }
+                )
+                transfer_segments.extend(plan["from_lift_segments"])
+                return (
+                    plan["final_finish"],
+                    location_b,
+                    transfer_segments,
+                    segment_duration,
                 )
 
-            start_floor = location_a.floor
-            end_floor = location_b.floor
-            lift, lift_start, lift_finish = self._nearest_compatible_lift_plan(
-                current_time_value,
-                start_floor,
-                end_floor,
-                payload,
+            travel_to_pickup_sec = 0.0
+            t, current_location, new_segments, seg_time = move_between(
+                current_location, pickup_loc, t
             )
-            if lift is None:
-                return math.inf, location_b, None
+            if new_segments is None or math.isinf(t):
+                return None
+            travel_to_pickup_sec += seg_time
+            segments.extend(new_segments)
 
-            wait = max(0.0, lift_start - current_time_value)
-            total += wait + (lift_finish - lift_start)
+            t += self.load_unload_time_sec
+            total += self.load_unload_time_sec
+            segments.append(
+                {
+                    "type": "pickup",
+                    "location": pickup_loc.name,
+                    "duration": self.load_unload_time_sec,
+                }
+            )
+
+            loaded_travel_sec = 0.0
+            t, current_location, new_segments, seg_time = move_between(
+                current_location, dropoff_loc, t
+            )
+            if new_segments is None or math.isinf(t):
+                return None
+            loaded_travel_sec += seg_time
+            segments.extend(new_segments)
+
+            t += self.load_unload_time_sec
+            total += self.load_unload_time_sec
+            segments.append(
+                {
+                    "type": "dropoff",
+                    "location": dropoff_loc.name,
+                    "duration": self.load_unload_time_sec,
+                }
+            )
+
+            actual_energy_kwh = total_route_energy_kwh(
+                amr, payload, travel_to_pickup_sec, loaded_travel_sec
+            )
 
             if reserve:
-                lift.reserve_trip(
-                    current_time_value, start_floor, end_floor, payload.size_units
-                )
+                if charge_segments:
+                    amr.total_charge_time += charge_segments[0]["duration"]
+                    amr.charge_to_full()
+                amr.consume_energy(actual_energy_kwh)
 
-            return (
-                lift_finish,
-                location_b,
-                {
-                    "type": "lift",
-                    "lift_id": lift.id,
-                    "from_floor": start_floor,
-                    "to_floor": end_floor,
-                    "wait_time": wait,
-                    "duration": lift_finish - lift_start,
-                },
-            )
-
-        t, current_location, segment = move_between(current_location, pickup_loc, t)
-        if segment is None or math.isinf(t):
-            return None
-        segments.append(segment)
-
-        t += self.load_unload_time_sec
-        total += self.load_unload_time_sec
-        segments.append(
-            {
-                "type": "pickup",
-                "location": pickup_loc.name,
-                "duration": self.load_unload_time_sec,
+            return {
+                "finish_time": t,
+                "duration": total,
+                "segments": segments,
+                "end_location": dropoff_loc.name,
+                "energy_kwh": actual_energy_kwh,
+                "battery_soc_after": max(
+                    0.0,
+                    (
+                        amr.battery_soc_percent
+                        if reserve
+                        else 100.0
+                        * max(0.0, amr.battery_energy_kwh() - actual_energy_kwh)
+                        / max(amr.battery_capacity_kwh, 1e-9)
+                    ),
+                ),
             }
-        )
-
-        t, current_location, segment = move_between(current_location, dropoff_loc, t)
-        if segment is None or math.isinf(t):
+        except Exception:
             return None
-        segments.append(segment)
-
-        t += self.load_unload_time_sec
-        total += self.load_unload_time_sec
-        segments.append(
-            {
-                "type": "dropoff",
-                "location": dropoff_loc.name,
-                "duration": self.load_unload_time_sec,
-            }
-        )
-
-        return {
-            "finish_time": t,
-            "duration": total,
-            "segments": segments,
-            "end_location": dropoff_loc.name,
-        }
 
     def _select_best_assignment(self) -> Optional[Tuple[AMR, Task, dict]]:
         if not self.pending_tasks:
             return None
-
-        available_tasks = [item[3] for item in self.pending_tasks]
-        best: Optional[Tuple[AMR, Task, dict]] = None
+        best = None
         best_finish = math.inf
-
-        for task in available_tasks:
+        for _, _, _, task in self.pending_tasks:
             for amr in self.amrs:
                 estimate = self._estimate_task_for_amr(amr, task, reserve=False)
                 if estimate is None:
@@ -509,21 +649,18 @@ class Simulation:
 
     def _try_assign_tasks(self, now: float):
         self.current_time = max(self.current_time, now)
-
         while True:
             choice = self._select_best_assignment()
             if choice is None:
                 return
-
-            amr, task, dry_run = choice
-
+            amr, task, _ = choice
             committed = self._estimate_task_for_amr(amr, task, reserve=True)
             if committed is None:
                 self._remove_pending_task(task)
                 self.failed_tasks.append(
                     {
                         "task_id": task.id,
-                        "reason": "No feasible AMR/lift combination",
+                        "reason": "No feasible AMR/lift/battery/graph combination",
                     }
                 )
                 continue
@@ -545,26 +682,67 @@ class Simulation:
                 from_location=task.pickup,
                 to_location=task.dropoff,
                 payload_name=task.payload,
+                task_duration_sec=committed["duration"],
                 amr_location_before=previous_location,
                 amr_location_after=committed["end_location"],
-                task_duration_sec=committed["duration"],
             )
 
+            segment_time = start_time
+
             for segment in committed["segments"]:
+                from_node = segment.get("from", "")
+                to_node = segment.get("to", "")
+
+                from_coords = self.graph_nodes.get(from_node)
+                to_coords = self.graph_nodes.get(to_node)
+
+                wait_time = segment.get("wait_time", 0.0)
+                duration = segment.get("duration", 0.0)
+
+                if wait_time > 0:
+                    self.log_step(
+                        event_time=segment_time,
+                        event_type="segment_wait",
+                        task_id=task.id,
+                        amr_id=amr.id,
+                        details=json.dumps(segment, ensure_ascii=False),
+                        from_location=segment.get("from", task.pickup),
+                        to_location=segment.get("to", task.dropoff),
+                        payload_name=task.payload,
+                        lift_id=segment.get("lift_id", ""),
+                        duration_sec=wait_time,
+                        wait_time_sec=wait_time,
+                        distance_m=0.0,
+                    )
+                    segment_time += wait_time
+
                 self.log_step(
-                    event_time=start_time,
+                    event_time=segment_time,
                     event_type=f"segment_{segment['type']}",
                     task_id=task.id,
                     amr_id=amr.id,
-                    details=json.dumps(segment, ensure_ascii=False),
+                    details=json.dumps(
+                        {
+                            **segment,
+                            "from_x": getattr(from_coords, "x", None),
+                            "from_y": getattr(from_coords, "y", None),
+                            "to_x": getattr(to_coords, "x", None),
+                            "to_y": getattr(to_coords, "y", None),
+                            "from_floor": getattr(from_coords, "floor", None),
+                            "to_floor": getattr(to_coords, "floor", None),
+                        },
+                        ensure_ascii=False,
+                    ),
                     from_location=segment.get("from", task.pickup),
                     to_location=segment.get("to", task.dropoff),
                     payload_name=task.payload,
                     lift_id=segment.get("lift_id", ""),
-                    duration_sec=segment.get("duration", 0.0),
-                    wait_time_sec=segment.get("wait_time", 0.0),
+                    duration_sec=duration,
+                    wait_time_sec=wait_time,
                     distance_m=segment.get("distance_m", 0.0),
                 )
+
+                segment_time += duration
 
             self.push_event(
                 committed["finish_time"],
@@ -576,10 +754,10 @@ class Simulation:
                     "finish_time": committed["finish_time"],
                     "duration": committed["duration"],
                     "segments": committed["segments"],
+                    "energy_kwh": committed["energy_kwh"],
+                    "battery_soc_after": amr.battery_soc_percent,
                 },
             )
-
-    # ------------------------- Simulation Loop ------------------------
 
     def run(self):
         while True:
@@ -592,57 +770,35 @@ class Simulation:
                     self.current_time = max(self.current_time, event.time)
                     self._handle_event(event)
                     continue
-
             if self.stop_requested:
                 break
             time.sleep(0.05 / max(self.clock.tick_rate, 1e-9))
 
     def _handle_event(self, event: Event):
-        self.log_step(
-            event_time=event.time,
-            event_type=f"event_processed_{event.event_type}",
-            task_id=event.payload.get("task").id if event.payload.get("task") else "",
-            amr_id=event.payload.get("amr_id", ""),
-            details=f"Processing event '{event.event_type}'",
-        )
-
         if event.event_type == "task_release":
             task: Task = event.payload["task"]
             self._queue_pending_task(task)
             self._try_assign_tasks(event.time)
-
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]
-            record = {
-                "task_id": task.id,
-                "pickup": task.pickup,
-                "dropoff": task.dropoff,
-                "payload": task.payload,
-                "amr_id": event.payload["amr_id"],
-                "start_time_sec": round(event.payload["start_time"], 3),
-                "finish_time_sec": round(event.payload["finish_time"], 3),
-                "duration_sec": round(event.payload["duration"], 3),
-                "start_datetime": self.clock.format_sim_time(
-                    event.payload["start_time"]
-                ),
-                "finish_datetime": self.clock.format_sim_time(
-                    event.payload["finish_time"]
-                ),
-                "duration_hms": format_duration(event.payload["duration"]),
-                "segments": event.payload["segments"],
-                "runtime_added": task.created_during_runtime,
-            }
-            self.completed_task_records.append(record)
-            self.log_step(
-                event_time=event.time,
-                event_type="task_completed",
-                task_id=task.id,
-                amr_id=event.payload["amr_id"],
-                details=f"Task completed in {format_duration(event.payload['duration'])}",
-                from_location=task.pickup,
-                to_location=task.dropoff,
-                payload_name=task.payload,
-                task_duration_sec=event.payload["duration"],
+            self.completed_task_records.append(
+                {
+                    "task_id": task.id,
+                    "pickup": task.pickup,
+                    "dropoff": task.dropoff,
+                    "payload": task.payload,
+                    "amr_id": event.payload["amr_id"],
+                    "start_datetime": self.clock.format_sim_time(
+                        event.payload["start_time"]
+                    ),
+                    "finish_datetime": self.clock.format_sim_time(
+                        event.payload["finish_time"]
+                    ),
+                    "duration_hms": format_duration(event.payload["duration"]),
+                    "energy_kwh": round(event.payload["energy_kwh"], 4),
+                    "battery_soc_after": round(event.payload["battery_soc_after"], 2),
+                    "segments": event.payload["segments"],
+                }
             )
             self._try_assign_tasks(event.time)
 
@@ -692,143 +848,51 @@ class Simulation:
         )
 
     def write_verbose_csv(self):
-        if not self.verbose or not self.verbose_csv_path:
+        if not self.verbose or not self.verbose_csv_path or not self.verbose_rows:
             return
-        if not self.verbose_rows:
-            return
-        fieldnames = [
-            "sim_time_sec",
-            "sim_datetime",
-            "event_type",
-            "task_id",
-            "amr_id",
-            "payload",
-            "from_location",
-            "to_location",
-            "lift_id",
-            "duration_sec",
-            "wait_time_sec",
-            "distance_m",
-            "task_duration_sec",
-            "amr_location_before",
-            "amr_location_after",
-            "details",
-        ]
         with open(self.verbose_csv_path, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=list(self.verbose_rows[0].keys()))
             writer.writeheader()
             writer.writerows(self.verbose_rows)
 
-    # --------------------------- Reporting ----------------------------
-
     def summary(self) -> dict:
-        with self.lock:
-            makespan = 0.0
-            if self.completed_task_records:
-                makespan = max(
-                    x["finish_time_sec"] for x in self.completed_task_records
-                )
+        makespan = 0.0
+        if self.completed_task_records:
+            finish_times = [
+                parse_datetime(x["finish_datetime"])
+                for x in self.completed_task_records
+            ]
+            makespan = max(
+                (dt - self.clock.start_datetime).total_seconds() for dt in finish_times
+            )
+        return {
+            "tick_rate": self.clock.tick_rate,
+            "sim_datetime": self.clock.format_sim_time(self.current_time),
+            "makespan_hms": format_duration(makespan),
+            "completed_tasks": len(self.completed_task_records),
+            "pending_tasks": len(self.pending_tasks),
+            "failed_tasks": self.failed_tasks,
+            "amrs": [
+                {
+                    "amr_id": amr.id,
+                    "completed_tasks": amr.completed_tasks,
+                    "current_location": amr.location_name,
+                    "battery_soc_percent": round(amr.battery_soc_percent, 2),
+                    "total_energy_used_kwh": round(amr.total_energy_used_kwh, 4),
+                    "total_charge_time_hms": format_duration(amr.total_charge_time),
+                }
+                for amr in self.amrs
+            ],
+        }
 
-            amr_summary = []
-            for amr in self.amrs:
-                utilisation = 0.0 if makespan <= 0 else amr.total_busy_time / makespan
-                amr_summary.append(
-                    {
-                        "amr_id": amr.id,
-                        "completed_tasks": amr.completed_tasks,
-                        "available_time_sec": round(amr.available_time, 3),
-                        "current_location": amr.location_name,
-                        "busy_time_sec": round(amr.total_busy_time, 3),
-                        "utilisation": round(utilisation, 4),
-                    }
-                )
-
-            return {
-                "tick_rate": self.clock.tick_rate,
-                "sim_time_sec": round(self.current_time, 3),
-                "sim_datetime": self.clock.format_sim_time(self.current_time),
-                "start_datetime": self.clock.start_datetime.isoformat(
-                    sep=" ", timespec="seconds"
-                ),
-                "makespan_sec": round(makespan, 3),
-                "makespan_hms": format_duration(makespan),
-                "completion_datetime": self.clock.format_sim_time(makespan),
-                "completed_tasks": len(self.completed_task_records),
-                "pending_tasks": len(self.pending_tasks),
-                "future_events": len(self.events),
-                "failed_tasks": self.failed_tasks,
-                "amrs": amr_summary,
-            }
-
-    def print_summary(self):
-        data = self.summary()
-        print("\n=== Simulation Summary ===")
-        print(json.dumps(data, indent=2))
-
-    def print_completed_tasks(self):
-        print("\n=== Completed Tasks ===")
-        print(json.dumps(self.completed_task_records, indent=2))
-
-
-# ---------------------------- CLI Helpers ----------------------------
-
-
-def load_json(path: str) -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-class RuntimeInputThread(threading.Thread):
-    def __init__(self, sim: Simulation):
-        super().__init__(daemon=True)
-        self.sim = sim
-
-    def run(self):
-        print("\nInteractive mode enabled.")
-        print("Paste a JSON task object to add a task at runtime.")
-        print(
-            "Use release_time (seconds from simulation start) or release_datetime (ISO format)."
-        )
-        print("Commands: status, quit")
-        while True:
-            try:
-                line = input().strip()
-            except EOFError:
-                self.sim.request_stop()
-                break
-
-            if not line:
-                continue
-
-            if line.lower() == "quit":
-                self.sim.request_stop()
-                break
-
-            if line.lower() == "status":
-                self.sim.print_summary()
-                continue
-
-            try:
-                task_dict = json.loads(line)
-                required = {"id", "pickup", "dropoff", "payload"}
-                missing = required - set(task_dict.keys())
-                if missing:
-                    print(f"Missing task fields: {sorted(missing)}")
-                    continue
-                task_dict.setdefault("release_time", 0.0)
-                task_dict.setdefault("quantity", 1)
-                task_dict.setdefault("priority", 100)
-                self.sim.add_runtime_task(task_dict)
-                print(f"Task {task_dict['id']} added.")
-            except Exception as exc:
-                print(f"Could not add task: {exc}")
-
-
-# -------------------------- Example Config ---------------------------
 
 EXAMPLE_CONFIG = {
     "simulation": {"start_datetime": "2026-01-01T08:00:00", "tick_rate": 120.0},
-    "building": {"floor_height_m": 4.0, "load_unload_time_sec": 20.0},
+    "building": {
+        "load_unload_time_sec": 20.0,
+        "floor_height_m": 4.0,
+        "charge_location": "Stores",
+    },
     "locations": [
         {"name": "Stores", "floor": 0, "x": 0, "y": 0},
         {"name": "Pharmacy", "floor": 0, "x": 20, "y": 8},
@@ -837,6 +901,40 @@ EXAMPLE_CONFIG = {
         {"name": "Ward-3A", "floor": 3, "x": 16, "y": 4},
         {"name": "Lab", "floor": 2, "x": 3, "y": 15},
     ],
+    "corridors": {
+        "nodes": [
+            {"name": "C0-A", "floor": 0, "x": 4, "y": 0},
+            {"name": "C0-B", "floor": 0, "x": 10, "y": 0},
+            {"name": "C0-C", "floor": 0, "x": 16, "y": 4},
+            {"name": "C1-A", "floor": 1, "x": 5, "y": 2},
+            {"name": "C1-B", "floor": 1, "x": 10, "y": 2},
+            {"name": "C2-A", "floor": 2, "x": 5, "y": 2},
+            {"name": "C2-B", "floor": 2, "x": 12, "y": 5},
+            {"name": "C2-C", "floor": 2, "x": 3, "y": 15},
+            {"name": "C3-A", "floor": 3, "x": 5, "y": 2},
+            {"name": "C3-B", "floor": 3, "x": 16, "y": 4},
+        ],
+        "edges": [
+            {"from": "Stores", "to": "C0-A"},
+            {"from": "C0-A", "to": "C0-B"},
+            {"from": "C0-B", "to": "C0-C"},
+            {"from": "C0-C", "to": "Pharmacy"},
+            {"from": "Lift-1-F0", "to": "C0-B"},
+            {"from": "Lift-2-F0", "to": "C0-C"},
+            {"from": "Lift-1-F1", "to": "C1-A"},
+            {"from": "C1-A", "to": "C1-B"},
+            {"from": "C1-B", "to": "Ward-1A"},
+            {"from": "Lift-1-F2", "to": "C2-A"},
+            {"from": "C2-A", "to": "C2-B"},
+            {"from": "C2-B", "to": "Ward-2A"},
+            {"from": "C2-B", "to": "C2-C"},
+            {"from": "C2-C", "to": "Lab"},
+            {"from": "Lift-1-F3", "to": "C3-A"},
+            {"from": "C3-A", "to": "C3-B"},
+            {"from": "C3-B", "to": "Ward-3A"},
+        ],
+        "auto_connect": False,
+    },
     "payloads": [
         {"name": "food_trolley", "weight_kg": 120, "size_units": 1.0},
         {"name": "drugs_box", "weight_kg": 15, "size_units": 0.3},
@@ -849,16 +947,13 @@ EXAMPLE_CONFIG = {
             "payload_capacity_kg": 150,
             "payload_size_capacity": 1.0,
             "speed_m_per_sec": 1.2,
+            "motor_power_w": 900,
+            "battery_capacity_kwh": 6.5,
+            "battery_charge_rate_kw": 2.2,
+            "recharge_threshold_percent": 20.0,
+            "battery_soc_percent": 100.0,
             "start_location": "Stores",
-        },
-        {
-            "id": "AMR-B",
-            "quantity": 1,
-            "payload_capacity_kg": 40,
-            "payload_size_capacity": 0.5,
-            "speed_m_per_sec": 1.5,
-            "start_location": "Pharmacy",
-        },
+        }
     ],
     "lifts": [
         {
@@ -869,6 +964,12 @@ EXAMPLE_CONFIG = {
             "boarding_time_sec": 6,
             "capacity_size_units": 1.0,
             "start_floor": 0,
+            "floor_locations": {
+                "0": {"x": 5, "y": 2},
+                "1": {"x": 5, "y": 2},
+                "2": {"x": 5, "y": 2},
+                "3": {"x": 5, "y": 2},
+            },
         },
         {
             "id": "Lift-2",
@@ -878,6 +979,12 @@ EXAMPLE_CONFIG = {
             "boarding_time_sec": 5,
             "capacity_size_units": 1.0,
             "start_floor": 0,
+            "floor_locations": {
+                "0": {"x": 18, "y": 6},
+                "1": {"x": 18, "y": 6},
+                "2": {"x": 18, "y": 6},
+                "3": {"x": 18, "y": 6},
+            },
         },
     ],
     "tasks": [
@@ -891,30 +998,27 @@ EXAMPLE_CONFIG = {
         },
         {
             "id": "T2",
-            "pickup": "Stores",
-            "dropoff": "Ward-2A",
-            "payload": "food_trolley",
-            "release_datetime": "2026-01-01T08:00:00",
-            "priority": 10,
-        },
-        {
-            "id": "T3",
             "pickup": "Pharmacy",
-            "dropoff": "Ward-3A",
+            "dropoff": "Ward-2A",
             "payload": "drugs_box",
-            "release_datetime": "2026-01-01T08:01:00",
+            "release_datetime": "2026-01-01T08:05:00",
             "priority": 20,
         },
         {
-            "id": "T4",
+            "id": "TEST1",
             "pickup": "Stores",
-            "dropoff": "Lab",
-            "payload": "linen_cart",
-            "release_datetime": "2026-01-01T08:02:00",
-            "priority": 30,
+            "dropoff": "Pharmacy",
+            "payload": "drugs_box",
+            "release_datetime": "2026-01-01T08:00:00",
+            "priority": 1,
         },
     ],
 }
+
+
+def load_json(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 def write_example_config(path: Path):
@@ -922,34 +1026,15 @@ def write_example_config(path: Path):
     print(f"Example config written to {path}")
 
 
-# ------------------------------- Main -------------------------------
-
-
 def main():
-    parser = argparse.ArgumentParser(description="AMR multi-floor delivery simulator")
+    parser = argparse.ArgumentParser(
+        description="AMR delivery simulator with graph routing"
+    )
     parser.add_argument("--config", type=str, help="Path to config JSON")
-    parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Allow runtime task insertion from stdin",
-    )
-    parser.add_argument(
-        "--write-example", type=str, help="Write an example JSON config and exit"
-    )
-    parser.add_argument(
-        "--print-tasks",
-        action="store_true",
-        help="Print completed task details at the end",
-    )
-    parser.add_argument(
-        "--verbose", action="store_true", help="Record verbose simulation steps"
-    )
-    parser.add_argument(
-        "--verbose-csv",
-        type=str,
-        default="simulation_steps.csv",
-        help="CSV file path for verbose output",
-    )
+    parser.add_argument("--interactive", action="store_true")
+    parser.add_argument("--write-example", type=str)
+    parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--verbose-csv", type=str, default="simulation_steps.csv")
     args = parser.parse_args()
 
     if args.write_example:
@@ -961,22 +1046,16 @@ def main():
             "Please provide --config path, or use --write-example example.json first."
         )
 
-    config = load_json(args.config)
-    sim = Simulation(config, verbose=args.verbose, verbose_csv_path=args.verbose_csv)
-
-    input_thread = None
-    if args.interactive:
-        input_thread = RuntimeInputThread(sim)
-        input_thread.start()
+    sim = Simulation(
+        load_json(args.config), verbose=args.verbose, verbose_csv_path=args.verbose_csv
+    )
 
     try:
         sim.run()
     except KeyboardInterrupt:
         sim.request_stop()
 
-    sim.print_summary()
-    if args.print_tasks:
-        sim.print_completed_tasks()
+    print(json.dumps(sim.summary(), indent=2))
     sim.write_verbose_csv()
     if args.verbose:
         print(f"Verbose CSV written to {args.verbose_csv}")

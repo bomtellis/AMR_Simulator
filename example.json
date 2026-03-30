@@ -1,11 +1,12 @@
 {
   "simulation": {
     "start_datetime": "2026-01-01T08:00:00",
-    "tick_rate": 1
+    "tick_rate": 120.0
   },
   "building": {
+    "load_unload_time_sec": 20.0,
     "floor_height_m": 4.0,
-    "load_unload_time_sec": 20.0
+    "charge_location": "Stores"
   },
   "locations": [
     {
@@ -45,6 +46,141 @@
       "y": 15
     }
   ],
+  "corridors": {
+    "nodes": [
+      {
+        "name": "C0-A",
+        "floor": 0,
+        "x": 4,
+        "y": 0
+      },
+      {
+        "name": "C0-B",
+        "floor": 0,
+        "x": 10,
+        "y": 0
+      },
+      {
+        "name": "C0-C",
+        "floor": 0,
+        "x": 16,
+        "y": 4
+      },
+      {
+        "name": "C1-A",
+        "floor": 1,
+        "x": 5,
+        "y": 2
+      },
+      {
+        "name": "C1-B",
+        "floor": 1,
+        "x": 10,
+        "y": 2
+      },
+      {
+        "name": "C2-A",
+        "floor": 2,
+        "x": 5,
+        "y": 2
+      },
+      {
+        "name": "C2-B",
+        "floor": 2,
+        "x": 12,
+        "y": 5
+      },
+      {
+        "name": "C2-C",
+        "floor": 2,
+        "x": 3,
+        "y": 15
+      },
+      {
+        "name": "C3-A",
+        "floor": 3,
+        "x": 5,
+        "y": 2
+      },
+      {
+        "name": "C3-B",
+        "floor": 3,
+        "x": 16,
+        "y": 4
+      }
+    ],
+    "edges": [
+      {
+        "from": "Stores",
+        "to": "C0-A"
+      },
+      {
+        "from": "C0-A",
+        "to": "C0-B"
+      },
+      {
+        "from": "C0-B",
+        "to": "C0-C"
+      },
+      {
+        "from": "C0-C",
+        "to": "Pharmacy"
+      },
+      {
+        "from": "Lift-1-F0",
+        "to": "C0-B"
+      },
+      {
+        "from": "Lift-2-F0",
+        "to": "C0-C"
+      },
+      {
+        "from": "Lift-1-F1",
+        "to": "C1-A"
+      },
+      {
+        "from": "C1-A",
+        "to": "C1-B"
+      },
+      {
+        "from": "C1-B",
+        "to": "Ward-1A"
+      },
+      {
+        "from": "Lift-1-F2",
+        "to": "C2-A"
+      },
+      {
+        "from": "C2-A",
+        "to": "C2-B"
+      },
+      {
+        "from": "C2-B",
+        "to": "Ward-2A"
+      },
+      {
+        "from": "C2-B",
+        "to": "C2-C"
+      },
+      {
+        "from": "C2-C",
+        "to": "Lab"
+      },
+      {
+        "from": "Lift-1-F3",
+        "to": "C3-A"
+      },
+      {
+        "from": "C3-A",
+        "to": "C3-B"
+      },
+      {
+        "from": "C3-B",
+        "to": "Ward-3A"
+      }
+    ],
+    "auto_connect": false
+  },
   "payloads": [
     {
       "name": "food_trolley",
@@ -69,18 +205,47 @@
       "payload_capacity_kg": 150,
       "payload_size_capacity": 1.0,
       "speed_m_per_sec": 1.2,
+      "motor_power_w": 900,
+      "battery_capacity_kwh": 6.5,
+      "battery_charge_rate_kw": 2.2,
+      "recharge_threshold_percent": 20.0,
+      "battery_soc_percent": 100.0,
       "start_location": "Stores"
-    },
-    {
-      "id": "AMR-B",
-      "quantity": 1,
-      "payload_capacity_kg": 40,
-      "payload_size_capacity": 0.5,
-      "speed_m_per_sec": 1.5,
-      "start_location": "Pharmacy"
     }
   ],
   "lifts": [
+    {
+      "id": "Lift-1",
+      "served_floors": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "speed_floors_per_sec": 0.5,
+      "door_time_sec": 4,
+      "boarding_time_sec": 6,
+      "capacity_size_units": 1.0,
+      "start_floor": 0,
+      "floor_locations": {
+        "0": {
+          "x": 5,
+          "y": 2
+        },
+        "1": {
+          "x": 5,
+          "y": 2
+        },
+        "2": {
+          "x": 5,
+          "y": 2
+        },
+        "3": {
+          "x": 5,
+          "y": 2
+        }
+      }
+    },
     {
       "id": "Lift-2",
       "served_floors": [
@@ -91,9 +256,27 @@
       ],
       "speed_floors_per_sec": 0.67,
       "door_time_sec": 4,
-      "boarding_time_sec": 15,
+      "boarding_time_sec": 5,
       "capacity_size_units": 1.0,
-      "start_floor": 0
+      "start_floor": 0,
+      "floor_locations": {
+        "0": {
+          "x": 18,
+          "y": 6
+        },
+        "1": {
+          "x": 18,
+          "y": 6
+        },
+        "2": {
+          "x": 18,
+          "y": 6
+        },
+        "3": {
+          "x": 18,
+          "y": 6
+        }
+      }
     }
   ],
   "tasks": [
@@ -107,27 +290,19 @@
     },
     {
       "id": "T2",
-      "pickup": "Stores",
-      "dropoff": "Ward-2A",
-      "payload": "food_trolley",
-      "release_datetime": "2026-01-01T08:00:00",
-      "priority": 10
-    },
-    {
-      "id": "T3",
       "pickup": "Pharmacy",
-      "dropoff": "Ward-3A",
+      "dropoff": "Ward-2A",
       "payload": "drugs_box",
-      "release_datetime": "2026-01-01T08:00:00",
+      "release_datetime": "2026-01-01T08:05:00",
       "priority": 20
     },
     {
-      "id": "T4",
+      "id": "TEST1",
       "pickup": "Stores",
-      "dropoff": "Lab",
-      "payload": "linen_cart",
+      "dropoff": "Pharmacy",
+      "payload": "drugs_box",
       "release_datetime": "2026-01-01T08:00:00",
-      "priority": 30
+      "priority": 1
     }
   ]
 }
