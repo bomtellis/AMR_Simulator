@@ -1,0 +1,133 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-01T08:00:00",
+    "tick_rate": 1
+  },
+  "building": {
+    "floor_height_m": 4.0,
+    "load_unload_time_sec": 20.0
+  },
+  "locations": [
+    {
+      "name": "Stores",
+      "floor": 0,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "name": "Pharmacy",
+      "floor": 0,
+      "x": 20,
+      "y": 8
+    },
+    {
+      "name": "Ward-1A",
+      "floor": 1,
+      "x": 10,
+      "y": 2
+    },
+    {
+      "name": "Ward-2A",
+      "floor": 2,
+      "x": 12,
+      "y": 5
+    },
+    {
+      "name": "Ward-3A",
+      "floor": 3,
+      "x": 16,
+      "y": 4
+    },
+    {
+      "name": "Lab",
+      "floor": 2,
+      "x": 3,
+      "y": 15
+    }
+  ],
+  "payloads": [
+    {
+      "name": "food_trolley",
+      "weight_kg": 120,
+      "size_units": 1.0
+    },
+    {
+      "name": "drugs_box",
+      "weight_kg": 15,
+      "size_units": 0.3
+    },
+    {
+      "name": "linen_cart",
+      "weight_kg": 80,
+      "size_units": 0.8
+    }
+  ],
+  "amrs": [
+    {
+      "id": "AMR-A",
+      "quantity": 2,
+      "payload_capacity_kg": 150,
+      "payload_size_capacity": 1.0,
+      "speed_m_per_sec": 1.2,
+      "start_location": "Stores"
+    },
+    {
+      "id": "AMR-B",
+      "quantity": 1,
+      "payload_capacity_kg": 40,
+      "payload_size_capacity": 0.5,
+      "speed_m_per_sec": 1.5,
+      "start_location": "Pharmacy"
+    }
+  ],
+  "lifts": [
+    {
+      "id": "Lift-2",
+      "served_floors": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "speed_floors_per_sec": 0.67,
+      "door_time_sec": 4,
+      "boarding_time_sec": 15,
+      "capacity_size_units": 1.0,
+      "start_floor": 0
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "pickup": "Stores",
+      "dropoff": "Ward-1A",
+      "payload": "food_trolley",
+      "release_datetime": "2026-01-01T08:00:00",
+      "priority": 10
+    },
+    {
+      "id": "T2",
+      "pickup": "Stores",
+      "dropoff": "Ward-2A",
+      "payload": "food_trolley",
+      "release_datetime": "2026-01-01T08:00:00",
+      "priority": 10
+    },
+    {
+      "id": "T3",
+      "pickup": "Pharmacy",
+      "dropoff": "Ward-3A",
+      "payload": "drugs_box",
+      "release_datetime": "2026-01-01T08:00:00",
+      "priority": 20
+    },
+    {
+      "id": "T4",
+      "pickup": "Stores",
+      "dropoff": "Lab",
+      "payload": "linen_cart",
+      "release_datetime": "2026-01-01T08:00:00",
+      "priority": 30
+    }
+  ]
+}

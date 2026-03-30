@@ -1,0 +1,49 @@
+sim_time_sec,sim_datetime,event_type,task_id,amr_id,payload,from_location,to_location,lift_id,duration_sec,wait_time_sec,distance_m,task_duration_sec,amr_location_before,amr_location_after,details
+0.0,2026-01-01 08:00:00,event_scheduled,T1,,,,,,0.0,0.0,0.0,0.0,,,Scheduled event 'task_release'
+0.0,2026-01-01 08:00:00,task_release_planned,T1,,food_trolley,Stores,Ward-1A,,0.0,0.0,0.0,0.0,,,Task T1 will release at 2026-01-01 08:00:00
+0.0,2026-01-01 08:00:00,event_scheduled,T2,,,,,,0.0,0.0,0.0,0.0,,,Scheduled event 'task_release'
+0.0,2026-01-01 08:00:00,task_release_planned,T2,,food_trolley,Stores,Ward-2A,,0.0,0.0,0.0,0.0,,,Task T2 will release at 2026-01-01 08:00:00
+0.0,2026-01-01 08:00:00,event_scheduled,T3,,,,,,0.0,0.0,0.0,0.0,,,Scheduled event 'task_release'
+0.0,2026-01-01 08:00:00,task_release_planned,T3,,drugs_box,Pharmacy,Ward-3A,,0.0,0.0,0.0,0.0,,,Task T3 will release at 2026-01-01 08:00:00
+0.0,2026-01-01 08:00:00,event_scheduled,T4,,,,,,0.0,0.0,0.0,0.0,,,Scheduled event 'task_release'
+0.0,2026-01-01 08:00:00,task_release_planned,T4,,linen_cart,Stores,Lab,,0.0,0.0,0.0,0.0,,,Task T4 will release at 2026-01-01 08:00:00
+0.0,2026-01-01 08:00:00,event_processed_task_release,T1,,,,,,0.0,0.0,0.0,0.0,,,Processing event 'task_release'
+0.0,2026-01-01 08:00:00,task_queued,T1,,food_trolley,Stores,Ward-1A,,0.0,0.0,0.0,0.0,,,Task queued with priority 10
+0.0,2026-01-01 08:00:00,task_assigned,T1,AMR-A-1,food_trolley,Stores,Ward-1A,,0.0,0.0,0.0,79.493,Stores,Ward-1A,Assigned task to AMR-A-1
+0.0,2026-01-01 08:00:00,segment_corridor,T1,AMR-A-1,food_trolley,Stores,Stores,,0.0,0.0,0.0,0.0,,,"{""type"": ""corridor"", ""from"": ""Stores"", ""to"": ""Stores"", ""duration"": 0.0, ""distance_m"": 0.0}"
+0.0,2026-01-01 08:00:00,segment_pickup,T1,AMR-A-1,food_trolley,Stores,Ward-1A,,20.0,0.0,0.0,0.0,,,"{""type"": ""pickup"", ""location"": ""Stores"", ""duration"": 20.0}"
+0.0,2026-01-01 08:00:00,segment_lift,T1,AMR-A-1,food_trolley,Stores,Ward-1A,Lift-2,39.493,0.0,0.0,0.0,,,"{""type"": ""lift"", ""lift_id"": ""Lift-2"", ""from_floor"": 0, ""to_floor"": 1, ""wait_time"": 0.0, ""duration"": 39.492537313432834}"
+0.0,2026-01-01 08:00:00,segment_dropoff,T1,AMR-A-1,food_trolley,Stores,Ward-1A,,20.0,0.0,0.0,0.0,,,"{""type"": ""dropoff"", ""location"": ""Ward-1A"", ""duration"": 20.0}"
+79.493,2026-01-01 08:01:19,event_scheduled,T1,AMR-A-1,,,,,0.0,0.0,0.0,0.0,,,Scheduled event 'task_complete'
+0.0,2026-01-01 08:00:00,event_processed_task_release,T2,,,,,,0.0,0.0,0.0,0.0,,,Processing event 'task_release'
+0.0,2026-01-01 08:00:00,task_queued,T2,,food_trolley,Stores,Ward-2A,,0.0,0.0,0.0,0.0,,,Task queued with priority 10
+0.0,2026-01-01 08:00:00,task_assigned,T2,AMR-A-2,food_trolley,Stores,Ward-2A,,0.0,0.0,0.0,121.97,Stores,Ward-2A,Assigned task to AMR-A-2
+0.0,2026-01-01 08:00:00,segment_corridor,T2,AMR-A-2,food_trolley,Stores,Stores,,0.0,0.0,0.0,0.0,,,"{""type"": ""corridor"", ""from"": ""Stores"", ""to"": ""Stores"", ""duration"": 0.0, ""distance_m"": 0.0}"
+0.0,2026-01-01 08:00:00,segment_pickup,T2,AMR-A-2,food_trolley,Stores,Ward-2A,,20.0,0.0,0.0,0.0,,,"{""type"": ""pickup"", ""location"": ""Stores"", ""duration"": 20.0}"
+0.0,2026-01-01 08:00:00,segment_lift,T2,AMR-A-2,food_trolley,Stores,Ward-2A,Lift-2,42.478,39.493,0.0,0.0,,,"{""type"": ""lift"", ""lift_id"": ""Lift-2"", ""from_floor"": 0, ""to_floor"": 2, ""wait_time"": 39.492537313432834, ""duration"": 42.4776119402985}"
+0.0,2026-01-01 08:00:00,segment_dropoff,T2,AMR-A-2,food_trolley,Stores,Ward-2A,,20.0,0.0,0.0,0.0,,,"{""type"": ""dropoff"", ""location"": ""Ward-2A"", ""duration"": 20.0}"
+121.97,2026-01-01 08:02:01,event_scheduled,T2,AMR-A-2,,,,,0.0,0.0,0.0,0.0,,,Scheduled event 'task_complete'
+0.0,2026-01-01 08:00:00,event_processed_task_release,T3,,,,,,0.0,0.0,0.0,0.0,,,Processing event 'task_release'
+0.0,2026-01-01 08:00:00,task_queued,T3,,drugs_box,Pharmacy,Ward-3A,,0.0,0.0,0.0,0.0,,,Task queued with priority 20
+0.0,2026-01-01 08:00:00,task_assigned,T3,AMR-B-1,drugs_box,Pharmacy,Ward-3A,,0.0,0.0,0.0,167.433,Pharmacy,Ward-3A,Assigned task to AMR-B-1
+0.0,2026-01-01 08:00:00,segment_corridor,T3,AMR-B-1,drugs_box,Pharmacy,Pharmacy,,0.0,0.0,0.0,0.0,,,"{""type"": ""corridor"", ""from"": ""Pharmacy"", ""to"": ""Pharmacy"", ""duration"": 0.0, ""distance_m"": 0.0}"
+0.0,2026-01-01 08:00:00,segment_pickup,T3,AMR-B-1,drugs_box,Pharmacy,Ward-3A,,20.0,0.0,0.0,0.0,,,"{""type"": ""pickup"", ""location"": ""Pharmacy"", ""duration"": 20.0}"
+0.0,2026-01-01 08:00:00,segment_lift,T3,AMR-B-1,drugs_box,Pharmacy,Ward-3A,Lift-2,45.463,81.97,0.0,0.0,,,"{""type"": ""lift"", ""lift_id"": ""Lift-2"", ""from_floor"": 0, ""to_floor"": 3, ""wait_time"": 81.97014925373134, ""duration"": 45.462686567164184}"
+0.0,2026-01-01 08:00:00,segment_dropoff,T3,AMR-B-1,drugs_box,Pharmacy,Ward-3A,,20.0,0.0,0.0,0.0,,,"{""type"": ""dropoff"", ""location"": ""Ward-3A"", ""duration"": 20.0}"
+167.433,2026-01-01 08:02:47,event_scheduled,T3,AMR-B-1,,,,,0.0,0.0,0.0,0.0,,,Scheduled event 'task_complete'
+0.0,2026-01-01 08:00:00,event_processed_task_release,T4,,,,,,0.0,0.0,0.0,0.0,,,Processing event 'task_release'
+0.0,2026-01-01 08:00:00,task_queued,T4,,linen_cart,Stores,Lab,,0.0,0.0,0.0,0.0,,,Task queued with priority 30
+79.493,2026-01-01 08:01:19,task_assigned,T4,AMR-A-1,linen_cart,Stores,Lab,,0.0,0.0,0.0,191.403,Ward-1A,Lab,Assigned task to AMR-A-1
+79.493,2026-01-01 08:01:19,segment_lift,T4,AMR-A-1,linen_cart,Stores,Lab,Lift-2,42.478,67.94,0.0,0.0,,,"{""type"": ""lift"", ""lift_id"": ""Lift-2"", ""from_floor"": 1, ""to_floor"": 0, ""wait_time"": 67.94029850746269, ""duration"": 42.477611940298516}"
+79.493,2026-01-01 08:01:19,segment_pickup,T4,AMR-A-1,linen_cart,Stores,Lab,,20.0,0.0,0.0,0.0,,,"{""type"": ""pickup"", ""location"": ""Stores"", ""duration"": 20.0}"
+79.493,2026-01-01 08:01:19,segment_lift,T4,AMR-A-1,linen_cart,Stores,Lab,Lift-2,40.985,0.0,0.0,0.0,,,"{""type"": ""lift"", ""lift_id"": ""Lift-2"", ""from_floor"": 0, ""to_floor"": 2, ""wait_time"": 0.0, ""duration"": 40.98507462686567}"
+79.493,2026-01-01 08:01:19,segment_dropoff,T4,AMR-A-1,linen_cart,Stores,Lab,,20.0,0.0,0.0,0.0,,,"{""type"": ""dropoff"", ""location"": ""Lab"", ""duration"": 20.0}"
+270.896,2026-01-01 08:04:30,event_scheduled,T4,AMR-A-1,,,,,0.0,0.0,0.0,0.0,,,Scheduled event 'task_complete'
+79.493,2026-01-01 08:01:19,event_processed_task_complete,T1,AMR-A-1,,,,,0.0,0.0,0.0,0.0,,,Processing event 'task_complete'
+79.493,2026-01-01 08:01:19,task_completed,T1,AMR-A-1,food_trolley,Stores,Ward-1A,,0.0,0.0,0.0,79.493,,,Task completed in 00:01:19
+121.97,2026-01-01 08:02:01,event_processed_task_complete,T2,AMR-A-2,,,,,0.0,0.0,0.0,0.0,,,Processing event 'task_complete'
+121.97,2026-01-01 08:02:01,task_completed,T2,AMR-A-2,food_trolley,Stores,Ward-2A,,0.0,0.0,0.0,121.97,,,Task completed in 00:02:02
+167.433,2026-01-01 08:02:47,event_processed_task_complete,T3,AMR-B-1,,,,,0.0,0.0,0.0,0.0,,,Processing event 'task_complete'
+167.433,2026-01-01 08:02:47,task_completed,T3,AMR-B-1,drugs_box,Pharmacy,Ward-3A,,0.0,0.0,0.0,167.433,,,Task completed in 00:02:47
+270.896,2026-01-01 08:04:30,event_processed_task_complete,T4,AMR-A-1,,,,,0.0,0.0,0.0,0.0,,,Processing event 'task_complete'
+270.896,2026-01-01 08:04:30,task_completed,T4,AMR-A-1,linen_cart,Stores,Lab,,0.0,0.0,0.0,191.403,,,Task completed in 00:03:11
