@@ -424,7 +424,7 @@ class Simulation:
                     "from_lift_sec": from_lift_sec,
                     "lift_start": lift_start,
                     "lift_finish": lift_finish,
-                    "wait_time": max(0.0, lift_start - arrival_at_lift),
+                    "wait_time": max(0.0, (lift_start - arrival_at_lift)),
                     "vertical_distance_m": abs(to_loc.floor - from_loc.floor)
                     * self.floor_height_m,
                     "final_finish": final_finish,

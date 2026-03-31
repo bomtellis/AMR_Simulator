@@ -1,0 +1,12 @@
+{
+  "Route Template": {
+    "prefix": "route",
+    "body": [
+      "{",
+      "  \"from\": \"${1:Stores}\",",
+      "  \"to\": \"${2:C0-A}\"",
+      "},"
+    ],
+    "description": "Insert route JSON with editable from/to fields"
+  }
+}
