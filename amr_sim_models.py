@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass(order=True)
@@ -32,9 +32,15 @@ class Task:
     dropoff: str
     payload: str
     release_time: float = 0.0
+    target_time: float = 0.0
     quantity: int = 1
     priority: int = 100
     created_during_runtime: bool = False
+    labels: List[str] = field(default_factory=list)
+    route_profile: Optional[str] = None
+    allowed_lifts: List[str] = field(default_factory=list)
+    allowed_nodes: List[str] = field(default_factory=list)
+    allowed_edges: List[Tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -78,6 +84,7 @@ class AMR:
     total_busy_time: float = 0.0
     total_charge_time: float = 0.0
     total_energy_used_kwh: float = 0.0
+    is_charging: bool = False
 
     def can_carry(self, payload: PayloadType) -> bool:
         return (

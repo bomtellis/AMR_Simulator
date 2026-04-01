@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 # Data models
 # ----------------------------
 
+
 @dataclass
 class Node:
     node_id: str
@@ -88,6 +89,7 @@ class AMRPosition:
 # ----------------------------
 # Loaders
 # ----------------------------
+
 
 class GraphData:
     def __init__(self) -> None:
@@ -158,8 +160,12 @@ class SimulationData:
         df["end_time"] = pd.to_datetime(df["end_time"])
 
         numeric_cols = [
-            "start_x", "start_y", "start_floor",
-            "end_x", "end_y", "end_floor",
+            "start_x",
+            "start_y",
+            "start_floor",
+            "end_x",
+            "end_y",
+            "end_floor",
         ]
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col])
@@ -200,8 +206,7 @@ class SimulationData:
             return []
 
         active = self.df[
-            (self.df["start_time"] <= timestamp) &
-            (self.df["end_time"] >= timestamp)
+            (self.df["start_time"] <= timestamp) & (self.df["end_time"] >= timestamp)
         ].copy()
 
         if active.empty:
@@ -233,8 +238,14 @@ class SimulationData:
             else:
                 floor = start_floor if ratio < 0.5 else end_floor
 
-            x = float(row["start_x"]) + (float(row["end_x"]) - float(row["start_x"])) * ratio
-            y = float(row["start_y"]) + (float(row["end_y"]) - float(row["start_y"])) * ratio
+            x = (
+                float(row["start_x"])
+                + (float(row["end_x"]) - float(row["start_x"])) * ratio
+            )
+            y = (
+                float(row["start_y"])
+                + (float(row["end_y"]) - float(row["start_y"])) * ratio
+            )
 
             results.append(
                 AMRPosition(
@@ -253,6 +264,7 @@ class SimulationData:
 # ----------------------------
 # Graphics
 # ----------------------------
+
 
 class FloorScene(QGraphicsScene):
     def __init__(self) -> None:
@@ -309,7 +321,10 @@ class FloorScene(QGraphicsScene):
                         points = [(p[0], p[1]) for p in entity.get_points()]
                         closed = entity.closed
                     else:
-                        points = [(v.dxf.location.x, v.dxf.location.y) for v in entity.vertices]
+                        points = [
+                            (v.dxf.location.x, v.dxf.location.y)
+                            for v in entity.vertices
+                        ]
                         closed = entity.is_closed
 
                     if len(points) >= 2:
@@ -336,12 +351,14 @@ class FloorScene(QGraphicsScene):
         if bounds:
             xs = [p[0] for p in bounds]
             ys = [p[1] for p in bounds]
-            self.setSceneRect(QRectF(
-                min(xs) - 100,
-                min(ys) - 100,
-                max(xs) - min(xs) + 200,
-                max(ys) - min(ys) + 200,
-            ))
+            self.setSceneRect(
+                QRectF(
+                    min(xs) - 100,
+                    min(ys) - 100,
+                    max(xs) - min(xs) + 200,
+                    max(ys) - min(ys) + 200,
+                )
+            )
 
     def draw_graph(self, graph: Optional[GraphData], floor: int) -> None:
         self.clear_group(self.edge_group)
@@ -373,7 +390,9 @@ class FloorScene(QGraphicsScene):
                 continue
 
             r = 10
-            item = QGraphicsEllipseItem(node.x - r / 2, self._map_y(node.y) - r / 2, r, r)
+            item = QGraphicsEllipseItem(
+                node.x - r / 2, self._map_y(node.y) - r / 2, r, r
+            )
             item.setPen(node_pen)
             item.setBrush(node_brush)
             self.node_group.addToGroup(item)
@@ -387,7 +406,9 @@ class FloorScene(QGraphicsScene):
                 continue
 
             r = 28
-            ellipse = QGraphicsEllipseItem(pos.x - r / 2, self._map_y(pos.y) - r / 2, r, r)
+            ellipse = QGraphicsEllipseItem(
+                pos.x - r / 2, self._map_y(pos.y) - r / 2, r, r
+            )
 
             status = pos.status.lower()
             if status == "lift":
@@ -428,6 +449,7 @@ class GraphicsView(QGraphicsView):
 # ----------------------------
 # Main window
 # ----------------------------
+
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -478,7 +500,9 @@ class MainWindow(QMainWindow):
         self.speed_spin.setRange(-300, 300)
         self.speed_spin.setValue(1)
         self.speed_spin.setSingleStep(1)
-        self.speed_spin.setToolTip("Playback speed in simulation seconds per tick. Negative rewinds.")
+        self.speed_spin.setToolTip(
+            "Playback speed in simulation seconds per tick. Negative rewinds."
+        )
         self.speed_spin.valueChanged.connect(self.on_speed_changed)
         form.addRow("Speed", self.speed_spin)
 
@@ -552,7 +576,9 @@ class MainWindow(QMainWindow):
     # ----------------------------
 
     def load_graph_json(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Select graph JSON", "", "JSON Files (*.json)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select graph JSON", "", "JSON Files (*.json)"
+        )
         if not path:
             return
         try:
@@ -563,26 +589,38 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"Failed to load graph JSON:\n{exc}")
 
     def load_sim_csv(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "Select simulation CSV", "", "CSV Files (*.csv)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select simulation CSV", "", "CSV Files (*.csv)"
+        )
         if not path:
             return
         try:
             self.simulation = SimulationData.from_csv(path)
             if self.simulation.start_time is not None:
                 self.set_current_time(self.simulation.start_time)
-                total_seconds = int((self.simulation.end_time - self.simulation.start_time).total_seconds())
+                total_seconds = int(
+                    (
+                        self.simulation.end_time - self.simulation.start_time
+                    ).total_seconds()
+                )
                 self.timeline_slider.setRange(0, max(total_seconds, 0))
             self.refresh_scene()
         except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to load simulation CSV:\n{exc}")
+            QMessageBox.critical(
+                self, "Error", f"Failed to load simulation CSV:\n{exc}"
+            )
 
     def load_floor_dxf(self) -> None:
         if self.floor_combo.count() == 0:
-            QMessageBox.warning(self, "No floors", "Load graph JSON first or add floors manually.")
+            QMessageBox.warning(
+                self, "No floors", "Load graph JSON first or add floors manually."
+            )
             return
 
         floor = int(self.floor_combo.currentText())
-        path, _ = QFileDialog.getOpenFileName(self, f"Select DXF for floor {floor}", "", "DXF Files (*.dxf)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Select DXF for floor {floor}", "", "DXF Files (*.dxf)"
+        )
         if not path:
             return
 
@@ -626,14 +664,22 @@ class MainWindow(QMainWindow):
         if self.simulation is None or self.current_time is None:
             return
 
-        next_time = self.current_time + pd.to_timedelta(self.playback_speed_seconds, unit="s")
+        next_time = self.current_time + pd.to_timedelta(
+            self.playback_speed_seconds, unit="s"
+        )
 
-        if self.simulation.start_time is not None and next_time < self.simulation.start_time:
+        if (
+            self.simulation.start_time is not None
+            and next_time < self.simulation.start_time
+        ):
             next_time = self.simulation.start_time
             self.timer.stop()
             self.play_btn.setText("Play")
 
-        if self.simulation.end_time is not None and next_time > self.simulation.end_time:
+        if (
+            self.simulation.end_time is not None
+            and next_time > self.simulation.end_time
+        ):
             next_time = self.simulation.end_time
             self.timer.stop()
             self.play_btn.setText("Play")
@@ -692,7 +738,9 @@ class MainWindow(QMainWindow):
             self.current_floor = floors[0]
             self.floor_combo.setCurrentText(str(self.current_floor))
 
-    def set_current_time(self, timestamp: pd.Timestamp, update_slider: bool = True) -> None:
+    def set_current_time(
+        self, timestamp: pd.Timestamp, update_slider: bool = True
+    ) -> None:
         if self.simulation is None:
             return
 
@@ -719,7 +767,11 @@ class MainWindow(QMainWindow):
             self.sync_slider_from_time()
 
     def sync_slider_from_time(self) -> None:
-        if self.simulation is None or self.current_time is None or self.simulation.start_time is None:
+        if (
+            self.simulation is None
+            or self.current_time is None
+            or self.simulation.start_time is None
+        ):
             return
         seconds = int((self.current_time - self.simulation.start_time).total_seconds())
         self.timeline_slider.blockSignals(True)
@@ -742,11 +794,15 @@ class MainWindow(QMainWindow):
         if self.simulation is not None and self.current_time is not None:
             all_positions = self.simulation.get_active_positions(self.current_time)
             total_active = len(all_positions)
-            floor_positions = [p for p in all_positions if p.floor == self.current_floor]
+            floor_positions = [
+                p for p in all_positions if p.floor == self.current_floor
+            ]
 
         self.scene.draw_amrs(floor_positions, self.current_floor)
 
-        current_time_str = str(self.current_time) if self.current_time is not None else "N/A"
+        current_time_str = (
+            str(self.current_time) if self.current_time is not None else "N/A"
+        )
         self.info_label.setText(
             f"Floor: {self.current_floor}\n"
             f"Simulation time: {current_time_str}\n"
