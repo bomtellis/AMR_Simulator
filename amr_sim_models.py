@@ -31,6 +31,7 @@ class Task:
     pickup: str
     dropoff: str
     payload: str
+    task_type: str
     release_time: float = 0.0
     quantity: int = 1
     priority: int = 100

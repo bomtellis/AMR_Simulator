@@ -45,6 +45,7 @@ class Simulation:
         self.stop_requested = False
         self.completed_task_records: List[dict] = []
         self.failed_tasks: List[dict] = []
+        self.location_reservations: Dict[str, List[Tuple[float, float]]] = defaultdict(list)
 
         self.load_unload_time_sec = float(
             config["building"].get("load_unload_time_sec", 20.0)
@@ -61,6 +62,22 @@ class Simulation:
                 x=float(loc.get("x", 0.0)),
                 y=float(loc.get("y", 0.0)),
             )
+            for loc in config["locations"]
+        }
+        self.location_max_concurrency: Dict[str, int] = {
+            loc["name"]: int(loc.get("max_concurrency", 999999))
+            for loc in config["locations"]
+        }
+        self.location_max_concurrency: Dict[str, int] = {
+            loc["name"]: int(loc.get("max_concurrency", 999999))
+            for loc in config["locations"]
+        }
+        self.location_max_concurrency: Dict[str, int] = {
+            loc["name"]: int(loc.get("max_concurrency", 999999))
+            for loc in config["locations"]
+        }
+        self.location_max_concurrency: Dict[str, int] = {
+            loc["name"]: int(loc.get("max_concurrency", 999999))
             for loc in config["locations"]
         }
 
@@ -100,9 +117,7 @@ class Simulation:
             self.lifts.append(lift)
 
         self.graph_nodes: Dict[str, Location] = {}
-        self.floor_graphs: Dict[int, Dict[str, List[dict]]] = defaultdict(
-            lambda: defaultdict(list)
-        )
+        self.floor_graphs: Dict[int, Dict[str, List[dict]]] = defaultdict(lambda: defaultdict(list))
         self._build_floor_graphs(config.get("corridors", {}))
 
         self.amrs: List[AMR] = []
@@ -169,34 +184,17 @@ class Simulation:
             self.graph_nodes[node.name] = node
             self.floor_graphs[node.floor][node.name]
 
-        def add_edge(
-            a_name: str,
-            b_name: str,
-            distance_m: Optional[float] = None,
-            bidirectional: bool = True,
-        ):
+        def add_edge(a_name: str, b_name: str, distance_m: Optional[float] = None, bidirectional: bool = True):
             if a_name not in self.graph_nodes or b_name not in self.graph_nodes:
-                raise ValueError(
-                    f"Corridor edge references unknown node: {a_name} -> {b_name}"
-                )
+                raise ValueError(f"Corridor edge references unknown node: {a_name} -> {b_name}")
             a = self.graph_nodes[a_name]
             b = self.graph_nodes[b_name]
             if a.floor != b.floor:
-                raise ValueError(
-                    f"Same-floor graph edge crosses floors: {a_name} -> {b_name}"
-                )
-            dist = (
-                distance_m
-                if distance_m is not None
-                else self._distance_same_floor(a, b)
-            )
-            self.floor_graphs[a.floor][a_name].append(
-                {"to": b_name, "distance_m": dist}
-            )
+                raise ValueError(f"Same-floor graph edge crosses floors: {a_name} -> {b_name}")
+            dist = distance_m if distance_m is not None else self._distance_same_floor(a, b)
+            self.floor_graphs[a.floor][a_name].append({"to": b_name, "distance_m": dist})
             if bidirectional:
-                self.floor_graphs[b.floor][b_name].append(
-                    {"to": a_name, "distance_m": dist}
-                )
+                self.floor_graphs[b.floor][b_name].append({"to": a_name, "distance_m": dist})
 
         for edge in corridor_cfg.get("edges", []):
             add_edge(
@@ -212,10 +210,8 @@ class Simulation:
             for floor, nodes in self.floor_graphs.items():
                 existing_names = list(nodes.keys())
                 corridor_names = [
-                    name
-                    for name in existing_names
-                    if name not in self.locations
-                    and not name.startswith(tuple(l.id + "-F" for l in self.lifts))
+                    name for name in existing_names
+                    if name not in self.locations and not name.startswith(tuple(l.id + "-F" for l in self.lifts))
                 ]
                 if not corridor_names:
                     continue
@@ -224,29 +220,17 @@ class Simulation:
                         continue
                     if nodes[loc.name]:
                         continue
-                    nearest = min(
-                        corridor_names,
-                        key=lambda n: self._distance_same_floor(
-                            loc, self.graph_nodes[n]
-                        ),
-                    )
+                    nearest = min(corridor_names, key=lambda n: self._distance_same_floor(loc, self.graph_nodes[n]))
                     add_edge(loc.name, nearest)
                 for lift in self.lifts:
                     lift_name = f"{lift.id}-F{floor}"
                     if lift_name not in nodes or nodes[lift_name]:
                         continue
                     lift_node = self.graph_nodes[lift_name]
-                    nearest = min(
-                        corridor_names,
-                        key=lambda n: self._distance_same_floor(
-                            lift_node, self.graph_nodes[n]
-                        ),
-                    )
+                    nearest = min(corridor_names, key=lambda n: self._distance_same_floor(lift_node, self.graph_nodes[n]))
                     add_edge(lift_name, nearest)
 
-    def _shortest_path_same_floor(
-        self, floor: int, start_name: str, end_name: str
-    ) -> Optional[dict]:
+    def _shortest_path_same_floor(self, floor: int, start_name: str, end_name: str) -> Optional[dict]:
         graph = self.floor_graphs.get(floor, {})
         if start_name not in graph or end_name not in graph:
             return None
@@ -270,17 +254,140 @@ class Simulation:
                         (
                             new_dist,
                             nxt,
-                            path
-                            + [
-                                {
-                                    "from": node,
-                                    "to": nxt,
-                                    "distance_m": edge["distance_m"],
-                                }
-                            ],
+                            path + [{
+                                "from": node,
+                                "to": nxt,
+                                "distance_m": edge["distance_m"],
+                            }],
                         ),
                     )
         return None
+
+    def _find_next_available_time(
+        self,
+        location_name: str,
+        requested_start: float,
+        duration: float,
+    ) -> float:
+        max_concurrency = self.location_max_concurrency.get(location_name, 999999)
+        reservations = sorted(self.location_reservations[location_name])
+
+        t = requested_start
+        while True:
+            overlap_count = 0
+            next_candidate = None
+
+            for start, end in reservations:
+                if not (t + duration <= start or t >= end):
+                    overlap_count += 1
+                    if next_candidate is None or end < next_candidate:
+                        next_candidate = end
+
+            if overlap_count < max_concurrency:
+                return t
+
+            if next_candidate is None:
+                return t
+
+            t = next_candidate
+
+    def _reserve_location(self, location_name: str, start_time: float, end_time: float):
+        self.location_reservations[location_name].append((start_time, end_time))
+
+    def _find_next_available_time(
+        self,
+        location_name: str,
+        requested_start: float,
+        duration: float,
+    ) -> float:
+        max_concurrency = self.location_max_concurrency.get(location_name, 999999)
+        reservations = sorted(self.location_reservations[location_name])
+
+        t = requested_start
+        while True:
+            overlap_count = 0
+            next_candidate = None
+
+            for start, end in reservations:
+                if not (t + duration <= start or t >= end):
+                    overlap_count += 1
+                    if next_candidate is None or end < next_candidate:
+                        next_candidate = end
+
+            if overlap_count < max_concurrency:
+                return t
+
+            if next_candidate is None:
+                return t
+
+            t = next_candidate
+
+    def _reserve_location(self, location_name: str, start_time: float, end_time: float):
+        self.location_reservations[location_name].append((start_time, end_time))
+
+    def _find_next_available_time(
+        self,
+        location_name: str,
+
+
+        requested_start: float,
+        duration: float,
+    ) -> float:
+        max_concurrency = self.location_max_concurrency.get(location_name, 999999)
+        reservations = sorted(self.location_reservations[location_name])
+
+        t = requested_start
+        while True:
+            overlap_count = 0
+            next_candidate = None
+
+            for start, end in reservations:
+                if not (t + duration <= start or t >= end):
+                    overlap_count += 1
+                    if next_candidate is None or end < next_candidate:
+                        next_candidate = end
+
+            if overlap_count < max_concurrency:
+                return t
+
+            if next_candidate is None:
+                return t
+
+            t = next_candidate
+
+    def _reserve_location(self, location_name: str, start_time: float, end_time: float):
+        self.location_reservations[location_name].append((start_time, end_time))
+
+    def _find_next_available_time(
+        self,
+        location_name: str,
+        requested_start: float,
+        duration: float,
+    ) -> float:
+        max_concurrency = self.location_max_concurrency.get(location_name, 999999)
+        reservations = sorted(self.location_reservations[location_name])
+
+        t = requested_start
+        while True:
+            overlap_count = 0
+            next_candidate = None
+
+            for start, end in reservations:
+                if not (t + duration <= start or t >= end):
+                    overlap_count += 1
+                    if next_candidate is None or end < next_candidate:
+                        next_candidate = end
+
+            if overlap_count < max_concurrency:
+                return t
+
+            if next_candidate is None:
+                return t
+
+            t = next_candidate
+
+    def _reserve_location(self, location_name: str, start_time: float, end_time: float):
+        self.location_reservations[location_name].append((start_time, end_time))
 
     def push_event(
         self, time_value: float, event_type: str, payload: Optional[dict] = None
@@ -335,9 +442,7 @@ class Simulation:
             return math.inf
         return route["distance_m"] / max(amr.speed_m_per_sec, 1e-9)
 
-    def _same_floor_segments(
-        self, amr: AMR, start: Location, end: Location
-    ) -> Optional[Tuple[List[dict], float, float]]:
+    def _same_floor_segments(self, amr: AMR, start: Location, end: Location) -> Optional[Tuple[List[dict], float, float]]:
         route = self._shortest_path_same_floor(start.floor, start.name, end.name)
         if route is None:
             return None
@@ -424,7 +529,7 @@ class Simulation:
                     "from_lift_sec": from_lift_sec,
                     "lift_start": lift_start,
                     "lift_finish": lift_finish,
-                    "wait_time": max(0.0, (lift_start - arrival_at_lift)),
+                    "wait_time": max(0.0, lift_start - arrival_at_lift),
                     "vertical_distance_m": abs(to_loc.floor - from_loc.floor)
                     * self.floor_height_m,
                     "final_finish": final_finish,
@@ -476,16 +581,8 @@ class Simulation:
             pickup_loc = self.locations[task.pickup]
             dropoff_loc = self.locations[task.dropoff]
 
-            to_pickup_est = (
-                self._same_floor_segments(amr, amr_loc, pickup_loc)
-                if amr_loc.floor == pickup_loc.floor
-                else None
-            )
-            loaded_est = (
-                self._same_floor_segments(amr, pickup_loc, dropoff_loc)
-                if pickup_loc.floor == dropoff_loc.floor
-                else None
-            )
+            to_pickup_est = self._same_floor_segments(amr, amr_loc, pickup_loc) if amr_loc.floor == pickup_loc.floor else None
+            loaded_est = self._same_floor_segments(amr, pickup_loc, dropoff_loc) if pickup_loc.floor == dropoff_loc.floor else None
             to_pickup_sec = to_pickup_est[1] if to_pickup_est else 0.0
             loaded_sec = loaded_est[1] if loaded_est else 0.0
 
@@ -509,12 +606,7 @@ class Simulation:
                         return math.inf, location_b, None, 0.0
                     same_segments, route_duration, _ = route
                     total += route_duration
-                    return (
-                        current_time_value + route_duration,
-                        location_b,
-                        same_segments,
-                        route_duration,
-                    )
+                    return current_time_value + route_duration, location_b, same_segments, route_duration
 
                 plan = self._nearest_compatible_lift_plan(
                     current_time_value, amr, location_a, location_b, payload
@@ -545,12 +637,7 @@ class Simulation:
                     }
                 )
                 transfer_segments.extend(plan["from_lift_segments"])
-                return (
-                    plan["final_finish"],
-                    location_b,
-                    transfer_segments,
-                    segment_duration,
-                )
+                return plan["final_finish"], location_b, transfer_segments, segment_duration
 
             travel_to_pickup_sec = 0.0
             t, current_location, new_segments, seg_time = move_between(
@@ -560,6 +647,114 @@ class Simulation:
                 return None
             travel_to_pickup_sec += seg_time
             segments.extend(new_segments)
+
+            pickup_start = self._find_next_available_time(
+                pickup_loc.name,
+                t,
+                self.load_unload_time_sec,
+            )
+            pickup_wait = pickup_start - t
+            if pickup_wait > 0:
+                segments.append(
+                    {
+                        "type": "wait_for_location",
+                        "from": pickup_loc.name,
+                        "to": pickup_loc.name,
+                        "duration": pickup_wait,
+                        "distance_m": 0.0,
+                        "location": pickup_loc.name,
+                    }
+                )
+                total += pickup_wait
+                t = pickup_start
+
+            if reserve:
+                self._reserve_location(
+                    pickup_loc.name,
+                    t,
+                    t + self.load_unload_time_sec,
+                )
+
+            pickup_start = self._find_next_available_time(
+                pickup_loc.name,
+                t,
+                self.load_unload_time_sec,
+            )
+            pickup_wait = pickup_start - t
+            if pickup_wait > 0:
+                segments.append(
+                    {
+                        "type": "wait_for_location",
+                        "from": pickup_loc.name,
+                        "to": pickup_loc.name,
+                        "duration": pickup_wait,
+                        "distance_m": 0.0,
+                        "location": pickup_loc.name,
+                    }
+                )
+                total += pickup_wait
+                t = pickup_start
+
+            if reserve:
+                self._reserve_location(
+                    pickup_loc.name,
+                    t,
+                    t + self.load_unload_time_sec,
+                )
+
+            pickup_start = self._find_next_available_time(
+                pickup_loc.name,
+                t,
+                self.load_unload_time_sec,
+            )
+            pickup_wait = pickup_start - t
+            if pickup_wait > 0:
+                segments.append(
+                    {
+                        "type": "wait_for_location",
+                        "from": pickup_loc.name,
+                        "to": pickup_loc.name,
+                        "duration": pickup_wait,
+                        "distance_m": 0.0,
+                        "location": pickup_loc.name,
+                    }
+                )
+                total += pickup_wait
+                t = pickup_start
+
+            if reserve:
+                self._reserve_location(
+                    pickup_loc.name,
+                    t,
+                    t + self.load_unload_time_sec,
+                )
+
+            pickup_start = self._find_next_available_time(
+                pickup_loc.name,
+                t,
+                self.load_unload_time_sec,
+            )
+            pickup_wait = pickup_start - t
+            if pickup_wait > 0:
+                segments.append(
+                    {
+                        "type": "wait_for_location",
+                        "from": pickup_loc.name,
+                        "to": pickup_loc.name,
+                        "duration": pickup_wait,
+                        "distance_m": 0.0,
+                        "location": pickup_loc.name,
+                    }
+                )
+                total += pickup_wait
+                t = pickup_start
+
+            if reserve:
+                self._reserve_location(
+                    pickup_loc.name,
+                    t,
+                    t + self.load_unload_time_sec,
+                )
 
             t += self.load_unload_time_sec
             total += self.load_unload_time_sec
@@ -579,6 +774,33 @@ class Simulation:
                 return None
             loaded_travel_sec += seg_time
             segments.extend(new_segments)
+
+            dropoff_start = self._find_next_available_time(
+                dropoff_loc.name,
+                t,
+                self.load_unload_time_sec,
+            )
+            dropoff_wait = dropoff_start - t
+            if dropoff_wait > 0:
+                segments.append(
+                    {
+                        "type": "wait_for_location",
+                        "from": dropoff_loc.name,
+                        "to": dropoff_loc.name,
+                        "duration": dropoff_wait,
+                        "distance_m": 0.0,
+                        "location": dropoff_loc.name,
+                    }
+                )
+                total += dropoff_wait
+                t = dropoff_start
+
+            if reserve:
+                self._reserve_location(
+                    dropoff_loc.name,
+                    t,
+                    t + self.load_unload_time_sec,
+                )
 
             t += self.load_unload_time_sec
             total += self.load_unload_time_sec
@@ -685,64 +907,24 @@ class Simulation:
                 task_duration_sec=committed["duration"],
                 amr_location_before=previous_location,
                 amr_location_after=committed["end_location"],
+                segment_type="start",
             )
 
-            segment_time = start_time
-
             for segment in committed["segments"]:
-                from_node = segment.get("from", "")
-                to_node = segment.get("to", "")
-
-                from_coords = self.graph_nodes.get(from_node)
-                to_coords = self.graph_nodes.get(to_node)
-
-                wait_time = segment.get("wait_time", 0.0)
-                duration = segment.get("duration", 0.0)
-
-                if wait_time > 0:
-                    self.log_step(
-                        event_time=segment_time,
-                        event_type="segment_wait",
-                        task_id=task.id,
-                        amr_id=amr.id,
-                        details=json.dumps(segment, ensure_ascii=False),
-                        from_location=segment.get("from", task.pickup),
-                        to_location=segment.get("to", task.dropoff),
-                        payload_name=task.payload,
-                        lift_id=segment.get("lift_id", ""),
-                        duration_sec=wait_time,
-                        wait_time_sec=wait_time,
-                        distance_m=0.0,
-                    )
-                    segment_time += wait_time
-
                 self.log_step(
-                    event_time=segment_time,
+                    event_time=start_time,
                     event_type=f"segment_{segment['type']}",
                     task_id=task.id,
                     amr_id=amr.id,
-                    details=json.dumps(
-                        {
-                            **segment,
-                            "from_x": getattr(from_coords, "x", None),
-                            "from_y": getattr(from_coords, "y", None),
-                            "to_x": getattr(to_coords, "x", None),
-                            "to_y": getattr(to_coords, "y", None),
-                            "from_floor": getattr(from_coords, "floor", None),
-                            "to_floor": getattr(to_coords, "floor", None),
-                        },
-                        ensure_ascii=False,
-                    ),
+                    details=json.dumps(segment, ensure_ascii=False),
                     from_location=segment.get("from", task.pickup),
                     to_location=segment.get("to", task.dropoff),
                     payload_name=task.payload,
                     lift_id=segment.get("lift_id", ""),
-                    duration_sec=duration,
-                    wait_time_sec=wait_time,
+                    duration_sec=segment.get("duration", 0.0),
+                    wait_time_sec=segment.get("wait_time", 0.0),
                     distance_m=segment.get("distance_m", 0.0),
                 )
-
-                segment_time += duration
 
             self.push_event(
                 committed["finish_time"],
@@ -781,6 +963,20 @@ class Simulation:
             self._try_assign_tasks(event.time)
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]
+            self.log_step(
+                event_time=event.payload["finish_time"],
+                event_type="task_complete",
+                task_id=task.id,
+                amr_id=event.payload["amr_id"],
+                details=f"Task {task.id} completed",
+                from_location=task.pickup,
+                to_location=task.dropoff,
+                payload_name=task.payload,
+                duration_sec=0.0,
+                wait_time_sec=0.0,
+                distance_m=0.0,
+                segment_type="finish",
+            )
             self.completed_task_records.append(
                 {
                     "task_id": task.id,
@@ -823,6 +1019,7 @@ class Simulation:
         task_duration_sec: float = 0.0,
         amr_location_before: str = "",
         amr_location_after: str = "",
+        segment_type: str = "",
     ):
         if not self.verbose:
             return
@@ -836,14 +1033,15 @@ class Simulation:
                 "payload": payload_name,
                 "from_location": from_location,
                 "to_location": to_location,
+                "amr_location_before": amr_location_before,
+                "amr_location_after": amr_location_after,
                 "lift_id": lift_id,
                 "duration_sec": round(duration_sec, 3),
                 "wait_time_sec": round(wait_time_sec, 3),
                 "distance_m": round(distance_m, 3),
                 "task_duration_sec": round(task_duration_sec, 3),
-                "amr_location_before": amr_location_before,
-                "amr_location_after": amr_location_after,
                 "details": details,
+                "segment_type": segment_type,
             }
         )
 
@@ -885,6 +1083,68 @@ class Simulation:
             ],
         }
 
+    def print_summary(self):
+        data = self.summary()
+        print("\n=== Simulation Summary ===")
+        print(json.dumps(data, indent=2))
+
+    def print_tasks_completed(self):
+        data = self.summary()
+        print("\n=== Simulation Summary ===")
+        print(data["completed_tasks"])
+
+    def print_completed_tasks(self):
+        print("\n=== Completed Tasks ===")
+        print(json.dumps(self.completed_task_records, indent=2))
+
+class RuntimeInputThread(threading.Thread):
+    def __init__(self, sim: Simulation):
+        super().__init__(daemon=True)
+        self.sim = sim
+
+    def run(self):
+        print("\nInteractive mode enabled.")
+        print("Paste a JSON task object to add a task at runtime.")
+        print(
+            "Use release_time (seconds from simulation start) or release_datetime (ISO format)."
+        )
+        print("Commands: status, quit")
+        while True:
+            try:
+                line = input().strip()
+            except EOFError:
+                self.sim.request_stop()
+                break
+
+            if not line:
+                continue
+
+            if line.lower() == "quit":
+                self.sim.request_stop()
+                break
+
+            if line.lower() == "status":
+                self.sim.print_summary()
+                continue
+
+            if line.lower() == "tasks":
+                self.sim.print_tasks_completed()
+                continue
+
+            try:
+                task_dict = json.loads(line)
+                required = {"id", "pickup", "dropoff", "payload"}
+                missing = required - set(task_dict.keys())
+                if missing:
+                    print(f"Missing task fields: {sorted(missing)}")
+                    continue
+                task_dict.setdefault("release_time", 0.0)
+                task_dict.setdefault("quantity", 1)
+                task_dict.setdefault("priority", 100)
+                self.sim.add_runtime_task(task_dict)
+                print(f"Task {task_dict['id']} added.")
+            except Exception as exc:
+                print(f"Could not add task: {exc}")
 
 EXAMPLE_CONFIG = {
     "simulation": {"start_datetime": "2026-01-01T08:00:00", "tick_rate": 120.0},
@@ -1049,6 +1309,12 @@ def main():
     sim = Simulation(
         load_json(args.config), verbose=args.verbose, verbose_csv_path=args.verbose_csv
     )
+
+    
+    input_thread = None
+    if args.interactive:
+        input_thread = RuntimeInputThread(sim)
+        input_thread.start()
 
     try:
         sim.run()
