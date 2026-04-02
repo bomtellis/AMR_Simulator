@@ -627,9 +627,13 @@ class AMRGraphEditor(tk.Tk):
         self.set_status("AMRs updated")
 
     def manage_tasks(self):
-        location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
+        locations = self.store.data.get("locations", [])
+        location_names = sorted(x["name"] for x in locations)
         payload_names = sorted(x["name"] for x in self.store.data.get("payloads", []))
         profile_names = [""] + sorted(self.store.data.get("route_profiles", {}).keys())
+
+        floor_map = {x["name"]: int(x["floor"]) for x in locations}
+
         TaskEditorWindow(
             self,
             self.store.data.get("tasks", []),
@@ -638,35 +642,8 @@ class AMRGraphEditor(tk.Tk):
             profile_names,
             self.store.suggest_next_task_id,
             self._save_tasks,
+            floor_map=floor_map,
         )
-
-    # columns = [
-    #     ("id", "ID", 90),
-    #     ("pickup", "Pickup", 160),
-    #     ("dropoff", "Dropoff", 160),
-    #     ("payload", "Payload", 140),
-    #     ("release_datetime", "Release datetime", 170),
-    #     ("target_time", "Target time", 100),
-    #     ("priority", "Priority", 80),
-    #     ("labels", "Labels", 160),
-    #     ("route_profile", "Route profile", 120),
-    # ]
-    # items = self.store.data.get("tasks", [])
-    # if not items:
-    #     items.append(
-    #         {
-    #             "id": self.store.suggest_next_task_id(),
-    #             "pickup": "",
-    #             "dropoff": "",
-    #             "payload": "",
-    #             "release_datetime": "2026-01-01T08:00:00",
-    #             "target_time": 300,
-    #             "priority": 10,
-    #             "labels": [""],
-    #             "route_profile": "",
-    #         }
-    #     )
-    # TableListEditor(self, "Tasks", columns, items, self._save_tasks)
 
     def _save_tasks(self, items):
         self.store.data["tasks"] = items
