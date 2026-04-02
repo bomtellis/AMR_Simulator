@@ -1563,7 +1563,6 @@ class Simulation:
                 (dt - self.clock.start_datetime).total_seconds() for dt in finish_times
             )
 
-        print(self.pending_tasks)
         return {
             "tick_rate": self.clock.tick_rate,
             "sim_datetime": self.clock.format_sim_time(self.current_time),

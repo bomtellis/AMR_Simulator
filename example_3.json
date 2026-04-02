@@ -1,0 +1,155 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T08:00:00",
+    "tick_rate": 1000
+  },
+  "building": {
+    "load_unload_time_sec": 20.0,
+    "floor_height_m": 4.0,
+    "charge_location": "B"
+  },
+  "locations": [
+    {
+      "name": "A",
+      "floor": 0,
+      "x": -21,
+      "y": 11
+    },
+    {
+      "name": "B",
+      "floor": 0,
+      "x": 166,
+      "y": 15
+    },
+    {
+      "name": "C",
+      "floor": 0,
+      "x": -20,
+      "y": -67
+    }
+  ],
+  "corridors": {
+    "nodes": [
+      {
+        "name": "C0-1",
+        "floor": 0,
+        "x": 42,
+        "y": -68
+      },
+      {
+        "name": "C0-2",
+        "floor": 0,
+        "x": 41,
+        "y": -24
+      },
+      {
+        "name": "C0-3",
+        "floor": 0,
+        "x": 40,
+        "y": 13
+      },
+      {
+        "name": "C0-4",
+        "floor": 0,
+        "x": 112,
+        "y": 16
+      }
+    ],
+    "edges": [
+      {
+        "from": "C",
+        "to": "C0-1"
+      },
+      {
+        "from": "C0-1",
+        "to": "C"
+      },
+      {
+        "from": "C0-1",
+        "to": "C0-2"
+      },
+      {
+        "from": "C0-2",
+        "to": "C0-1"
+      },
+      {
+        "from": "C0-2",
+        "to": "C0-3"
+      },
+      {
+        "from": "C0-3",
+        "to": "C0-2"
+      },
+      {
+        "from": "A",
+        "to": "C0-3"
+      },
+      {
+        "from": "C0-3",
+        "to": "A"
+      },
+      {
+        "from": "C0-3",
+        "to": "C0-4"
+      },
+      {
+        "from": "C0-4",
+        "to": "C0-3"
+      },
+      {
+        "from": "C0-4",
+        "to": "B"
+      },
+      {
+        "from": "B",
+        "to": "C0-4"
+      }
+    ],
+    "auto_connect": false
+  },
+  "payloads": [
+    {
+      "name": "coffee",
+      "weight_kg": 1,
+      "size_units": 1
+    }
+  ],
+  "amrs": [
+    {
+      "id": "A",
+      "quantity": 1,
+      "payload_capacity_kg": 100,
+      "payload_size_capacity": 1,
+      "speed_m_per_sec": 1.2,
+      "motor_power_w": 800,
+      "battery_capacity_kwh": 10,
+      "battery_charge_rate_kw": 3,
+      "recharge_threshold_percent": 20,
+      "battery_soc_percent": 100,
+      "start_location": "B"
+    }
+  ],
+  "lifts": [],
+  "tasks": [
+    {
+      "id": "T1",
+      "pickup": "A",
+      "dropoff": "C",
+      "payload": "coffee",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    }
+  ],
+  "route_profiles": {
+    "default": {
+      "allowed_lifts": [],
+      "allowed_nodes": [],
+      "allowed_edges": []
+    }
+  }
+}
