@@ -54,8 +54,8 @@
     {
       "name": "PHARMACY-DH",
       "floor": 0,
-      "x": 186.57,
-      "y": -80.154
+      "x": 186.572,
+      "y": -80.742
     },
     {
       "name": "AMU-DELIVERYHUB",
@@ -272,6 +272,12 @@
       "floor": 0,
       "x": 110,
       "y": -22
+    },
+    {
+      "name": "PHARMACY-GOODS-IN",
+      "floor": 0,
+      "x": 189.596,
+      "y": -78.431
     }
   ],
   "corridors": {
@@ -989,6 +995,18 @@
         "floor": 0,
         "x": 107,
         "y": -17
+      },
+      {
+        "name": "C0-42",
+        "floor": 0,
+        "x": 183.65,
+        "y": -75.306
+      },
+      {
+        "name": "C0-43",
+        "floor": 0,
+        "x": 189.8,
+        "y": -75.4
       }
     ],
     "edges": [
@@ -1015,10 +1033,6 @@
       {
         "from": "C0-5",
         "to": "C0-6"
-      },
-      {
-        "from": "C0-6",
-        "to": "C0-7"
       },
       {
         "from": "C0-7",
@@ -1839,6 +1853,38 @@
       {
         "from": "UEC-DELIVERYHUB",
         "to": "C0-40"
+      },
+      {
+        "from": "C0-42",
+        "to": "C0-7"
+      },
+      {
+        "from": "C0-7",
+        "to": "C0-42"
+      },
+      {
+        "from": "C0-42",
+        "to": "C0-6"
+      },
+      {
+        "from": "C0-6",
+        "to": "C0-42"
+      },
+      {
+        "from": "C0-42",
+        "to": "C0-43"
+      },
+      {
+        "from": "C0-43",
+        "to": "C0-42"
+      },
+      {
+        "from": "C0-43",
+        "to": "PHARMACY-GOODS-IN"
+      },
+      {
+        "from": "PHARMACY-GOODS-IN",
+        "to": "C0-43"
       }
     ],
     "auto_connect": false
@@ -2418,7 +2464,20 @@
       "labels": [
         ""
       ],
-      "route_profile": "dirty"
+      "route_profile": ""
+    },
+    {
+      "id": "T18",
+      "pickup": "RD",
+      "dropoff": "PHARMACY-GOODS-IN",
+      "payload": "drugs_box",
+      "release_datetime": "2026-01-01T09:00:00",
+      "target_time": 300,
+      "priority": 5,
+      "labels": [
+        ""
+      ],
+      "route_profile": "pharmacy_in"
     }
   ],
   "route_profiles": {
@@ -3199,6 +3258,89 @@
         [
           "C0-38",
           "C0-35"
+        ]
+      ]
+    },
+    "pharmacy_in": {
+      "allowed_lifts": [
+        "Lift-1",
+        "Lift-2",
+        "Lift-3",
+        "Lift-4",
+        "Lift-5",
+        "Lift-6",
+        "Lift-7",
+        "Lift-8"
+      ],
+      "allowed_nodes": [
+        "C0-1",
+        "C0-2",
+        "C0-3",
+        "C0-4",
+        "C0-42",
+        "C0-43",
+        "C0-5",
+        "C0-6",
+        "PHARMACY-GOODS-IN",
+        "RD",
+        "RD2"
+      ],
+      "allowed_edges": [
+        [
+          "C0-1",
+          "C0-2"
+        ],
+        [
+          "C0-2",
+          "C0-3"
+        ],
+        [
+          "C0-3",
+          "C0-4"
+        ],
+        [
+          "C0-4",
+          "C0-5"
+        ],
+        [
+          "C0-5",
+          "C0-6"
+        ],
+        [
+          "C0-2",
+          "RD2"
+        ],
+        [
+          "RD",
+          "C0-1"
+        ],
+        [
+          "C0-1",
+          "RD"
+        ],
+        [
+          "C0-42",
+          "C0-6"
+        ],
+        [
+          "C0-6",
+          "C0-42"
+        ],
+        [
+          "C0-42",
+          "C0-43"
+        ],
+        [
+          "C0-43",
+          "C0-42"
+        ],
+        [
+          "C0-43",
+          "PHARMACY-GOODS-IN"
+        ],
+        [
+          "PHARMACY-GOODS-IN",
+          "C0-43"
         ]
       ]
     }

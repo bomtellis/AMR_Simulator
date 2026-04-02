@@ -626,13 +626,31 @@ class AMRGraphEditor(tk.Tk):
         self.store.data["amrs"] = items
         self.set_status("AMRs updated")
 
+    def build_floor_map(self, store):
+        floor_map = {}
+
+        # Locations
+        for item in store.get("locations", []):
+            floor_map[item["name"]] = int(item["floor"])
+
+        # Corridor nodes
+        for item in store.get("corridors", {}).get("nodes", []):
+            floor_map[item["name"]] = int(item["floor"])
+
+        # Lift floor nodes
+        for lift in store.get("lifts", []):
+            for floor_str in lift.get("floor_locations", {}).keys():
+                floor_map[f"{lift['id']}-F{floor_str}"] = int(floor_str)
+
+        return floor_map
+
     def manage_tasks(self):
         locations = self.store.data.get("locations", [])
         location_names = sorted(x["name"] for x in locations)
         payload_names = sorted(x["name"] for x in self.store.data.get("payloads", []))
         profile_names = [""] + sorted(self.store.data.get("route_profiles", {}).keys())
 
-        floor_map = {x["name"]: int(x["floor"]) for x in locations}
+        floor_map = self.build_floor_map(self.store.data)
 
         TaskEditorWindow(
             self,
@@ -654,6 +672,8 @@ class AMRGraphEditor(tk.Tk):
             x["name"] for x in self.store.data.get("locations", [])
         }
         lift_ids = {x["id"] for x in self.store.data.get("lifts", [])}
+        floor_map = self.build_floor_map(self.store.data)
+
         RouteProfilesEditorV2(
             self,
             self.store.data.get("route_profiles", {}),
@@ -661,6 +681,7 @@ class AMRGraphEditor(tk.Tk):
             lift_ids,
             self.store.data.get("corridors", {}).get("edges", []),
             self._save_route_profiles,
+            floor_map=floor_map
         )
 
     def _save_route_profiles(self, profiles):

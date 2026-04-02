@@ -824,16 +824,21 @@ class Simulation:
             amr_loc = self.locations[amr.location_name]
             pickup_loc = self.locations[task.pickup]
             dropoff_loc = self.locations[task.dropoff]
-            route_rules = self._resolve_task_route_rules(task)
+
+            # No restrictions before pickup
+            pre_pickup_rules = None
+
+            # Apply route profile only once the load has been picked up
+            loaded_route_rules = self._resolve_task_route_rules(task)
 
             to_pickup_est = (
-                self._same_floor_segments(amr, amr_loc, pickup_loc, rules=route_rules)
+                self._same_floor_segments(amr, amr_loc, pickup_loc, rules=pre_pickup_rules)
                 if amr_loc.floor == pickup_loc.floor
                 else None
             )
             loaded_est = (
                 self._same_floor_segments(
-                    amr, pickup_loc, dropoff_loc, rules=route_rules
+                    amr, pickup_loc, dropoff_loc, rules=loaded_route_rules
                 )
                 if pickup_loc.floor == dropoff_loc.floor
                 else None
@@ -852,13 +857,16 @@ class Simulation:
             current_location = amr_loc
 
             def move_between(
-                location_a: Location, location_b: Location, current_time_value: float
+                location_a: Location,
+                location_b: Location,
+                current_time_value: float,
+                rules: Optional[dict] = None,
             ) -> Tuple[float, Location, Optional[List[dict]], float]:
                 nonlocal total
 
                 if location_a.floor == location_b.floor:
                     route = self._same_floor_segments(
-                        amr, location_a, location_b, rules=route_rules
+                        amr, location_a, location_b, rules=rules
                     )
                     if route is None:
                         return math.inf, location_b, None, 0.0
@@ -877,7 +885,7 @@ class Simulation:
                     location_a,
                     location_b,
                     payload,
-                    rules=route_rules,
+                    rules=rules,
                 )
                 if plan is None:
                     return math.inf, location_b, None, 0.0
@@ -914,7 +922,7 @@ class Simulation:
 
             travel_to_pickup_sec = 0.0
             t, current_location, new_segments, seg_time = move_between(
-                current_location, pickup_loc, t
+                current_location, pickup_loc, t, rules=pre_pickup_rules
             )
             if new_segments is None or math.isinf(t):
                 return None
@@ -960,13 +968,14 @@ class Simulation:
 
             loaded_travel_sec = 0.0
             t, current_location, new_segments, seg_time = move_between(
-                current_location, dropoff_loc, t
+                current_location, dropoff_loc, t, rules=loaded_route_rules
             )
             if new_segments is None or math.isinf(t):
                 return None
             loaded_travel_sec += seg_time
             segments.extend(new_segments)
 
+            # ... keep the rest of the function unchanged
             dropoff_start = self._find_next_available_time(
                 dropoff_loc.name,
                 t,
@@ -1235,155 +1244,6 @@ class Simulation:
                 },
             )
 
-    # def _try_assign_tasks(self, now: float):
-    #     self.current_time = max(self.current_time, now)
-    #     while True:
-    #         choice = self._select_best_assignment()
-    #         if choice is None:
-    #             return
-    #         amr, task, _ = choice
-    #         committed = self._estimate_task_for_amr(amr, task, reserve=True)
-    #         if committed is None:
-    #             self._remove_pending_task(task)
-    #             self.failed_tasks.append(
-    #                 {
-    #                     "task_id": task.id,
-    #                     "reason": "No feasible AMR/lift/battery/graph combination",
-    #                 }
-    #             )
-    #             continue
-
-    #         self._remove_pending_task(task)
-    #         start_time = max(self.current_time, amr.available_time, task.release_time)
-    #         previous_location = amr.location_name
-    #         amr.total_busy_time += committed["duration"]
-    #         amr.available_time = committed["finish_time"]
-    #         amr.location_name = committed["end_location"]
-    #         amr.completed_tasks += 1
-
-    #         # Log that the task has been assigned
-
-    #         self.log_step(
-    #             event_time=start_time,
-    #             event_type="task_assigned",
-    #             task_id=task.id,
-    #             amr_id=amr.id,
-    #             details=f"Assigned task to {amr.id}",
-    #             from_location=task.pickup,
-    #             to_location=task.dropoff,
-    #             payload_name=task.payload,
-    #             task_duration_sec=committed["duration"],
-    #             amr_location_before=previous_location,
-    #             amr_location_after=committed["end_location"],
-    #             status="start",
-    #         )
-
-    #         segment_start_time = start_time
-
-    #         for segment in committed["segments"]:
-    #             from_node = segment.get("from", "")
-    #             to_node = segment.get("to", "")
-
-    #             from_coords = self.graph_nodes.get(from_node)
-    #             to_coords = self.graph_nodes.get(to_node)
-
-    #             wait_time = segment.get("wait_time", 0.0)
-    #             duration = segment.get("duration", 0.0)
-
-    #             if wait_time > 0:
-    #                 self.log_step(
-    #                     event_time=segment_start_time,
-    #                     event_type="segment_wait",
-    #                     task_id=task.id,
-    #                     amr_id=amr.id,
-    #                     details=json.dumps(segment, ensure_ascii=False),
-    #                     from_location=from_node or task.pickup,
-    #                     to_location=to_node or task.dropoff,
-    #                     payload_name=task.payload,
-    #                     lift_id=segment.get("lift_id", ""),
-    #                     duration_sec=wait_time,
-    #                     wait_time_sec=wait_time,
-    #                     distance_m=0.0,
-    #                     segment_type="wait",
-    #                     start_time=segment_start_time,
-    #                     end_time=segment_start_time + wait_time,
-    #                     start_node=from_node,
-    #                     end_node=from_node,
-    #                     start_x=getattr(from_coords, "x", None),
-    #                     start_y=getattr(from_coords, "y", None),
-    #                     start_floor=getattr(from_coords, "floor", None),
-    #                     end_x=getattr(from_coords, "x", None),
-    #                     end_y=getattr(from_coords, "y", None),
-    #                     end_floor=getattr(from_coords, "floor", None),
-    #                     status="waiting",
-    #                 )
-    #                 segment_start_time += wait_time
-
-    #             segment_end_time = segment_start_time + duration
-
-    #             self.log_step(
-    #                 event_time=segment_start_time,
-    #                 event_type=f"segment_{segment.get('type', '')}",
-    #                 task_id=task.id,
-    #                 amr_id=amr.id,
-    #                 details=json.dumps(
-    #                     {
-    #                         **segment,
-    #                         "from_x": getattr(from_coords, "x", None),
-    #                         "from_y": getattr(from_coords, "y", None),
-    #                         "to_x": getattr(to_coords, "x", None),
-    #                         "to_y": getattr(to_coords, "y", None),
-    #                         "from_floor": getattr(from_coords, "floor", None),
-    #                         "to_floor": getattr(to_coords, "floor", None),
-    #                     },
-    #                     ensure_ascii=False,
-    #                 ),
-    #                 from_location=from_node or task.pickup,
-    #                 to_location=to_node or task.dropoff,
-    #                 payload_name=task.payload,
-    #                 lift_id=segment.get("lift_id", ""),
-    #                 duration_sec=duration,
-    #                 wait_time_sec=wait_time,
-    #                 distance_m=segment.get("distance_m", 0.0),
-    #                 segment_type=segment.get("type", ""),
-    #                 start_time=segment_start_time,
-    #                 end_time=segment_end_time,
-    #                 start_node=from_node,
-    #                 end_node=to_node,
-    #                 start_x=getattr(from_coords, "x", None),
-    #                 start_y=getattr(from_coords, "y", None),
-    #                 start_floor=getattr(from_coords, "floor", None),
-    #                 end_x=getattr(to_coords, "x", None),
-    #                 end_y=getattr(to_coords, "y", None),
-    #                 end_floor=getattr(to_coords, "floor", None),
-    #                 status="completed",
-    #             )
-
-    #             segment_start_time = segment_end_time
-
-    #         # Task complete
-
-    #         self.push_event(
-    #             committed["finish_time"],
-    #             "task_complete",
-    #             {
-    #                 "task": task,
-    #                 "amr_id": amr.id,
-    #                 "start_time": start_time,
-    #                 "finish_time": committed["finish_time"],
-    #                 "duration": committed["duration"],
-    #                 "segments": committed["segments"],
-    #                 "energy_kwh": committed["energy_kwh"],
-    #                 "battery_soc_after": amr.battery_soc_percent,
-    #             },
-    #         )
-
-    #         # Does the AMR need to be recharged?
-    #         # Schedule recharge after this task if battery is below reserve
-    #         if self._needs_post_task_recharge(amr):
-    #             self._schedule_recharge_for_amr(amr, committed["finish_time"])
-    #         break
-
     def run(self):
         while True:
             with self.lock:
@@ -1580,121 +1440,6 @@ class Simulation:
                 status="overrun",
             )
 
-    # def _handle_event(self, event: Event):
-    #     if event.event_type == "task_release":
-    #         task: Task = event.payload["task"]
-    #         self._queue_pending_task(task)
-    #         self._try_assign_tasks(event.time)
-    #     elif event.event_type == "task_complete":
-    #         task: Task = event.payload["task"]
-    #         self.log_step(
-    #             event_time=event.payload["finish_time"],
-    #             event_type="task_complete",
-    #             task_id=task.id,
-    #             amr_id=event.payload["amr_id"],
-    #             details=f"Task {task.id} completed",
-    #             from_location=task.pickup,
-    #             to_location=task.dropoff,
-    #             payload_name=task.payload,
-    #             duration_sec=0.0,
-    #             wait_time_sec=0.0,
-    #             distance_m=0.0,
-    #             status="finish",
-    #         )
-
-    #         self.completed_task_records.append(
-    #             {
-    #                 "task_id": task.id,
-    #                 "pickup": task.pickup,
-    #                 "dropoff": task.dropoff,
-    #                 "payload": task.payload,
-    #                 "amr_id": event.payload["amr_id"],
-    #                 "start_datetime": self.clock.format_sim_time(
-    #                     event.payload["start_time"]
-    #                 ),
-    #                 "finish_datetime": self.clock.format_sim_time(
-    #                     event.payload["finish_time"]
-    #                 ),
-    #                 "duration_hms": format_duration(event.payload["duration"]),
-    #                 "energy_kwh": round(event.payload["energy_kwh"], 4),
-    #                 "battery_soc_after": round(event.payload["battery_soc_after"], 2),
-    #                 "segments": event.payload["segments"],
-    #             }
-    #         )
-    #         self._try_assign_tasks(event.time)
-    #     elif event.event_type == "recharge_start":
-    #         amr = next(a for a in self.amrs if a.id == event.payload["amr_id"])
-
-    #         segment_start_time = event.payload["start_time"]
-    #         for segment in event.payload["segments"]:
-    #             from_node = segment.get("from", "")
-    #             to_node = segment.get("to", "")
-
-    #             from_coords = self.graph_nodes.get(from_node)
-    #             to_coords = self.graph_nodes.get(to_node)
-
-    #             duration = segment.get("duration", 0.0)
-    #             segment_end_time = segment_start_time + duration
-
-    #             self.log_step(
-    #                 event_time=segment_start_time,
-    #                 event_type=f"segment_{segment.get('type', '')}",
-    #                 amr_id=amr.id,
-    #                 details=json.dumps(segment, ensure_ascii=False),
-    #                 from_location=from_node,
-    #                 to_location=to_node,
-    #                 duration_sec=duration,
-    #                 distance_m=segment.get("distance_m", 0.0),
-    #                 segment_type=segment.get("type", ""),
-    #                 start_time=segment_start_time,
-    #                 end_time=segment_end_time,
-    #                 start_node=from_node,
-    #                 end_node=to_node,
-    #                 start_x=getattr(from_coords, "x", None),
-    #                 start_y=getattr(from_coords, "y", None),
-    #                 start_floor=getattr(from_coords, "floor", None),
-    #                 end_x=getattr(to_coords, "x", None),
-    #                 end_y=getattr(to_coords, "y", None),
-    #                 end_floor=getattr(to_coords, "floor", None),
-    #                 status="completed",
-    #             )
-
-    #             segment_start_time = segment_end_time
-
-    #         self.log_step(
-    #             event_time=event.payload["charge_start"],
-    #             event_type="segment_charge",
-    #             amr_id=amr.id,
-    #             from_location=self.charge_location_name,
-    #             to_location=self.charge_location_name,
-    #             duration_sec=event.payload["charge_finish"]
-    #             - event.payload["charge_start"],
-    #             segment_type="charge",
-    #             start_time=event.payload["charge_start"],
-    #             end_time=event.payload["charge_finish"],
-    #             start_node=self.charge_location_name,
-    #             end_node=self.charge_location_name,
-    #             status="charging",
-    #         )
-
-    #     elif event.event_type == "recharge_complete":
-    #         amr = next(a for a in self.amrs if a.id == event.payload["amr_id"])
-    #         charge_duration = amr.charge_duration_sec_to_full()
-    #         amr.total_charge_time += charge_duration
-    #         amr.charge_to_full()
-
-    #         self.log_step(
-    #             event_time=event.payload["finish_time"],
-    #             event_type="recharge_complete",
-    #             amr_id=amr.id,
-    #             details=f"{amr.id} recharge complete",
-    #             from_location=self.charge_location_name,
-    #             to_location=self.charge_location_name,
-    #             status="finish",
-    #         )
-
-    #         self._try_assign_tasks(event.time)
-
     def request_stop(self):
         with self.lock:
             self.stop_requested = True
@@ -1817,6 +1562,8 @@ class Simulation:
             makespan = max(
                 (dt - self.clock.start_datetime).total_seconds() for dt in finish_times
             )
+
+        print(self.pending_tasks)
         return {
             "tick_rate": self.clock.tick_rate,
             "sim_datetime": self.clock.format_sim_time(self.current_time),

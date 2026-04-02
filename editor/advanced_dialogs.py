@@ -296,6 +296,12 @@ class RouteProfilesEditorV2(tk.Toplevel):
             group_resolver=self._group_for_item,
         )
 
+        self.wait_window(picker)
+        
+        if picker.result is not None:
+            self.allowed_lifts = sorted(picker.result)
+            self.lifts_summary_var.set(self.summarize(self.allowed_lifts)) 
+
     def pick_nodes(self):
         picker = MultiSelectPicker(
             self,
@@ -304,6 +310,13 @@ class RouteProfilesEditorV2(tk.Toplevel):
             self.allowed_nodes,
             group_resolver=self._group_for_item,
         )
+
+        self.wait_window(picker)
+
+        if picker.result is not None:
+            self.allowed_nodes = sorted(picker.result)
+            self.nodes_summary_var.set(self.summarize(self.allowed_nodes))
+
 
     def fill_edges_from_nodes(self):
         profile_edges = []
