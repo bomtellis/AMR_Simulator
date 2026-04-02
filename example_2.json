@@ -266,6 +266,12 @@
       "floor": 4,
       "x": 145,
       "y": -144
+    },
+    {
+      "name": "UEC-DELIVERYHUB",
+      "floor": 0,
+      "x": 110,
+      "y": -22
     }
   ],
   "corridors": {
@@ -971,6 +977,18 @@
         "floor": 4,
         "x": 142.226,
         "y": -144.026
+      },
+      {
+        "name": "C0-40",
+        "floor": 0,
+        "x": 107,
+        "y": -22
+      },
+      {
+        "name": "C0-41",
+        "floor": 0,
+        "x": 107,
+        "y": -17
       }
     ],
     "edges": [
@@ -1785,6 +1803,42 @@
       {
         "from": "ADULTIP5-DELIVERYHUB",
         "to": "C4-7"
+      },
+      {
+        "from": "C0-39",
+        "to": "C0-41"
+      },
+      {
+        "from": "C0-41",
+        "to": "C0-39"
+      },
+      {
+        "from": "C0-40",
+        "to": "C0-40"
+      },
+      {
+        "from": "C0-41",
+        "to": "C0-41"
+      },
+      {
+        "from": "C0-40",
+        "to": "C0-41"
+      },
+      {
+        "from": "C0-41",
+        "to": "C0-40"
+      },
+      {
+        "from": "UEC-DELIVERYHUB",
+        "to": "UEC-DELIVERYHUB"
+      },
+      {
+        "from": "C0-40",
+        "to": "UEC-DELIVERYHUB"
+      },
+      {
+        "from": "UEC-DELIVERYHUB",
+        "to": "C0-40"
       }
     ],
     "auto_connect": false
@@ -2222,6 +2276,149 @@
         ""
       ],
       "route_profile": ""
+    },
+    {
+      "id": "T7",
+      "pickup": "KITCHEN",
+      "dropoff": "ADULTIP6-DELIVERYHUB",
+      "payload": "food_trolley",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 600,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T8",
+      "pickup": "AMU-DH",
+      "dropoff": "UEC-DH",
+      "payload": "empty_bin",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T9",
+      "pickup": "AMU-DH",
+      "dropoff": "UEC-DH",
+      "payload": "empty_bin",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T10",
+      "pickup": "AMU-DH",
+      "dropoff": "UEC-DH",
+      "payload": "empty_bin",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T11",
+      "pickup": "RD",
+      "dropoff": "ANTE-DH",
+      "payload": "goods_cage",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T12",
+      "pickup": "RD",
+      "dropoff": "BIRTHING-SUITE-DH",
+      "payload": "goods_cage",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T13",
+      "pickup": "RD",
+      "dropoff": "ENDOSCOPY-DH",
+      "payload": "goods_cage",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T14",
+      "pickup": "RD",
+      "dropoff": "ICU-DH",
+      "payload": "goods_cage",
+      "release_datetime": "2026-01-01T08:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T15",
+      "pickup": "ANTE-DH",
+      "dropoff": "RD",
+      "payload": "goods_cage",
+      "release_datetime": "2026-01-01T08:30:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T16",
+      "pickup": "BIRTHING-SUITE-DH",
+      "dropoff": "RD",
+      "payload": "goods_cage",
+      "release_datetime": "2026-01-01T08:30:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T17",
+      "pickup": "ENDOSCOPY-DH",
+      "dropoff": "RD",
+      "payload": "drugs_box",
+      "release_datetime": "2026-01-01T08:30:00",
+      "target_time": 600,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": "dirty"
     }
   ],
   "route_profiles": {

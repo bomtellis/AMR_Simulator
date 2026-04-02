@@ -390,13 +390,6 @@ class TaskFormDialog(simpledialog.Dialog):
         self.group_resolver = group_resolver or (lambda item: "Other")
         self.result = None
         super().__init__(parent, "Task")
-        self.location_names = location_names
-        self.payload_names = payload_names
-        self.profile_names = profile_names
-        self.seed = seed or {}
-        self.default_task_id = default_task_id
-        self.result = None
-        super().__init__(parent, "Task")
 
     def body(self, master):
         ttk.Label(master, text="ID").grid(row=0, column=0, sticky="w")
@@ -689,7 +682,6 @@ class BulkOneToManyTaskDialog(simpledialog.Dialog):
             "labels": labels,
             "route_profile": self.route_profile_var.get().strip(),
         }
-
 
 class TaskEditorWindow(tk.Toplevel):
     def __init__(
