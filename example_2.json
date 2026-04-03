@@ -1,6 +1,6 @@
 {
   "simulation": {
-    "start_datetime": "2026-01-05T06:00:00",
+    "start_datetime": "2026-01-01T08:00:00",
     "tick_rate": 1000
   },
   "building": {

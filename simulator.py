@@ -832,7 +832,9 @@ class Simulation:
             loaded_route_rules = self._resolve_task_route_rules(task)
 
             to_pickup_est = (
-                self._same_floor_segments(amr, amr_loc, pickup_loc, rules=pre_pickup_rules)
+                self._same_floor_segments(
+                    amr, amr_loc, pickup_loc, rules=pre_pickup_rules
+                )
                 if amr_loc.floor == pickup_loc.floor
                 else None
             )
@@ -1537,6 +1539,7 @@ class Simulation:
             "sim_datetime",
             "event_type",
             "payload",
+            "weight_kg",
             "from_location",
             "to_location",
             "lift_id",

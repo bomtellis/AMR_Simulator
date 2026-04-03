@@ -22,11 +22,20 @@ class VisualEvent:
     row: dict
 
 
+import math
+from typing import Dict, List, Tuple
+
+try:
+    import ezdxf
+except Exception:  # pragma: no cover
+    ezdxf = None
+
+
 class DXFScene:
     def __init__(self):
-        self.path: Optional[str] = None
-        self.entities: List[dict] = []
-        self.bounds: Optional[Tuple[float, float, float, float]] = None
+        self.path = None
+        self.entities = []
+        self.bounds = None
 
     def clear(self):
         self.path = None
@@ -55,63 +64,75 @@ class DXFScene:
 
     @staticmethod
     def _text_pixel_height(world_to_canvas, insert, model_height):
-        x1, y1 = world_to_canvas(insert[0], insert[1])
-        x2, y2 = world_to_canvas(insert[0], insert[1] + model_height)
-        return max(1, int(abs(y2 - y1)))
+        return 8
 
-    def _append_entity(self, entity: dict):
+    def _append_entity(self, entity: Dict):
+        if "bbox" not in entity or entity["bbox"] is None:
+            pts = entity.get("points", [])
+            entity["bbox"] = self._bbox_from_points(pts)
         self.entities.append(entity)
 
     def load(self, path: str):
         if ezdxf is None:
-            raise RuntimeError("ezdxf is not installed. Install with: pip install ezdxf")
+            raise RuntimeError(
+                "ezdxf is not installed. Install with: pip install ezdxf"
+            )
 
         doc = ezdxf.readfile(path)
         msp = doc.modelspace()
         self.clear()
         self.path = path
 
-        all_points: List[Tuple[float, float]] = []
+        all_points = []
 
         def track_points(points):
             for x, y in points:
                 all_points.append((float(x), float(y)))
 
         def add_line(start, end):
-            points = [(float(start[0]), float(start[1])), (float(end[0]), float(end[1]))]
+            points = [
+                (float(start[0]), float(start[1])),
+                (float(end[0]), float(end[1])),
+            ]
             track_points(points)
-            self._append_entity({
-                "type": "LINE",
-                "start": points[0],
-                "end": points[1],
-                "bbox": self._bbox_from_points(points),
-            })
+            self._append_entity(
+                {
+                    "type": "LINE",
+                    "start": points[0],
+                    "end": points[1],
+                    "bbox": self._bbox_from_points(points),
+                }
+            )
 
         def add_polyline(points, closed=False):
             if len(points) < 2:
                 return
             clean = [(float(x), float(y)) for x, y in points]
             track_points(clean)
-            self._append_entity({
-                "type": "POLYLINE",
-                "points": clean,
-                "closed": bool(closed),
-                "bbox": self._bbox_from_points(clean),
-            })
+            self._append_entity(
+                {
+                    "type": "POLYLINE",
+                    "points": clean,
+                    "closed": bool(closed),
+                    "bbox": self._bbox_from_points(clean),
+                }
+            )
 
         def add_text_entity(insert, text, height=2.5, rotation=0.0):
             x = float(insert[0])
             y = float(insert[1])
             h = float(height or 2.5)
             track_points([(x, y), (x + h, y + h)])
-            self._append_entity({
-                "type": "TEXT",
-                "insert": (x, y),
-                "text": str(text),
-                "height": h,
-                "rotation": float(rotation or 0.0),
-                "bbox": (x, y - h, x + max(h, len(str(text)) * h * 0.6), y + h),
-            })
+            self._append_entity(
+                {
+                    "type": "TEXT",
+                    "insert": (x, y),
+                    "text": str(text),
+                    "height": h,
+                    "rotation": float(rotation or 0.0),
+                    "bbox": (x, y - h, x + max(h, len(str(text)) * h * 0.6), y + h),
+                }
+            )
 
         def add_circle(center, radius):
             cx = float(center[0])
@@ -119,12 +140,14 @@ class DXFScene:
             r = float(radius)
             bbox = (cx - r, cy - r, cx + r, cy + r)
             track_points([(bbox[0], bbox[1]), (bbox[2], bbox[3])])
-            self._append_entity({
-                "type": "CIRCLE",
-                "center": (cx, cy),
-                "radius": r,
-                "bbox": bbox,
-            })
+            self._append_entity(
+                {
+                    "type": "CIRCLE",
+                    "center": (cx, cy),
+                    "radius": r,
+                    "bbox": bbox,
+                }
+            )
 
         def add_arc(center, radius, start_angle, end_angle):
             cx = float(center[0])
@@ -132,51 +155,184 @@ class DXFScene:
             r = float(radius)
             bbox = (cx - r, cy - r, cx + r, cy + r)
             track_points([(bbox[0], bbox[1]), (bbox[2], bbox[3])])
-            self._append_entity({
-                "type": "ARC",
-                "center": (cx, cy),
-                "radius": r,
-                "start_angle": float(start_angle),
-                "end_angle": float(end_angle),
-                "bbox": bbox,
-            })
+            self._append_entity(
+                {
+                    "type": "ARC",
+                    "center": (cx, cy),
+                    "radius": r,
+                    "start_angle": float(start_angle),
+                    "end_angle": float(end_angle),
+                    "bbox": bbox,
+                }
+            )
+
+        def load_hatch(entity):
+            try:
+                boundary_paths = entity.paths
+            except Exception:
+                return
+
+            for path in boundary_paths:
+                points = []
+                try:
+                    if hasattr(path, "vertices"):
+                        for vx in path.vertices:
+                            points.append((float(vx[0]), float(vx[1])))
+                    elif hasattr(path, "edges"):
+                        for edge in path.edges:
+                            edge_type = edge.__class__.__name__
+                            if edge_type == "LineEdge":
+                                points.append(
+                                    (float(edge.start[0]), float(edge.start[1]))
+                                )
+                                points.append((float(edge.end[0]), float(edge.end[1])))
+                            elif edge_type == "ArcEdge":
+                                cx = float(edge.center[0])
+                                cy = float(edge.center[1])
+                                r = float(edge.radius)
+                                start = math.radians(float(edge.start_angle))
+                                end = math.radians(float(edge.end_angle))
+                                if end < start:
+                                    end += math.tau
+                                steps = 24
+                                for i in range(steps + 1):
+                                    a = start + ((end - start) * i / steps)
+                                    points.append(
+                                        (cx + (r * math.cos(a)), cy + (r * math.sin(a)))
+                                    )
+                    if points:
+                        add_polyline(points, closed=True)
+                except Exception:
+                    continue
+
+        def load_insert(entity, doc_ref):
+            try:
+                block = doc_ref.blocks.get(entity.dxf.name)
+            except Exception:
+                return
+
+            insert = entity.dxf.insert
+            ix = float(insert.x)
+            iy = float(insert.y)
+            sx = float(getattr(entity.dxf, "xscale", 1.0) or 1.0)
+            sy = float(getattr(entity.dxf, "yscale", 1.0) or 1.0)
+            rotation = math.radians(float(getattr(entity.dxf, "rotation", 0.0) or 0.0))
+            cos_r = math.cos(rotation)
+            sin_r = math.sin(rotation)
+
+            def transform_point(x, y):
+                x *= sx
+                y *= sy
+                rx = (x * cos_r) - (y * sin_r)
+                ry = (x * sin_r) + (y * cos_r)
+                return ix + rx, iy + ry
+
+            for child in block:
+                try:
+                    dtype = child.dxftype()
+                    if dtype == "LINE":
+                        s = child.dxf.start
+                        e = child.dxf.end
+                        add_line(transform_point(s.x, s.y), transform_point(e.x, e.y))
+                    elif dtype in {"LWPOLYLINE", "POLYLINE"}:
+                        points = []
+                        try:
+                            raw_points = list(child.get_points())
+                            for p in raw_points:
+                                points.append(transform_point(float(p[0]), float(p[1])))
+                        except Exception:
+                            try:
+                                for v in child.vertices:
+                                    points.append(
+                                        transform_point(
+                                            float(v.dxf.location.x),
+                                            float(v.dxf.location.y),
+                                        )
+                                    )
+                            except Exception:
+                                continue
+                        add_polyline(
+                            points, closed=bool(getattr(child, "closed", False))
+                        )
+                    elif dtype == "TEXT":
+                        p = child.dxf.insert
+                        tx, ty = transform_point(p.x, p.y)
+                        add_text_entity(
+                            (tx, ty),
+                            child.dxf.text,
+                            child.dxf.height,
+                            float(getattr(child.dxf, "rotation", 0.0) or 0.0),
+                        )
+                    elif dtype == "MTEXT":
+                        p = child.dxf.insert
+                        tx, ty = transform_point(p.x, p.y)
+                        add_text_entity(
+                            (tx, ty),
+                            child.text,
+                            child.dxf.char_height,
+                            float(getattr(child.dxf, "rotation", 0.0) or 0.0),
+                        )
+                except Exception:
+                    continue
 
         for entity in msp:
-            try:
-                dtype = entity.dxftype()
-                if dtype == "LINE":
-                    start = entity.dxf.start
-                    end = entity.dxf.end
-                    add_line((start.x, start.y), (end.x, end.y))
-                elif dtype in {"LWPOLYLINE", "POLYLINE"}:
-                    points = []
+            dtype = entity.dxftype()
+            if dtype == "LINE":
+                start = entity.dxf.start
+                end = entity.dxf.end
+                add_line((start.x, start.y), (end.x, end.y))
+            elif dtype in {"LWPOLYLINE", "POLYLINE"}:
+                points = []
+                try:
+                    raw_points = list(entity.get_points())
+                    for p in raw_points:
+                        points.append((float(p[0]), float(p[1])))
+                except Exception:
                     try:
-                        raw_points = list(entity.get_points())
-                        for p in raw_points:
-                            points.append((float(p[0]), float(p[1])))
+                        for v in entity.vertices:
+                            points.append(
+                                (float(v.dxf.location.x), float(v.dxf.location.y))
+                            )
                     except Exception:
-                        try:
-                            for v in entity.vertices:
-                                points.append((float(v.dxf.location.x), float(v.dxf.location.y)))
-                        except Exception:
-                            continue
-                    add_polyline(points, closed=bool(getattr(entity, "closed", False)))
-                elif dtype == "CIRCLE":
-                    center = entity.dxf.center
-                    add_circle((center.x, center.y), entity.dxf.radius)
-                elif dtype == "ARC":
-                    center = entity.dxf.center
-                    add_arc((center.x, center.y), entity.dxf.radius, entity.dxf.start_angle, entity.dxf.end_angle)
-                elif dtype == "TEXT":
-                    insert = entity.dxf.insert
-                    add_text_entity((insert.x, insert.y), entity.dxf.text, entity.dxf.height, getattr(entity.dxf, "rotation", 0.0))
-                elif dtype == "MTEXT":
-                    insert = entity.dxf.insert
-                    add_text_entity((insert.x, insert.y), entity.text, entity.dxf.char_height, getattr(entity.dxf, "rotation", 0.0))
-            except Exception:
-                continue
+                        continue
+                add_polyline(points, closed=bool(getattr(entity, "closed", False)))
+            elif dtype == "CIRCLE":
+                center = entity.dxf.center
+                add_circle((center.x, center.y), entity.dxf.radius)
+            elif dtype == "ARC":
+                center = entity.dxf.center
+                add_arc(
+                    (center.x, center.y),
+                    entity.dxf.radius,
+                    entity.dxf.start_angle,
+                    entity.dxf.end_angle,
+                )
+            elif dtype == "TEXT":
+                insert = entity.dxf.insert
+                add_text_entity(
+                    (insert.x, insert.y),
+                    entity.dxf.text,
+                    entity.dxf.height,
+                    getattr(entity.dxf, "rotation", 0.0),
+                )
+            elif dtype == "MTEXT":
+                insert = entity.dxf.insert
+                add_text_entity(
+                    (insert.x, insert.y),
+                    entity.text,
+                    entity.dxf.char_height,
+                    getattr(entity.dxf, "rotation", 0.0),
+                )
+            elif dtype == "HATCH":
+                load_hatch(entity)
+            elif dtype == "INSERT":
+                load_insert(entity, doc)
 
-        self.bounds = self._bbox_from_points(all_points) if all_points else (0.0, 0.0, 100.0, 100.0)
+        self.bounds = (
+            self._bbox_from_points(all_points)
+            if all_points
+            else (0.0, 0.0, 100.0, 100.0)
+        )
 
     def fit_transform(self, canvas_w: int, canvas_h: int, padding: int = 40):
         if not self.bounds:
@@ -217,10 +373,14 @@ class DXFScene:
         return (min(xs), min(ys), max(xs), max(ys))
 
     def draw(self, canvas, world_to_canvas):
-        visible_world = self._expand_bbox(self._visible_world_bbox(canvas, world_to_canvas), 2.0)
+        visible_world = self._expand_bbox(
+            self._visible_world_bbox(canvas, world_to_canvas), 2.0
+        )
+
         for entity in self.entities:
             if not self._bbox_intersects(entity.get("bbox"), visible_world):
                 continue
+
             etype = entity["type"]
             if etype == "LINE":
                 x1, y1 = world_to_canvas(*entity["start"])
@@ -234,16 +394,24 @@ class DXFScene:
                 if len(pts) >= 4:
                     canvas.create_line(*pts, fill="#2e2e2e")
                     if entity.get("closed"):
-                        canvas.create_line(pts[-2], pts[-1], pts[0], pts[1], fill="#2e2e2e")
+                        canvas.create_line(
+                            pts[-2], pts[-1], pts[0], pts[1], fill="#2e2e2e"
+                        )
             elif etype == "CIRCLE":
                 cx, cy = world_to_canvas(*entity["center"])
-                ex, _ = world_to_canvas(entity["center"][0] + entity["radius"], entity["center"][1])
+                ex, _ = world_to_canvas(
+                    entity["center"][0] + entity["radius"], entity["center"][1]
+                )
                 r = abs(ex - cx)
                 if r >= 1:
-                    canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline="#2e2e2e")
+                    canvas.create_oval(
+                        cx - r, cy - r, cx + r, cy + r, outline="#2e2e2e"
+                    )
             elif etype == "ARC":
                 cx, cy = world_to_canvas(*entity["center"])
-                ex, _ = world_to_canvas(entity["center"][0] + entity["radius"], entity["center"][1])
+                ex, _ = world_to_canvas(
+                    entity["center"][0] + entity["radius"], entity["center"][1]
+                )
                 r = abs(ex - cx)
                 if r >= 1:
                     canvas.create_arc(
@@ -258,9 +426,9 @@ class DXFScene:
                     )
             elif etype == "TEXT":
                 x, y = world_to_canvas(*entity["insert"])
-                size = self._text_pixel_height(world_to_canvas, entity["insert"], entity.get("height", 2.5))
-                if size < 6:
-                    continue
+                size = self._text_pixel_height(
+                    world_to_canvas, entity["insert"], entity.get("height", 2.5)
+                )
                 canvas.create_text(
                     x,
                     y,
@@ -359,6 +527,7 @@ class LayoutModel:
     def floors(self) -> List[int]:
         return sorted({int(p["floor"]) for p in self.points.values()})
 
+
 class SimulationLog:
     def __init__(self):
         self.events: List[VisualEvent] = []
@@ -417,7 +586,7 @@ class SimulationLog:
             return int(float(value)) if value not in (None, "") else None
         except Exception:
             return None
-        
+
     def first_travel_time(self) -> Optional[datetime]:
         travel_markers = {
             "travel",
@@ -446,14 +615,16 @@ class SimulationLog:
             if start_node and end_node and start_node != end_node:
                 return event.start_time
 
-        return self.start_time        
+        return self.start_time
 
     def load(self, path: str):
         self.events = []
         with open(path, "r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                start_dt = self._parse_datetime(row.get("start_time", "")) or self._parse_datetime(row.get("sim_datetime", ""))
+                start_dt = self._parse_datetime(
+                    row.get("start_time", "")
+                ) or self._parse_datetime(row.get("sim_datetime", ""))
                 end_dt = self._parse_datetime(row.get("end_time", "")) or start_dt
                 if start_dt is None or end_dt is None:
                     continue
@@ -492,6 +663,7 @@ class SimulationLog:
     def state_at(self, current_time: datetime, layout: LayoutModel):
         amr_states: Dict[str, dict] = {}
         recent_events: List[dict] = []
+        task_assignment_start: Dict[Tuple[str, str], datetime] = {}
 
         for event in self.events:
             if event.start_time > current_time:
@@ -519,7 +691,16 @@ class SimulationLog:
             to_location = (row.get("to_location") or "").strip()
 
             start_dt = event.start_time
-            end_dt = event.end_time if event.end_time >= event.start_time else event.start_time
+            end_dt = (
+                event.end_time
+                if event.end_time >= event.start_time
+                else event.start_time
+            )
+
+            if task_id:
+                task_key = (amr_id, task_id)
+                if task_key not in task_assignment_start:
+                    task_assignment_start[task_key] = start_dt
 
             state = amr_states.get(
                 amr_id,
@@ -566,8 +747,10 @@ class SimulationLog:
                 frac = max(0.0, min(1.0, elapsed / total))
 
                 if (
-                    start_x is not None and start_y is not None and
-                    end_x is not None and end_y is not None
+                    start_x is not None
+                    and start_y is not None
+                    and end_x is not None
+                    and end_y is not None
                 ):
                     state["x"] = start_x + ((end_x - start_x) * frac)
                     state["y"] = start_y + ((end_y - start_y) * frac)
@@ -579,9 +762,9 @@ class SimulationLog:
                 elif start_floor is not None:
                     state["floor"] = start_floor
 
-                state["path"] = (start_node, end_node) if start_node and end_node else None
-                state["task_runtime_sec"] = max((current_time - start_dt).total_seconds(), 0.0)
-
+                state["path"] = (
+                    (start_node, end_node) if start_node and end_node else None
+                )
             else:
                 if end_x is not None:
                     state["x"] = end_x
@@ -599,12 +782,21 @@ class SimulationLog:
                     state["floor"] = start_floor
 
                 state["path"] = None
-                state["task_runtime_sec"] = max((end_dt - start_dt).total_seconds(), 0.0)
+
+            if task_id:
+                task_key = (amr_id, task_id)
+                assignment_start = task_assignment_start.get(task_key, start_dt)
+                state["task_runtime_sec"] = max(
+                    (current_time - assignment_start).total_seconds(), 0.0
+                )
+            else:
+                state["task_runtime_sec"] = 0.0
 
             amr_states[amr_id] = state
             recent_events.append({"timestamp": min(current_time, end_dt), "row": row})
 
         return amr_states, recent_events[-12:]
+
 
 class SimulationVisualizer(tk.Tk):
     def __init__(self):
@@ -651,6 +843,16 @@ class SimulationVisualizer(tk.Tk):
         self.offset_x = (canvas_w / 2.0) - (x * self.scale)
         self.offset_y = (canvas_h / 2.0) + (y * self.scale)
 
+    @staticmethod
+    def _format_runtime(seconds: float) -> str:
+        total = max(0, int(seconds))
+        hours = total // 3600
+        minutes = (total % 3600) // 60
+        secs = total % 60
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
+
     def _build_ui(self):
         self.columnconfigure(1, weight=1)
         self.rowconfigure(0, weight=1)
@@ -670,13 +872,21 @@ class SimulationVisualizer(tk.Tk):
         self.canvas.bind("<MouseWheel>", self.on_mousewheel)
 
         row = 0
-        ttk.Button(side, text="Open Layout JSON", command=self.open_json).grid(row=row, column=0, sticky="ew")
+        ttk.Button(side, text="Open Layout JSON", command=self.open_json).grid(
+            row=row, column=0, sticky="ew"
+        )
         row += 1
-        ttk.Button(side, text="Open DXF", command=self.open_dxf).grid(row=row, column=0, sticky="ew", pady=4)
+        ttk.Button(side, text="Open DXF", command=self.open_dxf).grid(
+            row=row, column=0, sticky="ew", pady=4
+        )
         row += 1
-        ttk.Button(side, text="Open Simulation CSV", command=self.open_csv).grid(row=row, column=0, sticky="ew")
+        ttk.Button(side, text="Open Simulation CSV", command=self.open_csv).grid(
+            row=row, column=0, sticky="ew"
+        )
         row += 1
-        ttk.Button(side, text="Fit View", command=self.fit_view).grid(row=row, column=0, sticky="ew", pady=4)
+        ttk.Button(side, text="Fit View", command=self.fit_view).grid(
+            row=row, column=0, sticky="ew", pady=4
+        )
         row += 1
 
         ttk.Separator(side).grid(row=row, column=0, sticky="ew", pady=10)
@@ -686,16 +896,32 @@ class SimulationVisualizer(tk.Tk):
         row += 1
         floor_row = ttk.Frame(side)
         floor_row.grid(row=row, column=0, sticky="ew")
-        self.floor_spin = ttk.Spinbox(floor_row, from_=0, to=99, textvariable=self.floor_var, width=8)
+        self.floor_spin = ttk.Spinbox(
+            floor_row, from_=0, to=99, textvariable=self.floor_var, width=8
+        )
         self.floor_spin.pack(side="left")
-        ttk.Button(floor_row, text="Go", command=self.refresh_canvas).pack(side="left", padx=4)
+        ttk.Button(floor_row, text="Go", command=self.refresh_canvas).pack(
+            side="left", padx=4
+        )
         row += 1
 
-        ttk.Checkbutton(side, text="Show DXF", variable=self.show_dxf_var, command=self.refresh_canvas).grid(row=row, column=0, sticky="w", pady=(10, 0))
+        ttk.Checkbutton(
+            side,
+            text="Show DXF",
+            variable=self.show_dxf_var,
+            command=self.refresh_canvas,
+        ).grid(row=row, column=0, sticky="w", pady=(10, 0))
         row += 1
-        ttk.Checkbutton(side, text="Show labels", variable=self.show_labels_var, command=self.refresh_canvas).grid(row=row, column=0, sticky="w")
+        ttk.Checkbutton(
+            side,
+            text="Show labels",
+            variable=self.show_labels_var,
+            command=self.refresh_canvas,
+        ).grid(row=row, column=0, sticky="w")
         row += 1
-        ttk.Checkbutton(side, text="Follow slider time", variable=self.follow_time_var).grid(row=row, column=0, sticky="w")
+        ttk.Checkbutton(
+            side, text="Follow slider time", variable=self.follow_time_var
+        ).grid(row=row, column=0, sticky="w")
         row += 1
         ttk.Checkbutton(
             side,
@@ -705,7 +931,9 @@ class SimulationVisualizer(tk.Tk):
         ).grid(row=row, column=0, sticky="w")
         row += 1
 
-        ttk.Label(side, text="AMR width (m)").grid(row=row, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(side, text="AMR width (m)").grid(
+            row=row, column=0, sticky="w", pady=(10, 0)
+        )
         row += 1
         width_spin = ttk.Spinbox(
             side,
@@ -720,7 +948,9 @@ class SimulationVisualizer(tk.Tk):
         width_spin.bind("<KeyRelease>", lambda _e: self.refresh_canvas())
         row += 1
 
-        ttk.Label(side, text="AMR length (m)").grid(row=row, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(side, text="AMR length (m)").grid(
+            row=row, column=0, sticky="w", pady=(10, 0)
+        )
         row += 1
         length_spin = ttk.Spinbox(
             side,
@@ -744,7 +974,9 @@ class SimulationVisualizer(tk.Tk):
         ttk.Label(side, text="Follow AMR").grid(row=row, column=0, sticky="w")
         row += 1
 
-        self.follow_combo = ttk.Combobox(side, textvariable=self.follow_amr_var, state="readonly")
+        self.follow_combo = ttk.Combobox(
+            side, textvariable=self.follow_amr_var, state="readonly"
+        )
         self.follow_combo.grid(row=row, column=0, sticky="ew")
         self.follow_combo.bind("<<ComboboxSelected>>", lambda _e: self.refresh_canvas())
         row += 1
@@ -765,24 +997,44 @@ class SimulationVisualizer(tk.Tk):
         controls = ttk.Frame(side)
         controls.grid(row=row, column=0, sticky="ew")
         ttk.Button(controls, text="|<", command=self.jump_start).pack(side="left")
-        ttk.Button(controls, text="First Move", command=self.jump_first_travel).pack(side="left", padx=2)
-        ttk.Button(controls, text="-10s", command=lambda: self.step_seconds(-10)).pack(side="left", padx=2)
+        ttk.Button(controls, text="First Move", command=self.jump_first_travel).pack(
+            side="left", padx=2
+        )
+        ttk.Button(controls, text="-10s", command=lambda: self.step_seconds(-10)).pack(
+            side="left", padx=2
+        )
         self.play_btn = ttk.Button(controls, text="Play", command=self.toggle_play)
         self.play_btn.pack(side="left", padx=2)
-        ttk.Button(controls, text="+10s", command=lambda: self.step_seconds(10)).pack(side="left", padx=2)
+        ttk.Button(controls, text="+10s", command=lambda: self.step_seconds(10)).pack(
+            side="left", padx=2
+        )
         ttk.Button(controls, text=">|", command=self.jump_end).pack(side="left")
 
         # End playback controls
 
-        ttk.Label(side, textvariable=self.time_label_var, wraplength=260).grid(row=row, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(side, textvariable=self.time_label_var, wraplength=260).grid(
+            row=row, column=0, sticky="w", pady=(8, 0)
+        )
         row += 1
-        self.slider = ttk.Scale(side, from_=0.0, to=1.0, variable=self.slider_var, command=self.on_slider_change)
+        self.slider = ttk.Scale(
+            side,
+            from_=0.0,
+            to=1.0,
+            variable=self.slider_var,
+            command=self.on_slider_change,
+        )
         self.slider.grid(row=row, column=0, sticky="ew")
         row += 1
 
-        ttk.Label(side, text="Playback speed (sim seconds / real second)").grid(row=row, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(side, text="Playback speed (sim seconds / real second)").grid(
+            row=row, column=0, sticky="w", pady=(10, 0)
+        )
         row += 1
-        self.speed_combo = ttk.Combobox(side, state="readonly", values=["1", "10", "30", "60", "120", "300"]) 
+        self.speed_combo = ttk.Combobox(
+            side,
+            state="readonly",
+            values=["1", "2", "5", "10", "30", "60", "120", "300"],
+        )
         self.speed_combo.set("60")
         self.speed_combo.bind("<<ComboboxSelected>>", self.on_speed_changed)
         self.speed_combo.grid(row=row, column=0, sticky="ew")
@@ -792,11 +1044,15 @@ class SimulationVisualizer(tk.Tk):
         row += 1
         ttk.Label(side, text="Loaded files").grid(row=row, column=0, sticky="w")
         row += 1
-        ttk.Label(side, textvariable=self.file_var, wraplength=260).grid(row=row, column=0, sticky="w")
+        ttk.Label(side, textvariable=self.file_var, wraplength=260).grid(
+            row=row, column=0, sticky="w"
+        )
         row += 1
         ttk.Label(side, text="Status").grid(row=row, column=0, sticky="w", pady=(10, 0))
         row += 1
-        ttk.Label(side, textvariable=self.status_var, wraplength=260).grid(row=row, column=0, sticky="w")
+        ttk.Label(side, textvariable=self.status_var, wraplength=260).grid(
+            row=row, column=0, sticky="w"
+        )
         row += 1
 
         self.event_box = tk.Text(side, height=18, width=34)
@@ -816,7 +1072,9 @@ class SimulationVisualizer(tk.Tk):
         if self.dxf_scene.bounds:
             canvas_w = max(self.canvas.winfo_width(), 1000)
             canvas_h = max(self.canvas.winfo_height(), 700)
-            self.scale, self.offset_x, self.offset_y = self.dxf_scene.fit_transform(canvas_w, canvas_h)
+            self.scale, self.offset_x, self.offset_y = self.dxf_scene.fit_transform(
+                canvas_w, canvas_h
+            )
         self.refresh_canvas()
 
     def _apply_follow_amr_floor(self):
@@ -835,12 +1093,14 @@ class SimulationVisualizer(tk.Tk):
             return
 
         followed_floor = state.get("floor")
-        if followed_floor is not None and int(self.floor_var.get()) != int(followed_floor):
+        if followed_floor is not None and int(self.floor_var.get()) != int(
+            followed_floor
+        ):
             self.floor_var.set(int(followed_floor))
 
         if state.get("x") is not None and state.get("y") is not None:
             self._center_view_on_world(float(state["x"]), float(state["y"]))
-            
+
     def refresh_canvas(self):
         self._apply_follow_amr_floor()
         self.canvas.delete("all")
@@ -875,16 +1135,24 @@ class SimulationVisualizer(tk.Tk):
             x, y = self.world_to_canvas(point["x"], point["y"])
             kind = point.get("kind")
             if kind == "location":
-                self.canvas.create_oval(x - 5, y - 5, x + 5, y + 5, fill="#18c37e", outline="")
+                self.canvas.create_oval(
+                    x - 5, y - 5, x + 5, y + 5, fill="#18c37e", outline=""
+                )
                 color = "#9bf0cd"
             elif kind == "corridor_node":
-                self.canvas.create_rectangle(x - 4, y - 4, x + 4, y + 4, fill="#f2c94c", outline="")
+                self.canvas.create_rectangle(
+                    x - 4, y - 4, x + 4, y + 4, fill="#f2c94c", outline=""
+                )
                 color = "#ffe8a3"
             else:
-                self.canvas.create_polygon(x, y - 6, x + 6, y, x, y + 6, x - 6, y, fill="#ff7b72", outline="")
+                self.canvas.create_polygon(
+                    x, y - 6, x + 6, y, x, y + 6, x - 6, y, fill="#ff7b72", outline=""
+                )
                 color = "#ffb3ae"
             if self.show_labels_var.get():
-                self.canvas.create_text(x + 8, y - 8, text=name, anchor="sw", fill=color)
+                self.canvas.create_text(
+                    x + 8, y - 8, text=name, anchor="sw", fill=color
+                )
 
     def _draw_amr_box_colored(self, state: dict, fill="#4da3ff"):
         x = float(state["x"])
@@ -894,7 +1162,10 @@ class SimulationVisualizer(tk.Tk):
 
         heading = 0.0
         if state.get("start_node") and state.get("end_node"):
-            if state["start_node"] in self.layout_model.points and state["end_node"] in self.layout_model.points:
+            if (
+                state["start_node"] in self.layout_model.points
+                and state["end_node"] in self.layout_model.points
+            ):
                 a = self.layout_model.points[state["start_node"]]
                 b = self.layout_model.points[state["end_node"]]
                 heading = math.atan2(
@@ -941,8 +1212,9 @@ class SimulationVisualizer(tk.Tk):
             self.event_box.delete("1.0", "end")
             return
 
-        amr_states, recent_events = self.sim_log.state_at(self.current_time, self.layout_model)
-
+        amr_states, recent_events = self.sim_log.state_at(
+            self.current_time, self.layout_model
+        )
 
         followed_amr = self.follow_amr_var.get().strip()
 
@@ -980,7 +1252,12 @@ class SimulationVisualizer(tk.Tk):
                 fill="#cfe5ff",
             )
 
-            action = state.get("event_type") or state.get("segment_type") or state.get("status") or ""
+            action = (
+                state.get("event_type")
+                or state.get("segment_type")
+                or state.get("status")
+                or ""
+            )
             if action:
                 self.canvas.create_text(
                     x + 12,
@@ -1003,6 +1280,66 @@ class SimulationVisualizer(tk.Tk):
             )
             self.event_box.insert("end", line)
 
+        self.draw_follow_info_box(amr_states)
+
+    def draw_follow_info_box(self, amr_states: dict):
+        if not self.follow_enabled_var.get():
+            return
+
+        followed_amr = self.follow_amr_var.get().strip()
+        if not followed_amr:
+            return
+
+        state = amr_states.get(followed_amr)
+        if not state:
+            return
+
+        canvas_w = self.canvas.winfo_width() or 1200
+        x2 = canvas_w - 12
+        x1 = canvas_w - 340
+        y1 = 12
+        y2 = 154
+
+        task_id = state.get("task_id") or "-"
+        payload = state.get("payload") or "-"
+        start_pos = state.get("from_location") or state.get("start_node") or "-"
+        end_pos = state.get("to_location") or state.get("end_node") or "-"
+        start_time = "-"
+        if state.get("start_time"):
+            start_time = state["start_time"].strftime("%Y-%m-%d %H:%M:%S")
+        duration = self._format_runtime(float(state.get("task_runtime_sec", 0.0)))
+
+        lines = [
+            f"Follow AMR: {followed_amr}",
+            f"Task ID: {task_id}",
+            f"Payload: {payload}",
+            f"Start: {start_pos}",
+            f"Finish: {end_pos}",
+            f"Start time: {start_time}",
+            f"Current duration: {duration}",
+        ]
+
+        self.canvas.create_rectangle(
+            x1,
+            y1,
+            x2,
+            y2,
+            fill="#151515",
+            outline="#ff9f1c",
+            width=2,
+        )
+
+        y = y1 + 10
+        for i, line in enumerate(lines):
+            self.canvas.create_text(
+                x1 + 10,
+                y,
+                text=line,
+                anchor="nw",
+                fill="#ffe2b3" if i == 0 else "white",
+            )
+            y += 19
+
     def draw_legend(self):
         self.canvas.create_rectangle(10, 10, 325, 122, fill="#151515", outline="#333")
         lines = [
@@ -1022,10 +1359,22 @@ class SimulationVisualizer(tk.Tk):
         if not self.current_time:
             self.time_label_var.set("No simulation loaded")
             return
-        fraction = self.sim_log.time_to_fraction(self.current_time) if self.sim_log.start_time else 0.0
+        fraction = (
+            self.sim_log.time_to_fraction(self.current_time)
+            if self.sim_log.start_time
+            else 0.0
+        )
         self.slider_var.set(fraction)
-        start = self.sim_log.start_time.strftime("%Y-%m-%d %H:%M:%S") if self.sim_log.start_time else "-"
-        end = self.sim_log.end_time.strftime("%Y-%m-%d %H:%M:%S") if self.sim_log.end_time else "-"
+        start = (
+            self.sim_log.start_time.strftime("%Y-%m-%d %H:%M:%S")
+            if self.sim_log.start_time
+            else "-"
+        )
+        end = (
+            self.sim_log.end_time.strftime("%Y-%m-%d %H:%M:%S")
+            if self.sim_log.end_time
+            else "-"
+        )
         self.time_label_var.set(
             f"Current: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}\nStart: {start}\nEnd: {end}"
         )
@@ -1152,12 +1501,16 @@ class SimulationVisualizer(tk.Tk):
         self.current_csv_path = path
         self.update_follow_amr_options()
         if not self.sim_log.events:
-            messagebox.showerror("No events", "No timestamped rows were found in the CSV.", parent=self)
+            messagebox.showerror(
+                "No events", "No timestamped rows were found in the CSV.", parent=self
+            )
             return
         self.update_loaded_files()
         self._sync_timeline_from_layout_and_csv()
         self.refresh_canvas()
-        self.set_status(f"Loaded simulation CSV {Path(path).name} with {len(self.sim_log.events)} events")
+        self.set_status(
+            f"Loaded simulation CSV {Path(path).name} with {len(self.sim_log.events)} events"
+        )
 
     def update_loaded_files(self):
         self.file_var.set(
@@ -1220,10 +1573,13 @@ class SimulationVisualizer(tk.Tk):
             self.sim_log.start_time = csv_start
 
         candidates = [x for x in (layout_end, csv_end) if x is not None]
-        self.sim_log.end_time = max(candidates) if candidates else self.sim_log.start_time
+        self.sim_log.end_time = (
+            max(candidates) if candidates else self.sim_log.start_time
+        )
 
         self.current_time = self.sim_log.start_time
         self.update_time_display()
+
 
 if __name__ == "__main__":
     app = SimulationVisualizer()
