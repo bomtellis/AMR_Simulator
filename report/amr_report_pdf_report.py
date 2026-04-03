@@ -174,7 +174,7 @@ def build_report(
         topMargin=18 * mm,
         bottomMargin=15 * mm,
         title="AMR Simulation Performance Report",
-        author="OpenAI",
+        author="",
     )
 
     story = [
