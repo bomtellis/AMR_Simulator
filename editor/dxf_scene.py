@@ -306,17 +306,17 @@ class DXFScene:
                     cx, cy = world_to_canvas(x, y)
                     pts.extend([cx, cy])
                 if len(pts) >= 4:
-                    canvas.create_line(*pts, fill="#2e2e2e")
+                    canvas.create_line(*pts, fill="#f7f7f7")
                     if entity.get("closed"):
                         canvas.create_line(
-                            pts[-2], pts[-1], pts[0], pts[1], fill="#2e2e2e"
+                            pts[-2], pts[-1], pts[0], pts[1], fill="#f7f7f7"
                         )
             elif etype == "CIRCLE":
                 cx, cy = world_to_canvas(*entity["center"])
                 rx = entity["radius"]
                 ex, _ = world_to_canvas(entity["center"][0] + rx, entity["center"][1])
                 r = abs(ex - cx)
-                canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline="#2e2e2e")
+                canvas.create_oval(cx - r, cy - r, cx + r, cy + r, outline="#cdcdcd")
             elif etype == "ARC":
                 cx, cy = world_to_canvas(*entity["center"])
                 rx = entity["radius"]
@@ -330,11 +330,12 @@ class DXFScene:
                     start=-entity["end_angle"],
                     extent=entity["end_angle"] - entity["start_angle"],
                     style="arc",
-                    outline="#2e2e2e",
+                    outline="#cdcdcd",
                 )
             elif etype == "TEXT":
                 x, y = world_to_canvas(*entity["insert"])
-                model_height = float(entity.get("height", 2.5) or 2.5)
+                # model_height = float(entity.get("height", 2.5) or 2.5)
+                model_height = 0.5
                 size = self._model_text_pixel_height(
                     world_to_canvas, entity["insert"], model_height
                 )
@@ -344,7 +345,7 @@ class DXFScene:
                     y,
                     text=text,
                     anchor="sw",
-                    fill="#e9e9e9",
+                    fill="#ffffff",
                     angle=-entity.get("rotation", 0.0),
                     font=("Arial", size),
                 )

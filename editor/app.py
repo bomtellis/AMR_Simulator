@@ -18,6 +18,7 @@ class AMRGraphEditor(tk.Tk):
         self.store = JsonStore()
         self.current_json_path = None
         self.current_dxf_path = None
+        self.loaded_dxf_floor = None
         self.dxf_scene = DXFScene()
 
         self.scale = 5.0
@@ -55,6 +56,7 @@ class AMRGraphEditor(tk.Tk):
 
         self.mode_var = tk.StringVar(value="select_move")
         self.floor_var = tk.IntVar(value=0)
+        self.floor_var.trace_add("write", self.on_floor_changed)
         self.snap_var = tk.BooleanVar(value=True)
         self.bidirectional_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value="Ready")
@@ -133,8 +135,12 @@ class AMRGraphEditor(tk.Tk):
             row=row, column=0, sticky="ew", pady=4
         )
         row += 1
-        ttk.Button(self.sidebar, text="Load DXF", command=self.load_dxf).grid(
+        ttk.Button(self.sidebar, text="Map DXF to Floor", command=self.load_dxf).grid(
             row=row, column=0, sticky="ew"
+        )
+        row += 1
+        ttk.Button(self.sidebar, text="Clear Floor DXF", command=self.clear_floor_dxf).grid(
+            row=row, column=0, sticky="ew", pady=4
         )
         row += 1
         ttk.Button(self.sidebar, text="Fit View", command=self.fit_view).grid(
@@ -186,6 +192,69 @@ class AMRGraphEditor(tk.Tk):
     def set_status(self, text):
         self.status_var.set(text)
 
+    def on_floor_changed(self, *_):
+        self.refresh_canvas()
+
+    def floor_dxf_entries(self):
+        return self.store.data.setdefault("floor_dxf_files", [])
+
+    def get_floor_dxf_path(self, floor):
+        for entry in self.floor_dxf_entries():
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    path = (entry.get("filepath") or "").strip()
+                    return path or None
+            except Exception:
+                continue
+        return None
+
+    def set_floor_dxf_path(self, floor, filepath):
+        entries = self.floor_dxf_entries()
+        payload = {"floor": int(floor), "filepath": str(filepath)}
+        for entry in entries:
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    entry.clear()
+                    entry.update(payload)
+                    return
+            except Exception:
+                continue
+        entries.append(payload)
+        entries.sort(key=lambda item: int(item.get("floor", 0)))
+
+    def clear_floor_dxf_mapping(self, floor):
+        self.store.data["floor_dxf_files"] = [
+            entry
+            for entry in self.floor_dxf_entries()
+            if int(entry.get("floor", -10**9)) != int(floor)
+        ]
+
+    def ensure_floor_dxf_loaded(self, floor, fit=False):
+        target_path = self.get_floor_dxf_path(floor)
+        if not target_path:
+            if self.loaded_dxf_floor is not None or self.dxf_scene.entities:
+                self.dxf_scene.clear()
+                self.current_dxf_path = None
+                self.loaded_dxf_floor = None
+            return False
+
+        if self.current_dxf_path == target_path and self.loaded_dxf_floor == int(floor):
+            return True
+
+        try:
+            self.dxf_scene.load(target_path)
+            self.current_dxf_path = target_path
+            self.loaded_dxf_floor = int(floor)
+            if fit:
+                self.fit_view()
+            return True
+        except Exception as exc:
+            self.dxf_scene.clear()
+            self.current_dxf_path = None
+            self.loaded_dxf_floor = None
+            self.set_status(f"Failed to load DXF for floor {floor}: {exc}")
+            return False
+
     def world_to_canvas(self, x, y):
         return (x * self.scale) + self.offset_x, (-y * self.scale) + self.offset_y
 
@@ -198,6 +267,7 @@ class AMRGraphEditor(tk.Tk):
         return round(x, 3), round(y, 3)
 
     def fit_view(self):
+        self.ensure_floor_dxf_loaded(self.floor_var.get(), fit=False)
         if self.dxf_scene.bounds:
             canvas_w = max(self.canvas.winfo_width(), 1000)
             canvas_h = max(self.canvas.winfo_height(), 700)
@@ -213,6 +283,7 @@ class AMRGraphEditor(tk.Tk):
     def refresh_canvas(self):
         self.canvas.delete("all")
         floor = self.floor_var.get()
+        self.ensure_floor_dxf_loaded(floor, fit=False)
         # self.draw_grid()
         if self.show_dxf_var.get() and self.dxf_scene.entities:
             self.dxf_scene.draw(self.canvas, self.world_to_canvas)
@@ -290,12 +361,16 @@ class AMRGraphEditor(tk.Tk):
 
     def draw_legend(self):
         self.canvas.create_rectangle(10, 10, 300, 128, fill="#151515", outline="#333")
+        floor = self.floor_var.get()
+        mapped_path = self.get_floor_dxf_path(floor)
+        dxf_name = Path(mapped_path).name if mapped_path else "None"
         lines = [
             "Legend",
             "Green circle = location",
             "Yellow square = corridor node",
             "Red diamond = lift node",
-            f"Mode: {self.mode_var.get()} | Floor: {self.floor_var.get()}",
+            f"Mode: {self.mode_var.get()} | Floor: {floor}",
+            f"DXF: {dxf_name}",
             "Double-click a point to edit",
         ]
         y = 20
@@ -546,6 +621,10 @@ class AMRGraphEditor(tk.Tk):
             return
         self.store = JsonStore.from_file(path)
         self.current_json_path = path
+        self.current_dxf_path = None
+        self.loaded_dxf_floor = None
+        self.dxf_scene.clear()
+        self.ensure_floor_dxf_loaded(self.floor_var.get(), fit=True)
         self.set_status(f"Opened {Path(path).name}")
         self.refresh_canvas()
 
@@ -562,16 +641,53 @@ class AMRGraphEditor(tk.Tk):
         self.refresh_canvas()
 
     def load_dxf(self):
-        path = filedialog.askopenfilename(filetypes=[("DXF files", "*.dxf")])
+        floor = self.floor_var.get()
+        initialdir = None
+        existing = self.get_floor_dxf_path(floor)
+        if existing:
+            try:
+                initialdir = str(Path(existing).expanduser().resolve().parent)
+            except Exception:
+                initialdir = str(Path(existing).expanduser().parent)
+
+        path = filedialog.askopenfilename(
+            filetypes=[("DXF files", "*.dxf")],
+            initialdir=initialdir,
+        )
         if not path:
             return
+
         try:
+            self.set_floor_dxf_path(floor, path)
             self.dxf_scene.load(path)
             self.current_dxf_path = path
+            self.loaded_dxf_floor = int(floor)
             self.fit_view()
-            self.set_status(f"Loaded DXF {Path(path).name}")
+            self.set_status(f"Mapped DXF {Path(path).name} to floor {floor}")
         except Exception as exc:
             messagebox.showerror("DXF load failed", str(exc), parent=self)
+
+    def clear_floor_dxf(self):
+        floor = self.floor_var.get()
+        existing = self.get_floor_dxf_path(floor)
+        if not existing:
+            self.set_status(f"No DXF mapped to floor {floor}")
+            return
+
+        if not messagebox.askyesno(
+            "Clear floor DXF",
+            f"Remove DXF mapping for floor {floor}?",
+            parent=self,
+        ):
+            return
+
+        self.clear_floor_dxf_mapping(floor)
+        if self.loaded_dxf_floor == int(floor):
+            self.dxf_scene.clear()
+            self.current_dxf_path = None
+            self.loaded_dxf_floor = None
+        self.set_status(f"Removed DXF mapping from floor {floor}")
+        self.refresh_canvas()
 
     def validate_json(self):
         errors = self.store.validate()

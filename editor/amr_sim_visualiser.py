@@ -64,7 +64,13 @@ class DXFScene:
 
     @staticmethod
     def _text_pixel_height(world_to_canvas, insert, model_height):
-        return 8
+        x0, y0 = world_to_canvas(float(insert[0]), float(insert[1]))
+        x1, y1 = world_to_canvas(float(insert[0]), float(insert[1]) + float(model_height or 2.5))
+        pixel_height = abs(y1 - y0)
+
+        min_size = 1      # effectively unreadable when zoomed out
+        max_size = 8      # stop text getting huge when zoomed in
+        return max(min_size, min(max_size, int(round(pixel_height))))
 
     def _append_entity(self, entity: Dict):
         if "bbox" not in entity or entity["bbox"] is None:
@@ -324,9 +330,11 @@ class DXFScene:
                     getattr(entity.dxf, "rotation", 0.0),
                 )
             elif dtype == "HATCH":
-                load_hatch(entity)
+                # load_hatch(entity)
+                continue
             elif dtype == "INSERT":
-                load_insert(entity, doc)
+                # load_insert(entity, doc)
+                continue
 
         self.bounds = (
             self._bbox_from_points(all_points)
@@ -346,7 +354,7 @@ class DXFScene:
         offset_x = padding - (min_x * scale)
         offset_y = canvas_h - padding + (min_y * scale)
         return scale, offset_x, offset_y
-
+    
     def _visible_world_bbox(self, canvas, world_to_canvas):
         width = max(canvas.winfo_width(), 1)
         height = max(canvas.winfo_height(), 1)
@@ -358,7 +366,7 @@ class DXFScene:
             sy = y1 - y0
             if sx == 0 or sy == 0:
                 return 0.0, 0.0
-            wx = cx / sx
+            wx = (cx - x0) / sx
             wy = (cy - y0) / sy
             return wx, wy
 
@@ -374,7 +382,7 @@ class DXFScene:
 
     def draw(self, canvas, world_to_canvas):
         visible_world = self._expand_bbox(
-            self._visible_world_bbox(canvas, world_to_canvas), 2.0
+            self._visible_world_bbox(canvas, world_to_canvas), 5.0
         )
 
         for entity in self.entities:
@@ -385,17 +393,17 @@ class DXFScene:
             if etype == "LINE":
                 x1, y1 = world_to_canvas(*entity["start"])
                 x2, y2 = world_to_canvas(*entity["end"])
-                canvas.create_line(x1, y1, x2, y2, fill="#2e2e2e")
+                canvas.create_line(x1, y1, x2, y2, fill="#f7f7f7")
             elif etype == "POLYLINE":
                 pts = []
                 for x, y in entity["points"]:
                     cx, cy = world_to_canvas(x, y)
                     pts.extend([cx, cy])
                 if len(pts) >= 4:
-                    canvas.create_line(*pts, fill="#2e2e2e")
+                    canvas.create_line(*pts, fill="#f7f7f7")
                     if entity.get("closed"):
                         canvas.create_line(
-                            pts[-2], pts[-1], pts[0], pts[1], fill="#2e2e2e"
+                            pts[-2], pts[-1], pts[0], pts[1], fill="#f7f7f7"
                         )
             elif etype == "CIRCLE":
                 cx, cy = world_to_canvas(*entity["center"])
@@ -405,7 +413,7 @@ class DXFScene:
                 r = abs(ex - cx)
                 if r >= 1:
                     canvas.create_oval(
-                        cx - r, cy - r, cx + r, cy + r, outline="#2e2e2e"
+                        cx - r, cy - r, cx + r, cy + r, outline="#f7f7f7"
                     )
             elif etype == "ARC":
                 cx, cy = world_to_canvas(*entity["center"])
@@ -422,19 +430,21 @@ class DXFScene:
                         start=-entity["end_angle"],
                         extent=entity["end_angle"] - entity["start_angle"],
                         style="arc",
-                        outline="#2e2e2e",
+                        outline="#f7f7f7",
                     )
             elif etype == "TEXT":
                 x, y = world_to_canvas(*entity["insert"])
                 size = self._text_pixel_height(
                     world_to_canvas, entity["insert"], entity.get("height", 2.5)
                 )
+                if size < 4:
+                    continue
                 canvas.create_text(
                     x,
                     y,
                     text=entity.get("text", ""),
                     anchor="sw",
-                    fill="#4a4a4a",
+                    fill="#f7f7f7",
                     angle=-entity.get("rotation", 0.0),
                     font=("Arial", size),
                 )
@@ -833,6 +843,9 @@ class SimulationVisualizer(tk.Tk):
         self.time_label_var = tk.StringVar(value="No simulation loaded")
         self.status_var = tk.StringVar(value="Ready")
         self.file_var = tk.StringVar(value="No files loaded")
+
+        self._zoom_redraw_job = None
+        self._pan_redraw_job = None
 
         self._build_ui()
         self.refresh_canvas()
@@ -1522,6 +1535,15 @@ class SimulationVisualizer(tk.Tk):
     def on_left_click(self, event):
         self.last_pan = (event.x, event.y)
 
+    def _schedule_pan_redraw(self, delay_ms=16):
+        if self._pan_redraw_job is not None:
+            self.after_cancel(self._pan_redraw_job)
+        self._pan_redraw_job = self.after(delay_ms, self._run_pan_redraw)
+
+    def _run_pan_redraw(self):
+        self._pan_redraw_job = None
+        self.refresh_canvas()
+
     def on_drag(self, event):
         if self.last_pan is None:
             self.last_pan = (event.x, event.y)
@@ -1531,7 +1553,8 @@ class SimulationVisualizer(tk.Tk):
         self.offset_x += dx
         self.offset_y += dy
         self.last_pan = (event.x, event.y)
-        self.refresh_canvas()
+        self.canvas.move("all", dx, dy)
+        self._schedule_pan_redraw()
 
     def on_left_release(self, _event):
         self.last_pan = None
@@ -1548,18 +1571,33 @@ class SimulationVisualizer(tk.Tk):
         self.offset_x += dx
         self.offset_y += dy
         self.last_pan = (event.x, event.y)
-        self.refresh_canvas()
+        self.canvas.move("all", dx, dy)
+        self._schedule_pan_redraw()
 
     def on_middle_release(self, _event):
         self.last_pan = None
 
+    def _schedule_zoom_redraw(self, delay_ms=16):
+        if self._zoom_redraw_job is not None:
+            self.after_cancel(self._zoom_redraw_job)
+        self._zoom_redraw_job = self.after(delay_ms, self._run_zoom_redraw)
+
+    def _run_zoom_redraw(self):
+        self._zoom_redraw_job = None
+        self.refresh_canvas()
+
     def on_mousewheel(self, event):
         mouse_world_x, mouse_world_y = self.canvas_to_world(event.x, event.y)
         factor = 1.1 if event.delta > 0 else 0.9
-        self.scale = max(0.2, min(60, self.scale * factor))
+        new_scale = max(0.2, min(60, self.scale * factor))
+
+        if new_scale == self.scale:
+            return
+
+        self.scale = new_scale
         self.offset_x = event.x - (mouse_world_x * self.scale)
         self.offset_y = event.y + (mouse_world_y * self.scale)
-        self.refresh_canvas()
+        self._schedule_zoom_redraw()
 
     def _sync_timeline_from_layout_and_csv(self):
         layout_start = self.layout_model.task_start_time

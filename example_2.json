@@ -3344,5 +3344,31 @@
         ]
       ]
     }
-  }
+  },
+  "floor_dxf_files": [
+    {
+      "floor": 0,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-00-DG-AR-300001.dxf"
+    },
+    {
+      "floor": 1,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-01-DG-AR-300002.dxf"
+    },
+    {
+      "floor": 2,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-02-DG-AR-300003.dxf"
+    },
+    {
+      "floor": 3,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-03-DG-AR-300004.dxf"
+    },
+    {
+      "floor": 4,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-04-DG-AR-300005.dxf"
+    },
+    {
+      "floor": 5,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-05-DG-AR-300006.dxf"
+    }
+  ]
 }

@@ -23,6 +23,7 @@ DEFAULT_JSON = {
     "payloads": [],
     "amrs": [],
     "lifts": [],
+    "floor_dxf_files": [],
     "tasks": [],
     "route_profiles": {
         "default": {
@@ -46,6 +47,37 @@ class JsonStore:
     def save(self, path: str) -> None:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
+
+    def floor_dxf_path(self, floor: int) -> Optional[str]:
+        for entry in self.data.get("floor_dxf_files", []):
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    path = (entry.get("filepath") or "").strip()
+                    return path or None
+            except Exception:
+                continue
+        return None
+
+    def set_floor_dxf_path(self, floor: int, filepath: str) -> None:
+        entries = self.data.setdefault("floor_dxf_files", [])
+        payload = {"floor": int(floor), "filepath": str(filepath)}
+        for entry in entries:
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    entry.clear()
+                    entry.update(payload)
+                    return
+            except Exception:
+                continue
+        entries.append(payload)
+        entries.sort(key=lambda item: int(item.get("floor", 0)))
+
+    def clear_floor_dxf_path(self, floor: int) -> None:
+        self.data["floor_dxf_files"] = [
+            entry
+            for entry in self.data.get("floor_dxf_files", [])
+            if int(entry.get("floor", -10**9)) != int(floor)
+        ]
 
     def names_in_use(self) -> set:
         names = set()
@@ -292,6 +324,34 @@ class JsonStore:
         for amr in self.data.get("amrs", []):
             if amr.get("start_location") and amr["start_location"] not in names and amr["start_location"] not in location_names:
                 errors.append(f"AMR {amr.get('id')} has unknown start location: {amr.get('start_location')}")
+
+        seen_floors = set()
+        for entry in self.data.get("floor_dxf_files", []):
+            if not isinstance(entry, dict):
+                errors.append(f"Invalid floor_dxf_files entry: {entry}")
+                continue
+
+            if "floor" not in entry:
+                errors.append("DXF mapping is missing floor")
+                continue
+
+            if "filepath" not in entry:
+                errors.append(f"DXF mapping for floor {entry.get('floor')} is missing filepath")
+                continue
+
+            try:
+                floor = int(entry.get("floor"))
+            except Exception:
+                errors.append(f"DXF mapping has invalid floor: {entry.get('floor')}")
+                continue
+
+            filepath = str(entry.get("filepath") or "").strip()
+            if not filepath:
+                errors.append(f"DXF mapping for floor {floor} has empty filepath")
+
+            if floor in seen_floors:
+                errors.append(f"Duplicate DXF mapping for floor {floor}")
+            seen_floors.add(floor)
 
         return errors
 
