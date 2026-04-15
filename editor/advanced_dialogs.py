@@ -2,6 +2,7 @@ import json
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 from copy import deepcopy
+import calendar
 from datetime import datetime, timedelta
 
 
@@ -297,10 +298,10 @@ class RouteProfilesEditorV2(tk.Toplevel):
         )
 
         self.wait_window(picker)
-        
+
         if picker.result is not None:
             self.allowed_lifts = sorted(picker.result)
-            self.lifts_summary_var.set(self.summarize(self.allowed_lifts)) 
+            self.lifts_summary_var.set(self.summarize(self.allowed_lifts))
 
     def pick_nodes(self):
         picker = MultiSelectPicker(
@@ -316,7 +317,6 @@ class RouteProfilesEditorV2(tk.Toplevel):
         if picker.result is not None:
             self.allowed_nodes = sorted(picker.result)
             self.nodes_summary_var.set(self.summarize(self.allowed_nodes))
-
 
     def fill_edges_from_nodes(self):
         profile_edges = []
@@ -695,6 +695,1009 @@ class BulkOneToManyTaskDialog(simpledialog.Dialog):
             "labels": labels,
             "route_profile": self.route_profile_var.get().strip(),
         }
+
+
+class MultiDaySelectDialog(tk.Toplevel):
+    def __init__(self, parent, initial_date=None):
+        super().__init__(parent)
+        self.title("Select target days")
+        self.geometry("820x560")
+        self.transient(parent)
+        self.grab_set()
+
+        base = initial_date or datetime.now()
+        self.display_year = base.year
+        self.display_month = base.month
+        self.selected_dates = set()
+        self.result = None
+
+        self.last_clicked_date = None
+
+        outer = ttk.Frame(self, padding=8)
+        outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(outer)
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        ttk.Button(header, text="◀", command=self.prev_month).pack(side="left")
+        ttk.Button(header, text="Today", command=self.go_to_today).pack(
+            side="left", padx=4
+        )
+        ttk.Button(header, text="▶", command=self.next_month).pack(side="left")
+
+        self.title_var = tk.StringVar()
+        ttk.Label(header, textvariable=self.title_var, font=("Arial", 11, "bold")).pack(
+            side="left", padx=12
+        )
+
+        ttk.Button(
+            header,
+            text="Select displayed month",
+            command=self.select_displayed_month,
+        ).pack(side="right")
+        ttk.Button(
+            header,
+            text="Clear all",
+            command=self.clear_selection,
+        ).pack(side="right", padx=4)
+
+        self.calendar_frame = ttk.Frame(outer)
+        self.calendar_frame.grid(row=1, column=0, sticky="nsew")
+        self.calendar_frame.columnconfigure(0, weight=1)
+        self.calendar_frame.rowconfigure(1, weight=1)
+
+        footer = ttk.Frame(outer)
+        footer.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+
+        self.summary_var = tk.StringVar(value="No days selected")
+        ttk.Label(footer, textvariable=self.summary_var).pack(side="left")
+
+        ttk.Button(footer, text="Cancel", command=self.destroy).pack(side="right")
+        ttk.Button(footer, text="OK", command=self.finish).pack(side="right", padx=4)
+
+        self.refresh()
+
+    def prev_month(self):
+        if self.display_month == 1:
+            self.display_month = 12
+            self.display_year -= 1
+        else:
+            self.display_month -= 1
+        self.refresh()
+
+    def next_month(self):
+        if self.display_month == 12:
+            self.display_month = 1
+            self.display_year += 1
+        else:
+            self.display_month += 1
+        self.refresh()
+
+    def go_to_today(self):
+        today = datetime.now()
+        self.display_year = today.year
+        self.display_month = today.month
+        self.refresh()
+
+    def clear_selection(self):
+        self.selected_dates.clear()
+        self.refresh()
+
+    def select_displayed_month(self):
+        cal = calendar.Calendar(firstweekday=0)
+        for dt in cal.itermonthdates(self.display_year, self.display_month):
+            if dt.month == self.display_month:
+                self.selected_dates.add(dt.isoformat())
+        self.refresh()
+
+    def toggle_date(self, date_obj, extend_range=False):
+        key = date_obj.isoformat()
+
+        if extend_range and self.last_clicked_date is not None:
+            start_date = min(self.last_clicked_date, date_obj)
+            end_date = max(self.last_clicked_date, date_obj)
+            current = start_date
+            while current <= end_date:
+                self.selected_dates.add(current.isoformat())
+                current = current + timedelta(days=1)
+        else:
+            if key in self.selected_dates:
+                self.selected_dates.remove(key)
+            else:
+                self.selected_dates.add(key)
+
+        self.last_clicked_date = date_obj
+        self.refresh()
+
+    def on_day_button_click(self, date_obj, event=None):
+        extend_range = bool(event and (event.state & 0x0001))
+        self.toggle_date(date_obj, extend_range=extend_range)
+        return "break"
+
+    def refresh(self):
+        for child in self.calendar_frame.winfo_children():
+            child.destroy()
+
+        self.title_var.set(
+            f"{calendar.month_name[self.display_month]} {self.display_year}"
+        )
+
+        header = ttk.Frame(self.calendar_frame)
+        header.grid(row=0, column=0, sticky="ew")
+        for col in range(7):
+            header.columnconfigure(col, weight=1)
+
+        for col, day_name in enumerate(
+            ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        ):
+            ttk.Label(header, text=day_name, anchor="center").grid(
+                row=0, column=col, sticky="ew", padx=2, pady=2
+            )
+
+        grid = ttk.Frame(self.calendar_frame)
+        grid.grid(row=1, column=0, sticky="nsew")
+        for col in range(7):
+            grid.columnconfigure(col, weight=1)
+        for row in range(6):
+            grid.rowconfigure(row, weight=1)
+
+        cal = calendar.Calendar(firstweekday=0)
+        month_days = list(cal.itermonthdates(self.display_year, self.display_month))
+
+        today = datetime.now().date()
+
+        for index, date_obj in enumerate(month_days[:42]):
+            row = index // 7
+            col = index % 7
+            in_month = date_obj.month == self.display_month
+            is_today = date_obj == today
+            is_selected = date_obj.isoformat() in self.selected_dates
+
+            text = str(date_obj.day)
+            if is_today:
+                text = f"{date_obj.day} •"
+
+            btn = tk.Button(
+                grid,
+                text=text,
+                relief="sunken" if is_selected else "raised",
+                bd=2 if is_selected else 1,
+                state="normal" if in_month else "disabled",
+                bg="#dcecff" if is_selected else "#ffffff",
+                activebackground="#c8defa",
+            )
+            btn.bind(
+                "<Button-1>",
+                lambda event, d=date_obj: self.on_day_button_click(d, event),
+            )
+            btn.grid(row=row, column=col, sticky="nsew", padx=2, pady=2)
+
+        count = len(self.selected_dates)
+        if count == 0:
+            self.summary_var.set("No days selected")
+        elif count <= 6:
+            labels = sorted(self.selected_dates)
+            self.summary_var.set(", ".join(labels))
+        else:
+            self.summary_var.set(f"{count} days selected")
+
+    def finish(self):
+        self.result = sorted(self.selected_dates)
+        self.destroy()
+
+
+class TaskPlannerDialog(tk.Toplevel):
+    def __init__(
+        self,
+        master,
+        items,
+        location_names,
+        payload_names,
+        profile_names,
+        suggest_task_id,
+        on_save,
+        floor_map=None,
+    ):
+        super().__init__(master)
+        self.title("Task Planner")
+        self.geometry("1450x760")
+        self.items = items
+        self.location_names = sorted(location_names)
+        self.floor_map = floor_map or {}
+        self.grouped_rows = self._build_grouped_rows()
+        self.payload_names = payload_names
+        self.profile_names = profile_names
+        self.suggest_task_id = suggest_task_id
+        self.on_save = on_save
+
+        self.day_start = self._initial_day()
+        self.hour_width = 90
+        self.row_height = 38
+        self.header_height = 36
+        self.left_width = 220
+        self.selected_task_index = None
+        self.selected_task_rect_id = None
+        self.selected_row_name = None
+        self.copied_task = None
+        self._context_row_name = None
+        self._context_task_index = None
+        self._context_datetime = None
+        self.task_canvas_ids = {}
+        self.task_fill_palette = [
+            "#2e7d32",  # 1st
+            "#1976d2",  # 2nd
+            "#f57c00",  # 3rd
+            "#7b1fa2",  # 4th
+            "#c2185b",  # 5th
+            "#00838f",  # 6th
+            "#6d4c41",  # 7th
+            "#455a64",  # 8th
+        ]
+
+        self._build_ui()
+        self._bind_events()
+        self.refresh_matrix()
+
+    def _build_ui(self):
+        outer = ttk.Frame(self, padding=8)
+        outer.pack(fill="both", expand=True)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(1, weight=1)
+
+        toolbar = ttk.Frame(outer)
+        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Button(toolbar, text="◀ Day", command=lambda: self.shift_day(-1)).pack(
+            side="left"
+        )
+        ttk.Button(toolbar, text="Today", command=self.go_to_today).pack(
+            side="left", padx=4
+        )
+        ttk.Button(toolbar, text="Day ▶", command=lambda: self.shift_day(1)).pack(
+            side="left"
+        )
+
+        ttk.Button(
+            toolbar, text="Copy Day...", command=self.copy_day_tasks_to_other_day
+        ).pack(side="left", padx=(10, 0))
+
+        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=10)
+
+        ttk.Button(
+            toolbar, text="- Hour Width", command=lambda: self.adjust_hour_width(-10)
+        ).pack(side="left")
+        ttk.Button(
+            toolbar, text="+ Hour Width", command=lambda: self.adjust_hour_width(10)
+        ).pack(side="left", padx=4)
+
+        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=10)
+
+        ttk.Button(toolbar, text="Copy", command=self.copy_selected_task).pack(
+            side="left"
+        )
+        ttk.Button(toolbar, text="Paste", command=self.paste_to_selected_row).pack(
+            side="left", padx=4
+        )
+        ttk.Button(toolbar, text="Delete", command=self.delete_selected_task).pack(
+            side="left"
+        )
+        ttk.Button(toolbar, text="Save", command=self.save).pack(side="right")
+
+        self.date_var = tk.StringVar()
+        ttk.Label(toolbar, textvariable=self.date_var, font=("Arial", 11, "bold")).pack(
+            side="right", padx=(0, 12)
+        )
+
+        canvas_frame = ttk.Frame(outer)
+        canvas_frame.grid(row=1, column=0, sticky="nsew")
+        canvas_frame.columnconfigure(0, weight=1)
+        canvas_frame.rowconfigure(0, weight=1)
+
+        self.canvas = tk.Canvas(
+            canvas_frame,
+            bg="#ffffff",
+            highlightthickness=1,
+            highlightbackground="#b8b8b8",
+        )
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+
+        y_scroll = ttk.Scrollbar(
+            canvas_frame, orient="vertical", command=self.canvas.yview
+        )
+        y_scroll.grid(row=0, column=1, sticky="ns")
+        x_scroll = ttk.Scrollbar(
+            canvas_frame, orient="horizontal", command=self.canvas.xview
+        )
+        x_scroll.grid(row=1, column=0, sticky="ew")
+        self.canvas.configure(xscrollcommand=x_scroll.set, yscrollcommand=y_scroll.set)
+
+        self.status_var = tk.StringVar(value="Double-click a cell to create a task.")
+        ttk.Label(outer, textvariable=self.status_var).grid(
+            row=2, column=0, sticky="ew", pady=(8, 0)
+        )
+
+        self.menu = tk.Menu(self, tearoff=0)
+
+    def _build_grouped_rows(self):
+        grouped = {}
+
+        for name in self.location_names:
+            floor = self.floor_map.get(name)
+            key = f"Floor {floor}" if floor is not None else "Other"
+            grouped.setdefault(key, []).append(name)
+
+        ordered = []
+        for floor in sorted(grouped.keys()):
+            ordered.append(("header", floor))
+            for loc in sorted(grouped[floor]):
+                ordered.append(("row", loc))
+
+        return ordered
+
+    def _bind_events(self):
+        self.canvas.bind("<Double-Button-1>", self.on_canvas_double_click)
+        self.canvas.bind("<Button-1>", self.on_canvas_left_click)
+        self.canvas.bind("<Button-3>", self.on_canvas_right_click)
+        self.bind("<Delete>", lambda event: self.delete_selected_task())
+        self.bind("<Control-c>", lambda event: self.copy_selected_task())
+        self.bind("<Control-C>", lambda event: self.copy_selected_task())
+        self.bind("<Control-v>", lambda event: self.paste_to_selected_row())
+        self.bind("<Control-V>", lambda event: self.paste_to_selected_row())
+        self.canvas.bind("<MouseWheel>", self.on_mousewheel)
+        self.canvas.bind("<Shift-MouseWheel>", self.on_shift_mousewheel)
+        self.canvas.bind("<Button-4>", self.on_mousewheel_linux)
+        self.canvas.bind("<Button-5>", self.on_mousewheel_linux)
+        self.canvas.bind("<Shift-Button-4>", self.on_shift_mousewheel_linux)
+        self.canvas.bind("<Shift-Button-5>", self.on_shift_mousewheel_linux)
+
+    def on_mousewheel(self, event):
+        self.canvas.yview_scroll(int(-event.delta / 120), "units")
+        return "break"
+
+    def on_shift_mousewheel(self, event):
+        self.canvas.xview_scroll(int(-event.delta / 120), "units")
+        return "break"
+
+    def on_mousewheel_linux(self, event):
+        if event.num == 4:
+            self.canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            self.canvas.yview_scroll(1, "units")
+        return "break"
+
+    def on_shift_mousewheel_linux(self, event):
+        if event.num == 4:
+            self.canvas.xview_scroll(-1, "units")
+        elif event.num == 5:
+            self.canvas.xview_scroll(1, "units")
+        return "break"
+
+    def _initial_day(self):
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        for task in self.items:
+            dt = self._task_datetime(task)
+            if dt is not None:
+                return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        return today
+
+    def shift_day(self, days):
+        self.day_start = self.day_start + timedelta(days=days)
+        self.refresh_matrix()
+
+    def go_to_today(self):
+        self.day_start = datetime.now().replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        self.refresh_matrix()
+
+    def adjust_hour_width(self, delta):
+        self.hour_width = max(40, min(220, self.hour_width + delta))
+        self.refresh_matrix()
+
+    def save(self):
+        self.on_save(self.items)
+        self.status_var.set("Tasks saved")
+
+    def _next_task_id(self, reserved_ids=None):
+        reserved_ids = set(reserved_ids or [])
+        nums = []
+        for task in self.items:
+            task_id = str(task.get("id", ""))
+            if task_id.startswith("T") and task_id[1:].isdigit():
+                nums.append(int(task_id[1:]))
+        for task_id in reserved_ids:
+            task_id = str(task_id)
+            if task_id.startswith("T") and task_id[1:].isdigit():
+                nums.append(int(task_id[1:]))
+        return f"T{max(nums, default=0) + 1}"
+
+    def _task_datetime(self, task):
+        try:
+            return datetime.fromisoformat(str(task.get("release_datetime", "")).strip())
+        except Exception:
+            return None
+
+    def _format_cell_datetime(self, dt):
+        return dt.replace(second=0, microsecond=0).isoformat(timespec="seconds")
+
+    def _snap_to_grid(self, dt):
+        minute = (dt.minute // 15) * 15
+        return dt.replace(minute=minute, second=0, microsecond=0)
+
+    def tasks_for_day(self):
+        start = self.day_start
+        end = start + timedelta(days=1)
+        rows = []
+        for idx, task in enumerate(self.items):
+            dt = self._task_datetime(task)
+            if dt is None:
+                continue
+            if start <= dt < end:
+                rows.append((idx, task, dt))
+        return rows
+
+    def refresh_matrix(self):
+        self.canvas.delete("all")
+        self.task_canvas_ids = {}
+        self.date_var.set(self.day_start.strftime("%A %d %B %Y"))
+
+        total_width = self.left_width + (24 * self.hour_width)
+        row_lane_count = self._calculate_row_lane_counts()
+        total_height = self.header_height
+
+        for kind, name in self.grouped_rows:
+            if kind == "header":
+                total_height += 24
+            else:
+                lanes = max(1, row_lane_count.get(name, 1))
+                total_height += max(self.row_height, lanes * 18)
+
+        self.canvas.configure(scrollregion=(0, 0, total_width, total_height))
+
+        self.canvas.create_rectangle(
+            0, 0, self.left_width, self.header_height, fill="#ececec", outline="#c8c8c8"
+        )
+        self.canvas.create_text(
+            10,
+            self.header_height / 2,
+            text="Departments / drop-off",
+            anchor="w",
+            font=("Arial", 10, "bold"),
+        )
+
+        for hour in range(24):
+            x1 = self.left_width + (hour * self.hour_width)
+            x2 = x1 + self.hour_width
+            fill = "#f4f4f4" if hour % 2 == 0 else "#fbfbfb"
+            self.canvas.create_rectangle(
+                x1, 0, x2, self.header_height, fill=fill, outline="#d6d6d6"
+            )
+            self.canvas.create_text(
+                (x1 + x2) / 2,
+                self.header_height / 2,
+                text=f"{hour:02d}:00",
+                font=("Arial", 10, "bold"),
+            )
+
+        y_cursor = self.header_height
+        row_index = 0
+        self._row_y_positions = {}
+
+        for kind, name in self.grouped_rows:
+            if kind == "header":
+                y1 = y_cursor
+                y2 = y1 + 24
+
+                self.canvas.create_rectangle(
+                    0, y1, total_width, y2, fill="#d0d7e5", outline="#b0b7c5"
+                )
+                self.canvas.create_text(
+                    10, (y1 + y2) / 2, text=name, anchor="w", font=("Arial", 10, "bold")
+                )
+
+                y_cursor = y2
+                continue
+
+            lanes = max(1, row_lane_count.get(name, 1))
+            row_height = max(self.row_height, lanes * 18)
+
+            y1 = y_cursor
+            y2 = y1 + row_height
+            self._row_y_positions[name] = (y1, y2, row_height)
+
+            fill = "#ffffff" if row_index % 2 == 0 else "#fafafa"
+            label_fill = "#f5f5f5" if self.selected_row_name != name else "#dcecff"
+
+            self.canvas.create_rectangle(
+                0, y1, self.left_width, y2, fill=label_fill, outline="#d6d6d6"
+            )
+            self.canvas.create_text(10, (y1 + y2) / 2, text=name, anchor="w")
+            self.canvas.create_rectangle(
+                self.left_width, y1, total_width, y2, fill=fill, outline="#ececec"
+            )
+
+            for hour in range(25):
+                x = self.left_width + (hour * self.hour_width)
+                self.canvas.create_line(x, y1, x, y2, fill="#e2e2e2")
+
+            y_cursor = y2
+            row_index += 1
+
+        self._draw_task_blocks()
+
+    def _task_fill_for_lane(self, lane_index):
+        return self.task_fill_palette[lane_index % len(self.task_fill_palette)]
+
+    def _visible_tasks_for_day(self):
+        results = []
+        task_list = getattr(self, "items", [])
+
+        for idx, task in enumerate(task_list):
+            dt = self._task_datetime(task)
+            if dt is None:
+                continue
+
+            if self.day_start <= dt < (self.day_start + timedelta(days=1)):
+                results.append((idx, task))
+
+        return results
+
+    def _draw_task_blocks(self):
+        visible_tasks = self._visible_tasks_for_day()
+        if not visible_tasks:
+            return
+
+        tasks_by_slot = {}
+        row_lane_count = {}
+
+        for idx, task in visible_tasks:
+            dt = self._task_datetime(task)
+            if dt is None:
+                continue
+
+            row_name = str(task.get("dropoff", "")).strip()
+            if not row_name:
+                continue
+
+            slot_key = (
+                row_name,
+                dt.replace(second=0, microsecond=0),
+            )
+            tasks_by_slot.setdefault(slot_key, []).append((idx, task))
+
+        lane_lookup = {}
+        for (row_name, _slot_dt), slot_tasks in tasks_by_slot.items():
+            slot_tasks.sort(
+                key=lambda item: (
+                    self._task_datetime(item[1]) or self.day_start,
+                    str(item[1].get("id", "")),
+                )
+            )
+            row_lane_count[row_name] = max(
+                row_lane_count.get(row_name, 1), len(slot_tasks)
+            )
+            for lane_index, (idx, _task) in enumerate(slot_tasks):
+                lane_lookup[idx] = lane_index
+
+        for idx, task in visible_tasks:
+            dt = self._task_datetime(task)
+            if dt is None:
+                continue
+
+            row_name = str(task.get("dropoff", "")).strip()
+            if row_name not in self.location_names:
+                continue
+
+            lane_count = max(1, row_lane_count.get(row_name, 1))
+            lane_index = lane_lookup.get(idx, 0)
+
+            x1 = self.left_width + (
+                ((dt - self.day_start).total_seconds() / 3600.0) * self.hour_width
+            )
+            block_width = max(
+                30,
+                (max(int(task.get("target_time", 300)), 60) / 3600.0) * self.hour_width,
+            )
+            x2 = x1 + block_width
+
+            if row_name not in self._row_y_positions:
+                continue
+
+            y1_row, y2_row, row_height = self._row_y_positions[row_name]
+
+            inner_top = y1_row + 4
+            inner_height = max(12, row_height - 8)
+
+            lane_height = max(12, inner_height / lane_count)
+
+            y1 = inner_top + (lane_index * lane_height)
+            y2 = y1 + lane_height - 2
+
+            selected = idx == self.selected_task_index
+            fill = self._task_fill_for_lane(lane_index)
+            outline = "#000000" if selected else "#244028"
+
+            rect_id = self.canvas.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                fill=fill,
+                outline=outline,
+                width=2 if selected else 1,
+                tags=("task", f"task_{idx}"),
+            )
+
+            label = f"{task.get('id', '')}  {task.get('pickup', '')}"
+            text_y = (y1 + y2) / 2
+            text_id = self.canvas.create_text(
+                x1 + 4,
+                text_y,
+                text=label,
+                anchor="w",
+                fill="white",
+                font=("Arial", 9, "bold" if selected else "normal"),
+                tags=("task", f"task_{idx}"),
+            )
+
+            self.task_canvas_ids[idx] = (rect_id, text_id)
+
+    def _row_name_from_y(self, canvas_y):
+        if canvas_y < self.header_height:
+            return None
+
+        for name, (y1, y2, _row_height) in getattr(
+            self, "_row_y_positions", {}
+        ).items():
+            if y1 <= canvas_y < y2:
+                return name
+
+        return None
+
+    def _datetime_from_x(self, canvas_x):
+        if canvas_x < self.left_width:
+            return self.day_start
+        hour_offset = (canvas_x - self.left_width) / float(self.hour_width)
+        minutes = max(0, min(int(round(hour_offset * 60)), (24 * 60) - 1))
+        return self._snap_to_grid(self.day_start + timedelta(minutes=minutes))
+
+    def _task_index_from_event(self, event):
+        current = self.canvas.find_withtag("current")
+        if not current:
+            return None
+        tags = self.canvas.gettags(current[0])
+        for tag in tags:
+            if tag.startswith("task_"):
+                try:
+                    return int(tag.split("_", 1)[1])
+                except Exception:
+                    return None
+        return None
+
+    def on_canvas_left_click(self, event):
+        self.canvas.focus_set()
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        task_index = self._task_index_from_event(event)
+        self.selected_row_name = self._row_name_from_y(canvas_y)
+        if task_index is not None:
+            self.selected_task_index = task_index
+            task = self.items[task_index]
+            self.status_var.set(
+                f"Selected {task.get('id', '')} → {task.get('dropoff', '')}"
+            )
+        else:
+            self.selected_task_index = None
+            if self.selected_row_name:
+                self.status_var.set(
+                    f"Selected destination row: {self.selected_row_name}"
+                )
+        self.refresh_matrix()
+
+    def on_canvas_double_click(self, event):
+        self.canvas.focus_set()
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+
+        task_index = self._task_index_from_event(event)
+        if task_index is not None:
+            dialog = TaskFormDialog(
+                self,
+                self.location_names,
+                self.payload_names,
+                self.profile_names,
+                seed=deepcopy(self.items[task_index]),
+                default_task_id=self.items[task_index].get("id", self._next_task_id()),
+                group_resolver=self._group_for_location,
+            )
+            if dialog.result:
+                self.items[task_index] = dialog.result
+                self.selected_task_index = task_index
+                self.selected_row_name = dialog.result.get("dropoff", "")
+                self.status_var.set(f"Updated {dialog.result.get('id', '')}")
+                self.refresh_matrix()
+            return
+
+        row_name = self._row_name_from_y(canvas_y)
+        if not row_name:
+            return
+
+        when = self._datetime_from_x(canvas_x)
+        seed = {
+            "dropoff": row_name,
+            "release_datetime": self._format_cell_datetime(when),
+        }
+        dialog = TaskFormDialog(
+            self,
+            self.location_names,
+            self.payload_names,
+            self.profile_names,
+            seed=seed,
+            default_task_id=self._next_task_id(),
+            group_resolver=self._group_for_location,
+        )
+        if dialog.result:
+            self.items.append(dialog.result)
+            self.selected_task_index = len(self.items) - 1
+            self.selected_row_name = dialog.result.get("dropoff", "")
+            self.status_var.set(f"Created {dialog.result.get('id', '')}")
+            self.refresh_matrix()
+
+    def on_canvas_right_click(self, event):
+        self.canvas.focus_set()
+        canvas_y = self.canvas.canvasy(event.y)
+        canvas_x = self.canvas.canvasx(event.x)
+        self._context_row_name = self._row_name_from_y(canvas_y)
+        self._context_datetime = self._datetime_from_x(canvas_x)
+        self._context_task_index = self._task_index_from_event(event)
+        self.menu.delete(0, "end")
+
+        if self._context_task_index is not None:
+            self.selected_task_index = self._context_task_index
+            self.refresh_matrix()
+            self.menu.add_command(label="Copy", command=self.copy_selected_task)
+            self.menu.add_command(label="Delete", command=self.delete_selected_task)
+        else:
+            if self.copied_task and self._context_row_name:
+                self.menu.add_command(
+                    label=f"Paste to {self._context_row_name}",
+                    command=lambda: self.paste_to_row(
+                        self._context_row_name,
+                        self._context_datetime,
+                    ),
+                )
+            if self._context_row_name:
+                self.menu.add_command(
+                    label=f"Create task at {self._context_row_name}",
+                    command=lambda: self._create_task_for_row(
+                        self._context_row_name,
+                        self._context_datetime,
+                    ),
+                )
+
+        if self.menu.index("end") is not None:
+            self.menu.tk_popup(event.x_root, event.y_root)
+
+    def _create_task_for_row(self, row_name, when=None):
+        when = when or self.day_start
+        seed = {
+            "dropoff": row_name,
+            "release_datetime": self._format_cell_datetime(when),
+        }
+        dialog = TaskFormDialog(
+            self,
+            self.location_names,
+            self.payload_names,
+            self.profile_names,
+            seed=seed,
+            default_task_id=self._next_task_id(),
+            group_resolver=self._group_for_location,
+        )
+        if dialog.result:
+            self.items.append(dialog.result)
+            self.selected_task_index = len(self.items) - 1
+            self.selected_row_name = row_name
+            self.refresh_matrix()
+
+    def copy_selected_task(self):
+        if self.selected_task_index is None:
+            self.status_var.set("Select a task first")
+            return
+        self.copied_task = deepcopy(self.items[self.selected_task_index])
+        self.status_var.set(f"Copied {self.copied_task.get('id', '')}")
+
+    def paste_to_selected_row(self):
+        if not self.selected_row_name:
+            self.status_var.set("Select a destination row first")
+            return
+        self.paste_to_row(self.selected_row_name)
+
+    def paste_to_row(self, row_name, when=None):
+        if not self.copied_task:
+            self.status_var.set("Copy a task first")
+            return
+        copied = deepcopy(self.copied_task)
+        copied["id"] = self._next_task_id()
+        copied["dropoff"] = row_name
+        if when is not None:
+            copied["release_datetime"] = self._format_cell_datetime(when)
+        self.items.append(copied)
+        self.selected_task_index = len(self.items) - 1
+        self.selected_row_name = row_name
+        self.status_var.set(
+            f"Pasted {copied.get('id', '')} to {row_name} at "
+            f"{copied.get('release_datetime', '')}"
+        )
+        self.refresh_matrix()
+
+    def delete_selected_task(self):
+        if self.selected_task_index is None:
+            self.status_var.set("Select a task first")
+            return
+        task = self.items[self.selected_task_index]
+        if not messagebox.askyesno(
+            "Delete task",
+            f"Delete task {task.get('id', '')}?",
+            parent=self,
+        ):
+            return
+        del self.items[self.selected_task_index]
+        self.selected_task_index = None
+        self.status_var.set("Task deleted")
+        self.refresh_matrix()
+
+    def _group_for_location(self, item):
+        floor = getattr(self, "floor_map", {}).get(item)
+        if floor is None:
+            return "Other"
+        return f"Floor {floor}"
+
+    def _calculate_row_lane_counts(self):
+        visible_tasks = self._visible_tasks_for_day()
+        tasks_by_slot = {}
+        row_lane_count = {}
+
+        for idx, task in visible_tasks:
+            dt = self._task_datetime(task)
+            if dt is None:
+                continue
+
+            row_name = str(task.get("dropoff", "")).strip()
+            if not row_name:
+                continue
+
+            slot_key = (row_name, dt.replace(second=0, microsecond=0))
+            tasks_by_slot.setdefault(slot_key, []).append(idx)
+
+        for (row_name, _slot_dt), task_indexes in tasks_by_slot.items():
+            row_lane_count[row_name] = max(
+                row_lane_count.get(row_name, 1),
+                len(task_indexes),
+            )
+
+        return row_lane_count
+
+    def _tasks_for_exact_day(self, day_start):
+        day_end = day_start + timedelta(days=1)
+        results = []
+        for idx, task in enumerate(self.items):
+            dt = self._task_datetime(task)
+            if dt is None:
+                continue
+            if day_start <= dt < day_end:
+                results.append((idx, task, dt))
+        return results
+
+    def _shift_task_to_day(
+        self, task, source_day_start, target_day_start, reserved_ids
+    ):
+        copied = deepcopy(task)
+        original_dt = self._task_datetime(task)
+        if original_dt is None:
+            return None
+
+        offset = original_dt - source_day_start
+        new_dt = target_day_start + offset
+
+        new_id = self._next_task_id(reserved_ids)
+        reserved_ids.add(new_id)
+
+        copied["id"] = new_id
+        copied["release_datetime"] = new_dt.replace(second=0, microsecond=0).isoformat(
+            timespec="seconds"
+        )
+        return copied
+
+    def copy_day_tasks_to_other_day(self):
+        source_day_start = self.day_start
+        source_tasks = self._tasks_for_exact_day(source_day_start)
+
+        if not source_tasks:
+            messagebox.showinfo(
+                "Copy day",
+                "There are no tasks on the displayed day to copy.",
+                parent=self,
+            )
+            return
+
+        picker = MultiDaySelectDialog(
+            self,
+            initial_date=source_day_start + timedelta(days=1),
+        )
+        self.wait_window(picker)
+
+        if not picker.result:
+            return
+
+        target_day_starts = []
+        for text in picker.result:
+            try:
+                dt = datetime.fromisoformat(text).replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                if dt != source_day_start:
+                    target_day_starts.append(dt)
+            except Exception:
+                continue
+
+        if not target_day_starts:
+            messagebox.showerror(
+                "Invalid selection",
+                "Select at least one target day different from the current day.",
+                parent=self,
+            )
+            return
+
+        existing_summary = []
+        for target_day_start in target_day_starts:
+            existing_target_tasks = self._tasks_for_exact_day(target_day_start)
+            if existing_target_tasks:
+                existing_summary.append(
+                    f"{target_day_start.strftime('%Y-%m-%d')} ({len(existing_target_tasks)} existing)"
+                )
+
+        if existing_summary:
+            if not messagebox.askyesno(
+                "Some target days already have tasks",
+                "These days already contain tasks:\n\n"
+                + "\n".join(existing_summary)
+                + "\n\nCopy the current day's tasks as additional tasks?",
+                parent=self,
+            ):
+                return
+
+        if not messagebox.askyesno(
+            "Confirm copy day",
+            (
+                f"Copy {len(source_tasks)} task(s) from "
+                f"{source_day_start.strftime('%Y-%m-%d')} to "
+                f"{len(target_day_starts)} selected day(s)?"
+            ),
+            parent=self,
+        ):
+            return
+
+        reserved_ids = {str(task.get("id", "")) for task in self.items}
+        created = []
+
+        for target_day_start in target_day_starts:
+            for _idx, task, _dt in source_tasks:
+                copied = self._shift_task_to_day(
+                    task,
+                    source_day_start,
+                    target_day_start,
+                    reserved_ids,
+                )
+                if copied is not None:
+                    created.append(copied)
+
+        self.items.extend(created)
+        self.status_var.set(
+            f"Copied {len(source_tasks)} task(s) to {len(target_day_starts)} day(s)"
+        )
+        self.refresh_matrix()
+
 
 class TaskEditorWindow(tk.Toplevel):
     def __init__(

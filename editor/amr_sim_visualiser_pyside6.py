@@ -7,7 +7,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QPolygonF, QFont, QPainterPath
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QPainter,
+    QPen,
+    QPolygonF,
+    QFont,
+    QPainterPath,
+    QMouseEvent,
+)
 from PySide6.QtCore import QPointF, QTimer, Qt, QRectF, QRect, QObject, Signal, QThread
 from PySide6.QtWidgets import (
     QApplication,
@@ -35,6 +44,14 @@ from PySide6.QtWidgets import (
     QWidget,
     QProgressDialog,
     QGraphicsPathItem,
+    QDialog,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QHeaderView,
+    QAbstractItemView,
+    QScrollArea,
+    QSplitter,
+    QSizePolicy,
 )
 
 try:
@@ -83,7 +100,9 @@ class DXFScene:
 
     def load(self, path: str):
         if ezdxf is None:
-            raise RuntimeError("ezdxf is not installed. Install with: pip install ezdxf")
+            raise RuntimeError(
+                "ezdxf is not installed. Install with: pip install ezdxf"
+            )
 
         doc = ezdxf.readfile(path)
         msp = doc.modelspace()
@@ -97,40 +116,49 @@ class DXFScene:
                 all_points.append((float(x), float(y)))
 
         def add_line(start, end):
-            points = [(float(start[0]), float(start[1])), (float(end[0]), float(end[1]))]
+            points = [
+                (float(start[0]), float(start[1])),
+                (float(end[0]), float(end[1])),
+            ]
             track_points(points)
-            self._append_entity({
-                "type": "LINE",
-                "start": points[0],
-                "end": points[1],
-                "bbox": self._bbox_from_points(points),
-            })
+            self._append_entity(
+                {
+                    "type": "LINE",
+                    "start": points[0],
+                    "end": points[1],
+                    "bbox": self._bbox_from_points(points),
+                }
+            )
 
         def add_polyline(points, closed=False):
             if len(points) < 2:
                 return
             clean = [(float(x), float(y)) for x, y in points]
             track_points(clean)
-            self._append_entity({
-                "type": "POLYLINE",
-                "points": clean,
-                "closed": bool(closed),
-                "bbox": self._bbox_from_points(clean),
-            })
+            self._append_entity(
+                {
+                    "type": "POLYLINE",
+                    "points": clean,
+                    "closed": bool(closed),
+                    "bbox": self._bbox_from_points(clean),
+                }
+            )
 
         def add_text_entity(insert, text, height=2.5, rotation=0.0):
             x = float(insert[0])
             y = float(insert[1])
             h = float(height or 2.5)
             track_points([(x, y), (x + h, y + h)])
-            self._append_entity({
-                "type": "TEXT",
-                "insert": (x, y),
-                "text": str(text),
-                "height": h,
-                "rotation": float(rotation or 0.0),
-                "bbox": (x, y - h, x + max(h, len(str(text)) * h * 0.6), y + h),
-            })
+            self._append_entity(
+                {
+                    "type": "TEXT",
+                    "insert": (x, y),
+                    "text": str(text),
+                    "height": h,
+                    "rotation": float(rotation or 0.0),
+                    "bbox": (x, y - h, x + max(h, len(str(text)) * h * 0.6), y + h),
+                }
+            )
 
         def add_circle(center, radius):
             cx = float(center[0])
@@ -138,12 +166,14 @@ class DXFScene:
             r = float(radius)
             bbox = (cx - r, cy - r, cx + r, cy + r)
             track_points([(bbox[0], bbox[1]), (bbox[2], bbox[3])])
-            self._append_entity({
-                "type": "CIRCLE",
-                "center": (cx, cy),
-                "radius": r,
-                "bbox": bbox,
-            })
+            self._append_entity(
+                {
+                    "type": "CIRCLE",
+                    "center": (cx, cy),
+                    "radius": r,
+                    "bbox": bbox,
+                }
+            )
 
         def add_arc(center, radius, start_angle, end_angle):
             cx = float(center[0])
@@ -151,14 +181,16 @@ class DXFScene:
             r = float(radius)
             bbox = (cx - r, cy - r, cx + r, cy + r)
             track_points([(bbox[0], bbox[1]), (bbox[2], bbox[3])])
-            self._append_entity({
-                "type": "ARC",
-                "center": (cx, cy),
-                "radius": r,
-                "start_angle": float(start_angle),
-                "end_angle": float(end_angle),
-                "bbox": bbox,
-            })
+            self._append_entity(
+                {
+                    "type": "ARC",
+                    "center": (cx, cy),
+                    "radius": r,
+                    "start_angle": float(start_angle),
+                    "end_angle": float(end_angle),
+                    "bbox": bbox,
+                }
+            )
 
         def load_hatch(entity):
             try:
@@ -176,7 +208,9 @@ class DXFScene:
                         for edge in path.edges:
                             edge_type = edge.__class__.__name__
                             if edge_type == "LineEdge":
-                                points.append((float(edge.start[0]), float(edge.start[1])))
+                                points.append(
+                                    (float(edge.start[0]), float(edge.start[1]))
+                                )
                                 points.append((float(edge.end[0]), float(edge.end[1])))
                             elif edge_type == "ArcEdge":
                                 cx = float(edge.center[0])
@@ -189,7 +223,9 @@ class DXFScene:
                                 steps = 24
                                 for i in range(steps + 1):
                                     a = start + ((end - start) * i / steps)
-                                    points.append((cx + (r * math.cos(a)), cy + (r * math.sin(a))))
+                                    points.append(
+                                        (cx + (r * math.cos(a)), cy + (r * math.sin(a)))
+                                    )
                     if points:
                         add_polyline(points, closed=True)
                 except Exception:
@@ -233,18 +269,35 @@ class DXFScene:
                         except Exception:
                             try:
                                 for v in child.vertices:
-                                    points.append(transform_point(float(v.dxf.location.x), float(v.dxf.location.y)))
+                                    points.append(
+                                        transform_point(
+                                            float(v.dxf.location.x),
+                                            float(v.dxf.location.y),
+                                        )
+                                    )
                             except Exception:
                                 continue
-                        add_polyline(points, closed=bool(getattr(child, "closed", False)))
+                        add_polyline(
+                            points, closed=bool(getattr(child, "closed", False))
+                        )
                     elif dtype == "TEXT":
                         p = child.dxf.insert
                         tx, ty = transform_point(p.x, p.y)
-                        add_text_entity((tx, ty), child.dxf.text, child.dxf.height, float(getattr(child.dxf, "rotation", 0.0) or 0.0))
+                        add_text_entity(
+                            (tx, ty),
+                            child.dxf.text,
+                            child.dxf.height,
+                            float(getattr(child.dxf, "rotation", 0.0) or 0.0),
+                        )
                     elif dtype == "MTEXT":
                         p = child.dxf.insert
                         tx, ty = transform_point(p.x, p.y)
-                        add_text_entity((tx, ty), child.text, child.dxf.char_height, float(getattr(child.dxf, "rotation", 0.0) or 0.0))
+                        add_text_entity(
+                            (tx, ty),
+                            child.text,
+                            child.dxf.char_height,
+                            float(getattr(child.dxf, "rotation", 0.0) or 0.0),
+                        )
                 except Exception:
                     continue
 
@@ -263,7 +316,9 @@ class DXFScene:
                 except Exception:
                     try:
                         for v in entity.vertices:
-                            points.append((float(v.dxf.location.x), float(v.dxf.location.y)))
+                            points.append(
+                                (float(v.dxf.location.x), float(v.dxf.location.y))
+                            )
                     except Exception:
                         continue
                 add_polyline(points, closed=bool(getattr(entity, "closed", False)))
@@ -272,19 +327,39 @@ class DXFScene:
                 add_circle((center.x, center.y), entity.dxf.radius)
             elif dtype == "ARC":
                 center = entity.dxf.center
-                add_arc((center.x, center.y), entity.dxf.radius, entity.dxf.start_angle, entity.dxf.end_angle)
+                add_arc(
+                    (center.x, center.y),
+                    entity.dxf.radius,
+                    entity.dxf.start_angle,
+                    entity.dxf.end_angle,
+                )
             elif dtype == "TEXT":
                 insert = entity.dxf.insert
-                add_text_entity((insert.x, insert.y), entity.dxf.text, entity.dxf.height, getattr(entity.dxf, "rotation", 0.0))
+                add_text_entity(
+                    (insert.x, insert.y),
+                    entity.dxf.text,
+                    entity.dxf.height,
+                    getattr(entity.dxf, "rotation", 0.0),
+                )
             elif dtype == "MTEXT":
                 insert = entity.dxf.insert
-                add_text_entity((insert.x, insert.y), entity.text, entity.dxf.char_height, getattr(entity.dxf, "rotation", 0.0))
+                add_text_entity(
+                    (insert.x, insert.y),
+                    entity.text,
+                    entity.dxf.char_height,
+                    getattr(entity.dxf, "rotation", 0.0),
+                )
             elif dtype == "HATCH":
                 load_hatch(entity)
             elif dtype == "INSERT":
                 load_insert(entity, doc)
 
-        self.bounds = self._bbox_from_points(all_points) if all_points else (0.0, 0.0, 100.0, 100.0)
+        self.bounds = (
+            self._bbox_from_points(all_points)
+            if all_points
+            else (0.0, 0.0, 100.0, 100.0)
+        )
+
 
 class LayoutModel:
     def __init__(self):
@@ -306,7 +381,12 @@ class LayoutModel:
             except Exception:
                 continue
 
-        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M"]:
+        for fmt in [
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%d/%m/%Y %H:%M:%S",
+            "%d/%m/%Y %H:%M",
+        ]:
             try:
                 return datetime.strptime(value, fmt)
             except Exception:
@@ -365,6 +445,7 @@ class LayoutModel:
     def floors(self) -> List[int]:
         return sorted({int(p["floor"]) for p in self.points.values()})
 
+
 class SimulationLog:
     def __init__(self):
         self.events: List[VisualEvent] = []
@@ -392,7 +473,12 @@ class SimulationLog:
                 return datetime.fromisoformat(candidate)
             except Exception:
                 continue
-        for fmt in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M"]:
+        for fmt in [
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%d %H:%M",
+            "%d/%m/%Y %H:%M:%S",
+            "%d/%m/%Y %H:%M",
+        ]:
             try:
                 return datetime.strptime(value, fmt)
             except Exception:
@@ -414,7 +500,15 @@ class SimulationLog:
             return None
 
     def first_travel_time(self) -> Optional[datetime]:
-        travel_markers = {"travel", "move", "movement", "corridor", "edge", "lift_travel", "lift"}
+        travel_markers = {
+            "travel",
+            "move",
+            "movement",
+            "corridor",
+            "edge",
+            "lift_travel",
+            "lift",
+        }
         for event in self.events:
             row = event.row
             segment_type = (row.get("segment_type") or "").strip().lower()
@@ -432,11 +526,15 @@ class SimulationLog:
         with open(path, "r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                start_dt = self._parse_datetime(row.get("start_time", "")) or self._parse_datetime(row.get("sim_datetime", ""))
+                start_dt = self._parse_datetime(
+                    row.get("start_time", "")
+                ) or self._parse_datetime(row.get("sim_datetime", ""))
                 end_dt = self._parse_datetime(row.get("end_time", "")) or start_dt
                 if start_dt is None or end_dt is None:
                     continue
-                self.events.append(VisualEvent(start_time=start_dt, end_time=end_dt, row=row))
+                self.events.append(
+                    VisualEvent(start_time=start_dt, end_time=end_dt, row=row)
+                )
         self.events.sort(key=lambda e: e.start_time)
         self.start_time = self.events[0].start_time if self.events else None
         self.end_time = max((e.end_time for e in self.events), default=None)
@@ -451,12 +549,20 @@ class SimulationLog:
     def time_to_fraction(self, value: datetime) -> float:
         if not self.start_time or not self.end_time or self.start_time == self.end_time:
             return 0.0
-        return max(0.0, min(1.0, (value - self.start_time).total_seconds() / (self.end_time - self.start_time).total_seconds()))
+        return max(
+            0.0,
+            min(
+                1.0,
+                (value - self.start_time).total_seconds()
+                / (self.end_time - self.start_time).total_seconds(),
+            ),
+        )
 
     def state_at(self, current_time: datetime, layout: LayoutModel):
         amr_states: Dict[str, dict] = {}
         recent_events: List[dict] = []
-        task_assignment_start: Dict[Tuple[str, str], datetime] = {}
+        current_task_start_by_amr: Dict[str, datetime] = {}
+        last_task_id_by_amr: Dict[str, str] = {}
 
         for event in self.events:
             if event.start_time > current_time:
@@ -483,57 +589,75 @@ class SimulationLog:
             to_location = (row.get("to_location") or "").strip()
 
             start_dt = event.start_time
-            end_dt = event.end_time if event.end_time >= event.start_time else event.start_time
+            end_dt = (
+                event.end_time
+                if event.end_time >= event.start_time
+                else event.start_time
+            )
 
             if task_id:
-                task_key = (amr_id, task_id)
-                if task_key not in task_assignment_start:
-                    task_assignment_start[task_key] = start_dt
+                previous_task_id = last_task_id_by_amr.get(amr_id)
+                if previous_task_id != task_id:
+                    current_task_start_by_amr[amr_id] = start_dt
+                    last_task_id_by_amr[amr_id] = task_id
+            else:
+                current_task_start_by_amr.pop(amr_id, None)
+                last_task_id_by_amr.pop(amr_id, None)
 
-            state = amr_states.get(amr_id, {
-                "amr_id": amr_id,
-                "task_id": task_id,
-                "payload": payload,
-                "event_type": event_type,
-                "segment_type": segment_type,
-                "status": status,
-                "timestamp": start_dt,
-                "start_time": start_dt,
-                "end_time": end_dt,
-                "start_node": start_node,
-                "end_node": end_node,
-                "from_location": from_location,
-                "to_location": to_location,
-                "floor": None,
-                "x": None,
-                "y": None,
-                "path": None,
-                "task_runtime_sec": 0.0,
-                "raw": row,
-            })
+            state = amr_states.get(
+                amr_id,
+                {
+                    "amr_id": amr_id,
+                    "task_id": task_id,
+                    "payload": payload,
+                    "event_type": event_type,
+                    "segment_type": segment_type,
+                    "status": status,
+                    "timestamp": start_dt,
+                    "start_time": start_dt,
+                    "end_time": end_dt,
+                    "start_node": start_node,
+                    "end_node": end_node,
+                    "from_location": from_location,
+                    "to_location": to_location,
+                    "floor": None,
+                    "x": None,
+                    "y": None,
+                    "path": None,
+                    "task_runtime_sec": 0.0,
+                    "raw": row,
+                },
+            )
 
-            state.update({
-                "task_id": task_id,
-                "payload": payload,
-                "event_type": event_type,
-                "segment_type": segment_type,
-                "status": status,
-                "timestamp": min(current_time, end_dt),
-                "start_time": start_dt,
-                "end_time": end_dt,
-                "start_node": start_node,
-                "end_node": end_node,
-                "from_location": from_location,
-                "to_location": to_location,
-                "raw": row,
-            })
+            state.update(
+                {
+                    "task_id": task_id,
+                    "payload": payload,
+                    "event_type": event_type,
+                    "segment_type": segment_type,
+                    "status": status,
+                    "timestamp": min(current_time, end_dt),
+                    "start_time": start_dt,
+                    "end_time": end_dt,
+                    "start_node": start_node,
+                    "end_node": end_node,
+                    "from_location": from_location,
+                    "to_location": to_location,
+                    "raw": row,
+                }
+            )
 
             if start_dt <= current_time <= end_dt:
                 total = max((end_dt - start_dt).total_seconds(), 0.001)
                 elapsed = max((current_time - start_dt).total_seconds(), 0.0)
                 frac = max(0.0, min(1.0, elapsed / total))
 
-                if start_x is not None and start_y is not None and end_x is not None and end_y is not None:
+                if (
+                    start_x is not None
+                    and start_y is not None
+                    and end_x is not None
+                    and end_y is not None
+                ):
                     state["x"] = start_x + ((end_x - start_x) * frac)
                     state["y"] = start_y + ((end_y - start_y) * frac)
 
@@ -544,7 +668,9 @@ class SimulationLog:
                 elif start_floor is not None:
                     state["floor"] = start_floor
 
-                state["path"] = (start_node, end_node) if start_node and end_node else None
+                state["path"] = (
+                    (start_node, end_node) if start_node and end_node else None
+                )
             else:
                 state["x"] = end_x if end_x is not None else start_x
                 state["y"] = end_y if end_y is not None else start_y
@@ -552,9 +678,10 @@ class SimulationLog:
                 state["path"] = None
 
             if task_id:
-                task_key = (amr_id, task_id)
-                assignment_start = task_assignment_start.get(task_key, start_dt)
-                state["task_runtime_sec"] = max((current_time - assignment_start).total_seconds(), 0.0)
+                assignment_start = current_task_start_by_amr.get(amr_id, start_dt)
+                state["task_runtime_sec"] = max(
+                    (current_time - assignment_start).total_seconds(), 0.0
+                )
             else:
                 state["task_runtime_sec"] = 0.0
 
@@ -562,6 +689,7 @@ class SimulationLog:
             recent_events.append({"timestamp": min(current_time, end_dt), "row": row})
 
         return amr_states, recent_events[-12:]
+
 
 class GraphicsView(QGraphicsView):
     def __init__(self, parent=None):
@@ -607,8 +735,12 @@ class GraphicsView(QGraphicsView):
         if self._last_pan_pos is not None:
             delta = event.position() - self._last_pan_pos
             self._last_pan_pos = event.position()
-            self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - int(delta.x()))
-            self.verticalScrollBar().setValue(self.verticalScrollBar().value() - int(delta.y()))
+            self.horizontalScrollBar().setValue(
+                self.horizontalScrollBar().value() - int(delta.x())
+            )
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() - int(delta.y())
+            )
             if self._pan_callback:
                 self._pan_callback()
             self.viewport().update()
@@ -632,6 +764,7 @@ class GraphicsView(QGraphicsView):
             painter.resetTransform()
             self._overlay_provider(painter, self.viewport().rect())
             painter.restore()
+
 
 class DxfLoadWorker(QObject):
     progress = Signal(int, int, str)
@@ -660,7 +793,11 @@ class DxfLoadWorker(QObject):
             except Exception:
                 continue
 
-            self.progress.emit(i - 1, total, f"Loading floor {floor}...\n{Path(path).name if path else ''}")
+            self.progress.emit(
+                i - 1,
+                total,
+                f"Loading floor {floor}...\n{Path(path).name if path else ''}",
+            )
 
             try:
                 if not path or not Path(path).exists():
@@ -675,6 +812,409 @@ class DxfLoadWorker(QObject):
                 self.error.emit(floor, str(exc))
 
         self.finished.emit()
+
+
+class TaskJumpDialog(QDialog):
+    def __init__(self, parent, grouped_tasks):
+        super().__init__(parent)
+        self.setWindowTitle("Tasks by AMR")
+        self.resize(980, 620)
+        self.selected_start_time = None
+        self.selected_amr_id = None
+
+        self._sort_column = None
+        self._sort_state = 0  # 0=original, 1=asc, 2=desc
+        self._insertion_counter = 0
+
+        layout = QVBoxLayout(self)
+
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(6)
+        self.tree.setHeaderLabels(
+            [
+                "Task ID / Segment",
+                "Payload",
+                "Origin",
+                "Destination",
+                "Duration",
+                "Datetime",
+            ]
+        )
+        self.tree.setRootIsDecorated(True)
+        self.tree.setAlternatingRowColors(True)
+        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
+        self.tree.header().sectionClicked.connect(self._on_header_clicked)
+
+        header = self.tree.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+
+        for amr_id in sorted(grouped_tasks.keys()):
+            amr_item = QTreeWidgetItem([amr_id, "", "", "", "", ""])
+            amr_item.setFirstColumnSpanned(True)
+            amr_item.setData(0, Qt.UserRole, None)
+            amr_item.setData(1, Qt.UserRole, None)
+            amr_item.setData(0, Qt.UserRole + 10, self._next_insertion_order())
+            amr_item.setData(0, Qt.UserRole + 20, "amr")
+
+            for task in grouped_tasks[amr_id]:
+                task_item = QTreeWidgetItem(
+                    [
+                        task["task_id"],
+                        task["payload"],
+                        task["origin"],
+                        task["destination"],
+                        task["duration"],
+                        task["sim_datetime"].strftime("%Y-%m-%d %H:%M:%S"),
+                    ]
+                )
+                task_item.setData(0, Qt.UserRole, task["start_time"])
+                task_item.setData(1, Qt.UserRole, amr_id)
+                task_item.setData(0, Qt.UserRole + 10, self._next_insertion_order())
+                task_item.setData(0, Qt.UserRole + 20, "task")
+
+                for segment in task.get("segments", []):
+                    segment_item = QTreeWidgetItem(
+                        [
+                            segment["label"],
+                            "",
+                            segment["origin"],
+                            segment["destination"],
+                            segment["duration"],
+                            segment["sim_datetime"].strftime("%Y-%m-%d %H:%M:%S"),
+                        ]
+                    )
+                    segment_item.setData(0, Qt.UserRole, segment["start_time"])
+                    segment_item.setData(1, Qt.UserRole, amr_id)
+                    segment_item.setData(
+                        0, Qt.UserRole + 10, self._next_insertion_order()
+                    )
+                    segment_item.setData(0, Qt.UserRole + 20, "segment")
+                    task_item.addChild(segment_item)
+
+                task_item.setExpanded(False)
+                amr_item.addChild(task_item)
+
+            amr_item.setExpanded(True)
+            self.tree.addTopLevelItem(amr_item)
+
+        layout.addWidget(self.tree)
+
+    def _next_insertion_order(self) -> int:
+        value = self._insertion_counter
+        self._insertion_counter += 1
+        return value
+
+    def _on_item_double_clicked(self, item, _column):
+        start_time = item.data(0, Qt.UserRole)
+        amr_id = item.data(1, Qt.UserRole)
+
+        if start_time is None:
+            return
+
+        self.selected_start_time = start_time
+        self.selected_amr_id = amr_id
+        self.accept()
+
+    def _on_header_clicked(self, column: int):
+        if self._sort_column != column:
+            self._sort_column = column
+            self._sort_state = 1
+        else:
+            self._sort_state = (self._sort_state + 1) % 3
+
+        if self._sort_state == 0:
+            self._restore_original_order()
+        else:
+            ascending = self._sort_state == 1
+            self._sort_tree(column, ascending)
+
+    def _restore_original_order(self):
+        amr_items = []
+        while self.tree.topLevelItemCount():
+            amr_items.append(self.tree.takeTopLevelItem(0))
+
+        amr_items.sort(key=lambda item: item.data(0, Qt.UserRole + 10))
+
+        for amr_item in amr_items:
+            self._sort_children_by_original_order(amr_item)
+            self.tree.addTopLevelItem(amr_item)
+
+    def _sort_children_by_original_order(self, parent_item: QTreeWidgetItem):
+        children = []
+        while parent_item.childCount():
+            children.append(parent_item.takeChild(0))
+
+        children.sort(key=lambda item: item.data(0, Qt.UserRole + 10))
+
+        for child in children:
+            self._sort_children_by_original_order(child)
+            parent_item.addChild(child)
+
+    def _sort_tree(self, column: int, ascending: bool):
+        amr_items = []
+        while self.tree.topLevelItemCount():
+            amr_items.append(self.tree.takeTopLevelItem(0))
+
+        amr_items.sort(
+            key=lambda item: self._item_sort_key(item, column), reverse=not ascending
+        )
+
+        for amr_item in amr_items:
+            self._sort_children(amr_item, column, ascending)
+            self.tree.addTopLevelItem(amr_item)
+
+    def _sort_children(
+        self, parent_item: QTreeWidgetItem, column: int, ascending: bool
+    ):
+        children = []
+        while parent_item.childCount():
+            children.append(parent_item.takeChild(0))
+
+        children.sort(
+            key=lambda item: self._item_sort_key(item, column), reverse=not ascending
+        )
+
+        for child in children:
+            self._sort_children(child, column, ascending)
+            parent_item.addChild(child)
+
+    def _item_sort_key(self, item: QTreeWidgetItem, column: int):
+        item_type = item.data(0, Qt.UserRole + 20)
+
+        # Keep AMR rows grouped sensibly when sorting their children
+        if item_type == "amr":
+            return (
+                self._safe_text(item, 0).lower(),
+                item.data(0, Qt.UserRole + 10),
+            )
+
+        if column == 4:
+            return (
+                self._duration_seconds(self._safe_text(item, 4)),
+                self._safe_text(item, 0).lower(),
+                item.data(0, Qt.UserRole + 10),
+            )
+
+        if column == 5:
+            return (
+                self._datetime_key(self._safe_text(item, 5)),
+                self._safe_text(item, 0).lower(),
+                item.data(0, Qt.UserRole + 10),
+            )
+
+        return (
+            self._safe_text(item, column).lower(),
+            self._safe_text(item, 0).lower(),
+            item.data(0, Qt.UserRole + 10),
+        )
+
+    def _safe_text(self, item: QTreeWidgetItem, column: int) -> str:
+        text = item.text(column)
+        return text if text is not None else ""
+
+    def _duration_seconds(self, text: str) -> int:
+        parts = [p for p in text.strip().split(":") if p != ""]
+        try:
+            if len(parts) == 3:
+                h, m, s = [int(x) for x in parts]
+                return h * 3600 + m * 60 + s
+            if len(parts) == 2:
+                m, s = [int(x) for x in parts]
+                return m * 60 + s
+        except Exception:
+            pass
+        return -1
+
+    def _datetime_key(self, text: str):
+        try:
+            return datetime.strptime(text.strip(), "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return datetime.min
+
+
+class AmrTimelineWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.timeline_data = []
+        self.start_time: Optional[datetime] = None
+        self.end_time: Optional[datetime] = None
+        self.current_time: Optional[datetime] = None
+
+        self.row_height = 28
+        self.left_pad = 140
+        self.top_pad = 34
+        self.right_pad = 40
+        self.bottom_pad = 28
+
+        self.seconds_per_pixel = 4.0
+        self.min_lane_width = 1400
+        self._pressed = False
+
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._update_virtual_size()
+
+    def set_data(self, timeline_data, start_time, end_time, current_time):
+        self.timeline_data = timeline_data or []
+        self.start_time = start_time
+        self.end_time = end_time
+        self.current_time = current_time
+        self._update_virtual_size()
+        self.update()
+
+    def _timeline_seconds(self) -> float:
+        if not self.start_time or not self.end_time or self.end_time <= self.start_time:
+            return 0.0
+        return max(0.0, (self.end_time - self.start_time).total_seconds())
+
+    def _usable_width(self) -> float:
+        seconds = self._timeline_seconds()
+        if seconds <= 0:
+            return self.min_lane_width
+        return max(self.min_lane_width, seconds / self.seconds_per_pixel)
+
+    def _update_virtual_size(self):
+        lane_count = max(1, len(self.timeline_data))
+        width = int(self.left_pad + self._usable_width() + self.right_pad)
+        height = int(
+            self.top_pad + self.bottom_pad + (lane_count * self.row_height) + 20
+        )
+        self.setMinimumSize(width, height)
+        self.resize(width, height)
+
+    def _time_to_x(self, value: datetime) -> float:
+        if not self.start_time or not self.end_time or self.end_time <= self.start_time:
+            return float(self.left_pad)
+
+        total = (self.end_time - self.start_time).total_seconds()
+        elapsed = (value - self.start_time).total_seconds()
+        frac = max(0.0, min(1.0, elapsed / total))
+        return self.left_pad + (self._usable_width() * frac)
+
+    def _x_to_time(self, x: float) -> Optional[datetime]:
+        if not self.start_time or not self.end_time or self.end_time <= self.start_time:
+            return None
+
+        frac = (x - self.left_pad) / max(1.0, self._usable_width())
+        frac = max(0.0, min(1.0, frac))
+        span = self.end_time - self.start_time
+        return self.start_time + (span * frac)
+
+    def _format_datetime(self, value: Optional[datetime]) -> str:
+        if value is None:
+            return "-"
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#101010"))
+
+        painter.setFont(QFont("", 9))
+
+        if not self.timeline_data or not self.start_time or not self.end_time:
+            painter.setPen(QColor("#cfcfcf"))
+            painter.drawText(self.rect(), Qt.AlignCenter, "No timeline data")
+            return
+
+        axis_y = self.top_pad - 8
+
+        painter.setPen(QColor("#8a8a8a"))
+        painter.drawLine(
+            self.left_pad,
+            axis_y,
+            int(self.left_pad + self._usable_width()),
+            axis_y,
+        )
+
+        ticks = max(6, int(self._usable_width() // 180))
+        for i in range(ticks + 1):
+            frac = i / max(1, ticks)
+            x = self.left_pad + (self._usable_width() * frac)
+            tick_time = self.start_time + ((self.end_time - self.start_time) * frac)
+
+            painter.setPen(QColor("#2a2a2a"))
+            painter.drawLine(
+                int(x), axis_y - 4, int(x), self.height() - self.bottom_pad + 2
+            )
+
+            painter.setPen(QColor("#d7d7d7"))
+            painter.drawText(
+                int(x) - 65,
+                6,
+                130,
+                22,
+                Qt.AlignCenter,
+                self._format_datetime(tick_time),
+            )
+
+        for row, lane in enumerate(self.timeline_data):
+            y = self.top_pad + (row * self.row_height)
+
+            painter.setPen(QColor("#d7d7d7"))
+            painter.drawText(8, y + 17, lane["amr_id"])
+
+            painter.setPen(QColor("#2a2a2a"))
+            painter.drawLine(
+                self.left_pad,
+                y + 18,
+                int(self.left_pad + self._usable_width()),
+                y + 18,
+            )
+
+            for block in lane["blocks"]:
+                x1 = self._time_to_x(block["start"])
+                x2 = self._time_to_x(block["end"])
+                if x2 < x1 + 2:
+                    x2 = x1 + 2
+
+                rect = QRectF(x1, y + 6, x2 - x1, 12)
+                painter.fillRect(rect, QColor(block["color"]))
+                painter.setPen(QColor("#000000"))
+                painter.drawRect(rect)
+
+        if self.current_time is not None:
+            x = self._time_to_x(self.current_time)
+            painter.setPen(QPen(QColor("#ffffff"), 2))
+            painter.drawLine(
+                int(x), self.top_pad - 10, int(x), self.height() - self.bottom_pad + 4
+            )
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._pressed = True
+            self._emit_seek(event.position().x())
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._pressed:
+            self._emit_seek(event.position().x())
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._pressed = False
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _emit_seek(self, x: float):
+        new_time = self._x_to_time(x)
+        if new_time is None:
+            return
+        parent = self.parent()
+        while parent is not None and not hasattr(parent, "on_timeline_seek"):
+            parent = parent.parent()
+        if parent and hasattr(parent, "on_timeline_seek"):
+            parent.on_timeline_seek(new_time)
+
 
 class SimulationVisualizer(QMainWindow):
     def __init__(self):
@@ -749,6 +1289,7 @@ class SimulationVisualizer(QMainWindow):
         add_btn("Open DXF", self.open_dxf)
         add_btn("Reload Current Floor DXF", self.reload_current_floor_dxf)
         add_btn("Open Simulation CSV", self.open_csv)
+        add_btn("Jump to Task", self.open_task_jump_dialog)
         add_btn("Fit View", self.fit_view)
 
         side_layout.addWidget(QLabel("Floor"))
@@ -849,15 +1390,31 @@ class SimulationVisualizer(QMainWindow):
         layout.addWidget(side)
         layout.addWidget(self.view, 1)
 
+        self.timeline_widget = AmrTimelineWidget(self)
+
+        self.timeline_scroll = QScrollArea()
+        self.timeline_scroll.setWidgetResizable(False)
+        self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.timeline_scroll.setWidget(self.timeline_widget)
+
+        self.main_splitter = QSplitter(Qt.Vertical)
+        self.main_splitter.addWidget(self.view)
+        self.main_splitter.addWidget(self.timeline_scroll)
+        self.main_splitter.setStretchFactor(0, 5)
+        self.main_splitter.setStretchFactor(1, 1)
+        self.main_splitter.setSizes([760, 220])
+
+        layout.addWidget(side)
+        layout.addWidget(self.main_splitter, 1)
+
     def reload_current_floor_dxf(self):
         floor = self.current_floor()
         path = self.dxf_paths_by_floor.get(floor)
 
         if not path:
             QMessageBox.information(
-                self,
-                "No DXF",
-                f"No DXF is assigned to floor {floor}."
+                self, "No DXF", f"No DXF is assigned to floor {floor}."
             )
             return
 
@@ -886,7 +1443,7 @@ class SimulationVisualizer(QMainWindow):
             QMessageBox.critical(
                 self,
                 "DXF reload failed",
-                f"Failed to reload DXF for floor {floor}:\n{exc}"
+                f"Failed to reload DXF for floor {floor}:\n{exc}",
             )
 
     def set_status(self, text: str):
@@ -923,7 +1480,9 @@ class SimulationVisualizer(QMainWindow):
             self.refresh_static_scene()
             return
 
-        self.dxf_progress_dialog = QProgressDialog("Loading DXFs...", "Cancel", 0, len(floor_dxf_files), self)
+        self.dxf_progress_dialog = QProgressDialog(
+            "Loading DXFs...", "Cancel", 0, len(floor_dxf_files), self
+        )
         self.dxf_progress_dialog.setWindowTitle("Loading")
         self.dxf_progress_dialog.setWindowModality(Qt.WindowModal)
         self.dxf_progress_dialog.setMinimumDuration(0)
@@ -1108,6 +1667,7 @@ class SimulationVisualizer(QMainWindow):
     def refresh_all(self):
         self.refresh_static_scene()
         self.refresh_dynamic_scene()
+        self.refresh_timeline()
 
     def refresh_static_scene(self):
         self.clear_items(self.static_items)
@@ -1121,7 +1681,6 @@ class SimulationVisualizer(QMainWindow):
 
         self.draw_layout_qt(floor)
         self.view.viewport().update()
-
 
     def refresh_dynamic_scene(self):
         self.clear_items(self.dynamic_items)
@@ -1137,7 +1696,7 @@ class SimulationVisualizer(QMainWindow):
         self.graphics_scene.addItem(item)
         (self.dynamic_items if dynamic else self.static_items).append(item)
         return item
-    
+
     def get_text_pixel_size(self) -> int:
         scale = self.view.transform().m11()
 
@@ -1182,7 +1741,7 @@ class SimulationVisualizer(QMainWindow):
         self.graphics_scene.addItem(item)
         (self.dynamic_items if dynamic else self.static_items).append(item)
         return item
-     
+
     def draw_dxf_scene_qt(self):
         visible_rect = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
         visible_world = (
@@ -1204,9 +1763,17 @@ class SimulationVisualizer(QMainWindow):
             elif etype == "POLYLINE":
                 pts = [QPointF(*self.world_to_scene(x, y)) for x, y in entity["points"]]
                 for i in range(len(pts) - 1):
-                    self.draw_line_item(pts[i].x(), pts[i].y(), pts[i + 1].x(), pts[i + 1].y(), "#858585")
+                    self.draw_line_item(
+                        pts[i].x(),
+                        pts[i].y(),
+                        pts[i + 1].x(),
+                        pts[i + 1].y(),
+                        "#858585",
+                    )
                 if entity.get("closed") and len(pts) > 2:
-                    self.draw_line_item(pts[-1].x(), pts[-1].y(), pts[0].x(), pts[0].y(), "#858585")
+                    self.draw_line_item(
+                        pts[-1].x(), pts[-1].y(), pts[0].x(), pts[0].y(), "#858585"
+                    )
             elif etype == "CIRCLE":
                 cx, cy = self.world_to_scene(*entity["center"])
                 r = float(entity["radius"])
@@ -1286,12 +1853,14 @@ class SimulationVisualizer(QMainWindow):
                 item.setPen(QPen(Qt.NoPen))
                 color = "#ffe8a3"
             else:
-                poly = QPolygonF([
-                    QPointF(x, y - 0.6),
-                    QPointF(x + 0.6, y),
-                    QPointF(x, y + 0.6),
-                    QPointF(x - 0.6, y),
-                ])
+                poly = QPolygonF(
+                    [
+                        QPointF(x, y - 0.6),
+                        QPointF(x + 0.6, y),
+                        QPointF(x, y + 0.6),
+                        QPointF(x - 0.6, y),
+                    ]
+                )
                 item = QGraphicsPolygonItem(poly)
                 item.setBrush(QBrush(QColor("#ff7b72")))
                 item.setPen(QPen(Qt.NoPen))
@@ -1299,7 +1868,9 @@ class SimulationVisualizer(QMainWindow):
             self.graphics_scene.addItem(item)
             self.static_items.append(item)
             if self.show_labels_check.isChecked():
-                self.draw_text_item(x + 0.8, y - 0.8, name, color, ignore_transform=True)
+                self.draw_text_item(
+                    x + 0.8, y - 0.8, name, color, ignore_transform=True
+                )
 
     def _draw_amr_box_colored_qt(self, state: dict, fill="#4da3ff"):
         x = float(state["x"])
@@ -1309,10 +1880,15 @@ class SimulationVisualizer(QMainWindow):
 
         heading = 0.0
         if state.get("start_node") and state.get("end_node"):
-            if state["start_node"] in self.layout_model.points and state["end_node"] in self.layout_model.points:
+            if (
+                state["start_node"] in self.layout_model.points
+                and state["end_node"] in self.layout_model.points
+            ):
                 a = self.layout_model.points[state["start_node"]]
                 b = self.layout_model.points[state["end_node"]]
-                heading = math.atan2(float(b["y"]) - float(a["y"]), float(b["x"]) - float(a["x"]))
+                heading = math.atan2(
+                    float(b["y"]) - float(a["y"]), float(b["x"]) - float(a["x"])
+                )
 
         hl = length / 2.0
         hw = width / 2.0
@@ -1341,7 +1917,9 @@ class SimulationVisualizer(QMainWindow):
             self.event_box.clear()
             return
 
-        amr_states, recent_events = self.sim_log.state_at(self.current_time, self.layout_model)
+        amr_states, recent_events = self.sim_log.state_at(
+            self.current_time, self.layout_model
+        )
         followed_amr = self.follow_combo.currentText().strip()
 
         for amr_id, state in amr_states.items():
@@ -1350,11 +1928,15 @@ class SimulationVisualizer(QMainWindow):
             if state.get("x") is None or state.get("y") is None:
                 continue
 
-            is_followed = self.follow_enabled_check.isChecked() and followed_amr == amr_id
+            is_followed = (
+                self.follow_enabled_check.isChecked() and followed_amr == amr_id
+            )
             x, y = self.world_to_scene(state["x"], state["y"])
 
             if self.show_amr_box_check.isChecked():
-                self._draw_amr_box_colored_qt(state, fill="#ff9f1c" if is_followed else "#4da3ff")
+                self._draw_amr_box_colored_qt(
+                    state, fill="#ff9f1c" if is_followed else "#4da3ff"
+                )
             else:
                 r = 0.5
                 item = QGraphicsEllipseItem(x - r, y - r, r * 2, r * 2)
@@ -1365,11 +1947,25 @@ class SimulationVisualizer(QMainWindow):
 
             payload = state.get("payload") or ""
             label = amr_id if not payload else f"{amr_id} | {payload}"
-            self.draw_text_item(x, y - 1.2, label, "#cfe5ff", dynamic=True, ignore_transform=True)
+            self.draw_text_item(
+                x, y - 1.2, label, "#cfe5ff", dynamic=True, ignore_transform=True
+            )
 
-            action = state.get("event_type") or state.get("segment_type") or state.get("status") or ""
+            action = (
+                state.get("event_type")
+                or state.get("segment_type")
+                or state.get("status")
+                or ""
+            )
             if action:
-                self.draw_text_item(x + 1.0, y + 0.6, action, "#cfe5ff", dynamic=True, ignore_transform=True)
+                self.draw_text_item(
+                    x + 1.0,
+                    y + 0.6,
+                    action,
+                    "#cfe5ff",
+                    dynamic=True,
+                    ignore_transform=True,
+                )
 
         self.event_box.clear()
         for item in recent_events:
@@ -1388,13 +1984,28 @@ class SimulationVisualizer(QMainWindow):
         if not self.current_time:
             self.time_label.setText("No simulation loaded")
             return
-        fraction = self.sim_log.time_to_fraction(self.current_time) if self.sim_log.start_time else 0.0
+        fraction = (
+            self.sim_log.time_to_fraction(self.current_time)
+            if self.sim_log.start_time
+            else 0.0
+        )
         self.slider.blockSignals(True)
         self.slider.setValue(int(fraction * 1000))
         self.slider.blockSignals(False)
-        start = self.sim_log.start_time.strftime("%Y-%m-%d %H:%M:%S") if self.sim_log.start_time else "-"
-        end = self.sim_log.end_time.strftime("%Y-%m-%d %H:%M:%S") if self.sim_log.end_time else "-"
-        self.time_label.setText(f"Current: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}\nStart: {start}\nEnd: {end}")
+        start = (
+            self.sim_log.start_time.strftime("%Y-%m-%d %H:%M:%S")
+            if self.sim_log.start_time
+            else "-"
+        )
+        end = (
+            self.sim_log.end_time.strftime("%Y-%m-%d %H:%M:%S")
+            if self.sim_log.end_time
+            else "-"
+        )
+        self.time_label.setText(
+            f"Current: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}\nStart: {start}\nEnd: {end}"
+        )
+        self.refresh_timeline()
 
     def on_slider_change(self, value):
         if not self.sim_log.start_time:
@@ -1466,7 +2077,13 @@ class SimulationVisualizer(QMainWindow):
             self.view.viewport().update()
 
     def update_follow_amr_options(self):
-        amr_ids = sorted({(event.row.get("amr_id") or "").strip() for event in self.sim_log.events if (event.row.get("amr_id") or "").strip()})
+        amr_ids = sorted(
+            {
+                (event.row.get("amr_id") or "").strip()
+                for event in self.sim_log.events
+                if (event.row.get("amr_id") or "").strip()
+            }
+        )
         self.follow_combo.blockSignals(True)
         self.follow_combo.clear()
         self.follow_combo.addItems(amr_ids)
@@ -1530,7 +2147,9 @@ class SimulationVisualizer(QMainWindow):
         self.update_loaded_files()
 
     def open_json(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open Layout JSON", "", "JSON files (*.json)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Layout JSON", "", "JSON files (*.json)"
+        )
         if not path:
             return
 
@@ -1575,19 +2194,25 @@ class SimulationVisualizer(QMainWindow):
             QMessageBox.critical(self, "DXF load failed", str(exc))
 
     def open_csv(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open Simulation CSV", "", "CSV files (*.csv)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Simulation CSV", "", "CSV files (*.csv)"
+        )
         if not path:
             return
         self.sim_log.load(path)
         self.current_csv_path = path
         self.update_follow_amr_options()
         if not self.sim_log.events:
-            QMessageBox.critical(self, "No events", "No timestamped rows were found in the CSV.")
+            QMessageBox.critical(
+                self, "No events", "No timestamped rows were found in the CSV."
+            )
             return
         self.update_loaded_files()
         self._sync_timeline_from_layout_and_csv()
         self.refresh_all()
-        self.set_status(f"Loaded simulation CSV {Path(path).name} with {len(self.sim_log.events)} events")
+        self.set_status(
+            f"Loaded simulation CSV {Path(path).name} with {len(self.sim_log.events)} events"
+        )
 
     def _content_bounds(self):
         floor = self.current_floor()
@@ -1635,7 +2260,7 @@ class SimulationVisualizer(QMainWindow):
         self.graphics_scene.setSceneRect(content_rect.adjusted(-pad, -pad, pad, pad))
 
         self.refresh_all()
-        
+
     def _sync_timeline_from_layout_and_csv(self):
         layout_start = self.layout_model.task_start_time
         layout_end = self.layout_model.task_end_time
@@ -1648,7 +2273,9 @@ class SimulationVisualizer(QMainWindow):
             self.sim_log.start_time = csv_start
 
         candidates = [x for x in (layout_end, csv_end) if x is not None]
-        self.sim_log.end_time = max(candidates) if candidates else self.sim_log.start_time
+        self.sim_log.end_time = (
+            max(candidates) if candidates else self.sim_log.start_time
+        )
 
         self.current_time = self.sim_log.start_time
         self.update_time_display()
@@ -1661,7 +2288,9 @@ class SimulationVisualizer(QMainWindow):
         if not followed_amr or not self.current_time or not self.sim_log.events:
             return None
 
-        amr_states, _recent_events = self.sim_log.state_at(self.current_time, self.layout_model)
+        amr_states, _recent_events = self.sim_log.state_at(
+            self.current_time, self.layout_model
+        )
         state = amr_states.get(followed_amr)
         if not state:
             return None
@@ -1670,8 +2299,14 @@ class SimulationVisualizer(QMainWindow):
         payload = state.get("payload") or "-"
         start_pos = state.get("from_location") or state.get("start_node") or "-"
         end_pos = state.get("to_location") or state.get("end_node") or "-"
-        start_time = state["start_time"].strftime("%Y-%m-%d %H:%M:%S") if state.get("start_time") else "-"
-        duration = SimulationLog._format_runtime(float(state.get("task_runtime_sec", 0.0)))
+        start_time = (
+            state["start_time"].strftime("%Y-%m-%d %H:%M:%S")
+            if state.get("start_time")
+            else "-"
+        )
+        duration = SimulationLog._format_runtime(
+            float(state.get("task_runtime_sec", 0.0))
+        )
 
         return [
             f"Follow AMR: {followed_amr}",
@@ -1712,6 +2347,9 @@ class SimulationVisualizer(QMainWindow):
             "Yellow square = corridor node",
             "Red diamond = lift node",
             "Blue AMR = active AMR, orange = followed AMR",
+            "Timeline:",
+            "blue=move, orange=lift, ",
+            "green=charge, purple=pickup/dropoff",
             f"Floor: {self.current_floor()}",
         ]
         self._draw_overlay_box(
@@ -1763,6 +2401,317 @@ class SimulationVisualizer(QMainWindow):
         sx, sy = self.world_to_scene(state["x"], state["y"])
         self.view.centerOn(sx, sy)
         self.view.viewport().update()
+
+    def _format_duration_label(self, start_time: datetime, end_time: datetime) -> str:
+        seconds = max(0.0, (end_time - start_time).total_seconds())
+        total = int(seconds)
+        hours = total // 3600
+        minutes = (total % 3600) // 60
+        secs = total % 60
+        if hours > 0:
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
+
+    def _sum_task_segment_seconds(self, segments: List[dict]) -> float:
+        total = 0.0
+
+        for segment in segments:
+            label = (segment.get("label") or "").strip().lower()
+            event_type = (segment.get("event_type") or "").strip().lower()
+            segment_type = (segment.get("segment_type") or "").strip().lower()
+
+            # Ignore bookkeeping rows that should not inflate task duration.
+            if label in {"task assigned", "task complete", "task overrun"}:
+                continue
+            if event_type in {
+                "task_assigned",
+                "task assigned",
+                "task_complete",
+                "task complete",
+                "task_completed",
+                "task completed",
+                "task_overrun",
+                "task overrun",
+            }:
+                continue
+
+            start_dt = segment.get("start_time")
+            end_dt = segment.get("end_time")
+
+            if start_dt is None or end_dt is None:
+                continue
+
+            seconds = max(0.0, (end_dt - start_dt).total_seconds())
+            total += seconds
+
+        return total
+
+    def build_task_jump_index(self) -> Dict[str, List[dict]]:
+        grouped: Dict[str, List[dict]] = {}
+
+        # Track the currently open displayed task per AMR/task_id
+        open_tasks: Dict[tuple[str, str], dict] = {}
+
+        for event in self.sim_log.events:
+            row = event.row
+            amr_id = (row.get("amr_id") or "").strip()
+            task_id = (row.get("task_id") or "").strip()
+
+            if not amr_id or not task_id:
+                continue
+
+            start_dt = event.start_time
+            end_dt = (
+                event.end_time
+                if event.end_time >= event.start_time
+                else event.start_time
+            )
+
+            sim_dt_str = (row.get("sim_datetime") or "").strip()
+            sim_dt = (
+                self.sim_log._parse_datetime(sim_dt_str) if sim_dt_str else start_dt
+            )
+
+            origin = (
+                (row.get("from_location") or "").strip()
+                or (row.get("start_node") or "").strip()
+                or "-"
+            )
+            destination = (
+                (row.get("to_location") or "").strip()
+                or (row.get("end_node") or "").strip()
+                or "-"
+            )
+            payload = (row.get("payload") or "").strip() or "-"
+
+            event_type = (row.get("event_type") or "").strip()
+            segment_type = (row.get("segment_type") or "").strip()
+            status = (row.get("status") or "").strip()
+
+            event_type_lower = event_type.lower()
+            label_source = event_type or segment_type or status or "Segment"
+            segment_label = label_source.replace("_", " ").title()
+
+            amr_tasks = grouped.setdefault(amr_id, [])
+            key = (amr_id, task_id)
+
+            current_bucket = open_tasks.get(key)
+
+            # Start a new displayed task only if none is currently open
+            if current_bucket is None:
+                current_bucket = {
+                    "task_id": task_id,
+                    "payload": payload,
+                    "origin": origin,
+                    "destination": destination,
+                    "start_time": start_dt,
+                    "end_time": end_dt,
+                    "sim_datetime": sim_dt,
+                    "segments": [],
+                }
+                amr_tasks.append(current_bucket)
+                open_tasks[key] = current_bucket
+            else:
+                if start_dt < current_bucket["start_time"]:
+                    current_bucket["start_time"] = start_dt
+                    current_bucket["origin"] = origin
+                if end_dt > current_bucket["end_time"]:
+                    current_bucket["end_time"] = end_dt
+                    current_bucket["destination"] = destination
+                if sim_dt < current_bucket.get("sim_datetime", sim_dt):
+                    current_bucket["sim_datetime"] = sim_dt
+                if current_bucket["payload"] == "-" and payload != "-":
+                    current_bucket["payload"] = payload
+
+            current_bucket["segments"].append(
+                {
+                    "label": segment_label,
+                    "origin": origin,
+                    "destination": destination,
+                    "start_time": start_dt,
+                    "end_time": end_dt,
+                    "duration": self._format_duration_label(start_dt, end_dt),
+                    "event_type": event_type,
+                    "segment_type": segment_type,
+                    "sim_datetime": sim_dt,
+                }
+            )
+
+            # Close the displayed task only on completion
+            if event_type_lower in {
+                "task_complete",
+                "task complete",
+                "task_completed",
+                "task completed",
+            }:
+                open_tasks.pop(key, None)
+
+        result: Dict[str, List[dict]] = {}
+
+        for amr_id in sorted(grouped.keys()):
+            task_list = grouped[amr_id]
+
+            for task in task_list:
+                task["segments"].sort(
+                    key=lambda item: (
+                        item.get("sim_datetime") or item["start_time"],
+                        item["start_time"],
+                        item["end_time"],
+                        item.get("event_type", ""),
+                        item.get("segment_type", ""),
+                        item["label"],
+                    )
+                )
+                total_seconds = self._sum_task_segment_seconds(task["segments"])
+                task["duration"] = SimulationLog._format_runtime(total_seconds)
+
+            task_list.sort(
+                key=lambda item: (
+                    item.get("sim_datetime") or item["start_time"],
+                    item["start_time"],
+                    item["task_id"],
+                )
+            )
+            result[amr_id] = task_list
+
+        return result
+
+    def open_task_jump_dialog(self):
+        if not self.sim_log.events:
+            QMessageBox.information(
+                self,
+                "No simulation loaded",
+                "Load a simulation CSV first.",
+            )
+            return
+
+        grouped_tasks = self.build_task_jump_index()
+        if not grouped_tasks:
+            QMessageBox.information(
+                self,
+                "No tasks found",
+                "No task rows with AMR IDs were found in the simulation log.",
+            )
+            return
+
+        dialog = TaskJumpDialog(self, grouped_tasks)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        if dialog.selected_start_time is None:
+            return
+
+        self.current_time = dialog.selected_start_time
+        if dialog.selected_amr_id:
+            index = self.follow_combo.findText(dialog.selected_amr_id)
+            if index >= 0:
+                self.follow_combo.setCurrentIndex(index)
+            self.follow_enabled_check.setChecked(True)
+
+        self.update_time_display()
+        self.refresh_dynamic_scene()
+        self.set_status(
+            f"Jumped to task start {dialog.selected_start_time.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        self.view.viewport().update()
+
+    def build_amr_timeline_data(self) -> List[dict]:
+        lanes: Dict[str, List[dict]] = {}
+
+        for event in self.sim_log.events:
+            row = event.row
+            amr_id = (row.get("amr_id") or "").strip()
+            if not amr_id:
+                continue
+
+            start_dt = event.start_time
+            end_dt = (
+                event.end_time
+                if event.end_time >= event.start_time
+                else event.start_time
+            )
+
+            segment_type = (row.get("segment_type") or "").strip().lower()
+            event_type = (row.get("event_type") or "").strip().lower()
+            lift_id = (row.get("lift_id") or "").strip()
+
+            block_type = "other"
+            color = "#6f6f6f"
+
+            if "charge" in segment_type or "charge" in event_type:
+                block_type = "charging"
+                color = "#2ecc71"
+            elif lift_id or "lift" in segment_type or "lift" in event_type:
+                block_type = "lift"
+                color = "#f39c12"
+            elif any(
+                word in segment_type for word in ["corridor", "move", "travel"]
+            ) or any(word in event_type for word in ["move", "travel"]):
+                block_type = "movement"
+                color = "#3498db"
+            elif "pickup" in segment_type or "dropoff" in segment_type:
+                block_type = "handling"
+                color = "#9b59b6"
+
+            lanes.setdefault(amr_id, []).append(
+                {
+                    "start": start_dt,
+                    "end": end_dt,
+                    "type": block_type,
+                    "color": color,
+                }
+            )
+
+        result = []
+        for amr_id in sorted(lanes.keys()):
+            blocks = sorted(lanes[amr_id], key=lambda b: (b["start"], b["end"]))
+            merged = []
+
+            for block in blocks:
+                if not merged:
+                    merged.append(block.copy())
+                    continue
+
+                prev = merged[-1]
+                same_type = (
+                    prev["type"] == block["type"] and prev["color"] == block["color"]
+                )
+                touching = block["start"] <= prev["end"]
+
+                if same_type and touching:
+                    if block["end"] > prev["end"]:
+                        prev["end"] = block["end"]
+                else:
+                    merged.append(block.copy())
+
+            result.append(
+                {
+                    "amr_id": amr_id,
+                    "blocks": merged,
+                }
+            )
+
+        return result
+
+    def refresh_timeline(self):
+        if not hasattr(self, "timeline_widget"):
+            return
+
+        timeline_data = self.build_amr_timeline_data() if self.sim_log.events else []
+        self.timeline_widget.set_data(
+            timeline_data,
+            self.sim_log.start_time,
+            self.sim_log.end_time,
+            self.current_time,
+        )
+
+    def on_timeline_seek(self, new_time: datetime):
+        self.current_time = new_time
+        self.update_time_display()
+        self.refresh_dynamic_scene()
+        self.refresh_timeline()
+        self.view.viewport().update()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

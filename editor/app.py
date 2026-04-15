@@ -5,7 +5,7 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from dxf_scene import DXFScene
 from dialogs import LiftEditorDialog, PointEditorDialog, TableListEditor
-from advanced_dialogs import RouteProfilesEditorV2, TaskEditorWindow
+from advanced_dialogs import RouteProfilesEditorV2, TaskEditorWindow, TaskPlannerDialog
 from models import JsonStore
 
 
@@ -139,9 +139,9 @@ class AMRGraphEditor(tk.Tk):
             row=row, column=0, sticky="ew"
         )
         row += 1
-        ttk.Button(self.sidebar, text="Clear Floor DXF", command=self.clear_floor_dxf).grid(
-            row=row, column=0, sticky="ew", pady=4
-        )
+        ttk.Button(
+            self.sidebar, text="Clear Floor DXF", command=self.clear_floor_dxf
+        ).grid(row=row, column=0, sticky="ew", pady=4)
         row += 1
         ttk.Button(self.sidebar, text="Fit View", command=self.fit_view).grid(
             row=row, column=0, sticky="ew", pady=4
@@ -166,6 +166,10 @@ class AMRGraphEditor(tk.Tk):
         ttk.Button(self.sidebar, text="Tasks", command=self.manage_tasks).grid(
             row=row, column=0, sticky="ew"
         )
+        row += 1
+        ttk.Button(
+            self.sidebar, text="Task Planner", command=self.manage_task_planner
+        ).grid(row=row, column=0, sticky="ew", pady=4)
         row += 1
         ttk.Button(
             self.sidebar, text="Route Profiles", command=self.manage_route_profiles
@@ -226,7 +230,7 @@ class AMRGraphEditor(tk.Tk):
         self.store.data["floor_dxf_files"] = [
             entry
             for entry in self.floor_dxf_entries()
-            if int(entry.get("floor", -10**9)) != int(floor)
+            if int(entry.get("floor", -(10**9))) != int(floor)
         ]
 
     def ensure_floor_dxf_loaded(self, floor, fit=False):
@@ -783,6 +787,27 @@ class AMRGraphEditor(tk.Tk):
         self.store.data["tasks"] = items
         self.set_status("Tasks updated")
 
+    def manage_task_planner(self):
+        locations = self.store.data.get("locations", [])
+        location_names = sorted(x["name"] for x in locations)
+        payload_names = sorted(x["name"] for x in self.store.data.get("payloads", []))
+        profile_names = [""] + sorted(self.store.data.get("route_profiles", {}).keys())
+
+        floor_map = self.build_floor_map(self.store.data)
+        for item in locations:
+            floor_map[item["name"]] = int(item["floor"])
+
+        TaskPlannerDialog(
+            self,
+            self.store.data.get("tasks", []),
+            location_names,
+            payload_names,
+            profile_names,
+            self.store.suggest_next_task_id,
+            self._save_tasks,
+            floor_map=floor_map,
+        )
+
     def manage_route_profiles(self):
         point_names = set(self.store.names_in_use()) | {
             x["name"] for x in self.store.data.get("locations", [])
@@ -797,7 +822,7 @@ class AMRGraphEditor(tk.Tk):
             lift_ids,
             self.store.data.get("corridors", {}).get("edges", []),
             self._save_route_profiles,
-            floor_map=floor_map
+            floor_map=floor_map,
         )
 
     def _save_route_profiles(self, profiles):

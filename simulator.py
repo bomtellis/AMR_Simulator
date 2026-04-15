@@ -172,6 +172,15 @@ class Simulation:
         for task in initial_tasks:
             self.schedule_task_release(task)
 
+        self.amr_centre_name = config["building"].get("amr_centre", "AMR_CENTRE")
+        self.idle_return_window_sec = float(
+            config["building"].get("idle_return_window_sec", 300.0)
+        )
+        self.enable_idle_return = bool(
+            config["building"].get("enable_idle_return", True)
+        )
+        self.synthetic_task_counter = 0
+
     def _empty_route_rules(self) -> dict:
         return {
             "allowed_lifts": set(),
@@ -812,6 +821,9 @@ class Simulation:
 
     def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False):
         try:
+            if getattr(task, "is_idle_return", False):
+                if getattr(task, "amr_id", "") != amr.id:
+                    return None
             if task.pickup not in self.locations or task.dropoff not in self.locations:
                 return None
             if task.payload not in self.payloads:
@@ -853,6 +865,7 @@ class Simulation:
                 amr, payload, to_pickup_sec, loaded_sec, t
             )
             t = charge_ready_time
+            task_start_time = t
 
             total = sum(seg["duration"] for seg in charge_segments)
             segments = list(charge_segments)
@@ -1038,6 +1051,7 @@ class Simulation:
                 battery_soc_after = projected_battery_soc_after
 
             return {
+                "task_start_time": task_start_time,
                 "finish_time": t,
                 "duration": total,
                 "segments": segments,
@@ -1056,6 +1070,8 @@ class Simulation:
         best_finish = math.inf
 
         for _, _, _, task in self.pending_tasks:
+            if task.release_time > self.current_time:
+                continue
             for amr in self.amrs:
                 if getattr(amr, "is_charging", False):
                     continue
@@ -1089,6 +1105,7 @@ class Simulation:
 
     def _try_assign_tasks(self, now: float):
         self.current_time = max(self.current_time, now)
+        self._queue_idle_return_tasks(self.current_time)
 
         while self.pending_tasks:
             # First, send any idle AMRs that need recharge to charge immediately
@@ -1105,6 +1122,9 @@ class Simulation:
             if charge_scheduled:
                 # Re-evaluate after charge events have been queued
                 continue
+
+            # Return trip to home location
+            self._queue_idle_return_tasks(self.current_time)
 
             choice = self._select_best_assignment()
             if choice is None:
@@ -1125,10 +1145,11 @@ class Simulation:
                 continue
 
             self._remove_pending_task(task)
-            start_time = max(self.current_time, amr.available_time, task.release_time)
+            start_time = committed["task_start_time"]
+            finish_time = committed["finish_time"]
             previous_location = amr.location_name
             amr.total_busy_time += committed["duration"]
-            amr.available_time = committed["finish_time"]
+            amr.available_time = finish_time
             amr.location_name = committed["end_location"]
             amr.completed_tasks += 1
 
@@ -1144,6 +1165,8 @@ class Simulation:
                 task_duration_sec=committed["duration"],
                 amr_location_before=previous_location,
                 amr_location_after=committed["end_location"],
+                start_time=start_time,
+                end_time=start_time + 1.0,
                 status="start",
             )
 
@@ -1231,13 +1254,13 @@ class Simulation:
                 segment_start_time = segment_end_time
 
             self.push_event(
-                committed["finish_time"],
+                finish_time,
                 "task_complete",
                 {
                     "task": task,
                     "amr_id": amr.id,
                     "start_time": start_time,
-                    "finish_time": committed["finish_time"],
+                    "finish_time": finish_time,
                     "duration": committed["duration"],
                     "target_time": task.target_time,
                     "segments": committed["segments"],
@@ -1280,6 +1303,8 @@ class Simulation:
                 duration_sec=0.0,
                 wait_time_sec=0.0,
                 distance_m=0.0,
+                start_time=event.payload["finish_time"],
+                end_time=event.payload["finish_time"],
                 status="finish",
             )
 
@@ -1594,6 +1619,90 @@ class Simulation:
     def print_completed_tasks(self):
         print("\n=== Completed Tasks ===")
         print(json.dumps(self.completed_task_records, indent=2))
+
+    def _next_pending_task_release_for_amr(self, amr: AMR) -> Optional[float]:
+        feasible_release_times = []
+
+        for _, _, _, task in self.pending_tasks:
+            if task.pickup not in self.locations or task.dropoff not in self.locations:
+                continue
+            if task.payload not in self.payloads:
+                continue
+
+            payload = self.payloads[task.payload]
+            if not amr.can_carry(payload):
+                continue
+
+            feasible_release_times.append(task.release_time)
+
+        if not feasible_release_times:
+            return None
+
+        return min(feasible_release_times)
+
+    def _amr_has_return_task_pending(self, amr: AMR) -> bool:
+        for _, _, _, task in self.pending_tasks:
+            if (
+                getattr(task, "is_idle_return", False)
+                and getattr(task, "amr_id", "") == amr.id
+            ):
+                return True
+        return False
+
+    def _create_idle_return_task(self, amr: AMR, now: float) -> Optional[Task]:
+        if amr.location_name == self.amr_centre_name:
+            return None
+
+        if self.amr_centre_name not in self.locations:
+            return None
+
+        self.synthetic_task_counter += 1
+
+        task = Task(
+            id=f"RETURN-{amr.id}-{self.synthetic_task_counter}",
+            pickup=amr.location_name,
+            dropoff=self.amr_centre_name,
+            payload=next(iter(self.payloads.keys())),  # dummy payload name
+            release_time=now,
+            priority=999999,
+            target_time=0.0,
+            labels=[],
+            route_profile=None,
+        )
+        task.created_during_runtime = True
+        task.is_idle_return = True
+        task.amr_id = amr.id
+        return task
+
+    def _queue_idle_return_tasks(self, now: float):
+        if not self.enable_idle_return:
+            return
+
+        for amr in self.amrs:
+            if getattr(amr, "is_charging", False):
+                continue
+            if amr.available_time > now:
+                continue
+            if self._needs_post_task_recharge(amr):
+                continue
+            if self._amr_has_return_task_pending(amr):
+                continue
+
+            next_release = self._next_pending_task_release_for_amr(amr)
+
+            should_return = False
+
+            if next_release is None:
+                should_return = True
+            elif next_release - now > self.idle_return_window_sec:
+                should_return = True
+
+            if not should_return:
+                continue
+
+            return_task = self._create_idle_return_task(amr, now)
+            if return_task is not None:
+                self._queue_pending_task(return_task)
 
 
 class RuntimeInputThread(threading.Thread):

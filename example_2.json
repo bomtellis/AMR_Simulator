@@ -6,7 +6,10 @@
   "building": {
     "load_unload_time_sec": 20.0,
     "floor_height_m": 4.0,
-    "charge_location": "AMR-CENTRE"
+    "charge_location": "AMR-CENTRE",
+    "amr_centre": "AMR-CENTRE",
+    "idle_return_window_sec": 300.0,
+    "enable_idle_return": true
   },
   "locations": [
     {
@@ -1934,6 +1937,19 @@
       "recharge_threshold_percent": 20.0,
       "battery_soc_percent": 100,
       "start_location": "AMR-CENTRE"
+    },
+    {
+      "id": "AMR-B",
+      "quantity": 2,
+      "payload_capacity_kg": 500,
+      "payload_size_capacity": 1.5,
+      "speed_m_per_sec": 1.2,
+      "motor_power_w": 1500,
+      "battery_capacity_kwh": 10,
+      "battery_charge_rate_kw": 1.8,
+      "recharge_threshold_percent": 20,
+      "battery_soc_percent": 100,
+      "start_location": "AMR-CENTRE"
     }
   ],
   "lifts": [
@@ -3345,30 +3361,5 @@
       ]
     }
   },
-  "floor_dxf_files": [
-    {
-      "floor": 0,
-      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-00-DG-AR-300001.dxf"
-    },
-    {
-      "floor": 1,
-      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-01-DG-AR-300002.dxf"
-    },
-    {
-      "floor": 2,
-      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-02-DG-AR-300003.dxf"
-    },
-    {
-      "floor": 3,
-      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-03-DG-AR-300004.dxf"
-    },
-    {
-      "floor": 4,
-      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-04-DG-AR-300005.dxf"
-    },
-    {
-      "floor": 5,
-      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-05-DG-AR-300006.dxf"
-    }
-  ]
+  "floor_dxf_files": []
 }
