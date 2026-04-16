@@ -299,7 +299,7 @@ class DXFScene:
             if etype == "LINE":
                 x1, y1 = world_to_canvas(*entity["start"])
                 x2, y2 = world_to_canvas(*entity["end"])
-                canvas.create_line(x1, y1, x2, y2, fill="#2e2e2e")
+                canvas.create_line(x1, y1, x2, y2, fill="#7a7a7a")
             elif etype == "POLYLINE":
                 pts = []
                 for x, y in entity["points"]:
@@ -328,7 +328,7 @@ class DXFScene:
                     cx + r,
                     cy + r,
                     start=-entity["end_angle"],
-                    extent=entity["end_angle"] - entity["start_angle"],
+                    extent=abs(entity["end_angle"] - entity["start_angle"]),
                     style="arc",
                     outline="#cdcdcd",
                 )

@@ -281,6 +281,54 @@
       "floor": 0,
       "x": 189.596,
       "y": -78.431
+    },
+    {
+      "name": "BIRTHING-SUITE-DELIVERYAREA",
+      "floor": 1,
+      "x": 65,
+      "y": -7
+    },
+    {
+      "name": "NEONATAL-DELIVERYAREA",
+      "floor": 1,
+      "x": 65,
+      "y": -46
+    },
+    {
+      "name": "ANTE-DELIVERYAREA",
+      "floor": 1,
+      "x": 85.349,
+      "y": -82.67
+    },
+    {
+      "name": "ENDOSCOPY-DELIVERYAREA",
+      "floor": 1,
+      "x": 156.117,
+      "y": -141.729
+    },
+    {
+      "name": "OPD4-DELIVERYAREA",
+      "floor": 1,
+      "x": 170.706,
+      "y": -154.239
+    },
+    {
+      "name": "OPD3-DELIVERYAREA",
+      "floor": 1,
+      "x": 142.644,
+      "y": -154.279
+    },
+    {
+      "name": "ICU-DELIVERYHUB",
+      "floor": 1,
+      "x": 138.931,
+      "y": -78.676
+    },
+    {
+      "name": "KITCHEN-DH2",
+      "floor": 2,
+      "x": 138.206,
+      "y": -96.463
     }
   ],
   "corridors": {
@@ -660,20 +708,14 @@
       {
         "name": "C1-14",
         "floor": 1,
-        "x": 77.167,
-        "y": -30.539
+        "x": 77.412,
+        "y": -30.679
       },
       {
         "name": "C1-15",
         "floor": 1,
         "x": 77.438,
         "y": -10.134
-      },
-      {
-        "name": "C1-16",
-        "floor": 1,
-        "x": 77.581,
-        "y": -6.771
       },
       {
         "name": "C1-11",
@@ -1010,6 +1052,48 @@
         "floor": 0,
         "x": 189.8,
         "y": -75.4
+      },
+      {
+        "name": "C1-35",
+        "floor": 1,
+        "x": 78,
+        "y": -7
+      },
+      {
+        "name": "C1-36",
+        "floor": 1,
+        "x": 69,
+        "y": -7
+      },
+      {
+        "name": "C1-37",
+        "floor": 1,
+        "x": 77.366,
+        "y": -46.134
+      },
+      {
+        "name": "C1-38",
+        "floor": 1,
+        "x": 69,
+        "y": -46
+      },
+      {
+        "name": "C1-39",
+        "floor": 1,
+        "x": 85.39,
+        "y": -85.318
+      },
+      {
+        "name": "C1-40",
+        "floor": 1,
+        "x": 170.626,
+        "y": -149.962
+      },
+      {
+        "name": "C2-21",
+        "floor": 2,
+        "x": 138.377,
+        "y": -93.614
       }
     ],
     "edges": [
@@ -1298,10 +1382,6 @@
         "to": "NEONATAL-DH"
       },
       {
-        "from": "C1-13",
-        "to": "C1-14"
-      },
-      {
         "from": "C1-14",
         "to": "C1-15"
       },
@@ -1332,10 +1412,6 @@
       {
         "from": "C1-20",
         "to": "THEATRES3-DH"
-      },
-      {
-        "from": "C1-10",
-        "to": "C1-17"
       },
       {
         "from": "Lift-1-F1",
@@ -1406,10 +1482,6 @@
         "to": "OPD3-DH"
       },
       {
-        "from": "C1-30",
-        "to": "C1-32"
-      },
-      {
         "from": "C1-32",
         "to": "OPD4-DH"
       },
@@ -1468,10 +1540,6 @@
       {
         "from": "C2-7",
         "to": "C2-8"
-      },
-      {
-        "from": "C2-8",
-        "to": "C2-9"
       },
       {
         "from": "C2-9",
@@ -1888,6 +1956,158 @@
       {
         "from": "PHARMACY-GOODS-IN",
         "to": "C0-43"
+      },
+      {
+        "from": "C1-15",
+        "to": "C1-35"
+      },
+      {
+        "from": "C1-35",
+        "to": "C1-15"
+      },
+      {
+        "from": "C1-35",
+        "to": "C1-36"
+      },
+      {
+        "from": "C1-36",
+        "to": "C1-35"
+      },
+      {
+        "from": "C1-36",
+        "to": "BIRTHING-SUITE-DELIVERYAREA"
+      },
+      {
+        "from": "BIRTHING-SUITE-DELIVERYAREA",
+        "to": "C1-36"
+      },
+      {
+        "from": "NEONATAL-DELIVERYAREA",
+        "to": "C1-38"
+      },
+      {
+        "from": "C1-38",
+        "to": "NEONATAL-DELIVERYAREA"
+      },
+      {
+        "from": "C1-38",
+        "to": "C1-37"
+      },
+      {
+        "from": "C1-37",
+        "to": "C1-38"
+      },
+      {
+        "from": "C1-14",
+        "to": "C1-37"
+      },
+      {
+        "from": "C1-37",
+        "to": "C1-14"
+      },
+      {
+        "from": "C1-37",
+        "to": "C1-13"
+      },
+      {
+        "from": "C1-13",
+        "to": "C1-37"
+      },
+      {
+        "from": "C1-17",
+        "to": "C1-39"
+      },
+      {
+        "from": "C1-39",
+        "to": "C1-17"
+      },
+      {
+        "from": "C1-39",
+        "to": "ANTE-DELIVERYAREA"
+      },
+      {
+        "from": "ANTE-DELIVERYAREA",
+        "to": "C1-39"
+      },
+      {
+        "from": "C1-39",
+        "to": "C1-10"
+      },
+      {
+        "from": "C1-10",
+        "to": "C1-39"
+      },
+      {
+        "from": "C1-33",
+        "to": "ENDOSCOPY-DELIVERYAREA"
+      },
+      {
+        "from": "ENDOSCOPY-DELIVERYAREA",
+        "to": "C1-33"
+      },
+      {
+        "from": "C1-40",
+        "to": "OPD4-DELIVERYAREA"
+      },
+      {
+        "from": "OPD4-DELIVERYAREA",
+        "to": "C1-40"
+      },
+      {
+        "from": "C1-30",
+        "to": "C1-40"
+      },
+      {
+        "from": "C1-40",
+        "to": "C1-30"
+      },
+      {
+        "from": "C1-40",
+        "to": "C1-32"
+      },
+      {
+        "from": "C1-32",
+        "to": "C1-40"
+      },
+      {
+        "from": "C1-30",
+        "to": "OPD3-DELIVERYAREA"
+      },
+      {
+        "from": "OPD3-DELIVERYAREA",
+        "to": "C1-30"
+      },
+      {
+        "from": "ICU-DELIVERYHUB",
+        "to": "C1-4"
+      },
+      {
+        "from": "C1-4",
+        "to": "ICU-DELIVERYHUB"
+      },
+      {
+        "from": "C2-8",
+        "to": "C2-21"
+      },
+      {
+        "from": "C2-21",
+        "to": "C2-8"
+      },
+      {
+        "from": "C2-21",
+        "to": "C2-9"
+      },
+      {
+        "from": "C2-9",
+        "to": "C2-21"
+      },
+      {
+        "from": "C2-21",
+        "to": "KITCHEN-DH2"
+      },
+      {
+        "from": "KITCHEN-DH2",
+        "to": "C2-21"
       }
     ],
     "auto_connect": false
@@ -2316,7 +2536,7 @@
     {
       "id": "T5",
       "pickup": "KITCHEN",
-      "dropoff": "ADULTIP1-DELIVERYHUB",
+      "dropoff": "MATERNITY-DELIVERYHUB",
       "payload": "food_trolley",
       "release_datetime": "2026-01-01T08:00:00",
       "target_time": 600,
@@ -2342,7 +2562,7 @@
     {
       "id": "T7",
       "pickup": "KITCHEN",
-      "dropoff": "ADULTIP6-DELIVERYHUB",
+      "dropoff": "ADULTIP7-DELIVERYHUB",
       "payload": "food_trolley",
       "release_datetime": "2026-01-01T08:00:00",
       "target_time": 600,
@@ -2354,146 +2574,16 @@
     },
     {
       "id": "T8",
-      "pickup": "AMU-DH",
-      "dropoff": "UEC-DH",
-      "payload": "empty_bin",
+      "pickup": "KITCHEN",
+      "dropoff": "ADULTIP5-DELIVERYHUB",
+      "payload": "food_trolley",
       "release_datetime": "2026-01-01T08:00:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T9",
-      "pickup": "AMU-DH",
-      "dropoff": "UEC-DH",
-      "payload": "empty_bin",
-      "release_datetime": "2026-01-01T08:00:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T10",
-      "pickup": "AMU-DH",
-      "dropoff": "UEC-DH",
-      "payload": "empty_bin",
-      "release_datetime": "2026-01-01T08:00:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T11",
-      "pickup": "RD",
-      "dropoff": "ANTE-DH",
-      "payload": "goods_cage",
-      "release_datetime": "2026-01-01T08:00:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T12",
-      "pickup": "RD",
-      "dropoff": "BIRTHING-SUITE-DH",
-      "payload": "goods_cage",
-      "release_datetime": "2026-01-01T08:00:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T13",
-      "pickup": "RD",
-      "dropoff": "ENDOSCOPY-DH",
-      "payload": "goods_cage",
-      "release_datetime": "2026-01-01T08:00:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T14",
-      "pickup": "RD",
-      "dropoff": "ICU-DH",
-      "payload": "goods_cage",
-      "release_datetime": "2026-01-01T08:00:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T15",
-      "pickup": "ANTE-DH",
-      "dropoff": "RD",
-      "payload": "goods_cage",
-      "release_datetime": "2026-01-01T08:30:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T16",
-      "pickup": "BIRTHING-SUITE-DH",
-      "dropoff": "RD",
-      "payload": "goods_cage",
-      "release_datetime": "2026-01-01T08:30:00",
-      "target_time": 300,
-      "priority": 10,
-      "labels": [
-        ""
-      ],
-      "route_profile": ""
-    },
-    {
-      "id": "T17",
-      "pickup": "ENDOSCOPY-DH",
-      "dropoff": "RD",
-      "payload": "drugs_box",
-      "release_datetime": "2026-01-01T08:30:00",
       "target_time": 600,
       "priority": 10,
       "labels": [
         ""
       ],
       "route_profile": ""
-    },
-    {
-      "id": "T18",
-      "pickup": "RD",
-      "dropoff": "PHARMACY-GOODS-IN",
-      "payload": "drugs_box",
-      "release_datetime": "2026-01-01T09:00:00",
-      "target_time": 300,
-      "priority": 5,
-      "labels": [
-        ""
-      ],
-      "route_profile": "pharmacy_in"
     }
   ],
   "route_profiles": {
@@ -2566,7 +2656,6 @@
         "C1-13",
         "C1-14",
         "C1-15",
-        "C1-16",
         "C1-17",
         "C1-18",
         "C1-19",
@@ -3361,5 +3450,18 @@
       ]
     }
   },
-  "floor_dxf_files": []
+  "floor_dxf_files": [
+    {
+      "floor": 1,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-01-DG-AR-300002.dxf"
+    },
+    {
+      "floor": 2,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-02-DG-AR-300003.dxf"
+    },
+    {
+      "floor": 3,
+      "filepath": "C:/Users/tombe/Downloads/DXF/DXF/LHC-RYD-MB-03-DG-AR-300004.dxf"
+    }
+  ]
 }
