@@ -62,8 +62,106 @@ class PointEditorDialog(QDialog):
             QMessageBox.critical(self, "Invalid value", str(exc))
 
 
+class EdgeConnectionsDialog(QDialog):
+    columns = [
+        ("from", "From", 180),
+        ("from_floor", "From floor", 90),
+        ("to", "To", 180),
+        ("to_floor", "To floor", 90),
+        ("cross_floor", "Cross-floor", 90),
+    ]
+
+    def __init__(self, parent, point_name, edges, on_delete):
+        super().__init__(parent)
+        self.setWindowTitle(f"Edge Connections - {point_name}")
+        self.resize(760, 420)
+        self.point_name = point_name
+        self.edges = list(edges)
+        self.on_delete = on_delete
+
+        layout = QVBoxLayout(self)
+        self.summary_label = QLabel()
+        layout.addWidget(self.summary_label)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for idx, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(idx, width)
+        layout.addWidget(self.table, 1)
+
+        button_row = QHBoxLayout()
+        layout.addLayout(button_row)
+        self.delete_btn = QPushButton("Delete selected")
+        close_btn = QPushButton("Close")
+        button_row.addWidget(self.delete_btn)
+        button_row.addStretch(1)
+        button_row.addWidget(close_btn)
+
+        self.delete_btn.clicked.connect(self.delete_selected)
+        close_btn.clicked.connect(self.accept)
+
+        self._refresh_table()
+
+    def _refresh_table(self):
+        self.table.setRowCount(0)
+        for edge in self.edges:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            values = [
+                edge.get("from", ""),
+                edge.get("from_floor", ""),
+                edge.get("to", ""),
+                edge.get("to_floor", ""),
+                "Yes" if edge.get("cross_floor") else "No",
+            ]
+            for col, value in enumerate(values):
+                self.table.setItem(row, col, QTableWidgetItem(str(value)))
+        count = len(self.edges)
+        if count == 0:
+            self.summary_label.setText(f"No edge connections for {self.point_name}")
+            self.delete_btn.setEnabled(False)
+        else:
+            cross_count = sum(1 for edge in self.edges if edge.get("cross_floor"))
+            self.summary_label.setText(
+                f"{count} connection(s) for {self.point_name} ({cross_count} cross-floor)"
+            )
+            self.delete_btn.setEnabled(True)
+
+    def delete_selected(self):
+        rows = sorted(
+            {index.row() for index in self.table.selectionModel().selectedRows()}
+        )
+        if not rows:
+            QMessageBox.information(
+                self, "Delete edges", "Select one or more edge connections first."
+            )
+            return
+        selected_edges = [self.edges[row] for row in rows]
+        if (
+            QMessageBox.question(
+                self,
+                "Delete edges",
+                f"Delete {len(selected_edges)} selected edge connection(s)?",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        self.on_delete(selected_edges)
+        for row in reversed(rows):
+            del self.edges[row]
+        self._refresh_table()
+
+
 class LiftEditorDialog(QDialog):
-    def __init__(self, parent, lift=None, default_floor=0, default_x=0.0, default_y=0.0):
+    def __init__(
+        self, parent, lift=None, default_floor=0, default_x=0.0, default_y=0.0
+    ):
         super().__init__(parent)
         self.setWindowTitle("Lift Editor")
         self.result = None
@@ -85,7 +183,9 @@ class LiftEditorDialog(QDialog):
         self.door_edit = QLineEdit(str(self.lift.get("door_time_sec", 4)))
         self.board_edit = QLineEdit(str(self.lift.get("boarding_time_sec", 6)))
         self.capacity_edit = QLineEdit(str(self.lift.get("capacity_size_units", 1.0)))
-        self.start_floor_edit = QLineEdit(str(self.lift.get("start_floor", self.default_floor)))
+        self.start_floor_edit = QLineEdit(
+            str(self.lift.get("start_floor", self.default_floor))
+        )
         self.positions_edit = QPlainTextEdit()
 
         if floor_locations:
@@ -116,7 +216,9 @@ class LiftEditorDialog(QDialog):
             lift_id = self.id_edit.text().strip()
             if not lift_id:
                 raise ValueError("Lift ID is required")
-            floors = [int(x.strip()) for x in self.floors_edit.text().split(",") if x.strip()]
+            floors = [
+                int(x.strip()) for x in self.floors_edit.text().split(",") if x.strip()
+            ]
             if not floors:
                 raise ValueError("At least one served floor is required")
             positions = json.loads(self.positions_edit.toPlainText().strip())
@@ -131,7 +233,9 @@ class LiftEditorDialog(QDialog):
                 "boarding_time_sec": float(self.board_edit.text()),
                 "capacity_size_units": float(self.capacity_edit.text()),
                 "start_floor": int(self.start_floor_edit.text()),
-                "floor_locations": {int(k): (float(v[0]), float(v[1])) for k, v in positions.items()},
+                "floor_locations": {
+                    int(k): (float(v[0]), float(v[1])) for k, v in positions.items()
+                },
             }
             super().accept()
         except Exception as exc:
@@ -220,7 +324,9 @@ class TableListEditor(QMainWindow):
             row = self.table.rowCount()
             self.table.insertRow(row)
             for col, (key, _heading, _width) in enumerate(self.columns):
-                self.table.setItem(row, col, QTableWidgetItem(self.stringify(item.get(key, ""))))
+                self.table.setItem(
+                    row, col, QTableWidgetItem(self.stringify(item.get(key, "")))
+                )
 
     def add_item(self):
         item = self.prompt_item()

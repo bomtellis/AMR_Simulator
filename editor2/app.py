@@ -2,20 +2,17 @@ import math
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QPointF, Qt, Signal, QRect
+from PySide6.QtCore import QObject, QPoint, QPointF, Qt, Signal, QRect, QThread, Slot
 from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
     QFileDialog,
     QFormLayout,
-    QGraphicsEllipseItem,
     QGraphicsItem,
-    QGraphicsLineItem,
-    QGraphicsPathItem,
     QGraphicsPolygonItem,
-    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsView,
@@ -24,17 +21,87 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QProgressBar,
     QSpinBox,
-    QToolButton,
     QVBoxLayout,
     QWidget,
     QInputDialog,
+    QMenu,
 )
 
 from dxf_scene import DXFScene
-from dialogs import LiftEditorDialog, PointEditorDialog, TableListEditor
+from dialogs import (
+    EdgeConnectionsDialog,
+    LiftEditorDialog,
+    PointEditorDialog,
+    TableListEditor,
+)
 from advanced_dialogs import RouteProfilesEditorV2, TaskEditorWindow, TaskPlannerDialog
 from models import JsonStore
+
+
+class DXFLoadWorker(QObject):
+    loaded = Signal(int, str, object, object)
+    failed = Signal(int, str, str)
+
+    @Slot(int, str)
+    def load_floor(self, floor, path):
+        try:
+            payload = DXFScene.load_content(path)
+            self.loaded.emit(
+                int(floor), str(path), payload["entities"], payload["bounds"]
+            )
+        except Exception as exc:
+            self.failed.emit(int(floor), str(path), str(exc))
+
+
+class DXFLoadingDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._completed = False
+        self.setWindowTitle("Loading DXFs")
+        self.setWindowModality(Qt.ApplicationModal)
+        self.setWindowFlag(Qt.WindowCloseButtonHint, False)
+        self.setWindowFlag(Qt.WindowContextHelpButtonHint, False)
+        self.setMinimumWidth(420)
+
+        layout = QVBoxLayout(self)
+        self.message_label = QLabel("Loading DXF files...")
+        self.message_label.setWordWrap(True)
+        layout.addWidget(self.message_label)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 1)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+
+        self.detail_label = QLabel("0 / 0")
+        layout.addWidget(self.detail_label)
+
+    def update_progress(self, current, total, message, failed_count=0):
+        total = max(1, int(total))
+        current = max(0, min(int(current), total))
+        self.progress_bar.setRange(0, total)
+        self.progress_bar.setValue(current)
+        self.message_label.setText(message)
+        detail = f"{current} / {total} loaded"
+        if failed_count:
+            detail += f" ({failed_count} failed)"
+        self.detail_label.setText(detail)
+
+    def mark_complete(self):
+        self._completed = True
+        self.accept()
+
+    def reject(self):
+        if self._completed:
+            super().reject()
+
+    def closeEvent(self, event):
+        if self._completed:
+            super().closeEvent(event)
+        else:
+            event.ignore()
 
 
 class EditorGraphicsView(QGraphicsView):
@@ -54,8 +121,8 @@ class EditorGraphicsView(QGraphicsView):
         self.setBackgroundBrush(QBrush(QColor("#111111")))
         self._overlay_provider = None
         self.setDragMode(QGraphicsView.NoDrag)
-        self.setTransformationAnchor(QGraphicsView.NoAnchor)
-        self.setResizeAnchor(QGraphicsView.NoAnchor)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self._middle_panning = False
         self._last_middle_pos = None
 
@@ -112,6 +179,8 @@ class EditorGraphicsView(QGraphicsView):
 
 
 class AMRGraphEditor(QMainWindow):
+    _request_dxf_load = Signal(int, str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AMR Simulation Graph Editor")
@@ -122,6 +191,22 @@ class AMRGraphEditor(QMainWindow):
         self.current_dxf_path = None
         self.loaded_dxf_floor = None
         self.dxf_scene = DXFScene()
+        self._dxf_cache = {}
+        self._dxf_loading_floors = set()
+        self._pending_fit_after_load = False
+        self._last_requested_floor = None
+        self._loading_dialog = None
+        self._loading_batch_floors = set()
+        self._loading_batch_failed = set()
+        self._loading_batch_active = False
+
+        self._dxf_thread = QThread(self)
+        self._dxf_worker = DXFLoadWorker()
+        self._dxf_worker.moveToThread(self._dxf_thread)
+        self._dxf_worker.loaded.connect(self._on_dxf_loaded)
+        self._dxf_worker.failed.connect(self._on_dxf_failed)
+        self._request_dxf_load.connect(self._dxf_worker.load_floor)
+        self._dxf_thread.start()
 
         self.scale = 5.0
         self.offset_x = 250
@@ -166,7 +251,17 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.mouseDragged.connect(self.on_drag)
 
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["select_move", "corridor_node", "location", "edge", "lift", "pan", "delete"])
+        self.mode_combo.addItems(
+            [
+                "select_move",
+                "corridor_node",
+                "location",
+                "edge",
+                "lift",
+                "pan",
+                "delete",
+            ]
+        )
         self.floor_spin = QSpinBox()
         self.floor_spin.setRange(0, 99)
         self.floor_spin.valueChanged.connect(self.on_floor_changed)
@@ -232,6 +327,9 @@ class AMRGraphEditor(QMainWindow):
 
     def on_floor_changed(self, *_):
         self.refresh_canvas()
+        self._queue_all_floor_dxf_loads(
+            active_floor=self.floor_spin.value(), force_reload=False
+        )
 
     def floor_dxf_entries(self):
         return self.store.data.setdefault("floor_dxf_files", [])
@@ -261,29 +359,215 @@ class AMRGraphEditor(QMainWindow):
         entries.sort(key=lambda item: int(item.get("floor", 0)))
 
     def clear_floor_dxf_mapping(self, floor):
-        self.store.data["floor_dxf_files"] = [entry for entry in self.floor_dxf_entries() if int(entry.get("floor", -(10**9))) != int(floor)]
+        self.store.data["floor_dxf_files"] = [
+            entry
+            for entry in self.floor_dxf_entries()
+            if int(entry.get("floor", -(10**9))) != int(floor)
+        ]
 
-    def ensure_floor_dxf_loaded(self, floor):
-        target_path = self.get_floor_dxf_path(floor)
-        if not target_path:
-            if self.loaded_dxf_floor is not None or self.dxf_scene.entities:
+    def _all_mapped_floors(self):
+        floors = []
+        for entry in self.floor_dxf_entries():
+            try:
+                floor = int(entry.get("floor"))
+            except Exception:
+                continue
+            if self.get_floor_dxf_path(floor):
+                floors.append(floor)
+        return sorted(set(floors))
+
+    def _ensure_loading_dialog(self):
+        if self._loading_dialog is None:
+            self._loading_dialog = DXFLoadingDialog(self)
+        return self._loading_dialog
+
+    def _update_loading_dialog(self):
+        if not self._loading_batch_active:
+            return
+        dialog = self._ensure_loading_dialog()
+        total = len(self._loading_batch_floors)
+        completed = 0
+        for floor in self._loading_batch_floors:
+            path = self.get_floor_dxf_path(floor)
+            cached = self._dxf_cache.get(floor)
+            if cached and path and cached.get("path") == path:
+                completed += 1
+            elif floor in self._loading_batch_failed:
+                completed += 1
+        failed_count = len(self._loading_batch_failed)
+        pending = max(0, total - completed)
+        message = f"Loading {total} DXF file(s)..."
+        if pending:
+            message = f"Loading {pending} remaining DXF file(s)..."
+        elif failed_count:
+            message = "Finished loading DXFs with some failures."
+        else:
+            message = "Finished loading all DXFs."
+        dialog.update_progress(completed, total, message, failed_count=failed_count)
+        if total > 0 and not dialog.isVisible():
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+        QApplication.processEvents()
+        if total > 0 and completed >= total:
+            dialog.mark_complete()
+            self._loading_batch_active = False
+
+    def _start_loading_batch(self, floors):
+        target_floors = []
+        for floor in floors:
+            floor = int(floor)
+            path = self.get_floor_dxf_path(floor)
+            if path:
+                target_floors.append(floor)
+        target_floors = sorted(set(target_floors))
+        if not target_floors:
+            return
+        self._loading_batch_floors = set(target_floors)
+        self._loading_batch_failed = set()
+        self._loading_batch_active = True
+        dialog = self._ensure_loading_dialog()
+        dialog._completed = False
+        self._update_loading_dialog()
+
+    def _queue_all_floor_dxf_loads(self, active_floor=None, force_reload=False):
+        floors = self._all_mapped_floors()
+        if not floors:
+            return
+        if active_floor is not None:
+            floors = [int(active_floor)] + [
+                f for f in floors if int(f) != int(active_floor)
+            ]
+        self._start_loading_batch(floors)
+        for floor in floors:
+            self.request_floor_dxf_load(
+                floor,
+                force_reload=force_reload and int(floor) == int(active_floor),
+                prefetch=int(floor)
+                != int(active_floor if active_floor is not None else floor),
+            )
+        self._update_loading_dialog()
+
+    def _clear_dxf_cache(self):
+        self._dxf_cache.clear()
+        self._dxf_loading_floors.clear()
+        self._loading_batch_floors.clear()
+        self._loading_batch_failed.clear()
+        self._loading_batch_active = False
+        if self._loading_dialog is not None and self._loading_dialog.isVisible():
+            self._loading_dialog.mark_complete()
+        self.current_dxf_path = None
+        self.loaded_dxf_floor = None
+        self.dxf_scene.clear()
+
+    def _set_active_dxf_floor(self, floor):
+        floor = int(floor)
+        cached = self._dxf_cache.get(floor)
+        if not cached:
+            self.current_dxf_path = None
+            self.loaded_dxf_floor = None
+            self.dxf_scene.clear()
+            return False
+        self.current_dxf_path = cached["path"]
+        self.loaded_dxf_floor = floor
+        self.dxf_scene.set_content(cached["path"], cached["entities"], cached["bounds"])
+        return True
+
+    def request_floor_dxf_load(self, floor, force_reload=False, prefetch=False):
+        floor = int(floor)
+        path = self.get_floor_dxf_path(floor)
+        if not path:
+            if not prefetch and floor == self.floor_spin.value():
                 self.dxf_scene.clear()
                 self.current_dxf_path = None
                 self.loaded_dxf_floor = None
             return False
-        if self.current_dxf_path == target_path and self.loaded_dxf_floor == int(floor):
+
+        cached = self._dxf_cache.get(floor)
+        if (not force_reload) and cached and cached.get("path") == path:
+            if not prefetch and floor == self.floor_spin.value():
+                self._set_active_dxf_floor(floor)
             return True
-        try:
-            self.dxf_scene.load(target_path)
-            self.current_dxf_path = target_path
-            self.loaded_dxf_floor = int(floor)
-            return True
-        except Exception as exc:
+
+        if floor in self._dxf_loading_floors:
+            self._update_loading_dialog()
+            return False
+
+        self._dxf_loading_floors.add(floor)
+        if not prefetch and floor == self.floor_spin.value():
+            self.set_status(f"Loading DXF for floor {floor}...")
+        self._request_dxf_load.emit(floor, path)
+        self._update_loading_dialog()
+        return False
+
+    def ensure_floor_dxf_loaded(self, floor, force_reload=False):
+        floor = int(floor)
+        path = self.get_floor_dxf_path(floor)
+        if not path:
+            if floor == self.floor_spin.value():
+                self.dxf_scene.clear()
+                self.current_dxf_path = None
+                self.loaded_dxf_floor = None
+            return False
+
+        cached = self._dxf_cache.get(floor)
+        if (not force_reload) and cached and cached.get("path") == path:
+            return self._set_active_dxf_floor(floor)
+
+        self.request_floor_dxf_load(floor, force_reload=force_reload, prefetch=False)
+        return False
+
+    def _prefetch_other_floor_dxfs(self, active_floor):
+        for entry in self.floor_dxf_entries():
+            try:
+                floor = int(entry.get("floor"))
+            except Exception:
+                continue
+            if floor == int(active_floor):
+                continue
+            self.request_floor_dxf_load(floor, prefetch=True)
+
+    @Slot(int, str, object, object)
+    def _on_dxf_loaded(self, floor, path, entities, bounds):
+        floor = int(floor)
+        self._dxf_loading_floors.discard(floor)
+        self._loading_batch_failed.discard(floor)
+        self._dxf_cache[floor] = {
+            "path": path,
+            "entities": list(entities or []),
+            "bounds": bounds,
+        }
+
+        if self.get_floor_dxf_path(floor) != path:
+            return
+
+        if floor == self.floor_spin.value():
+            self._set_active_dxf_floor(floor)
+            self.refresh_canvas()
+            if self._pending_fit_after_load:
+                self._pending_fit_after_load = False
+                self.fit_view()
+            else:
+                self.set_status(f"Loaded DXF {Path(path).name} for floor {floor}")
+
+        self._prefetch_other_floor_dxfs(floor)
+        self._update_loading_dialog()
+
+    @Slot(int, str, str)
+    def _on_dxf_failed(self, floor, path, error):
+        floor = int(floor)
+        self._dxf_loading_floors.discard(floor)
+        self._loading_batch_failed.add(floor)
+        cached = self._dxf_cache.get(floor)
+        if cached and cached.get("path") == path:
+            self._dxf_cache.pop(floor, None)
+        if floor == self.floor_spin.value():
             self.dxf_scene.clear()
             self.current_dxf_path = None
             self.loaded_dxf_floor = None
-            self.set_status(f"Failed to load DXF for floor {floor}: {exc}")
-            return False
+            self.refresh_canvas()
+            self.set_status(f"Failed to load DXF for floor {floor}: {error}")
+        self._update_loading_dialog()
 
     def world_to_scene(self, x, y):
         return QPointF(float(x), -float(y))
@@ -321,7 +605,9 @@ class AMRGraphEditor(QMainWindow):
         if not bounds:
             return None
         min_x, min_y, max_x, max_y = bounds
-        return self._scene_rect_from_bounds((min_x, min_y, max_x, max_y), padding=padding)
+        return self._scene_rect_from_bounds(
+            (min_x, min_y, max_x, max_y), padding=padding
+        )
 
     def _scene_rect_from_bounds(self, bounds, padding=8.0):
         min_x, min_y, max_x, max_y = bounds
@@ -334,9 +620,17 @@ class AMRGraphEditor(QMainWindow):
 
     def fit_view(self):
         floor = self.floor_spin.value()
-        self.ensure_floor_dxf_loaded(floor)
+        ready = self.ensure_floor_dxf_loaded(floor)
         rect = self._scene_rect_for_floor(floor, padding=8.0)
-        if rect is not None and not rect.isNull() and rect.width() > 0 and rect.height() > 0:
+        if rect is None and not ready and self.get_floor_dxf_path(floor):
+            self._pending_fit_after_load = True
+            return
+        if (
+            rect is not None
+            and not rect.isNull()
+            and rect.width() > 0
+            and rect.height() > 0
+        ):
             self.canvas.resetTransform()
             self.canvas.fitInView(rect, Qt.KeepAspectRatio)
             self.scene.setSceneRect(rect.adjusted(-40, -40, 40, 40))
@@ -353,23 +647,90 @@ class AMRGraphEditor(QMainWindow):
         rect = self._scene_rect_for_floor(floor, padding=8.0)
         if rect is not None:
             self.scene.setSceneRect(rect.adjusted(-40, -40, 40, 40))
-        if self.show_dxf_check.isChecked() and self.dxf_scene.entities:
-            self.dxf_scene.populate_graphics_scene(self.scene, self.canvas.transform().m11())
+        if (
+            self.show_dxf_check.isChecked()
+            and self.loaded_dxf_floor == int(floor)
+            and self.dxf_scene.entities
+        ):
+            self.dxf_scene.populate_graphics_scene(
+                self.scene, self.canvas.transform().m11()
+            )
         self.draw_edges(floor)
         self.draw_points(floor)
         self.file_label.setText(self.current_json_path or "New file")
         self.canvas.viewport().update()
 
+    def _edge_rows_for_point(self, point_name):
+        points = self.store.all_points()
+        results = []
+        for edge in self.store.data.get("corridors", {}).get("edges", []):
+            if edge.get("from") != point_name and edge.get("to") != point_name:
+                continue
+            from_name = edge.get("from", "")
+            to_name = edge.get("to", "")
+            from_point = points.get(from_name)
+            to_point = points.get(to_name)
+            from_floor = from_point.get("floor", "") if from_point else ""
+            to_floor = to_point.get("floor", "") if to_point else ""
+            results.append(
+                {
+                    "from": from_name,
+                    "from_floor": from_floor,
+                    "to": to_name,
+                    "to_floor": to_floor,
+                    "cross_floor": (
+                        from_point is not None
+                        and to_point is not None
+                        and int(from_floor) != int(to_floor)
+                    ),
+                }
+            )
+        results.sort(
+            key=lambda edge: (
+                str(edge.get("from_floor", "")),
+                str(edge.get("from", "")),
+                str(edge.get("to_floor", "")),
+                str(edge.get("to", "")),
+            )
+        )
+        return results
+
+    def _delete_edge_connections(self, edges):
+        removed = 0
+        for edge in edges:
+            before = len(self.store.data.get("corridors", {}).get("edges", []))
+            self.store.remove_edge(edge.get("from", ""), edge.get("to", ""))
+            after = len(self.store.data.get("corridors", {}).get("edges", []))
+            if after < before:
+                removed += 1
+        self.refresh_canvas()
+        self.set_status(f"Deleted {removed} edge connection(s)")
+
+    def _show_edge_connections_dialog(self, point_name):
+        dialog = EdgeConnectionsDialog(
+            self,
+            point_name,
+            self._edge_rows_for_point(point_name),
+            self._delete_edge_connections,
+        )
+        dialog.exec()
+
     def draw_edges(self, floor):
         points = self.store.all_points()
-        pen = QPen(QColor("#6aa9ff"), 0)
-        for edge in self.store.edges_for_floor(floor):
+        pen_same_floor = QPen(QColor("#6aa9ff"), 0)
+        pen_cross_floor = QPen(QColor("#ff4d4f"), 0)
+        for edge in self.store.data.get("corridors", {}).get("edges", []):
             a = points.get(edge["from"])
             b = points.get(edge["to"])
             if not a or not b:
                 continue
+            a_floor = int(a["floor"])
+            b_floor = int(b["floor"])
+            if int(floor) not in {a_floor, b_floor}:
+                continue
             pa = self.world_to_scene(a["x"], a["y"])
             pb = self.world_to_scene(b["x"], b["y"])
+            pen = pen_cross_floor if a_floor != b_floor else pen_same_floor
             item = self.scene.addLine(pa.x(), pa.y(), pb.x(), pb.y(), pen)
             self._item_lookup[item] = ("edge", edge)
 
@@ -380,18 +741,38 @@ class AMRGraphEditor(QMainWindow):
             kind = point.get("kind")
             outline = QPen(QColor("#ffffff") if selected else QColor("transparent"), 0)
             if kind == "location":
-                r = 0.45
-                item = self.scene.addEllipse(pos.x() - r, pos.y() - r, 2 * r, 2 * r, outline, QBrush(QColor("#18c37e")))
+                r = 0.3
+                item = self.scene.addEllipse(
+                    pos.x() - r,
+                    pos.y() - r,
+                    2 * r,
+                    2 * r,
+                    outline,
+                    QBrush(QColor("#18c37e")),
+                )
                 label_color = QColor("#9bf0cd")
             elif kind == "corridor_node":
-                r = 0.4
-                item = self.scene.addRect(pos.x() - r, pos.y() - r, 2 * r, 2 * r, outline, QBrush(QColor("#f2c94c")))
+                r = 0.3
+                item = self.scene.addRect(
+                    pos.x() - r,
+                    pos.y() - r,
+                    2 * r,
+                    2 * r,
+                    outline,
+                    QBrush(QColor("#f2c94c")),
+                )
                 label_color = QColor("#ffe8a3")
             else:
-                r = 0.55
-                poly = [QPointF(pos.x(), pos.y() - r), QPointF(pos.x() + r, pos.y()), QPointF(pos.x(), pos.y() + r), QPointF(pos.x() - r, pos.y())]
+                r = 0.3
+                poly = [
+                    QPointF(pos.x(), pos.y() - r),
+                    QPointF(pos.x() + r, pos.y()),
+                    QPointF(pos.x(), pos.y() + r),
+                    QPointF(pos.x() - r, pos.y()),
+                ]
                 item = QGraphicsPolygonItem()
                 from PySide6.QtGui import QPolygonF
+
                 item.setPolygon(QPolygonF(poly))
                 item.setPen(outline)
                 item.setBrush(QBrush(QColor("#ff7b72")))
@@ -482,12 +863,20 @@ class AMRGraphEditor(QMainWindow):
             if picked:
                 if picked.startswith("Lift-") and "-F" in picked:
                     lift_id = picked.rsplit("-F", 1)[0]
-                    if QMessageBox.question(self, "Delete lift", f"Delete entire {lift_id}?") == QMessageBox.Yes:
+                    if (
+                        QMessageBox.question(
+                            self, "Delete lift", f"Delete entire {lift_id}?"
+                        )
+                        == QMessageBox.Yes
+                    ):
                         self.store.delete_lift(lift_id)
                         self.selected_point_name = None
                         self.set_status(f"Deleted {lift_id}")
                 else:
-                    if QMessageBox.question(self, "Delete point", f"Delete {picked}?") == QMessageBox.Yes:
+                    if (
+                        QMessageBox.question(self, "Delete point", f"Delete {picked}?")
+                        == QMessageBox.Yes
+                    ):
                         self.store.delete_point(picked)
                         self.selected_point_name = None
                         self.set_status(f"Deleted {picked}")
@@ -495,7 +884,12 @@ class AMRGraphEditor(QMainWindow):
             return
 
         if mode == "corridor_node":
-            name, ok = QInputDialog.getText(self, "Corridor node", "Node name:", text=self.store.suggest_next_corridor_name(floor))
+            name, ok = QInputDialog.getText(
+                self,
+                "Corridor node",
+                "Node name:",
+                text=self.store.suggest_next_corridor_name(floor),
+            )
             if not ok or not name:
                 return
             self.store.add_corridor_node(name, floor, x, y)
@@ -536,8 +930,10 @@ class AMRGraphEditor(QMainWindow):
                     if item["id"] == lift_id:
                         existing_lift = item
                         break
-            dialog = LiftEditorDialog(self, existing_lift, default_floor=floor, default_x=x, default_y=y)
-            if dialog.exec() == dialog.Accepted and dialog.result:
+            dialog = LiftEditorDialog(
+                self, existing_lift, default_floor=floor, default_x=x, default_y=y
+            )
+            if dialog.exec() == QDialog.Accepted and dialog.result:
                 self.store.upsert_lift(
                     dialog.result["id"],
                     dialog.result["served_floors"],
@@ -561,20 +957,36 @@ class AMRGraphEditor(QMainWindow):
         point = self.store.all_points()[picked]
         if point.get("kind") == "lift_node":
             lift_id = point["lift_id"]
-            existing_lift = next((x for x in self.store.data.get("lifts", []) if x["id"] == lift_id), None)
-            dialog = LiftEditorDialog(self, existing_lift, default_floor=floor, default_x=point["x"], default_y=point["y"])
-            if dialog.exec() == dialog.Accepted and dialog.result:
+            existing_lift = next(
+                (x for x in self.store.data.get("lifts", []) if x["id"] == lift_id),
+                None,
+            )
+            dialog = LiftEditorDialog(
+                self,
+                existing_lift,
+                default_floor=floor,
+                default_x=point["x"],
+                default_y=point["y"],
+            )
+            if dialog.exec() == QDialog.Accepted and dialog.result:
                 self.store.upsert_lift(
-                    dialog.result["id"], dialog.result["served_floors"], dialog.result["floor_locations"],
-                    dialog.result["speed_floors_per_sec"], dialog.result["door_time_sec"], dialog.result["boarding_time_sec"],
-                    dialog.result["capacity_size_units"], dialog.result["start_floor"],
+                    dialog.result["id"],
+                    dialog.result["served_floors"],
+                    dialog.result["floor_locations"],
+                    dialog.result["speed_floors_per_sec"],
+                    dialog.result["door_time_sec"],
+                    dialog.result["boarding_time_sec"],
+                    dialog.result["capacity_size_units"],
+                    dialog.result["start_floor"],
                 )
                 self.set_status(f"Edited {dialog.result['id']}")
                 self.refresh_canvas()
             return
         dialog = PointEditorDialog(self, f"Edit {picked}", picked, point)
-        if dialog.exec() == dialog.accept and dialog.result:
-            self.store.set_point_position(picked, dialog.result["x"], dialog.result["y"])
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            self.store.set_point_position(
+                picked, dialog.result["x"], dialog.result["y"]
+            )
             self.store.rename_point(picked, dialog.result["name"])
             self.selected_point_name = dialog.result["name"]
             self.set_status(f"Edited {dialog.result['name']}")
@@ -608,9 +1020,20 @@ class AMRGraphEditor(QMainWindow):
                     after = len(self.store.data.get("corridors", {}).get("edges", []))
                     removed = removed or (after < before)
                 self.edge_delete_start = None
-                self.set_status("Edge removed" if removed else "No matching edge to remove")
+                self.set_status(
+                    "Edge removed" if removed else "No matching edge to remove"
+                )
                 self.refresh_canvas()
                 return
+        if mode == "select_move" and picked:
+            self.selected_point_name = picked
+            self.refresh_canvas()
+            menu = QMenu(self)
+            show_edges_action = menu.addAction("Show all edge connections")
+            action = menu.exec(event.globalPosition().toPoint())
+            if action == show_edges_action:
+                self._show_edge_connections_dialog(picked)
+            return
         if picked:
             self.selected_point_name = picked
             self.refresh_canvas()
@@ -624,8 +1047,12 @@ class AMRGraphEditor(QMainWindow):
                 return
             dx = current.x() - self.last_pan.x()
             dy = current.y() - self.last_pan.y()
-            self.canvas.horizontalScrollBar().setValue(self.canvas.horizontalScrollBar().value() - dx)
-            self.canvas.verticalScrollBar().setValue(self.canvas.verticalScrollBar().value() - dy)
+            self.canvas.horizontalScrollBar().setValue(
+                self.canvas.horizontalScrollBar().value() - dx
+            )
+            self.canvas.verticalScrollBar().setValue(
+                self.canvas.verticalScrollBar().value() - dy
+            )
             self.last_pan = current
             self.canvas.viewport().update()
             return
@@ -645,13 +1072,18 @@ class AMRGraphEditor(QMainWindow):
             return
         dx = current.x() - self.last_pan.x()
         dy = current.y() - self.last_pan.y()
-        self.canvas.horizontalScrollBar().setValue(self.canvas.horizontalScrollBar().value() - dx)
-        self.canvas.verticalScrollBar().setValue(self.canvas.verticalScrollBar().value() - dy)
+        self.canvas.horizontalScrollBar().setValue(
+            self.canvas.horizontalScrollBar().value() - dx
+        )
+        self.canvas.verticalScrollBar().setValue(
+            self.canvas.verticalScrollBar().value() - dy
+        )
         self.last_pan = current
         self.canvas.viewport().update()
 
     def on_middle_release(self, event):
         self.last_pan = None
+        self.refresh_canvas()
 
     def on_mousewheel(self, event):
         factor = 1.1 if event.angleDelta().y() > 0 else 0.9
@@ -659,15 +1091,17 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.viewport().update()
 
     def open_json(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Open JSON", "", "JSON files (*.json)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open JSON", "", "JSON files (*.json)"
+        )
         if not path:
             return
         self.store = JsonStore.from_file(path)
         self.current_json_path = path
-        self.current_dxf_path = None
-        self.loaded_dxf_floor = None
-        self.dxf_scene.clear()
-        self.ensure_floor_dxf_loaded(self.floor_spin.value())
+        self._clear_dxf_cache()
+        current_floor = self.floor_spin.value()
+        self._pending_fit_after_load = bool(self.get_floor_dxf_path(current_floor))
+        self._queue_all_floor_dxf_loads(active_floor=current_floor, force_reload=False)
         self.set_status(f"Opened {Path(path).name}")
         self.refresh_canvas()
         self.fit_view()
@@ -675,7 +1109,9 @@ class AMRGraphEditor(QMainWindow):
     def save_json(self):
         path = self.current_json_path
         if not path:
-            path, _ = QFileDialog.getSaveFileName(self, "Save JSON", "", "JSON files (*.json)")
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Save JSON", "", "JSON files (*.json)"
+            )
         if not path:
             return
         self.store.save(path)
@@ -692,19 +1128,21 @@ class AMRGraphEditor(QMainWindow):
                 initialdir = str(Path(existing).expanduser().resolve().parent)
             except Exception:
                 initialdir = str(Path(existing).expanduser().parent)
-        path, _ = QFileDialog.getOpenFileName(self, "Select DXF", initialdir, "DXF files (*.dxf)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select DXF", initialdir, "DXF files (*.dxf)"
+        )
         if not path:
             return
-        try:
-            self.set_floor_dxf_path(floor, path)
-            self.dxf_scene.load(path)
-            self.current_dxf_path = path
-            self.loaded_dxf_floor = int(floor)
-            self.refresh_canvas()
-            self.fit_view()
-            self.set_status(f"Mapped DXF {Path(path).name} to floor {floor}")
-        except Exception as exc:
-            QMessageBox.critical(self, "DXF load failed", str(exc))
+        self.set_floor_dxf_path(floor, path)
+        self._dxf_cache.pop(int(floor), None)
+        if self.loaded_dxf_floor == int(floor):
+            self.dxf_scene.clear()
+            self.current_dxf_path = None
+            self.loaded_dxf_floor = None
+        self._pending_fit_after_load = True
+        self._queue_all_floor_dxf_loads(active_floor=floor, force_reload=True)
+        self.refresh_canvas()
+        self.set_status(f"Mapped DXF {Path(path).name} to floor {floor}")
 
     def clear_floor_dxf(self):
         floor = self.floor_spin.value()
@@ -712,9 +1150,16 @@ class AMRGraphEditor(QMainWindow):
         if not existing:
             self.set_status(f"No DXF mapped to floor {floor}")
             return
-        if QMessageBox.question(self, "Clear floor DXF", f"Remove DXF mapping for floor {floor}?") != QMessageBox.Yes:
+        if (
+            QMessageBox.question(
+                self, "Clear floor DXF", f"Remove DXF mapping for floor {floor}?"
+            )
+            != QMessageBox.Yes
+        ):
             return
         self.clear_floor_dxf_mapping(floor)
+        self._dxf_cache.pop(int(floor), None)
+        self._dxf_loading_floors.discard(int(floor))
         if self.loaded_dxf_floor == int(floor):
             self.dxf_scene.clear()
             self.current_dxf_path = None
@@ -728,12 +1173,24 @@ class AMRGraphEditor(QMainWindow):
             QMessageBox.critical(self, "Validation errors", "\n".join(errors[:100]))
             self.set_status(f"Validation failed with {len(errors)} error(s)")
         else:
-            QMessageBox.information(self, "Validation", "JSON structure is internally consistent.")
+            QMessageBox.information(
+                self, "Validation", "JSON structure is internally consistent."
+            )
             self.set_status("Validation passed")
 
     def manage_payloads(self):
-        columns = [("name", "Name", 220), ("weight_kg", "Weight kg", 120), ("size_units", "Size units", 120)]
-        TableListEditor(self, "Payloads", columns, self.store.data.get("payloads", []), self._save_payloads)
+        columns = [
+            ("name", "Name", 220),
+            ("weight_kg", "Weight kg", 120),
+            ("size_units", "Size units", 120),
+        ]
+        TableListEditor(
+            self,
+            "Payloads",
+            columns,
+            self.store.data.get("payloads", []),
+            self._save_payloads,
+        )
 
     def _save_payloads(self, items):
         self.store.data["payloads"] = items
@@ -741,12 +1198,21 @@ class AMRGraphEditor(QMainWindow):
 
     def manage_amrs(self):
         columns = [
-            ("id", "ID", 120), ("quantity", "Quantity", 80), ("payload_capacity_kg", "Payload kg", 110),
-            ("payload_size_capacity", "Payload size", 110), ("speed_m_per_sec", "Speed", 90), ("motor_power_w", "Motor W", 90),
-            ("battery_capacity_kwh", "Battery kWh", 100), ("battery_charge_rate_kw", "Charge kW", 100),
-            ("recharge_threshold_percent", "Recharge %", 100), ("battery_soc_percent", "SOC %", 80), ("start_location", "Start location", 160),
+            ("id", "ID", 120),
+            ("quantity", "Quantity", 80),
+            ("payload_capacity_kg", "Payload kg", 110),
+            ("payload_size_capacity", "Payload size", 110),
+            ("speed_m_per_sec", "Speed", 90),
+            ("motor_power_w", "Motor W", 90),
+            ("battery_capacity_kwh", "Battery kWh", 100),
+            ("battery_charge_rate_kw", "Charge kW", 100),
+            ("recharge_threshold_percent", "Recharge %", 100),
+            ("battery_soc_percent", "SOC %", 80),
+            ("start_location", "Start location", 160),
         ]
-        TableListEditor(self, "AMRs", columns, self.store.data.get("amrs", []), self._save_amrs)
+        TableListEditor(
+            self, "AMRs", columns, self.store.data.get("amrs", []), self._save_amrs
+        )
 
     def _save_amrs(self, items):
         self.store.data["amrs"] = items
@@ -769,7 +1235,16 @@ class AMRGraphEditor(QMainWindow):
         payload_names = sorted(x["name"] for x in self.store.data.get("payloads", []))
         profile_names = [""] + sorted(self.store.data.get("route_profiles", {}).keys())
         floor_map = self.build_floor_map(self.store.data)
-        TaskEditorWindow(self, self.store.data.get("tasks", []), location_names, payload_names, profile_names, self.store.suggest_next_task_id, self._save_tasks, floor_map=floor_map)
+        TaskEditorWindow(
+            self,
+            self.store.data.get("tasks", []),
+            location_names,
+            payload_names,
+            profile_names,
+            self.store.suggest_next_task_id,
+            self._save_tasks,
+            floor_map=floor_map,
+        )
 
     def _save_tasks(self, items):
         self.store.data["tasks"] = items
@@ -783,18 +1258,45 @@ class AMRGraphEditor(QMainWindow):
         floor_map = self.build_floor_map(self.store.data)
         for item in locations:
             floor_map[item["name"]] = int(item["floor"])
-        TaskPlannerDialog(self, self.store.data.get("tasks", []), location_names, payload_names, profile_names, self.store.suggest_next_task_id, self._save_tasks, floor_map=floor_map)
+        TaskPlannerDialog(
+            self,
+            self.store.data.get("tasks", []),
+            location_names,
+            payload_names,
+            profile_names,
+            self.store.suggest_next_task_id,
+            self._save_tasks,
+            floor_map=floor_map,
+        )
 
     def manage_route_profiles(self):
-        point_names = set(self.store.names_in_use()) | {x["name"] for x in self.store.data.get("locations", [])}
+        point_names = set(self.store.names_in_use()) | {
+            x["name"] for x in self.store.data.get("locations", [])
+        }
         lift_ids = {x["id"] for x in self.store.data.get("lifts", [])}
         floor_map = self.build_floor_map(self.store.data)
-        dialog = RouteProfilesEditorV2(self, self.store.data.get("route_profiles", {}), point_names, lift_ids, self.store.data.get("corridors", {}).get("edges", []), self._save_route_profiles, floor_map=floor_map)
+        dialog = RouteProfilesEditorV2(
+            self,
+            self.store.data.get("route_profiles", {}),
+            point_names,
+            lift_ids,
+            self.store.data.get("corridors", {}).get("edges", []),
+            self._save_route_profiles,
+            floor_map=floor_map,
+        )
         dialog.exec()
 
     def _save_route_profiles(self, profiles):
         self.store.data["route_profiles"] = profiles
         self.set_status("Route profiles updated")
+
+    def closeEvent(self, event):
+        try:
+            self._dxf_thread.quit()
+            self._dxf_thread.wait(2000)
+        except Exception:
+            pass
+        super().closeEvent(event)
 
 
 def main():

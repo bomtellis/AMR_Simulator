@@ -52,6 +52,10 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSplitter,
     QSizePolicy,
+    QMenu,
+    QListWidgetItem,
+    QListWidget,
+    QFrame,
 )
 
 try:
@@ -698,6 +702,7 @@ class GraphicsView(QGraphicsView):
         self._zoom_callback = None
         self._pan_callback = None
         self._overlay_provider = None
+        self._context_menu_callback = None
 
         self.setRenderHint(QPainter.Antialiasing, False)
         self.setRenderHint(QPainter.TextAntialiasing, True)
@@ -710,6 +715,9 @@ class GraphicsView(QGraphicsView):
     def set_callbacks(self, zoom_callback=None, pan_callback=None):
         self._zoom_callback = zoom_callback
         self._pan_callback = pan_callback
+
+    def set_context_menu_callback(self, context_menu_callback):
+        self._context_menu_callback = context_menu_callback
 
     def set_overlay_provider(self, overlay_provider):
         self._overlay_provider = overlay_provider
@@ -729,6 +737,12 @@ class GraphicsView(QGraphicsView):
             self.setCursor(Qt.ClosedHandCursor)
             event.accept()
             return
+
+        if event.button() == Qt.RightButton and self._context_menu_callback:
+            self._context_menu_callback(event)
+            event.accept()
+            return
+
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -1037,6 +1051,145 @@ class TaskJumpDialog(QDialog):
             return datetime.min
 
 
+class LiftShaftWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.lift_state = None
+        self.setMinimumSize(120, 260)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+    def set_lift_state(self, lift_state: dict):
+        self.lift_state = lift_state
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#151515"))
+
+        state = self.lift_state or {}
+        floors = list(state.get("served_floors", []))
+        if not floors:
+            floors = [0]
+
+        min_floor = min(floors)
+        max_floor = max(floors)
+        span = max(1, max_floor - min_floor)
+
+        left = 44
+        top = 20
+        shaft_w = 32
+        shaft_h = max(160, self.height() - 120)
+
+        painter.setPen(QPen(QColor("#666666"), 2))
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(left, top, shaft_w, shaft_h)
+
+        font = QFont()
+        font.setPixelSize(11)
+        painter.setFont(font)
+
+        for floor in sorted(floors):
+            if span == 0:
+                frac = 0.0
+            else:
+                frac = (floor - min_floor) / span
+            y = top + shaft_h - (frac * shaft_h)
+            painter.setPen(QPen(QColor("#2f2f2f"), 1))
+            painter.drawLine(left - 10, int(y), left + shaft_w + 10, int(y))
+            painter.setPen(QColor("#d7d7d7"))
+            painter.drawText(6, int(y) + 4, f"F{floor}")
+
+        current_floor = float(state.get("current_floor", min_floor))
+        current_floor = max(min_floor, min(max_floor, current_floor))
+        if span == 0:
+            frac = 0.0
+        else:
+            frac = (current_floor - min_floor) / span
+        car_h = 24
+        car_y = top + shaft_h - (frac * shaft_h) - (car_h / 2)
+
+        painter.setPen(QPen(QColor("#111111"), 1))
+        painter.setBrush(QBrush(QColor("#f39c12")))
+        painter.drawRect(left + 2, int(car_y), shaft_w - 4, car_h)
+
+        occupant = state.get("occupant") or "-"
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(12, top + shaft_h + 26, f"AMR: {occupant}")
+        painter.drawText(12, top + shaft_h + 46, f"Pos: F{current_floor:.2f}")
+
+
+class LiftMonitorDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Lift Monitor")
+        self.setModal(True)
+        self.resize(980, 520)
+        self._lift_widgets = {}
+
+        outer = QVBoxLayout(self)
+        row = QHBoxLayout()
+        outer.addLayout(row)
+
+        self._row = row
+
+        self.setWindowModality(Qt.NonModal)
+
+    def set_lifts(self, lift_states: List[dict]):
+        while self._row.count():
+            item = self._row.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        self._lift_widgets = {}
+
+        for lift_state in lift_states:
+            panel = QFrame()
+            panel.setFrameShape(QFrame.StyledPanel)
+            panel.setStyleSheet(
+                "QFrame { background: #101010; border: 1px solid #333333; } QLabel { color: white; } QListWidget { background: #151515; color: white; border: 1px solid #333333; }"
+            )
+            layout = QVBoxLayout(panel)
+
+            shaft = LiftShaftWidget(panel)
+            waiting_label = QLabel("Waiting AMRs")
+            waiting_list = QListWidget(panel)
+            waiting_list.setMinimumHeight(110)
+            name_label = QLabel(lift_state.get("lift_id", "Lift"))
+            name_label.setAlignment(Qt.AlignCenter)
+
+            layout.addWidget(shaft, alignment=Qt.AlignHCenter)
+            layout.addWidget(name_label)
+            layout.addWidget(waiting_label)
+            layout.addWidget(waiting_list)
+
+            self._row.addWidget(panel)
+            self._lift_widgets[lift_state.get("lift_id", "")] = (shaft, waiting_list)
+
+        self.update_states(lift_states)
+
+    def update_states(self, lift_states: List[dict]):
+        if set(self._lift_widgets.keys()) != {
+            x.get("lift_id", "") for x in lift_states
+        }:
+            self.set_lifts(lift_states)
+            return
+
+        for lift_state in lift_states:
+            lift_id = lift_state.get("lift_id", "")
+            if lift_id not in self._lift_widgets:
+                continue
+            shaft, waiting_list = self._lift_widgets[lift_id]
+            shaft.set_lift_state(lift_state)
+            waiting_list.clear()
+            waiting = lift_state.get("waiting_amrs", [])
+            if waiting:
+                for amr in waiting:
+                    waiting_list.addItem(QListWidgetItem(amr))
+            else:
+                waiting_list.addItem(QListWidgetItem("-"))
+
+
 class AmrTimelineWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1238,7 +1391,7 @@ class SimulationVisualizer(QMainWindow):
         self.current_time: Optional[datetime] = None
         self.is_playing = False
         self.play_speed = 60.0
-
+        self.lift_monitor_dialog: Optional[LiftMonitorDialog] = None
         self.play_timer = QTimer(self)
         self.play_timer.timeout.connect(self._tick)
 
@@ -1274,10 +1427,12 @@ class SimulationVisualizer(QMainWindow):
             zoom_callback=self.on_zoom,
             pan_callback=lambda: self.pan_redraw_timer.start(20),
         )
+        self.view.set_context_menu_callback(self.on_view_right_click)
         self.view.set_overlay_provider(self.draw_overlay_panels)
 
         self.static_items = []
         self.dynamic_items = []
+        self.node_context_menu = QMenu(self)
 
         def add_btn(text, fn):
             btn = QPushButton(text)
@@ -1290,6 +1445,7 @@ class SimulationVisualizer(QMainWindow):
         add_btn("Reload Current Floor DXF", self.reload_current_floor_dxf)
         add_btn("Open Simulation CSV", self.open_csv)
         add_btn("Jump to Task", self.open_task_jump_dialog)
+        add_btn("Lift Monitor", self.open_lift_monitor_dialog)
         add_btn("Fit View", self.fit_view)
 
         side_layout.addWidget(QLabel("Floor"))
@@ -1386,9 +1542,6 @@ class SimulationVisualizer(QMainWindow):
         self.event_box = QTextEdit()
         self.event_box.setReadOnly(True)
         side_layout.addWidget(self.event_box, 1)
-
-        layout.addWidget(side)
-        layout.addWidget(self.view, 1)
 
         self.timeline_widget = AmrTimelineWidget(self)
 
@@ -1686,6 +1839,7 @@ class SimulationVisualizer(QMainWindow):
         self.clear_items(self.dynamic_items)
         self.draw_dynamic_state_qt(self.current_floor())
         self.update_follow_view()
+        self.update_lift_monitor_dialog()
         self.view.viewport().update()
 
     def draw_line_item(self, x1, y1, x2, y2, color="#858585", width=0.0, dynamic=False):
@@ -1865,12 +2019,18 @@ class SimulationVisualizer(QMainWindow):
                 item.setBrush(QBrush(QColor("#ff7b72")))
                 item.setPen(QPen(Qt.NoPen))
                 color = "#ffb3ae"
+
+            item.setData(0, "layout_node")
+            item.setData(1, name)
             self.graphics_scene.addItem(item)
             self.static_items.append(item)
+
             if self.show_labels_check.isChecked():
-                self.draw_text_item(
+                label_item = self.draw_text_item(
                     x + 0.8, y - 0.8, name, color, ignore_transform=True
                 )
+                label_item.setData(0, "layout_node_label")
+                label_item.setData(1, name)
 
     def _draw_amr_box_colored_qt(self, state: dict, fill="#4da3ff"):
         x = float(state["x"])
@@ -1911,6 +2071,276 @@ class SimulationVisualizer(QMainWindow):
         sx0, sy0 = self.world_to_scene(x, y)
         sx1, sy1 = self.world_to_scene(front_x, front_y)
         self.draw_line_item(sx0, sy0, sx1, sy1, "#858585", 0.0, dynamic=True)
+
+    def build_lift_monitor_state(self) -> List[dict]:
+        lifts = []
+        current_time = self.current_time
+
+        for lift in self.layout_model.data.get("lifts", []):
+            served_floors = sorted(int(x) for x in lift.get("served_floors", []))
+            start_floor = int(
+                lift.get("start_floor", served_floors[0] if served_floors else 0)
+            )
+            state = {
+                "lift_id": lift.get("id", "Lift"),
+                "served_floors": served_floors or [start_floor],
+                "current_floor": float(start_floor),
+                "occupant": None,
+                "waiting_amrs": [],
+            }
+
+            if current_time and self.sim_log.events:
+                waiting = set()
+                last_floor = float(start_floor)
+                active_travel = None
+                active_occupant = None
+
+                for event in self.sim_log.events:
+                    row = event.row
+
+                    row_lift_id = (row.get("lift_id") or "").strip()
+                    segment_type = (row.get("segment_type") or "").strip().lower()
+                    event_type = (row.get("event_type") or "").strip().lower()
+                    status = (row.get("status") or "").strip().lower()
+
+                    start_node = (row.get("start_node") or "").strip()
+                    end_node = (row.get("end_node") or "").strip()
+                    from_location = (row.get("from_location") or "").strip()
+                    to_location = (row.get("to_location") or "").strip()
+
+                    lift_id = state["lift_id"]
+                    lift_prefix = f"{lift_id}-f"
+
+                    row_matches_lift = False
+
+                    if row_lift_id == lift_id:
+                        row_matches_lift = True
+                    elif start_node.lower().startswith(lift_prefix):
+                        row_matches_lift = True
+                    elif end_node.lower().startswith(lift_prefix):
+                        row_matches_lift = True
+                    elif from_location.lower().startswith(lift_prefix):
+                        row_matches_lift = True
+                    elif to_location.lower().startswith(lift_prefix):
+                        row_matches_lift = True
+
+                    if not row_matches_lift:
+                        continue
+
+                    start_dt = event.start_time
+                    end_dt = (
+                        event.end_time
+                        if event.end_time >= event.start_time
+                        else event.start_time
+                    )
+                    if start_dt > current_time:
+                        break
+
+                    start_floor = self.sim_log._int_or_none(row.get("start_floor"))
+                    end_floor = self.sim_log._int_or_none(row.get("end_floor"))
+                    amr_id = (row.get("amr_id") or "").strip() or None
+                    text_blob = " ".join(
+                        x for x in [segment_type, event_type, status] if x
+                    )
+
+                    if end_dt <= current_time:
+                        if start_floor is not None and end_floor is not None:
+                            last_floor = float(end_floor)
+
+                    is_reposition = "lift_reposition" in text_blob
+
+                    is_travel = (
+                        "lift_transfer" in text_blob
+                        or "segment_lift" in text_blob
+                        or (
+                            row_lift_id
+                            and start_floor is not None
+                            and end_floor is not None
+                            and start_floor != end_floor
+                            and not is_reposition
+                        )
+                    )
+
+                    is_waiting = any(
+                        word in text_blob for word in ["wait", "queue", "board", "door"]
+                    )
+
+                    if start_dt <= current_time <= end_dt:
+                        if (
+                            (is_travel or is_reposition)
+                            and start_floor is not None
+                            and end_floor is not None
+                        ):
+                            total = max((end_dt - start_dt).total_seconds(), 0.001)
+                            elapsed = max(
+                                (current_time - start_dt).total_seconds(), 0.0
+                            )
+                            frac = max(0.0, min(1.0, elapsed / total))
+                            active_travel = float(start_floor) + (
+                                (float(end_floor) - float(start_floor)) * frac
+                            )
+                            if not is_reposition:
+                                active_occupant = amr_id
+                        elif is_waiting and amr_id:
+                            waiting.add(amr_id)
+                        elif row_lift_id and amr_id and "lift" in text_blob:
+                            if not is_reposition:
+                                active_occupant = amr_id
+
+                state["current_floor"] = (
+                    active_travel if active_travel is not None else last_floor
+                )
+                state["occupant"] = active_occupant
+                if active_occupant in waiting:
+                    waiting.discard(active_occupant)
+                state["waiting_amrs"] = sorted(waiting)
+
+            lifts.append(state)
+
+        return lifts
+
+    def update_lift_monitor_dialog(self):
+        if self.lift_monitor_dialog is None:
+            return
+        lift_states = self.build_lift_monitor_state()
+        self.lift_monitor_dialog.update_states(lift_states)
+        if hasattr(self, "lift_dialog") and self.lift_dialog.isVisible():
+            self.lift_dialog.update_from_time(self.current_time)
+
+    def open_lift_monitor_dialog(self):
+        lift_states = self.build_lift_monitor_state()
+        if not lift_states:
+            QMessageBox.information(
+                self, "No lifts", "No lifts are defined in the loaded layout."
+            )
+            return
+
+        # Reuse if already open
+        if self.lift_monitor_dialog and self.lift_monitor_dialog.isVisible():
+            self.lift_monitor_dialog.raise_()
+            self.lift_monitor_dialog.activateWindow()
+            return
+
+        self.lift_monitor_dialog = LiftMonitorDialog(self)
+        self.lift_monitor_dialog.set_lifts(lift_states)
+        self.lift_monitor_dialog.show()
+
+    def _node_name_at_view_event(self, event: QMouseEvent) -> Optional[str]:
+        scene_pos = self.view.mapToScene(event.position().toPoint())
+
+        for item in self.graphics_scene.items(scene_pos):
+            item_type = item.data(0)
+            if item_type in {"layout_node", "layout_node_label"}:
+                node_name = item.data(1)
+                if node_name:
+                    return str(node_name)
+
+        floor = self.current_floor()
+        world_x = float(scene_pos.x())
+        world_y = -float(scene_pos.y())
+        best_name = None
+        best_dist = 2.0
+
+        for name, point in self.layout_model.points_for_floor(floor).items():
+            dist = math.hypot(
+                float(point["x"]) - world_x,
+                float(point["y"]) - world_y,
+            )
+            if dist <= best_dist:
+                best_name = name
+                best_dist = dist
+
+        return best_name
+
+    def _current_amrs_at_node(self, node_name: str) -> List[dict]:
+        if not node_name or not self.current_time or not self.sim_log.events:
+            return []
+
+        node = self.layout_model.points.get(node_name)
+        if not node:
+            return []
+
+        node_floor = int(node.get("floor", self.current_floor()))
+        node_x = float(node["x"])
+        node_y = float(node["y"])
+
+        amr_states, _recent_events = self.sim_log.state_at(
+            self.current_time,
+            self.layout_model,
+        )
+        matches = []
+
+        for state in amr_states.values():
+            state_floor = state.get("floor")
+            if state_floor is None or int(state_floor) != node_floor:
+                continue
+
+            at_node = False
+
+            if (
+                state.get("start_node") == node_name
+                or state.get("end_node") == node_name
+            ):
+                if state.get("x") is None or state.get("y") is None:
+                    at_node = True
+
+            if state.get("x") is not None and state.get("y") is not None:
+                dist = math.hypot(
+                    float(state["x"]) - node_x,
+                    float(state["y"]) - node_y,
+                )
+                if dist <= 0.75:
+                    at_node = True
+
+            if at_node:
+                matches.append(state)
+
+        matches.sort(key=lambda item: str(item.get("amr_id", "")))
+        return matches
+
+    def show_node_amr_status(self, node_name: str):
+        states = self._current_amrs_at_node(node_name)
+        current_stamp = (
+            self.current_time.strftime("%Y-%m-%d %H:%M:%S")
+            if self.current_time
+            else "-"
+        )
+
+        if not states:
+            QMessageBox.information(
+                self,
+                f"AMRs at {node_name}",
+                f"Node: {node_name}\nTime: {current_stamp}\n\nNo AMRs are currently at this node.",
+            )
+            return
+
+        lines = [f"Node: {node_name}", f"Time: {current_stamp}", ""]
+        for state in states:
+            status_text = (
+                state.get("status")
+                or state.get("event_type")
+                or state.get("segment_type")
+                or "-"
+            )
+            task_id = state.get("task_id") or "-"
+            payload = state.get("payload") or "-"
+            lines.append(
+                f"{state.get('amr_id', 'AMR')} | Status: {status_text} | Task: {task_id} | Payload: {payload}"
+            )
+
+        QMessageBox.information(self, f"AMRs at {node_name}", "\n".join(lines))
+
+    def on_view_right_click(self, event: QMouseEvent):
+        node_name = self._node_name_at_view_event(event)
+        if not node_name:
+            return
+
+        self.node_context_menu.clear()
+        self.node_context_menu.addAction(
+            "Show AMRs at node",
+            lambda checked=False, name=node_name: self.show_node_amr_status(name),
+        )
+        self.node_context_menu.popup(event.globalPosition().toPoint())
 
     def draw_dynamic_state_qt(self, floor: int):
         if not self.current_time or not self.sim_log.events:
@@ -1983,6 +2413,7 @@ class SimulationVisualizer(QMainWindow):
     def update_time_display(self):
         if not self.current_time:
             self.time_label.setText("No simulation loaded")
+            self.update_lift_monitor_dialog()
             return
         fraction = (
             self.sim_log.time_to_fraction(self.current_time)
@@ -2006,6 +2437,7 @@ class SimulationVisualizer(QMainWindow):
             f"Current: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}\nStart: {start}\nEnd: {end}"
         )
         self.refresh_timeline()
+        self.update_lift_monitor_dialog()
 
     def on_slider_change(self, value):
         if not self.sim_log.start_time:
@@ -2146,6 +2578,13 @@ class SimulationVisualizer(QMainWindow):
         self.show_dxf_floor(self.current_floor())
         self.update_loaded_files()
 
+    def _finish_first_json_load(self):
+        self.refresh_static_scene()
+        self.refresh_dynamic_scene()
+        self.refresh_timeline()
+        self.fit_view()
+        self.view.viewport().update()
+
     def open_json(self):
         path, _ = QFileDialog.getOpenFileName(
             self, "Open Layout JSON", "", "JSON files (*.json)"
@@ -2158,12 +2597,21 @@ class SimulationVisualizer(QMainWindow):
 
         floors = self.layout_model.floors()
         if floors:
-            self.floor_spin.setValue(floors[0])
+            self.floor_spin.blockSignals(True)
+            self.floor_spin.setValue(int(floors[0]))
+            self.floor_spin.blockSignals(False)
 
         self.update_loaded_files()
         self._sync_timeline_from_layout_and_csv()
-        self.fit_view()
-        self.refresh_all()
+
+        # Build initial scene contents immediately
+        self.refresh_static_scene()
+        self.refresh_dynamic_scene()
+        self.refresh_timeline()
+
+        # Let Qt finish sizing/layout before fitting the scene
+        QTimer.singleShot(0, self._finish_first_json_load)
+
         self.start_loading_floor_dxfs_from_json()
         self.set_status(f"Loaded layout {Path(path).name}")
 

@@ -69,6 +69,17 @@ COLUMN_ALIASES = {
     "outcome": ["outcome", "result", "task_result"],
     "payload": ["payload", "payload_type", "payload_name", "load_type", "load"],
     "distance": ["distance_m", "segment_distance_m", "distance", "travel_distance_m"],
+    "energy": [
+        "energy_kwh",
+        "segment_energy_kwh",
+        "energy",
+        "consumption_kwh",
+        "recharge_energy_kwh",
+    ],
+    "start_x": ["start_x", "from_x", "x_from", "origin_x", "x1"],
+    "start_y": ["start_y", "from_y", "y_from", "origin_y", "y1"],
+    "end_x": ["end_x", "to_x", "x_to", "destination_x", "x2"],
+    "end_y": ["end_y", "to_y", "y_to", "destination_y", "y2"],
 }
 
 WAIT_PATTERNS = re.compile(r"wait|queue|queued|blocked|hold|reserve|reservation", re.I)
@@ -122,7 +133,8 @@ def fmt_ts(value, has_datetime: bool) -> str:
     if pd.isna(value):
         return "-"
     return (
-        pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S")
+        # pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S")
+        pd.Timestamp(value).strftime("%d/%m/%Y %H:%M:%S")
         if has_datetime
         else f"{float(value):,.1f}s"
     )
@@ -251,6 +263,58 @@ def load_payload_weights(json_path: Path) -> Dict[str, float]:
     return weights
 
 
+def load_amr_parameters(json_path: Path) -> pd.DataFrame:
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    amrs = data.get("amrs", [])
+    rows: List[dict] = []
+
+    for item in amrs:
+        rows.append(
+            {
+                "amr": str(item.get("id", "")).strip() or "-",
+                "quantity": int(item.get("quantity", 1) or 1),
+                "payload_capacity_kg": item.get("payload_capacity_kg", "-"),
+                "payload_capacity_size_units": item.get(
+                    "payload_capacity_size_units", "-"
+                ),
+                "speed_m_per_sec": item.get("speed_m_per_sec", "-"),
+                "battery_capacity_kwh": item.get("battery_capacity_kwh", "-"),
+                "battery_charge_rate_kw": item.get("battery_charge_rate_kw", "-"),
+                "recharge_threshold_percent": item.get(
+                    "recharge_threshold_percent", "-"
+                ),
+                "battery_soc_percent": item.get("battery_soc_percent", "-"),
+                "start_location": item.get("start_location", "-"),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def load_floor_dxf_map(json_path: Path) -> Dict[int, str]:
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    rows = data.get("floor_dxf_files", data.get("dxf_files", []))
+    floor_map: Dict[int, str] = {}
+
+    for item in rows:
+        try:
+            floor = int(item.get("floor"))
+        except (TypeError, ValueError):
+            continue
+
+        path = str(item.get("filepath", "")).strip()
+        if not path:
+            continue
+
+        floor_map[floor] = path
+
+    return floor_map
+
+
 def is_lift_wait_row(row: pd.Series) -> bool:
     segment_text = str(row.get("_segment_text", "")).strip().lower()
     event_text = str(row.get("_event_text", "")).strip().lower()
@@ -264,11 +328,52 @@ def is_lift_wait_row(row: pd.Series) -> bool:
     return False
 
 
+def extract_congestion_point(
+    row: pd.Series,
+    cols: Dict[str, Optional[str]],
+) -> Tuple[Optional[float], Optional[float], Optional[int]]:
+    sx = pd.to_numeric(
+        row.get(cols["start_x"]) if cols.get("start_x") else None,
+        errors="coerce",
+    )
+    sy = pd.to_numeric(
+        row.get(cols["start_y"]) if cols.get("start_y") else None,
+        errors="coerce",
+    )
+    sf = pd.to_numeric(
+        row.get(cols["start_floor"]) if cols.get("start_floor") else None,
+        errors="coerce",
+    )
+
+    ex = pd.to_numeric(
+        row.get(cols["end_x"]) if cols.get("end_x") else None,
+        errors="coerce",
+    )
+    ey = pd.to_numeric(
+        row.get(cols["end_y"]) if cols.get("end_y") else None,
+        errors="coerce",
+    )
+    ef = pd.to_numeric(
+        row.get(cols["end_floor"]) if cols.get("end_floor") else None,
+        errors="coerce",
+    )
+
+    if pd.notna(sx) and pd.notna(sy) and pd.notna(sf):
+        return float(sx), float(sy), int(sf)
+
+    if pd.notna(ex) and pd.notna(ey) and pd.notna(ef):
+        return float(ex), float(ey), int(ef)
+
+    return None, None, None
+
+
 def analyse(
     csv_path: Path,
     target_amr_util: float,
     target_lift_util: float,
     payload_weights: Optional[Dict[str, float]] = None,
+    amr_parameters: Optional[pd.DataFrame] = None,
+    floor_dxf_map: Optional[Dict[int, str]] = None,
 ) -> Dict[str, pd.DataFrame]:
     raw = pd.read_csv(csv_path)
     df, ctx = parse_time_column(raw)
@@ -290,6 +395,7 @@ def analyse(
 
     payload_col = cols["payload"]
     distance_col = cols["distance"]
+    energy_col = cols["energy"]
 
     df["_event_text"] = df[event_col].astype(str) if event_col else ""
     df["_segment_text"] = df[seg_col].astype(str) if seg_col else ""
@@ -298,6 +404,11 @@ def analyse(
     )
     df["_distance_m"] = (
         pd.to_numeric(df[distance_col], errors="coerce") if distance_col else 0.0
+    )
+    df["_energy_kwh"] = (
+        pd.to_numeric(df[energy_col], errors="coerce").fillna(0.0)
+        if energy_col
+        else 0.0
     )
     df["_wait_s"] = (
         pd.to_numeric(df[wait_col], errors="coerce").fillna(0) if wait_col else 0.0
@@ -439,6 +550,41 @@ def analyse(
     charge_mask = df["_segment_text"].str.fullmatch(
         r"segment_charge", case=False, na=False
     )
+
+    recharge_energy = (
+        df.loc[charge_mask]
+        .groupby(amr_col, dropna=False)["_energy_kwh"]
+        .sum()
+        .reset_index(name="recharge_energy_kwh")
+        .rename(columns={amr_col: "amr"})
+    )
+
+    amr_summary = amr_summary.merge(recharge_energy, on="amr", how="left")
+    amr_summary["recharge_energy_kwh"] = (
+        amr_summary["recharge_energy_kwh"].fillna(0.0).round(3)
+    )
+
+    recharge_summary = (
+        df.loc[charge_mask]
+        .groupby(amr_col, dropna=False)
+        .agg(
+            recharges=("_segment_text", "size"),
+            recharge_energy_kwh=("_energy_kwh", "sum"),
+            recharge_time_s=("_duration_s", "sum"),
+        )
+        .reset_index()
+        .rename(columns={amr_col: "amr"})
+    )
+
+    if recharge_summary.empty:
+        recharge_summary = pd.DataFrame(
+            columns=["amr", "recharges", "recharge_energy_kwh", "recharge_time_s"]
+        )
+    else:
+        recharge_summary["recharge_energy_kwh"] = (
+            recharge_summary["recharge_energy_kwh"].fillna(0.0).round(3)
+        )
+
     recharge_counts = (
         df.loc[charge_mask]
         .groupby(amr_col, dropna=False)
@@ -454,7 +600,7 @@ def analyse(
 
     df = derive_lift_columns(df, cols)
     lift_mask = df["_segment_text"].str.fullmatch(
-        r"lift_transfer", case=False, na=False
+        r"lift_transfer|lift_reposition", case=False, na=False
     )
     lift_rows = df.loc[lift_mask].copy()
     lift_rows = lift_rows[lift_rows["_lift_id"].notna()].copy()
@@ -472,6 +618,7 @@ def analyse(
                 "avg_trip_s",
                 "utilisation_pct",
                 "idle_pct",
+                "lift_energy_kwh",
             ]
         )
     else:
@@ -481,6 +628,7 @@ def analyse(
                 trips=("lift_time_s", "count"),
                 total_lift_time_s=("lift_time_s", "sum"),
                 avg_trip_s=("lift_time_s", "mean"),
+                lift_energy_kwh=("_energy_kwh", "sum"),
             )
             .reset_index()
             .rename(columns={"_lift_id": "lift_id"})
@@ -491,6 +639,7 @@ def analyse(
         lift_summary["idle_pct"] = (
             (100 - lift_summary["utilisation_pct"]).clip(lower=0).round(1)
         )
+        lift_summary["lift_energy_kwh"] = lift_summary["lift_energy_kwh"].round(4)
 
     # Lift Wait times
 
@@ -533,6 +682,157 @@ def analyse(
             .sort_values("time")
             .reset_index(drop=True)
         )
+
+    # Congestion heatmap data
+    congestion_mask = df["_event_text"].str.contains(WAIT_PATTERNS, na=False) | df[
+        "_segment_text"
+    ].str.contains(WAIT_PATTERNS, na=False)
+
+    congestion_rows = df.loc[congestion_mask].copy()
+
+    congestion_points: List[dict] = []
+    for _, row in congestion_rows.iterrows():
+        x, y, floor = extract_congestion_point(row, cols)
+        if x is None or y is None or floor is None:
+            continue
+
+        weight = float(pd.to_numeric(row.get("_wait_s", 0), errors="coerce") or 0.0)
+        if weight <= 0:
+            weight = float(
+                pd.to_numeric(row.get("_duration_s", 0), errors="coerce") or 0.0
+            )
+        if weight <= 0:
+            weight = 1.0
+
+        congestion_points.append(
+            {
+                "floor": int(floor),
+                "x": float(x),
+                "y": float(y),
+                "weight": float(weight),
+                "event": safe_text(row.get("_event_text")),
+                "segment": safe_text(row.get("_segment_text")),
+            }
+        )
+
+    if congestion_points:
+        congestion_df = pd.DataFrame(congestion_points)
+
+        grid_size = 2.0
+        congestion_df["grid_x"] = (congestion_df["x"] / grid_size).round().astype(int)
+        congestion_df["grid_y"] = (congestion_df["y"] / grid_size).round().astype(int)
+
+        congestion_heatmap = (
+            congestion_df.groupby(["floor", "grid_x", "grid_y"], dropna=False)
+            .agg(
+                x=("x", "mean"),
+                y=("y", "mean"),
+                congestion_score=("weight", "sum"),
+                event_count=("weight", "size"),
+            )
+            .reset_index()
+            .sort_values(["floor", "congestion_score"], ascending=[True, False])
+            .reset_index(drop=True)
+        )
+    else:
+        congestion_heatmap = pd.DataFrame(
+            columns=[
+                "floor",
+                "grid_x",
+                "grid_y",
+                "x",
+                "y",
+                "congestion_score",
+                "event_count",
+            ]
+        )
+
+    # Congestion path data for rectangular path overlays
+    # Use travelled segments, weighted by congestion-related wait/duration
+    path_source = df[
+        df["_segment_text"].str.contains(
+            r"corridor|lift_transfer|lift_reposition",
+            case=False,
+            na=False,
+        )
+    ].copy()
+
+    congestion_path_rows: List[dict] = []
+    for _, row in path_source.iterrows():
+        sx = pd.to_numeric(
+            row.get(cols["start_x"]) if cols.get("start_x") else None,
+            errors="coerce",
+        )
+        sy = pd.to_numeric(
+            row.get(cols["start_y"]) if cols.get("start_y") else None,
+            errors="coerce",
+        )
+        sf = pd.to_numeric(
+            row.get(cols["start_floor"]) if cols.get("start_floor") else None,
+            errors="coerce",
+        )
+
+        ex = pd.to_numeric(
+            row.get(cols["end_x"]) if cols.get("end_x") else None,
+            errors="coerce",
+        )
+        ey = pd.to_numeric(
+            row.get(cols["end_y"]) if cols.get("end_y") else None,
+            errors="coerce",
+        )
+        ef = pd.to_numeric(
+            row.get(cols["end_floor"]) if cols.get("end_floor") else None,
+            errors="coerce",
+        )
+
+        if pd.isna(sf) and pd.notna(ef):
+            sf = ef
+        if pd.isna(ef) and pd.notna(sf):
+            ef = sf
+
+        if pd.isna(sx) or pd.isna(sy) or pd.isna(ex) or pd.isna(ey) or pd.isna(sf):
+            continue
+
+        if pd.notna(ef) and int(sf) != int(ef):
+            continue
+
+        if float(sx) == float(ex) and float(sy) == float(ey):
+            continue
+
+        weight = float(pd.to_numeric(row.get("_wait_s", 0), errors="coerce") or 0.0)
+        if weight <= 0:
+            weight = float(
+                pd.to_numeric(row.get("_duration_s", 0), errors="coerce") or 0.0
+            )
+        if weight <= 0:
+            weight = 1.0
+
+        congestion_path_rows.append(
+            {
+                "floor": int(sf),
+                "x1": float(sx),
+                "y1": float(sy),
+                "x2": float(ex),
+                "y2": float(ey),
+                "congestion_score": float(weight),
+                "event": safe_text(row.get("_event_text")),
+                "segment": safe_text(row.get("_segment_text")),
+            }
+        )
+
+    congestion_paths = pd.DataFrame(
+        congestion_path_rows,
+        columns=[
+            "floor",
+            "x1",
+            "y1",
+            "x2",
+            "y2",
+            "congestion_score",
+            "event",
+            "segment",
+        ],
+    )
 
     active_amrs = max(int(tasks["amr"].nunique()), 1)
     workload_based_amrs = int(
@@ -613,15 +913,21 @@ def analyse(
         tasks.groupby(["payload"], dropna=False)
         .agg(
             tasks=("task_id", "count"),
-            total_payload_weight_kg=("payload_weight_kg", "sum"),
+            payload_weight_kg=("payload_weight_kg", "first"),
         )
         .reset_index()
         .sort_values(["payload"])
     )
 
-    payload_schedule["total_payload_weight_kg"] = payload_schedule[
-        "total_payload_weight_kg"
-    ].round(1)
+    payload_schedule["payload_weight_kg"] = (
+        pd.to_numeric(payload_schedule["payload_weight_kg"], errors="coerce")
+        .fillna(0.0)
+        .round(1)
+    )
+
+    payload_schedule["payload_weight_kg"] = payload_schedule["payload_weight_kg"].round(
+        1
+    )
 
     return {
         "summary": summary,
@@ -632,4 +938,26 @@ def analyse(
         "methodology": methodology,
         "payload_schedule": payload_schedule,
         "lift_wait_schedule": lift_wait_schedule,
+        "recharge_summary": recharge_summary,
+        "amr_list": (
+            amr_parameters.copy()
+            if amr_parameters is not None
+            else pd.DataFrame(
+                columns=[
+                    "amr",
+                    "quantity",
+                    "payload_capacity_kg",
+                    "payload_capacity_size_units",
+                    "speed_m_per_sec",
+                    "battery_capacity_kwh",
+                    "battery_charge_rate_kw",
+                    "recharge_threshold_percent",
+                    "battery_soc_percent",
+                    "start_location",
+                ]
+            )
+        ),
+        "congestion_heatmap": congestion_heatmap,
+        "congestion_paths": congestion_paths,
+        "floor_dxf_map": floor_dxf_map or {},
     }

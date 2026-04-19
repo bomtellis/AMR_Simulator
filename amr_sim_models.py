@@ -54,6 +54,12 @@ class Lift:
     capacity_size_units: float = 1.0
     current_floor: int = 0
     available_time: float = 0.0
+    car_mass_kg: float = 1200.0
+    counterweight_ratio: float = 0.5
+    travel_efficiency: float = 0.75
+    door_power_w: float = 800.0
+    standby_power_w: float = 120.0
+    regen_efficiency: float = 0.2
 
     def can_serve(self, floor_a: int, floor_b: int) -> bool:
         return floor_a in self.served_floors and floor_b in self.served_floors

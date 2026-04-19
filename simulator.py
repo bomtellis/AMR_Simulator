@@ -9,7 +9,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from amr_sim_energy import requires_recharge_before_route, total_route_energy_kwh
+from amr_sim_energy import (
+    requires_recharge_before_route,
+    total_lift_energy_kwh,
+    total_route_energy_kwh,
+)
 from amr_sim_models import AMR, Event, Lift, Location, PayloadType, Task
 from amr_sim_time_utils import (
     SimulationClock,
@@ -32,6 +36,10 @@ class Simulation:
             sim_cfg.get("start_datetime", "2026-01-01T08:00:00")
         )
         tick_rate = float(sim_cfg.get("tick_rate", 120.0))
+        self.wall_start_time = None
+        self.last_progress_update = 0.0
+        self.progress_update_interval = 0.2  # seconds
+        self.estimated_total_sim_time = 1.0
 
         self.clock = SimulationClock(start_datetime=start_datetime, tick_rate=tick_rate)
         self.current_time = 0.0
@@ -48,6 +56,34 @@ class Simulation:
         self.failed_tasks: List[dict] = []
         self.location_reservations: Dict[str, List[Tuple[float, float]]] = defaultdict(
             list
+        )
+
+        # Congestion setup
+        building_cfg = config.get("building", {})
+
+        self.edge_reservations: Dict[
+            Tuple[str, str], List[Tuple[float, float, str]]
+        ] = defaultdict(list)
+
+        self.node_reservations: Dict[str, List[Tuple[float, float, str]]] = defaultdict(
+            list
+        )
+        self.node_clearance_time_sec = float(
+            building_cfg.get("node_clearance_time_sec", 0.5)
+        )
+
+        self.route_cache: Dict[Tuple[int, str, str, Tuple, Tuple], Optional[dict]] = {}
+
+        self.amr_spacing_m = float(building_cfg.get("amr_spacing_m", 1.5))
+        self.edge_max_concurrency = int(building_cfg.get("edge_max_concurrency", 1))
+        self.edge_congestion_window_sec = float(
+            building_cfg.get("edge_congestion_window_sec", 30.0)
+        )
+        self.edge_slowdown_per_amr = float(
+            building_cfg.get("edge_slowdown_per_amr", 0.15)
+        )
+        self.min_congestion_speed_factor = float(
+            building_cfg.get("min_congestion_speed_factor", 0.45)
         )
 
         self.load_unload_time_sec = float(
@@ -108,6 +144,12 @@ class Simulation:
                 floor_locations=floor_locations,
                 capacity_size_units=float(item.get("capacity_size_units", 1.0)),
                 current_floor=int(item.get("start_floor", 0)),
+                car_mass_kg=float(item.get("car_mass_kg", 1200.0)),
+                counterweight_ratio=float(item.get("counterweight_ratio", 0.5)),
+                travel_efficiency=float(item.get("travel_efficiency", 0.75)),
+                door_power_w=float(item.get("door_power_w", 800.0)),
+                standby_power_w=float(item.get("standby_power_w", 120.0)),
+                regen_efficiency=float(item.get("regen_efficiency", 0.2)),
             )
 
             for floor in lift.served_floors:
@@ -172,6 +214,8 @@ class Simulation:
         for task in initial_tasks:
             self.schedule_task_release(task)
 
+        self.estimated_total_sim_time = self._estimate_total_sim_time()
+
         self.amr_centre_name = config["building"].get("amr_centre", "AMR_CENTRE")
         self.idle_return_window_sec = float(
             config["building"].get("idle_return_window_sec", 300.0)
@@ -180,6 +224,15 @@ class Simulation:
             config["building"].get("enable_idle_return", True)
         )
         self.synthetic_task_counter = 0
+
+    def _rules_cache_key(
+        self, rules: Optional[dict]
+    ) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+        if not rules:
+            return ((), ())
+        allowed_nodes = tuple(sorted(rules.get("allowed_nodes", set())))
+        allowed_edges = tuple(sorted(rules.get("allowed_edges", set())))
+        return (allowed_nodes, allowed_edges)
 
     def _empty_route_rules(self) -> dict:
         return {
@@ -344,50 +397,68 @@ class Simulation:
         rules: Optional[dict] = None,
     ) -> Optional[dict]:
         graph = self.floor_graphs.get(floor, {})
+        rules = rules or self._empty_route_rules()
+        cache_key = (floor, start_name, end_name, *self._rules_cache_key(rules))
+
         if start_name not in graph or end_name not in graph:
+            self.route_cache[cache_key] = None
             return None
 
-        rules = rules or self._empty_route_rules()
+        if cache_key in self.route_cache:
+            return self.route_cache[cache_key]
 
         if not self._node_allowed(start_name, rules):
+            self.route_cache[cache_key] = None
             return None
         if not self._node_allowed(end_name, rules):
+            self.route_cache[cache_key] = None
             return None
 
-        heap = [(0.0, start_name, [])]
+        heap = [(0.0, start_name)]
         best = {start_name: 0.0}
+        prev: Dict[str, Tuple[str, float]] = {}
 
         while heap:
-            dist, node, path = heapq.heappop(heap)
+            dist, node = heapq.heappop(heap)
             if node == end_name:
-                return {"distance_m": dist, "edges": path}
+                break
             if dist > best.get(node, math.inf):
                 continue
+
             for edge in graph[node]:
                 nxt = edge["to"]
                 if not self._node_allowed(nxt, rules):
                     continue
                 if not self._edge_allowed(node, nxt, rules):
                     continue
+
                 new_dist = dist + edge["distance_m"]
                 if new_dist < best.get(nxt, math.inf):
                     best[nxt] = new_dist
-                    heapq.heappush(
-                        heap,
-                        (
-                            new_dist,
-                            nxt,
-                            path
-                            + [
-                                {
-                                    "from": node,
-                                    "to": nxt,
-                                    "distance_m": edge["distance_m"],
-                                }
-                            ],
-                        ),
-                    )
-        return None
+                    prev[nxt] = (node, edge["distance_m"])
+                    heapq.heappush(heap, (new_dist, nxt))
+
+        if end_name not in best:
+            self.route_cache[cache_key] = None
+            return None
+
+        path_edges = []
+        node = end_name
+        while node != start_name:
+            parent, distance_m = prev[node]
+            path_edges.append(
+                {
+                    "from": parent,
+                    "to": node,
+                    "distance_m": distance_m,
+                }
+            )
+            node = parent
+        path_edges.reverse()
+
+        result = {"distance_m": best[end_name], "edges": path_edges}
+        self.route_cache[cache_key] = result
+        return result
 
     def _find_next_available_time(
         self,
@@ -396,7 +467,7 @@ class Simulation:
         duration: float,
     ) -> float:
         max_concurrency = self.location_max_concurrency.get(location_name, 999999)
-        reservations = sorted(self.location_reservations[location_name])
+        reservations = self.location_reservations[location_name]
 
         t = requested_start
         while True:
@@ -418,7 +489,12 @@ class Simulation:
             t = next_candidate
 
     def _reserve_location(self, location_name: str, start_time: float, end_time: float):
-        self.location_reservations[location_name].append((start_time, end_time))
+        reservations = self.location_reservations[location_name]
+        item = (start_time, end_time)
+        idx = len(reservations)
+        while idx > 0 and reservations[idx - 1][0] > start_time:
+            idx -= 1
+        reservations.insert(idx, item)
 
     def push_event(
         self, time_value: float, event_type: str, payload: Optional[dict] = None
@@ -467,6 +543,148 @@ class Simulation:
     def _distance_same_floor(self, a: Location, b: Location) -> float:
         return math.hypot(b.x - a.x, b.y - a.y)
 
+    def _physical_edge_key(self, a_name: str, b_name: str) -> Tuple[str, str]:
+        # Same physical corridor edge in either direction.
+        return tuple(sorted((a_name, b_name)))
+
+    def _spacing_time_sec(self, amr: AMR) -> float:
+        return self.amr_spacing_m / max(amr.speed_m_per_sec, 1e-9)
+
+    def _edge_recent_demand(self, edge_key: Tuple[str, str], t: float) -> int:
+        reservations = self.edge_reservations.get(edge_key, [])
+        window = self.edge_congestion_window_sec
+        count = 0
+        for start, end, _ in reservations:
+            if start <= t + window and end >= t - window:
+                count += 1
+        return count
+
+    def _find_next_edge_start(
+        self,
+        edge_key: Tuple[str, str],
+        requested_start: float,
+        duration: float,
+        spacing_time: float,
+    ) -> Tuple[float, int]:
+        reservations = self.edge_reservations.get(edge_key, [])
+        t = requested_start
+
+        while True:
+            overlap_count = 0
+            next_candidate = None
+
+            for start, end, _ in reservations:
+                protected_start = start - spacing_time
+                protected_end = end + spacing_time
+
+                if not (t + duration <= protected_start or t >= protected_end):
+                    overlap_count += 1
+                    if next_candidate is None or protected_end < next_candidate:
+                        next_candidate = protected_end
+
+            if overlap_count < self.edge_max_concurrency:
+                return t, overlap_count
+
+            if next_candidate is None:
+                return t, overlap_count
+
+            t = next_candidate
+
+    def _reserve_edge(
+        self,
+        from_name: str,
+        to_name: str,
+        start_time: float,
+        end_time: float,
+        amr_id: str,
+    ):
+        edge_key = self._physical_edge_key(from_name, to_name)
+        reservations = self.edge_reservations[edge_key]
+        item = (start_time, end_time, amr_id)
+        idx = len(reservations)
+        while idx > 0 and reservations[idx - 1][0] > start_time:
+            idx -= 1
+        reservations.insert(idx, item)
+
+    def _reserve_node(
+        self,
+        node_name: str,
+        start_time: float,
+        end_time: float,
+        amr_id: str,
+    ):
+        self.node_reservations[node_name].append((start_time, end_time, amr_id))
+
+    def _find_next_node_arrival(
+        self,
+        node_name: str,
+        requested_arrival: float,
+        spacing_time: float,
+    ) -> float:
+        reservations = sorted(self.node_reservations.get(node_name, []))
+        t = requested_arrival
+
+        while True:
+            blocked = False
+            next_candidate = None
+
+            for start, end, _ in reservations:
+                protected_start = start - spacing_time
+                protected_end = end + spacing_time
+
+                if protected_start <= t < protected_end:
+                    blocked = True
+                    if next_candidate is None or protected_end < next_candidate:
+                        next_candidate = protected_end
+
+            if not blocked:
+                return t
+
+            if next_candidate is None:
+                return t
+
+            t = next_candidate
+
+    def _reserve_corridor_segments(
+        self,
+        amr: AMR,
+        segments: List[dict],
+        start_time: float,
+    ):
+        t = start_time
+        spacing_time = self._spacing_time_sec(amr)
+
+        for segment in segments:
+            duration = float(segment.get("duration", 0.0))
+            seg_type = segment.get("type", "")
+
+            if seg_type == "corridor":
+                self._reserve_edge(
+                    segment["from"],
+                    segment["to"],
+                    t,
+                    t + duration,
+                    amr.id,
+                )
+                self._reserve_node(
+                    segment["to"],
+                    t + duration,
+                    t + duration + self.node_clearance_time_sec,
+                    amr.id,
+                )
+
+            elif seg_type in {"wait_for_edge", "wait_for_node"}:
+                node_name = segment.get("from") or segment.get("to")
+                if node_name:
+                    self._reserve_node(
+                        node_name,
+                        t,
+                        t + duration,
+                        amr.id,
+                    )
+
+            t += duration
+
     def _travel_same_floor(self, amr: AMR, start: Location, end: Location) -> float:
         route = self._shortest_path_same_floor(start.floor, start.name, end.name)
         if route is None:
@@ -479,6 +697,7 @@ class Simulation:
         start: Location,
         end: Location,
         rules: Optional[dict] = None,
+        start_time_value: Optional[float] = None,
     ) -> Optional[Tuple[List[dict], float, float]]:
         route = self._shortest_path_same_floor(
             start.floor,
@@ -488,11 +707,98 @@ class Simulation:
         )
         if route is None:
             return None
-        segments = []
+
+        segments: List[dict] = []
         total_duration = 0.0
+        current_time_value = start_time_value
+
         for edge in route["edges"]:
-            duration = edge["distance_m"] / max(amr.speed_m_per_sec, 1e-9)
-            total_duration += duration
+            base_duration = edge["distance_m"] / max(amr.speed_m_per_sec, 1e-9)
+
+            if current_time_value is None:
+                duration = base_duration
+                speed_factor = 1.0
+                congestion_count = 0
+                edge_wait = 0.0
+                node_wait = 0.0
+            else:
+                edge_key = self._physical_edge_key(edge["from"], edge["to"])
+                congestion_count = self._edge_recent_demand(
+                    edge_key, current_time_value
+                )
+
+                speed_factor = max(
+                    self.min_congestion_speed_factor,
+                    1.0 - (congestion_count * self.edge_slowdown_per_amr),
+                )
+
+                # Start with a slowed-but-moving duration
+                travel_duration = base_duration / max(speed_factor, 1e-9)
+
+                edge_start, _ = self._find_next_edge_start(
+                    edge_key=edge_key,
+                    requested_start=current_time_value,
+                    duration=travel_duration,
+                    spacing_time=self._spacing_time_sec(amr),
+                )
+                edge_wait = max(0.0, edge_start - current_time_value)
+
+                if edge_wait > 0:
+                    segments.append(
+                        {
+                            "type": "wait_for_edge",
+                            "from": edge["from"],
+                            "to": edge["from"],
+                            "duration": edge_wait,
+                            "distance_m": 0.0,
+                            "congestion_count": congestion_count,
+                        }
+                    )
+                    total_duration += edge_wait
+                    current_time_value = edge_start
+
+                proposed_arrival = current_time_value + travel_duration
+                safe_arrival = self._find_next_node_arrival(
+                    edge["to"],
+                    proposed_arrival,
+                    self._spacing_time_sec(amr),
+                )
+
+                node_wait = max(0.0, safe_arrival - proposed_arrival)
+
+                if node_wait > 0:
+                    # First try to absorb delay by slowing down on the segment
+                    adjusted_duration = travel_duration + node_wait
+                    effective_speed_factor = base_duration / max(
+                        adjusted_duration, 1e-9
+                    )
+
+                    if effective_speed_factor >= self.min_congestion_speed_factor:
+                        duration = adjusted_duration
+                    else:
+                        duration = base_duration / max(
+                            self.min_congestion_speed_factor, 1e-9
+                        )
+                        stop_wait = max(
+                            0.0, safe_arrival - (current_time_value + duration)
+                        )
+                        if stop_wait > 0:
+                            segments.append(
+                                {
+                                    "type": "wait_for_node",
+                                    "from": edge["to"],
+                                    "to": edge["to"],
+                                    "duration": stop_wait,
+                                    "distance_m": 0.0,
+                                    "congestion_count": congestion_count,
+                                }
+                            )
+                            total_duration += stop_wait
+                        node_wait = stop_wait
+                        speed_factor = self.min_congestion_speed_factor
+                else:
+                    duration = travel_duration
+
             segments.append(
                 {
                     "type": "corridor",
@@ -500,8 +806,15 @@ class Simulation:
                     "to": edge["to"],
                     "duration": duration,
                     "distance_m": edge["distance_m"],
+                    "speed_factor": speed_factor,
+                    "congestion_count": congestion_count,
                 }
             )
+            total_duration += duration
+
+            if current_time_value is not None:
+                current_time_value += duration + node_wait
+
         return segments, total_duration, route["distance_m"]
 
     def _lift_location_on_floor(self, lift: Lift, floor: int) -> Location:
@@ -536,39 +849,54 @@ class Simulation:
             if not self._node_allowed(destination_lift.name, rules):
                 continue
 
+            ##
             to_lift_route = self._same_floor_segments(
-                amr, from_loc, origin_lift, rules=rules
+                amr,
+                from_loc,
+                origin_lift,
+                rules=rules,
+                start_time_value=ready_time,
             )
-            from_lift_route = self._same_floor_segments(
-                amr, destination_lift, to_loc, rules=rules
-            )
-            if to_lift_route is None or from_lift_route is None:
+            if to_lift_route is None:
                 continue
 
             to_lift_segments, to_lift_sec, to_lift_distance_m = to_lift_route
-            from_lift_segments, from_lift_sec, from_lift_distance_m = from_lift_route
 
             arrival_at_lift = ready_time + to_lift_sec
             lift_start = max(arrival_at_lift, lift.available_time)
 
-            reposition = abs(lift.current_floor - from_loc.floor) / max(
+            reposition_sec = abs(lift.current_floor - from_loc.floor) / max(
                 lift.speed_floors_per_sec, 1e-9
             )
-            loaded_travel = abs(to_loc.floor - from_loc.floor) / max(
+            loaded_travel_sec = abs(to_loc.floor - from_loc.floor) / max(
                 lift.speed_floors_per_sec, 1e-9
             )
 
-            lift_duration = (
-                reposition
-                + lift.door_time_sec
-                + lift.boarding_time_sec
-                + loaded_travel
-                + lift.door_time_sec
-                + lift.boarding_time_sec
-            )
+            reposition_start = max(arrival_at_lift, lift.available_time)
+            reposition_finish = reposition_start + reposition_sec
 
-            lift_finish = lift_start + lift_duration
+            board_start = reposition_finish
+            loaded_start = board_start + lift.door_time_sec + lift.boarding_time_sec
+            loaded_finish = loaded_start + loaded_travel_sec
+            unload_finish = loaded_finish + lift.door_time_sec + lift.boarding_time_sec
+
+            lift_start = reposition_start
+            lift_finish = unload_finish
+
+            from_lift_route = self._same_floor_segments(
+                amr,
+                destination_lift,
+                to_loc,
+                rules=rules,
+                start_time_value=lift_finish,
+            )
+            if from_lift_route is None:
+                continue
+
+            from_lift_segments, from_lift_sec, from_lift_distance_m = from_lift_route
             final_finish = lift_finish + from_lift_sec
+
+            ##
 
             if final_finish < best_finish:
                 best_finish = final_finish
@@ -588,6 +916,14 @@ class Simulation:
                     "vertical_distance_m": abs(to_loc.floor - from_loc.floor)
                     * self.floor_height_m,
                     "final_finish": final_finish,
+                    "reposition_from_floor": lift.current_floor,
+                    "reposition_to_floor": from_loc.floor,
+                    "reposition_sec": reposition_sec,
+                    "loaded_travel_sec": loaded_travel_sec,
+                    "reposition_start": reposition_start,
+                    "reposition_finish": reposition_finish,
+                    "loaded_start": loaded_start,
+                    "loaded_finish": loaded_finish,
                 }
 
         return best_plan
@@ -627,6 +963,41 @@ class Simulation:
             return None
 
         transfer_segments = list(plan["to_lift_segments"])
+
+        if plan["wait_time"] > 0:
+            transfer_segments.append(
+                {
+                    "type": "wait_for_lift",
+                    "lift_id": plan["lift"].id,
+                    "from": plan["origin_lift"].name,
+                    "to": plan["origin_lift"].name,
+                    "duration": plan["wait_time"],
+                    "distance_m": 0.0,
+                }
+            )
+
+        if plan.get("reposition_sec", 0.0) > 0:
+            transfer_segments.append(
+                {
+                    "type": "lift_reposition",
+                    "lift_id": plan["lift"].id,
+                    "from": f"{plan['lift'].id}-F{plan['reposition_from_floor']}",
+                    "to": f"{plan['lift'].id}-F{plan['reposition_to_floor']}",
+                    "from_floor": plan["reposition_from_floor"],
+                    "to_floor": plan["reposition_to_floor"],
+                    "wait_time": 0.0,
+                    "duration": plan["reposition_sec"],
+                    "distance_m": abs(
+                        plan["reposition_to_floor"] - plan["reposition_from_floor"]
+                    )
+                    * self.floor_height_m,
+                    "vertical_distance_m": abs(
+                        plan["reposition_to_floor"] - plan["reposition_from_floor"]
+                    )
+                    * self.floor_height_m,
+                }
+            )
+
         transfer_segments.append(
             {
                 "type": "lift_transfer",
@@ -635,12 +1006,18 @@ class Simulation:
                 "to": plan["destination_lift"].name,
                 "from_floor": current_loc.floor,
                 "to_floor": charge_loc.floor,
-                "wait_time": plan["wait_time"],
-                "duration": plan["lift_finish"] - plan["lift_start"],
+                "wait_time": 0.0,
+                "duration": (
+                    plan["lift_finish"]
+                    - plan["lift_start"]
+                    - plan.get("reposition_sec", 0.0)
+                    - plan["wait_time"]
+                ),
                 "distance_m": plan["vertical_distance_m"],
                 "vertical_distance_m": plan["vertical_distance_m"],
             }
         )
+
         transfer_segments.extend(plan["from_lift_segments"])
 
         if reserve:
@@ -705,7 +1082,7 @@ class Simulation:
             next_times.append(amr.available_time)
 
         if self.events:
-            next_event_time = min(event.time for event in self.events)
+            next_event_time = self.events[0].time
             if next_event_time > now:
                 next_times.append(next_event_time)
 
@@ -837,6 +1214,8 @@ class Simulation:
             pickup_loc = self.locations[task.pickup]
             dropoff_loc = self.locations[task.dropoff]
 
+            lift_energy_kwh_total = 0.0
+
             # No restrictions before pickup
             pre_pickup_rules = None
 
@@ -871,6 +1250,9 @@ class Simulation:
             segments = list(charge_segments)
             current_location = amr_loc
 
+            lift_empty_sec_total = 0.0
+            lift_loaded_sec_total = 0.0
+
             def move_between(
                 location_a: Location,
                 location_b: Location,
@@ -881,12 +1263,25 @@ class Simulation:
 
                 if location_a.floor == location_b.floor:
                     route = self._same_floor_segments(
-                        amr, location_a, location_b, rules=rules
+                        amr,
+                        location_a,
+                        location_b,
+                        rules=rules,
+                        start_time_value=current_time_value,
                     )
                     if route is None:
                         return math.inf, location_b, None, 0.0
+
                     same_segments, route_duration, _ = route
                     total += route_duration
+
+                    if reserve:
+                        self._reserve_corridor_segments(
+                            amr=amr,
+                            segments=same_segments,
+                            start_time=current_time_value,
+                        )
+
                     return (
                         current_time_value + route_duration,
                         location_b,
@@ -905,14 +1300,90 @@ class Simulation:
                 if plan is None:
                     return math.inf, location_b, None, 0.0
 
+                nonlocal lift_energy_kwh_total
+                lift_energy_kwh_total += total_lift_energy_kwh(
+                    lift=plan["lift"],
+                    payload=payload,
+                    floor_height_m=self.floor_height_m,
+                    reposition_floor_delta=(
+                        plan["reposition_to_floor"] - plan["reposition_from_floor"]
+                    ),
+                    loaded_floor_delta=(location_b.floor - location_a.floor),
+                    wait_time_sec=plan["wait_time"],
+                    door_time_sec=plan["lift"].door_time_sec,
+                )
+
                 segment_duration = plan["final_finish"] - current_time_value
                 total += segment_duration
 
+                nonlocal lift_empty_sec_total, lift_loaded_sec_total
+                lift_empty_sec_total += float(plan.get("reposition_sec", 0.0))
+                lift_loaded_sec_total += float(plan.get("loaded_travel_sec", 0.0))
+
                 if reserve:
+                    self._reserve_corridor_segments(
+                        amr=amr,
+                        segments=plan["to_lift_segments"],
+                        start_time=current_time_value,
+                    )
+                    self._reserve_corridor_segments(
+                        amr=amr,
+                        segments=plan["from_lift_segments"],
+                        start_time=plan["lift_finish"],
+                    )
                     plan["lift"].available_time = plan["lift_finish"]
                     plan["lift"].current_floor = location_b.floor
 
                 transfer_segments = list(plan["to_lift_segments"])
+
+                if plan["wait_time"] > 0:
+                    transfer_segments.append(
+                        {
+                            "type": "wait_for_lift",
+                            "lift_id": plan["lift"].id,
+                            "from": plan["origin_lift"].name,
+                            "to": plan["origin_lift"].name,
+                            "duration": plan["wait_time"],
+                            "distance_m": 0.0,
+                        }
+                    )
+
+                if plan.get("reposition_sec", 0.0) > 0:
+                    transfer_segments.append(
+                        {
+                            "type": "lift_reposition",
+                            "lift_id": plan["lift"].id,
+                            "from": f"{plan['lift'].id}-F{plan['reposition_from_floor']}",
+                            "to": f"{plan['lift'].id}-F{plan['reposition_to_floor']}",
+                            "from_floor": plan["reposition_from_floor"],
+                            "to_floor": plan["reposition_to_floor"],
+                            "wait_time": 0.0,
+                            "duration": plan["reposition_sec"],
+                            "distance_m": abs(
+                                plan["reposition_to_floor"]
+                                - plan["reposition_from_floor"]
+                            )
+                            * self.floor_height_m,
+                            "vertical_distance_m": abs(
+                                plan["reposition_to_floor"]
+                                - plan["reposition_from_floor"]
+                            )
+                            * self.floor_height_m,
+                            "energy_kwh": total_lift_energy_kwh(
+                                lift=plan["lift"],
+                                payload=payload,
+                                floor_height_m=self.floor_height_m,
+                                reposition_floor_delta=(
+                                    plan["reposition_to_floor"]
+                                    - plan["reposition_from_floor"]
+                                ),
+                                loaded_floor_delta=0,
+                                wait_time_sec=0.0,
+                                door_time_sec=0.0,
+                            ),
+                        }
+                    )
+
                 transfer_segments.append(
                     {
                         "type": "lift_transfer",
@@ -921,13 +1392,29 @@ class Simulation:
                         "to": plan["destination_lift"].name,
                         "from_floor": location_a.floor,
                         "to_floor": location_b.floor,
-                        "wait_time": plan["wait_time"],
-                        "duration": plan["lift_finish"] - plan["lift_start"],
+                        "wait_time": 0.0,
+                        "duration": (
+                            plan["lift_finish"]
+                            - plan["lift_start"]
+                            - plan.get("reposition_sec", 0.0)
+                            - plan["wait_time"]
+                        ),
                         "distance_m": plan["vertical_distance_m"],
                         "vertical_distance_m": plan["vertical_distance_m"],
+                        "energy_kwh": total_lift_energy_kwh(
+                            lift=plan["lift"],
+                            payload=payload,
+                            floor_height_m=self.floor_height_m,
+                            reposition_floor_delta=0,
+                            loaded_floor_delta=(location_b.floor - location_a.floor),
+                            wait_time_sec=plan["wait_time"],
+                            door_time_sec=plan["lift"].door_time_sec,
+                        ),
                     }
                 )
+
                 transfer_segments.extend(plan["from_lift_segments"])
+
                 return (
                     plan["final_finish"],
                     location_b,
@@ -1028,9 +1515,13 @@ class Simulation:
                 }
             )
 
-            actual_energy_kwh = total_route_energy_kwh(
+            corridor_energy_kwh = total_route_energy_kwh(
                 amr, payload, travel_to_pickup_sec, loaded_travel_sec
             )
+
+            lift_energy_kwh = lift_energy_kwh_total
+
+            actual_energy_kwh = corridor_energy_kwh + lift_energy_kwh
 
             projected_battery_soc_after = (
                 100.0
@@ -1058,8 +1549,13 @@ class Simulation:
                 "end_location": end_location_name,
                 "energy_kwh": actual_energy_kwh,
                 "battery_soc_after": battery_soc_after,
+                "corridor_energy_kwh": corridor_energy_kwh,
+                "lift_energy_kwh": lift_energy_kwh,
+                "lift_empty_sec_total": lift_empty_sec_total,
+                "lift_loaded_sec_total": lift_loaded_sec_total,
             }
-        except Exception:
+        except Exception as exc:
+            print(f"_estimate_task_for_amr failed for {task.id} on {amr.id}: {exc}")
             return None
 
     def _select_best_assignment(self) -> Optional[Tuple[AMR, Task, dict]]:
@@ -1069,7 +1565,11 @@ class Simulation:
         best = None
         best_finish = math.inf
 
-        for _, _, _, task in self.pending_tasks:
+        candidate_tasks = []
+        for item in self.pending_tasks[: min(8, len(self.pending_tasks))]:
+            candidate_tasks.append(item)
+
+        for _, _, _, task in candidate_tasks:
             if task.release_time > self.current_time:
                 continue
             for amr in self.amrs:
@@ -1176,11 +1676,26 @@ class Simulation:
                 from_node = segment.get("from", "")
                 to_node = segment.get("to", "")
 
+                lift_id = segment.get("lift_id", "")
+                if not lift_id and segment.get("type", "").startswith("lift_"):
+                    for key_node in (from_node, to_node):
+                        if key_node:
+                            for lift in self.lifts:
+                                prefix = f"{lift.id}-F"
+                                if key_node.startswith(prefix):
+                                    lift_id = lift.id
+                                    break
+                            if lift_id:
+                                break
+
                 from_coords = self.graph_nodes.get(from_node)
                 to_coords = self.graph_nodes.get(to_node)
 
-                wait_time = segment.get("wait_time", 0.0)
-                duration = segment.get("duration", 0.0)
+                wait_time = float(segment.get("wait_time", 0.0))
+                duration = float(segment.get("duration", 0.0))
+                segment_type = segment.get("type", "")
+
+                explicit_wait = duration if segment_type.startswith("wait_") else 0.0
 
                 if wait_time > 0:
                     self.log_step(
@@ -1192,7 +1707,7 @@ class Simulation:
                         from_location=from_node or task.pickup,
                         to_location=to_node or task.dropoff,
                         payload_name=task.payload,
-                        lift_id=segment.get("lift_id", ""),
+                        lift_id=lift_id,
                         duration_sec=wait_time,
                         wait_time_sec=wait_time,
                         distance_m=0.0,
@@ -1208,8 +1723,42 @@ class Simulation:
                         end_y=getattr(from_coords, "y", None),
                         end_floor=getattr(from_coords, "floor", None),
                         status="waiting",
+                        energy_kwh=segment.get("energy_kwh", 0.0),
                     )
                     segment_start_time += wait_time
+
+                if explicit_wait > 0:
+                    self.log_step(
+                        event_time=segment_start_time,
+                        event_type="segment_wait",
+                        task_id=task.id,
+                        amr_id=amr.id,
+                        details=json.dumps(segment, ensure_ascii=False),
+                        from_location=from_node or task.pickup,
+                        to_location=to_node or task.dropoff,
+                        payload_name=task.payload,
+                        lift_id=lift_id,
+                        duration_sec=explicit_wait,
+                        wait_time_sec=explicit_wait,
+                        distance_m=0.0,
+                        segment_type=segment_type,
+                        start_time=segment_start_time,
+                        end_time=segment_start_time + explicit_wait,
+                        start_node=from_node,
+                        end_node=to_node or from_node,
+                        start_x=getattr(from_coords, "x", None),
+                        start_y=getattr(from_coords, "y", None),
+                        start_floor=getattr(from_coords, "floor", None),
+                        end_x=getattr(to_coords, "x", None),
+                        end_y=getattr(to_coords, "y", None),
+                        end_floor=getattr(to_coords, "floor", None),
+                        status="waiting",
+                        energy_kwh=segment.get("energy_kwh", 0.0),
+                    )
+
+                if explicit_wait > 0:
+                    segment_start_time += explicit_wait
+                    continue
 
                 segment_end_time = segment_start_time + duration
 
@@ -1233,7 +1782,7 @@ class Simulation:
                     from_location=from_node or task.pickup,
                     to_location=to_node or task.dropoff,
                     payload_name=task.payload,
-                    lift_id=segment.get("lift_id", ""),
+                    lift_id=lift_id,
                     duration_sec=duration,
                     wait_time_sec=wait_time,
                     distance_m=segment.get("distance_m", 0.0),
@@ -1249,6 +1798,7 @@ class Simulation:
                     end_y=getattr(to_coords, "y", None),
                     end_floor=getattr(to_coords, "floor", None),
                     status="completed",
+                    energy_kwh=segment.get("energy_kwh", 0.0),
                 )
 
                 segment_start_time = segment_end_time
@@ -1266,23 +1816,32 @@ class Simulation:
                     "segments": committed["segments"],
                     "energy_kwh": committed["energy_kwh"],
                     "battery_soc_after": amr.battery_soc_percent,
+                    "lift_energy_kwh": committed["lift_energy_kwh"],
+                    "lift_empty_sec_total": committed["lift_empty_sec_total"],
+                    "lift_loaded_sec_total": committed["lift_loaded_sec_total"],
                 },
             )
 
     def run(self):
+        self.wall_start_time = time.time()
+
         while True:
             with self.lock:
                 if not self.events:
-                    if self.stop_requested:
-                        break
-                else:
-                    event = heapq.heappop(self.events)
-                    self.current_time = max(self.current_time, event.time)
-                    self._handle_event(event)
-                    continue
+                    break
+
+                event = heapq.heappop(self.events)
+                self.current_time = max(self.current_time, event.time)
+                self._handle_event(event)
+
+            self._print_progress()
+
             if self.stop_requested:
                 break
-            time.sleep(0.05 / max(self.clock.tick_rate, 1e-9))
+
+        self._print_progress_complete()
+        self.print_short_summary()
+        print()
 
     def _handle_event(self, event: Event):
         if event.event_type == "task_release":
@@ -1344,6 +1903,15 @@ class Simulation:
                     "energy_kwh": round(event.payload["energy_kwh"], 4),
                     "battery_soc_after": round(event.payload["battery_soc_after"], 2),
                     "segments": event.payload["segments"],
+                    "lift_energy_kwh": round(
+                        event.payload.get("lift_energy_kwh", 0.0), 4
+                    ),
+                    "lift_empty_sec_total": round(
+                        event.payload.get("lift_empty_sec_total", 0.0), 3
+                    ),
+                    "lift_loaded_sec_total": round(
+                        event.payload.get("lift_loaded_sec_total", 0.0), 3
+                    ),
                 }
             )
 
@@ -1375,6 +1943,7 @@ class Simulation:
                 start_time=event.payload["start_time"],
                 end_time=event.payload["end_time"],
                 status="waiting",
+                energy_kwh=0.0,
             )
             self._try_assign_tasks(event.time)
 
@@ -1385,6 +1954,19 @@ class Simulation:
             for segment in event.payload["travel_segments"]:
                 from_node = segment.get("from", "")
                 to_node = segment.get("to", "")
+
+                lift_id = segment.get("lift_id", "")
+                if not lift_id and segment.get("type", "").startswith("lift_"):
+                    for key_node in (from_node, to_node):
+                        if key_node:
+                            for lift in self.lifts:
+                                prefix = f"{lift.id}-F"
+                                if key_node.startswith(prefix):
+                                    lift_id = lift.id
+                                    break
+                            if lift_id:
+                                break
+
                 from_coords = self.graph_nodes.get(from_node)
                 to_coords = self.graph_nodes.get(to_node)
                 duration = segment.get("duration", 0.0)
@@ -1404,6 +1986,7 @@ class Simulation:
                     end_time=segment_end_time,
                     start_node=from_node,
                     end_node=to_node,
+                    lift_id=lift_id,
                     start_x=getattr(from_coords, "x", None),
                     start_y=getattr(from_coords, "y", None),
                     start_floor=getattr(from_coords, "floor", None),
@@ -1411,6 +1994,7 @@ class Simulation:
                     end_y=getattr(to_coords, "y", None),
                     end_floor=getattr(to_coords, "floor", None),
                     status="completed",
+                    energy_kwh=segment.get("energy_kwh", 0.0),
                 )
                 segment_start_time = segment_end_time
 
@@ -1427,6 +2011,7 @@ class Simulation:
                 start_node=self.charge_location_name,
                 end_node=self.charge_location_name,
                 status="charging",
+                energy_kwh=0.0,
             )
 
         elif event.event_type == "charge_cycle_complete":
@@ -1443,6 +2028,7 @@ class Simulation:
                 from_location=self.charge_location_name,
                 to_location=self.charge_location_name,
                 status="finish",
+                energy_kwh=0.0,
             )
 
             self._try_assign_tasks(event.time)
@@ -1500,6 +2086,7 @@ class Simulation:
         end_y: Optional[float] = None,
         end_floor: Optional[int] = None,
         status: str = "",
+        energy_kwh: float = 0.0,
     ):
         if not self.verbose:
             return
@@ -1536,6 +2123,7 @@ class Simulation:
                 "end_y": end_y,
                 "end_floor": end_floor,
                 "status": status,
+                "energy_kwh": energy_kwh,
             }
         )
 
@@ -1571,6 +2159,7 @@ class Simulation:
             "duration_sec",
             "wait_time_sec",
             "distance_m",
+            "energy_kwh",
             "task_duration_sec",
             "details",
         ]
@@ -1579,6 +2168,61 @@ class Simulation:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(self.verbose_rows)
+
+    def _estimate_total_sim_time(self) -> float:
+        times = [0.0]
+
+        for _, _, _, task in self.pending_tasks:
+            times.append(task.release_time)
+
+        for event in self.events:
+            times.append(event.time)
+
+        if self.completed_task_records:
+            finish_times = [
+                parse_datetime(x["finish_datetime"])
+                for x in self.completed_task_records
+            ]
+            times.append(
+                max(
+                    (dt - self.clock.start_datetime).total_seconds()
+                    for dt in finish_times
+                )
+            )
+
+        return max(times)
+
+    def _print_progress(self):
+        now_wall = time.time()
+
+        if now_wall - self.last_progress_update < self.progress_update_interval:
+            return
+
+        self.last_progress_update = now_wall
+
+        elapsed = now_wall - self.wall_start_time
+
+        total_sim = max(self.estimated_total_sim_time, self.current_time, 1e-9)
+        progress = min(1.0, self.current_time / max(total_sim, 1e-9))
+
+        bar_length = 40
+        filled = int(bar_length * progress)
+        bar = "#" * filled + "-" * (bar_length - filled)
+
+        if progress > 0:
+            eta = elapsed * (1 - progress) / progress
+        else:
+            eta = 0
+
+        line = (
+            f"\r[{bar}] "
+            f"{progress*100:6.2f}% | "
+            f"Sim: {self.clock.format_sim_time(self.current_time)} | "
+            f"Elapsed: {elapsed:6.1f}s | "
+            f"Events: {len(self.events)} | "
+            f"ETA: {eta:6.1f}s | "
+        )
+        print(line, end="", flush=True)
 
     def summary(self) -> dict:
         makespan = 0.0
@@ -1611,14 +2255,57 @@ class Simulation:
             ],
         }
 
+    def short_summary(self) -> dict:
+        makespan = 0.0
+        if self.completed_task_records:
+            finish_times = [
+                parse_datetime(x["finish_datetime"])
+                for x in self.completed_task_records
+            ]
+            makespan = max(
+                (dt - self.clock.start_datetime).total_seconds() for dt in finish_times
+            )
+
+        return {
+            "sim_datetime": self.clock.format_sim_time(self.current_time),
+            "duration_hms": format_duration(makespan),
+            "completed_tasks": len(self.completed_task_records),
+            "pending_tasks": len(self.pending_tasks),
+            "failed_tasks": self.failed_tasks,
+        }
+
     def print_summary(self):
         data = self.summary()
         print("\n=== Simulation Summary ===")
         print(json.dumps(data, indent=2))
 
+    def print_short_summary(self):
+        data = self.short_summary()
+        print("\n=== Short Simulation Summary ===")
+        print(json.dumps(data, indent=2))
+
     def print_completed_tasks(self):
         print("\n=== Completed Tasks ===")
         print(json.dumps(self.completed_task_records, indent=2))
+
+    def _print_progress_complete(self):
+        if self.wall_start_time is None:
+            return
+
+        elapsed = time.time() - self.wall_start_time
+        bar_length = 40
+        bar = "#" * bar_length
+
+        print(
+            f"\r[{bar}] "
+            f"{100.00:6.2f}% | "
+            f"Sim: {self.clock.format_sim_time(self.current_time)} | "
+            f"Elapsed: {elapsed:6.1f}s | "
+            f"Events: {0}",
+            f"ETA: {0.0:6.1f}s | ",
+            end="",
+            flush=True,
+        )
 
     def _next_pending_task_release_for_amr(self, amr: AMR) -> Optional[float]:
         feasible_release_times = []
@@ -1733,6 +2420,10 @@ class RuntimeInputThread(threading.Thread):
 
             if line.lower() == "status":
                 self.sim.print_summary()
+                continue
+
+            if line.lower() == "short":
+                self.sim.print_short_summary()
                 continue
 
             try:
@@ -1959,7 +2650,7 @@ def main():
     except KeyboardInterrupt:
         sim.request_stop()
 
-    print(json.dumps(sim.summary(), indent=2))
+    # print(json.dumps(sim.summary(), indent=2))
     sim.write_verbose_csv()
     if args.verbose:
         print(f"Verbose CSV written to {args.verbose_csv}")
