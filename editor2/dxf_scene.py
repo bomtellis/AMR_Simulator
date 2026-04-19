@@ -347,6 +347,7 @@ class DXFScene:
         poly_path = QPainterPath()
         arc_path = QPainterPath()
         text_items = []
+        created_items = []
 
         for entity in self.entities:
             etype = entity["type"]
@@ -424,6 +425,7 @@ class DXFScene:
             item.setBrush(Qt.NoBrush)
             item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
             scene.addItem(item)
+            created_items.append(item)
 
         if not poly_path.isEmpty():
             item = QGraphicsPathItem(poly_path)
@@ -431,6 +433,7 @@ class DXFScene:
             item.setBrush(Qt.NoBrush)
             item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
             scene.addItem(item)
+            created_items.append(item)
 
         if not arc_path.isEmpty():
             item = QGraphicsPathItem(arc_path)
@@ -438,6 +441,10 @@ class DXFScene:
             item.setBrush(Qt.NoBrush)
             item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
             scene.addItem(item)
+            created_items.append(item)
 
         for item in text_items:
             scene.addItem(item)
+            created_items.append(item)
+
+        return created_items

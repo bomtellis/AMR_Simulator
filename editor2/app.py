@@ -35,6 +35,10 @@ from dialogs import (
     LiftEditorDialog,
     PointEditorDialog,
     TableListEditor,
+    DepartmentEditorDialog,
+    WasteStreamEditorDialog,
+    WasteStreamListDialog,
+    DepartmentListDialog,
 )
 from advanced_dialogs import RouteProfilesEditorV2, TaskEditorWindow, TaskPlannerDialog
 from models import JsonStore
@@ -256,6 +260,7 @@ class AMRGraphEditor(QMainWindow):
                 "select_move",
                 "corridor_node",
                 "location",
+                "department",
                 "edge",
                 "lift",
                 "pan",
@@ -305,6 +310,8 @@ class AMRGraphEditor(QMainWindow):
             ("Tasks", self.manage_tasks),
             ("Task Planner", self.manage_task_planner),
             ("Route Profiles", self.manage_route_profiles),
+            ("Waste Streams", self.manage_waste_streams),
+            ("Departments", self.manage_departments),
         ]:
             btn = QPushButton(text)
             btn.clicked.connect(handler)
@@ -762,6 +769,20 @@ class AMRGraphEditor(QMainWindow):
                     QBrush(QColor("#f2c94c")),
                 )
                 label_color = QColor("#ffe8a3")
+            elif kind == "department":
+                poly = QPolygonF(
+                    [
+                        QPointF(pos.x(), pos.y() - 0.9),
+                        QPointF(pos.x() + 0.9, pos.y()),
+                        QPointF(pos.x(), pos.y() + 0.9),
+                        QPointF(pos.x() - 0.9, pos.y()),
+                    ]
+                )
+                item = QGraphicsPolygonItem(poly)
+                item.setBrush(QBrush(QColor("#14b8a6")))
+                item.setPen(QPen(QColor("#7be7dc"), 0.08))
+                self.scene.addItem(item)
+                label_color = QColor("#bff7f2")
             else:
                 r = 0.3
                 poly = [
@@ -797,11 +818,14 @@ class AMRGraphEditor(QMainWindow):
             "Legend",
             "Green circle = location",
             "Yellow square = corridor node",
+            "Teal diamond = department",
             "Red diamond = lift node",
             f"Mode: {self.mode_combo.currentText()} | Floor: {floor}",
             f"DXF: {dxf_name}",
             "Double-click a point to edit",
         ]
+        if self.mode_combo.currentText() == "department":
+            lines.append("Click anywhere to add a department")
         self._draw_overlay_box(painter, 12, 12, 320, lines, "#333333", "white")
 
     def _draw_overlay_box(self, painter, x, y, w, lines, border_color, title_color):
@@ -837,6 +861,124 @@ class AMRGraphEditor(QMainWindow):
 
     def _item_at_scene(self, sx, sy):
         return self.canvas.itemAt(self.canvas.mapFromScene(QPointF(sx, sy)))
+
+    def create_department_at_point(self, point_name):
+        point = self.store.all_points().get(point_name)
+        if not point:
+            return
+
+        location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
+        waste_stream_names = sorted(
+            x["name"] for x in self.store.data.get("waste_streams", [])
+        )
+
+        dialog = DepartmentEditorDialog(
+            self,
+            location_names=location_names,
+            waste_stream_names=waste_stream_names,
+            current_floor=self.floor_spin.value(),
+            default_department_id=self.store.suggest_next_department_id(),
+            default_x=point["x"],
+            default_y=point["y"],
+            group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            if dialog.result["name"] in self.store.names_in_use():
+                QMessageBox.critical(
+                    self, "Duplicate name", "Department name already exists"
+                )
+                return
+            self.store.upsert_department(dialog.result)
+            self.set_status(f"Added department {dialog.result['name']}")
+            self.refresh_canvas()
+
+    def create_department_at_position(self, x, y, floor):
+        location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
+        waste_stream_names = sorted(
+            x["name"] for x in self.store.data.get("waste_streams", [])
+        )
+
+        dialog = DepartmentEditorDialog(
+            self,
+            location_names=location_names,
+            waste_stream_names=waste_stream_names,
+            current_floor=floor,
+            default_department_id=self.store.suggest_next_department_id(),
+            default_x=x,
+            default_y=y,
+            group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            dept_name = str(dialog.result.get("name", "")).strip()
+            if dept_name in self.store.names_in_use():
+                QMessageBox.critical(
+                    self, "Duplicate name", "Department name already exists"
+                )
+                return
+            self.store.upsert_department(dialog.result)
+            self.selected_point_name = dept_name
+            self.set_status(f"Added department {dept_name}")
+            self.refresh_canvas()
+
+    def edit_department_by_name(self, dept_name):
+        dept = next(
+            (
+                x
+                for x in self.store.data.get("departments", [])
+                if str(x.get("name", "")).strip() == str(dept_name).strip()
+            ),
+            None,
+        )
+        if not dept:
+            return
+
+        location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
+        waste_stream_names = sorted(
+            x["name"] for x in self.store.data.get("waste_streams", [])
+        )
+
+        dialog = DepartmentEditorDialog(
+            self,
+            location_names=location_names,
+            waste_stream_names=waste_stream_names,
+            current_floor=self.floor_spin.value(),
+            seed=dept,
+            default_department_id=str(dept.get("id", "")),
+            default_x=float(dept.get("x", 0.0)),
+            default_y=float(dept.get("y", 0.0)),
+            group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            for other in self.store.data.get("departments", []):
+                if other is dept:
+                    continue
+                if (
+                    str(other.get("id", "")).strip()
+                    == str(dialog.result.get("id", "")).strip()
+                ):
+                    QMessageBox.critical(
+                        self, "Duplicate", "Department ID already exists"
+                    )
+                    return
+                if (
+                    str(other.get("name", "")).strip()
+                    == str(dialog.result.get("name", "")).strip()
+                ):
+                    QMessageBox.critical(
+                        self, "Duplicate", "Department name already exists"
+                    )
+                    return
+
+            old_name = str(dept.get("name", "")).strip()
+            new_name = str(dialog.result.get("name", "")).strip()
+
+            self.store.upsert_department(dialog.result)
+
+            if old_name and new_name and old_name != new_name:
+                self.store.rename_point(old_name, new_name)
+
+            self.set_status(f"Edited department {new_name}")
+            self.refresh_canvas()
 
     def on_left_click(self, event, sx, sy):
         mode = self.mode_combo.currentText()
@@ -906,14 +1048,37 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
             return
 
+        if mode == "department":
+            existing = self.find_nearest_point_name(x, y, floor)
+            if existing:
+                point = self.store.all_points().get(existing, {})
+                if point.get("kind") == "department":
+                    self.edit_department_by_name(existing)
+                    return
+
+            self.create_department_at_position(x, y, floor)
+            return
+
         if mode == "edge":
             if not picked:
                 self.set_status("No nearby point found")
                 return
+
+            picked_point = self.store.all_points().get(picked, {})
+            if picked_point.get("kind") == "department":
+                self.set_status("Departments cannot be connected by corridor edges")
+                return
+
             if self.selected_for_edge is None:
                 self.selected_for_edge = picked
                 self.set_status(f"Edge start selected: {picked}")
             else:
+                start_point = self.store.all_points().get(self.selected_for_edge, {})
+                if start_point.get("kind") == "department":
+                    self.set_status("Departments cannot be connected by corridor edges")
+                    self.selected_for_edge = None
+                    return
+
                 self.store.add_edge(self.selected_for_edge, picked)
                 if self.bidirectional_check.isChecked():
                     self.store.add_edge(picked, self.selected_for_edge)
@@ -982,6 +1147,9 @@ class AMRGraphEditor(QMainWindow):
                 self.set_status(f"Edited {dialog.result['id']}")
                 self.refresh_canvas()
             return
+        if point.get("kind") == "department":
+            self.edit_department_by_name(picked)
+            return
         dialog = PointEditorDialog(self, f"Edit {picked}", picked, point)
         if dialog.exec() == QDialog.Accepted and dialog.result:
             self.store.set_point_position(
@@ -1004,10 +1172,21 @@ class AMRGraphEditor(QMainWindow):
         picked = self.find_nearest_point_name(x, y, floor)
         if mode == "edge":
             if picked and self.edge_delete_start is None:
+                picked_point = self.store.all_points().get(picked, {})
+                if picked_point.get("kind") == "department":
+                    self.set_status("Departments cannot be connected by corridor edges")
+                    return
                 self.edge_delete_start = picked
                 self.selected_for_edge = None
                 self.set_status(f"Edge delete start selected: {picked}")
                 return
+
+            if picked:
+                picked_point = self.store.all_points().get(picked, {})
+                if picked_point.get("kind") == "department":
+                    self.set_status("Departments cannot be connected by corridor edges")
+                    return
+
             if picked and self.edge_delete_start:
                 removed = False
                 before = len(self.store.data.get("corridors", {}).get("edges", []))
@@ -1028,11 +1207,45 @@ class AMRGraphEditor(QMainWindow):
         if mode == "select_move" and picked:
             self.selected_point_name = picked
             self.refresh_canvas()
+            point = self.store.all_points().get(picked, {})
             menu = QMenu(self)
+
+            if point.get("kind") == "department":
+                edit_department_action = menu.addAction("Edit department")
+                delete_department_action = menu.addAction("Delete department")
+                action = menu.exec(event.globalPosition().toPoint())
+
+                if action == edit_department_action:
+                    self.edit_department_by_name(picked)
+                elif action == delete_department_action:
+                    dept = next(
+                        (
+                            x
+                            for x in self.store.data.get("departments", [])
+                            if x.get("name") == picked
+                        ),
+                        None,
+                    )
+                    if dept:
+                        self.store.delete_department(dept.get("id", ""))
+                        self.set_status(f"Deleted department {picked}")
+                        self.refresh_canvas()
+                return
+
             show_edges_action = menu.addAction("Show all edge connections")
+            create_department_action = menu.addAction("Create department here")
             action = menu.exec(event.globalPosition().toPoint())
+
             if action == show_edges_action:
                 self._show_edge_connections_dialog(picked)
+            elif action == create_department_action:
+                point = self.store.all_points().get(picked)
+                if point:
+                    self.create_department_at_position(
+                        float(point["x"]),
+                        float(point["y"]),
+                        int(point["floor"]),
+                    )
             return
         if picked:
             self.selected_point_name = picked
@@ -1224,6 +1437,10 @@ class AMRGraphEditor(QMainWindow):
             floor_map[item["name"]] = int(item["floor"])
         for item in store.get("corridors", {}).get("nodes", []):
             floor_map[item["name"]] = int(item["floor"])
+        for item in store.get("departments", []):
+            name = str(item.get("name", "")).strip()
+            if name:
+                floor_map[name] = int(item.get("floor", 0))
         for lift in store.get("lifts", []):
             for floor_str in lift.get("floor_locations", {}).keys():
                 floor_map[f"{lift['id']}-F{floor_str}"] = int(floor_str)
@@ -1297,6 +1514,40 @@ class AMRGraphEditor(QMainWindow):
         except Exception:
             pass
         super().closeEvent(event)
+
+    def manage_waste_streams(self):
+        payload_names = sorted(x["name"] for x in self.store.data.get("payloads", []))
+        items = list(self.store.data.get("waste_streams", []))
+        dialog = WasteStreamListDialog(
+            self, payload_names, items, self._save_waste_streams
+        )
+        dialog.exec()
+
+    def _save_waste_streams(self, items):
+        self.store.data["waste_streams"] = items
+        self.set_status("Waste streams updated")
+
+    def manage_departments(self):
+        location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
+        waste_stream_names = sorted(
+            x["name"] for x in self.store.data.get("waste_streams", [])
+        )
+        dialog = DepartmentListDialog(
+            self,
+            self.store.data.get("departments", []),
+            location_names,
+            waste_stream_names,
+            current_floor=self.floor_spin.value(),
+            on_save=self._save_departments,
+            suggest_department_id=self.store.suggest_next_department_id,
+            group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+        )
+        dialog.exec()
+
+    def _save_departments(self, items):
+        self.store.data["departments"] = items
+        self.set_status("Departments updated")
+        self.refresh_canvas()
 
 
 def main():

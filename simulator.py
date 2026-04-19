@@ -124,6 +124,17 @@ class Simulation:
             for p in config["payloads"]
         }
 
+        # Parse waste streams and departments
+        self.waste_streams: Dict[str, dict] = {
+            str(item.get("name", "")).strip(): dict(item)
+            for item in config.get("waste_streams", [])
+            if str(item.get("name", "")).strip()
+        }
+
+        self.departments: List[dict] = list(config.get("departments", []))
+        self.department_runtime: Dict[str, Dict[str, dict]] = {}
+        self.department_task_counter = 0
+
         self.route_profiles = config.get("route_profiles", {})
 
         # Parse lifts from configuration
@@ -213,6 +224,8 @@ class Simulation:
 
         for task in initial_tasks:
             self.schedule_task_release(task)
+
+        self._init_department_runtime()
 
         self.estimated_total_sim_time = self._estimate_total_sim_time()
 
@@ -532,6 +545,211 @@ class Simulation:
                 self._try_assign_tasks(self.current_time)
             else:
                 self.schedule_task_release(task)
+
+    def _init_department_runtime(self):
+        self.department_runtime = {}
+
+        for dept in self.departments:
+            dept_id = str(dept.get("id", "")).strip()
+            if not dept_id:
+                continue
+
+            waste_stream_names = [
+                str(x).strip()
+                for x in dept.get("waste_streams", [])
+                if str(x).strip() in self.waste_streams
+            ]
+            if not waste_stream_names:
+                continue
+
+            self.department_runtime[dept_id] = {}
+
+            for stream_name in waste_stream_names:
+                stream_cfg = dict(self.waste_streams.get(stream_name, {}))
+                container_capacity_m3 = float(
+                    stream_cfg.get("container_capacity_m3", 0.0) or 0.0
+                )
+                full_threshold_fraction = float(
+                    stream_cfg.get("full_threshold_fraction", 0.8) or 0.8
+                )
+
+                self.department_runtime[dept_id][stream_name] = {
+                    "last_update_time": 0.0,
+                    "fill_m3": 0.0,
+                    "generated_m3_total": 0.0,
+                    "tasks_created": 0,
+                    "container_capacity_m3": container_capacity_m3,
+                    "full_threshold_fraction": full_threshold_fraction,
+                }
+
+    def _day_key_for_sim_time(self, sim_time_sec: float) -> str:
+        dt = self.clock.sim_seconds_to_datetime(sim_time_sec)
+        return ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][dt.weekday()]
+
+    def _department_is_active(self, dept: dict, sim_time_sec: float) -> bool:
+        if not bool(dept.get("enabled", True)):
+            return False
+
+        active_days = dept.get("days_active", [])
+        if active_days:
+            if self._day_key_for_sim_time(sim_time_sec) not in set(active_days):
+                return False
+
+        hours_operated = float(dept.get("hours_operated_per_day", 24.0) or 0.0)
+        if hours_operated <= 0:
+            return False
+
+        dt = self.clock.sim_seconds_to_datetime(sim_time_sec)
+        hour_decimal = dt.hour + (dt.minute / 60.0) + (dt.second / 3600.0)
+        return hour_decimal < hours_operated
+
+    def _department_hourly_waste_rate_m3(
+        self, dept: dict, sim_time_sec: float
+    ) -> float:
+        waste_cfg = dict(dept.get("waste", {}) or {})
+
+        alpha = float(waste_cfg.get("alpha", 0.0) or 0.0)
+        beta = float(waste_cfg.get("beta", 0.0) or 0.0)
+        gamma = float(waste_cfg.get("gamma", 0.0) or 0.0)
+
+        bed_count = float(dept.get("bed_count", 0.0) or 0.0)
+        patient_turnover = float(dept.get("patient_turnover", 0.0) or 0.0)
+        staff_count = float(dept.get("staff_count", 0.0) or 0.0)
+        hours_operated = max(
+            float(dept.get("hours_operated_per_day", 24.0) or 24.0), 1.0
+        )
+
+        # Turnover is assumed to be per active day, spread across operating hours
+        turnover_per_hour = patient_turnover / hours_operated
+
+        return (alpha * bed_count) + (beta * turnover_per_hour) + (gamma * staff_count)
+
+    def _make_department_waste_task_id(self, dept_id: str, stream_name: str) -> str:
+        self.department_task_counter += 1
+        safe_stream = "".join(
+            c if c.isalnum() else "_" for c in stream_name.upper()
+        ).strip("_")
+        return f"WASTE_{dept_id}_{safe_stream}_{self.department_task_counter:05d}"
+
+    def _create_department_waste_task(
+        self,
+        dept: dict,
+        stream_name: str,
+        release_time: float,
+        waste_volume_m3: float,
+    ):
+        dept_id = str(dept.get("id", "")).strip()
+        dept_name = str(dept.get("name", dept_id)).strip()
+        stream_cfg = dict(self.waste_streams.get(stream_name, {}))
+        waste_cfg = dict(dept.get("waste", {}) or {})
+
+        pickup_location = str(waste_cfg.get("pickup_location", "")).strip()
+        dropoff_location = str(waste_cfg.get("dropoff_location", "")).strip()
+        payload_name = str(stream_cfg.get("payload", "")).strip()
+
+        if not pickup_location or pickup_location not in self.locations:
+            return
+        if not dropoff_location or dropoff_location not in self.locations:
+            return
+        if not payload_name or payload_name not in self.payloads:
+            return
+
+        task = Task(
+            id=self._make_department_waste_task_id(dept_id, stream_name),
+            pickup=pickup_location,
+            dropoff=dropoff_location,
+            payload=payload_name,
+            release_time=release_time,
+            target_time=0.0,
+            quantity=1,
+            priority=60,
+            created_during_runtime=True,
+            labels=["waste", stream_name],
+            route_profile=None,
+            task_source="department_waste",
+            department_id=dept_id,
+            waste_stream=stream_name,
+            waste_volume_m3=float(waste_volume_m3),
+            container_type=payload_name,
+        )
+
+        self.schedule_task_release(task)
+
+        self.log_step(
+            event_time=release_time,
+            event_type="waste_task_generated",
+            task_id=task.id,
+            details=f"Generated waste collection for {dept_name} / {stream_name}",
+            from_location=pickup_location,
+            to_location=dropoff_location,
+            payload_name=payload_name,
+            duration_sec=0.0,
+            wait_time_sec=0.0,
+            distance_m=0.0,
+            start_time=release_time,
+            end_time=release_time,
+            start_node=pickup_location,
+            end_node=dropoff_location,
+            start_x=self.locations[pickup_location].x,
+            start_y=self.locations[pickup_location].y,
+            start_floor=self.locations[pickup_location].floor,
+            end_x=self.locations[dropoff_location].x,
+            end_y=self.locations[dropoff_location].y,
+            end_floor=self.locations[dropoff_location].floor,
+            status="generated",
+            energy_kwh=0.0,
+            task_source="department_waste",
+            department_id=dept_id,
+            waste_stream=stream_name,
+            waste_volume_m3=float(waste_volume_m3),
+            container_type=payload_name,
+        )
+
+    def _update_department_waste_until(self, now: float):
+        if now <= 0 or not self.departments:
+            return
+
+        for dept in self.departments:
+            dept_id = str(dept.get("id", "")).strip()
+            if not dept_id:
+                continue
+            runtime_by_stream = self.department_runtime.get(dept_id, {})
+            if not runtime_by_stream:
+                continue
+
+            for stream_name, runtime in runtime_by_stream.items():
+                last_time = float(runtime.get("last_update_time", 0.0) or 0.0)
+                if now <= last_time:
+                    continue
+
+                if self._department_is_active(dept, now):
+                    elapsed_hours = (now - last_time) / 3600.0
+                    hourly_rate = self._department_hourly_waste_rate_m3(dept, now)
+                    generated_m3 = max(0.0, elapsed_hours * hourly_rate)
+
+                    runtime["fill_m3"] += generated_m3
+                    runtime["generated_m3_total"] += generated_m3
+
+                    container_capacity_m3 = float(
+                        runtime.get("container_capacity_m3", 0.0) or 0.0
+                    )
+                    full_threshold_fraction = float(
+                        runtime.get("full_threshold_fraction", 0.8) or 0.8
+                    )
+                    trigger_volume_m3 = container_capacity_m3 * full_threshold_fraction
+
+                    if trigger_volume_m3 > 0:
+                        while runtime["fill_m3"] >= trigger_volume_m3:
+                            self._create_department_waste_task(
+                                dept=dept,
+                                stream_name=stream_name,
+                                release_time=now,
+                                waste_volume_m3=trigger_volume_m3,
+                            )
+                            runtime["fill_m3"] -= trigger_volume_m3
+                            runtime["tasks_created"] += 1
+
+                runtime["last_update_time"] = now
 
     def _queue_pending_task(self, task: Task):
         self.pending_task_counter += 1
@@ -1668,6 +1886,11 @@ class Simulation:
                 start_time=start_time,
                 end_time=start_time + 1.0,
                 status="start",
+                task_source=getattr(task, "task_source", ""),
+                department_id=getattr(task, "department_id", ""),
+                waste_stream=getattr(task, "waste_stream", ""),
+                waste_volume_m3=getattr(task, "waste_volume_m3", 0.0),
+                container_type=getattr(task, "container_type", ""),
             )
 
             segment_start_time = start_time
@@ -1831,6 +2054,7 @@ class Simulation:
                     break
 
                 event = heapq.heappop(self.events)
+                self._update_department_waste_until(event.time)
                 self.current_time = max(self.current_time, event.time)
                 self._handle_event(event)
 
@@ -1865,6 +2089,11 @@ class Simulation:
                 start_time=event.payload["finish_time"],
                 end_time=event.payload["finish_time"],
                 status="finish",
+                task_source=getattr(task, "task_source", ""),
+                department_id=getattr(task, "department_id", ""),
+                waste_stream=getattr(task, "waste_stream", ""),
+                waste_volume_m3=getattr(task, "waste_volume_m3", 0.0),
+                container_type=getattr(task, "container_type", ""),
             )
 
             self.completed_task_records.append(
@@ -2087,6 +2316,11 @@ class Simulation:
         end_floor: Optional[int] = None,
         status: str = "",
         energy_kwh: float = 0.0,
+        task_source: str = "",
+        department_id: str = "",
+        waste_stream: str = "",
+        waste_volume_m3: float = 0.0,
+        container_type: str = "",
     ):
         if not self.verbose:
             return
@@ -2124,6 +2358,11 @@ class Simulation:
                 "end_floor": end_floor,
                 "status": status,
                 "energy_kwh": energy_kwh,
+                "task_source": task_source,
+                "department_id": department_id,
+                "waste_stream": waste_stream,
+                "waste_volume_m3": round(float(waste_volume_m3 or 0.0), 6),
+                "container_type": container_type,
             }
         )
 
@@ -2162,6 +2401,11 @@ class Simulation:
             "energy_kwh",
             "task_duration_sec",
             "details",
+            "task_source",
+            "department_id",
+            "waste_stream",
+            "waste_volume_m3",
+            "container_type",
         ]
 
         with open(self.verbose_csv_path, "w", newline="", encoding="utf-8") as f:

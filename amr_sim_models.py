@@ -42,6 +42,13 @@ class Task:
     allowed_nodes: List[str] = field(default_factory=list)
     allowed_edges: List[Tuple[str, str]] = field(default_factory=list)
 
+    # Runtime / waste metadata
+    task_source: str = ""
+    department_id: str = ""
+    waste_stream: str = ""
+    waste_volume_m3: float = 0.0
+    container_type: str = ""
+
 
 @dataclass
 class Lift:

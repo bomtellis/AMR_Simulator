@@ -21,6 +21,8 @@ DEFAULT_JSON = {
         "auto_connect": False,
     },
     "payloads": [],
+    "waste_streams": [],
+    "departments": [],
     "amrs": [],
     "lifts": [],
     "floor_dxf_files": [],
@@ -76,7 +78,7 @@ class JsonStore:
         self.data["floor_dxf_files"] = [
             entry
             for entry in self.data.get("floor_dxf_files", [])
-            if int(entry.get("floor", -10**9)) != int(floor)
+            if int(entry.get("floor", -(10**9))) != int(floor)
         ]
 
     def names_in_use(self) -> set:
@@ -85,6 +87,10 @@ class JsonStore:
             names.add(loc["name"])
         for node in self.data.get("corridors", {}).get("nodes", []):
             names.add(node["name"])
+        for dept in self.data.get("departments", []):
+            name = str(dept.get("name", "")).strip()
+            if name:
+                names.add(name)
         for lift in self.data.get("lifts", []):
             for floor_str in lift.get("floor_locations", {}):
                 names.add(f"{lift['id']}-F{floor_str}")
@@ -107,6 +113,27 @@ class JsonStore:
                     "kind": "lift_node",
                     "lift_id": lift_id,
                 }
+
+        for dept in self.data.get("departments", []):
+            name = str(dept.get("name", "")).strip()
+            if not name:
+                continue
+            try:
+                floor = int(dept.get("floor", 0))
+                x = float(dept.get("x", 0.0))
+                y = float(dept.get("y", 0.0))
+            except Exception:
+                continue
+
+            result[name] = {
+                "name": name,
+                "floor": floor,
+                "x": x,
+                "y": y,
+                "kind": "department",
+                "department_id": str(dept.get("id", "")).strip() or name,
+            }
+
         return result
 
     def points_for_floor(self, floor: int) -> Dict[str, dict]:
@@ -117,10 +144,16 @@ class JsonStore:
         }
 
     def locations_for_floor(self, floor: int) -> List[dict]:
-        return [x for x in self.data.get("locations", []) if int(x["floor"]) == int(floor)]
+        return [
+            x for x in self.data.get("locations", []) if int(x["floor"]) == int(floor)
+        ]
 
     def corridor_nodes_for_floor(self, floor: int) -> List[dict]:
-        return [x for x in self.data.get("corridors", {}).get("nodes", []) if int(x["floor"]) == int(floor)]
+        return [
+            x
+            for x in self.data.get("corridors", {}).get("nodes", [])
+            if int(x["floor"]) == int(floor)
+        ]
 
     def lift_nodes_for_floor(self, floor: int) -> List[dict]:
         result = []
@@ -128,14 +161,16 @@ class JsonStore:
             key = str(floor)
             if key in lift.get("floor_locations", {}):
                 pos = lift["floor_locations"][key]
-                result.append({
-                    "name": f"{lift['id']}-F{floor}",
-                    "floor": floor,
-                    "x": pos["x"],
-                    "y": pos["y"],
-                    "kind": "lift_node",
-                    "lift_id": lift["id"],
-                })
+                result.append(
+                    {
+                        "name": f"{lift['id']}-F{floor}",
+                        "floor": floor,
+                        "x": pos["x"],
+                        "y": pos["y"],
+                        "kind": "lift_node",
+                        "lift_id": lift["id"],
+                    }
+                )
         return result
 
     def edges_for_floor(self, floor: int) -> List[dict]:
@@ -158,7 +193,15 @@ class JsonStore:
             {"name": name, "floor": floor, "x": round(x, 3), "y": round(y, 3)}
         )
 
+    def is_department_point(self, name: str) -> bool:
+        for dept in self.data.get("departments", []):
+            if str(dept.get("name", "")).strip() == str(name).strip():
+                return True
+        return False
+
     def add_edge(self, from_name: str, to_name: str) -> None:
+        if self.is_department_point(from_name) or self.is_department_point(to_name):
+            return
         edges = self.data["corridors"]["edges"]
         if not any(e["from"] == from_name and e["to"] == to_name for e in edges):
             edges.append({"from": from_name, "to": to_name})
@@ -183,10 +226,18 @@ class JsonStore:
                 item["x"] = x
                 item["y"] = y
                 return
+        for item in self.data.get("departments", []):
+            if str(item.get("name", "")) == name:
+                item["x"] = x
+                item["y"] = y
+                return
+
         if "-F" in name:
             lift_id, floor_text = name.rsplit("-F", 1)
             for lift in self.data.get("lifts", []):
-                if lift["id"] == lift_id and floor_text in lift.get("floor_locations", {}):
+                if lift["id"] == lift_id and floor_text in lift.get(
+                    "floor_locations", {}
+                ):
                     lift["floor_locations"][floor_text]["x"] = x
                     lift["floor_locations"][floor_text]["y"] = y
                     return
@@ -205,32 +256,112 @@ class JsonStore:
                 edge["from"] = new_name
             if edge["to"] == old_name:
                 edge["to"] = new_name
+        for item in self.data.get("departments", []):
+            if str(item.get("name", "")) == old_name:
+                item["name"] = new_name
+            item["waste_pickup_locations"] = [
+                new_name if x == old_name else x
+                for x in item.get("waste_pickup_locations", [])
+            ]
+            waste_cfg = item.get("waste", {}) or {}
+            if waste_cfg.get("pickup_location") == old_name:
+                waste_cfg["pickup_location"] = new_name
+            if waste_cfg.get("dropoff_location") == old_name:
+                waste_cfg["dropoff_location"] = new_name
         for task in self.data.get("tasks", []):
             if task.get("pickup") == old_name:
                 task["pickup"] = new_name
             if task.get("dropoff") == old_name:
                 task["dropoff"] = new_name
         for profile in self.data.get("route_profiles", {}).values():
-            profile["allowed_nodes"] = [new_name if x == old_name else x for x in profile.get("allowed_nodes", [])]
+            profile["allowed_nodes"] = [
+                new_name if x == old_name else x
+                for x in profile.get("allowed_nodes", [])
+            ]
             profile["allowed_edges"] = [
                 [new_name if part == old_name else part for part in edge_pair]
                 for edge_pair in profile.get("allowed_edges", [])
             ]
 
     def delete_point(self, name: str) -> None:
-        self.data["locations"] = [x for x in self.data.get("locations", []) if x["name"] != name]
+        self.data["locations"] = [
+            x for x in self.data.get("locations", []) if x["name"] != name
+        ]
         self.data["corridors"]["nodes"] = [
-            x for x in self.data.get("corridors", {}).get("nodes", []) if x["name"] != name
+            x
+            for x in self.data.get("corridors", {}).get("nodes", [])
+            if x["name"] != name
         ]
         self.data["corridors"]["edges"] = [
-            e for e in self.data.get("corridors", {}).get("edges", [])
+            e
+            for e in self.data.get("corridors", {}).get("edges", [])
             if e["from"] != name and e["to"] != name
         ]
+        self.data["departments"] = [
+            x
+            for x in self.data.get("departments", [])
+            if str(x.get("name", "")) != name
+        ]
         for profile in self.data.get("route_profiles", {}).values():
-            profile["allowed_nodes"] = [x for x in profile.get("allowed_nodes", []) if x != name]
+            profile["allowed_nodes"] = [
+                x for x in profile.get("allowed_nodes", []) if x != name
+            ]
             profile["allowed_edges"] = [
-                pair for pair in profile.get("allowed_edges", [])
-                if name not in pair
+                pair for pair in profile.get("allowed_edges", []) if name not in pair
+            ]
+
+    def suggest_next_department_id(self) -> str:
+        nums = []
+        for item in self.data.get("departments", []):
+            dept_id = str(item.get("id", "")).strip().upper()
+            if dept_id.startswith("D") and dept_id[1:].isdigit():
+                nums.append(int(dept_id[1:]))
+        next_num = (max(nums) + 1) if nums else 1
+        return f"D{next_num}"
+
+    def upsert_department(self, payload: dict) -> None:
+        items = self.data.setdefault("departments", [])
+        dept_id = str(payload.get("id", "")).strip()
+        existing = next(
+            (x for x in items if str(x.get("id", "")).strip() == dept_id),
+            None,
+        )
+        if existing is None:
+            items.append(payload)
+        else:
+            existing.clear()
+            existing.update(payload)
+
+    def delete_department(self, dept_id: str) -> None:
+        self.data["departments"] = [
+            x
+            for x in self.data.get("departments", [])
+            if str(x.get("id", "")).strip() != str(dept_id).strip()
+        ]
+
+    def upsert_waste_stream(self, payload: dict) -> None:
+        items = self.data.setdefault("waste_streams", [])
+        name = str(payload.get("name", "")).strip()
+        existing = next(
+            (x for x in items if str(x.get("name", "")).strip() == name),
+            None,
+        )
+        if existing is None:
+            items.append(payload)
+        else:
+            existing.clear()
+            existing.update(payload)
+
+    def delete_waste_stream(self, name: str) -> None:
+        name = str(name).strip()
+        self.data["waste_streams"] = [
+            x
+            for x in self.data.get("waste_streams", [])
+            if str(x.get("name", "")).strip() != name
+        ]
+        for dept in self.data.get("departments", []):
+            dept["waste_streams"] = [
+                x for x in dept.get("waste_streams", []) if str(x).strip() != name
             ]
 
     def upsert_lift(
@@ -270,16 +401,32 @@ class JsonStore:
             lift.update(payload)
 
     def delete_lift(self, lift_id: str) -> None:
-        names_to_delete = {f"{lift_id}-F{floor}" for lift in self.data.get("lifts", []) if lift["id"] == lift_id for floor in lift.get("floor_locations", {}).keys()}
-        self.data["lifts"] = [x for x in self.data.get("lifts", []) if x["id"] != lift_id]
+        names_to_delete = {
+            f"{lift_id}-F{floor}"
+            for lift in self.data.get("lifts", [])
+            if lift["id"] == lift_id
+            for floor in lift.get("floor_locations", {}).keys()
+        }
+        self.data["lifts"] = [
+            x for x in self.data.get("lifts", []) if x["id"] != lift_id
+        ]
         self.data["corridors"]["edges"] = [
-            e for e in self.data.get("corridors", {}).get("edges", [])
+            e
+            for e in self.data.get("corridors", {}).get("edges", [])
             if e["from"] not in names_to_delete and e["to"] not in names_to_delete
         ]
         for profile in self.data.get("route_profiles", {}).values():
-            profile["allowed_lifts"] = [x for x in profile.get("allowed_lifts", []) if x != lift_id]
-            profile["allowed_nodes"] = [x for x in profile.get("allowed_nodes", []) if x not in names_to_delete]
-            profile["allowed_edges"] = [pair for pair in profile.get("allowed_edges", []) if not any(name in pair for name in names_to_delete)]
+            profile["allowed_lifts"] = [
+                x for x in profile.get("allowed_lifts", []) if x != lift_id
+            ]
+            profile["allowed_nodes"] = [
+                x for x in profile.get("allowed_nodes", []) if x not in names_to_delete
+            ]
+            profile["allowed_edges"] = [
+                pair
+                for pair in profile.get("allowed_edges", [])
+                if not any(name in pair for name in names_to_delete)
+            ]
 
     def validate(self) -> List[str]:
         errors = []
@@ -293,16 +440,29 @@ class JsonStore:
 
         location_names = {x["name"] for x in self.data.get("locations", [])}
         payload_names = {x["name"] for x in self.data.get("payloads", [])}
+        waste_stream_names = {x["name"] for x in self.data.get("waste_streams", [])}
         route_profile_names = set(self.data.get("route_profiles", {}).keys())
         lift_names = {x["id"] for x in self.data.get("lifts", [])}
 
         for task in self.data.get("tasks", []):
-            if task.get("pickup") not in location_names and task.get("pickup") not in names:
-                errors.append(f"Task {task.get('id')} pickup not found: {task.get('pickup')}")
-            if task.get("dropoff") not in location_names and task.get("dropoff") not in names:
-                errors.append(f"Task {task.get('id')} dropoff not found: {task.get('dropoff')}")
+            if (
+                task.get("pickup") not in location_names
+                and task.get("pickup") not in names
+            ):
+                errors.append(
+                    f"Task {task.get('id')} pickup not found: {task.get('pickup')}"
+                )
+            if (
+                task.get("dropoff") not in location_names
+                and task.get("dropoff") not in names
+            ):
+                errors.append(
+                    f"Task {task.get('id')} dropoff not found: {task.get('dropoff')}"
+                )
             if task.get("payload") not in payload_names:
-                errors.append(f"Task {task.get('id')} payload not found: {task.get('payload')}")
+                errors.append(
+                    f"Task {task.get('id')} payload not found: {task.get('payload')}"
+                )
             rp = task.get("route_profile", "")
             if rp and rp not in route_profile_names:
                 errors.append(f"Task {task.get('id')} route profile not found: {rp}")
@@ -310,20 +470,94 @@ class JsonStore:
         for profile_name, profile in self.data.get("route_profiles", {}).items():
             for lift_id in profile.get("allowed_lifts", []):
                 if lift_id not in lift_names:
-                    errors.append(f"Route profile {profile_name} has unknown lift: {lift_id}")
+                    errors.append(
+                        f"Route profile {profile_name} has unknown lift: {lift_id}"
+                    )
             for node_name in profile.get("allowed_nodes", []):
                 if node_name not in names and node_name not in location_names:
-                    errors.append(f"Route profile {profile_name} has unknown node: {node_name}")
+                    errors.append(
+                        f"Route profile {profile_name} has unknown node: {node_name}"
+                    )
             for edge_pair in profile.get("allowed_edges", []):
                 if len(edge_pair) != 2:
-                    errors.append(f"Route profile {profile_name} has invalid edge pair: {edge_pair}")
+                    errors.append(
+                        f"Route profile {profile_name} has invalid edge pair: {edge_pair}"
+                    )
                     continue
                 if edge_pair[0] not in names or edge_pair[1] not in names:
-                    errors.append(f"Route profile {profile_name} has unknown edge endpoint: {edge_pair}")
+                    errors.append(
+                        f"Route profile {profile_name} has unknown edge endpoint: {edge_pair}"
+                    )
+
+        for stream in self.data.get("waste_streams", []):
+            stream_name = str(stream.get("name", "")).strip()
+            if not stream_name:
+                errors.append("Waste stream has no name")
+            payload_name = str(stream.get("payload", "")).strip()
+            if payload_name not in payload_names:
+                errors.append(
+                    f"Waste stream {stream_name or '-'} payload not found: {payload_name}"
+                )
+            try:
+                capacity = float(stream.get("container_capacity_m3", 0))
+                if capacity <= 0:
+                    errors.append(
+                        f"Waste stream {stream_name or '-'} container capacity must be greater than 0"
+                    )
+            except Exception:
+                errors.append(
+                    f"Waste stream {stream_name or '-'} has invalid container capacity"
+                )
+            try:
+                threshold = float(stream.get("full_threshold_fraction", 0))
+                if not (0.0 < threshold <= 1.0):
+                    errors.append(
+                        f"Waste stream {stream_name or '-'} full threshold must be between 0 and 1"
+                    )
+            except Exception:
+                errors.append(
+                    f"Waste stream {stream_name or '-'} has invalid full threshold"
+                )
+
+        for dept in self.data.get("departments", []):
+            dept_name = (
+                str(dept.get("name", "")).strip() or str(dept.get("id", "")).strip()
+            )
+            waste = dept.get("waste", {}) or {}
+
+            for loc in dept.get("waste_pickup_locations", []):
+                if loc not in location_names:
+                    errors.append(
+                        f"Department {dept_name} has unknown waste pickup location: {loc}"
+                    )
+
+            for stream_name in dept.get("waste_streams", []):
+                if stream_name not in waste_stream_names:
+                    errors.append(
+                        f"Department {dept_name} has unknown waste stream: {stream_name}"
+                    )
+
+            pickup_location = str(waste.get("pickup_location", "")).strip()
+            if pickup_location and pickup_location not in location_names:
+                errors.append(
+                    f"Department {dept_name} has unknown waste pickup location: {pickup_location}"
+                )
+
+            dropoff_location = str(waste.get("dropoff_location", "")).strip()
+            if dropoff_location and dropoff_location not in location_names:
+                errors.append(
+                    f"Department {dept_name} has unknown waste dropoff location: {dropoff_location}"
+                )
 
         for amr in self.data.get("amrs", []):
-            if amr.get("start_location") and amr["start_location"] not in names and amr["start_location"] not in location_names:
-                errors.append(f"AMR {amr.get('id')} has unknown start location: {amr.get('start_location')}")
+            if (
+                amr.get("start_location")
+                and amr["start_location"] not in names
+                and amr["start_location"] not in location_names
+            ):
+                errors.append(
+                    f"AMR {amr.get('id')} has unknown start location: {amr.get('start_location')}"
+                )
 
         seen_floors = set()
         for entry in self.data.get("floor_dxf_files", []):
@@ -336,7 +570,9 @@ class JsonStore:
                 continue
 
             if "filepath" not in entry:
-                errors.append(f"DXF mapping for floor {entry.get('floor')} is missing filepath")
+                errors.append(
+                    f"DXF mapping for floor {entry.get('floor')} is missing filepath"
+                )
                 continue
 
             try:
@@ -361,7 +597,7 @@ class JsonStore:
         for item in self.data.get("corridors", {}).get("nodes", []):
             name = item["name"]
             if name.startswith(prefix):
-                tail = name[len(prefix):]
+                tail = name[len(prefix) :]
                 if tail.isdigit():
                     nums.append(int(tail))
         next_num = max(nums, default=0) + 1
