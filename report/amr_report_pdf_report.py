@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import copy
 import io
 import re
@@ -643,12 +646,50 @@ class FloorOverlayFlowable(Flowable):
                 fill=1,
             )
 
+def prepare_heatmap_floor(
+    floor: int,
+    floor_df: pd.DataFrame,
+    floor_dxf_map: Dict[int, str],
+) -> tuple[int, dict]:
+    floor_df = (
+        floor_df.sort_values("congestion_score", ascending=False)
+        .reset_index(drop=True)
+    )
+
+    dxf_path = floor_dxf_map.get(int(floor))
+    dxf_drawing = None
+
+    if dxf_path:
+        cached_svg = get_cached_dxf_svg_path(dxf_path)
+
+        if not cached_svg.exists():
+            extents = render_dxf_to_svg(
+                dxf_path,
+                output_path=str(cached_svg),
+            )
+        else:
+            extents = get_dxf_extents(dxf_path)
+
+        try:
+            dxf_drawing = load_svg_as_drawing(str(cached_svg))
+        except Exception:
+            dxf_drawing = None
+    else:
+        extents = compute_floor_extents(floor_df)
+
+    return int(floor), {
+        "floor_df": floor_df,
+        "dxf_drawing": dxf_drawing,
+        "extents": extents,
+    }
+
 
 def build_report(
     results: Dict[str, pd.DataFrame],
     csv_path: Path,
     pdf_path: Path,
     progress_callback=None,
+    heatmap_workers: Optional[int] = None,
 ) -> None:
     styles = make_styles()
     doc = NumberedDocTemplate(
@@ -1150,46 +1191,55 @@ def build_report(
     prepared_heatmaps: Dict[int, dict] = {}
 
     if not heatmap_df.empty:
-        floors = sorted(heatmap_df["floor"].dropna().unique())
-        for idx, floor in enumerate(floors, start=1):
-            report_progress(
-                idx,
-                max(len(floors), 1),
-                f"Preparing heatmap floor {int(floor)} ({idx}/{len(floors)})",
-            )
+        floors = sorted(int(f) for f in heatmap_df["floor"].dropna().unique())
 
-            floor_df = (
-                heatmap_df[heatmap_df["floor"] == floor]
-                .sort_values("congestion_score", ascending=False)
-                .reset_index(drop=True)
-            )
+        grouped_floor_dfs = {
+            int(floor): heatmap_df[heatmap_df["floor"] == floor].copy()
+            for floor in floors
+        }
 
-            dxf_path = floor_dxf_map.get(int(floor))
-            dxf_drawing = None
+        workers = heatmap_workers or min(
+            len(floors),
+            max(1, (os.cpu_count() or 2) - 1),
+        )
 
-            if dxf_path:
-                cached_svg = get_cached_dxf_svg_path(dxf_path)
-                if not cached_svg.exists():
-                    extents = render_dxf_to_svg(
-                        dxf_path,
-                        output_path=str(cached_svg),
-                    )
-                else:
-                    extents = get_dxf_extents(dxf_path)
+        report_progress(
+            0,
+            max(len(floors), 1),
+            f"Preparing heatmaps using {workers} worker(s)",
+        )
 
-                try:
-                    dxf_drawing = load_svg_as_drawing(str(cached_svg))
-                except Exception:
-                    dxf_drawing = None
-            else:
-                extents = compute_floor_extents(floor_df)
-
-            prepared_heatmaps[int(floor)] = {
-                "floor_df": floor_df,
-                "dxf_drawing": dxf_drawing,
-                "extents": extents,
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(
+                    prepare_heatmap_floor,
+                    floor,
+                    floor_df,
+                    floor_dxf_map,
+                ): floor
+                for floor, floor_df in grouped_floor_dfs.items()
             }
 
+            for idx, future in enumerate(as_completed(futures), start=1):
+                floor = futures[future]
+
+                try:
+                    prepared_floor, prepared = future.result()
+                    prepared_heatmaps[prepared_floor] = prepared
+                except Exception as exc:
+                    report_progress(
+                        idx,
+                        max(len(floors), 1),
+                        f"Heatmap floor {floor} failed: {exc}",
+                    )
+                    continue
+
+                report_progress(
+                    idx,
+                    max(len(floors), 1),
+                    f"Prepared heatmap floor {floor} ({idx}/{len(floors)})",
+                )
+                
     heatmap_story: List = []
     if prepared_heatmaps:
         heatmap_story += [NextPageTemplate("a0_landscape"), PageBreak()]

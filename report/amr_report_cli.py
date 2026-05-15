@@ -24,4 +24,10 @@ def parse_args():
         help="Path to simulator JSON config for payload weights",
         default=None,
     )
+    parser.add_argument(
+        "--heatmap-workers",
+        type=int,
+        default=None,
+        help="Number of worker threads used to prepare heatmap floors",
+    )
     return parser.parse_args()

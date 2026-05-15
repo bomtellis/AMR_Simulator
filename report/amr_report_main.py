@@ -66,7 +66,13 @@ def main() -> None:
         mapped = base + int(span * current / max(total, 1))
         print_progress(mapped, 100, message)
 
-    build_report(results, csv_path, out_path, progress_callback=report_progress)
+    build_report(
+        results,
+        csv_path,
+        out_path,
+        progress_callback=report_progress,
+        heatmap_workers=args.heatmap_workers,
+    )
 
     print_progress(100, 100, f"Report written to {out_path}")
 
