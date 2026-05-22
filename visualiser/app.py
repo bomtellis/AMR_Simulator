@@ -39,6 +39,8 @@ from dialogs import (
     WasteStreamEditorDialog,
     WasteStreamListDialog,
     DepartmentListDialog,
+    AMRListDialog,
+    AMREditorDialog,
 )
 from advanced_dialogs import RouteProfilesEditorV2, TaskEditorWindow, TaskPlannerDialog
 from models import JsonStore
@@ -272,6 +274,8 @@ class AMRGraphEditor(QMainWindow):
         self.floor_spin.valueChanged.connect(self.on_floor_changed)
         self.snap_check = QCheckBox("Snap to 1.0")
         self.snap_check.setChecked(True)
+        self.chain_edges_check = QCheckBox("Chain edge creation")
+        self.chain_edges_check.setChecked(True)
         self.bidirectional_check = QCheckBox("Bidirectional edges")
         self.bidirectional_check.setChecked(True)
         self.show_dxf_check = QCheckBox("Show DXF")
@@ -294,6 +298,7 @@ class AMRGraphEditor(QMainWindow):
         sidebar_layout.addSpacing(10)
         sidebar_layout.addWidget(self.snap_check)
         sidebar_layout.addWidget(self.bidirectional_check)
+        sidebar_layout.addWidget(self.chain_edges_check)
         sidebar_layout.addWidget(self.show_dxf_check)
         sidebar_layout.addWidget(self.show_labels_check)
         sidebar_layout.addSpacing(10)
@@ -1026,15 +1031,9 @@ class AMRGraphEditor(QMainWindow):
             return
 
         if mode == "corridor_node":
-            name, ok = QInputDialog.getText(
-                self,
-                "Corridor node",
-                "Node name:",
-                text=self.store.suggest_next_corridor_name(floor),
-            )
-            if not ok or not name:
-                return
+            name = self.store.suggest_next_corridor_name(floor)
             self.store.add_corridor_node(name, floor, x, y)
+            self.selected_point_name = name
             self.set_status(f"Added corridor node {name}")
             self.refresh_canvas()
             return
@@ -1079,13 +1078,20 @@ class AMRGraphEditor(QMainWindow):
                     self.selected_for_edge = None
                     return
 
-                self.store.add_edge(self.selected_for_edge, picked)
+                start = self.selected_for_edge
+
+                self.store.add_edge(start, picked)
                 if self.bidirectional_check.isChecked():
-                    self.store.add_edge(picked, self.selected_for_edge)
-                self.set_status(f"Connected {self.selected_for_edge} -> {picked}")
-                self.selected_for_edge = None
+                    self.store.add_edge(picked, start)
+
+                if self.chain_edges_check.isChecked():
+                    self.selected_for_edge = picked
+                    self.set_status(f"Connected {start} -> {picked}. Chain start now: {picked}")
+                else:
+                    self.selected_for_edge = None
+                    self.set_status(f"Connected {start} -> {picked}")
+
                 self.refresh_canvas()
-            return
 
         if mode == "lift":
             existing_lift = None
@@ -1171,6 +1177,13 @@ class AMRGraphEditor(QMainWindow):
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)
         if mode == "edge":
+            # Right click empty space cancels edge chaining
+            if not picked:
+                if self.selected_for_edge is not None:
+                    self.selected_for_edge = None
+                    self.edge_delete_start = None
+                    self.set_status("Edge chaining cancelled")
+                return
             if picked and self.edge_delete_start is None:
                 picked_point = self.store.all_points().get(picked, {})
                 if picked_point.get("kind") == "department":
@@ -1410,22 +1423,15 @@ class AMRGraphEditor(QMainWindow):
         self.set_status("Payloads updated")
 
     def manage_amrs(self):
-        columns = [
-            ("id", "ID", 120),
-            ("quantity", "Quantity", 80),
-            ("payload_capacity_kg", "Payload kg", 110),
-            ("payload_size_capacity", "Payload size", 110),
-            ("speed_m_per_sec", "Speed", 90),
-            ("motor_power_w", "Motor W", 90),
-            ("battery_capacity_kwh", "Battery kWh", 100),
-            ("battery_charge_rate_kw", "Charge kW", 100),
-            ("recharge_threshold_percent", "Recharge %", 100),
-            ("battery_soc_percent", "SOC %", 80),
-            ("start_location", "Start location", 160),
-        ]
-        TableListEditor(
-            self, "AMRs", columns, self.store.data.get("amrs", []), self._save_amrs
+        location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
+
+        dialog = AMRListDialog(
+            self,
+            self.store.data.get("amrs", []),
+            location_names,
+            self._save_amrs,
         )
+        dialog.exec()
 
     def _save_amrs(self, items):
         self.store.data["amrs"] = items

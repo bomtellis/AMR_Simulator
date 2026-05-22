@@ -1,0 +1,653 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T06:00:00",
+    "tick_rate": 1000
+  },
+  "building": {
+    "load_unload_time_sec": 20.0,
+    "floor_height_m": 4.0,
+    "charge_location": "AMR-CENTRE"
+  },
+  "locations": [
+    {
+      "name": "Sterile Store",
+      "floor": 1,
+      "x": 99.739,
+      "y": -70.098
+    },
+    {
+      "name": "SSD Outbound",
+      "floor": 0,
+      "x": 173.306,
+      "y": -8.801
+    }
+  ],
+  "corridors": {
+    "nodes": [
+      {
+        "name": "C1-1",
+        "floor": 1,
+        "x": 92,
+        "y": -85
+      },
+      {
+        "name": "C1-2",
+        "floor": 1,
+        "x": 95.584,
+        "y": -84.937
+      },
+      {
+        "name": "C1-3",
+        "floor": 1,
+        "x": 95.509,
+        "y": -75.652
+      },
+      {
+        "name": "C1-4",
+        "floor": 1,
+        "x": 112.472,
+        "y": -76.054
+      },
+      {
+        "name": "C1-5",
+        "floor": 1,
+        "x": 133.656,
+        "y": -76.094
+      },
+      {
+        "name": "C1-6",
+        "floor": 1,
+        "x": 133.978,
+        "y": -85.058
+      },
+      {
+        "name": "C1-7",
+        "floor": 1,
+        "x": 136.993,
+        "y": -85.098
+      },
+      {
+        "name": "C1-8",
+        "floor": 1,
+        "x": 140.611,
+        "y": -85.178
+      },
+      {
+        "name": "C1-9",
+        "floor": 1,
+        "x": 88.515,
+        "y": -85.219
+      },
+      {
+        "name": "C1-10",
+        "floor": 1,
+        "x": 86.505,
+        "y": -75.571
+      },
+      {
+        "name": "C1-11",
+        "floor": 1,
+        "x": 77.46,
+        "y": -84.776
+      },
+      {
+        "name": "C1-12",
+        "floor": 1,
+        "x": 77.541,
+        "y": -75.531
+      },
+      {
+        "name": "C1-13",
+        "floor": 1,
+        "x": 99.78,
+        "y": -75.79
+      },
+      {
+        "name": "C0-1",
+        "floor": 0,
+        "x": 173.383,
+        "y": -13.553
+      },
+      {
+        "name": "C0-2",
+        "floor": 0,
+        "x": 173.383,
+        "y": -41.865
+      },
+      {
+        "name": "C0-3",
+        "floor": 0,
+        "x": 181.766,
+        "y": -41.965
+      },
+      {
+        "name": "C0-4",
+        "floor": 0,
+        "x": 182.167,
+        "y": -75.397
+      },
+      {
+        "name": "C0-5",
+        "floor": 0,
+        "x": 151.948,
+        "y": -75.447
+      },
+      {
+        "name": "C0-6",
+        "floor": 0,
+        "x": 151.798,
+        "y": -84.934
+      },
+      {
+        "name": "C0-7",
+        "floor": 0,
+        "x": 140.804,
+        "y": -85.386
+      },
+      {
+        "name": "C0-8",
+        "floor": 0,
+        "x": 137.441,
+        "y": -85.386
+      },
+      {
+        "name": "C0-9",
+        "floor": 0,
+        "x": 134.229,
+        "y": -85.135
+      },
+      {
+        "name": "C0-10",
+        "floor": 0,
+        "x": 134.178,
+        "y": -75.447
+      },
+      {
+        "name": "C0-11",
+        "floor": 0,
+        "x": 142.812,
+        "y": -75.246
+      },
+      {
+        "name": "C0-12",
+        "floor": 0,
+        "x": 142.612,
+        "y": -59.685
+      },
+      {
+        "name": "C0-13",
+        "floor": 0,
+        "x": 107.222,
+        "y": -59.585
+      },
+      {
+        "name": "C0-14",
+        "floor": 0,
+        "x": 77.455,
+        "y": -59.635
+      },
+      {
+        "name": "C0-15",
+        "floor": 0,
+        "x": 77.606,
+        "y": -85.185
+      },
+      {
+        "name": "C0-16",
+        "floor": 0,
+        "x": 88.8,
+        "y": -85.537
+      },
+      {
+        "name": "C0-17",
+        "floor": 0,
+        "x": 91.962,
+        "y": -85.637
+      }
+    ],
+    "edges": [
+      {
+        "from": "C1-9",
+        "to": "C1-1"
+      },
+      {
+        "from": "C1-1",
+        "to": "C1-9"
+      },
+      {
+        "from": "C1-1",
+        "to": "C1-2"
+      },
+      {
+        "from": "C1-2",
+        "to": "C1-1"
+      },
+      {
+        "from": "C1-2",
+        "to": "C1-3"
+      },
+      {
+        "from": "C1-3",
+        "to": "C1-2"
+      },
+      {
+        "from": "C1-3",
+        "to": "C1-10"
+      },
+      {
+        "from": "C1-10",
+        "to": "C1-3"
+      },
+      {
+        "from": "C1-4",
+        "to": "C1-5"
+      },
+      {
+        "from": "C1-5",
+        "to": "C1-4"
+      },
+      {
+        "from": "C1-5",
+        "to": "C1-6"
+      },
+      {
+        "from": "C1-6",
+        "to": "C1-5"
+      },
+      {
+        "from": "C1-6",
+        "to": "C1-7"
+      },
+      {
+        "from": "C1-7",
+        "to": "C1-6"
+      },
+      {
+        "from": "C1-7",
+        "to": "C1-8"
+      },
+      {
+        "from": "C1-8",
+        "to": "C1-7"
+      },
+      {
+        "from": "C1-9",
+        "to": "C1-11"
+      },
+      {
+        "from": "C1-11",
+        "to": "C1-9"
+      },
+      {
+        "from": "C1-12",
+        "to": "C1-11"
+      },
+      {
+        "from": "C1-11",
+        "to": "C1-12"
+      },
+      {
+        "from": "C1-12",
+        "to": "C1-10"
+      },
+      {
+        "from": "C1-10",
+        "to": "C1-12"
+      },
+      {
+        "from": "Lift-1-F1",
+        "to": "C1-1"
+      },
+      {
+        "from": "C1-1",
+        "to": "Lift-1-F1"
+      },
+      {
+        "from": "C1-7",
+        "to": "Lift-2-F1"
+      },
+      {
+        "from": "Lift-2-F1",
+        "to": "C1-7"
+      },
+      {
+        "from": "C1-3",
+        "to": "C1-13"
+      },
+      {
+        "from": "C1-13",
+        "to": "C1-3"
+      },
+      {
+        "from": "C1-13",
+        "to": "C1-4"
+      },
+      {
+        "from": "C1-4",
+        "to": "C1-13"
+      },
+      {
+        "from": "C1-13",
+        "to": "Sterile Store"
+      },
+      {
+        "from": "Sterile Store",
+        "to": "C1-13"
+      },
+      {
+        "from": "C0-1",
+        "to": "C0-2"
+      },
+      {
+        "from": "C0-2",
+        "to": "C0-1"
+      },
+      {
+        "from": "C0-2",
+        "to": "C0-3"
+      },
+      {
+        "from": "C0-3",
+        "to": "C0-2"
+      },
+      {
+        "from": "C0-3",
+        "to": "C0-4"
+      },
+      {
+        "from": "C0-4",
+        "to": "C0-3"
+      },
+      {
+        "from": "C0-4",
+        "to": "C0-5"
+      },
+      {
+        "from": "C0-5",
+        "to": "C0-4"
+      },
+      {
+        "from": "C0-5",
+        "to": "C0-6"
+      },
+      {
+        "from": "C0-6",
+        "to": "C0-5"
+      },
+      {
+        "from": "C0-6",
+        "to": "C0-7"
+      },
+      {
+        "from": "C0-7",
+        "to": "C0-6"
+      },
+      {
+        "from": "C0-7",
+        "to": "C0-8"
+      },
+      {
+        "from": "C0-8",
+        "to": "C0-7"
+      },
+      {
+        "from": "C0-8",
+        "to": "C0-9"
+      },
+      {
+        "from": "C0-9",
+        "to": "C0-8"
+      },
+      {
+        "from": "C0-9",
+        "to": "C0-10"
+      },
+      {
+        "from": "C0-10",
+        "to": "C0-9"
+      },
+      {
+        "from": "C0-10",
+        "to": "C0-11"
+      },
+      {
+        "from": "C0-11",
+        "to": "C0-10"
+      },
+      {
+        "from": "C0-11",
+        "to": "C0-12"
+      },
+      {
+        "from": "C0-12",
+        "to": "C0-11"
+      },
+      {
+        "from": "C0-12",
+        "to": "C0-13"
+      },
+      {
+        "from": "C0-13",
+        "to": "C0-12"
+      },
+      {
+        "from": "C0-13",
+        "to": "C0-14"
+      },
+      {
+        "from": "C0-14",
+        "to": "C0-13"
+      },
+      {
+        "from": "C0-14",
+        "to": "C0-15"
+      },
+      {
+        "from": "C0-15",
+        "to": "C0-14"
+      },
+      {
+        "from": "C0-15",
+        "to": "C0-16"
+      },
+      {
+        "from": "C0-16",
+        "to": "C0-15"
+      },
+      {
+        "from": "C0-16",
+        "to": "C0-17"
+      },
+      {
+        "from": "C0-17",
+        "to": "C0-16"
+      },
+      {
+        "from": "C0-17",
+        "to": "Lift-1-F0"
+      },
+      {
+        "from": "Lift-1-F0",
+        "to": "C0-17"
+      },
+      {
+        "from": "C0-11",
+        "to": "C0-5"
+      },
+      {
+        "from": "C0-5",
+        "to": "C0-11"
+      },
+      {
+        "from": "SSD Outbound",
+        "to": "C0-1"
+      },
+      {
+        "from": "C0-1",
+        "to": "SSD Outbound"
+      },
+      {
+        "from": "Lift-2-F0",
+        "to": "C0-8"
+      },
+      {
+        "from": "C0-8",
+        "to": "Lift-2-F0"
+      },
+      {
+        "from": "C1-8",
+        "to": "Lift-3-F1"
+      },
+      {
+        "from": "Lift-3-F1",
+        "to": "C1-8"
+      },
+      {
+        "from": "C0-7",
+        "to": "Lift-3-F0"
+      },
+      {
+        "from": "Lift-3-F0",
+        "to": "C0-7"
+      }
+    ],
+    "auto_connect": false
+  },
+  "payloads": [
+    {
+      "name": "Case cart",
+      "weight_kg": 40,
+      "size_units": 1
+    }
+  ],
+  "waste_streams": [],
+  "departments": [],
+  "amrs": [
+    {
+      "id": "AMR-1",
+      "quantity": 1,
+      "payload_capacity_kg": 100.0,
+      "payload_size_capacity": 1.0,
+      "speed_m_per_sec": 1.0,
+      "motor_power_w": 250.0,
+      "battery_capacity_kwh": 1.0,
+      "battery_charge_rate_kw": 0.5,
+      "recharge_threshold_percent": 20.0,
+      "battery_soc_percent": 100.0,
+      "start_location": "Sterile Store"
+    }
+  ],
+  "lifts": [
+    {
+      "id": "Lift-1",
+      "served_floors": [
+        0,
+        1
+      ],
+      "speed_floors_per_sec": 0.45,
+      "door_time_sec": 4.0,
+      "boarding_time_sec": 6.0,
+      "capacity_size_units": 1.0,
+      "start_floor": 1,
+      "floor_locations": {
+        "0": {
+          "x": 92.0,
+          "y": -89.0
+        },
+        "1": {
+          "x": 92.0,
+          "y": -89.0
+        }
+      }
+    },
+    {
+      "id": "Lift-2",
+      "served_floors": [
+        0,
+        1
+      ],
+      "speed_floors_per_sec": 0.45,
+      "door_time_sec": 4.0,
+      "boarding_time_sec": 6.0,
+      "capacity_size_units": 1.0,
+      "start_floor": 1,
+      "floor_locations": {
+        "0": {
+          "x": 137.0,
+          "y": -82.0
+        },
+        "1": {
+          "x": 137.0,
+          "y": -82.0
+        }
+      }
+    },
+    {
+      "id": "Lift-3",
+      "served_floors": [
+        0,
+        1
+      ],
+      "speed_floors_per_sec": 0.45,
+      "door_time_sec": 4.0,
+      "boarding_time_sec": 20.0,
+      "capacity_size_units": 1.0,
+      "start_floor": 1,
+      "floor_locations": {
+        "0": {
+          "x": 141.0,
+          "y": -82.0
+        },
+        "1": {
+          "x": 141.0,
+          "y": -82.0
+        }
+      }
+    }
+  ],
+  "floor_dxf_files": [
+    {
+      "floor": 0,
+      "filepath": "C:/Users/tombe/Downloads/LHC-RYD-MB-00-DG-AR-300001.dxf"
+    },
+    {
+      "floor": 1,
+      "filepath": "C:/Users/tombe/Downloads/LHC-RYD-MB-01-DG-AR-300002.dxf"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "T1",
+      "pickup": "SSD Outbound",
+      "dropoff": "Sterile Store",
+      "payload": "Case cart",
+      "release_datetime": "2026-05-22T05:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    },
+    {
+      "id": "T2",
+      "pickup": "SSD Outbound",
+      "dropoff": "Sterile Store",
+      "payload": "Case cart",
+      "release_datetime": "2026-05-22T06:00:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    }
+  ],
+  "route_profiles": {
+    "default": {
+      "allowed_lifts": [],
+      "allowed_nodes": [],
+      "allowed_edges": []
+    }
+  }
+}

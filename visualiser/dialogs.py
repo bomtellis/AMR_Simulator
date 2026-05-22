@@ -174,18 +174,21 @@ class LiftEditorDialog(QDialog):
         self.setWindowTitle("Lift Editor")
         self.result = None
         self.lift = lift or {}
-        self.default_floor = default_floor
-        self.default_x = default_x
-        self.default_y = default_y
+        self.default_floor = int(default_floor)
+        self.default_x = float(default_x)
+        self.default_y = float(default_y)
 
         floors = self.lift.get("served_floors", [self.default_floor])
-        floor_locations = self.lift.get("floor_locations", {})
+        self.existing_floor_locations = self._normalise_floor_locations(
+            self.lift.get("floor_locations", {})
+        )
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
         layout.addLayout(form)
 
-        self.id_edit = QLineEdit(self.lift.get("id", "Lift-1"))
+        default_lift_id = self._suggest_next_lift_id()
+        self.id_edit = QLineEdit(self.lift.get("id", default_lift_id))
         self.floors_edit = QLineEdit(", ".join(str(x) for x in floors))
         self.speed_edit = QLineEdit(str(self.lift.get("speed_floors_per_sec", 0.45)))
         self.door_edit = QLineEdit(str(self.lift.get("door_time_sec", 4)))
@@ -194,13 +197,13 @@ class LiftEditorDialog(QDialog):
         self.start_floor_edit = QLineEdit(
             str(self.lift.get("start_floor", self.default_floor))
         )
-        self.positions_edit = QPlainTextEdit()
 
-        if floor_locations:
-            payload = {int(k): [v["x"], v["y"]] for k, v in floor_locations.items()}
-        else:
-            payload = {self.default_floor: [self.default_x, self.default_y]}
-        self.positions_edit.setPlainText(json.dumps(payload, indent=2))
+        self.positions_edit = QPlainTextEdit()
+        self.positions_edit.setReadOnly(True)
+        self.positions_edit.setToolTip(
+            "Automatically generated from served floors. "
+            "New floors use the clicked lift position."
+        )
 
         form.addRow("Lift ID", self.id_edit)
         form.addRow("Served floors", self.floors_edit)
@@ -209,8 +212,17 @@ class LiftEditorDialog(QDialog):
         form.addRow("Boarding time sec", self.board_edit)
         form.addRow("Capacity size units", self.capacity_edit)
         form.addRow("Start floor", self.start_floor_edit)
-        form.addRow("Per-floor positions", self.positions_edit)
-        form.addRow("", QLabel("Format: {floor: [x, y]}"))
+        form.addRow("Auto per-floor positions", self.positions_edit)
+        form.addRow(
+            "",
+            QLabel(
+                "Generated automatically. Existing floor positions are kept; "
+                "new floors use the clicked X/Y."
+            ),
+        )
+
+        self.floors_edit.textChanged.connect(self._refresh_positions_preview)
+        self._refresh_positions_preview()
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -219,20 +231,96 @@ class LiftEditorDialog(QDialog):
 
         self.resize(520, 520)
 
+    def _normalise_floor_locations(self, floor_locations):
+        normalised = {}
+        for key, value in (floor_locations or {}).items():
+            try:
+                floor = int(key)
+                if isinstance(value, dict):
+                    x = float(value.get("x", self.default_x))
+                    y = float(value.get("y", self.default_y))
+                else:
+                    x = float(value[0])
+                    y = float(value[1])
+                normalised[floor] = (x, y)
+            except Exception:
+                continue
+        return normalised
+
+    def _parse_floors(self):
+        floors = [
+            int(x.strip())
+            for x in self.floors_edit.text().split(",")
+            if x.strip()
+        ]
+        if not floors:
+            raise ValueError("At least one served floor is required")
+        return sorted(set(floors))
+
+    def _build_floor_locations(self, floors):
+        positions = {}
+        for floor in floors:
+            x, y = self.existing_floor_locations.get(
+                floor,
+                (self.default_x, self.default_y),
+            )
+            positions[floor] = (float(x), float(y))
+        return positions
+
+    def _refresh_positions_preview(self):
+        try:
+            floors = self._parse_floors()
+            positions = self._build_floor_locations(floors)
+            preview = {
+                floor: [round(pos[0], 3), round(pos[1], 3)]
+                for floor, pos in positions.items()
+            }
+            self.positions_edit.setPlainText(json.dumps(preview, indent=2))
+        except Exception as exc:
+            self.positions_edit.setPlainText(f"Invalid served floors: {exc}")
+
+    def _suggest_next_lift_id(self):
+        existing_ids = set()
+
+        parent = self.parent()
+        if parent and hasattr(parent, "store"):
+            for lift in parent.store.data.get("lifts", []):
+                lift_id = str(lift.get("id", "")).strip()
+                if lift_id:
+                    existing_ids.add(lift_id)
+
+        nums = []
+        for lift_id in existing_ids:
+            upper = lift_id.upper()
+
+            if upper.startswith("LIFT-"):
+                tail = lift_id[5:]
+            elif upper.startswith("LIFT"):
+                tail = lift_id[4:]
+            else:
+                continue
+
+            tail = tail.strip()
+
+            if tail.isdigit():
+                nums.append(int(tail))
+
+        next_num = max(nums, default=0) + 1
+        return f"Lift-{next_num}"
+
     def accept(self):
         try:
             lift_id = self.id_edit.text().strip()
             if not lift_id:
                 raise ValueError("Lift ID is required")
-            floors = [
-                int(x.strip()) for x in self.floors_edit.text().split(",") if x.strip()
-            ]
-            if not floors:
-                raise ValueError("At least one served floor is required")
-            positions = json.loads(self.positions_edit.toPlainText().strip())
-            for floor in floors:
-                if str(floor) not in {str(k) for k in positions.keys()}:
-                    raise ValueError(f"Missing position for floor {floor}")
+
+            floors = self._parse_floors()
+            start_floor = int(self.start_floor_edit.text())
+            if start_floor not in floors:
+                raise ValueError("Start floor must be one of the served floors")
+
+            positions = self._build_floor_locations(floors)
+
             self.result = {
                 "id": lift_id,
                 "served_floors": floors,
@@ -240,15 +328,198 @@ class LiftEditorDialog(QDialog):
                 "door_time_sec": float(self.door_edit.text()),
                 "boarding_time_sec": float(self.board_edit.text()),
                 "capacity_size_units": float(self.capacity_edit.text()),
-                "start_floor": int(self.start_floor_edit.text()),
-                "floor_locations": {
-                    int(k): (float(v[0]), float(v[1])) for k, v in positions.items()
-                },
+                "start_floor": start_floor,
+                "floor_locations": positions,
             }
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid lift", str(exc))
 
+class AMREditorDialog(QDialog):
+    def __init__(self, parent, location_names, seed=None, default_amr_id="AMR-1"):
+        super().__init__(parent)
+        self.setWindowTitle("AMR")
+        self.result = None
+        self.seed = seed or {}
+        self.location_names = sorted(location_names)
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.id_edit = QLineEdit(str(self.seed.get("id", default_amr_id)))
+        self.quantity_edit = QLineEdit(str(self.seed.get("quantity", 1)))
+        self.payload_capacity_edit = QLineEdit(str(self.seed.get("payload_capacity_kg", 100)))
+        self.payload_size_edit = QLineEdit(str(self.seed.get("payload_size_capacity", 1.0)))
+        self.speed_edit = QLineEdit(str(self.seed.get("speed_m_per_sec", 1.0)))
+        self.motor_power_edit = QLineEdit(str(self.seed.get("motor_power_w", 250)))
+        self.battery_capacity_edit = QLineEdit(str(self.seed.get("battery_capacity_kwh", 1.0)))
+        self.charge_rate_edit = QLineEdit(str(self.seed.get("battery_charge_rate_kw", 0.5)))
+        self.recharge_threshold_edit = QLineEdit(str(self.seed.get("recharge_threshold_percent", 20)))
+        self.battery_soc_edit = QLineEdit(str(self.seed.get("battery_soc_percent", 100)))
+
+        self.start_location_combo = QComboBox()
+        self.start_location_combo.addItems([""] + self.location_names)
+        self.start_location_combo.setCurrentText(str(self.seed.get("start_location", "")))
+
+        form.addRow("AMR ID", self.id_edit)
+        form.addRow("Quantity", self.quantity_edit)
+        form.addRow("Payload capacity kg", self.payload_capacity_edit)
+        form.addRow("Payload size capacity", self.payload_size_edit)
+        form.addRow("Speed m/sec", self.speed_edit)
+        form.addRow("Motor power W", self.motor_power_edit)
+        form.addRow("Battery capacity kWh", self.battery_capacity_edit)
+        form.addRow("Battery charge rate kW", self.charge_rate_edit)
+        form.addRow("Recharge threshold %", self.recharge_threshold_edit)
+        form.addRow("Battery SOC %", self.battery_soc_edit)
+        form.addRow("Start location", self.start_location_combo)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.resize(520, 420)
+
+    def accept(self):
+        try:
+            amr_id = self.id_edit.text().strip()
+            if not amr_id:
+                raise ValueError("AMR ID is required")
+
+            self.result = {
+                "id": amr_id,
+                "quantity": int(float(self.quantity_edit.text())),
+                "payload_capacity_kg": float(self.payload_capacity_edit.text()),
+                "payload_size_capacity": float(self.payload_size_edit.text()),
+                "speed_m_per_sec": float(self.speed_edit.text()),
+                "motor_power_w": float(self.motor_power_edit.text()),
+                "battery_capacity_kwh": float(self.battery_capacity_edit.text()),
+                "battery_charge_rate_kw": float(self.charge_rate_edit.text()),
+                "recharge_threshold_percent": float(self.recharge_threshold_edit.text()),
+                "battery_soc_percent": float(self.battery_soc_edit.text()),
+                "start_location": self.start_location_combo.currentText().strip(),
+            }
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid AMR", str(exc))
+
+class AMRListDialog(QDialog):
+    columns = [
+        ("id", "ID", 120),
+        ("quantity", "Qty", 70),
+        ("payload_capacity_kg", "Payload kg", 100),
+        ("payload_size_capacity", "Size cap.", 90),
+        ("speed_m_per_sec", "Speed", 80),
+        ("motor_power_w", "Motor W", 90),
+        ("battery_capacity_kwh", "Battery kWh", 100),
+        ("battery_charge_rate_kw", "Charge kW", 100),
+        ("recharge_threshold_percent", "Recharge %", 100),
+        ("battery_soc_percent", "SOC %", 80),
+        ("start_location", "Start location", 160),
+    ]
+
+    def __init__(self, parent, items, location_names, on_save):
+        super().__init__(parent)
+        self.setWindowTitle("AMRs")
+        self.resize(1200, 520)
+        self.items = [dict(x) for x in items]
+        self.location_names = list(location_names)
+        self.on_save = on_save
+
+        layout = QVBoxLayout(self)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels([heading for _key, heading, _width in self.columns])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.cellDoubleClicked.connect(lambda _row, _col: self.edit_item())
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+
+        for idx, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(idx, width)
+
+        layout.addWidget(self.table)
+
+        row = QHBoxLayout()
+        layout.addLayout(row)
+
+        add_btn = QPushButton("Add")
+        edit_btn = QPushButton("Edit")
+        delete_btn = QPushButton("Delete")
+        save_btn = QPushButton("Save")
+
+        add_btn.clicked.connect(self.add_item)
+        edit_btn.clicked.connect(self.edit_item)
+        delete_btn.clicked.connect(self.delete_item)
+        save_btn.clicked.connect(self.save_items)
+
+        row.addWidget(add_btn)
+        row.addWidget(edit_btn)
+        row.addWidget(delete_btn)
+        row.addStretch(1)
+        row.addWidget(save_btn)
+
+        self._refresh_table()
+
+    def _suggest_next_amr_id(self):
+        nums = []
+        for item in self.items:
+            value = str(item.get("id", "")).strip().upper()
+            if value.startswith("AMR-") and value[4:].isdigit():
+                nums.append(int(value[4:]))
+            elif value.startswith("AMR") and value[3:].isdigit():
+                nums.append(int(value[3:]))
+        return f"AMR-{max(nums, default=0) + 1}"
+
+    def _refresh_table(self):
+        self.table.setRowCount(0)
+        for item in self.items:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            for col, (key, _heading, _width) in enumerate(self.columns):
+                self.table.setItem(row, col, QTableWidgetItem(str(item.get(key, ""))))
+
+    def add_item(self):
+        dialog = AMREditorDialog(
+            self,
+            self.location_names,
+            default_amr_id=self._suggest_next_amr_id(),
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            if any(x.get("id") == dialog.result["id"] for x in self.items):
+                QMessageBox.critical(self, "Duplicate", "AMR ID already exists")
+                return
+            self.items.append(dialog.result)
+            self._refresh_table()
+
+    def edit_item(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+
+        dialog = AMREditorDialog(self, self.location_names, seed=self.items[row])
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            new_id = dialog.result["id"]
+            for idx, item in enumerate(self.items):
+                if idx != row and item.get("id") == new_id:
+                    QMessageBox.critical(self, "Duplicate", "AMR ID already exists")
+                    return
+            self.items[row] = dialog.result
+            self._refresh_table()
+            self.table.selectRow(row)
+
+    def delete_item(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        del self.items[row]
+        self._refresh_table()
+
+    def save_items(self):
+        self.on_save(self.items)
+        self.accept()
 
 class TableListEditor(QMainWindow):
     def __init__(self, master, title, columns, items, on_save):
