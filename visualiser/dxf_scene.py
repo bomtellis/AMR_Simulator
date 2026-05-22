@@ -56,6 +56,40 @@ class DXFScene:
         ys = [float(p[1]) for p in points]
         return (min(xs), min(ys), max(xs), max(ys))
 
+    DXF_UNIT_TO_METRES = {
+        0: None,          # Unitless
+        1: 0.0254,        # Inches
+        2: 0.3048,        # Feet
+        4: 0.001,         # Millimetres
+        5: 0.01,          # Centimetres
+        6: 1.0,           # Metres
+        7: 1000.0,        # Kilometres
+        10: 0.9144,       # Yards
+        14: 0.1,          # Decimetres
+        21: 1200.0 / 3937.0,  # US survey feet
+    }
+
+    @classmethod
+    def _detect_dxf_unit_scale(cls, doc) -> float:
+        """
+        Return a multiplier that converts DXF drawing units to metres.
+
+        Uses $INSUNITS when available.
+        If the drawing is unitless, assume metres to avoid unexpectedly
+        shrinking already-correct AMR layouts.
+        """
+        try:
+            insunits = int(doc.header.get("$INSUNITS", 0) or 0)
+        except Exception:
+            insunits = 0
+
+        scale = cls.DXF_UNIT_TO_METRES.get(insunits)
+
+        if scale is None:
+            return 1.0
+
+        return float(scale)
+
     @classmethod
     def load_content(cls, path: str):
         if ezdxf is None:
@@ -64,9 +98,17 @@ class DXFScene:
             )
 
         doc = ezdxf.readfile(path)
+        unit_scale = cls._detect_dxf_unit_scale(doc)
+
         msp = doc.modelspace()
         entities: List[Dict] = []
         all_points = []
+
+        def scale_value(value):
+            return float(value) * unit_scale
+
+        def scale_point(point):
+            return scale_value(point[0]), scale_value(point[1])
 
         def append_entity(entity: Dict):
             if "bbox" not in entity or entity["bbox"] is None:
@@ -79,8 +121,8 @@ class DXFScene:
 
         def add_line(start, end):
             points = [
-                (float(start[0]), float(start[1])),
-                (float(end[0]), float(end[1])),
+                scale_point(start),
+                scale_point(end),
             ]
             track_points(points)
             append_entity(
@@ -95,7 +137,7 @@ class DXFScene:
         def add_polyline(points, closed=False):
             if len(points) < 2:
                 return
-            clean = [(float(x), float(y)) for x, y in points]
+            clean = [scale_point((x, y)) for x, y in points]
             track_points(clean)
             append_entity(
                 {
@@ -107,9 +149,8 @@ class DXFScene:
             )
 
         def add_text_entity(insert, text, height=2.5, rotation=0.0):
-            x = float(insert[0])
-            y = float(insert[1])
-            h = float(height or 2.5)
+            x, y = scale_point(insert)
+            h = scale_value(height or 2.5)
             track_points([(x, y), (x + h, y + h)])
             append_entity(
                 {
@@ -123,9 +164,8 @@ class DXFScene:
             )
 
         def add_circle(center, radius):
-            cx = float(center[0])
-            cy = float(center[1])
-            r = float(radius)
+            cx, cy = scale_point(center)
+            r = scale_value(radius)
             bbox = (cx - r, cy - r, cx + r, cy + r)
             track_points([(bbox[0], bbox[1]), (bbox[2], bbox[3])])
             append_entity(
@@ -133,9 +173,8 @@ class DXFScene:
             )
 
         def add_arc(center, radius, start_angle, end_angle):
-            cx = float(center[0])
-            cy = float(center[1])
-            r = float(radius)
+            cx, cy = scale_point(center)
+            r = scale_value(radius)
             bbox = (cx - r, cy - r, cx + r, cy + r)
             track_points([(bbox[0], bbox[1]), (bbox[2], bbox[3])])
             append_entity(
