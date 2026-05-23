@@ -190,8 +190,144 @@ class JsonStore:
 
     def add_location(self, name: str, floor: int, x: float, y: float) -> None:
         self.data["locations"].append(
-            {"name": name, "floor": floor, "x": round(x, 3), "y": round(y, 3)}
+            {"name": name, "floor": floor, "x": round(x, 3), "y": round(y, 3), "bounding_box": []}
         )
+
+    def set_location_bounding_box(self, location_name: str, points: list) -> None:
+        for item in self.data.get("locations", []):
+            if item.get("name") == location_name:
+                lx = float(item.get("x", 0.0))
+                ly = float(item.get("y", 0.0))
+                item["bounding_box"] = [
+                    {
+                        "dx": round(float(p["x"]) - lx, 3),
+                        "dy": round(float(p["y"]) - ly, 3),
+                    }
+                    for p in points
+                ]
+                return
+
+    def location_bounding_box_metrics(self, location_name: str) -> dict:
+        points = self.get_location_bounding_box_points(location_name)
+        if len(points) < 3:
+            return {"length": 0.0, "width": 0.0, "area": 0.0}
+
+        xs = [float(p["x"]) for p in points]
+        ys = [float(p["y"]) for p in points]
+
+        length = max(xs) - min(xs)
+        width = max(ys) - min(ys)
+
+        area = 0.0
+        for i, p1 in enumerate(points):
+            p2 = points[(i + 1) % len(points)]
+            area += (float(p1["x"]) * float(p2["y"])) - (float(p2["x"]) * float(p1["y"]))
+        area = abs(area) / 2.0
+
+        return {
+            "length": round(length, 3),
+            "width": round(width, 3),
+            "area": round(area, 3),
+        }
+
+    def remove_location_bounding_box(self, location_name: str) -> None:
+        for item in self.data.get("locations", []):
+            if item.get("name") == location_name:
+                item.pop("bounding_box", None)
+                return
+
+    def get_location_bounding_box_points(self, location_name: str) -> list:
+        for item in self.data.get("locations", []):
+            if item.get("name") == location_name:
+                lx = float(item.get("x", 0.0))
+                ly = float(item.get("y", 0.0))
+
+                points = []
+                for p in item.get("bounding_box", []):
+                    if "dx" in p and "dy" in p:
+                        points.append({
+                            "x": round(lx + float(p["dx"]), 3),
+                            "y": round(ly + float(p["dy"]), 3),
+                        })
+                    else:
+                        # Backwards compatibility for old absolute boxes
+                        points.append({
+                            "x": round(float(p["x"]), 3),
+                            "y": round(float(p["y"]), 3),
+                        })
+                return points
+
+        return []
+
+    def get_location(self, location_name: str) -> Optional[dict]:
+        for item in self.data.get("locations", []):
+            if item.get("name") == location_name:
+                return item
+        return None
+
+    def get_location_inventory_spaces(self, location_name: str) -> list:
+        location = self.get_location(location_name)
+        if not location:
+            return []
+        return deepcopy(location.get("inventory_spaces", []))
+
+
+    def set_location_inventory_spaces(self, location_name: str, spaces: list) -> None:
+        location = self.get_location(location_name)
+        if not location:
+            return
+
+        lx = float(location.get("x", 0.0))
+        ly = float(location.get("y", 0.0))
+
+        clean_spaces = []
+        for idx, space in enumerate(spaces, start=1):
+            name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+            points = []
+
+            for p in space.get("points", []):
+                if "dx" in p and "dy" in p:
+                    points.append({
+                        "dx": round(float(p["dx"]), 3),
+                        "dy": round(float(p["dy"]), 3),
+                    })
+                else:
+                    points.append({
+                        "dx": round(float(p["x"]) - lx, 3),
+                        "dy": round(float(p["y"]) - ly, 3),
+                    })
+
+            if len(points) >= 3:
+                clean_spaces.append({
+                    "name": name,
+                    "points": points,
+                })
+
+        location["inventory_spaces"] = clean_spaces
+
+
+    def inventory_space_points_absolute(self, location_name: str, space: dict) -> list:
+        location = self.get_location(location_name)
+        if not location:
+            return []
+
+        lx = float(location.get("x", 0.0))
+        ly = float(location.get("y", 0.0))
+
+        result = []
+        for p in space.get("points", []):
+            if "dx" in p and "dy" in p:
+                result.append({
+                    "x": round(lx + float(p["dx"]), 3),
+                    "y": round(ly + float(p["dy"]), 3),
+                })
+            else:
+                result.append({
+                    "x": round(float(p["x"]), 3),
+                    "y": round(float(p["y"]), 3),
+                })
+
+        return result
 
     def is_department_point(self, name: str) -> bool:
         for dept in self.data.get("departments", []):

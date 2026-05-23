@@ -3,7 +3,8 @@ from typing import Any, List, Optional
 
 from advanced_dialogs import MultiSelectPicker
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtGui import QColor, QBrush, QPen, QPolygonF, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -28,6 +29,13 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QGraphicsScene,
+    QGraphicsView,
+    QGraphicsPolygonItem,
+    QGraphicsSimpleTextItem,
+    QGraphicsItem,
+    QMenu,
+    QGraphicsPathItem
 )
 
 
@@ -51,6 +59,19 @@ class PointEditorDialog(QDialog):
         form.addRow("Y", self.y_edit)
         form.addRow("Floor", QLabel(str(point["floor"])))
         form.addRow("Kind", QLabel(str(point.get("kind", ""))))
+        if point.get("kind") == "location":
+            metrics = {}
+            parent_obj = self.parent()
+            if parent_obj and hasattr(parent_obj, "store"):
+                metrics = parent_obj.store.location_bounding_box_metrics(point_name)
+
+            length = float(metrics.get("length", 0.0))
+            width = float(metrics.get("width", 0.0))
+            area = float(metrics.get("area", 0.0))
+
+            form.addRow("Bounding length", QLabel(f"{length:.3f} m"))
+            form.addRow("Bounding width", QLabel(f"{width:.3f} m"))
+            form.addRow("Bounding area", QLabel(f"{area:.3f} m²"))
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -1195,3 +1216,718 @@ class DepartmentListDialog(QDialog):
     def save_items(self):
         self.on_save(self.items)
         self.accept()
+
+class InventorySpacesDialog(QDialog):
+    def __init__(self, parent, location_name):
+        super().__init__(parent)
+        self.setWindowTitle(f"Inventory Spaces - {location_name}")
+        self.resize(900, 650)
+
+        self.location_name = location_name
+        self.store = parent.store
+        self.editor = parent
+        self._dxf_background_pixmap = None
+        self._dxf_background_rect = None
+        self.location = self.store.get_location(location_name)
+        self.spaces = self.store.get_location_inventory_spaces(location_name)
+
+        self.current_points = []
+        self.selected_space_index = None
+        self.drag_point_index = None
+        self.drag_whole_space = False
+        self.drag_start_world = None
+        self.drag_start_points = []
+        self.copied_space = None
+        self._initial_fit_done = False
+
+        layout = QHBoxLayout(self)
+
+        left = QVBoxLayout()
+        layout.addLayout(left, 0)
+
+        self.space_list = QListWidget()
+        self.space_list.currentRowChanged.connect(self.select_space)
+        self.space_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.space_list.customContextMenuRequested.connect(self._show_space_list_menu)
+
+        left.addWidget(QLabel("Inventory spaces"))
+        left.addWidget(self.space_list, 1)
+
+        add_btn = QPushButton("New space")
+        save_btn = QPushButton("Save current")
+        copy_btn = QPushButton("Copy selected")
+        paste_btn = QPushButton("Paste copy")
+        delete_btn = QPushButton("Delete selected")
+        finish_btn = QPushButton("Save and close")
+
+        add_btn.clicked.connect(self.new_space)
+        save_btn.clicked.connect(self.save_current_space)
+        copy_btn.clicked.connect(self.copy_selected_space)
+        paste_btn.clicked.connect(self.paste_copied_space)
+        delete_btn.clicked.connect(self.delete_selected_space)
+        finish_btn.clicked.connect(self.finish)
+
+        left.addWidget(add_btn)
+        left.addWidget(save_btn)
+        left.addWidget(copy_btn)
+        left.addWidget(paste_btn)
+        left.addWidget(delete_btn)
+        left.addStretch(1)
+        left.addWidget(finish_btn)
+
+        right = QVBoxLayout()
+        layout.addLayout(right, 1)
+
+        self.name_edit = QLineEdit()
+        right.addWidget(QLabel("Space name"))
+        right.addWidget(self.name_edit)
+
+        self.rectangle_snap_check = QCheckBox("Rectangular snap")
+        self.rectangle_snap_check.setChecked(True)
+        right.addWidget(self.rectangle_snap_check)
+
+        size_row = QHBoxLayout()
+
+        self.length_edit = QLineEdit("0.000")
+        self.width_edit = QLineEdit("0.000")
+        self.lock_size_check = QCheckBox("Lock size")
+
+        self.length_edit.editingFinished.connect(self._apply_size_from_fields)
+        self.width_edit.editingFinished.connect(self._apply_size_from_fields)
+
+        size_row.addWidget(QLabel("Length"))
+        size_row.addWidget(self.length_edit)
+        size_row.addWidget(QLabel("Width"))
+        size_row.addWidget(self.width_edit)
+        size_row.addWidget(self.lock_size_check)
+
+        right.addLayout(size_row)
+
+        self.scene = QGraphicsScene(self)
+        self.view = QGraphicsView(self.scene)
+        self.view.setRenderHint(self.view.renderHints())
+        self.view.setMouseTracking(True)
+        self.view.mousePressEvent = self._mouse_press
+        self.view.mouseMoveEvent = self._mouse_move
+        self.view.mouseReleaseEvent = self._mouse_release
+        right.addWidget(self.view, 1)
+
+        self.status_label = QLabel(
+            "Left-click to add points. Drag yellow points to edit. Right-click a point to remove it."
+        )
+        right.addWidget(self.status_label)
+
+        self.refresh_list()
+        self.refresh_scene()
+
+    def _apply_size_from_fields(self):
+        if len(self.current_points) != 4:
+            return
+
+        try:
+            new_length = float(self.length_edit.text())
+            new_width = float(self.width_edit.text())
+        except ValueError:
+            self._refresh_size_fields()
+            return
+
+        if new_length <= 0 or new_width <= 0:
+            self._refresh_size_fields()
+            return
+
+        xs = [float(p["x"]) for p in self.current_points]
+        ys = [float(p["y"]) for p in self.current_points]
+
+        min_x = min(xs)
+        min_y = min(ys)
+
+        self.current_points = [
+            {"x": round(min_x, 3), "y": round(min_y, 3)},
+            {"x": round(min_x + new_length, 3), "y": round(min_y, 3)},
+            {"x": round(min_x + new_length, 3), "y": round(min_y + new_width, 3)},
+            {"x": round(min_x, 3), "y": round(min_y + new_width, 3)},
+        ]
+
+        self.refresh_scene()
+
+    def _show_space_list_menu(self, pos):
+        row = self.space_list.row(self.space_list.itemAt(pos))
+        if row >= 0:
+            self.space_list.setCurrentRow(row)
+
+        menu = QMenu(self)
+        copy_action = menu.addAction("Copy")
+        paste_action = menu.addAction("Paste")
+        delete_action = menu.addAction("Delete")
+
+        copy_action.setEnabled(self.space_list.currentRow() >= 0)
+        paste_action.setEnabled(self.copied_space is not None)
+        delete_action.setEnabled(self.space_list.currentRow() >= 0)
+
+        action = menu.exec(self.space_list.viewport().mapToGlobal(pos))
+
+        if action == copy_action:
+            self.copy_selected_space()
+        elif action == paste_action:
+            self.paste_copied_space()
+        elif action == delete_action:
+            self.delete_selected_space()
+
+    def _current_size(self):
+        if not self.current_points:
+            return 0.0, 0.0
+
+        xs = [float(p["x"]) for p in self.current_points]
+        ys = [float(p["y"]) for p in self.current_points]
+
+        length = max(xs) - min(xs)
+        width = max(ys) - min(ys)
+
+        return round(length, 3), round(width, 3)
+
+
+    def _refresh_size_fields(self):
+        length, width = self._current_size()
+        self.length_edit.setText(f"{length:.3f}")
+        self.width_edit.setText(f"{width:.3f}")
+
+
+    def _point_inside_current_space(self, x, y):
+        if len(self.current_points) < 3:
+            return False
+
+        inside = False
+        points = self.current_points
+        j = len(points) - 1
+
+        for i in range(len(points)):
+            xi = float(points[i]["x"])
+            yi = float(points[i]["y"])
+            xj = float(points[j]["x"])
+            yj = float(points[j]["y"])
+
+            intersects = ((yi > y) != (yj > y)) and (
+                x < ((xj - xi) * (y - yi) / ((yj - yi) or 1e-9)) + xi
+            )
+
+            if intersects:
+                inside = not inside
+
+            j = i
+
+        return inside
+
+    def refresh_list(self):
+        self.space_list.blockSignals(True)
+        self.space_list.clear()
+        for space in self.spaces:
+            self.space_list.addItem(space.get("name", "Inventory space"))
+        self.space_list.blockSignals(False)
+
+    def select_space(self, row):
+        if row < 0 or row >= len(self.spaces):
+            return
+
+        self.selected_space_index = row
+        space = self.spaces[row]
+        self.name_edit.setText(space.get("name", ""))
+
+        self.current_points = self.store.inventory_space_points_absolute(
+            self.location_name,
+            space,
+        )
+
+        self.refresh_scene()
+
+    def new_space(self):
+        self.selected_space_index = None
+        self.name_edit.setText(f"Inventory {len(self.spaces) + 1}")
+        self.current_points = []
+        self.refresh_scene()
+
+    def save_current_space(self):
+        name = self.name_edit.text().strip() or f"Inventory {len(self.spaces) + 1}"
+
+        if len(self.current_points) < 3:
+            QMessageBox.critical(
+                self,
+                "Invalid inventory space",
+                "Draw at least three points for an inventory space.",
+            )
+            return
+
+        lx = float(self.location.get("x", 0.0))
+        ly = float(self.location.get("y", 0.0))
+
+        payload = {
+            "name": name,
+            "points": [
+                {
+                    "dx": round(float(p["x"]) - lx, 3),
+                    "dy": round(float(p["y"]) - ly, 3),
+                }
+                for p in self.current_points
+            ],
+        }
+
+        if self.selected_space_index is None:
+            self.spaces.append(payload)
+            self.selected_space_index = len(self.spaces) - 1
+        else:
+            self.spaces[self.selected_space_index] = payload
+
+        self.refresh_list()
+        self.space_list.setCurrentRow(self.selected_space_index)
+        self.refresh_scene()
+
+    def delete_selected_space(self):
+        row = self.space_list.currentRow()
+        if row < 0 or row >= len(self.spaces):
+            return
+
+        del self.spaces[row]
+        self.selected_space_index = None
+        self.current_points = []
+        self.name_edit.clear()
+        self.refresh_list()
+        self.refresh_scene()
+
+    def finish(self):
+        self.store.set_location_inventory_spaces(self.location_name, self.spaces)
+        self.accept()
+
+    def world_to_scene(self, x, y):
+        return QPointF(float(x), -float(y))
+
+    def scene_to_world(self, point):
+        return float(point.x()), -float(point.y())
+        
+    def _apply_rectangle_snap(self, moving_index=None):
+        if not self.rectangle_snap_check.isChecked():
+            return
+
+        if len(self.current_points) != 4:
+            return
+
+        if moving_index is None or moving_index < 0 or moving_index >= 4:
+            xs = [float(p["x"]) for p in self.current_points]
+            ys = [float(p["y"]) for p in self.current_points]
+
+            min_x = round(min(xs), 3)
+            max_x = round(max(xs), 3)
+            min_y = round(min(ys), 3)
+            max_y = round(max(ys), 3)
+
+            self.current_points = [
+                {"x": min_x, "y": min_y},
+                {"x": max_x, "y": min_y},
+                {"x": max_x, "y": max_y},
+                {"x": min_x, "y": max_y},
+            ]
+            return
+
+        p = self.current_points[moving_index]
+        opposite_index = (moving_index + 2) % 4
+        opposite = self.current_points[opposite_index]
+
+        x1 = round(float(p["x"]), 3)
+        y1 = round(float(p["y"]), 3)
+        x2 = round(float(opposite["x"]), 3)
+        y2 = round(float(opposite["y"]), 3)
+
+        self.current_points = [
+            {"x": x1, "y": y1},
+            {"x": x2, "y": y1},
+            {"x": x2, "y": y2},
+            {"x": x1, "y": y2},
+        ]
+
+        if moving_index == 1:
+            self.current_points = [
+                {"x": x2, "y": y1},
+                {"x": x1, "y": y1},
+                {"x": x1, "y": y2},
+                {"x": x2, "y": y2},
+            ]
+        elif moving_index == 2:
+            self.current_points = [
+                {"x": x2, "y": y2},
+                {"x": x1, "y": y2},
+                {"x": x1, "y": y1},
+                {"x": x2, "y": y1},
+            ]
+        elif moving_index == 3:
+            self.current_points = [
+                {"x": x1, "y": y2},
+                {"x": x2, "y": y2},
+                {"x": x2, "y": y1},
+                {"x": x1, "y": y1},
+            ]
+
+    def _nearest_current_point(self, x, y, radius=0.5):
+        best = None
+        best_dist = radius
+
+        for idx, p in enumerate(self.current_points):
+            d = ((float(p["x"]) - x) ** 2 + (float(p["y"]) - y) ** 2) ** 0.5
+            if d <= best_dist:
+                best = idx
+                best_dist = d
+
+        return best
+
+    def _mouse_press(self, event):
+        scene_pos = self.view.mapToScene(event.position().toPoint())
+        x, y = self.scene_to_world(scene_pos)
+
+        hit = self._nearest_current_point(x, y)
+
+        if event.button() == Qt.RightButton:
+            if hit is not None:
+                self.current_points.pop(hit)
+                self.refresh_scene()
+            return
+
+        if event.button() == Qt.LeftButton:
+            if hit is not None and not self.lock_size_check.isChecked():
+                self.drag_point_index = hit
+                return
+
+            if self.lock_size_check.isChecked() and self._point_inside_current_space(x, y):
+                self.drag_whole_space = True
+                self.drag_start_world = {"x": x, "y": y}
+                self.drag_start_points = [dict(p) for p in self.current_points]
+                return
+
+            if self.lock_size_check.isChecked():
+                return
+
+            self.current_points.append({
+                "x": round(x, 3),
+                "y": round(y, 3),
+            })
+            self._apply_rectangle_snap()
+            self.refresh_scene()
+
+    def _mouse_move(self, event):
+        scene_pos = self.view.mapToScene(event.position().toPoint())
+        x, y = self.scene_to_world(scene_pos)
+
+        if self.drag_whole_space and self.drag_start_world is not None:
+            dx = round(x - float(self.drag_start_world["x"]), 3)
+            dy = round(y - float(self.drag_start_world["y"]), 3)
+
+            self.current_points = [
+                {
+                    "x": round(float(p["x"]) + dx, 3),
+                    "y": round(float(p["y"]) + dy, 3),
+                }
+                for p in self.drag_start_points
+            ]
+
+            self.refresh_scene()
+            return
+
+        if self.drag_point_index is None:
+            return
+
+        if 0 <= self.drag_point_index < len(self.current_points):
+            self.current_points[self.drag_point_index] = {
+                "x": round(x, 3),
+                "y": round(y, 3),
+            }
+            self._apply_rectangle_snap(self.drag_point_index)
+            self.refresh_scene()
+
+    def _mouse_release(self, event):
+        self.drag_point_index = None
+        self.drag_whole_space = False
+        self.drag_start_world = None
+        self.drag_start_points = []
+
+    def _location_box_scene_rect(self):
+        location_box = self.store.get_location_bounding_box_points(self.location_name)
+
+        if not location_box:
+            return None
+
+        pts = [self.world_to_scene(p["x"], p["y"]) for p in location_box]
+        xs = [p.x() for p in pts]
+        ys = [p.y() for p in pts]
+
+        return QRectF(
+            min(xs),
+            min(ys),
+            max(xs) - min(xs),
+            max(ys) - min(ys),
+        )
+
+    def copy_selected_space(self):
+        row = self.space_list.currentRow()
+        if row < 0 or row >= len(self.spaces):
+            return
+
+        self.copied_space = {
+            "name": self.spaces[row].get("name", "Inventory space"),
+            "points": [dict(p) for p in self.spaces[row].get("points", [])],
+        }
+
+        self.status_label.setText(f"Copied {self.copied_space['name']}")
+
+
+    def paste_copied_space(self):
+        if not self.copied_space:
+            return
+
+        pasted = {
+            "name": f"{self.copied_space.get('name', 'Inventory space')} copy",
+            "points": [dict(p) for p in self.copied_space.get("points", [])],
+        }
+
+        # Small offset so pasted space is visible and selectable separately
+        for p in pasted["points"]:
+            p["dx"] = round(float(p.get("dx", 0.0)) + 0.25, 3)
+            p["dy"] = round(float(p.get("dy", 0.0)) + 0.25, 3)
+
+        self.spaces.append(pasted)
+        self.selected_space_index = len(self.spaces) - 1
+        self.refresh_list()
+        self.space_list.setCurrentRow(self.selected, self.space_list.setContextMenuPolicy(Qt.CustomContextMenu))
+        self.space_list.customContextMenuRequested.connect(self._show_space_list_menu_space_index)
+        self.select_space(self.selected_space_index)
+        self.refresh_scene()
+
+    def _draw_dxf_background(self):
+        if not self.location:
+            return
+
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+
+        floor = int(self.location.get("floor", 0))
+
+        if getattr(editor, "loaded_dxf_floor", None) != floor:
+            editor.ensure_floor_dxf_loaded(floor)
+
+        if getattr(editor, "loaded_dxf_floor", None) != floor:
+            return
+
+        dxf_scene = getattr(editor, "dxf_scene", None)
+        if dxf_scene is None or not dxf_scene.entities:
+            return
+
+        view_rect = self._location_box_scene_rect()
+        if view_rect is None or view_rect.isNull():
+            return
+
+        world_rect = QRectF(
+            view_rect.left(),
+            -view_rect.bottom(),
+            view_rect.width(),
+            view_rect.height(),
+        ).adjusted(-1.0, -1.0, 1.0, 1.0)
+
+        line_path = QPainterPath()
+        poly_path = QPainterPath()
+        arc_path = QPainterPath()
+
+        for entity in dxf_scene.entities:
+            bbox = entity.get("bbox")
+            if bbox:
+                min_x, min_y, max_x, max_y = bbox
+                if (
+                    max_x < world_rect.left()
+                    or min_x > world_rect.right()
+                    or max_y < world_rect.top()
+                    or min_y > world_rect.bottom()
+                ):
+                    continue
+
+            etype = entity.get("type")
+
+            if etype == "LINE":
+                x1, y1 = entity["start"]
+                x2, y2 = entity["end"]
+                line_path.moveTo(x1, -y1)
+                line_path.lineTo(x2, -y2)
+
+            elif etype == "POLYLINE":
+                pts = [QPointF(x, -y) for x, y in entity.get("points", [])]
+                if len(pts) >= 2:
+                    poly_path.moveTo(pts[0])
+                    for pt in pts[1:]:
+                        poly_path.lineTo(pt)
+                    if entity.get("closed"):
+                        poly_path.closeSubpath()
+
+            elif etype == "CIRCLE":
+                cx, cy = entity["center"]
+                r = float(entity["radius"])
+                arc_path.addEllipse(QRectF(cx - r, -(cy + r), r * 2, r * 2))
+
+            elif etype == "ARC":
+                cx, cy = entity["center"]
+                r = float(entity["radius"])
+                start_angle = float(entity.get("start_angle", 0.0))
+                end_angle = float(entity.get("end_angle", 0.0))
+                span_angle = end_angle - start_angle
+                if span_angle <= 0:
+                    span_angle += 360.0
+
+                rect = QRectF(cx - r, -(cy + r), r * 2, r * 2)
+                arc_path.arcMoveTo(rect, -start_angle)
+                arc_path.arcTo(rect, -start_angle, -span_angle)
+
+        for path, colour in [
+            (line_path, "#777777"),
+            (poly_path, "#999999"),
+            (arc_path, "#777777"),
+        ]:
+            if path.isEmpty():
+                continue
+
+            item = QGraphicsPathItem(path)
+            item.setPen(QPen(QColor(colour), 0))
+            item.setBrush(Qt.NoBrush)
+            item.setZValue(-100)
+            item.setOpacity(0.45)
+            item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
+            self.scene.addItem(item)
+
+    def _build_dxf_background_pixmap(self):
+        if not self.location:
+            return
+
+        location_box = self.store.get_location_bounding_box_points(self.location_name)
+        if not location_box:
+            return
+
+        pts = [self.world_to_scene(p["x"], p["y"]) for p in location_box]
+        xs = [p.x() for p in pts]
+        ys = [p.y() for p in pts]
+
+        rect = QRectF(
+            min(xs),
+            min(ys),
+            max(xs) - min(xs),
+            max(ys) - min(ys),
+        ).adjusted(-2, -2, 2, 2)
+
+        if rect.isNull() or rect.width() <= 0 or rect.height() <= 0:
+            return
+
+        editor = getattr(self, "editor", None)
+        if editor is None:
+            return
+
+        floor = int(self.location.get("floor", 0))
+
+        if getattr(editor, "loaded_dxf_floor", None) != floor:
+            editor.ensure_floor_dxf_loaded(floor)
+
+        if getattr(editor, "loaded_dxf_floor", None) != floor:
+            return
+
+        dxf_scene = getattr(editor, "dxf_scene", None)
+        if dxf_scene is None or not dxf_scene.entities:
+            return
+
+        target_width = 1600
+        scale = target_width / max(1.0, rect.width())
+        target_height = max(1, int(rect.height() * scale))
+
+        image = QImage(
+            int(target_width),
+            int(target_height),
+            QImage.Format_ARGB32_Premultiplied,
+        )
+        image.fill(Qt.transparent)
+
+        temp_scene = QGraphicsScene()
+        dxf_scene.populate_graphics_scene(temp_scene, scale)
+
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing, False)
+        temp_scene.render(
+            painter,
+            QRectF(0, 0, image.width(), image.height()),
+            rect,
+        )
+        painter.end()
+        temp_scene.clear()
+
+        self._dxf_background_pixmap = QPixmap.fromImage(image)
+        self._dxf_background_rect = rect
+
+    def refresh_scene(self):
+        self.scene.clear()
+        self._draw_dxf_background()
+
+        location_box = self.store.get_location_bounding_box_points(self.location_name)
+
+        if location_box:
+            pts = [self.world_to_scene(p["x"], p["y"]) for p in location_box]
+            poly = QGraphicsPolygonItem(QPolygonF(pts))
+            poly.setPen(QPen(QColor("#18c37e"), 0.08))
+            poly.setBrush(QBrush(QColor(24, 195, 126, 35)))
+            self.scene.addItem(poly)
+
+        for idx, space in enumerate(self.spaces):
+            if idx == self.selected_space_index:
+                continue
+
+            pts_abs = self.store.inventory_space_points_absolute(
+                self.location_name,
+                space,
+            )
+            if len(pts_abs) < 3:
+                continue
+
+            pts = [self.world_to_scene(p["x"], p["y"]) for p in pts_abs]
+            poly = QGraphicsPolygonItem(QPolygonF(pts))
+            poly.setPen(QPen(QColor("#6aa9ff"), 0.05))
+            poly.setBrush(QBrush(QColor(106, 169, 255, 45)))
+            poly.setZValue(-10)
+            self.scene.addItem(poly)
+
+            label = QGraphicsSimpleTextItem(space.get("name", "Inventory"))
+            label.setBrush(QBrush(QColor("#bcd7ff")))
+            label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+            label.setPos(pts[0])
+            self.scene.addItem(label)
+
+        if self.current_points:
+            pts = [self.world_to_scene(p["x"], p["y"]) for p in self.current_points]
+
+            if len(pts) >= 3:
+                poly = QGraphicsPolygonItem(QPolygonF(pts))
+                poly.setPen(QPen(QColor("#ffdd57"), 0.08))
+                poly.setBrush(QBrush(QColor(255, 221, 87, 55)))
+                self.scene.addItem(poly)
+
+            for idx, pt in enumerate(pts):
+                handle = self.scene.addEllipse(
+                    pt.x() - 0.18,
+                    pt.y() - 0.18,
+                    0.36,
+                    0.36,
+                    QPen(QColor("#ffffff"), 0),
+                    QBrush(QColor("#ffdd57")),
+                )
+                handle.setZValue(10)
+
+        base_rect = self._location_box_scene_rect()
+
+        if base_rect is None:
+            base_rect = self.scene.itemsBoundingRect()
+
+        if not base_rect.isNull():
+            padded = base_rect.adjusted(-2, -2, 2, 2)
+            self.scene.setSceneRect(padded)
+
+            if not self._initial_fit_done:
+                self.view.fitInView(padded, Qt.KeepAspectRatio)
+                self._initial_fit_done = True
+
+        self._refresh_size_fields()

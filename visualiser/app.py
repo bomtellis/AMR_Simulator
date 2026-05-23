@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QPoint, QPointF, Qt, Signal, QRect, QThread, Slot
-from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont
+from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont, QPolygonF
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -41,6 +41,7 @@ from dialogs import (
     DepartmentListDialog,
     AMRListDialog,
     AMREditorDialog,
+    InventorySpacesDialog,
 )
 from advanced_dialogs import RouteProfilesEditorV2, TaskEditorWindow, TaskPlannerDialog
 from models import JsonStore
@@ -223,6 +224,9 @@ class AMRGraphEditor(QMainWindow):
         self.dragging_point_name = None
         self.drag_mode_active = False
         self.edge_delete_start = None
+        self.bounding_box_location_name = None
+        self.bounding_box_points = []
+        self.dragging_bounding_box_point_index = None
 
         self._item_lookup = {}
         self._point_item_lookup = {}
@@ -262,6 +266,7 @@ class AMRGraphEditor(QMainWindow):
                 "select_move",
                 "corridor_node",
                 "location",
+                "location_bbox",
                 "department",
                 "edge",
                 "lift",
@@ -282,8 +287,11 @@ class AMRGraphEditor(QMainWindow):
         self.show_dxf_check.setChecked(True)
         self.show_labels_check = QCheckBox("Show labels")
         self.show_labels_check.setChecked(True)
+        self.show_location_bounds_check = QCheckBox("Show location bounding boxes")
+        self.show_location_bounds_check.setChecked(False)
         self.show_dxf_check.toggled.connect(self.refresh_canvas)
         self.show_labels_check.toggled.connect(self.refresh_canvas)
+        self.show_location_bounds_check.toggled.connect(self.refresh_canvas)
 
         sidebar_layout.addWidget(QLabel("Mode"))
         sidebar_layout.addWidget(self.mode_combo)
@@ -301,6 +309,7 @@ class AMRGraphEditor(QMainWindow):
         sidebar_layout.addWidget(self.chain_edges_check)
         sidebar_layout.addWidget(self.show_dxf_check)
         sidebar_layout.addWidget(self.show_labels_check)
+        sidebar_layout.addWidget(self.show_location_bounds_check)
         sidebar_layout.addSpacing(10)
 
         for text, handler in [
@@ -667,6 +676,9 @@ class AMRGraphEditor(QMainWindow):
             self.dxf_scene.populate_graphics_scene(
                 self.scene, self.canvas.transform().m11()
             )
+        if self.show_location_bounds_check.isChecked():
+            self.draw_location_bounding_boxes(floor)
+        self.draw_temporary_location_bounding_box(floor)
         self.draw_edges(floor)
         self.draw_points(floor)
         self.file_label.setText(self.current_json_path or "New file")
@@ -726,6 +738,113 @@ class AMRGraphEditor(QMainWindow):
             self._delete_edge_connections,
         )
         dialog.exec()
+
+    def find_nearest_bounding_box_point_index(self, x, y, radius_world=0.6):
+        if not self.bounding_box_location_name:
+            return None
+
+        best_index = None
+        best_dist = radius_world
+
+        for idx, point in enumerate(self.bounding_box_points):
+            d = math.hypot(float(point["x"]) - x, float(point["y"]) - y)
+            if d <= best_dist:
+                best_index = idx
+                best_dist = d
+
+        return best_index
+
+
+    def draw_location_bounding_boxes(self, floor):
+        pen = QPen(QColor("#00e5ff"), 0)
+        brush = QBrush(QColor(0, 229, 255, 35))
+        for location in self.store.locations_for_floor(floor):
+            points = self.store.get_location_bounding_box_points(location["name"]) or []
+            if len(points) < 3:
+                continue
+            poly = QPolygonF([self.world_to_scene(p["x"], p["y"]) for p in points])
+            item = QGraphicsPolygonItem(poly)
+            item.setPen(pen)
+            item.setBrush(brush)
+            item.setZValue(-5)
+            self.scene.addItem(item)
+            self._item_lookup[item] = ("location_bounding_box", location.get("name", ""))
+
+    def draw_temporary_location_bounding_box(self, floor):
+        if self.mode_combo.currentText() != "location_bbox":
+            return
+        if not self.bounding_box_location_name or not self.bounding_box_points:
+            return
+        location = self.store.get_location(self.bounding_box_location_name)
+        if not location or int(location.get("floor", -1)) != int(floor):
+            return
+
+        pts = [self.world_to_scene(p["x"], p["y"]) for p in self.bounding_box_points]
+        pen = QPen(QColor("#ffdd57"), 0)
+        pen.setStyle(Qt.DashLine)
+        brush = QBrush(QColor(255, 221, 87, 35)) if len(pts) >= 3 else Qt.NoBrush
+
+        # if len(pts) == 1:
+        #     p = pts[0]
+        #     self.scene.addEllipse(p.x() - 0.15, p.y() - 0.15, 0.3, 0.3, pen, QBrush(QColor("#ffdd57")))
+        #     return
+
+        poly = QPolygonF(pts)
+        item = QGraphicsPolygonItem(poly)
+        item.setPen(pen)
+        item.setBrush(brush)
+        item.setZValue(-4)
+        self.scene.addItem(item)
+
+        for idx, p in enumerate(pts):
+            handle_pen = QPen(QColor("#ffffff"), 0)
+            handle_brush = QBrush(
+                QColor("#ff6b6b")
+                if idx == self.dragging_bounding_box_point_index
+                else QColor("#ffdd57")
+            )
+            handle = self.scene.addEllipse(
+                p.x() - 0.18,
+                p.y() - 0.18,
+                0.36,
+                0.36,
+                handle_pen,
+                handle_brush,
+            )
+            handle.setZValue(20)
+            self._item_lookup[handle] = ("location_bounding_box_point", idx)
+
+    def start_location_bounding_box_draw(self, location_name, keep_existing=False):
+        location = self.store.get_location(location_name)
+        if location is None:
+            return
+        self.bounding_box_location_name = location_name
+        existing = self.store.get_location_bounding_box_points(location_name)
+        self.bounding_box_points = [dict(p) for p in existing] if keep_existing else []
+        self.mode_combo.setCurrentText("location_bbox")
+        self.show_location_bounds_check.setChecked(True)
+        self.set_status(f"Drawing bounding box for {location_name}. Left-click points, right-click empty space to finish.")
+        self.refresh_canvas()
+
+    def finish_location_bounding_box_draw(self):
+        name = self.bounding_box_location_name
+        if not name:
+            return
+        if len(self.bounding_box_points) < 3:
+            QMessageBox.critical(self, "Bounding box", "Add at least three points for a room bounding box.")
+            return
+        self.store.set_location_bounding_box(name, self.bounding_box_points)
+        self.bounding_box_location_name = None
+        self.bounding_box_points = []
+        self.set_status(f"Saved bounding box for {name}")
+        self.refresh_canvas()
+
+    def cancel_location_bounding_box_draw(self):
+        name = self.bounding_box_location_name
+        self.bounding_box_location_name = None
+        self.bounding_box_points = []
+        self.set_status(f"Cancelled bounding box drawing for {name}" if name else "Bounding box drawing cancelled")
+        self.refresh_canvas()
 
     def draw_edges(self, floor):
         points = self.store.all_points()
@@ -797,8 +916,6 @@ class AMRGraphEditor(QMainWindow):
                     QPointF(pos.x() - r, pos.y()),
                 ]
                 item = QGraphicsPolygonItem()
-                from PySide6.QtGui import QPolygonF
-
                 item.setPolygon(QPolygonF(poly))
                 item.setPen(outline)
                 item.setBrush(QBrush(QColor("#ff7b72")))
@@ -831,6 +948,12 @@ class AMRGraphEditor(QMainWindow):
         ]
         if self.mode_combo.currentText() == "department":
             lines.append("Click anywhere to add a department")
+        if self.mode_combo.currentText() == "location_bbox":
+            if self.bounding_box_location_name:
+                lines.append(f"Bounding: {self.bounding_box_location_name} ({len(self.bounding_box_points)} pts)")
+                lines.append("Left-click = add point | Right-click empty = finish")
+            else:
+                lines.append("Right-click a location and choose draw bounding box")
         self._draw_overlay_box(painter, 12, 12, 320, lines, "#333333", "white")
 
     def _draw_overlay_box(self, painter, x, y, w, lines, border_color, title_color):
@@ -1047,6 +1170,37 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
             return
 
+        if mode == "location_bbox":
+            if not self.bounding_box_location_name:
+                if picked:
+                    picked_point = self.store.all_points().get(picked, {})
+                    if picked_point.get("kind") == "location":
+                        self.start_location_bounding_box_draw(picked, keep_existing=False)
+                    else:
+                        self.set_status("Pick a location before drawing a bounding box")
+                else:
+                    self.set_status("Right-click a location and choose draw bounding box, or left-click a location first")
+                return
+
+            location = self.store.get_location(self.bounding_box_location_name)
+            if not location or int(location.get("floor", -1)) != int(floor):
+                self.set_status("Bounding box location is not on the current floor")
+                return
+            
+            hit_index = self.find_nearest_bounding_box_point_index(x, y)
+            if hit_index is not None:
+                self.dragging_bounding_box_point_index = hit_index
+                self.set_status(
+                    f"Dragging bounding box point {hit_index + 1} for {self.bounding_box_location_name}"
+                )
+                self.refresh_canvas()
+                return
+            
+            self.bounding_box_points.append({"x": x, "y": y})
+            self.set_status(f"Added point {len(self.bounding_box_points)} for {self.bounding_box_location_name}")
+            self.refresh_canvas()
+            return
+
         if mode == "department":
             existing = self.find_nearest_point_name(x, y, floor)
             if existing:
@@ -1169,6 +1323,7 @@ class AMRGraphEditor(QMainWindow):
     def on_left_release(self, event):
         self.dragging_point_name = None
         self.drag_mode_active = False
+        self.dragging_bounding_box_point_index = None
         self.last_pan = None
 
     def on_right_click(self, event, sx, sy):
@@ -1176,6 +1331,50 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)
+        if mode == "location_bbox" and self.bounding_box_location_name:
+            hit_index = self.find_nearest_bounding_box_point_index(x, y)
+
+            if hit_index is not None:
+                removed = self.bounding_box_points.pop(hit_index)
+                self.dragging_bounding_box_point_index = None
+                self.set_status(
+                    f"Removed bounding box point {hit_index + 1} "
+                    f"from {self.bounding_box_location_name}"
+                )
+                self.refresh_canvas()
+                return
+        if mode == "location_bbox":
+            if not picked:
+                if self.bounding_box_location_name:
+                    self.finish_location_bounding_box_draw()
+                return
+            picked_point = self.store.all_points().get(picked, {})
+            if picked_point.get("kind") == "location":
+                self.selected_point_name = picked
+                self.refresh_canvas()
+                menu = QMenu(self)
+                draw_action = menu.addAction("Draw / replace bounding box")
+                edit_action = None
+                remove_action = None
+                if self.store.get_location(picked).get("bounding_box"):
+                    edit_action = menu.addAction("Edit existing bounding box")
+                    remove_action = menu.addAction("Remove bounding box")
+                cancel_action = None
+                if self.bounding_box_location_name:
+                    cancel_action = menu.addAction("Cancel current bounding box drawing")
+                action = menu.exec(event.globalPosition().toPoint())
+                if action == draw_action:
+                    self.start_location_bounding_box_draw(picked, keep_existing=False)
+                elif edit_action is not None and action == edit_action:
+                    self.start_location_bounding_box_draw(picked, keep_existing=True)
+                elif remove_action is not None and action == remove_action:
+                    self.store.remove_location_bounding_box(picked)
+                    self.set_status(f"Removed bounding box for {picked}")
+                    self.refresh_canvas()
+                elif cancel_action is not None and action == cancel_action:
+                    self.cancel_location_bounding_box_draw()
+                return
+
         if mode == "edge":
             # Right click empty space cancels edge chaining
             if not picked:
@@ -1245,11 +1444,35 @@ class AMRGraphEditor(QMainWindow):
                         self.refresh_canvas()
                 return
 
+            if point.get("kind") == "location":
+                draw_bounds_action = menu.addAction("Add / edit room bounding box")
+                remove_bounds_action = None
+                location = self.store.get_location(picked)
+                if location and location.get("bounding_box"):
+                    remove_bounds_action = menu.addAction("Remove room bounding box")
+                menu.addSeparator()
+                inventory_spaces_action = menu.addAction("Inventory spaces")
+                menu.addSeparator()
+            else:
+                draw_bounds_action = None
+                remove_bounds_action = None
+
             show_edges_action = menu.addAction("Show all edge connections")
             create_department_action = menu.addAction("Create department here")
             action = menu.exec(event.globalPosition().toPoint())
 
-            if action == show_edges_action:
+            if draw_bounds_action is not None and action == draw_bounds_action:
+                self.start_location_bounding_box_draw(picked, keep_existing=bool(self.store.get_location(picked).get("bounding_box")))
+            elif remove_bounds_action is not None and action == remove_bounds_action:
+                self.store.remove_location_bounding_box(picked)
+                self.set_status(f"Removed bounding box for {picked}")
+                self.refresh_canvas()
+            elif point.get("kind") == "location" and action == inventory_spaces_action:
+                dialog = InventorySpacesDialog(self, picked)
+                if dialog.exec() == QDialog.Accepted:
+                    self.set_status(f"Updated inventory spaces for {picked}")
+                    self.refresh_canvas()
+            elif action == show_edges_action:
                 self._show_edge_connections_dialog(picked)
             elif action == create_department_action:
                 point = self.store.all_points().get(picked)
@@ -1281,6 +1504,19 @@ class AMRGraphEditor(QMainWindow):
             )
             self.last_pan = current
             self.canvas.viewport().update()
+            return
+        if (
+            mode == "location_bbox"
+            and self.dragging_bounding_box_point_index is not None
+            and self.bounding_box_location_name
+        ):
+            x, y = self.scene_to_world(sx, sy)
+            x, y = self.snap(x, y)
+
+            idx = self.dragging_bounding_box_point_index
+            if 0 <= idx < len(self.bounding_box_points):
+                self.bounding_box_points[idx] = {"x": x, "y": y}
+                self.refresh_canvas()
             return
         if mode == "select_move" and self.drag_mode_active and self.dragging_point_name:
             x, y = self.scene_to_world(sx, sy)

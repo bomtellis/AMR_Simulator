@@ -1,0 +1,142 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T06:00:00",
+    "tick_rate": 1000
+  },
+  "building": {
+    "load_unload_time_sec": 20.0,
+    "floor_height_m": 4.0,
+    "charge_location": "AMR-CENTRE"
+  },
+  "locations": [
+    {
+      "name": "Test",
+      "floor": 0,
+      "x": -34,
+      "y": 38,
+      "bounding_box": [
+        {
+          "dx": -3.0,
+          "dy": 2.0
+        },
+        {
+          "dx": 4.0,
+          "dy": 2.0
+        },
+        {
+          "dx": 4.0,
+          "dy": -2.0
+        },
+        {
+          "dx": -3.0,
+          "dy": -2.0
+        }
+      ],
+      "inventory_spaces": [
+        {
+          "name": "Bin 1",
+          "points": [
+            {
+              "dx": -2.69,
+              "dy": -0.256
+            },
+            {
+              "dx": -1.69,
+              "dy": -0.256
+            },
+            {
+              "dx": -1.69,
+              "dy": 1.744
+            },
+            {
+              "dx": -2.69,
+              "dy": 1.744
+            }
+          ]
+        },
+        {
+          "name": "Bin 2",
+          "points": [
+            {
+              "dx": -1.396,
+              "dy": -0.267
+            },
+            {
+              "dx": -0.396,
+              "dy": -0.267
+            },
+            {
+              "dx": -0.396,
+              "dy": 1.733
+            },
+            {
+              "dx": -1.396,
+              "dy": 1.733
+            }
+          ]
+        },
+        {
+          "name": "Bin 3",
+          "points": [
+            {
+              "dx": -0.102,
+              "dy": -0.295
+            },
+            {
+              "dx": 0.898,
+              "dy": -0.295
+            },
+            {
+              "dx": 0.898,
+              "dy": 1.705
+            },
+            {
+              "dx": -0.102,
+              "dy": 1.705
+            }
+          ]
+        },
+        {
+          "name": "Bin 4",
+          "points": [
+            {
+              "dx": 1.175,
+              "dy": -0.289
+            },
+            {
+              "dx": 2.175,
+              "dy": -0.289
+            },
+            {
+              "dx": 2.175,
+              "dy": 1.711
+            },
+            {
+              "dx": 1.175,
+              "dy": 1.711
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "corridors": {
+    "nodes": [],
+    "edges": [],
+    "auto_connect": false
+  },
+  "payloads": [],
+  "waste_streams": [],
+  "departments": [],
+  "amrs": [],
+  "lifts": [],
+  "floor_dxf_files": [],
+  "tasks": [],
+  "route_profiles": {
+    "default": {
+      "allowed_lifts": [],
+      "allowed_nodes": [],
+      "allowed_edges": []
+    }
+  }
+}
