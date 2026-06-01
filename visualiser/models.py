@@ -26,6 +26,13 @@ DEFAULT_JSON = {
     "lifts": [],
     "floor_dxf_files": [],
     "tasks": [],
+    "task_generation": {
+        "enabled": True,
+        "department_waste": {
+            "enabled": True,
+            "priority": 60,
+        },
+    },
     "route_profiles": {
         "default": {
             "allowed_lifts": [],
