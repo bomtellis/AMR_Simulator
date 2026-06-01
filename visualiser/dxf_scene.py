@@ -1,3 +1,7 @@
+"""
+AMR Simulator DXF Scene
+"""
+
 import math
 from typing import Dict, List, Optional, Tuple
 
@@ -57,15 +61,15 @@ class DXFScene:
         return (min(xs), min(ys), max(xs), max(ys))
 
     DXF_UNIT_TO_METRES = {
-        0: None,          # Unitless
-        1: 0.0254,        # Inches
-        2: 0.3048,        # Feet
-        4: 0.001,         # Millimetres
-        5: 0.01,          # Centimetres
-        6: 1.0,           # Metres
-        7: 1000.0,        # Kilometres
-        10: 0.9144,       # Yards
-        14: 0.1,          # Decimetres
+        0: None,  # Unitless
+        1: 0.0254,  # Inches
+        2: 0.3048,  # Feet
+        4: 0.001,  # Millimetres
+        5: 0.01,  # Centimetres
+        6: 1.0,  # Metres
+        7: 1000.0,  # Kilometres
+        10: 0.9144,  # Yards
+        14: 0.1,  # Decimetres
         21: 1200.0 / 3937.0,  # US survey feet
     }
 

@@ -3,7 +3,6 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-
 DEFAULT_JSON = {
     "simulation": {
         "start_datetime": "2026-01-05T06:00:00",
@@ -12,7 +11,7 @@ DEFAULT_JSON = {
     "building": {
         "load_unload_time_sec": 20.0,
         "floor_height_m": 4.0,
-        "charge_location": "AMR-CENTRE",
+        "charge_locations": ["AMR-CENTRE"],
     },
     "locations": [],
     "corridors": {
@@ -59,6 +58,22 @@ class JsonStore:
             except Exception:
                 continue
         return None
+
+    def charge_locations(self) -> list:
+        building = self.data.setdefault("building", {})
+        locations = building.get("charge_locations")
+
+        if isinstance(locations, list):
+            return [str(x).strip() for x in locations if str(x).strip()]
+
+        legacy = str(building.get("charge_location", "")).strip()
+        return [legacy] if legacy else []
+
+    def set_charge_locations(self, locations: list) -> None:
+        self.data.setdefault("building", {})["charge_locations"] = [
+            str(x).strip() for x in locations if str(x).strip()
+        ]
+        self.data["building"].pop("charge_location", None)
 
     def set_floor_dxf_path(self, floor: int, filepath: str) -> None:
         entries = self.data.setdefault("floor_dxf_files", [])
@@ -190,7 +205,13 @@ class JsonStore:
 
     def add_location(self, name: str, floor: int, x: float, y: float) -> None:
         self.data["locations"].append(
-            {"name": name, "floor": floor, "x": round(x, 3), "y": round(y, 3), "bounding_box": []}
+            {
+                "name": name,
+                "floor": floor,
+                "x": round(x, 3),
+                "y": round(y, 3),
+                "bounding_box": [],
+            }
         )
 
     def set_location_bounding_box(self, location_name: str, points: list) -> None:
@@ -221,7 +242,9 @@ class JsonStore:
         area = 0.0
         for i, p1 in enumerate(points):
             p2 = points[(i + 1) % len(points)]
-            area += (float(p1["x"]) * float(p2["y"])) - (float(p2["x"]) * float(p1["y"]))
+            area += (float(p1["x"]) * float(p2["y"])) - (
+                float(p2["x"]) * float(p1["y"])
+            )
         area = abs(area) / 2.0
 
         return {
@@ -245,16 +268,20 @@ class JsonStore:
                 points = []
                 for p in item.get("bounding_box", []):
                     if "dx" in p and "dy" in p:
-                        points.append({
-                            "x": round(lx + float(p["dx"]), 3),
-                            "y": round(ly + float(p["dy"]), 3),
-                        })
+                        points.append(
+                            {
+                                "x": round(lx + float(p["dx"]), 3),
+                                "y": round(ly + float(p["dy"]), 3),
+                            }
+                        )
                     else:
                         # Backwards compatibility for old absolute boxes
-                        points.append({
-                            "x": round(float(p["x"]), 3),
-                            "y": round(float(p["y"]), 3),
-                        })
+                        points.append(
+                            {
+                                "x": round(float(p["x"]), 3),
+                                "y": round(float(p["y"]), 3),
+                            }
+                        )
                 return points
 
         return []
@@ -271,7 +298,6 @@ class JsonStore:
             return []
         return deepcopy(location.get("inventory_spaces", []))
 
-
     def set_location_inventory_spaces(self, location_name: str, spaces: list) -> None:
         location = self.get_location(location_name)
         if not location:
@@ -287,24 +313,29 @@ class JsonStore:
 
             for p in space.get("points", []):
                 if "dx" in p and "dy" in p:
-                    points.append({
-                        "dx": round(float(p["dx"]), 3),
-                        "dy": round(float(p["dy"]), 3),
-                    })
+                    points.append(
+                        {
+                            "dx": round(float(p["dx"]), 3),
+                            "dy": round(float(p["dy"]), 3),
+                        }
+                    )
                 else:
-                    points.append({
-                        "dx": round(float(p["x"]) - lx, 3),
-                        "dy": round(float(p["y"]) - ly, 3),
-                    })
+                    points.append(
+                        {
+                            "dx": round(float(p["x"]) - lx, 3),
+                            "dy": round(float(p["y"]) - ly, 3),
+                        }
+                    )
 
             if len(points) >= 3:
-                clean_spaces.append({
-                    "name": name,
-                    "points": points,
-                })
+                clean_spaces.append(
+                    {
+                        "name": name,
+                        "points": points,
+                    }
+                )
 
         location["inventory_spaces"] = clean_spaces
-
 
     def inventory_space_points_absolute(self, location_name: str, space: dict) -> list:
         location = self.get_location(location_name)
@@ -317,15 +348,19 @@ class JsonStore:
         result = []
         for p in space.get("points", []):
             if "dx" in p and "dy" in p:
-                result.append({
-                    "x": round(lx + float(p["dx"]), 3),
-                    "y": round(ly + float(p["dy"]), 3),
-                })
+                result.append(
+                    {
+                        "x": round(lx + float(p["dx"]), 3),
+                        "y": round(ly + float(p["dy"]), 3),
+                    }
+                )
             else:
-                result.append({
-                    "x": round(float(p["x"]), 3),
-                    "y": round(float(p["y"]), 3),
-                })
+                result.append(
+                    {
+                        "x": round(float(p["x"]), 3),
+                        "y": round(float(p["y"]), 3),
+                    }
+                )
 
         return result
 
@@ -508,7 +543,13 @@ class JsonStore:
         speed_floors_per_sec: float = 0.45,
         door_time_sec: float = 4,
         boarding_time_sec: float = 6,
-        capacity_size_units: float = 1.0,
+        capacity_length_m: float = 1.0,
+        capacity_width_m: float = 1.0,
+        capacity_height_m: float = 2.0,
+        health_percent: float = 100.0,
+        health_loss_per_journey_percent: float = 0.05,
+        mean_time_between_failures_hours: float = 720.0,
+        mean_time_to_repair_hours: float = 4.0,
         start_floor: int = 0,
     ) -> None:
         lift = None
@@ -523,7 +564,17 @@ class JsonStore:
             "speed_floors_per_sec": speed_floors_per_sec,
             "door_time_sec": door_time_sec,
             "boarding_time_sec": boarding_time_sec,
-            "capacity_size_units": capacity_size_units,
+            "capacity_length_m": capacity_length_m,
+            "capacity_width_m": capacity_width_m,
+            "capacity_height_m": capacity_height_m,
+            "health_percent": round(float(health_percent), 3),
+            "health_loss_per_journey_percent": round(
+                float(health_loss_per_journey_percent), 3
+            ),
+            "mean_time_between_failures_hours": round(
+                float(mean_time_between_failures_hours), 3
+            ),
+            "mean_time_to_repair_hours": round(float(mean_time_to_repair_hours), 3),
             "start_floor": start_floor,
             "floor_locations": {
                 str(f): {"x": round(pos[0], 3), "y": round(pos[1], 3)}

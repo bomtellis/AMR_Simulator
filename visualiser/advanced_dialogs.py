@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from functools import partial
 
+
 from PySide6.QtCore import QDate, QPoint, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QBrush
 from PySide6.QtWidgets import (
@@ -239,6 +240,7 @@ class RouteProfilesEditorV2(QDialog):
         on_save,
         floor_map=None,
     ):
+        self.editor = master
         super().__init__(master)
         self.setWindowTitle("Route Profiles")
         self.resize(1200, 720)
@@ -294,6 +296,10 @@ class RouteProfilesEditorV2(QDialog):
         nodes_row.addWidget(self.nodes_summary, 1)
         nodes_row.addWidget(pick_nodes)
         profile_form.addRow("Allowed nodes", nodes_row)
+
+        graphical_nodes_btn = QPushButton("Graphical...")
+        graphical_nodes_btn.clicked.connect(self.pick_nodes_graphically)
+        nodes_row.addWidget(graphical_nodes_btn)
 
         form.addWidget(QLabel("Allowed edges as JSON array pairs"))
         self.edges_text = QPlainTextEdit()
@@ -449,6 +455,32 @@ class RouteProfilesEditorV2(QDialog):
         self.apply_profile_changes()
         self.on_save(self.profiles)
         self.accept()
+
+    def pick_nodes_graphically(self):
+        if not hasattr(self.editor, "start_route_profile_graphical_selection"):
+            QMessageBox.critical(
+                self,
+                "Graphical selection unavailable",
+                "The main editor does not support graphical route profile selection.",
+            )
+            return
+
+        self.hide()
+
+        self.editor.start_route_profile_graphical_selection(
+            allowed_point_names=set(self.point_names),
+            selected_nodes=set(self.allowed_nodes),
+            callback=self.apply_graphical_node_selection,
+            return_window=self,
+        )
+
+    def apply_graphical_node_selection(self, selected_nodes):
+        self.allowed_nodes = sorted(selected_nodes)
+        self.nodes_summary.setText(self.summarize(self.allowed_nodes))
+        self.fill_edges_from_nodes()
+        self.show()
+        self.raise_()
+        self.activateWindow()
 
 
 class TaskFormDialog(QDialog):
@@ -965,8 +997,7 @@ class TaskPlannerDialog(QMainWindow):
             btn.setToolButtonStyle(Qt.ToolButtonTextOnly)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             btn.setMinimumHeight(22)
-            btn.setStyleSheet(
-                f"""
+            btn.setStyleSheet(f"""
                 QToolButton {{
                     background: {self.task_fill_palette[lane_index % len(self.task_fill_palette)]};
                     color: white;
@@ -978,8 +1009,7 @@ class TaskPlannerDialog(QMainWindow):
                 QToolButton:hover {{
                     border: 1px solid white;
                 }}
-                """
-            )
+                """)
             btn.clicked.connect(
                 partial(self._select_task_from_cell, task_index, row_name)
             )

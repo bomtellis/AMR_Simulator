@@ -22,7 +22,15 @@ class Location:
 class PayloadType:
     name: str
     weight_kg: float
+    length_m: float = 1.0
+    width_m: float = 1.0
+    height_m: float = 1.0
+    # Legacy compatibility only. New editor files use length/width/height.
     size_units: float = 1.0
+
+    @property
+    def footprint_area_m2(self) -> float:
+        return max(0.0, self.length_m) * max(0.0, self.width_m)
 
 
 @dataclass
@@ -48,6 +56,8 @@ class Task:
     waste_stream: str = ""
     waste_volume_m3: float = 0.0
     container_type: str = ""
+    pending_reason: str = ""
+    assigned_inventory_space: str = ""
 
 
 @dataclass
@@ -58,6 +68,10 @@ class Lift:
     door_time_sec: float
     boarding_time_sec: float
     floor_locations: Dict[int, Tuple[float, float]] = field(default_factory=dict)
+    capacity_length_m: float = 1.0
+    capacity_width_m: float = 1.0
+    capacity_height_m: float = 2.0
+    # Legacy compatibility only.
     capacity_size_units: float = 1.0
     current_floor: int = 0
     available_time: float = 0.0
@@ -67,9 +81,32 @@ class Lift:
     door_power_w: float = 800.0
     standby_power_w: float = 120.0
     regen_efficiency: float = 0.2
+    health_percent: float = 100.0
+    health_loss_per_journey_percent: float = 0.05
+    mean_time_between_failures_hours: float = 720.0
+    mean_time_to_repair_hours: float = 4.0
+    failed_until: float = 0.0
+    journeys_completed: int = 0
+    operating_time_since_failure_sec: float = 0.0
+    failures_count: int = 0
 
     def can_serve(self, floor_a: int, floor_b: int) -> bool:
         return floor_a in self.served_floors and floor_b in self.served_floors
+
+    def can_fit(self, payload: PayloadType, amr: Optional["AMR"] = None) -> bool:
+        total_length = max(payload.length_m, amr.length_m if amr else 0.0)
+        total_width = max(payload.width_m, amr.width_m if amr else 0.0)
+        total_height = max(payload.height_m, amr.height_m if amr else 0.0)
+        return (
+            total_length <= self.capacity_length_m
+            and total_width <= self.capacity_width_m
+            and total_height <= self.capacity_height_m
+        )
+
+    def apply_journey_wear(self) -> None:
+        loss = max(0.0, float(self.health_loss_per_journey_percent or 0.0))
+        self.health_percent = max(0.0, round(float(self.health_percent) - loss, 3))
+        self.journeys_completed += 1
 
     def location_on_floor(self, floor: int) -> Location:
         if floor not in self.floor_locations:
@@ -84,13 +121,20 @@ class Lift:
 class AMR:
     id: str
     payload_capacity_kg: float
-    payload_size_capacity: float
-    speed_m_per_sec: float
-    motor_power_w: float
-    battery_capacity_kwh: float
-    battery_charge_rate_kw: float
+    payload_length_capacity_m: float = 1.0
+    payload_width_capacity_m: float = 1.0
+    payload_height_capacity_m: float = 1.0
+    length_m: float = 0.8
+    width_m: float = 0.6
+    height_m: float = 1.2
+    speed_m_per_sec: float = 1.0
+    motor_power_w: float = 750.0
+    battery_capacity_kwh: float = 5.0
+    battery_charge_rate_kw: float = 1.5
     recharge_threshold_percent: float = 20.0
     battery_soc_percent: float = 100.0
+    # Legacy compatibility only.
+    payload_size_capacity: float = 1.0
     available_time: float = 0.0
     location_name: str = ""
     completed_tasks: int = 0
@@ -102,7 +146,9 @@ class AMR:
     def can_carry(self, payload: PayloadType) -> bool:
         return (
             payload.weight_kg <= self.payload_capacity_kg
-            and payload.size_units <= self.payload_size_capacity
+            and payload.length_m <= self.payload_length_capacity_m
+            and payload.width_m <= self.payload_width_capacity_m
+            and payload.height_m <= self.payload_height_capacity_m
         )
 
     def battery_energy_kwh(self) -> float:

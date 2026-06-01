@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
     QGraphicsItem,
     QMenu,
-    QGraphicsPathItem
+    QGraphicsPathItem,
 )
 
 
@@ -214,7 +214,23 @@ class LiftEditorDialog(QDialog):
         self.speed_edit = QLineEdit(str(self.lift.get("speed_floors_per_sec", 0.45)))
         self.door_edit = QLineEdit(str(self.lift.get("door_time_sec", 4)))
         self.board_edit = QLineEdit(str(self.lift.get("boarding_time_sec", 6)))
-        self.capacity_edit = QLineEdit(str(self.lift.get("capacity_size_units", 1.0)))
+        self.capacity_length_edit = QLineEdit(
+            str(self.lift.get("capacity_length_m", 1.0))
+        )
+        self.capacity_width_edit = QLineEdit(
+            str(self.lift.get("capacity_width_m", 1.0))
+        )
+        self.capacity_height_edit = QLineEdit(
+            str(self.lift.get("capacity_height_m", 2.0))
+        )
+        self.health_edit = QLineEdit(str(self.lift.get("health_percent", 100.0)))
+        self.health_loss_edit = QLineEdit(
+            str(self.lift.get("health_loss_per_journey_percent", 0.05))
+        )
+        self.mtbf_edit = QLineEdit(
+            str(self.lift.get("mean_time_between_failures_hours", 720.0))
+        )
+        self.mttr_edit = QLineEdit(str(self.lift.get("mean_time_to_repair_hours", 4.0)))
         self.start_floor_edit = QLineEdit(
             str(self.lift.get("start_floor", self.default_floor))
         )
@@ -231,7 +247,13 @@ class LiftEditorDialog(QDialog):
         form.addRow("Speed floors/sec", self.speed_edit)
         form.addRow("Door time sec", self.door_edit)
         form.addRow("Boarding time sec", self.board_edit)
-        form.addRow("Capacity size units", self.capacity_edit)
+        form.addRow("Capacity length m", self.capacity_length_edit)
+        form.addRow("Capacity width m", self.capacity_width_edit)
+        form.addRow("Capacity height m", self.capacity_height_edit)
+        form.addRow("Health %", self.health_edit)
+        form.addRow("Health loss per journey %", self.health_loss_edit)
+        form.addRow("MTBF hours", self.mtbf_edit)
+        form.addRow("MTTR hours", self.mttr_edit)
         form.addRow("Start floor", self.start_floor_edit)
         form.addRow("Auto per-floor positions", self.positions_edit)
         form.addRow(
@@ -270,9 +292,7 @@ class LiftEditorDialog(QDialog):
 
     def _parse_floors(self):
         floors = [
-            int(x.strip())
-            for x in self.floors_edit.text().split(",")
-            if x.strip()
+            int(x.strip()) for x in self.floors_edit.text().split(",") if x.strip()
         ]
         if not floors:
             raise ValueError("At least one served floor is required")
@@ -348,13 +368,20 @@ class LiftEditorDialog(QDialog):
                 "speed_floors_per_sec": float(self.speed_edit.text()),
                 "door_time_sec": float(self.door_edit.text()),
                 "boarding_time_sec": float(self.board_edit.text()),
-                "capacity_size_units": float(self.capacity_edit.text()),
+                "capacity_length_m": float(self.capacity_length_edit.text()),
+                "capacity_width_m": float(self.capacity_width_edit.text()),
+                "capacity_height_m": float(self.capacity_height_edit.text()),
+                "health_percent": float(self.health_edit.text()),
+                "health_loss_per_journey_percent": float(self.health_loss_edit.text()),
+                "mean_time_between_failures_hours": float(self.mtbf_edit.text()),
+                "mean_time_to_repair_hours": float(self.mttr_edit.text()),
                 "start_floor": start_floor,
                 "floor_locations": positions,
             }
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid lift", str(exc))
+
 
 class AMREditorDialog(QDialog):
     def __init__(self, parent, location_names, seed=None, default_amr_id="AMR-1"):
@@ -370,23 +397,51 @@ class AMREditorDialog(QDialog):
 
         self.id_edit = QLineEdit(str(self.seed.get("id", default_amr_id)))
         self.quantity_edit = QLineEdit(str(self.seed.get("quantity", 1)))
-        self.payload_capacity_edit = QLineEdit(str(self.seed.get("payload_capacity_kg", 100)))
-        self.payload_size_edit = QLineEdit(str(self.seed.get("payload_size_capacity", 1.0)))
+        self.payload_capacity_edit = QLineEdit(
+            str(self.seed.get("payload_capacity_kg", 100))
+        )
+        self.payload_length_edit = QLineEdit(
+            str(self.seed.get("payload_length_capacity_m", 1.0))
+        )
+        self.payload_width_edit = QLineEdit(
+            str(self.seed.get("payload_width_capacity_m", 1.0))
+        )
+        self.payload_height_edit = QLineEdit(
+            str(self.seed.get("payload_height_capacity_m", 1.0))
+        )
+        self.amr_length_edit = QLineEdit(str(self.seed.get("length_m", 0.8)))
+        self.amr_width_edit = QLineEdit(str(self.seed.get("width_m", 0.6)))
+        self.amr_height_edit = QLineEdit(str(self.seed.get("height_m", 1.2)))
         self.speed_edit = QLineEdit(str(self.seed.get("speed_m_per_sec", 1.0)))
         self.motor_power_edit = QLineEdit(str(self.seed.get("motor_power_w", 250)))
-        self.battery_capacity_edit = QLineEdit(str(self.seed.get("battery_capacity_kwh", 1.0)))
-        self.charge_rate_edit = QLineEdit(str(self.seed.get("battery_charge_rate_kw", 0.5)))
-        self.recharge_threshold_edit = QLineEdit(str(self.seed.get("recharge_threshold_percent", 20)))
-        self.battery_soc_edit = QLineEdit(str(self.seed.get("battery_soc_percent", 100)))
+        self.battery_capacity_edit = QLineEdit(
+            str(self.seed.get("battery_capacity_kwh", 1.0))
+        )
+        self.charge_rate_edit = QLineEdit(
+            str(self.seed.get("battery_charge_rate_kw", 0.5))
+        )
+        self.recharge_threshold_edit = QLineEdit(
+            str(self.seed.get("recharge_threshold_percent", 20))
+        )
+        self.battery_soc_edit = QLineEdit(
+            str(self.seed.get("battery_soc_percent", 100))
+        )
 
         self.start_location_combo = QComboBox()
         self.start_location_combo.addItems([""] + self.location_names)
-        self.start_location_combo.setCurrentText(str(self.seed.get("start_location", "")))
+        self.start_location_combo.setCurrentText(
+            str(self.seed.get("start_location", ""))
+        )
 
         form.addRow("AMR ID", self.id_edit)
         form.addRow("Quantity", self.quantity_edit)
         form.addRow("Payload capacity kg", self.payload_capacity_edit)
-        form.addRow("Payload size capacity", self.payload_size_edit)
+        form.addRow("Payload length capacity m", self.payload_length_edit)
+        form.addRow("Payload width capacity m", self.payload_width_edit)
+        form.addRow("Payload height capacity m", self.payload_height_edit)
+        form.addRow("AMR length m", self.amr_length_edit)
+        form.addRow("AMR width m", self.amr_width_edit)
+        form.addRow("AMR height m", self.amr_height_edit)
         form.addRow("Speed m/sec", self.speed_edit)
         form.addRow("Motor power W", self.motor_power_edit)
         form.addRow("Battery capacity kWh", self.battery_capacity_edit)
@@ -412,12 +467,19 @@ class AMREditorDialog(QDialog):
                 "id": amr_id,
                 "quantity": int(float(self.quantity_edit.text())),
                 "payload_capacity_kg": float(self.payload_capacity_edit.text()),
-                "payload_size_capacity": float(self.payload_size_edit.text()),
+                "payload_length_capacity_m": float(self.payload_length_edit.text()),
+                "payload_width_capacity_m": float(self.payload_width_edit.text()),
+                "payload_height_capacity_m": float(self.payload_height_edit.text()),
+                "length_m": float(self.amr_length_edit.text()),
+                "width_m": float(self.amr_width_edit.text()),
+                "height_m": float(self.amr_height_edit.text()),
                 "speed_m_per_sec": float(self.speed_edit.text()),
                 "motor_power_w": float(self.motor_power_edit.text()),
                 "battery_capacity_kwh": float(self.battery_capacity_edit.text()),
                 "battery_charge_rate_kw": float(self.charge_rate_edit.text()),
-                "recharge_threshold_percent": float(self.recharge_threshold_edit.text()),
+                "recharge_threshold_percent": float(
+                    self.recharge_threshold_edit.text()
+                ),
                 "battery_soc_percent": float(self.battery_soc_edit.text()),
                 "start_location": self.start_location_combo.currentText().strip(),
             }
@@ -425,12 +487,15 @@ class AMREditorDialog(QDialog):
         except Exception as exc:
             QMessageBox.critical(self, "Invalid AMR", str(exc))
 
+
 class AMRListDialog(QDialog):
     columns = [
         ("id", "ID", 120),
         ("quantity", "Qty", 70),
         ("payload_capacity_kg", "Payload kg", 100),
-        ("payload_size_capacity", "Size cap.", 90),
+        ("payload_length_capacity_m", "Length cap. m", 110),
+        ("payload_width_capacity_m", "Width cap. m", 110),
+        ("payload_height_capacity_m", "Height cap. m", 110),
         ("speed_m_per_sec", "Speed", 80),
         ("motor_power_w", "Motor W", 90),
         ("battery_capacity_kwh", "Battery kWh", 100),
@@ -451,7 +516,9 @@ class AMRListDialog(QDialog):
         layout = QVBoxLayout(self)
 
         self.table = QTableWidget(0, len(self.columns))
-        self.table.setHorizontalHeaderLabels([heading for _key, heading, _width in self.columns])
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -541,6 +608,7 @@ class AMRListDialog(QDialog):
     def save_items(self):
         self.on_save(self.items)
         self.accept()
+
 
 class TableListEditor(QMainWindow):
     def __init__(self, master, title, columns, items, on_save):
@@ -1217,6 +1285,78 @@ class DepartmentListDialog(QDialog):
         self.on_save(self.items)
         self.accept()
 
+
+class ZoomableInventoryView(QGraphicsView):
+    def __init__(self, scene, parent=None):
+        super().__init__(scene, parent)
+        self._middle_panning = False
+        self._last_middle_pos = None
+        self._inventory_mouse_press = None
+        self._inventory_mouse_move = None
+        self._inventory_mouse_release = None
+        self.setDragMode(QGraphicsView.NoDrag)
+
+    def set_inventory_mouse_handlers(self, press, move, release):
+        self._inventory_mouse_press = press
+        self._inventory_mouse_move = move
+        self._inventory_mouse_release = release
+
+    def wheelEvent(self, event):
+        factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
+        self.scale(factor, factor)
+        event.accept()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self._middle_panning = True
+            self._last_middle_pos = event.position().toPoint()
+            self.viewport().setCursor(Qt.ClosedHandCursor)
+            event.accept()
+            return
+
+        if self._inventory_mouse_press:
+            self._inventory_mouse_press(event)
+            return
+
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._middle_panning and self._last_middle_pos is not None:
+            current = event.position().toPoint()
+            delta = current - self._last_middle_pos
+
+            self.horizontalScrollBar().setValue(
+                self.horizontalScrollBar().value() - delta.x()
+            )
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() - delta.y()
+            )
+
+            self._last_middle_pos = current
+            event.accept()
+            return
+
+        if self._inventory_mouse_move:
+            self._inventory_mouse_move(event)
+            return
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MiddleButton:
+            self._middle_panning = False
+            self._last_middle_pos = None
+            self.viewport().unsetCursor()
+            event.accept()
+            return
+
+        if self._inventory_mouse_release:
+            self._inventory_mouse_release(event)
+            return
+
+        super().mouseReleaseEvent(event)
+
+
 class InventorySpacesDialog(QDialog):
     def __init__(self, parent, location_name):
         super().__init__(parent)
@@ -1304,12 +1444,16 @@ class InventorySpacesDialog(QDialog):
         right.addLayout(size_row)
 
         self.scene = QGraphicsScene(self)
-        self.view = QGraphicsView(self.scene)
+        self.view = ZoomableInventoryView(self.scene)
+        self.view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.view.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self.view.setRenderHint(self.view.renderHints())
         self.view.setMouseTracking(True)
-        self.view.mousePressEvent = self._mouse_press
-        self.view.mouseMoveEvent = self._mouse_move
-        self.view.mouseReleaseEvent = self._mouse_release
+        self.view.set_inventory_mouse_handlers(
+            self._mouse_press,
+            self._mouse_move,
+            self._mouse_release,
+        )
         right.addWidget(self.view, 1)
 
         self.status_label = QLabel(
@@ -1385,12 +1529,10 @@ class InventorySpacesDialog(QDialog):
 
         return round(length, 3), round(width, 3)
 
-
     def _refresh_size_fields(self):
         length, width = self._current_size()
         self.length_edit.setText(f"{length:.3f}")
         self.width_edit.setText(f"{width:.3f}")
-
 
     def _point_inside_current_space(self, x, y):
         if len(self.current_points) < 3:
@@ -1501,7 +1643,7 @@ class InventorySpacesDialog(QDialog):
 
     def scene_to_world(self, point):
         return float(point.x()), -float(point.y())
-        
+
     def _apply_rectangle_snap(self, moving_index=None):
         if not self.rectangle_snap_check.isChecked():
             return
@@ -1593,7 +1735,9 @@ class InventorySpacesDialog(QDialog):
                 self.drag_point_index = hit
                 return
 
-            if self.lock_size_check.isChecked() and self._point_inside_current_space(x, y):
+            if self.lock_size_check.isChecked() and self._point_inside_current_space(
+                x, y
+            ):
                 self.drag_whole_space = True
                 self.drag_start_world = {"x": x, "y": y}
                 self.drag_start_points = [dict(p) for p in self.current_points]
@@ -1602,10 +1746,12 @@ class InventorySpacesDialog(QDialog):
             if self.lock_size_check.isChecked():
                 return
 
-            self.current_points.append({
-                "x": round(x, 3),
-                "y": round(y, 3),
-            })
+            self.current_points.append(
+                {
+                    "x": round(x, 3),
+                    "y": round(y, 3),
+                }
+            )
             self._apply_rectangle_snap()
             self.refresh_scene()
 
@@ -1674,7 +1820,6 @@ class InventorySpacesDialog(QDialog):
 
         self.status_label.setText(f"Copied {self.copied_space['name']}")
 
-
     def paste_copied_space(self):
         if not self.copied_space:
             return
@@ -1692,8 +1837,7 @@ class InventorySpacesDialog(QDialog):
         self.spaces.append(pasted)
         self.selected_space_index = len(self.spaces) - 1
         self.refresh_list()
-        self.space_list.setCurrentRow(self.selected, self.space_list.setContextMenuPolicy(Qt.CustomContextMenu))
-        self.space_list.customContextMenuRequested.connect(self._show_space_list_menu_space_index)
+        self.space_list.setCurrentRow(self.selected_space_index)
         self.select_space(self.selected_space_index)
         self.refresh_scene()
 
@@ -1794,71 +1938,6 @@ class InventorySpacesDialog(QDialog):
             item.setOpacity(0.45)
             item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
             self.scene.addItem(item)
-
-    def _build_dxf_background_pixmap(self):
-        if not self.location:
-            return
-
-        location_box = self.store.get_location_bounding_box_points(self.location_name)
-        if not location_box:
-            return
-
-        pts = [self.world_to_scene(p["x"], p["y"]) for p in location_box]
-        xs = [p.x() for p in pts]
-        ys = [p.y() for p in pts]
-
-        rect = QRectF(
-            min(xs),
-            min(ys),
-            max(xs) - min(xs),
-            max(ys) - min(ys),
-        ).adjusted(-2, -2, 2, 2)
-
-        if rect.isNull() or rect.width() <= 0 or rect.height() <= 0:
-            return
-
-        editor = getattr(self, "editor", None)
-        if editor is None:
-            return
-
-        floor = int(self.location.get("floor", 0))
-
-        if getattr(editor, "loaded_dxf_floor", None) != floor:
-            editor.ensure_floor_dxf_loaded(floor)
-
-        if getattr(editor, "loaded_dxf_floor", None) != floor:
-            return
-
-        dxf_scene = getattr(editor, "dxf_scene", None)
-        if dxf_scene is None or not dxf_scene.entities:
-            return
-
-        target_width = 1600
-        scale = target_width / max(1.0, rect.width())
-        target_height = max(1, int(rect.height() * scale))
-
-        image = QImage(
-            int(target_width),
-            int(target_height),
-            QImage.Format_ARGB32_Premultiplied,
-        )
-        image.fill(Qt.transparent)
-
-        temp_scene = QGraphicsScene()
-        dxf_scene.populate_graphics_scene(temp_scene, scale)
-
-        painter = QPainter(image)
-        painter.setRenderHint(QPainter.Antialiasing, False)
-        temp_scene.render(
-            painter,
-            QRectF(0, 0, image.width(), image.height()),
-            rect,
-        )
-        painter.end()
-        temp_scene.clear()
-
-        self._dxf_background_pixmap = QPixmap.fromImage(image)
-        self._dxf_background_rect = rect
 
     def refresh_scene(self):
         self.scene.clear()

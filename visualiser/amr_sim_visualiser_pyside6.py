@@ -49,6 +49,8 @@ from PySide6.QtWidgets import (
     QDialog,
     QTreeWidget,
     QTreeWidgetItem,
+    QTableWidget,
+    QTableWidgetItem,
     QHeaderView,
     QAbstractItemView,
     QScrollArea,
@@ -824,6 +826,74 @@ class LiftShaftWidget(QWidget):
         painter.setPen(QColor("#ffffff"))
         painter.drawText(12, top + shaft_h + 26, f"AMR: {occupant}")
         painter.drawText(12, top + shaft_h + 46, f"Pos: F{current_floor:.2f}")
+
+
+class LocationInventoryPayloadDialog(QDialog):
+    columns = [
+        ("space", "Inventory space", 180),
+        ("payload", "Current payload", 170),
+        ("task_id", "Task", 100),
+        ("amr_id", "AMR", 100),
+        ("status", "Status", 130),
+        ("timestamp", "Updated", 160),
+        ("source", "Source", 120),
+    ]
+
+    def __init__(
+        self,
+        parent,
+        location_name: str,
+        rows: List[dict],
+        current_time: Optional[datetime],
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(f"Inventory payloads - {location_name}")
+        self.resize(980, 420)
+        self.location_name = location_name
+        self.rows = list(rows or [])
+        self.current_time = current_time
+
+        layout = QVBoxLayout(self)
+        stamp = current_time.strftime("%Y-%m-%d %H:%M:%S") if current_time else "-"
+        self.summary_label = QLabel(
+            f"Location: {location_name}\nTime: {stamp}\nSpaces: {len(self.rows)}"
+        )
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for idx, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(idx, width)
+        layout.addWidget(self.table, 1)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close_btn)
+        layout.addLayout(row)
+
+        self._refresh_table()
+
+    def _refresh_table(self):
+        self.table.setRowCount(0)
+        for row_data in self.rows:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            for col, (key, _heading, _width) in enumerate(self.columns):
+                value = row_data.get(key, "")
+                self.table.setItem(
+                    row,
+                    col,
+                    QTableWidgetItem(str(value if value not in (None, "") else "-")),
+                )
 
 
 class LiftMonitorDialog(QDialog):
@@ -2029,6 +2099,206 @@ class SimulationVisualizer(QMainWindow):
         matches.sort(key=lambda item: str(item.get("amr_id", "")))
         return matches
 
+    def _location_by_name(self, location_name: str) -> Optional[dict]:
+        for location in self.layout_model.data.get("locations", []):
+            if str(location.get("name", "")).strip() == str(location_name).strip():
+                return location
+        return None
+
+    def _payload_value_from_space(self, space: dict):
+        for key in (
+            "current_payload",
+            "payload",
+            "payload_name",
+            "stored_payload",
+            "contents",
+            "content",
+            "item",
+        ):
+            value = space.get(key)
+            if value not in (None, "", []):
+                if isinstance(value, list):
+                    return ", ".join(str(x) for x in value if str(x).strip()) or "-"
+                return str(value)
+        return "-"
+
+    def _find_inventory_space_row(self, rows: List[dict], space_name: str):
+        space_name = str(space_name or "").strip()
+        if not space_name:
+            return None
+        for row in rows:
+            if str(row.get("space", "")).strip() == space_name:
+                return row
+        return None
+
+    def _first_empty_inventory_space_row(self, rows: List[dict]):
+        for row in rows:
+            if str(row.get("payload", "-")).strip() in {"", "-"}:
+                return row
+        return None
+
+    def _event_location_matches(
+        self, row: dict, location_name: str, event_kind: str
+    ) -> bool:
+        location_name = str(location_name or "").strip()
+        if not location_name:
+            return False
+
+        field_groups = {
+            "dropoff": [
+                "to_location",
+                "dropoff",
+                "end_node",
+                "destination",
+                "location",
+            ],
+            "pickup": ["from_location", "pickup", "start_node", "origin", "location"],
+        }
+        for key in field_groups.get(event_kind, []):
+            if str(row.get(key, "")).strip() == location_name:
+                return True
+        return False
+
+    def _inventory_space_name_from_event(self, row: dict, event_kind: str) -> str:
+        keys = [
+            "inventory_space",
+            "inventory_space_name",
+            "space",
+            "space_name",
+        ]
+        if event_kind == "dropoff":
+            keys = ["to_inventory_space", "dropoff_inventory_space"] + keys
+        elif event_kind == "pickup":
+            keys = ["from_inventory_space", "pickup_inventory_space"] + keys
+        for key in keys:
+            value = str(row.get(key, "")).strip()
+            if value:
+                return value
+        return ""
+
+    def _inventory_payload_rows_for_location(self, location_name: str) -> List[dict]:
+        location = self._location_by_name(location_name)
+        if not location:
+            return []
+
+        spaces = location.get("inventory_spaces", []) or []
+        rows = []
+        for idx, space in enumerate(spaces, start=1):
+            space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+            rows.append(
+                {
+                    "space": space_name,
+                    "payload": self._payload_value_from_space(space),
+                    "task_id": space.get("task_id", "-"),
+                    "amr_id": space.get("amr_id", "-"),
+                    "status": (
+                        "Stored"
+                        if self._payload_value_from_space(space) != "-"
+                        else "Empty"
+                    ),
+                    "timestamp": space.get("timestamp", "-"),
+                    "source": "Layout JSON",
+                }
+            )
+
+        if not rows:
+            return []
+
+        if not self.current_time or not self.sim_log.events:
+            return rows
+
+        for event in self.sim_log.events:
+            if event.start_time > self.current_time:
+                break
+
+            row = event.row
+            event_type = str(row.get("event_type", "")).strip().lower()
+            segment_type = str(row.get("segment_type", "")).strip().lower()
+            status = str(row.get("status", "")).strip().lower()
+            text = " ".join([event_type, segment_type, status])
+
+            is_dropoff = any(
+                token in text
+                for token in ["dropoff", "drop_off", "deliver", "delivery", "unload"]
+            )
+            is_pickup = any(
+                token in text for token in ["pickup", "pick_up", "collect", "load"]
+            )
+
+            if not is_dropoff and not is_pickup:
+                continue
+
+            if is_dropoff and self._event_location_matches(
+                row, location_name, "dropoff"
+            ):
+                target = self._find_inventory_space_row(
+                    rows, self._inventory_space_name_from_event(row, "dropoff")
+                ) or self._first_empty_inventory_space_row(rows)
+                if target is None:
+                    continue
+                target.update(
+                    {
+                        "payload": str(row.get("payload", "")).strip() or "-",
+                        "task_id": str(row.get("task_id", "")).strip() or "-",
+                        "amr_id": str(row.get("amr_id", "")).strip() or "-",
+                        "status": "Occupied",
+                        "timestamp": event.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "source": "Simulation CSV",
+                    }
+                )
+
+            if is_pickup and self._event_location_matches(row, location_name, "pickup"):
+                payload = str(row.get("payload", "")).strip()
+                target = self._find_inventory_space_row(
+                    rows, self._inventory_space_name_from_event(row, "pickup")
+                )
+                if target is None and payload:
+                    for candidate in rows:
+                        if str(candidate.get("payload", "")).strip() == payload:
+                            target = candidate
+                            break
+                if target is None:
+                    continue
+                target.update(
+                    {
+                        "payload": "-",
+                        "task_id": str(row.get("task_id", "")).strip() or "-",
+                        "amr_id": str(row.get("amr_id", "")).strip() or "-",
+                        "status": "Empty",
+                        "timestamp": event.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "source": "Simulation CSV",
+                    }
+                )
+
+        return rows
+
+    def show_location_inventory_payloads(self, location_name: str):
+        point = self.layout_model.points.get(location_name, {})
+        if point.get("kind") != "location":
+            QMessageBox.information(
+                self,
+                "Inventory spaces",
+                f"{location_name} is not a location node.",
+            )
+            return
+
+        rows = self._inventory_payload_rows_for_location(location_name)
+        if not rows:
+            QMessageBox.information(
+                self,
+                f"Inventory payloads - {location_name}",
+                f"Location: {location_name}\n\nNo inventory spaces are defined for this location.",
+            )
+            return
+
+        dialog = LocationInventoryPayloadDialog(
+            self,
+            location_name,
+            rows,
+            self.current_time,
+        )
+        dialog.exec()
+
     def show_dropoff_tasks_at_node(self, node_name: str):
         tasks = self._tasks_dropping_off_at_node(node_name)
 
@@ -2132,6 +2402,16 @@ class SimulationVisualizer(QMainWindow):
             "Show pickup tasks at location",
             lambda checked=False, name=node_name: self.show_pickup_tasks_at_node(name),
         )
+
+        point = self.layout_model.points.get(node_name, {})
+        if point.get("kind") == "location":
+            self.node_context_menu.addSeparator()
+            self.node_context_menu.addAction(
+                "Show inventory payloads",
+                lambda checked=False, name=node_name: self.show_location_inventory_payloads(
+                    name
+                ),
+            )
 
         self.node_context_menu.popup(event.globalPosition().toPoint())
 

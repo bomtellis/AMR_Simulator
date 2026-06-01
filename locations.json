@@ -6,7 +6,9 @@
   "building": {
     "load_unload_time_sec": 20.0,
     "floor_height_m": 4.0,
-    "charge_location": "AMR-CENTRE"
+    "charge_locations": [
+      "Test"
+    ]
   },
   "locations": [
     {
@@ -128,7 +130,26 @@
   "payloads": [],
   "waste_streams": [],
   "departments": [],
-  "amrs": [],
+  "amrs": [
+    {
+      "id": "AMR-1",
+      "quantity": 1,
+      "payload_capacity_kg": 100.0,
+      "payload_length_capacity_m": 1.0,
+      "payload_width_capacity_m": 1.0,
+      "payload_height_capacity_m": 1.0,
+      "length_m": 0.8,
+      "width_m": 0.6,
+      "height_m": 0.2,
+      "speed_m_per_sec": 1.0,
+      "motor_power_w": 250.0,
+      "battery_capacity_kwh": 1.0,
+      "battery_charge_rate_kw": 0.5,
+      "recharge_threshold_percent": 20.0,
+      "battery_soc_percent": 100.0,
+      "start_location": "Test"
+    }
+  ],
   "lifts": [],
   "floor_dxf_files": [],
   "tasks": [],

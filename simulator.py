@@ -54,6 +54,7 @@ class Simulation:
         self.stop_requested = False
         self.completed_task_records: List[dict] = []
         self.failed_tasks: List[dict] = []
+        self.failed_task_ids = set()
         self.location_reservations: Dict[str, List[Tuple[float, float]]] = defaultdict(
             list
         )
@@ -90,9 +91,22 @@ class Simulation:
             config["building"].get("load_unload_time_sec", 20.0)
         )
         self.floor_height_m = float(config["building"].get("floor_height_m", 4.0))
-        self.charge_location_name = config["building"].get(
-            "charge_location", config["locations"][0]["name"]
-        )
+        configured_charge_locations = config["building"].get("charge_locations")
+        if isinstance(configured_charge_locations, list):
+            self.charge_location_names = [
+                str(x).strip() for x in configured_charge_locations if str(x).strip()
+            ]
+        else:
+            legacy_charge_location = str(
+                config["building"].get("charge_location", "")
+            ).strip()
+            self.charge_location_names = (
+                [legacy_charge_location] if legacy_charge_location else []
+            )
+        if not self.charge_location_names:
+            self.charge_location_names = [config["locations"][0]["name"]]
+        # Backwards-compatible current charger label used by existing logging paths.
+        self.charge_location_name = self.charge_location_names[0]
 
         # Parse locations from config
 
@@ -113,16 +127,27 @@ class Simulation:
             for loc in config["locations"]
         }
 
+        # Inventory spaces are finite storage slots inside locations.
+        # A drop-off only needs a free compatible slot when the location explicitly
+        # defines at least one valid inventory space. Locations with no
+        # inventory_spaces, an empty inventory_spaces list, or no valid spaces keep
+        # the previous unlimited-storage behaviour.
+        self.inventory_spaces_by_location: Dict[str, List[dict]] = {}
+        self._init_inventory_spaces(config.get("locations", []))
+
         # Parse payloads from configuration
 
-        self.payloads: Dict[str, PayloadType] = {
-            p["name"]: PayloadType(
+        self.payloads: Dict[str, PayloadType] = {}
+        for p in config["payloads"]:
+            legacy_size = float(p.get("size_units", 1.0))
+            self.payloads[p["name"]] = PayloadType(
                 name=p["name"],
                 weight_kg=float(p["weight_kg"]),
-                size_units=float(p.get("size_units", 1.0)),
+                length_m=float(p.get("length_m", legacy_size)),
+                width_m=float(p.get("width_m", legacy_size)),
+                height_m=float(p.get("height_m", legacy_size)),
+                size_units=legacy_size,
             )
-            for p in config["payloads"]
-        }
 
         # Parse waste streams and departments
         self.waste_streams: Dict[str, dict] = {
@@ -153,6 +178,9 @@ class Simulation:
                 door_time_sec=float(item.get("door_time_sec", 4.0)),
                 boarding_time_sec=float(item.get("boarding_time_sec", 5.0)),
                 floor_locations=floor_locations,
+                capacity_length_m=float(item.get("capacity_length_m", 2.8)),
+                capacity_width_m=float(item.get("capacity_width_m", 1.8)),
+                capacity_height_m=float(item.get("capacity_height_m", 2.1)),
                 capacity_size_units=float(item.get("capacity_size_units", 1.0)),
                 current_floor=int(item.get("start_floor", 0)),
                 car_mass_kg=float(item.get("car_mass_kg", 1200.0)),
@@ -161,6 +189,16 @@ class Simulation:
                 door_power_w=float(item.get("door_power_w", 800.0)),
                 standby_power_w=float(item.get("standby_power_w", 120.0)),
                 regen_efficiency=float(item.get("regen_efficiency", 0.2)),
+                health_percent=float(item.get("health_percent", 100.0)),
+                health_loss_per_journey_percent=float(
+                    item.get("health_loss_per_journey_percent", 0.05)
+                ),
+                mean_time_between_failures_hours=float(
+                    item.get("mean_time_between_failures_hours", 720.0)
+                ),
+                mean_time_to_repair_hours=float(
+                    item.get("mean_time_to_repair_hours", 4.0)
+                ),
             )
 
             for floor in lift.served_floors:
@@ -187,6 +225,27 @@ class Simulation:
                     AMR(
                         id=f"{amr_type['id']}-{i + 1}",
                         payload_capacity_kg=float(amr_type["payload_capacity_kg"]),
+                        payload_length_capacity_m=float(
+                            amr_type.get(
+                                "payload_length_capacity_m",
+                                amr_type.get("payload_size_capacity", 1.0),
+                            )
+                        ),
+                        payload_width_capacity_m=float(
+                            amr_type.get(
+                                "payload_width_capacity_m",
+                                amr_type.get("payload_size_capacity", 1.0),
+                            )
+                        ),
+                        payload_height_capacity_m=float(
+                            amr_type.get(
+                                "payload_height_capacity_m",
+                                amr_type.get("payload_size_capacity", 1.0),
+                            )
+                        ),
+                        length_m=float(amr_type.get("length_m", 0.8)),
+                        width_m=float(amr_type.get("width_m", 0.6)),
+                        height_m=float(amr_type.get("height_m", 1.2)),
                         payload_size_capacity=float(
                             amr_type.get("payload_size_capacity", 1.0)
                         ),
@@ -237,6 +296,250 @@ class Simulation:
             config["building"].get("enable_idle_return", True)
         )
         self.synthetic_task_counter = 0
+
+    def _space_points_dimensions(self, points: list) -> Tuple[float, float]:
+        if not points:
+            return 0.0, 0.0
+
+        xs = []
+        ys = []
+        for p in points:
+            try:
+                if "dx" in p and "dy" in p:
+                    xs.append(float(p.get("dx", 0.0)))
+                    ys.append(float(p.get("dy", 0.0)))
+                else:
+                    xs.append(float(p.get("x", 0.0)))
+                    ys.append(float(p.get("y", 0.0)))
+            except Exception:
+                continue
+
+        if not xs or not ys:
+            return 0.0, 0.0
+
+        return abs(max(xs) - min(xs)), abs(max(ys) - min(ys))
+
+    def _init_inventory_spaces(self, location_dicts: List[dict]) -> None:
+        self.inventory_spaces_by_location = {}
+
+        for loc in location_dicts:
+            location_name = str(loc.get("name", "")).strip()
+            if not location_name:
+                continue
+
+            raw_spaces = loc.get("inventory_spaces", []) or []
+            clean_spaces = []
+
+            for index, raw_space in enumerate(raw_spaces, start=1):
+                if not isinstance(raw_space, dict):
+                    continue
+
+                points = list(raw_space.get("points", []) or [])
+                point_length, point_width = self._space_points_dimensions(points)
+
+                length_m = float(
+                    raw_space.get(
+                        "length_m",
+                        raw_space.get("length", point_length),
+                    )
+                    or point_length
+                    or 0.0
+                )
+                width_m = float(
+                    raw_space.get(
+                        "width_m",
+                        raw_space.get("width", point_width),
+                    )
+                    or point_width
+                    or 0.0
+                )
+                height_m = float(
+                    raw_space.get(
+                        "height_m",
+                        raw_space.get("height", 999999.0),
+                    )
+                    or 999999.0
+                )
+
+                name = str(raw_space.get("name", "")).strip() or f"Space {index}"
+                occupied = bool(raw_space.get("occupied", False))
+
+                clean_spaces.append(
+                    {
+                        "name": name,
+                        "length_m": length_m,
+                        "width_m": width_m,
+                        "height_m": height_m,
+                        "occupied": occupied,
+                        "payload": str(raw_space.get("payload", "")).strip(),
+                        "reserved_by_task": str(
+                            raw_space.get("reserved_by_task", "")
+                        ).strip(),
+                        "task_id": str(raw_space.get("task_id", "")).strip(),
+                    }
+                )
+
+            if clean_spaces:
+                self.inventory_spaces_by_location[location_name] = clean_spaces
+
+    def _location_has_inventory_spaces(self, location_name: str) -> bool:
+        # Inventory rules only apply where at least one valid inventory space has
+        # been configured. No configured spaces means unlimited capacity.
+        return bool(self.inventory_spaces_by_location.get(location_name, []))
+
+    def _inventory_space_can_fit_payload(
+        self, space: dict, payload: PayloadType
+    ) -> bool:
+        length_m = float(space.get("length_m", 0.0) or 0.0)
+        width_m = float(space.get("width_m", 0.0) or 0.0)
+        height_m = float(space.get("height_m", 999999.0) or 999999.0)
+
+        # Allow the trolley/bin to be rotated in plan, but not laid on its side.
+        fits_normal = payload.length_m <= length_m and payload.width_m <= width_m
+        fits_rotated = payload.length_m <= width_m and payload.width_m <= length_m
+        return (fits_normal or fits_rotated) and payload.height_m <= height_m
+
+    def _find_free_inventory_space(
+        self, location_name: str, payload: PayloadType
+    ) -> Optional[dict]:
+        for space in self.inventory_spaces_by_location.get(location_name, []):
+            if bool(space.get("occupied", False)):
+                continue
+            if str(space.get("reserved_by_task", "")).strip():
+                continue
+            if not self._inventory_space_can_fit_payload(space, payload):
+                continue
+            return space
+        return None
+
+    def _inventory_pending_reason(
+        self, location_name: str, payload: PayloadType
+    ) -> str:
+        spaces = self.inventory_spaces_by_location.get(location_name, [])
+        if not spaces:
+            return ""
+
+        compatible_count = sum(
+            1
+            for space in spaces
+            if self._inventory_space_can_fit_payload(space, payload)
+        )
+        if compatible_count <= 0:
+            return (
+                f"No compatible inventory space at {location_name} for payload "
+                f"{payload.name} ({payload.length_m}m x {payload.width_m}m x {payload.height_m}m)"
+            )
+
+        return f"All compatible inventory spaces are full at {location_name}"
+
+    def _reserve_inventory_space_for_task(
+        self, task: Task, payload: PayloadType
+    ) -> Optional[dict]:
+        if not self._location_has_inventory_spaces(task.dropoff):
+            return None
+
+        space = self._find_free_inventory_space(task.dropoff, payload)
+        if space is None:
+            return None
+
+        space["reserved_by_task"] = task.id
+        task.assigned_inventory_space = str(space.get("name", ""))
+        return space
+
+    def _occupy_inventory_space_for_completed_task(
+        self, task: Task, payload: PayloadType
+    ) -> None:
+        if not self._location_has_inventory_spaces(task.dropoff):
+            return
+
+        target_name = str(getattr(task, "assigned_inventory_space", "")).strip()
+        spaces = self.inventory_spaces_by_location.get(task.dropoff, [])
+
+        target_space = None
+        for space in spaces:
+            if target_name and str(space.get("name", "")) == target_name:
+                target_space = space
+                break
+
+        if target_space is None:
+            target_space = next(
+                (
+                    space
+                    for space in spaces
+                    if str(space.get("reserved_by_task", "")) == task.id
+                ),
+                None,
+            )
+
+        if target_space is None:
+            target_space = self._find_free_inventory_space(task.dropoff, payload)
+
+        if target_space is None:
+            return
+
+        target_space["occupied"] = True
+        target_space["payload"] = payload.name
+        target_space["task_id"] = task.id
+        target_space["reserved_by_task"] = ""
+        task.assigned_inventory_space = str(target_space.get("name", ""))
+
+    def _free_inventory_space_for_pickup(
+        self, task: Task, payload: PayloadType
+    ) -> None:
+        if not self._location_has_inventory_spaces(task.pickup):
+            return
+
+        spaces = self.inventory_spaces_by_location.get(task.pickup, [])
+        for space in spaces:
+            if not bool(space.get("occupied", False)):
+                continue
+            stored_payload = str(space.get("payload", "")).strip()
+            if stored_payload and stored_payload != payload.name:
+                continue
+            space["occupied"] = False
+            space["payload"] = ""
+            space["task_id"] = ""
+            space["reserved_by_task"] = ""
+            return
+
+    def _set_task_pending_reason(self, task: Optional[Task], reason: str) -> None:
+        if task is None:
+            return
+        try:
+            task.pending_reason = str(reason or "").strip()
+        except Exception:
+            pass
+
+    def _fail_task(self, task: Task, reason: str, now: Optional[float] = None) -> None:
+        reason = str(reason or "Task failed").strip()
+        self._set_task_pending_reason(task, reason)
+        self._remove_pending_task(task)
+
+        task_id = str(getattr(task, "id", "")).strip()
+        if task_id in self.failed_task_ids:
+            return
+
+        self.failed_task_ids.add(task_id)
+        self.failed_tasks.append({"task_id": task.id, "reason": reason})
+        event_time = self.current_time if now is None else now
+        self.log_step(
+            event_time=event_time,
+            event_type="task_failed",
+            task_id=task.id,
+            details=reason,
+            from_location=task.pickup,
+            to_location=task.dropoff,
+            payload_name=task.payload,
+            start_time=event_time,
+            end_time=event_time,
+            status="failed",
+            task_source=getattr(task, "task_source", ""),
+            department_id=getattr(task, "department_id", ""),
+            waste_stream=getattr(task, "waste_stream", ""),
+            waste_volume_m3=getattr(task, "waste_volume_m3", 0.0),
+            container_type=getattr(task, "container_type", ""),
+            pending_reason=reason,
+        )
 
     def _rules_cache_key(
         self, rules: Optional[dict]
@@ -1056,7 +1359,7 @@ class Simulation:
                 continue
             if not lift.can_serve(from_loc.floor, to_loc.floor):
                 continue
-            if payload.size_units > lift.capacity_size_units:
+            if not lift.can_fit(payload, amr):
                 continue
 
             origin_lift = self._lift_location_on_floor(lift, from_loc.floor)
@@ -1146,6 +1449,75 @@ class Simulation:
 
         return best_plan
 
+    def _charge_location_candidates(self) -> List[Location]:
+        candidates = []
+        for name in self.charge_location_names:
+            if name in self.locations:
+                candidates.append(self.locations[name])
+        if not candidates and self.charge_location_name in self.locations:
+            candidates.append(self.locations[self.charge_location_name])
+        return candidates
+
+    def _select_charge_location_for_amr(
+        self, amr: AMR, current_loc: Location, now: float
+    ) -> Optional[Location]:
+        candidates = self._charge_location_candidates()
+        if not candidates:
+            return None
+        best_loc = None
+        best_finish = math.inf
+        dummy_payload = (
+            next(iter(self.payloads.values()))
+            if self.payloads
+            else PayloadType("empty", 0.0)
+        )
+        for charge_loc in candidates:
+            if current_loc.floor == charge_loc.floor:
+                route = self._same_floor_segments(amr, current_loc, charge_loc)
+                if route is None:
+                    continue
+                finish = now + route[1]
+            else:
+                plan = self._nearest_compatible_lift_plan(
+                    now, amr, current_loc, charge_loc, dummy_payload
+                )
+                if plan is None:
+                    continue
+                finish = plan["final_finish"]
+            if finish < best_finish:
+                best_finish = finish
+                best_loc = charge_loc
+        return best_loc
+
+    def _apply_lift_journey_wear(
+        self,
+        lift: Lift,
+        journey_operating_sec: float = 0.0,
+        journey_finish_time: Optional[float] = None,
+    ) -> None:
+        lift.apply_journey_wear()
+        lift.operating_time_since_failure_sec += max(
+            0.0, float(journey_operating_sec or 0.0)
+        )
+
+        mtbf_sec = (
+            max(0.0, float(lift.mean_time_between_failures_hours or 0.0)) * 3600.0
+        )
+        if mtbf_sec <= 0.0:
+            return
+        if lift.operating_time_since_failure_sec < mtbf_sec:
+            return
+
+        repair_sec = max(0.0, float(lift.mean_time_to_repair_hours or 0.0)) * 3600.0
+        start_repair = max(
+            float(lift.available_time),
+            float(journey_finish_time or lift.available_time),
+        )
+        lift.failed_until = start_repair + repair_sec
+        lift.available_time = max(lift.available_time, lift.failed_until)
+        lift.failures_count += 1
+        lift.operating_time_since_failure_sec = 0.0
+
     def _plan_return_to_charge(
         self,
         amr: AMR,
@@ -1153,7 +1525,12 @@ class Simulation:
         current_time_value: float,
         reserve: bool = False,
     ) -> Optional[dict]:
-        charge_loc = self.locations[self.charge_location_name]
+        charge_loc = self._select_charge_location_for_amr(
+            amr, current_loc, current_time_value
+        )
+        if charge_loc is None:
+            return None
+        self.charge_location_name = charge_loc.name
 
         if current_loc.floor == charge_loc.floor:
             route = self._same_floor_segments(amr, current_loc, charge_loc)
@@ -1241,6 +1618,12 @@ class Simulation:
         if reserve:
             plan["lift"].available_time = plan["lift_finish"]
             plan["lift"].current_floor = charge_loc.floor
+            self._apply_lift_journey_wear(
+                plan["lift"],
+                journey_operating_sec=float(plan.get("reposition_sec", 0.0))
+                + float(plan.get("loaded_travel_sec", 0.0)),
+                journey_finish_time=plan["lift_finish"],
+            )
             amr.location_name = charge_loc.name
 
         return {
@@ -1426,7 +1809,19 @@ class Simulation:
 
             payload = self.payloads[task.payload]
             if not amr.can_carry(payload):
+                self._set_task_pending_reason(
+                    task, "No AMR has sufficient payload weight/dimensions"
+                )
                 return None
+
+            if self._location_has_inventory_spaces(task.dropoff):
+                free_space = self._find_free_inventory_space(task.dropoff, payload)
+                if free_space is None:
+                    self._set_task_pending_reason(
+                        task,
+                        self._inventory_pending_reason(task.dropoff, payload),
+                    )
+                    return None
 
             amr_loc = self.locations[amr.location_name]
             pickup_loc = self.locations[task.pickup]
@@ -1551,6 +1946,12 @@ class Simulation:
                     )
                     plan["lift"].available_time = plan["lift_finish"]
                     plan["lift"].current_floor = location_b.floor
+                    self._apply_lift_journey_wear(
+                        plan["lift"],
+                        journey_operating_sec=float(plan.get("reposition_sec", 0.0))
+                        + float(plan.get("loaded_travel_sec", 0.0)),
+                        journey_finish_time=plan["lift_finish"],
+                    )
 
                 transfer_segments = list(plan["to_lift_segments"])
 
@@ -1716,12 +2117,25 @@ class Simulation:
                 total += dropoff_wait
                 t = dropoff_start
 
+            inventory_space_name = ""
             if reserve:
                 self._reserve_location(
                     dropoff_loc.name,
                     t,
                     t + self.load_unload_time_sec,
                 )
+                reserved_space = self._reserve_inventory_space_for_task(task, payload)
+                if (
+                    self._location_has_inventory_spaces(dropoff_loc.name)
+                    and reserved_space is None
+                ):
+                    self._set_task_pending_reason(
+                        task,
+                        self._inventory_pending_reason(dropoff_loc.name, payload),
+                    )
+                    return None
+                if reserved_space is not None:
+                    inventory_space_name = str(reserved_space.get("name", ""))
 
             t += self.load_unload_time_sec
             total += self.load_unload_time_sec
@@ -1730,6 +2144,8 @@ class Simulation:
                     "type": "dropoff",
                     "location": dropoff_loc.name,
                     "duration": self.load_unload_time_sec,
+                    "inventory_space": inventory_space_name
+                    or getattr(task, "assigned_inventory_space", ""),
                 }
             )
 
@@ -1789,7 +2205,20 @@ class Simulation:
 
         for _, _, _, task in candidate_tasks:
             if task.release_time > self.current_time:
+                self._set_task_pending_reason(task, "Waiting for release time")
                 continue
+
+            if task.payload in self.payloads and self._location_has_inventory_spaces(
+                task.dropoff
+            ):
+                payload = self.payloads[task.payload]
+                if self._find_free_inventory_space(task.dropoff, payload) is None:
+                    self._set_task_pending_reason(
+                        task,
+                        self._inventory_pending_reason(task.dropoff, payload),
+                    )
+                    continue
+
             for amr in self.amrs:
                 if getattr(amr, "is_charging", False):
                     continue
@@ -1809,11 +2238,11 @@ class Simulation:
 
     def _remove_pending_task(self, target_task: Task):
         rebuilt = []
-        removed = False
+        target_id = str(getattr(target_task, "id", "")).strip()
         while self.pending_tasks:
             item = heapq.heappop(self.pending_tasks)
-            if not removed and item[3].id == target_task.id:
-                removed = True
+            item_id = str(getattr(item[3], "id", "")).strip()
+            if item_id == target_id:
                 continue
             rebuilt.append(item)
         for item in rebuilt:
@@ -1846,6 +2275,32 @@ class Simulation:
 
             choice = self._select_best_assignment()
             if choice is None:
+                failed_inventory_task = False
+                for _priority, _release, _counter, pending_task in list(
+                    self.pending_tasks
+                ):
+                    if pending_task.release_time > self.current_time:
+                        continue
+                    if pending_task.payload not in self.payloads:
+                        continue
+                    payload = self.payloads[pending_task.payload]
+                    if not self._location_has_inventory_spaces(pending_task.dropoff):
+                        continue
+                    if (
+                        self._find_free_inventory_space(pending_task.dropoff, payload)
+                        is None
+                    ):
+                        self._fail_task(
+                            pending_task,
+                            self._inventory_pending_reason(
+                                pending_task.dropoff, payload
+                            ),
+                            now=self.current_time,
+                        )
+                        failed_inventory_task = True
+                        break
+                if failed_inventory_task:
+                    continue
                 self._create_wait_event_for_pending_tasks(self.current_time)
                 return
 
@@ -1853,16 +2308,15 @@ class Simulation:
             committed = self._estimate_task_for_amr(amr, task, reserve=True)
 
             if committed is None:
-                self._remove_pending_task(task)
-                self.failed_tasks.append(
-                    {
-                        "task_id": task.id,
-                        "reason": "No feasible AMR/lift/battery/graph combination",
-                    }
+                reason = (
+                    getattr(task, "pending_reason", "")
+                    or "No feasible AMR/lift/battery/graph combination"
                 )
+                self._fail_task(task, reason, now=self.current_time)
                 continue
 
             self._remove_pending_task(task)
+            self._set_task_pending_reason(task, "")
             start_time = committed["task_start_time"]
             finish_time = committed["finish_time"]
             previous_location = amr.location_name
@@ -2074,6 +2528,10 @@ class Simulation:
             self._try_assign_tasks(event.time)
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]
+            payload_obj = self.payloads.get(task.payload)
+            if payload_obj is not None:
+                self._free_inventory_space_for_pickup(task, payload_obj)
+                self._occupy_inventory_space_for_completed_task(task, payload_obj)
             self.log_step(
                 event_time=event.payload["finish_time"],
                 event_type="task_complete",
@@ -2321,6 +2779,7 @@ class Simulation:
         waste_stream: str = "",
         waste_volume_m3: float = 0.0,
         container_type: str = "",
+        pending_reason: str = "",
     ):
         if not self.verbose:
             return
@@ -2363,11 +2822,12 @@ class Simulation:
                 "waste_stream": waste_stream,
                 "waste_volume_m3": round(float(waste_volume_m3 or 0.0), 6),
                 "container_type": container_type,
+                "pending_reason": pending_reason,
             }
         )
 
     def write_verbose_csv(self):
-        if not self.verbose or not self.verbose_csv_path or not self.verbose_rows:
+        if not self.verbose_csv_path:
             return
 
         fieldnames = [
@@ -2406,6 +2866,7 @@ class Simulation:
             "waste_stream",
             "waste_volume_m3",
             "container_type",
+            "pending_reason",
         ]
 
         with open(self.verbose_csv_path, "w", newline="", encoding="utf-8") as f:
@@ -2486,6 +2947,24 @@ class Simulation:
             "completed_tasks": len(self.completed_task_records),
             "pending_tasks": len(self.pending_tasks),
             "failed_tasks": self.failed_tasks,
+            "lifts": [
+                {
+                    "lift_id": lift.id,
+                    "current_floor": lift.current_floor,
+                    "available_time": round(lift.available_time, 3),
+                    "health_percent": round(lift.health_percent, 3),
+                    "journeys_completed": lift.journeys_completed,
+                    "mean_time_between_failures_hours": lift.mean_time_between_failures_hours,
+                    "mean_time_to_repair_hours": lift.mean_time_to_repair_hours,
+                    "failures_count": lift.failures_count,
+                    "failed_until": (
+                        self.clock.format_sim_time(lift.failed_until)
+                        if lift.failed_until
+                        else ""
+                    ),
+                }
+                for lift in self.lifts
+            ],
             "amrs": [
                 {
                     "amr_id": amr.id,
@@ -2692,7 +3171,7 @@ EXAMPLE_CONFIG = {
     "building": {
         "load_unload_time_sec": 20.0,
         "floor_height_m": 4.0,
-        "charge_location": "Stores",
+        "charge_locations": ["Stores"],
     },
     "locations": [
         {"name": "Stores", "floor": 0, "x": 0, "y": 0},
@@ -2760,16 +3239,39 @@ EXAMPLE_CONFIG = {
         }
     },
     "payloads": [
-        {"name": "food_trolley", "weight_kg": 120, "size_units": 1.0},
-        {"name": "drugs_box", "weight_kg": 15, "size_units": 0.3},
-        {"name": "linen_cart", "weight_kg": 80, "size_units": 0.8},
+        {
+            "name": "food_trolley",
+            "weight_kg": 120,
+            "length_m": 1.0,
+            "width_m": 0.7,
+            "height_m": 1.2,
+        },
+        {
+            "name": "drugs_box",
+            "weight_kg": 15,
+            "length_m": 0.4,
+            "width_m": 0.3,
+            "height_m": 0.3,
+        },
+        {
+            "name": "linen_cart",
+            "weight_kg": 80,
+            "length_m": 0.9,
+            "width_m": 0.6,
+            "height_m": 1.1,
+        },
     ],
     "amrs": [
         {
             "id": "AMR-A",
             "quantity": 2,
             "payload_capacity_kg": 150,
-            "payload_size_capacity": 1.0,
+            "payload_length_capacity_m": 1.2,
+            "payload_width_capacity_m": 0.8,
+            "payload_height_capacity_m": 1.3,
+            "length_m": 0.8,
+            "width_m": 0.6,
+            "height_m": 1.2,
             "speed_m_per_sec": 1.2,
             "motor_power_w": 900,
             "battery_capacity_kwh": 6.5,
@@ -2786,7 +3288,13 @@ EXAMPLE_CONFIG = {
             "speed_floors_per_sec": 0.5,
             "door_time_sec": 4,
             "boarding_time_sec": 6,
-            "capacity_size_units": 1.0,
+            "capacity_length_m": 1.5,
+            "capacity_width_m": 1.2,
+            "capacity_height_m": 2.1,
+            "health_percent": 100.0,
+            "health_loss_per_journey_percent": 0.05,
+            "mean_time_between_failures_hours": 720.0,
+            "mean_time_to_repair_hours": 4.0,
             "start_floor": 0,
             "floor_locations": {
                 "0": {"x": 5, "y": 2},
@@ -2801,7 +3309,13 @@ EXAMPLE_CONFIG = {
             "speed_floors_per_sec": 0.67,
             "door_time_sec": 4,
             "boarding_time_sec": 5,
-            "capacity_size_units": 1.0,
+            "capacity_length_m": 1.5,
+            "capacity_width_m": 1.2,
+            "capacity_height_m": 2.1,
+            "health_percent": 100.0,
+            "health_loss_per_journey_percent": 0.05,
+            "mean_time_between_failures_hours": 720.0,
+            "mean_time_to_repair_hours": 4.0,
             "start_floor": 0,
             "floor_locations": {
                 "0": {"x": 18, "y": 6},

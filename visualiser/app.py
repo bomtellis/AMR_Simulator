@@ -1,8 +1,22 @@
+"""
+AMR Simulator app
+"""
+
 import math
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QPoint, QPointF, Qt, Signal, QRect, QThread, Slot
+from PySide6.QtCore import (
+    QObject,
+    QPoint,
+    QPointF,
+    Qt,
+    Signal,
+    QRect,
+    QThread,
+    Slot,
+    QRectF,
+)
 from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont, QPolygonF
 from PySide6.QtWidgets import (
     QApplication,
@@ -43,7 +57,12 @@ from dialogs import (
     AMREditorDialog,
     InventorySpacesDialog,
 )
-from advanced_dialogs import RouteProfilesEditorV2, TaskEditorWindow, TaskPlannerDialog
+from advanced_dialogs import (
+    MultiSelectPicker,
+    RouteProfilesEditorV2,
+    TaskEditorWindow,
+    TaskPlannerDialog,
+)
 from models import JsonStore
 
 
@@ -207,6 +226,14 @@ class AMRGraphEditor(QMainWindow):
         self._loading_batch_failed = set()
         self._loading_batch_active = False
 
+        self.route_profile_selection_active = False
+        self.route_profile_allowed_point_names = set()
+        self.route_profile_selected_nodes = set()
+        self.route_profile_selection_callback = None
+        self.route_profile_return_window = None
+        self.route_profile_selection_rect_start = None
+        self.route_profile_selection_rect_item = None
+
         self._dxf_thread = QThread(self)
         self._dxf_worker = DXFLoadWorker()
         self._dxf_worker.moveToThread(self._dxf_thread)
@@ -321,6 +348,7 @@ class AMRGraphEditor(QMainWindow):
             ("Validate", self.validate_json),
             ("Payloads", self.manage_payloads),
             ("AMRs", self.manage_amrs),
+            ("Charging Locations", self.manage_charging_locations),
             ("Tasks", self.manage_tasks),
             ("Task Planner", self.manage_task_planner),
             ("Route Profiles", self.manage_route_profiles),
@@ -754,7 +782,6 @@ class AMRGraphEditor(QMainWindow):
 
         return best_index
 
-
     def draw_location_bounding_boxes(self, floor):
         pen = QPen(QColor("#00e5ff"), 0)
         brush = QBrush(QColor(0, 229, 255, 35))
@@ -768,7 +795,10 @@ class AMRGraphEditor(QMainWindow):
             item.setBrush(brush)
             item.setZValue(-5)
             self.scene.addItem(item)
-            self._item_lookup[item] = ("location_bounding_box", location.get("name", ""))
+            self._item_lookup[item] = (
+                "location_bounding_box",
+                location.get("name", ""),
+            )
 
     def draw_temporary_location_bounding_box(self, floor):
         if self.mode_combo.currentText() != "location_bbox":
@@ -823,7 +853,9 @@ class AMRGraphEditor(QMainWindow):
         self.bounding_box_points = [dict(p) for p in existing] if keep_existing else []
         self.mode_combo.setCurrentText("location_bbox")
         self.show_location_bounds_check.setChecked(True)
-        self.set_status(f"Drawing bounding box for {location_name}. Left-click points, right-click empty space to finish.")
+        self.set_status(
+            f"Drawing bounding box for {location_name}. Left-click points, right-click empty space to finish."
+        )
         self.refresh_canvas()
 
     def finish_location_bounding_box_draw(self):
@@ -831,7 +863,11 @@ class AMRGraphEditor(QMainWindow):
         if not name:
             return
         if len(self.bounding_box_points) < 3:
-            QMessageBox.critical(self, "Bounding box", "Add at least three points for a room bounding box.")
+            QMessageBox.critical(
+                self,
+                "Bounding box",
+                "Add at least three points for a room bounding box.",
+            )
             return
         self.store.set_location_bounding_box(name, self.bounding_box_points)
         self.bounding_box_location_name = None
@@ -843,7 +879,11 @@ class AMRGraphEditor(QMainWindow):
         name = self.bounding_box_location_name
         self.bounding_box_location_name = None
         self.bounding_box_points = []
-        self.set_status(f"Cancelled bounding box drawing for {name}" if name else "Bounding box drawing cancelled")
+        self.set_status(
+            f"Cancelled bounding box drawing for {name}"
+            if name
+            else "Bounding box drawing cancelled"
+        )
         self.refresh_canvas()
 
     def draw_edges(self, floor):
@@ -869,8 +909,25 @@ class AMRGraphEditor(QMainWindow):
         for name, point in self.store.points_for_floor(floor).items():
             pos = self.world_to_scene(point["x"], point["y"])
             selected = name == self.selected_point_name
+            route_selected = (
+                self.route_profile_selection_active
+                and name in self.route_profile_selected_nodes
+            )
+            route_allowed = (
+                not self.route_profile_selection_active
+                or name in self.route_profile_allowed_point_names
+            )
             kind = point.get("kind")
-            outline = QPen(QColor("#ffffff") if selected else QColor("transparent"), 0)
+            outline = QPen(
+                (
+                    QColor("#00e5ff")
+                    if route_selected
+                    else QColor("#ffffff") if selected else QColor("transparent")
+                ),
+                0,
+            )
+            if self.route_profile_selection_active and route_selected:
+                item.setZValue(30)
             if kind == "location":
                 r = 0.3
                 item = self.scene.addEllipse(
@@ -950,7 +1007,9 @@ class AMRGraphEditor(QMainWindow):
             lines.append("Click anywhere to add a department")
         if self.mode_combo.currentText() == "location_bbox":
             if self.bounding_box_location_name:
-                lines.append(f"Bounding: {self.bounding_box_location_name} ({len(self.bounding_box_points)} pts)")
+                lines.append(
+                    f"Bounding: {self.bounding_box_location_name} ({len(self.bounding_box_points)} pts)"
+                )
                 lines.append("Left-click = add point | Right-click empty = finish")
             else:
                 lines.append("Right-click a location and choose draw bounding box")
@@ -1114,6 +1173,25 @@ class AMRGraphEditor(QMainWindow):
         x, y = self.scene_to_world(sx, sy)
         x, y = self.snap(x, y)
 
+        if self.route_profile_selection_active:
+            picked = self._route_profile_pickable_point_at(x, y, floor)
+
+            if picked:
+                if not (event.modifiers() & Qt.ControlModifier):
+                    self.route_profile_selected_nodes.clear()
+
+                if picked in self.route_profile_selected_nodes:
+                    self.route_profile_selected_nodes.remove(picked)
+                else:
+                    self.route_profile_selected_nodes.add(picked)
+
+                self.set_status(
+                    f"Route profile selection: {len(self.route_profile_selected_nodes)} node(s)"
+                )
+                self.refresh_canvas()
+
+            return
+
         if mode == "pan":
             self.last_pan = event.position().toPoint()
             return
@@ -1175,18 +1253,22 @@ class AMRGraphEditor(QMainWindow):
                 if picked:
                     picked_point = self.store.all_points().get(picked, {})
                     if picked_point.get("kind") == "location":
-                        self.start_location_bounding_box_draw(picked, keep_existing=False)
+                        self.start_location_bounding_box_draw(
+                            picked, keep_existing=False
+                        )
                     else:
                         self.set_status("Pick a location before drawing a bounding box")
                 else:
-                    self.set_status("Right-click a location and choose draw bounding box, or left-click a location first")
+                    self.set_status(
+                        "Right-click a location and choose draw bounding box, or left-click a location first"
+                    )
                 return
 
             location = self.store.get_location(self.bounding_box_location_name)
             if not location or int(location.get("floor", -1)) != int(floor):
                 self.set_status("Bounding box location is not on the current floor")
                 return
-            
+
             hit_index = self.find_nearest_bounding_box_point_index(x, y)
             if hit_index is not None:
                 self.dragging_bounding_box_point_index = hit_index
@@ -1195,9 +1277,11 @@ class AMRGraphEditor(QMainWindow):
                 )
                 self.refresh_canvas()
                 return
-            
+
             self.bounding_box_points.append({"x": x, "y": y})
-            self.set_status(f"Added point {len(self.bounding_box_points)} for {self.bounding_box_location_name}")
+            self.set_status(
+                f"Added point {len(self.bounding_box_points)} for {self.bounding_box_location_name}"
+            )
             self.refresh_canvas()
             return
 
@@ -1240,7 +1324,9 @@ class AMRGraphEditor(QMainWindow):
 
                 if self.chain_edges_check.isChecked():
                     self.selected_for_edge = picked
-                    self.set_status(f"Connected {start} -> {picked}. Chain start now: {picked}")
+                    self.set_status(
+                        f"Connected {start} -> {picked}. Chain start now: {picked}"
+                    )
                 else:
                     self.selected_for_edge = None
                     self.set_status(f"Connected {start} -> {picked}")
@@ -1266,7 +1352,13 @@ class AMRGraphEditor(QMainWindow):
                     dialog.result["speed_floors_per_sec"],
                     dialog.result["door_time_sec"],
                     dialog.result["boarding_time_sec"],
-                    dialog.result["capacity_size_units"],
+                    dialog.result["capacity_length_m"],
+                    dialog.result["capacity_width_m"],
+                    dialog.result["capacity_height_m"],
+                    dialog.result["health_percent"],
+                    dialog.result["health_loss_per_journey_percent"],
+                    dialog.result["mean_time_between_failures_hours"],
+                    dialog.result["mean_time_to_repair_hours"],
                     dialog.result["start_floor"],
                 )
                 self.set_status(f"Saved {dialog.result['id']}")
@@ -1301,7 +1393,13 @@ class AMRGraphEditor(QMainWindow):
                     dialog.result["speed_floors_per_sec"],
                     dialog.result["door_time_sec"],
                     dialog.result["boarding_time_sec"],
-                    dialog.result["capacity_size_units"],
+                    dialog.result["capacity_length_m"],
+                    dialog.result["capacity_width_m"],
+                    dialog.result["capacity_height_m"],
+                    dialog.result["health_percent"],
+                    dialog.result["health_loss_per_journey_percent"],
+                    dialog.result["mean_time_between_failures_hours"],
+                    dialog.result["mean_time_to_repair_hours"],
                     dialog.result["start_floor"],
                 )
                 self.set_status(f"Edited {dialog.result['id']}")
@@ -1321,6 +1419,35 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
 
     def on_left_release(self, event):
+        if self.route_profile_selection_active:
+            if self.route_profile_selection_rect_item is not None:
+                rect = self.route_profile_selection_rect_item.rect()
+                keep_existing = bool(event.modifiers() & Qt.ControlModifier)
+
+                if not keep_existing:
+                    self.route_profile_selected_nodes.clear()
+
+                floor = self.floor_spin.value()
+
+                for name, point in self.store.points_for_floor(floor).items():
+                    if name not in self.route_profile_allowed_point_names:
+                        continue
+
+                    pos = self.world_to_scene(point["x"], point["y"])
+                    if rect.contains(pos):
+                        self.route_profile_selected_nodes.add(name)
+
+                self.scene.removeItem(self.route_profile_selection_rect_item)
+                self.route_profile_selection_rect_item = None
+                self.route_profile_selection_rect_start = None
+
+                self.set_status(
+                    f"Route profile selection: {len(self.route_profile_selected_nodes)} node(s)"
+                )
+                self.refresh_canvas()
+
+            return
+
         self.dragging_point_name = None
         self.drag_mode_active = False
         self.dragging_bounding_box_point_index = None
@@ -1331,6 +1458,24 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)
+
+        if self.route_profile_selection_active:
+            if picked:
+                return
+
+            menu = QMenu(self)
+            finish_action = menu.addAction("Apply route profile selection")
+            cancel_action = menu.addAction("Cancel route profile selection")
+
+            action = menu.exec(event.globalPosition().toPoint())
+
+            if action == finish_action:
+                self._finish_route_profile_graphical_selection()
+            elif action == cancel_action:
+                self._cancel_route_profile_graphical_selection()
+
+            return
+
         if mode == "location_bbox" and self.bounding_box_location_name:
             hit_index = self.find_nearest_bounding_box_point_index(x, y)
 
@@ -1361,7 +1506,9 @@ class AMRGraphEditor(QMainWindow):
                     remove_action = menu.addAction("Remove bounding box")
                 cancel_action = None
                 if self.bounding_box_location_name:
-                    cancel_action = menu.addAction("Cancel current bounding box drawing")
+                    cancel_action = menu.addAction(
+                        "Cancel current bounding box drawing"
+                    )
                 action = menu.exec(event.globalPosition().toPoint())
                 if action == draw_action:
                     self.start_location_bounding_box_draw(picked, keep_existing=False)
@@ -1462,7 +1609,12 @@ class AMRGraphEditor(QMainWindow):
             action = menu.exec(event.globalPosition().toPoint())
 
             if draw_bounds_action is not None and action == draw_bounds_action:
-                self.start_location_bounding_box_draw(picked, keep_existing=bool(self.store.get_location(picked).get("bounding_box")))
+                self.start_location_bounding_box_draw(
+                    picked,
+                    keep_existing=bool(
+                        self.store.get_location(picked).get("bounding_box")
+                    ),
+                )
             elif remove_bounds_action is not None and action == remove_bounds_action:
                 self.store.remove_location_bounding_box(picked)
                 self.set_status(f"Removed bounding box for {picked}")
@@ -1488,6 +1640,30 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
 
     def on_drag(self, event, sx, sy):
+        if self.route_profile_selection_active:
+            if not (event.modifiers() & Qt.AltModifier):
+                return
+
+            scene_pos = self.canvas.mapToScene(event.position().toPoint())
+
+            if self.route_profile_selection_rect_start is None:
+                self.route_profile_selection_rect_start = scene_pos
+                self.route_profile_selection_rect_item = self.scene.addRect(
+                    QRectF(scene_pos, scene_pos),
+                    QPen(QColor("#00e5ff"), 0),
+                    QBrush(QColor(0, 229, 255, 35)),
+                )
+                self.route_profile_selection_rect_item.setZValue(200)
+                return
+
+            rect = QRectF(
+                self.route_profile_selection_rect_start, scene_pos
+            ).normalized()
+
+            if self.route_profile_selection_rect_item is not None:
+                self.route_profile_selection_rect_item.setRect(rect)
+
+            return
         mode = self.mode_combo.currentText()
         if mode == "pan":
             current = event.position().toPoint()
@@ -1644,7 +1820,9 @@ class AMRGraphEditor(QMainWindow):
         columns = [
             ("name", "Name", 220),
             ("weight_kg", "Weight kg", 120),
-            ("size_units", "Size units", 120),
+            ("length_m", "Length m", 100),
+            ("width_m", "Width m", 100),
+            ("height_m", "Height m", 100),
         ]
         TableListEditor(
             self,
@@ -1790,6 +1968,110 @@ class AMRGraphEditor(QMainWindow):
         self.store.data["departments"] = items
         self.set_status("Departments updated")
         self.refresh_canvas()
+
+    def manage_charging_locations(self):
+        location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
+
+        picker = MultiSelectPicker(
+            self,
+            "Charging Locations",
+            location_names,
+            selected=self.store.charge_locations(),
+            group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+        )
+
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.store.set_charge_locations(sorted(picker.result))
+            self.set_status(f"Updated {len(picker.result)} charging location(s)")
+
+    def start_route_profile_graphical_selection(
+        self,
+        allowed_point_names,
+        selected_nodes,
+        callback,
+        return_window=None,
+    ):
+        self.route_profile_selection_active = True
+        self.route_profile_allowed_point_names = set(allowed_point_names or [])
+        self.route_profile_selected_nodes = set(selected_nodes or [])
+        self.route_profile_selection_callback = callback
+        self.route_profile_return_window = return_window
+        self.route_profile_selection_rect_start = None
+        self.route_profile_selection_rect_item = None
+
+        self.mode_combo.setCurrentText("select_move")
+        self.set_status(
+            "Route profile graphical selection: click nodes, Ctrl-click to add/remove, "
+            "Alt-drag for rectangle selection, Ctrl+Alt-drag to add to selection, "
+            "right-click empty space to finish."
+        )
+        self.refresh_canvas()
+
+    def _route_profile_pickable_point_at(self, x, y, floor):
+        picked = self.find_nearest_point_name(x, y, floor, radius_world=1.0)
+        if not picked:
+            return None
+
+        if picked not in self.route_profile_allowed_point_names:
+            return None
+
+        return picked
+
+    def _finish_route_profile_graphical_selection(self):
+        selected = set(self.route_profile_selected_nodes)
+
+        callback = self.route_profile_selection_callback
+        return_window = self.route_profile_return_window
+
+        self.route_profile_selection_active = False
+        self.route_profile_allowed_point_names = set()
+        self.route_profile_selected_nodes = set()
+        self.route_profile_selection_callback = None
+        self.route_profile_return_window = None
+        self.route_profile_selection_rect_start = None
+
+        if self.route_profile_selection_rect_item is not None:
+            try:
+                self.scene.removeItem(self.route_profile_selection_rect_item)
+            except Exception:
+                pass
+        self.route_profile_selection_rect_item = None
+
+        self.set_status(f"Route profile selection applied: {len(selected)} node(s)")
+        self.refresh_canvas()
+
+        if callback:
+            callback(selected)
+
+        if return_window:
+            return_window.show()
+            return_window.raise_()
+            return_window.activateWindow()
+
+    def _cancel_route_profile_graphical_selection(self):
+        return_window = self.route_profile_return_window
+
+        self.route_profile_selection_active = False
+        self.route_profile_allowed_point_names = set()
+        self.route_profile_selected_nodes = set()
+        self.route_profile_selection_callback = None
+        self.route_profile_return_window = None
+        self.route_profile_selection_rect_start = None
+
+        if self.route_profile_selection_rect_item is not None:
+            try:
+                self.scene.removeItem(self.route_profile_selection_rect_item)
+            except Exception:
+                pass
+        self.route_profile_selection_rect_item = None
+
+        self.set_status("Route profile graphical selection cancelled")
+        self.refresh_canvas()
+
+        if return_window:
+            return_window.show()
+            return_window.raise_()
+            return_window.activateWindow()
 
 
 def main():
