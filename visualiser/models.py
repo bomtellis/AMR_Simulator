@@ -3,6 +3,149 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+LOGISTICS_TASK_GENERATION_CATEGORIES = [
+    ("catering", "Catering"),
+    ("pharmacy", "Pharmacy"),
+    ("linen", "Linen"),
+    ("waste", "Waste"),
+    ("stores", "Stores"),
+    ("ssd", "SSD"),
+]
+
+
+def default_task_generation_category(label: str) -> dict:
+    return {
+        "enabled": False,
+        "display_name": label,
+        "generation_mode": "scheduled",
+        "priority": 100,
+        "pickup_location": "",
+        "dropoff_location": "",
+        "payload": "",
+        "return_enabled": False,
+        "return_payload": "",
+        "route_profile": "",
+        "days_active": ["mon", "tue", "wed", "thu", "fri"],
+        "schedule_times": [],
+        "frequency_per_day": 0.0,
+        "volume_per_event_m3": 0.0,
+        "threshold_volume_m3": 0.0,
+        "base_daily_volume_m3": 0.0,
+        "notes": "",
+    }
+
+
+def default_task_generation_config() -> dict:
+    categories = {
+        key: default_task_generation_category(label)
+        for key, label in LOGISTICS_TASK_GENERATION_CATEGORIES
+    }
+
+    categories["catering"].update(
+        {
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "schedule_times": ["07:30", "11:45", "16:45"],
+            "return_enabled": True,
+        }
+    )
+    categories["pharmacy"].update(
+        {
+            "generation_mode": "scheduled_sporadic",
+            "priority": 30,
+            "schedule_times": ["10:00", "15:00"],
+            "frequency_per_day": 2.0,
+        }
+    )
+    categories["linen"].update(
+        {
+            "generation_mode": "threshold",
+            "priority": 55,
+            "threshold_volume_m3": 0.8,
+            "base_daily_volume_m3": 0.0,
+            "return_enabled": True,
+        }
+    )
+    categories["waste"].update(
+        {
+            "enabled": True,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "return_enabled": True,
+        }
+    )
+    categories["stores"].update(
+        {
+            "generation_mode": "scheduled",
+            "priority": 70,
+            "schedule_times": ["09:30", "14:30"],
+        }
+    )
+    categories["ssd"].update(
+        {
+            "generation_mode": "scheduled_threshold",
+            "priority": 35,
+            "schedule_times": ["08:00", "12:00", "17:00"],
+            "return_enabled": True,
+        }
+    )
+
+    return {
+        "enabled": True,
+        # Backwards compatibility for the current waste generator module.
+        "department_waste": {
+            "enabled": True,
+            "priority": 60,
+        },
+        "categories": categories,
+    }
+
+
+def merge_task_generation_defaults(value: Optional[dict]) -> dict:
+    merged = default_task_generation_config()
+    if not isinstance(value, dict):
+        return merged
+
+    merged["enabled"] = bool(value.get("enabled", merged["enabled"]))
+
+    if isinstance(value.get("department_waste"), dict):
+        merged["department_waste"].update(value.get("department_waste", {}))
+
+    incoming_categories = value.get("categories", {})
+    if isinstance(incoming_categories, dict):
+        for key, incoming in incoming_categories.items():
+            if key not in merged["categories"]:
+                merged["categories"][key] = (
+                    dict(incoming) if isinstance(incoming, dict) else {}
+                )
+            elif isinstance(incoming, dict):
+                merged["categories"][key].update(incoming)
+
+    # Support older experiments where categories were stored directly under task_generation.
+    for key, _label in LOGISTICS_TASK_GENERATION_CATEGORIES:
+        if isinstance(value.get(key), dict):
+            merged["categories"][key].update(value[key])
+
+    # Keep waste category and department_waste switch in step.
+    if "waste" in merged["categories"]:
+        merged["department_waste"]["enabled"] = bool(
+            merged["categories"]["waste"].get(
+                "enabled", merged["department_waste"].get("enabled", True)
+            )
+        )
+        merged["department_waste"]["priority"] = int(
+            float(
+                merged["categories"]["waste"].get(
+                    "priority", merged["department_waste"].get("priority", 60)
+                )
+            )
+        )
+
+    return merged
+
+
 DEFAULT_JSON = {
     "simulation": {
         "start_datetime": "2026-01-05T06:00:00",
@@ -26,13 +169,7 @@ DEFAULT_JSON = {
     "lifts": [],
     "floor_dxf_files": [],
     "tasks": [],
-    "task_generation": {
-        "enabled": True,
-        "department_waste": {
-            "enabled": True,
-            "priority": 60,
-        },
-    },
+    "task_generation": default_task_generation_config(),
     "route_profiles": {
         "default": {
             "allowed_lifts": [],
@@ -46,6 +183,19 @@ DEFAULT_JSON = {
 class JsonStore:
     def __init__(self, data: Optional[dict] = None):
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
+        self.ensure_task_generation_defaults()
+
+    def ensure_task_generation_defaults(self) -> dict:
+        self.data["task_generation"] = merge_task_generation_defaults(
+            self.data.get("task_generation", {})
+        )
+        return self.data["task_generation"]
+
+    def task_generation(self) -> dict:
+        return self.ensure_task_generation_defaults()
+
+    def set_task_generation(self, value: dict) -> None:
+        self.data["task_generation"] = merge_task_generation_defaults(value)
 
     @classmethod
     def from_file(cls, path: str) -> "JsonStore":

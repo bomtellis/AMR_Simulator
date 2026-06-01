@@ -56,6 +56,7 @@ from dialogs import (
     AMRListDialog,
     AMREditorDialog,
     InventorySpacesDialog,
+    TaskGenerationSettingsDialog,
 )
 from advanced_dialogs import (
     MultiSelectPicker,
@@ -351,6 +352,7 @@ class AMRGraphEditor(QMainWindow):
             ("Charging Locations", self.manage_charging_locations),
             ("Tasks", self.manage_tasks),
             ("Task Planner", self.manage_task_planner),
+            ("Task Generation", self.manage_task_generation),
             ("Route Profiles", self.manage_route_profiles),
             ("Waste Streams", self.manage_waste_streams),
             ("Departments", self.manage_departments),
@@ -1905,6 +1907,34 @@ class AMRGraphEditor(QMainWindow):
             self._save_tasks,
             floor_map=floor_map,
         )
+
+    def manage_task_generation(self):
+        locations = self.store.data.get("locations", [])
+        location_names = sorted(x["name"] for x in locations)
+        payload_names = sorted(x["name"] for x in self.store.data.get("payloads", []))
+        profile_names = sorted(self.store.data.get("route_profiles", {}).keys())
+
+        if hasattr(self.store, "task_generation"):
+            task_generation = self.store.task_generation()
+        else:
+            task_generation = self.store.data.setdefault("task_generation", {})
+
+        dialog = TaskGenerationSettingsDialog(
+            self,
+            task_generation,
+            location_names,
+            payload_names,
+            profile_names,
+            self._save_task_generation,
+        )
+        dialog.exec()
+
+    def _save_task_generation(self, config):
+        if hasattr(self.store, "set_task_generation"):
+            self.store.set_task_generation(config)
+        else:
+            self.store.data["task_generation"] = config
+        self.set_status("Task generation parameters updated")
 
     def manage_route_profiles(self):
         point_names = set(self.store.names_in_use()) | {

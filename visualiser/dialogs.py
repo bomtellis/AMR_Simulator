@@ -39,6 +39,320 @@ from PySide6.QtWidgets import (
 )
 
 
+class TaskGenerationSettingsDialog(QDialog):
+    """Editor for top-level task_generation logistics parameters."""
+
+    DAYS = [
+        ("mon", "Mon"),
+        ("tue", "Tue"),
+        ("wed", "Wed"),
+        ("thu", "Thu"),
+        ("fri", "Fri"),
+        ("sat", "Sat"),
+        ("sun", "Sun"),
+    ]
+
+    CATEGORY_LABELS = [
+        ("catering", "Catering"),
+        ("pharmacy", "Pharmacy"),
+        ("linen", "Linen"),
+        ("waste", "Waste"),
+        ("stores", "Stores"),
+        ("ssd", "SSD"),
+    ]
+
+    MODES = [
+        "scheduled",
+        "threshold",
+        "continuous",
+        "sporadic",
+        "hybrid",
+        "scheduled_threshold",
+        "scheduled_sporadic",
+    ]
+
+    def __init__(
+        self,
+        parent,
+        task_generation,
+        location_names,
+        payload_names,
+        profile_names,
+        on_save,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Task generation parameters")
+        self.resize(980, 700)
+        self.location_names = sorted(location_names)
+        self.payload_names = sorted(payload_names)
+        self.profile_names = list(profile_names)
+        self.on_save = on_save
+        self.current_key = None
+        self._loading = False
+        self.config = self._normalise_config(task_generation)
+
+        layout = QVBoxLayout(self)
+
+        self.global_enabled = QCheckBox("Enable automatic task generation")
+        self.global_enabled.setChecked(bool(self.config.get("enabled", True)))
+        layout.addWidget(self.global_enabled)
+
+        body = QHBoxLayout()
+        layout.addLayout(body, 1)
+
+        self.category_list = QListWidget()
+        self.category_list.setFixedWidth(190)
+        body.addWidget(self.category_list)
+
+        right = QScrollArea()
+        right.setWidgetResizable(True)
+        body.addWidget(right, 1)
+        container = QWidget()
+        right.setWidget(container)
+        form = QFormLayout(container)
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+        self.enabled_check = QCheckBox("Enabled")
+        self.display_name_edit = QLineEdit()
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(self.MODES)
+        self.priority_edit = QLineEdit()
+
+        self.pickup_combo = QComboBox()
+        self.pickup_combo.addItems([""] + self.location_names)
+        self.dropoff_combo = QComboBox()
+        self.dropoff_combo.addItems([""] + self.location_names)
+        self.payload_combo = QComboBox()
+        self.payload_combo.addItems([""] + self.payload_names)
+        self.route_profile_combo = QComboBox()
+        self.route_profile_combo.addItems([""] + self.profile_names)
+
+        self.return_enabled_check = QCheckBox("Generate return / exchange task")
+        self.return_payload_combo = QComboBox()
+        self.return_payload_combo.addItems([""] + self.payload_names)
+
+        days_widget = QWidget()
+        days_layout = QHBoxLayout(days_widget)
+        days_layout.setContentsMargins(0, 0, 0, 0)
+        self.day_checks = {}
+        for key, label in self.DAYS:
+            chk = QCheckBox(label)
+            self.day_checks[key] = chk
+            days_layout.addWidget(chk)
+        days_layout.addStretch(1)
+
+        self.schedule_times_edit = QLineEdit()
+        self.frequency_edit = QLineEdit()
+        self.volume_per_event_edit = QLineEdit()
+        self.threshold_volume_edit = QLineEdit()
+        self.base_daily_volume_edit = QLineEdit()
+        self.notes_edit = QPlainTextEdit()
+        self.notes_edit.setFixedHeight(90)
+
+        form.addRow("Category enabled", self.enabled_check)
+        form.addRow("Display name", self.display_name_edit)
+        form.addRow("Generation mode", self.mode_combo)
+        form.addRow("Priority", self.priority_edit)
+        form.addRow("Pickup / source location", self.pickup_combo)
+        form.addRow("Drop-off / destination", self.dropoff_combo)
+        form.addRow("Payload", self.payload_combo)
+        form.addRow("Route profile", self.route_profile_combo)
+        form.addRow("Return task", self.return_enabled_check)
+        form.addRow("Return payload", self.return_payload_combo)
+        form.addRow("Days active", days_widget)
+        form.addRow("Schedule times", self.schedule_times_edit)
+        form.addRow("Frequency per day", self.frequency_edit)
+        form.addRow("Volume per event m³", self.volume_per_event_edit)
+        form.addRow("Threshold volume m³", self.threshold_volume_edit)
+        form.addRow("Base daily volume m³", self.base_daily_volume_edit)
+        form.addRow("Notes", self.notes_edit)
+
+        help_label = QLabel(
+            "Schedule times are comma-separated HH:MM values. "
+            "Threshold and volume fields are used by threshold/sporadic/hybrid generators. "
+            "The Waste category also keeps the legacy department_waste settings in step."
+        )
+        help_label.setWordWrap(True)
+        layout.addWidget(help_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        for key, label in self.CATEGORY_LABELS:
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, key)
+            self.category_list.addItem(item)
+        self.category_list.currentItemChanged.connect(self._on_category_changed)
+        self.category_list.setCurrentRow(0)
+
+    def _default_category(self, key, label):
+        return {
+            "enabled": key == "waste",
+            "display_name": label,
+            "generation_mode": (
+                "threshold" if key in {"waste", "linen"} else "scheduled"
+            ),
+            "priority": {
+                "catering": 40,
+                "pharmacy": 30,
+                "linen": 55,
+                "waste": 60,
+                "stores": 70,
+                "ssd": 35,
+            }.get(key, 100),
+            "pickup_location": "",
+            "dropoff_location": "",
+            "payload": "",
+            "return_enabled": key in {"catering", "linen", "waste", "ssd"},
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": ["mon", "tue", "wed", "thu", "fri"],
+            "schedule_times": {
+                "catering": ["07:30", "11:45", "16:45"],
+                "pharmacy": ["10:00", "15:00"],
+                "stores": ["09:30", "14:30"],
+                "ssd": ["08:00", "12:00", "17:00"],
+            }.get(key, []),
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24 if key == "waste" else 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+        }
+
+    def _normalise_config(self, task_generation):
+        source = dict(task_generation or {})
+        result = {"enabled": bool(source.get("enabled", True)), "categories": {}}
+        incoming_categories = (
+            source.get("categories", {})
+            if isinstance(source.get("categories", {}), dict)
+            else {}
+        )
+        for key, label in self.CATEGORY_LABELS:
+            item = self._default_category(key, label)
+            if isinstance(incoming_categories.get(key), dict):
+                item.update(incoming_categories[key])
+            if isinstance(source.get(key), dict):
+                item.update(source[key])
+            result["categories"][key] = item
+        department_waste = dict(source.get("department_waste", {}) or {})
+        if department_waste:
+            result["categories"]["waste"]["enabled"] = bool(
+                department_waste.get(
+                    "enabled", result["categories"]["waste"].get("enabled", True)
+                )
+            )
+            result["categories"]["waste"]["priority"] = int(
+                float(
+                    department_waste.get(
+                        "priority", result["categories"]["waste"].get("priority", 60)
+                    )
+                )
+            )
+        result["department_waste"] = {
+            "enabled": bool(result["categories"]["waste"].get("enabled", True)),
+            "priority": int(float(result["categories"]["waste"].get("priority", 60))),
+        }
+        return result
+
+    def _on_category_changed(self, current, previous):
+        if self._loading:
+            return
+        if previous is not None:
+            self._store_current_category()
+        if current is None:
+            return
+        self.current_key = current.data(Qt.UserRole)
+        self._load_category(self.current_key)
+
+    def _load_category(self, key):
+        self._loading = True
+        item = self.config["categories"].get(key, {})
+        self.enabled_check.setChecked(bool(item.get("enabled", False)))
+        self.display_name_edit.setText(str(item.get("display_name", key.title())))
+        self.mode_combo.setCurrentText(str(item.get("generation_mode", "scheduled")))
+        self.priority_edit.setText(str(item.get("priority", 100)))
+        self.pickup_combo.setCurrentText(str(item.get("pickup_location", "")))
+        self.dropoff_combo.setCurrentText(str(item.get("dropoff_location", "")))
+        self.payload_combo.setCurrentText(str(item.get("payload", "")))
+        self.route_profile_combo.setCurrentText(str(item.get("route_profile", "")))
+        self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
+        self.return_payload_combo.setCurrentText(str(item.get("return_payload", "")))
+        days = set(item.get("days_active", []))
+        for day_key, _label in self.DAYS:
+            self.day_checks[day_key].setChecked(day_key in days)
+        self.schedule_times_edit.setText(
+            ", ".join(str(x) for x in item.get("schedule_times", []))
+        )
+        self.frequency_edit.setText(str(item.get("frequency_per_day", 0.0)))
+        self.volume_per_event_edit.setText(str(item.get("volume_per_event_m3", 0.0)))
+        self.threshold_volume_edit.setText(str(item.get("threshold_volume_m3", 0.0)))
+        self.base_daily_volume_edit.setText(str(item.get("base_daily_volume_m3", 0.0)))
+        self.notes_edit.setPlainText(str(item.get("notes", "")))
+        self._loading = False
+
+    def _parse_schedule_times(self):
+        values = []
+        for raw in self.schedule_times_edit.text().split(","):
+            text = raw.strip()
+            if not text:
+                continue
+            parts = text.split(":")
+            if len(parts) != 2:
+                raise ValueError(f"Invalid schedule time: {text}")
+            hour = int(parts[0])
+            minute = int(parts[1])
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError(f"Invalid schedule time: {text}")
+            values.append(f"{hour:02d}:{minute:02d}")
+        return values
+
+    def _store_current_category(self):
+        if not self.current_key:
+            return
+        days_active = [
+            key for key, _label in self.DAYS if self.day_checks[key].isChecked()
+        ]
+        if not days_active:
+            raise ValueError("Select at least one active day")
+        self.config["categories"][self.current_key] = {
+            "enabled": self.enabled_check.isChecked(),
+            "display_name": self.display_name_edit.text().strip()
+            or self.current_key.title(),
+            "generation_mode": self.mode_combo.currentText().strip(),
+            "priority": int(float(self.priority_edit.text() or 100)),
+            "pickup_location": self.pickup_combo.currentText().strip(),
+            "dropoff_location": self.dropoff_combo.currentText().strip(),
+            "payload": self.payload_combo.currentText().strip(),
+            "return_enabled": self.return_enabled_check.isChecked(),
+            "return_payload": self.return_payload_combo.currentText().strip(),
+            "route_profile": self.route_profile_combo.currentText().strip(),
+            "days_active": days_active,
+            "schedule_times": self._parse_schedule_times(),
+            "frequency_per_day": float(self.frequency_edit.text() or 0.0),
+            "volume_per_event_m3": float(self.volume_per_event_edit.text() or 0.0),
+            "threshold_volume_m3": float(self.threshold_volume_edit.text() or 0.0),
+            "base_daily_volume_m3": float(self.base_daily_volume_edit.text() or 0.0),
+            "notes": self.notes_edit.toPlainText().strip(),
+        }
+
+    def accept(self):
+        try:
+            self._store_current_category()
+            self.config["enabled"] = self.global_enabled.isChecked()
+            waste = self.config["categories"].get("waste", {})
+            self.config["department_waste"] = {
+                "enabled": bool(waste.get("enabled", True)),
+                "priority": int(float(waste.get("priority", 60))),
+            }
+            self.on_save(self.config)
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid task generation settings", str(exc))
+
+
 class PointEditorDialog(QDialog):
     def __init__(self, parent, title, point_name, point):
         super().__init__(parent)
