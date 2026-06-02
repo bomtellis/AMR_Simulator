@@ -1292,6 +1292,56 @@ class AmrTimelineWidget(QWidget):
             parent.on_timeline_seek(new_time)
 
 
+class LocationInventoryPayloadDialog(QDialog):
+    columns = [
+        ("space", "Inventory space", 180),
+        ("payload", "Current payload", 170),
+        ("task_id", "Task", 100),
+        ("amr_id", "AMR", 100),
+        ("status", "Status", 130),
+        ("timestamp", "Updated", 160),
+        ("source", "Source", 120),
+    ]
+
+    def __init__(self, parent, location_name, rows, current_time):
+        super().__init__(parent)
+        self.setWindowTitle(f"Inventory payloads - {location_name}")
+        self.resize(980, 420)
+
+        layout = QVBoxLayout(self)
+
+        stamp = current_time.strftime("%Y-%m-%d %H:%M:%S") if current_time else "-"
+        layout.addWidget(
+            QLabel(f"Location: {location_name}\nTime: {stamp}\nSpaces: {len(rows)}")
+        )
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels([h for _k, h, _w in self.columns])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
+        for idx, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(idx, width)
+
+        layout.addWidget(self.table, 1)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close_btn)
+        layout.addLayout(row)
+
+        for row_data in rows:
+            r = self.table.rowCount()
+            self.table.insertRow(r)
+            for c, (key, _heading, _width) in enumerate(self.columns):
+                value = row_data.get(key, "-")
+                self.table.setItem(r, c, QTableWidgetItem(str(value or "-")))
+
+
 class SimulationVisualizer(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1511,6 +1561,80 @@ class SimulationVisualizer(QMainWindow):
 
         layout.addWidget(side)
         layout.addWidget(self.main_splitter, 1)
+
+    def _location_by_name(self, location_name):
+        for location in self.layout_model.data.get("locations", []):
+            if str(location.get("name", "")).strip() == str(location_name).strip():
+                return location
+        return None
+
+    def _payload_value_from_space(self, space):
+        for key in (
+            "current_payload",
+            "payload",
+            "payload_name",
+            "stored_payload",
+            "contents",
+            "content",
+            "item",
+        ):
+            value = space.get(key)
+            if value not in (None, "", []):
+                if isinstance(value, list):
+                    return ", ".join(str(x) for x in value if str(x).strip()) or "-"
+                return str(value)
+        return "-"
+
+    def _inventory_payload_rows_for_location(self, location_name):
+        location = self._location_by_name(location_name)
+        if not location:
+            return []
+
+        rows = []
+        for idx, space in enumerate(
+            location.get("inventory_spaces", []) or [], start=1
+        ):
+            payload = self._payload_value_from_space(space)
+            rows.append(
+                {
+                    "space": str(space.get("name", "")).strip() or f"Inventory {idx}",
+                    "payload": payload,
+                    "task_id": space.get("task_id", "-"),
+                    "amr_id": space.get("amr_id", "-"),
+                    "status": "Stored" if payload != "-" else "Empty",
+                    "timestamp": space.get("timestamp", "-"),
+                    "source": "Layout JSON",
+                }
+            )
+
+        return rows
+
+    def show_location_inventory_payloads(self, location_name):
+        point = self.layout_model.points.get(location_name, {})
+        if point.get("kind") != "location":
+            QMessageBox.information(
+                self,
+                "Inventory status",
+                f"{location_name} is not a location node.",
+            )
+            return
+
+        rows = self._inventory_payload_rows_for_location(location_name)
+        if not rows:
+            QMessageBox.information(
+                self,
+                f"Inventory status - {location_name}",
+                f"Location: {location_name}\n\nNo inventory spaces are defined for this location.",
+            )
+            return
+
+        dialog = LocationInventoryPayloadDialog(
+            self,
+            location_name,
+            rows,
+            self.current_time,
+        )
+        dialog.exec()
 
     def reload_current_floor_dxf(self):
         floor = self.current_floor()
@@ -2127,27 +2251,38 @@ class SimulationVisualizer(QMainWindow):
     def _node_name_at_view_event(self, event: QMouseEvent) -> Optional[str]:
         scene_pos = self.view.mapToScene(event.position().toPoint())
 
+        # Only accept actual node marker items.
+        # Do not accept labels because ItemIgnoresTransformations can make
+        # their hit boxes behave incorrectly at different zoom levels.
         for item in self.graphics_scene.items(scene_pos):
             item_type = item.data(0)
-            if item_type in {"layout_node", "layout_node_label"}:
+            if item_type == "layout_node":
                 node_name = item.data(1)
                 if node_name:
                     return str(node_name)
 
+        # Pixel-based fallback, locations only.
         floor = self.current_floor()
-        world_x = float(scene_pos.x())
-        world_y = -float(scene_pos.y())
+        cursor_view_pos = event.position()
+
         best_name = None
-        best_dist = 2.0
+        best_dist_px = 12.0
 
         for name, point in self.layout_model.points_for_floor(floor).items():
-            dist = math.hypot(
-                float(point["x"]) - world_x,
-                float(point["y"]) - world_y,
+            if point.get("kind") != "location":
+                continue
+
+            sx, sy = self.world_to_scene(point["x"], point["y"])
+            point_view_pos = self.view.mapFromScene(QPointF(sx, sy))
+
+            dist_px = math.hypot(
+                float(point_view_pos.x()) - float(cursor_view_pos.x()),
+                float(point_view_pos.y()) - float(cursor_view_pos.y()),
             )
-            if dist <= best_dist:
+
+            if dist_px <= best_dist_px:
                 best_name = name
-                best_dist = dist
+                best_dist_px = dist_px
 
         return best_name
 
@@ -2346,26 +2481,36 @@ class SimulationVisualizer(QMainWindow):
 
         spaces = location.get("inventory_spaces", []) or []
         rows = []
-        for idx, space in enumerate(spaces, start=1):
-            space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+
+        if spaces:
+            for idx, space in enumerate(spaces, start=1):
+                space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+                payload = self._payload_value_from_space(space)
+
+                rows.append(
+                    {
+                        "space": space_name,
+                        "payload": payload,
+                        "task_id": space.get("task_id", "-"),
+                        "amr_id": space.get("amr_id", "-"),
+                        "status": "Stored" if payload != "-" else "Empty",
+                        "timestamp": space.get("timestamp", "-"),
+                        "source": "Layout JSON",
+                    }
+                )
+        else:
+            # No defined inventory spaces: still show the location contents.
             rows.append(
                 {
-                    "space": space_name,
-                    "payload": self._payload_value_from_space(space),
-                    "task_id": space.get("task_id", "-"),
-                    "amr_id": space.get("amr_id", "-"),
-                    "status": (
-                        "Stored"
-                        if self._payload_value_from_space(space) != "-"
-                        else "Empty"
-                    ),
-                    "timestamp": space.get("timestamp", "-"),
-                    "source": "Layout JSON",
+                    "space": "Location",
+                    "payload": "-",
+                    "task_id": "-",
+                    "amr_id": "-",
+                    "status": "Empty",
+                    "timestamp": "-",
+                    "source": "Location fallback",
                 }
             )
-
-        if not rows:
-            return []
 
         if not self.current_time or not self.sim_log.events:
             return rows
@@ -2470,12 +2615,12 @@ class SimulationVisualizer(QMainWindow):
             )
             return
 
-        rows = self._inventory_space_rows_for_location(location_name)
+        rows = self._inventory_payload_rows_for_location(location_name)
         if not rows:
             QMessageBox.information(
                 self,
-                f"Inventory spaces - {location_name}",
-                f"Location: {location_name}\n\nNo inventory spaces are defined for this location.",
+                f"Inventory status - {location_name}",
+                f"Location: {location_name}\n\nNo location information was found.",
             )
             return
 
@@ -2483,14 +2628,6 @@ class SimulationVisualizer(QMainWindow):
         dialog.exec()
 
     def show_location_inventory_payloads(self, location_name: str):
-        point = self.layout_model.points.get(location_name, {})
-        if point.get("kind") != "location":
-            QMessageBox.information(
-                self,
-                "Inventory spaces",
-                f"{location_name} is not a location node.",
-            )
-            return
 
         rows = self._inventory_payload_rows_for_location(location_name)
         if not rows:
