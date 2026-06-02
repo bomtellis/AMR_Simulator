@@ -9072,7 +9072,8 @@
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
         "notes": "",
-        "return_delay_minutes": 0,
+        "return_delay_minutes": 0.0,
+        "scheduled_times": [],
         "departments": {
           "D1": {
             "enabled": true,
@@ -9095,7 +9096,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "scheduled_times": [
               "08:00",
@@ -9108,7 +9111,7 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": ""
+            "notes": "Catering runs throughout the day - 7 days per week"
           },
           "D2": {
             "enabled": true,
@@ -9183,6 +9186,34 @@
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": ""
+          },
+          "D8": {
+            "enabled": false,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
           }
         }
       },
@@ -9216,6 +9247,8 @@
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
         "notes": "",
+        "return_delay_minutes": 0.0,
+        "scheduled_times": [],
         "departments": {
           "D1": {
             "enabled": false,
@@ -9271,7 +9304,8 @@
         "threshold_volume_m3": 0.8,
         "base_daily_volume_m3": 0.0,
         "notes": "",
-        "return_delay_minutes": 0,
+        "return_delay_minutes": 0.0,
+        "scheduled_times": [],
         "departments": {
           "D1": {
             "enabled": false,
@@ -9623,34 +9657,9 @@
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
         "notes": "",
-        "return_delay_minutes": 0,
-        "departments": {
-          "D1": {
-            "enabled": false,
-            "generation_mode": "scheduled_threshold",
-            "priority": 35,
-            "pickup_location": "",
-            "dropoff_location": "",
-            "dropoff_locations": [],
-            "payload": "",
-            "return_enabled": true,
-            "return_payload": "",
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": ""
-          }
-        }
+        "return_delay_minutes": 0.0,
+        "scheduled_times": [],
+        "departments": {}
       }
     }
   }
