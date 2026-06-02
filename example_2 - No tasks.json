@@ -9111,58 +9111,23 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Catering runs throughout the day - 7 days per week"
-          },
-          "D2": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 40,
-            "pickup_location": "KITCHEN",
-            "dropoff_location": "",
-            "dropoff_locations": [],
-            "payload": "food_trolley",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "food_trolley",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri",
-              "sat",
-              "sun"
-            ],
-            "scheduled_times": [
-              "08:00",
-              "11:30",
-              "12:30",
-              "16:30",
-              "17:30"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
             "notes": ""
           },
           "D3": {
-            "enabled": true,
+            "enabled": false,
             "generation_mode": "scheduled",
             "priority": 40,
-            "pickup_location": "KITCHEN",
+            "pickup_location": "",
+            "pickup_locations": [],
             "dropoff_location": "D3-CATERING",
             "dropoff_locations": [
               "D3-CATERING"
             ],
-            "payload": "food_trolley",
+            "payload": "",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
-            "return_payload": "food_trolley",
+            "return_payload": "",
             "return_delay_minutes": 0.0,
             "route_profile": "",
             "days_active": [
@@ -9170,24 +9135,45 @@
               "tue",
               "wed",
               "thu",
-              "fri",
-              "sat",
-              "sun"
+              "fri"
             ],
-            "scheduled_times": [
-              "08:00",
-              "11:30",
-              "12:30",
-              "16:30",
-              "17:30"
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D8": {
+            "enabled": false,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
             ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": ""
           },
-          "D8": {
+          "D11": {
             "enabled": false,
             "generation_mode": "scheduled",
             "priority": 40,

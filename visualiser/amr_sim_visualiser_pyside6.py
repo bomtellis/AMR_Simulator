@@ -1,7 +1,9 @@
 import csv
 import json
 import math
+import os
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,18 +21,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QMouseEvent,
 )
-from PySide6.QtCore import (
-    QPointF,
-    QTimer,
-    Qt,
-    QRectF,
-    QRect,
-    QObject,
-    Signal,
-    Slot,
-    QRunnable,
-    QThreadPool,
-)
+from PySide6.QtCore import QPointF, QTimer, Qt, QRectF, QRect, QObject, Signal, QThread
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -501,48 +492,133 @@ class GraphicsView(QGraphicsView):
             painter.restore()
 
 
-class DxfLoadSignals(QObject):
+def _load_dxf_floor_process(job):
+    """Load one DXF in a worker process and return serialisable content.
+
+    This mirrors the editor: DXF parsing happens outside the GUI thread and
+    only plain entity/bounds data is passed back to Qt. QGraphicsItems are
+    created later, on demand, for the active floor only.
+    """
+    floor, path = job
+    floor = int(floor)
+    path = str(path or "").strip()
+
+    try:
+        if not path or not Path(path).exists():
+            return {
+                "ok": False,
+                "floor": floor,
+                "path": path,
+                "entities": None,
+                "bounds": None,
+                "error": f"DXF file not found: {path}",
+            }
+
+        payload = DXFScene.load_content(path)
+        return {
+            "ok": True,
+            "floor": floor,
+            "path": path,
+            "entities": payload.get("entities", []),
+            "bounds": payload.get("bounds"),
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "floor": floor,
+            "path": path,
+            "entities": None,
+            "bounds": None,
+            "error": str(exc),
+        }
+
+
+class DxfLoadWorker(QObject):
     progress = Signal(int, int, str)
     floor_loaded = Signal(int, str, object, object)
     error = Signal(int, str)
-    finished_one = Signal()
+    finished = Signal()
 
-
-class DxfLoadTask(QRunnable):
-    def __init__(
-        self, floor: int, path: str, index: int, total: int, signals: DxfLoadSignals
-    ):
+    def __init__(self, floor_dxf_files):
         super().__init__()
-        self.floor = int(floor)
-        self.path = str(path)
-        self.index = int(index)
-        self.total = int(total)
-        self.signals = signals
+        self.floor_dxf_files = list(floor_dxf_files)
+        self._cancelled = False
 
-    @Slot()
+    def cancel(self):
+        self._cancelled = True
+
+    def _normalise_jobs(self):
+        jobs = []
+        seen = set()
+
+        for entry in self.floor_dxf_files:
+            try:
+                floor = int(entry.get("floor"))
+                path = str(entry.get("filepath") or "").strip()
+            except Exception:
+                continue
+
+            if not path:
+                continue
+
+            key = (floor, path)
+            if key in seen:
+                continue
+
+            seen.add(key)
+            jobs.append(key)
+
+        return jobs
+
     def run(self):
-        self.signals.progress.emit(
-            self.index,
-            self.total,
-            f"Loading floor {self.floor}...\n{Path(self.path).name if self.path else ''}",
-        )
+        jobs = self._normalise_jobs()
+        total = len(jobs)
+
+        if total <= 0:
+            self.finished.emit()
+            return
+
+        worker_count = min(total, max(1, (os.cpu_count() or 2) - 1))
+        completed = 0
+
+        self.progress.emit(0, total, "Preparing DXF load...")
 
         try:
-            if not self.path or not Path(self.path).exists():
-                self.signals.error.emit(self.floor, f"DXF file not found: {self.path}")
-                return
+            with ProcessPoolExecutor(max_workers=worker_count) as pool:
+                futures = [pool.submit(_load_dxf_floor_process, job) for job in jobs]
 
-            payload = DXFScene.load_content(self.path)
-            self.signals.floor_loaded.emit(
-                self.floor,
-                self.path,
-                payload["entities"],
-                payload["bounds"],
-            )
-        except Exception as exc:
-            self.signals.error.emit(self.floor, str(exc))
+                for future in as_completed(futures):
+                    completed += 1
+
+                    if self._cancelled:
+                        continue
+
+                    result = future.result()
+                    floor = int(result.get("floor", 0))
+                    path = str(result.get("path", ""))
+                    label = Path(path).name if path else ""
+
+                    self.progress.emit(
+                        completed,
+                        total,
+                        f"Loaded {completed} of {total} DXFs...\n{label}",
+                    )
+
+                    if result.get("ok"):
+                        self.floor_loaded.emit(
+                            floor,
+                            path,
+                            result.get("entities") or [],
+                            result.get("bounds"),
+                        )
+                    else:
+                        self.error.emit(
+                            floor,
+                            str(result.get("error") or "Unknown DXF load error"),
+                        )
         finally:
-            self.signals.finished_one.emit()
+            self.finished.emit()
 
 
 class TaskJumpDialog(QDialog):
@@ -903,6 +979,68 @@ class LocationInventoryPayloadDialog(QDialog):
                 )
 
 
+class LocationInventorySpacesDialog(QDialog):
+    columns = [
+        ("name", "Inventory space", 180),
+        ("length_m", "Length m", 90),
+        ("width_m", "Width m", 90),
+        ("height_m", "Height m", 90),
+        ("occupied", "Occupied", 90),
+        ("payload", "Payload", 160),
+        ("task_id", "Task", 120),
+        ("reserved_by_task", "Reserved by", 120),
+        ("points", "Points", 90),
+    ]
+
+    def __init__(self, parent, location_name: str, rows: List[dict]):
+        super().__init__(parent)
+        self.setWindowTitle(f"Inventory spaces - {location_name}")
+        self.resize(1080, 460)
+        self.location_name = location_name
+        self.rows = list(rows or [])
+
+        layout = QVBoxLayout(self)
+        self.summary_label = QLabel(
+            f"Location: {location_name}\nInventory spaces: {len(self.rows)}"
+        )
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for idx, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(idx, width)
+        layout.addWidget(self.table, 1)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close_btn)
+        layout.addLayout(row)
+
+        self._refresh_table()
+
+    def _refresh_table(self):
+        self.table.setRowCount(0)
+        for row_data in self.rows:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            for col, (key, _heading, _width) in enumerate(self.columns):
+                value = row_data.get(key, "")
+                self.table.setItem(
+                    row,
+                    col,
+                    QTableWidgetItem(str(value if value not in (None, "") else "-")),
+                )
+
+
 class LiftMonitorDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1162,17 +1300,13 @@ class SimulationVisualizer(QMainWindow):
 
         self.layout_model = LayoutModel()
         self.dxf_scenes: Dict[int, DXFScene] = {}
-        self.dxf_thread_pool = QThreadPool.globalInstance()
-        self.dxf_thread_pool.setMaxThreadCount(
-            max(2, min(6, self.dxf_thread_pool.maxThreadCount()))
-        )
-        self.dxf_load_signals: Optional[DxfLoadSignals] = None
-        self.dxf_load_total = 0
-        self.dxf_load_completed = 0
+        self.dxf_load_thread: Optional[QThread] = None
+        self.dxf_load_worker: Optional[DxfLoadWorker] = None
         self.dxf_progress_dialog: Optional[QProgressDialog] = None
         self.dxf_paths_by_floor: Dict[int, str] = {}
         self.dxf_items_by_floor: Dict[int, List[QGraphicsItem]] = {}
         self.current_dxf_floor: Optional[int] = None
+        self.dxf_loading_failures: Dict[int, str] = {}
         self._dxf_text_bucket: Optional[int] = None
         self.sim_log = SimulationLog()
 
@@ -1388,38 +1522,18 @@ class SimulationVisualizer(QMainWindow):
             )
             return
 
-        try:
-            old_items = self.dxf_items_by_floor.pop(floor, [])
-            for item in old_items:
-                self.graphics_scene.removeItem(item)
+        old_items = self.dxf_items_by_floor.pop(floor, [])
+        for item in old_items:
+            self.graphics_scene.removeItem(item)
 
-            self.dxf_scenes.pop(floor, None)
+        self.dxf_scenes.pop(floor, None)
+        self.dxf_loading_failures.pop(floor, None)
+        self.current_dxf_floor = None
 
-            dxf_scene = DXFScene()
-            dxf_scene.load(path)
-
-            self.dxf_scenes[floor] = dxf_scene
-            self.dxf_paths_by_floor[floor] = path
-            old_items = self.dxf_items_by_floor.pop(floor, [])
-            for item in old_items:
-                self.graphics_scene.removeItem(item)
-
-            self.ensure_dxf_floor_loaded(floor)
-
-            self.ensure_dxf_floor_loaded(floor)
-            self.show_dxf_floor(floor)
-
-            self.fit_view()
-            self.refresh_static_scene()
-            self.refresh_dynamic_scene()
-            self.set_status(f"Reloaded DXF for floor {floor}: {Path(path).name}")
-
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "DXF reload failed",
-                f"Failed to reload DXF for floor {floor}:\n{exc}",
-            )
+        self._start_dxf_load_batch(
+            [{"floor": floor, "filepath": path}],
+            label=f"Reloading DXF for floor {floor}...",
+        )
 
     def set_status(self, text: str):
         self.status_label.setText(text)
@@ -1444,24 +1558,29 @@ class SimulationVisualizer(QMainWindow):
         self.dxf_scenes.clear()
         self.dxf_paths_by_floor.clear()
         self.dxf_items_by_floor.clear()
+        self.dxf_loading_failures.clear()
         self.current_dxf_floor = None
 
-    def start_loading_floor_dxfs_from_json(self):
-        floor_dxf_files = self.layout_model.data.get("floor_dxf_files", [])
-        self.clear_all_loaded_dxf_items()
+    def _dxf_loader_active(self) -> bool:
+        return bool(self.dxf_load_thread and self.dxf_load_thread.isRunning())
+
+    def _start_dxf_load_batch(self, floor_dxf_files, label="Loading DXFs..."):
+        floor_dxf_files = list(floor_dxf_files or [])
 
         if not floor_dxf_files:
             self.update_loaded_files()
-            self.refresh_static_scene()
             return
 
-        self.dxf_load_total = len(floor_dxf_files)
-        self.dxf_load_completed = 0
+        if self._dxf_loader_active():
+            self.set_status(
+                "DXF loading is already running. Cancel it before starting another load."
+            )
+            return
 
         self.dxf_progress_dialog = QProgressDialog(
-            "Loading DXFs...", "Cancel", 0, self.dxf_load_total, self
+            label, "Cancel", 0, len(floor_dxf_files), self
         )
-        self.dxf_progress_dialog.setWindowTitle("Loading")
+        self.dxf_progress_dialog.setWindowTitle("Loading DXFs")
         self.dxf_progress_dialog.setWindowModality(Qt.WindowModal)
         self.dxf_progress_dialog.setMinimumDuration(0)
         self.dxf_progress_dialog.setValue(0)
@@ -1469,28 +1588,32 @@ class SimulationVisualizer(QMainWindow):
 
         self.view.setUpdatesEnabled(False)
 
-        self.dxf_load_signals = DxfLoadSignals()
-        self.dxf_load_signals.progress.connect(self.on_dxf_load_progress)
-        self.dxf_load_signals.floor_loaded.connect(self.on_dxf_floor_loaded)
-        self.dxf_load_signals.error.connect(self.on_dxf_load_error)
-        self.dxf_load_signals.finished_one.connect(self.on_dxf_load_finished_one)
+        self.dxf_load_thread = QThread(self)
+        self.dxf_load_worker = DxfLoadWorker(floor_dxf_files)
+        self.dxf_load_worker.moveToThread(self.dxf_load_thread)
 
-        for index, entry in enumerate(floor_dxf_files):
-            try:
-                floor = int(entry.get("floor"))
-                path = str(entry.get("filepath") or "").strip()
-            except Exception:
-                self.dxf_load_completed += 1
-                continue
+        self.dxf_load_thread.started.connect(self.dxf_load_worker.run)
+        self.dxf_load_worker.progress.connect(self.on_dxf_load_progress)
+        self.dxf_load_worker.floor_loaded.connect(self.on_dxf_floor_loaded)
+        self.dxf_load_worker.error.connect(self.on_dxf_load_error)
+        self.dxf_load_worker.finished.connect(self.on_dxf_load_finished)
+        self.dxf_load_worker.finished.connect(self.dxf_load_thread.quit)
+        self.dxf_load_thread.finished.connect(self.dxf_load_thread.deleteLater)
+        self.dxf_progress_dialog.canceled.connect(self.dxf_load_worker.cancel)
 
-            task = DxfLoadTask(
-                floor=floor,
-                path=path,
-                index=index,
-                total=self.dxf_load_total,
-                signals=self.dxf_load_signals,
-            )
-            self.dxf_thread_pool.start(task)
+        self.dxf_load_thread.start()
+
+    def start_loading_floor_dxfs_from_json(self):
+        floor_dxf_files = self.layout_model.data.get("floor_dxf_files", [])
+        self.clear_all_loaded_dxf_items()
+        self.dxf_loading_failures.clear()
+
+        if not floor_dxf_files:
+            self.update_loaded_files()
+            self.refresh_static_scene()
+            return
+
+        self._start_dxf_load_batch(floor_dxf_files, label="Loading DXFs...")
 
     def on_dxf_load_progress(self, value: int, total: int, label: str):
         if self.dxf_progress_dialog is None:
@@ -1504,14 +1627,18 @@ class SimulationVisualizer(QMainWindow):
                 return
 
     def on_dxf_floor_loaded(self, floor: int, path: str, entities, bounds):
-        dxf_scene = DXFScene()
-        dxf_scene.set_content(path, entities, bounds)
-
-        self.dxf_scenes[floor] = dxf_scene
+        floor = int(floor)
+        self.dxf_scenes[floor] = DXFScene.from_content(path, entities, bounds)
         self.dxf_paths_by_floor[floor] = path
+        self.dxf_loading_failures.pop(floor, None)
+
+        # Match the editor principle: cache parsed DXF content for every floor,
+        # but only create QGraphicsItems for the active floor on demand.
+        old_items = self.dxf_items_by_floor.pop(floor, [])
+        for item in old_items:
+            self.graphics_scene.removeItem(item)
 
         self.update_loaded_files()
-
         if floor == self.current_floor():
             self.ensure_dxf_floor_loaded(floor)
             self.show_dxf_floor(floor)
@@ -1519,6 +1646,7 @@ class SimulationVisualizer(QMainWindow):
             self.view.viewport().update()
 
     def on_dxf_load_error(self, floor: int, message: str):
+        self.dxf_loading_failures[int(floor)] = str(message)
         self.set_status(f"Failed DXF F{floor}: {message}")
 
     def on_dxf_load_finished(self):
@@ -1532,14 +1660,15 @@ class SimulationVisualizer(QMainWindow):
         self.refresh_static_scene()
         self.view.viewport().update()
 
-    def on_dxf_load_finished_one(self):
-        self.dxf_load_completed += 1
+        if self.dxf_loading_failures:
+            self.set_status(
+                f"Loaded DXFs with {len(self.dxf_loading_failures)} failure(s)."
+            )
+        else:
+            self.set_status("Loaded DXFs.")
 
-        if self.dxf_progress_dialog:
-            self.dxf_progress_dialog.setValue(self.dxf_load_completed)
-
-        if self.dxf_load_completed >= self.dxf_load_total:
-            self.on_dxf_load_finished()
+        self.dxf_load_worker = None
+        self.dxf_load_thread = None
 
     def current_dxf_scene(self) -> Optional[DXFScene]:
         return self.dxf_scenes.get(self.current_floor())
@@ -2306,6 +2435,53 @@ class SimulationVisualizer(QMainWindow):
 
         return rows
 
+    def _inventory_space_rows_for_location(self, location_name: str) -> List[dict]:
+        location = self._location_by_name(location_name)
+        if not location:
+            return []
+
+        rows = []
+        for idx, space in enumerate(
+            location.get("inventory_spaces", []) or [], start=1
+        ):
+            points = list(space.get("points", []) or [])
+            rows.append(
+                {
+                    "name": str(space.get("name", "")).strip() or f"Inventory {idx}",
+                    "length_m": space.get("length_m", space.get("length", "")),
+                    "width_m": space.get("width_m", space.get("width", "")),
+                    "height_m": space.get("height_m", space.get("height", "")),
+                    "occupied": "Yes" if bool(space.get("occupied", False)) else "No",
+                    "payload": self._payload_value_from_space(space),
+                    "task_id": space.get("task_id", "-"),
+                    "reserved_by_task": space.get("reserved_by_task", "-"),
+                    "points": len(points),
+                }
+            )
+        return rows
+
+    def show_location_inventory_spaces(self, location_name: str):
+        point = self.layout_model.points.get(location_name, {})
+        if point.get("kind") != "location":
+            QMessageBox.information(
+                self,
+                "Inventory spaces",
+                f"{location_name} is not a location node.",
+            )
+            return
+
+        rows = self._inventory_space_rows_for_location(location_name)
+        if not rows:
+            QMessageBox.information(
+                self,
+                f"Inventory spaces - {location_name}",
+                f"Location: {location_name}\n\nNo inventory spaces are defined for this location.",
+            )
+            return
+
+        dialog = LocationInventorySpacesDialog(self, location_name, rows)
+        dialog.exec()
+
     def show_location_inventory_payloads(self, location_name: str):
         point = self.layout_model.points.get(location_name, {})
         if point.get("kind") != "location":
@@ -2440,6 +2616,12 @@ class SimulationVisualizer(QMainWindow):
         point = self.layout_model.points.get(node_name, {})
         if point.get("kind") == "location":
             self.node_context_menu.addSeparator()
+            self.node_context_menu.addAction(
+                "View inventory spaces",
+                lambda checked=False, name=node_name: self.show_location_inventory_spaces(
+                    name
+                ),
+            )
             self.node_context_menu.addAction(
                 "Show inventory payloads",
                 lambda checked=False, name=node_name: self.show_location_inventory_payloads(
@@ -2629,61 +2811,8 @@ class SimulationVisualizer(QMainWindow):
         self.follow_combo.blockSignals(False)
 
     def load_floor_dxfs_from_json(self):
-        self.hide_all_dxf_items()
-
-        for floor, items in list(self.dxf_items_by_floor.items()):
-            for item in items:
-                self.graphics_scene.removeItem(item)
-
-        self.dxf_scenes.clear()
-        self.dxf_paths_by_floor.clear()
-        self.dxf_items_by_floor.clear()
-
-        floor_dxf_files = self.layout_model.data.get("floor_dxf_files", [])
-        total = len(floor_dxf_files)
-
-        if total == 0:
-            return
-
-        progress = QProgressDialog("Loading DXFs...", "Cancel", 0, total, self)
-        progress.setWindowTitle("Loading")
-        progress.setWindowModality(Qt.WindowModal)
-        progress.setMinimumDuration(0)
-        progress.show()
-        self.view.setUpdatesEnabled(False)
-
-        for i, entry in enumerate(floor_dxf_files):
-            if progress.wasCanceled():
-                break
-
-            floor = int(entry.get("floor"))
-            path = str(entry.get("filepath") or "").strip()
-
-            progress.setLabelText(f"Loading floor {floor}...\n{Path(path).name}")
-            progress.setValue(i)
-            QApplication.processEvents()
-
-            try:
-                if not path or not Path(path).exists():
-                    continue
-
-                dxf_scene = DXFScene()
-                dxf_scene.load(path)
-
-                self.dxf_scenes[floor] = dxf_scene
-                self.dxf_paths_by_floor[floor] = path
-
-                self.ensure_dxf_floor_loaded(floor)
-
-            except Exception as exc:
-                self.set_status(f"Failed DXF F{floor}: {exc}")
-
-        progress.setValue(total)
-        self.view.setUpdatesEnabled(True)
-        self.view.viewport().update()
-
-        self.show_dxf_floor(self.current_floor())
-        self.update_loaded_files()
+        # Backwards-compatible entry point retained for older callers.
+        self.start_loading_floor_dxfs_from_json()
 
     def _finish_first_json_load(self):
         self.refresh_static_scene()
@@ -2728,25 +2857,22 @@ class SimulationVisualizer(QMainWindow):
             return
 
         floor = self.current_floor()
-        try:
-            dxf_scene = DXFScene()
-            dxf_scene.load(path)
+        self.dxf_paths_by_floor[floor] = path
+        self.dxf_loading_failures.pop(floor, None)
 
-            self.dxf_scenes[floor] = dxf_scene
-            self.dxf_paths_by_floor[floor] = path
+        old_items = self.dxf_items_by_floor.pop(floor, [])
+        for item in old_items:
+            self.graphics_scene.removeItem(item)
 
-            old_items = self.dxf_items_by_floor.pop(floor, [])
-            for item in old_items:
-                self.graphics_scene.removeItem(item)
+        self.dxf_scenes.pop(floor, None)
+        self.current_dxf_floor = None
+        self.update_loaded_files()
+        self.set_status(f"Mapped DXF {Path(path).name} to floor {floor}")
 
-            self.ensure_dxf_floor_loaded(floor)
-            self.show_dxf_floor(floor)
-
-            self.update_loaded_files()
-            self.fit_view()
-            self.set_status(f"Loaded DXF {Path(path).name} for floor {floor}")
-        except Exception as exc:
-            QMessageBox.critical(self, "DXF load failed", str(exc))
+        self._start_dxf_load_batch(
+            [{"floor": floor, "filepath": path}],
+            label=f"Loading DXF for floor {floor}...",
+        )
 
     def open_csv(self):
         path, _ = QFileDialog.getOpenFileName(

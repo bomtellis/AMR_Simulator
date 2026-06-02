@@ -275,21 +275,29 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         for category_key, category in categories.items():
             if not isinstance(category, dict):
                 continue
-            if not bool(category.get("enabled", False)):
-                continue
 
-            overrides = category.get("departments", {}) or {}
-            used_department_ids = set()
+            overrides = (
+                category.get("departments", {})
+                if isinstance(category.get("departments", {}), dict)
+                else {}
+            )
 
-            # Department overrides created by Configure multiple / individual override.
+            # Department overrides are independently enabled.  The category
+            # default "enabled" flag must not disable configured departments.
+            # This lets the editor keep "Category defaults" disabled so no
+            # default task is generated, while still allowing selected
+            # department overrides to generate tasks.
             for dept in self.departments:
                 dept_id = self._department_id(dept)
                 if not dept_id or dept_id not in overrides:
                     continue
-                used_department_ids.add(dept_id)
+
                 cfg = self._merge_category_with_override(
                     category, overrides.get(dept_id, {})
                 )
+                if not bool(cfg.get("enabled", False)):
+                    continue
+
                 dept_locations = self._department_category_locations(
                     dept, str(category_key)
                 )
@@ -318,9 +326,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     }
                 )
 
-            # Category-level generation, for categories without department overrides.
-            # This keeps older/global category configs working.
-            if not overrides:
+            # Category-level generation is only for a deliberately enabled
+            # category default and only when there are no department overrides.
+            # This prevents the "Category defaults" row from creating a site-wide
+            # task in addition to department-level tasks.
+            if bool(category.get("enabled", False)) and not overrides:
                 instances.append(
                     {
                         "key": str(category_key),
@@ -990,10 +1000,24 @@ class TaskGenerationManager:
 
     def _has_dynamic_categories(self) -> bool:
         categories = self._task_generation_cfg().get("categories", {}) or {}
-        return any(
-            isinstance(v, dict) and bool(v.get("enabled", False))
-            for v in categories.values()
-        )
+        for category in categories.values():
+            if not isinstance(category, dict):
+                continue
+
+            # Enabled category default, usually legacy/global category generation.
+            if bool(category.get("enabled", False)):
+                return True
+
+            # Enabled department overrides must start the dynamic generator even
+            # when the category default is intentionally disabled.
+            overrides = category.get("departments", {})
+            if isinstance(overrides, dict):
+                for override in overrides.values():
+                    if isinstance(override, dict) and bool(
+                        override.get("enabled", False)
+                    ):
+                        return True
+        return False
 
     def _build_generators(self) -> None:
         task_generation = self._task_generation_cfg()
@@ -1015,12 +1039,26 @@ class TaskGenerationManager:
         # Keep legacy department waste support, but avoid duplicating new waste category
         # generation when the dynamic Waste category is enabled.
         categories = task_generation.get("categories", {}) or {}
+        waste_category = (
+            categories.get("waste", {})
+            if isinstance(categories.get("waste", {}), dict)
+            else {}
+        )
+        waste_overrides = (
+            waste_category.get("departments", {})
+            if isinstance(waste_category.get("departments", {}), dict)
+            else {}
+        )
         dynamic_waste_enabled = bool(
-            isinstance(categories.get("waste"), dict)
-            and categories.get("waste", {}).get("enabled", False)
-            and (
-                categories.get("waste", {}).get("departments")
-                or categories.get("waste", {}).get("payload")
+            (
+                bool(waste_category.get("enabled", False))
+                and _clean_text(waste_category.get("payload", ""))
+            )
+            or any(
+                isinstance(override, dict)
+                and bool(override.get("enabled", False))
+                and _clean_text(override.get("payload", ""))
+                for override in waste_overrides.values()
             )
         )
 
