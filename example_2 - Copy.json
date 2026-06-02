@@ -9254,14 +9254,14 @@
         "Linen"
       ],
       "waste": {
-        "alpha": 0.2,
-        "beta": 0.1,
-        "gamma": 0.05,
+        "alpha": 0.002,
+        "beta": 0.015,
+        "gamma": 0.001,
         "pickup_location": "FRAILTY-DH",
         "dropoff_location": "FRAILTY-DH"
       },
-      "x": 37.433,
-      "y": -89.387
+      "x": 38.0,
+      "y": -89.0
     },
     {
       "id": "D2",

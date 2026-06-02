@@ -3,7 +3,7 @@ from typing import Any, List, Optional
 
 from advanced_dialogs import MultiSelectPicker
 
-from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtCore import Qt, QPointF, QRectF, QTime
 from PySide6.QtGui import QColor, QBrush, QPen, QPolygonF, QPainter, QPainterPath
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -36,7 +36,104 @@ from PySide6.QtWidgets import (
     QGraphicsItem,
     QMenu,
     QGraphicsPathItem,
+    QTimeEdit,
 )
+
+
+class ScheduledTimesDialog(QDialog):
+    def __init__(self, parent, times=None):
+        super().__init__(parent)
+        self.setWindowTitle("Scheduled times")
+        self.resize(520, 520)
+
+        self.result = None
+        self.times = sorted(set(times or []))
+
+        layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel("Scheduled task times over a 24 hour day"))
+
+        add_row = QHBoxLayout()
+        layout.addLayout(add_row)
+
+        self.time_edit = QTimeEdit()
+        self.time_edit.setDisplayFormat("HH:mm")
+        self.time_edit.setTime(QTime(8, 0))
+
+        add_btn = QPushButton("Add time")
+        add_btn.clicked.connect(self.add_time)
+
+        add_row.addWidget(self.time_edit)
+        add_row.addWidget(add_btn)
+
+        self.list_widget = QListWidget()
+        layout.addWidget(self.list_widget, 1)
+
+        btn_row = QHBoxLayout()
+        layout.addLayout(btn_row)
+
+        remove_btn = QPushButton("Remove selected")
+        clear_btn = QPushButton("Clear all")
+        sort_btn = QPushButton("Sort")
+
+        remove_btn.clicked.connect(self.remove_selected)
+        clear_btn.clicked.connect(self.clear_all)
+        sort_btn.clicked.connect(self.refresh)
+
+        btn_row.addWidget(remove_btn)
+        btn_row.addWidget(clear_btn)
+        btn_row.addWidget(sort_btn)
+        btn_row.addStretch(1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.refresh()
+
+    def add_time(self):
+        value = self.time_edit.time().toString("HH:mm")
+        if value not in self.times:
+            self.times.append(value)
+            self.times.sort()
+        self.refresh()
+
+    def remove_selected(self):
+        rows = sorted(
+            {index.row() for index in self.list_widget.selectedIndexes()},
+            reverse=True,
+        )
+        for row in rows:
+            if 0 <= row < len(self.times):
+                del self.times[row]
+        self.refresh()
+
+    def clear_all(self):
+        self.times = []
+        self.refresh()
+
+    def refresh(self):
+        self.times = sorted(set(self.times))
+        self.list_widget.clear()
+
+        for hour in range(24):
+            hour_times = [t for t in self.times if t.startswith(f"{hour:02d}:")]
+            if not hour_times:
+                continue
+
+            header = QListWidgetItem(f"{hour:02d}:00")
+            header.setFlags(Qt.ItemIsEnabled)
+            self.list_widget.addItem(header)
+
+            for value in hour_times:
+                item = QListWidgetItem(f"    {value}")
+                item.setData(Qt.UserRole, value)
+                self.list_widget.addItem(item)
+
+    def accept(self):
+        self.result = sorted(set(self.times))
+        super().accept()
 
 
 class TaskGenerationSettingsDialog(QDialog):
@@ -82,12 +179,13 @@ class TaskGenerationSettingsDialog(QDialog):
     ):
         super().__init__(parent)
         self.setWindowTitle("Task generation parameters")
-        self.resize(980, 700)
+        self.resize(1060, 720)
         self.location_names = sorted(location_names)
         self.payload_names = sorted(payload_names)
         self.profile_names = list(profile_names)
         self.on_save = on_save
         self.current_key = None
+        self.selected_dropoffs = []
         self._loading = False
         self.config = self._normalise_config(task_generation)
 
@@ -100,9 +198,20 @@ class TaskGenerationSettingsDialog(QDialog):
         body = QHBoxLayout()
         layout.addLayout(body, 1)
 
+        left = QVBoxLayout()
+        body.addLayout(left, 0)
         self.category_list = QListWidget()
-        self.category_list.setFixedWidth(190)
-        body.addWidget(self.category_list)
+        self.category_list.setFixedWidth(220)
+        left.addWidget(self.category_list, 1)
+
+        category_buttons = QHBoxLayout()
+        left.addLayout(category_buttons)
+        add_category_btn = QPushButton("Add")
+        delete_category_btn = QPushButton("Delete")
+        add_category_btn.clicked.connect(self.add_category)
+        delete_category_btn.clicked.connect(self.delete_current_category)
+        category_buttons.addWidget(add_category_btn)
+        category_buttons.addWidget(delete_category_btn)
 
         right = QScrollArea()
         right.setWidgetResizable(True)
@@ -120,8 +229,18 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.pickup_combo = QComboBox()
         self.pickup_combo.addItems([""] + self.location_names)
-        self.dropoff_combo = QComboBox()
-        self.dropoff_combo.addItems([""] + self.location_names)
+
+        self.dropoff_summary = QLabel("None selected")
+        self.dropoff_summary.setWordWrap(True)
+        dropoff_row = QHBoxLayout()
+        dropoff_row.addWidget(self.dropoff_summary, 1)
+        self.pick_dropoffs_btn = QPushButton("Select...")
+        self.pick_dropoffs_btn.clicked.connect(self.pick_dropoff_locations)
+        self.clear_dropoffs_btn = QPushButton("Clear")
+        self.clear_dropoffs_btn.clicked.connect(self.clear_dropoff_locations)
+        dropoff_row.addWidget(self.pick_dropoffs_btn)
+        dropoff_row.addWidget(self.clear_dropoffs_btn)
+
         self.payload_combo = QComboBox()
         self.payload_combo.addItems([""] + self.payload_names)
         self.route_profile_combo = QComboBox()
@@ -141,7 +260,25 @@ class TaskGenerationSettingsDialog(QDialog):
             days_layout.addWidget(chk)
         days_layout.addStretch(1)
 
-        self.schedule_times_edit = QLineEdit()
+        self.scheduled_times = []
+
+        schedule_row = QHBoxLayout()
+        self.schedule_summary = QLabel("No times selected")
+        self.schedule_summary.setWordWrap(True)
+
+        schedule_btn = QPushButton("Edit times...")
+        schedule_btn.clicked.connect(self.edit_scheduled_times)
+
+        clear_schedule_btn = QPushButton("Clear")
+        clear_schedule_btn.clicked.connect(self.clear_scheduled_times)
+
+        schedule_row.addWidget(self.schedule_summary, 1)
+        schedule_row.addWidget(schedule_btn)
+        schedule_row.addWidget(clear_schedule_btn)
+
+        self.schedule_button = schedule_btn
+        self.clear_schedule_button = clear_schedule_btn
+
         self.frequency_edit = QLineEdit()
         self.volume_per_event_edit = QLineEdit()
         self.threshold_volume_edit = QLineEdit()
@@ -154,13 +291,15 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Generation mode", self.mode_combo)
         form.addRow("Priority", self.priority_edit)
         form.addRow("Pickup / source location", self.pickup_combo)
-        form.addRow("Drop-off / destination", self.dropoff_combo)
+        form.addRow("Drop-off destinations", dropoff_row)
         form.addRow("Payload", self.payload_combo)
         form.addRow("Route profile", self.route_profile_combo)
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Days active", days_widget)
-        form.addRow("Schedule times", self.schedule_times_edit)
+
+        form.addRow("Scheduled times", schedule_row)
+
         form.addRow("Frequency per day", self.frequency_edit)
         form.addRow("Volume per event m³", self.volume_per_event_edit)
         form.addRow("Threshold volume m³", self.threshold_volume_edit)
@@ -169,7 +308,8 @@ class TaskGenerationSettingsDialog(QDialog):
 
         help_label = QLabel(
             "Schedule times are comma-separated HH:MM values. "
-            "Threshold and volume fields are used by threshold/sporadic/hybrid generators. "
+            "Drop-off destinations can contain multiple locations; the first is also saved as "
+            "dropoff_location for compatibility with existing generators. "
             "The Waste category also keeps the legacy department_waste settings in step."
         )
         help_label.setWordWrap(True)
@@ -180,12 +320,145 @@ class TaskGenerationSettingsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        for key, label in self.CATEGORY_LABELS:
+        self.mode_combo.currentTextChanged.connect(self._update_mode_field_state)
+        self.return_enabled_check.toggled.connect(self._update_mode_field_state)
+
+        self._refresh_category_list()
+        self.category_list.currentItemChanged.connect(self._on_category_changed)
+        if self.category_list.count() > 0:
+            self.category_list.setCurrentRow(0)
+
+        self._refresh_schedule_summary()
+
+    def edit_scheduled_times(self):
+        dialog = ScheduledTimesDialog(self, self.scheduled_times)
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.scheduled_times = list(dialog.result)
+            self._refresh_schedule_summary()
+
+    def clear_scheduled_times(self):
+        self.scheduled_times = []
+        self._refresh_schedule_summary()
+
+    def _refresh_schedule_summary(self):
+        if not self.scheduled_times:
+            self.schedule_summary.setText("No times selected")
+        elif len(self.scheduled_times) <= 8:
+            self.schedule_summary.setText(", ".join(self.scheduled_times))
+        else:
+            self.schedule_summary.setText(
+                f"{len(self.scheduled_times)} times selected: "
+                + ", ".join(self.scheduled_times[:8])
+                + "..."
+            )
+
+    def _category_label_pairs(self):
+        labels = {key: label for key, label in self.CATEGORY_LABELS}
+        pairs = []
+        for key, item in self.config.get("categories", {}).items():
+            display = str(item.get("display_name", "")).strip() or labels.get(
+                key, key.title()
+            )
+            pairs.append((key, display))
+        return sorted(pairs, key=lambda pair: pair[1].lower())
+
+    def _refresh_category_list(self, select_key=None):
+        current_key = select_key or self.current_key
+        self.category_list.blockSignals(True)
+        self.category_list.clear()
+        selected_row = 0
+        for row, (key, label) in enumerate(self._category_label_pairs()):
             item = QListWidgetItem(label)
             item.setData(Qt.UserRole, key)
             self.category_list.addItem(item)
-        self.category_list.currentItemChanged.connect(self._on_category_changed)
-        self.category_list.setCurrentRow(0)
+            if key == current_key:
+                selected_row = row
+        self.category_list.blockSignals(False)
+        if self.category_list.count() > 0:
+            self.category_list.setCurrentRow(selected_row)
+            current = self.category_list.currentItem()
+            if current is not None:
+                self.current_key = current.data(Qt.UserRole)
+                self._load_category(self.current_key)
+
+    def _slugify_category_key(self, value):
+        text = "".join(ch.lower() if ch.isalnum() else "_" for ch in str(value).strip())
+        text = "_".join(part for part in text.split("_") if part)
+        return text or "category"
+
+    def add_category(self):
+        try:
+            self._store_current_category()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid current category", str(exc))
+            return
+
+        name, ok = QInputDialog.getText(
+            self, "New logistics category", "Category name:"
+        )
+        if not ok or not name.strip():
+            return
+
+        base_key = self._slugify_category_key(name)
+        key = base_key
+        counter = 2
+        while key in self.config.setdefault("categories", {}):
+            key = f"{base_key}_{counter}"
+            counter += 1
+
+        self.config["categories"][key] = self._default_category(key, name.strip())
+        self.current_key = key
+        self._refresh_category_list(select_key=key)
+
+    def delete_current_category(self):
+        item = self.category_list.currentItem()
+        if item is None:
+            return
+        key = item.data(Qt.UserRole)
+        label = item.text()
+        if key == "waste":
+            QMessageBox.critical(
+                self,
+                "Delete category",
+                "The Waste category cannot be deleted because it is used by the current department waste generator.",
+            )
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Delete category",
+                f"Delete logistics category '{label}'?",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        self.config.setdefault("categories", {}).pop(key, None)
+        self.current_key = None
+        self._refresh_category_list()
+
+    def pick_dropoff_locations(self):
+        picker = MultiSelectPicker(
+            self,
+            "Select drop-off destinations",
+            self.location_names,
+            selected=self.selected_dropoffs,
+            group_resolver=lambda item: "Locations",
+        )
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.selected_dropoffs = sorted(picker.result)
+            self._refresh_dropoff_summary()
+
+    def clear_dropoff_locations(self):
+        self.selected_dropoffs = []
+        self._refresh_dropoff_summary()
+
+    def _refresh_dropoff_summary(self):
+        if not self.selected_dropoffs:
+            self.dropoff_summary.setText("None selected")
+        elif len(self.selected_dropoffs) <= 4:
+            self.dropoff_summary.setText(", ".join(self.selected_dropoffs))
+        else:
+            self.dropoff_summary.setText(f"{len(self.selected_dropoffs)} selected")
 
     def _default_category(self, key, label):
         return {
@@ -204,6 +477,7 @@ class TaskGenerationSettingsDialog(QDialog):
             }.get(key, 100),
             "pickup_location": "",
             "dropoff_location": "",
+            "dropoff_locations": [],
             "payload": "",
             "return_enabled": key in {"catering", "linen", "waste", "ssd"},
             "return_payload": "",
@@ -236,7 +510,19 @@ class TaskGenerationSettingsDialog(QDialog):
                 item.update(incoming_categories[key])
             if isinstance(source.get(key), dict):
                 item.update(source[key])
+            self._normalise_category_dropoffs(item)
             result["categories"][key] = item
+
+        for key, incoming in incoming_categories.items():
+            if key in result["categories"] or not isinstance(incoming, dict):
+                continue
+            item = self._default_category(
+                key, str(incoming.get("display_name", key.title()))
+            )
+            item.update(incoming)
+            self._normalise_category_dropoffs(item)
+            result["categories"][key] = item
+
         department_waste = dict(source.get("department_waste", {}) or {})
         if department_waste:
             result["categories"]["waste"]["enabled"] = bool(
@@ -257,25 +543,56 @@ class TaskGenerationSettingsDialog(QDialog):
         }
         return result
 
+    def _normalise_category_dropoffs(self, item):
+        selected = item.get("dropoff_locations")
+        if isinstance(selected, list):
+            locations = [str(x).strip() for x in selected if str(x).strip()]
+        else:
+            locations = []
+        legacy = str(item.get("dropoff_location", "")).strip()
+        if legacy and legacy not in locations:
+            locations.insert(0, legacy)
+        item["dropoff_locations"] = locations
+        item["dropoff_location"] = locations[0] if locations else legacy
+
     def _on_category_changed(self, current, previous):
         if self._loading:
             return
+
+        # currentItemChanged is emitted after QListWidget has already moved the
+        # selection.  Using currentItem() inside the save routine therefore
+        # renames the newly selected list row with the previous category name.
+        # Save the form into the previous category key and update the previous
+        # list item only.
         if previous is not None:
-            self._store_current_category()
+            previous_key = previous.data(Qt.UserRole)
+            try:
+                self._store_category(previous_key, list_item=previous)
+            except Exception as exc:
+                self._loading = True
+                self.category_list.setCurrentItem(previous)
+                self._loading = False
+                QMessageBox.critical(self, "Invalid category", str(exc))
+                return
+
         if current is None:
+            self.current_key = None
             return
+
         self.current_key = current.data(Qt.UserRole)
         self._load_category(self.current_key)
 
     def _load_category(self, key):
         self._loading = True
         item = self.config["categories"].get(key, {})
+        self._normalise_category_dropoffs(item)
+        self.selected_dropoffs = list(item.get("dropoff_locations", []))
         self.enabled_check.setChecked(bool(item.get("enabled", False)))
         self.display_name_edit.setText(str(item.get("display_name", key.title())))
         self.mode_combo.setCurrentText(str(item.get("generation_mode", "scheduled")))
         self.priority_edit.setText(str(item.get("priority", 100)))
         self.pickup_combo.setCurrentText(str(item.get("pickup_location", "")))
-        self.dropoff_combo.setCurrentText(str(item.get("dropoff_location", "")))
+        self._refresh_dropoff_summary()
         self.payload_combo.setCurrentText(str(item.get("payload", "")))
         self.route_profile_combo.setCurrentText(str(item.get("route_profile", "")))
         self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
@@ -283,60 +600,112 @@ class TaskGenerationSettingsDialog(QDialog):
         days = set(item.get("days_active", []))
         for day_key, _label in self.DAYS:
             self.day_checks[day_key].setChecked(day_key in days)
-        self.schedule_times_edit.setText(
-            ", ".join(str(x) for x in item.get("schedule_times", []))
-        )
+        self.scheduled_times = list(item.get("scheduled_times", []))
+
+        legacy_schedule = str(item.get("schedule", "")).strip()
+        if legacy_schedule and not self.scheduled_times:
+            self.scheduled_times = [
+                x.strip() for x in legacy_schedule.split(",") if x.strip()
+            ]
+
+        self._refresh_schedule_summary()
         self.frequency_edit.setText(str(item.get("frequency_per_day", 0.0)))
         self.volume_per_event_edit.setText(str(item.get("volume_per_event_m3", 0.0)))
         self.threshold_volume_edit.setText(str(item.get("threshold_volume_m3", 0.0)))
         self.base_daily_volume_edit.setText(str(item.get("base_daily_volume_m3", 0.0)))
         self.notes_edit.setPlainText(str(item.get("notes", "")))
         self._loading = False
+        self._update_mode_field_state()
 
-    def _parse_schedule_times(self):
-        values = []
-        for raw in self.schedule_times_edit.text().split(","):
-            text = raw.strip()
-            if not text:
-                continue
-            parts = text.split(":")
-            if len(parts) != 2:
-                raise ValueError(f"Invalid schedule time: {text}")
-            hour = int(parts[0])
-            minute = int(parts[1])
-            if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                raise ValueError(f"Invalid schedule time: {text}")
-            values.append(f"{hour:02d}:{minute:02d}")
-        return values
+    def _set_widget_enabled(self, widget, enabled):
+        widget.setEnabled(bool(enabled))
+
+    def _update_mode_field_state(self, *_):
+        mode = self.mode_combo.currentText().strip()
+
+        uses_schedule = mode in {
+            "scheduled",
+            "scheduled_threshold",
+            "scheduled_sporadic",
+        }
+
+        uses_threshold = mode in {
+            "threshold",
+            "hybrid",
+            "scheduled_threshold",
+        }
+
+        uses_continuous = mode in {
+            "continuous",
+            "hybrid",
+        }
+
+        uses_sporadic = mode in {
+            "sporadic",
+            "hybrid",
+            "scheduled_sporadic",
+        }
+
+        self.schedule_summary.setEnabled(uses_schedule)
+        self.schedule_button.setEnabled(uses_schedule)
+        self.clear_schedule_button.setEnabled(uses_schedule)
+
+        self.threshold_volume_edit.setEnabled(uses_threshold)
+
+        self.base_daily_volume_edit.setEnabled(uses_continuous or uses_threshold)
+
+        self.frequency_edit.setEnabled(uses_sporadic)
+
+        self.volume_per_event_edit.setEnabled(uses_sporadic)
+
+        self.return_payload_combo.setEnabled(self.return_enabled_check.isChecked())
 
     def _store_current_category(self):
         if not self.current_key:
             return
+        self._store_category(
+            self.current_key, list_item=self.category_list.currentItem()
+        )
+
+    def _store_category(self, category_key, list_item=None):
+        if not category_key:
+            return
+
         days_active = [
             key for key, _label in self.DAYS if self.day_checks[key].isChecked()
         ]
         if not days_active:
             raise ValueError("Select at least one active day")
-        self.config["categories"][self.current_key] = {
+
+        display_name = (
+            self.display_name_edit.text().strip() or str(category_key).title()
+        )
+        dropoff_locations = [
+            str(x).strip() for x in self.selected_dropoffs if str(x).strip()
+        ]
+        self.config["categories"][category_key] = {
             "enabled": self.enabled_check.isChecked(),
-            "display_name": self.display_name_edit.text().strip()
-            or self.current_key.title(),
+            "display_name": display_name,
             "generation_mode": self.mode_combo.currentText().strip(),
             "priority": int(float(self.priority_edit.text() or 100)),
             "pickup_location": self.pickup_combo.currentText().strip(),
-            "dropoff_location": self.dropoff_combo.currentText().strip(),
+            "dropoff_location": dropoff_locations[0] if dropoff_locations else "",
+            "dropoff_locations": dropoff_locations,
             "payload": self.payload_combo.currentText().strip(),
             "return_enabled": self.return_enabled_check.isChecked(),
             "return_payload": self.return_payload_combo.currentText().strip(),
             "route_profile": self.route_profile_combo.currentText().strip(),
             "days_active": days_active,
-            "schedule_times": self._parse_schedule_times(),
+            "scheduled_times": list(self.scheduled_times),
             "frequency_per_day": float(self.frequency_edit.text() or 0.0),
             "volume_per_event_m3": float(self.volume_per_event_edit.text() or 0.0),
             "threshold_volume_m3": float(self.threshold_volume_edit.text() or 0.0),
             "base_daily_volume_m3": float(self.base_daily_volume_edit.text() or 0.0),
             "notes": self.notes_edit.toPlainText().strip(),
         }
+
+        if list_item is not None:
+            list_item.setText(display_name)
 
     def accept(self):
         try:
@@ -1222,6 +1591,289 @@ class WasteStreamListDialog(QDialog):
         self.accept()
 
 
+class DepartmentWasteStreamSettingsDialog(QDialog):
+    MODES = [
+        "scheduled",
+        "threshold",
+        "continuous",
+        "sporadic",
+        "hybrid",
+        "scheduled_threshold",
+        "scheduled_sporadic",
+    ]
+
+    def __init__(self, parent, waste_stream_names, items=None):
+        super().__init__(parent)
+        self.setWindowTitle("Department waste stream generation")
+        self.resize(900, 520)
+
+        self.waste_stream_names = list(waste_stream_names)
+        self.items = [dict(x) for x in (items or [])]
+        self.result = None
+
+        layout = QVBoxLayout(self)
+
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Stream",
+                "Mode",
+                "Frequency/day",
+                "Volume/event m³",
+                "Threshold m³",
+                "Base daily m³",
+                "Scheduled times",
+            ]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        layout.addWidget(self.table, 1)
+
+        row = QHBoxLayout()
+        layout.addLayout(row)
+
+        add_btn = QPushButton("Add stream")
+        edit_btn = QPushButton("Edit selected")
+        delete_btn = QPushButton("Delete selected")
+
+        add_btn.clicked.connect(self.add_item)
+        edit_btn.clicked.connect(self.edit_item)
+        delete_btn.clicked.connect(self.delete_item)
+
+        row.addWidget(add_btn)
+        row.addWidget(edit_btn)
+        row.addWidget(delete_btn)
+        row.addStretch(1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.refresh()
+
+    def refresh(self):
+        self.table.setRowCount(0)
+
+        for item in self.items:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+
+            values = [
+                item.get("name", ""),
+                item.get("generation_mode", "threshold"),
+                item.get("frequency_per_day", 0.0),
+                item.get("volume_per_event_m3", 0.0),
+                item.get("threshold_volume_m3", 0.0),
+                item.get("base_daily_volume_m3", 0.0),
+                ", ".join(item.get("scheduled_times", [])),
+            ]
+
+            for col, value in enumerate(values):
+                self.table.setItem(row, col, QTableWidgetItem(str(value)))
+
+    def add_item(self):
+        dialog = DepartmentWasteStreamItemDialog(
+            self,
+            self.waste_stream_names,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            name = dialog.result["name"]
+            if any(x.get("name") == name for x in self.items):
+                QMessageBox.critical(
+                    self,
+                    "Duplicate",
+                    "This waste stream is already assigned to the department.",
+                )
+                return
+            self.items.append(dialog.result)
+            self.refresh()
+
+    def edit_item(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+
+        dialog = DepartmentWasteStreamItemDialog(
+            self,
+            self.waste_stream_names,
+            seed=self.items[row],
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            new_name = dialog.result["name"]
+
+            for idx, item in enumerate(self.items):
+                if idx != row and item.get("name") == new_name:
+                    QMessageBox.critical(
+                        self,
+                        "Duplicate",
+                        "This waste stream is already assigned to the department.",
+                    )
+                    return
+
+            self.items[row] = dialog.result
+            self.refresh()
+            self.table.selectRow(row)
+
+    def delete_item(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        del self.items[row]
+        self.refresh()
+
+    def accept(self):
+        self.result = [dict(x) for x in self.items]
+        super().accept()
+
+
+class DepartmentWasteStreamItemDialog(QDialog):
+    MODES = [
+        "scheduled",
+        "threshold",
+        "continuous",
+        "sporadic",
+        "hybrid",
+        "scheduled_threshold",
+        "scheduled_sporadic",
+    ]
+
+    def __init__(self, parent, waste_stream_names, seed=None):
+        super().__init__(parent)
+        self.setWindowTitle("Waste stream generation settings")
+        self.resize(520, 420)
+
+        self.seed = seed or {}
+        self.result = None
+        self.scheduled_times = list(self.seed.get("scheduled_times", []))
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.name_combo = QComboBox()
+        self.name_combo.addItems([""] + list(waste_stream_names))
+        self.name_combo.setCurrentText(str(self.seed.get("name", "")))
+
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(self.MODES)
+        self.mode_combo.setCurrentText(
+            str(self.seed.get("generation_mode", "threshold"))
+        )
+
+        self.frequency_edit = QLineEdit(str(self.seed.get("frequency_per_day", 0.0)))
+        self.volume_edit = QLineEdit(str(self.seed.get("volume_per_event_m3", 0.0)))
+        self.threshold_edit = QLineEdit(str(self.seed.get("threshold_volume_m3", 0.0)))
+        self.base_daily_edit = QLineEdit(
+            str(self.seed.get("base_daily_volume_m3", 0.0))
+        )
+
+        schedule_row = QHBoxLayout()
+        self.schedule_summary = QLabel()
+        self.schedule_summary.setWordWrap(True)
+
+        edit_times_btn = QPushButton("Edit times...")
+        clear_times_btn = QPushButton("Clear")
+
+        edit_times_btn.clicked.connect(self.edit_times)
+        clear_times_btn.clicked.connect(self.clear_times)
+
+        self.edit_times_btn = edit_times_btn
+        self.clear_times_btn = clear_times_btn
+
+        schedule_row.addWidget(self.schedule_summary, 1)
+        schedule_row.addWidget(edit_times_btn)
+        schedule_row.addWidget(clear_times_btn)
+
+        form.addRow("Waste stream", self.name_combo)
+        form.addRow("Generation mode", self.mode_combo)
+        form.addRow("Frequency per day", self.frequency_edit)
+        form.addRow("Volume per event m³", self.volume_edit)
+        form.addRow("Threshold volume m³", self.threshold_edit)
+        form.addRow("Base daily volume m³", self.base_daily_edit)
+        form.addRow("Scheduled times", schedule_row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.mode_combo.currentTextChanged.connect(self.update_field_state)
+
+        self.refresh_schedule_summary()
+        self.update_field_state()
+
+    def edit_times(self):
+        dialog = ScheduledTimesDialog(self, self.scheduled_times)
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.scheduled_times = list(dialog.result)
+            self.refresh_schedule_summary()
+
+    def clear_times(self):
+        self.scheduled_times = []
+        self.refresh_schedule_summary()
+
+    def refresh_schedule_summary(self):
+        if not self.scheduled_times:
+            self.schedule_summary.setText("No times selected")
+        elif len(self.scheduled_times) <= 6:
+            self.schedule_summary.setText(", ".join(self.scheduled_times))
+        else:
+            self.schedule_summary.setText(f"{len(self.scheduled_times)} times selected")
+
+    def update_field_state(self):
+        mode = self.mode_combo.currentText().strip()
+
+        uses_schedule = mode in {
+            "scheduled",
+            "scheduled_threshold",
+            "scheduled_sporadic",
+        }
+        uses_threshold = mode in {
+            "threshold",
+            "hybrid",
+            "scheduled_threshold",
+        }
+        uses_continuous = mode in {
+            "continuous",
+            "hybrid",
+        }
+        uses_sporadic = mode in {
+            "sporadic",
+            "hybrid",
+            "scheduled_sporadic",
+        }
+
+        self.schedule_summary.setEnabled(uses_schedule)
+        self.edit_times_btn.setEnabled(uses_schedule)
+        self.clear_times_btn.setEnabled(uses_schedule)
+
+        self.threshold_edit.setEnabled(uses_threshold)
+        self.base_daily_edit.setEnabled(uses_continuous or uses_threshold)
+        self.frequency_edit.setEnabled(uses_sporadic)
+        self.volume_edit.setEnabled(uses_sporadic)
+
+    def accept(self):
+        try:
+            name = self.name_combo.currentText().strip()
+            if not name:
+                raise ValueError("Waste stream is required")
+
+            self.result = {
+                "name": name,
+                "generation_mode": self.mode_combo.currentText().strip(),
+                "frequency_per_day": float(self.frequency_edit.text() or 0.0),
+                "volume_per_event_m3": float(self.volume_edit.text() or 0.0),
+                "threshold_volume_m3": float(self.threshold_edit.text() or 0.0),
+                "base_daily_volume_m3": float(self.base_daily_edit.text() or 0.0),
+                "scheduled_times": list(self.scheduled_times),
+            }
+
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid waste stream settings", str(exc))
+
+
 class DepartmentEditorDialog(QDialog):
     DAYS = [
         ("mon", "Mon"),
@@ -1254,7 +1906,9 @@ class DepartmentEditorDialog(QDialog):
         self.group_resolver = group_resolver or (lambda item: "Other")
 
         self.selected_locations = list(self.seed.get("waste_pickup_locations", []))
-        self.selected_waste_streams = list(self.seed.get("waste_streams", []))
+        self.selected_waste_streams = self._normalise_department_waste_streams(
+            self.seed.get("waste_streams", [])
+        )
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -1343,6 +1997,50 @@ class DepartmentEditorDialog(QDialog):
         self._refresh_pickup_summary()
         self._refresh_waste_summary()
 
+    def _normalise_department_waste_streams(self, value):
+        result = []
+
+        for item in value or []:
+            if isinstance(item, dict):
+                name = str(item.get("name", "")).strip()
+                if not name:
+                    continue
+                result.append(
+                    {
+                        "name": name,
+                        "generation_mode": str(
+                            item.get("generation_mode", "threshold")
+                        ),
+                        "frequency_per_day": float(item.get("frequency_per_day", 0.0)),
+                        "volume_per_event_m3": float(
+                            item.get("volume_per_event_m3", 0.0)
+                        ),
+                        "threshold_volume_m3": float(
+                            item.get("threshold_volume_m3", 0.0)
+                        ),
+                        "base_daily_volume_m3": float(
+                            item.get("base_daily_volume_m3", 0.0)
+                        ),
+                        "scheduled_times": list(item.get("scheduled_times", [])),
+                    }
+                )
+            else:
+                name = str(item).strip()
+                if name:
+                    result.append(
+                        {
+                            "name": name,
+                            "generation_mode": "threshold",
+                            "frequency_per_day": 0.0,
+                            "volume_per_event_m3": 0.0,
+                            "threshold_volume_m3": 0.0,
+                            "base_daily_volume_m3": 0.0,
+                            "scheduled_times": [],
+                        }
+                    )
+
+        return result
+
     def _refresh_pickup_summary(self):
         if not self.selected_locations:
             self.pickup_summary.setText("None selected")
@@ -1352,12 +2050,18 @@ class DepartmentEditorDialog(QDialog):
             self.pickup_summary.setText(f"{len(self.selected_locations)} selected")
 
     def _refresh_waste_summary(self):
-        if not self.selected_waste_streams:
+        names = [
+            str(x.get("name", "")).strip()
+            for x in self.selected_waste_streams
+            if str(x.get("name", "")).strip()
+        ]
+
+        if not names:
             self.waste_summary.setText("None selected")
-        elif len(self.selected_waste_streams) <= 4:
-            self.waste_summary.setText(", ".join(self.selected_waste_streams))
+        elif len(names) <= 4:
+            self.waste_summary.setText(", ".join(names))
         else:
-            self.waste_summary.setText(f"{len(self.selected_waste_streams)} selected")
+            self.waste_summary.setText(f"{len(names)} selected")
 
     def _pick_locations(self):
         picker = MultiSelectPicker(
@@ -1372,15 +2076,14 @@ class DepartmentEditorDialog(QDialog):
             self._refresh_pickup_summary()
 
     def _pick_waste_streams(self):
-        picker = MultiSelectPicker(
+        dialog = DepartmentWasteStreamSettingsDialog(
             self,
-            "Select waste streams",
             self.waste_stream_names,
-            selected=self.selected_waste_streams,
-            group_resolver=lambda _: "Waste streams",
+            self.selected_waste_streams,
         )
-        if picker.exec() == QDialog.Accepted and picker.result is not None:
-            self.selected_waste_streams = sorted(picker.result)
+
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.selected_waste_streams = list(dialog.result)
             self._refresh_waste_summary()
 
     def accept(self):
@@ -1412,7 +2115,7 @@ class DepartmentEditorDialog(QDialog):
                 "hours_operated_per_day": float(self.hours_edit.text()),
                 "days_active": days_active,
                 "waste_pickup_locations": list(self.selected_locations),
-                "waste_streams": list(self.selected_waste_streams),
+                "waste_streams": [dict(x) for x in self.selected_waste_streams],
                 "waste": {
                     "alpha": float(self.alpha_edit.text()),
                     "beta": float(self.beta_edit.text()),
@@ -1520,7 +2223,12 @@ class DepartmentListDialog(QDialog):
             self.table.setItem(
                 row,
                 7,
-                QTableWidgetItem(", ".join(item.get("waste_streams", []))),
+                QTableWidgetItem(
+                    ", ".join(
+                        x.get("name", str(x)) if isinstance(x, dict) else str(x)
+                        for x in item.get("waste_streams", [])
+                    )
+                ),
             )
 
     def add_item(self):

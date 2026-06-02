@@ -21,6 +21,7 @@ def default_task_generation_category(label: str) -> dict:
         "priority": 100,
         "pickup_location": "",
         "dropoff_location": "",
+        "dropoff_locations": [],
         "payload": "",
         "return_enabled": False,
         "return_payload": "",
@@ -127,6 +128,20 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
     for key, _label in LOGISTICS_TASK_GENERATION_CATEGORIES:
         if isinstance(value.get(key), dict):
             merged["categories"][key].update(value[key])
+
+    for category in merged["categories"].values():
+        if not isinstance(category, dict):
+            continue
+        dropoff_locations = category.get("dropoff_locations")
+        if isinstance(dropoff_locations, list):
+            clean = [str(x).strip() for x in dropoff_locations if str(x).strip()]
+        else:
+            clean = []
+        legacy_dropoff = str(category.get("dropoff_location", "")).strip()
+        if legacy_dropoff and legacy_dropoff not in clean:
+            clean.insert(0, legacy_dropoff)
+        category["dropoff_locations"] = clean
+        category["dropoff_location"] = clean[0] if clean else legacy_dropoff
 
     # Keep waste category and department_waste switch in step.
     if "waste" in merged["categories"]:
@@ -875,7 +890,12 @@ class JsonStore:
                         f"Department {dept_name} has unknown waste pickup location: {loc}"
                     )
 
-            for stream_name in dept.get("waste_streams", []):
+            for stream_item in dept.get("waste_streams", []):
+                if isinstance(stream_item, dict):
+                    stream_name = str(stream_item.get("name", "")).strip()
+                else:
+                    stream_name = str(stream_item).strip()
+
                 if stream_name not in waste_stream_names:
                     errors.append(
                         f"Department {dept_name} has unknown waste stream: {stream_name}"

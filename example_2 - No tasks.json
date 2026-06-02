@@ -4829,9 +4829,9 @@
         "Linen"
       ],
       "waste": {
-        "alpha": 0.2,
-        "beta": 0.1,
-        "gamma": 0.05,
+        "alpha": 0.002,
+        "beta": 0.015,
+        "gamma": 0.001,
         "pickup_location": "FRAILTY-DH",
         "dropoff_location": "FRAILTY-DH"
       },

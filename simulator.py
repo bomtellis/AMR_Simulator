@@ -15,6 +15,7 @@ from amr_sim_energy import (
     total_route_energy_kwh,
 )
 from amr_sim_models import AMR, Event, Lift, Location, PayloadType, Task
+from amr_sim_task_generation import TaskGenerationManager
 from amr_sim_time_utils import (
     SimulationClock,
     format_duration,
@@ -161,6 +162,12 @@ class Simulation:
         self.department_task_counter = 0
 
         self.route_profiles = config.get("route_profiles", {})
+        self.task_generation_manager = TaskGenerationManager(
+            config=config,
+            clock=self.clock,
+            locations=self.locations,
+            payloads=self.payloads,
+        )
 
         # Parse lifts from configuration
 
@@ -284,7 +291,8 @@ class Simulation:
         for task in initial_tasks:
             self.schedule_task_release(task)
 
-        self._init_department_runtime()
+        # Runtime task generation is now handled by amr_sim_task_generation.py.
+        # Keep the old department runtime methods below for compatibility only.
 
         self.estimated_total_sim_time = self._estimate_total_sim_time()
 
@@ -2499,6 +2507,47 @@ class Simulation:
                 },
             )
 
+    def _update_task_generators_until(self, now: float):
+        if not getattr(self, "task_generation_manager", None):
+            return
+
+        for record in self.task_generation_manager.update_until(now):
+            task = record.task
+            self.schedule_task_release(task)
+
+            pickup = self.locations.get(record.pickup_location)
+            dropoff = self.locations.get(record.dropoff_location)
+
+            self.log_step(
+                event_time=task.release_time,
+                event_type=record.event_type,
+                task_id=task.id,
+                details=record.details,
+                from_location=record.pickup_location,
+                to_location=record.dropoff_location,
+                payload_name=record.payload_name,
+                duration_sec=0.0,
+                wait_time_sec=0.0,
+                distance_m=0.0,
+                start_time=task.release_time,
+                end_time=task.release_time,
+                start_node=record.pickup_location,
+                end_node=record.dropoff_location,
+                start_x=getattr(pickup, "x", None),
+                start_y=getattr(pickup, "y", None),
+                start_floor=getattr(pickup, "floor", None),
+                end_x=getattr(dropoff, "x", None),
+                end_y=getattr(dropoff, "y", None),
+                end_floor=getattr(dropoff, "floor", None),
+                status="generated",
+                energy_kwh=0.0,
+                task_source=record.task_source,
+                department_id=record.department_id,
+                waste_stream=record.waste_stream,
+                waste_volume_m3=record.waste_volume_m3,
+                container_type=record.container_type,
+            )
+
     def run(self):
         self.wall_start_time = time.time()
 
@@ -2508,7 +2557,7 @@ class Simulation:
                     break
 
                 event = heapq.heappop(self.events)
-                self._update_department_waste_until(event.time)
+                self._update_task_generators_until(event.time)
                 self.current_time = max(self.current_time, event.time)
                 self._handle_event(event)
 
@@ -3119,6 +3168,47 @@ class RuntimeInputThread(threading.Thread):
     def __init__(self, sim: Simulation):
         super().__init__(daemon=True)
         self.sim = sim
+
+    def _update_task_generators_until(self, now: float):
+        if not getattr(self, "task_generation_manager", None):
+            return
+
+        for record in self.task_generation_manager.update_until(now):
+            task = record.task
+            self.schedule_task_release(task)
+
+            pickup = self.locations.get(record.pickup_location)
+            dropoff = self.locations.get(record.dropoff_location)
+
+            self.log_step(
+                event_time=task.release_time,
+                event_type=record.event_type,
+                task_id=task.id,
+                details=record.details,
+                from_location=record.pickup_location,
+                to_location=record.dropoff_location,
+                payload_name=record.payload_name,
+                duration_sec=0.0,
+                wait_time_sec=0.0,
+                distance_m=0.0,
+                start_time=task.release_time,
+                end_time=task.release_time,
+                start_node=record.pickup_location,
+                end_node=record.dropoff_location,
+                start_x=getattr(pickup, "x", None),
+                start_y=getattr(pickup, "y", None),
+                start_floor=getattr(pickup, "floor", None),
+                end_x=getattr(dropoff, "x", None),
+                end_y=getattr(dropoff, "y", None),
+                end_floor=getattr(dropoff, "floor", None),
+                status="generated",
+                energy_kwh=0.0,
+                task_source=record.task_source,
+                department_id=record.department_id,
+                waste_stream=record.waste_stream,
+                waste_volume_m3=record.waste_volume_m3,
+                container_type=record.container_type,
+            )
 
     def run(self):
         print("\nInteractive mode enabled.")
