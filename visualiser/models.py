@@ -23,6 +23,8 @@ def default_task_generation_category(label: str) -> dict:
         "dropoff_location": "",
         "dropoff_locations": [],
         "payload": "",
+        "tracked_item_exchange": False,
+        "exchange_mode": "top_up_only",
         "return_enabled": False,
         "return_payload": "",
         "route_profile": "",
