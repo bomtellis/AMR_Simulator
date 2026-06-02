@@ -440,6 +440,29 @@
           "dx": -1.396,
           "dy": -0.623
         }
+      ],
+      "inventory_spaces": [
+        {
+          "name": "Inventory 1",
+          "points": [
+            {
+              "dx": -1.276,
+              "dy": -0.491
+            },
+            {
+              "dx": 1.221,
+              "dy": -0.491
+            },
+            {
+              "dx": 1.221,
+              "dy": 0.532
+            },
+            {
+              "dx": -1.276,
+              "dy": 0.532
+            }
+          ]
+        }
       ]
     },
     {
@@ -6255,7 +6278,21 @@
       }
     }
   ],
-  "tasks": [],
+  "tasks": [
+    {
+      "id": "T1",
+      "pickup": "KITCHEN",
+      "dropoff": "D1-CATERING",
+      "payload": "Clinical Waste Bin",
+      "release_datetime": "2026-06-02T08:06:00",
+      "target_time": 300,
+      "priority": 10,
+      "labels": [
+        ""
+      ],
+      "route_profile": ""
+    }
+  ],
   "route_profiles": {
     "default": {
       "allowed_lifts": [],

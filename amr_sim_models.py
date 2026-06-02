@@ -61,6 +61,8 @@ class Task:
     container_type: str = ""
     pending_reason: str = ""
     assigned_inventory_space: str = ""
+    payload_instance_id: str = ""
+    is_return_task: bool = False
 
     # Tracked item exchange metadata. These fields are populated by automatic
     # task generation when a payload has track_items enabled. They are kept on
@@ -162,6 +164,8 @@ class AMR:
     total_charge_time: float = 0.0
     total_energy_used_kwh: float = 0.0
     is_charging: bool = False
+    payload: str = ""
+    payload_instance_id: str = ""
 
     def can_carry(self, payload: PayloadType) -> bool:
         return (

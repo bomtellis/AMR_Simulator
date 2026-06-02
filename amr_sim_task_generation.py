@@ -466,6 +466,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             task_source="task_generation_return",
             department_id=getattr(outbound, "department_id", ""),
             container_type=return_payload,
+            payload_instance_id=str(getattr(outbound, "payload_instance_id", "") or ""),
+            is_return_task=True,
         )
         return task
 

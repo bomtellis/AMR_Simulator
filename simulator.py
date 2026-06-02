@@ -15,6 +15,12 @@ from amr_sim_energy import (
     total_route_energy_kwh,
 )
 from amr_sim_models import AMR, Event, Lift, Location, PayloadType, Task
+from amr_sim_payload_instances import (
+    EMPTY_PAYLOAD_NAME,
+    PayloadInstanceStore,
+    is_empty_payload_name,
+    normalise_payload_name,
+)
 from amr_sim_task_generation import TaskGenerationManager
 from amr_sim_time_utils import (
     SimulationClock,
@@ -59,6 +65,8 @@ class Simulation:
         self.location_reservations: Dict[str, List[Tuple[float, float]]] = defaultdict(
             list
         )
+
+        self.payload_instance_store = PayloadInstanceStore()
 
         # Congestion setup
         building_cfg = config.get("building", {})
@@ -180,6 +188,18 @@ class Simulation:
                 size_units=legacy_size,
                 track_items=bool(p.get("track_items", False)),
                 items=clean_items,
+            )
+
+        # Internal zero-load payload used for empty idle return, recharge and no-load moves.
+        # It is deliberately not written as a real payload in verbose output.
+        if EMPTY_PAYLOAD_NAME not in self.payloads:
+            self.payloads[EMPTY_PAYLOAD_NAME] = PayloadType(
+                name=EMPTY_PAYLOAD_NAME,
+                weight_kg=0.0,
+                length_m=0.0,
+                width_m=0.0,
+                height_m=0.0,
+                size_units=0.0,
             )
 
         # Parse waste streams and departments
@@ -322,7 +342,9 @@ class Simulation:
                 task_data, self.clock.start_datetime
             )
             task_data.pop("release_datetime", None)
-            initial_tasks.append(Task(**task_data))
+            task = Task(**task_data)
+            self._prepare_task_payload_instance(task)
+            initial_tasks.append(task)
 
         for task in initial_tasks:
             self.schedule_task_release(task)
@@ -394,6 +416,101 @@ class Simulation:
 
         return abs(max(xs) - min(xs)), abs(max(ys) - min(ys))
 
+    def _payload_log_name(self, payload_name: str) -> str:
+        return (
+            ""
+            if is_empty_payload_name(payload_name)
+            else str(payload_name or "").strip()
+        )
+
+    def _payload_for_task(self, task: Task) -> Optional[PayloadType]:
+        payload_name = str(getattr(task, "payload", "") or "").strip()
+        if is_empty_payload_name(payload_name):
+            return self.payloads.get(EMPTY_PAYLOAD_NAME)
+        return self.payloads.get(payload_name)
+
+    def _prepare_task_payload_instance(self, task: Task) -> None:
+        payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        if not payload_name:
+            task.payload = EMPTY_PAYLOAD_NAME
+            task.payload_instance_id = ""
+            return
+        if payload_name not in self.payloads:
+            return
+        self.payload_instance_store.ensure_task_instance_id(task)
+
+    def _task_requires_existing_payload_instance(self, task: Task) -> bool:
+        # Outbound tasks can create a new physical object at their source.
+        # Return tasks must collect the exact instance that the outbound task left
+        # at the destination.
+        return bool(getattr(task, "is_return_task", False))
+
+    def _pickup_instance_available(self, task: Task) -> bool:
+        payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+        if not payload_name or not instance_id:
+            return True
+        if not self._task_requires_existing_payload_instance(task):
+            return True
+        return self.payload_instance_store.has_instance_at(
+            task.pickup, instance_id, payload_name
+        )
+
+    def _pickup_instance_pending_reason(self, task: Task) -> str:
+        instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+        payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        if instance_id:
+            return (
+                f"Payload instance {instance_id} ({payload_name}) is not available "
+                f"at pickup location {task.pickup}"
+            )
+        return (
+            f"Payload {payload_name} is not available at pickup location {task.pickup}"
+        )
+
+    def _pickup_payload_instance_for_task(self, task: Task) -> None:
+        payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        if not payload_name:
+            return
+
+        instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+        record = None
+
+        if instance_id:
+            record = self.payload_instance_store.pickup(
+                task.pickup,
+                payload_name=payload_name,
+                instance_id=instance_id,
+            )
+            if record is None and self._task_requires_existing_payload_instance(task):
+                raise RuntimeError(self._pickup_instance_pending_reason(task))
+
+        if record is None and not instance_id:
+            # Normal outbound tasks can create a new physical object at the source.
+            instance_id = self.payload_instance_store.ensure_task_instance_id(task)
+
+        if instance_id:
+            task.payload_instance_id = instance_id
+
+    def _store_payload_instance_for_task(self, task: Task) -> None:
+        payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+        if not payload_name:
+            return
+        if not instance_id:
+            instance_id = self.payload_instance_store.ensure_task_instance_id(task)
+        self.payload_instance_store.store(
+            task.dropoff,
+            payload_name,
+            instance_id,
+            source_task_id=task.id,
+            metadata={
+                "task_source": getattr(task, "task_source", ""),
+                "department_id": getattr(task, "department_id", ""),
+                "container_type": getattr(task, "container_type", ""),
+            },
+        )
+
     def _init_inventory_spaces(self, location_dicts: List[dict]) -> None:
         self.inventory_spaces_by_location = {}
 
@@ -447,6 +564,9 @@ class Simulation:
                         "height_m": height_m,
                         "occupied": occupied,
                         "payload": str(raw_space.get("payload", "")).strip(),
+                        "payload_instance_id": str(
+                            raw_space.get("payload_instance_id", "")
+                        ).strip(),
                         "reserved_by_task": str(
                             raw_space.get("reserved_by_task", "")
                         ).strip(),
@@ -554,6 +674,9 @@ class Simulation:
 
         target_space["occupied"] = True
         target_space["payload"] = payload.name
+        target_space["payload_instance_id"] = str(
+            getattr(task, "payload_instance_id", "") or ""
+        )
         target_space["task_id"] = task.id
         target_space["reserved_by_task"] = ""
         task.assigned_inventory_space = str(target_space.get("name", ""))
@@ -571,8 +694,19 @@ class Simulation:
             stored_payload = str(space.get("payload", "")).strip()
             if stored_payload and stored_payload != payload.name:
                 continue
+            wanted_instance_id = str(
+                getattr(task, "payload_instance_id", "") or ""
+            ).strip()
+            stored_instance_id = str(space.get("payload_instance_id", "") or "").strip()
+            if (
+                wanted_instance_id
+                and stored_instance_id
+                and wanted_instance_id != stored_instance_id
+            ):
+                continue
             space["occupied"] = False
             space["payload"] = ""
+            space["payload_instance_id"] = ""
             space["task_id"] = ""
             space["reserved_by_task"] = ""
             return
@@ -604,6 +738,8 @@ class Simulation:
             return
 
         return_payload = str(getattr(task, "return_payload", "") or "").strip()
+        if not return_payload:
+            return_payload = normalise_payload_name(getattr(task, "payload", ""))
         if not return_payload or return_payload not in self.payloads:
             return
 
@@ -630,6 +766,8 @@ class Simulation:
             task_source="task_generation_return",
             department_id=str(getattr(task, "department_id", "") or ""),
             container_type=return_payload,
+            payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
+            is_return_task=True,
         )
         self.schedule_task_release(return_task)
 
@@ -642,7 +780,8 @@ class Simulation:
             details=f"Generated delayed return for {task.id}",
             from_location=return_task.pickup,
             to_location=return_task.dropoff,
-            payload_name=return_task.payload,
+            payload_name=self._payload_log_name(return_task.payload),
+            payload_instance_id=getattr(return_task, "payload_instance_id", ""),
             duration_sec=0.0,
             wait_time_sec=0.0,
             distance_m=0.0,
@@ -682,7 +821,8 @@ class Simulation:
             details=reason,
             from_location=task.pickup,
             to_location=task.dropoff,
-            payload_name=task.payload,
+            payload_name=self._payload_log_name(task.payload),
+            payload_instance_id=getattr(task, "payload_instance_id", ""),
             start_time=event_time,
             end_time=event_time,
             status="failed",
@@ -985,6 +1125,7 @@ class Simulation:
         # )
 
     def schedule_task_release(self, task: Task):
+        self._prepare_task_payload_instance(task)
         self.push_event(task.release_time, "task_release", {"task": task})
 
     def add_runtime_task(self, task_dict: dict):
@@ -995,6 +1136,7 @@ class Simulation:
         task_data.pop("release_datetime", None)
         task = Task(**task_data)
         task.created_during_runtime = True
+        self._prepare_task_payload_instance(task)
         with self.lock:
             if task.release_time <= self.current_time:
                 self._queue_pending_task(task)
@@ -1957,10 +2099,16 @@ class Simulation:
                     return None
             if task.pickup not in self.locations or task.dropoff not in self.locations:
                 return None
-            if task.payload not in self.payloads:
+
+            payload = self._payload_for_task(task)
+            if payload is None:
                 return None
 
-            payload = self.payloads[task.payload]
+            if not self._pickup_instance_available(task):
+                self._set_task_pending_reason(
+                    task, self._pickup_instance_pending_reason(task)
+                )
+                return None
             if not amr.can_carry(payload):
                 self._set_task_pending_reason(
                     task, "No AMR has sufficient payload weight/dimensions"
@@ -2361,10 +2509,12 @@ class Simulation:
                 self._set_task_pending_reason(task, "Waiting for release time")
                 continue
 
-            if task.payload in self.payloads and self._location_has_inventory_spaces(
-                task.dropoff
+            payload_for_inventory = self._payload_for_task(task)
+            if (
+                payload_for_inventory is not None
+                and self._location_has_inventory_spaces(task.dropoff)
             ):
-                payload = self.payloads[task.payload]
+                payload = payload_for_inventory
                 if self._find_free_inventory_space(task.dropoff, payload) is None:
                     self._set_task_pending_reason(
                         task,
@@ -2434,9 +2584,9 @@ class Simulation:
                 ):
                     if pending_task.release_time > self.current_time:
                         continue
-                    if pending_task.payload not in self.payloads:
+                    payload = self._payload_for_task(pending_task)
+                    if payload is None:
                         continue
-                    payload = self.payloads[pending_task.payload]
                     if not self._location_has_inventory_spaces(pending_task.dropoff):
                         continue
                     if (
@@ -2486,7 +2636,8 @@ class Simulation:
                 details=f"Assigned task to {amr.id}",
                 from_location=task.pickup,
                 to_location=task.dropoff,
-                payload_name=task.payload,
+                payload_name=self._payload_log_name(task.payload),
+                payload_instance_id=getattr(task, "payload_instance_id", ""),
                 task_duration_sec=committed["duration"],
                 amr_location_before=previous_location,
                 amr_location_after=committed["end_location"],
@@ -2502,6 +2653,7 @@ class Simulation:
             )
 
             segment_start_time = start_time
+            carrying_payload = False
 
             for segment in committed["segments"]:
                 from_node = segment.get("from", "")
@@ -2525,6 +2677,20 @@ class Simulation:
                 wait_time = float(segment.get("wait_time", 0.0))
                 duration = float(segment.get("duration", 0.0))
                 segment_type = segment.get("type", "")
+                segment_has_payload = (
+                    carrying_payload
+                    or segment_type in {"pickup", "dropoff"}
+                    or bool(
+                        getattr(task, "is_return_task", False)
+                        and segment_type not in {"wait_for_location"}
+                    )
+                )
+                segment_payload_name = task.payload if segment_has_payload else ""
+                segment_payload_instance_id = (
+                    getattr(task, "payload_instance_id", "")
+                    if segment_has_payload
+                    else ""
+                )
 
                 explicit_wait = duration if segment_type.startswith("wait_") else 0.0
 
@@ -2537,7 +2703,8 @@ class Simulation:
                         details=json.dumps(segment, ensure_ascii=False),
                         from_location=from_node or task.pickup,
                         to_location=to_node or task.dropoff,
-                        payload_name=task.payload,
+                        payload_name=segment_payload_name,
+                        payload_instance_id=segment_payload_instance_id,
                         lift_id=lift_id,
                         duration_sec=wait_time,
                         wait_time_sec=wait_time,
@@ -2567,7 +2734,8 @@ class Simulation:
                         details=json.dumps(segment, ensure_ascii=False),
                         from_location=from_node or task.pickup,
                         to_location=to_node or task.dropoff,
-                        payload_name=task.payload,
+                        payload_name=segment_payload_name,
+                        payload_instance_id=segment_payload_instance_id,
                         lift_id=lift_id,
                         duration_sec=explicit_wait,
                         wait_time_sec=explicit_wait,
@@ -2612,7 +2780,8 @@ class Simulation:
                     ),
                     from_location=from_node or task.pickup,
                     to_location=to_node or task.dropoff,
-                    payload_name=task.payload,
+                    payload_name=segment_payload_name,
+                    payload_instance_id=segment_payload_instance_id,
                     lift_id=lift_id,
                     duration_sec=duration,
                     wait_time_sec=wait_time,
@@ -2633,6 +2802,10 @@ class Simulation:
                 )
 
                 segment_start_time = segment_end_time
+                if segment_type == "pickup":
+                    carrying_payload = True
+                elif segment_type == "dropoff":
+                    carrying_payload = False
 
             self.push_event(
                 finish_time,
@@ -2673,7 +2846,8 @@ class Simulation:
                 details=record.details,
                 from_location=record.pickup_location,
                 to_location=record.dropoff_location,
-                payload_name=record.payload_name,
+                payload_name=self._payload_log_name(record.payload_name),
+                payload_instance_id=getattr(task, "payload_instance_id", ""),
                 duration_sec=0.0,
                 wait_time_sec=0.0,
                 distance_m=0.0,
@@ -2726,9 +2900,15 @@ class Simulation:
             self._try_assign_tasks(event.time)
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]
-            payload_obj = self.payloads.get(task.payload)
-            if payload_obj is not None:
+            payload_obj = self._payload_for_task(task)
+            if payload_obj is not None and not is_empty_payload_name(task.payload):
+                try:
+                    self._pickup_payload_instance_for_task(task)
+                except RuntimeError as exc:
+                    self._fail_task(task, str(exc), now=event.payload["finish_time"])
+                    return
                 self._free_inventory_space_for_pickup(task, payload_obj)
+                self._store_payload_instance_for_task(task)
                 self._occupy_inventory_space_for_completed_task(task, payload_obj)
             self.log_step(
                 event_time=event.payload["finish_time"],
@@ -2738,7 +2918,8 @@ class Simulation:
                 details=f"Task {task.id} completed",
                 from_location=task.pickup,
                 to_location=task.dropoff,
-                payload_name=task.payload,
+                payload_name=self._payload_log_name(task.payload),
+                payload_instance_id=getattr(task, "payload_instance_id", ""),
                 duration_sec=0.0,
                 wait_time_sec=0.0,
                 distance_m=0.0,
@@ -2757,7 +2938,8 @@ class Simulation:
                     "task_id": task.id,
                     "pickup": task.pickup,
                     "dropoff": task.dropoff,
-                    "payload": task.payload,
+                    "payload": self._payload_log_name(task.payload),
+                    "payload_instance_id": getattr(task, "payload_instance_id", ""),
                     "amr_id": event.payload["amr_id"],
                     "start_datetime": self.clock.format_sim_time(
                         event.payload["start_time"]
@@ -2948,7 +3130,8 @@ class Simulation:
                 ),
                 from_location=task.pickup,
                 to_location=task.dropoff,
-                payload_name=task.payload,
+                payload_name=self._payload_log_name(task.payload),
+                payload_instance_id=getattr(task, "payload_instance_id", ""),
                 duration_sec=event.payload["actual_duration"],
                 task_duration_sec=event.payload["target_time"],
                 status="overrun",
@@ -2968,6 +3151,7 @@ class Simulation:
         from_location: str = "",
         to_location: str = "",
         payload_name: str = "",
+        payload_instance_id: str = "",
         lift_id: str = "",
         duration_sec: float = 0.0,
         wait_time_sec: float = 0.0,
@@ -3010,7 +3194,8 @@ class Simulation:
                 "event_type": event_type,
                 "task_id": task_id,
                 "amr_id": amr_id,
-                "payload": payload_name,
+                "payload": self._payload_log_name(payload_name),
+                "payload_instance_id": payload_instance_id,
                 "from_location": from_location,
                 "to_location": to_location,
                 "lift_id": lift_id,
@@ -3073,6 +3258,7 @@ class Simulation:
             "sim_datetime",
             "event_type",
             "payload",
+            "payload_instance_id",
             "weight_kg",
             "from_location",
             "to_location",
@@ -3267,10 +3453,9 @@ class Simulation:
         for _, _, _, task in self.pending_tasks:
             if task.pickup not in self.locations or task.dropoff not in self.locations:
                 continue
-            if task.payload not in self.payloads:
+            payload = self._payload_for_task(task)
+            if payload is None:
                 continue
-
-            payload = self.payloads[task.payload]
             if not amr.can_carry(payload):
                 continue
 
@@ -3303,7 +3488,7 @@ class Simulation:
             id=f"RETURN-{amr.id}-{self.synthetic_task_counter}",
             pickup=amr.location_name,
             dropoff=self.amr_centre_name,
-            payload=next(iter(self.payloads.keys())),  # dummy payload name
+            payload=EMPTY_PAYLOAD_NAME,
             release_time=now,
             priority=999999,
             target_time=0.0,
@@ -3369,7 +3554,8 @@ class RuntimeInputThread(threading.Thread):
                 details=record.details,
                 from_location=record.pickup_location,
                 to_location=record.dropoff_location,
-                payload_name=record.payload_name,
+                payload_name=self.sim._payload_log_name(record.payload_name),
+                payload_instance_id=getattr(task, "payload_instance_id", ""),
                 duration_sec=0.0,
                 wait_time_sec=0.0,
                 distance_m=0.0,
