@@ -48,6 +48,7 @@ def default_task_generation_config() -> dict:
             "priority": 40,
             "schedule_times": ["07:30", "11:45", "16:45"],
             "return_enabled": True,
+            "return_delay_minutes": 0,
         }
     )
     categories["pharmacy"].update(
@@ -65,6 +66,7 @@ def default_task_generation_config() -> dict:
             "threshold_volume_m3": 0.8,
             "base_daily_volume_m3": 0.0,
             "return_enabled": True,
+            "return_delay_minutes": 0,
         }
     )
     categories["waste"].update(
@@ -75,6 +77,7 @@ def default_task_generation_config() -> dict:
             "threshold_volume_m3": 0.24,
             "base_daily_volume_m3": 0.0,
             "return_enabled": True,
+            "return_delay_minutes": 0,
         }
     )
     categories["stores"].update(
@@ -90,6 +93,7 @@ def default_task_generation_config() -> dict:
             "priority": 35,
             "schedule_times": ["08:00", "12:00", "17:00"],
             "return_enabled": True,
+            "return_delay_minutes": 0,
         }
     )
 

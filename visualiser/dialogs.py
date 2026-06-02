@@ -37,6 +37,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QGraphicsPathItem,
     QTimeEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
 )
 
 
@@ -136,6 +138,528 @@ class ScheduledTimesDialog(QDialog):
         super().accept()
 
 
+class BulkDepartmentTaskGenerationDialog(QDialog):
+    DAYS = (
+        TaskGenerationSettingsDialog.DAYS
+        if "TaskGenerationSettingsDialog" in globals()
+        else [
+            ("mon", "Mon"),
+            ("tue", "Tue"),
+            ("wed", "Wed"),
+            ("thu", "Thu"),
+            ("fri", "Fri"),
+            ("sat", "Sat"),
+            ("sun", "Sun"),
+        ]
+    )
+
+    MODES = [
+        "scheduled",
+        "threshold",
+        "continuous",
+        "sporadic",
+        "hybrid",
+        "scheduled_threshold",
+        "scheduled_sporadic",
+    ]
+
+    def __init__(
+        self,
+        parent,
+        category_key,
+        category_label,
+        departments,
+        base_category,
+        location_names,
+        payload_names,
+        profile_names,
+        selected_department_ids=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle(f"Configure multiple departments - {category_label}")
+        self.resize(920, 720)
+
+        self.category_key = category_key
+        self.departments = [dict(x) for x in departments or []]
+        self.base_category = dict(base_category or {})
+        self.location_names = sorted(location_names)
+        self.payload_names = list(payload_names)
+        self.profile_names = list(profile_names)
+        self.result = None
+        self.selected_department_ids = list(selected_department_ids or [])
+        self.department_location_role = "dropoff"
+        self.department_location_role = str(
+            self.base_category.get(
+                "department_location_role", self.department_location_role
+            )
+        )
+        self.selected_pickup_locations = []
+        self.selected_dropoffs = list(self.base_category.get("dropoff_locations", []))
+        self.scheduled_times = list(self.base_category.get("scheduled_times", []))
+
+        layout = QVBoxLayout(self)
+
+        dept_row = QHBoxLayout()
+        self.department_summary = QLabel("No departments selected")
+        self.department_summary.setWordWrap(True)
+        pick_depts_btn = QPushButton("Select departments...")
+        pick_depts_btn.clicked.connect(self.pick_departments)
+        dept_row.addWidget(self.department_summary, 1)
+        dept_row.addWidget(pick_depts_btn)
+        layout.addLayout(dept_row)
+
+        role_row = QHBoxLayout()
+        layout.addLayout(role_row)
+
+        self.role_pickup_radio = QCheckBox("Use department locations as pickup/source")
+        self.role_dropoff_radio = QCheckBox("Use department locations as drop-off")
+        self.role_pickup_radio.setChecked(self.department_location_role == "pickup")
+        self.role_dropoff_radio.setChecked(self.department_location_role != "pickup")
+
+        self.role_pickup_radio.toggled.connect(
+            lambda checked: self.set_department_location_role("pickup", checked)
+        )
+        self.role_dropoff_radio.toggled.connect(
+            lambda checked: self.set_department_location_role("dropoff", checked)
+        )
+
+        role_row.addWidget(self.role_pickup_radio)
+        role_row.addWidget(self.role_dropoff_radio)
+        role_row.addStretch(1)
+
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.enabled_check = QCheckBox("Enabled")
+        self.enabled_check.setChecked(bool(self.base_category.get("enabled", False)))
+
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItems(self.MODES)
+        self.mode_combo.setCurrentText(
+            str(self.base_category.get("generation_mode", "scheduled"))
+        )
+
+        self.priority_edit = QLineEdit(str(self.base_category.get("priority", 100)))
+
+        legacy_pickup = str(self.base_category.get("pickup_location", "")).strip()
+        self.selected_pickup_locations = [legacy_pickup] if legacy_pickup else []
+
+        pickup_row = QHBoxLayout()
+        self.pickup_summary = QLabel("None selected")
+        self.pickup_summary.setWordWrap(True)
+
+        self.pick_pickups_btn = QPushButton("Select...")
+        self.pick_pickups_btn.clicked.connect(self.pick_pickups)
+
+        self.clear_pickups_btn = QPushButton("Clear")
+        self.clear_pickups_btn.clicked.connect(self.clear_pickups)
+
+        pickup_row.addWidget(self.pickup_summary, 1)
+        pickup_row.addWidget(self.pick_pickups_btn)
+        pickup_row.addWidget(self.clear_pickups_btn)
+
+        dropoff_row = QHBoxLayout()
+        self.dropoff_summary = QLabel()
+        self.dropoff_summary.setWordWrap(True)
+
+        self.pick_dropoffs_btn = QPushButton("Select...")
+        self.pick_dropoffs_btn.clicked.connect(self.pick_dropoffs)
+
+        self.clear_dropoffs_btn = QPushButton("Clear")
+        self.clear_dropoffs_btn.clicked.connect(self.clear_dropoffs)
+
+        dropoff_row.addWidget(self.dropoff_summary, 1)
+        dropoff_row.addWidget(self.pick_dropoffs_btn)
+        dropoff_row.addWidget(self.clear_dropoffs_btn)
+
+        self.payload_combo = QComboBox()
+        self.payload_combo.addItems([""] + self.payload_names)
+        self.payload_combo.setCurrentText(str(self.base_category.get("payload", "")))
+
+        self.route_profile_combo = QComboBox()
+        self.route_profile_combo.addItems([""] + self.profile_names)
+        self.route_profile_combo.setCurrentText(
+            str(self.base_category.get("route_profile", ""))
+        )
+
+        self.return_enabled_check = QCheckBox("Generate return / exchange task")
+        self.return_enabled_check.setChecked(
+            bool(self.base_category.get("return_enabled", False))
+        )
+
+        self.return_payload_combo = QComboBox()
+        self.return_payload_combo.addItems([""] + self.payload_names)
+        self.return_payload_combo.setCurrentText(
+            str(self.base_category.get("return_payload", ""))
+        )
+
+        self.return_delay_edit = QLineEdit(
+            str(self.base_category.get("return_delay_minutes", 0))
+        )
+
+        days_widget = QWidget()
+        days_layout = QHBoxLayout(days_widget)
+        days_layout.setContentsMargins(0, 0, 0, 0)
+        self.day_checks = {}
+        active_days = set(
+            self.base_category.get("days_active", ["mon", "tue", "wed", "thu", "fri"])
+        )
+        for key, label in self.DAYS:
+            chk = QCheckBox(label)
+            chk.setChecked(key in active_days)
+            self.day_checks[key] = chk
+            days_layout.addWidget(chk)
+        days_layout.addStretch(1)
+
+        schedule_row = QHBoxLayout()
+        self.schedule_summary = QLabel()
+        self.schedule_summary.setWordWrap(True)
+        edit_times_btn = QPushButton("Edit times...")
+        edit_times_btn.clicked.connect(self.edit_scheduled_times)
+        clear_times_btn = QPushButton("Clear")
+        clear_times_btn.clicked.connect(self.clear_scheduled_times)
+        schedule_row.addWidget(self.schedule_summary, 1)
+        schedule_row.addWidget(edit_times_btn)
+        schedule_row.addWidget(clear_times_btn)
+
+        self.frequency_edit = QLineEdit(
+            str(self.base_category.get("frequency_per_day", 0.0))
+        )
+        self.volume_per_event_edit = QLineEdit(
+            str(self.base_category.get("volume_per_event_m3", 0.0))
+        )
+        self.threshold_volume_edit = QLineEdit(
+            str(self.base_category.get("threshold_volume_m3", 0.0))
+        )
+        self.base_daily_volume_edit = QLineEdit(
+            str(self.base_category.get("base_daily_volume_m3", 0.0))
+        )
+        self.notes_edit = QPlainTextEdit(str(self.base_category.get("notes", "")))
+        self.notes_edit.setFixedHeight(90)
+
+        form.addRow("Enabled", self.enabled_check)
+        form.addRow("Generation mode", self.mode_combo)
+        form.addRow("Priority", self.priority_edit)
+        form.addRow("Pickup / source locations", pickup_row)
+        form.addRow("Drop-off destinations", dropoff_row)
+        form.addRow("Payload", self.payload_combo)
+        form.addRow("Route profile", self.route_profile_combo)
+        form.addRow("Return task", self.return_enabled_check)
+        form.addRow("Return payload", self.return_payload_combo)
+        form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow("Days active", days_widget)
+        form.addRow("Scheduled times", schedule_row)
+        form.addRow("Frequency per day", self.frequency_edit)
+        form.addRow("Volume per event m³", self.volume_per_event_edit)
+        form.addRow("Threshold volume m³", self.threshold_volume_edit)
+        form.addRow("Base daily volume m³", self.base_daily_volume_edit)
+        form.addRow("Notes", self.notes_edit)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.refresh_department_summary()
+        self.refresh_pickup_summary()
+        self.update_role_field_state()
+        self.refresh_dropoff_summary()
+        self.refresh_schedule_summary()
+
+    def set_department_location_role(self, role, checked):
+        if not checked:
+            return
+
+        self.department_location_role = role
+
+        self.role_pickup_radio.blockSignals(True)
+        self.role_dropoff_radio.blockSignals(True)
+
+        self.role_pickup_radio.setChecked(role == "pickup")
+        self.role_dropoff_radio.setChecked(role == "dropoff")
+
+        self.role_pickup_radio.blockSignals(False)
+        self.role_dropoff_radio.blockSignals(False)
+
+        self.update_role_field_state()
+
+    def update_role_field_state(self):
+        using_dept_as_pickup = self.department_location_role == "pickup"
+
+        self.pickup_summary.setEnabled(not using_dept_as_pickup)
+        self.pick_pickups_btn.setEnabled(not using_dept_as_pickup)
+        self.clear_pickups_btn.setEnabled(not using_dept_as_pickup)
+
+        self.dropoff_summary.setEnabled(using_dept_as_pickup)
+        self.pick_dropoffs_btn.setEnabled(using_dept_as_pickup)
+        self.clear_dropoffs_btn.setEnabled(using_dept_as_pickup)
+
+    def pick_pickups(self):
+        picker = MultiSelectPicker(
+            self,
+            "Select pickup / source locations",
+            self.location_names,
+            selected=self.selected_pickup_locations,
+            group_resolver=lambda item: "Locations",
+        )
+
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.selected_pickup_locations = sorted(picker.result)
+            self.refresh_pickup_summary()
+
+    def clear_pickups(self):
+        self.selected_pickup_locations = []
+        self.refresh_pickup_summary()
+
+    def refresh_pickup_summary(self):
+        if not self.selected_pickup_locations:
+            self.pickup_summary.setText("None selected")
+        elif len(self.selected_pickup_locations) <= 4:
+            self.pickup_summary.setText(", ".join(self.selected_pickup_locations))
+        else:
+            self.pickup_summary.setText(
+                f"{len(self.selected_pickup_locations)} selected"
+            )
+
+    def pick_departments(self):
+        options = []
+        label_by_id = {}
+        floor_by_label = {}
+
+        sorted_departments = sorted(
+            self.departments,
+            key=lambda d: (
+                int(d.get("floor", 0)),
+                str(d.get("name", "")).strip().lower()
+                or str(d.get("id", "")).strip().lower(),
+            ),
+        )
+
+        for dept in sorted_departments:
+            dept_id = (
+                str(dept.get("id", "")).strip() or str(dept.get("name", "")).strip()
+            )
+            if not dept_id:
+                continue
+
+            name = str(dept.get("name", "")).strip()
+            floor = str(dept.get("floor", "Other")).strip() or "Other"
+
+            display = f"{dept_id} - {name}" if name else dept_id
+            options.append(display)
+            label_by_id[display] = dept_id
+            floor_by_label[display] = f"Floor {floor}"
+
+        picker = MultiSelectPicker(
+            self,
+            "Select departments",
+            options,
+            selected=[
+                display
+                for display, dept_id in label_by_id.items()
+                if dept_id in self.selected_department_ids
+            ],
+            group_resolver=lambda item: floor_by_label.get(item, "Other"),
+        )
+
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.selected_department_ids = [
+                label_by_id[x] for x in picker.result if x in label_by_id
+            ]
+
+            self.refresh_department_summary()
+
+    def _set_department_location_mode(self, dept_id, mode, checked, other_toggle):
+        if not checked:
+            return
+
+        self.department_location_modes[dept_id] = mode
+
+        other_toggle.blockSignals(True)
+        other_toggle.setChecked(False)
+        other_toggle.blockSignals(False)
+
+    def refresh_department_summary(self):
+        if not self.selected_department_ids:
+            self.department_summary.setText("No departments selected")
+        elif len(self.selected_department_ids) <= 6:
+            self.department_summary.setText(", ".join(self.selected_department_ids))
+        else:
+            self.department_summary.setText(
+                f"{len(self.selected_department_ids)} departments selected"
+            )
+
+    def pick_dropoffs(self):
+        picker = MultiSelectPicker(
+            self,
+            "Select drop-off destinations",
+            self.location_names,
+            selected=self.selected_dropoffs,
+            group_resolver=lambda item: "Locations",
+        )
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.selected_dropoffs = sorted(picker.result)
+            self.refresh_dropoff_summary()
+
+    def clear_dropoffs(self):
+        self.selected_dropoffs = []
+        self.refresh_dropoff_summary()
+
+    def refresh_dropoff_summary(self):
+        if not self.selected_dropoffs:
+            self.dropoff_summary.setText("None selected")
+        elif len(self.selected_dropoffs) <= 4:
+            self.dropoff_summary.setText(", ".join(self.selected_dropoffs))
+        else:
+            self.dropoff_summary.setText(f"{len(self.selected_dropoffs)} selected")
+
+    def edit_scheduled_times(self):
+        dialog = ScheduledTimesDialog(self, self.scheduled_times)
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.scheduled_times = list(dialog.result)
+            self.refresh_schedule_summary()
+
+    def clear_scheduled_times(self):
+        self.scheduled_times = []
+        self.refresh_schedule_summary()
+
+    def refresh_schedule_summary(self):
+        if not self.scheduled_times:
+            self.schedule_summary.setText("No times selected")
+        elif len(self.scheduled_times) <= 8:
+            self.schedule_summary.setText(", ".join(self.scheduled_times))
+        else:
+            self.schedule_summary.setText(f"{len(self.scheduled_times)} times selected")
+
+    def _department_default_location(self, dept_id):
+        for dept in self.departments:
+            current_id = (
+                str(dept.get("id", "")).strip() or str(dept.get("name", "")).strip()
+            )
+            if current_id != dept_id:
+                continue
+
+            category_locations = dept.get("task_generation_locations", {})
+            category_entry = category_locations.get(self.category_key, {})
+
+            locations = category_entry.get("pickup_dropoff_locations", [])
+            if locations:
+                return str(locations[0]).strip()
+
+        return ""
+
+    def accept(self):
+        try:
+            if not self.selected_department_ids:
+                raise ValueError("Select at least one department")
+
+            days_active = [
+                key for key, _label in self.DAYS if self.day_checks[key].isChecked()
+            ]
+            if not days_active:
+                raise ValueError("Select at least one active day")
+
+            dropoff_locations = [
+                str(x).strip() for x in self.selected_dropoffs if str(x).strip()
+            ]
+
+            payload = {
+                "enabled": self.enabled_check.isChecked(),
+                "generation_mode": self.mode_combo.currentText().strip(),
+                "priority": int(float(self.priority_edit.text() or 100)),
+                "pickup_location": (
+                    self.selected_pickup_locations[0]
+                    if self.selected_pickup_locations
+                    else ""
+                ),
+                "pickup_locations": list(self.selected_pickup_locations),
+                "dropoff_location": dropoff_locations[0] if dropoff_locations else "",
+                "dropoff_locations": dropoff_locations,
+                "payload": self.payload_combo.currentText().strip(),
+                "return_enabled": self.return_enabled_check.isChecked(),
+                "return_payload": self.return_payload_combo.currentText().strip(),
+                "return_delay_minutes": float(self.return_delay_edit.text() or 0),
+                "route_profile": self.route_profile_combo.currentText().strip(),
+                "days_active": days_active,
+                "scheduled_times": list(self.scheduled_times),
+                "frequency_per_day": float(self.frequency_edit.text() or 0.0),
+                "volume_per_event_m3": float(self.volume_per_event_edit.text() or 0.0),
+                "threshold_volume_m3": float(self.threshold_volume_edit.text() or 0.0),
+                "base_daily_volume_m3": float(
+                    self.base_daily_volume_edit.text() or 0.0
+                ),
+                "notes": self.notes_edit.toPlainText().strip(),
+            }
+
+            self.result = {}
+
+            for dept_id in self.selected_department_ids:
+                item = dict(payload)
+                role = self.department_location_role
+                dept_location = self._department_default_location(dept_id)
+
+                if role == "pickup":
+                    item["pickup_location"] = dept_location
+                    item["pickup_locations"] = [dept_location] if dept_location else []
+                    item["dropoff_location"] = (
+                        dropoff_locations[0] if dropoff_locations else ""
+                    )
+                    item["dropoff_locations"] = list(dropoff_locations)
+                else:
+                    item["pickup_location"] = (
+                        self.selected_pickup_locations[0]
+                        if self.selected_pickup_locations
+                        else ""
+                    )
+                    item["pickup_locations"] = list(self.selected_pickup_locations)
+                    item["dropoff_location"] = dept_location
+                    item["dropoff_locations"] = [dept_location] if dept_location else []
+
+                item["department_location_role"] = role
+                self.result[dept_id] = item
+
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid bulk department settings", str(exc))
+
+
+class ConfiguredGroupSelectDialog(QDialog):
+    def __init__(self, parent, title, groups, label_builder):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(860, 520)
+        self.result_key = None
+
+        layout = QVBoxLayout(self)
+
+        self.list_widget = QListWidget()
+        self.list_widget.setWordWrap(True)
+        self.list_widget.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.list_widget.itemDoubleClicked.connect(lambda _item: self.accept())
+        layout.addWidget(self.list_widget, 1)
+
+        for signature, group in groups.items():
+            item = QListWidgetItem(label_builder(group))
+            item.setData(Qt.UserRole, signature)
+            item.setSizeHint(item.sizeHint())
+            self.list_widget.addItem(item)
+
+        if self.list_widget.count():
+            self.list_widget.setCurrentRow(0)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def accept(self):
+        item = self.list_widget.currentItem()
+        if item is None:
+            return
+        self.result_key = item.data(Qt.UserRole)
+        super().accept()
+
+
 class TaskGenerationSettingsDialog(QDialog):
     """Editor for top-level task_generation logistics parameters."""
 
@@ -229,6 +753,18 @@ class TaskGenerationSettingsDialog(QDialog):
         self.department_hint.setWordWrap(True)
         department_col.addWidget(self.department_hint)
 
+        bulk_dept_btn = QPushButton("Configure multiple...")
+        bulk_dept_btn.clicked.connect(self.configure_multiple_departments)
+        department_col.addWidget(bulk_dept_btn)
+
+        edit_group_btn = QPushButton("Edit configured group...")
+        edit_group_btn.clicked.connect(self.edit_configured_department_group)
+        department_col.addWidget(edit_group_btn)
+
+        clear_group_btn = QPushButton("Clear configured group...")
+        clear_group_btn.clicked.connect(self.clear_configured_department_group)
+        department_col.addWidget(clear_group_btn)
+
         category_buttons = QHBoxLayout()
         left.addLayout(category_buttons)
         add_category_btn = QPushButton("Add")
@@ -261,8 +797,11 @@ class TaskGenerationSettingsDialog(QDialog):
         dropoff_row.addWidget(self.dropoff_summary, 1)
         self.pick_dropoffs_btn = QPushButton("Select...")
         self.pick_dropoffs_btn.clicked.connect(self.pick_dropoff_locations)
+
         self.clear_dropoffs_btn = QPushButton("Clear")
         self.clear_dropoffs_btn.clicked.connect(self.clear_dropoff_locations)
+
+        dropoff_row.addWidget(self.dropoff_summary, 1)
         dropoff_row.addWidget(self.pick_dropoffs_btn)
         dropoff_row.addWidget(self.clear_dropoffs_btn)
 
@@ -274,6 +813,8 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check = QCheckBox("Generate return / exchange task")
         self.return_payload_combo = QComboBox()
         self.return_payload_combo.addItems([""] + self.payload_names)
+
+        self.return_delay_edit = QLineEdit()
 
         days_widget = QWidget()
         days_layout = QHBoxLayout(days_widget)
@@ -321,6 +862,7 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Route profile", self.route_profile_combo)
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
+        form.addRow("Return delay (minutes)", self.return_delay_edit)
         form.addRow("Days active", days_widget)
 
         form.addRow("Scheduled times", schedule_row)
@@ -368,6 +910,230 @@ class TaskGenerationSettingsDialog(QDialog):
         self._loading = False
 
         self._refresh_schedule_summary()
+
+    def _department_display_name(self, dept_id):
+        dept_id = str(dept_id).strip()
+
+        for dept in self.departments:
+            current_id = (
+                str(dept.get("id", "")).strip() or str(dept.get("name", "")).strip()
+            )
+            if current_id == dept_id:
+                name = str(dept.get("name", "")).strip()
+                floor = str(dept.get("floor", "")).strip()
+                if floor:
+                    return f"{name or dept_id} (Floor {floor})"
+                return name or dept_id
+
+        return dept_id
+
+    def _department_group_names_text(self, dept_ids, limit=4):
+        names = [self._department_display_name(x) for x in sorted(dept_ids)]
+
+        if len(names) <= limit:
+            return ", ".join(names)
+
+        shown = ", ".join(names[:limit])
+        remaining = len(names) - limit
+        return f"{shown}, +{remaining} departments"
+
+    def _configured_group_label(self, group):
+        payload = group.get("payload", {}) or {}
+        dept_ids = sorted(group.get("departments", []))
+
+        category_label = (
+            self.category_list.currentItem().text()
+            if self.category_list.currentItem()
+            else self.current_key
+        )
+
+        payload_name = str(payload.get("payload", "")).strip() or "No payload"
+        role = str(payload.get("department_location_role", "")).strip() or "default"
+        mode = str(payload.get("generation_mode", "")).strip() or "default"
+        pickup = str(payload.get("pickup_location", "")).strip() or "None"
+        dropoff = str(payload.get("dropoff_location", "")).strip() or "None"
+        delay = str(payload.get("return_delay_minutes", "")).strip()
+
+        lines = [
+            f"{category_label}    Payload: {payload_name}    Mode: {mode}",
+            f"Departments: {self._department_group_names_text(dept_ids, limit=4)}",
+            f"Role: {role}    Pickup: {pickup}    Drop-off: {dropoff}",
+        ]
+
+        if delay not in {"", "0", "0.0"}:
+            lines.append(f"Return delay: {delay} min")
+
+        return "\n".join(lines)
+
+    def clear_configured_department_group(self):
+        if not self.current_key:
+            QMessageBox.information(
+                self,
+                "Clear configured group",
+                "Select a category first.",
+            )
+            return
+
+        try:
+            self._store_current_category()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid current category", str(exc))
+            return
+
+        category = self.config.setdefault("categories", {}).setdefault(
+            self.current_key, {}
+        )
+        overrides = category.setdefault("departments", {})
+
+        groups = {}
+
+        for dept_id, payload in overrides.items():
+            if not isinstance(payload, dict):
+                continue
+
+            signature = self._bulk_group_signature(payload)
+            groups.setdefault(signature, {"payload": dict(payload), "departments": []})
+            groups[signature]["departments"].append(str(dept_id))
+
+        groups = {
+            key: value
+            for key, value in groups.items()
+            if len(value.get("departments", [])) > 1
+        }
+
+        if not groups:
+            QMessageBox.information(
+                self,
+                "Clear configured group",
+                "No multi-department configured groups were found for this category.",
+            )
+            return
+
+        dialog = ConfiguredGroupSelectDialog(
+            self,
+            "Clear configured group",
+            groups,
+            self._configured_group_label,
+        )
+
+        if dialog.exec() != QDialog.Accepted or not dialog.result_key:
+            return
+
+        group = groups[dialog.result_key]
+        dept_ids = sorted(group["departments"])
+
+        if (
+            QMessageBox.question(
+                self,
+                "Clear configured group",
+                (
+                    f"Clear task-generation overrides for {len(dept_ids)} department(s)?\n\n"
+                    + ", ".join(dept_ids[:12])
+                    + ("..." if len(dept_ids) > 12 else "")
+                ),
+            )
+            != QMessageBox.Yes
+        ):
+            return
+
+        for dept_id in dept_ids:
+            overrides.pop(dept_id, None)
+
+        self._load_category(self.current_key)
+
+        QMessageBox.information(
+            self,
+            "Clear configured group",
+            f"Cleared {len(dept_ids)} department override(s).",
+        )
+
+    def _bulk_group_signature(self, payload):
+        clean = dict(payload or {})
+        clean.pop("department_location_role", None)
+        return json.dumps(clean, sort_keys=True)
+
+    def edit_configured_department_group(self):
+        if not self.current_key:
+            QMessageBox.information(
+                self,
+                "Edit configured group",
+                "Select a category first.",
+            )
+            return
+
+        try:
+            self._store_current_category()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid current category", str(exc))
+            return
+
+        category = self.config.setdefault("categories", {}).setdefault(
+            self.current_key, {}
+        )
+        overrides = category.setdefault("departments", {})
+
+        groups = {}
+
+        for dept_id, payload in overrides.items():
+            if not isinstance(payload, dict):
+                continue
+
+            signature = self._bulk_group_signature(payload)
+            groups.setdefault(signature, {"payload": dict(payload), "departments": []})
+            groups[signature]["departments"].append(str(dept_id))
+
+        groups = {
+            key: value
+            for key, value in groups.items()
+            if len(value.get("departments", [])) > 1
+        }
+
+        if not groups:
+            QMessageBox.information(
+                self,
+                "Edit configured group",
+                "No multi-department configured groups were found for this category.",
+            )
+            return
+
+        dialog = ConfiguredGroupSelectDialog(
+            self,
+            "Edit configured group",
+            groups,
+            self._configured_group_label,
+        )
+
+        if dialog.exec() != QDialog.Accepted or not dialog.result_key:
+            return
+
+        group = groups[dialog.result_key]
+        group_payload = dict(group["payload"])
+        selected_department_ids = sorted(group["departments"])
+
+        dialog = BulkDepartmentTaskGenerationDialog(
+            self,
+            category_key=self.current_key,
+            category_label=(
+                self.category_list.currentItem().text()
+                if self.category_list.currentItem()
+                else self.current_key
+            ),
+            departments=self.departments,
+            base_category=group_payload,
+            location_names=self.location_names,
+            payload_names=self.payload_names,
+            profile_names=self.profile_names,
+            selected_department_ids=selected_department_ids,
+        )
+
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            for dept_id in selected_department_ids:
+                overrides.pop(dept_id, None)
+
+            for dept_id, payload in dialog.result.items():
+                overrides[dept_id] = payload
+
+            self._load_category(self.current_key)
 
     def _department_label(self, dept):
         name = str(dept.get("name", "")).strip()
@@ -426,6 +1192,47 @@ class TaskGenerationSettingsDialog(QDialog):
             current = self.department_list.currentItem()
             self.current_department_id = current.data(Qt.UserRole) if current else ""
             self.current_department_id = self.current_department_id or ""
+
+    def configure_multiple_departments(self):
+        if not self.current_key:
+            QMessageBox.information(
+                self,
+                "Configure departments",
+                "Select a category first.",
+            )
+            return
+
+        try:
+            self._store_current_category()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid current category", str(exc))
+            return
+
+        dialog = BulkDepartmentTaskGenerationDialog(
+            self,
+            category_key=self.current_key,
+            category_label=(
+                self.category_list.currentItem().text()
+                if self.category_list.currentItem()
+                else self.current_key
+            ),
+            departments=self.departments,
+            base_category=self.config.get("categories", {}).get(self.current_key, {}),
+            location_names=self.location_names,
+            payload_names=self.payload_names,
+            profile_names=self.profile_names,
+        )
+
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            category = self.config.setdefault("categories", {}).setdefault(
+                self.current_key, {}
+            )
+            overrides = category.setdefault("departments", {})
+
+            for dept_id, payload in dialog.result.items():
+                overrides[dept_id] = payload
+
+            self._load_category(self.current_key)
 
     def _on_department_changed(self, current, previous):
         if self._loading:
@@ -758,6 +1565,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.route_profile_combo.setCurrentText(str(item.get("route_profile", "")))
         self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
         self.return_payload_combo.setCurrentText(str(item.get("return_payload", "")))
+        self.return_delay_edit.setText(str(item.get("return_delay_minutes", 0)))
         days = set(item.get("days_active", []))
         for day_key, _label in self.DAYS:
             self.day_checks[day_key].setChecked(day_key in days)
@@ -858,6 +1666,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "payload": self.payload_combo.currentText().strip(),
             "return_enabled": self.return_enabled_check.isChecked(),
             "return_payload": self.return_payload_combo.currentText().strip(),
+            "return_delay_minutes": float(self.return_delay_edit.text() or 0),
             "route_profile": self.route_profile_combo.currentText().strip(),
             "days_active": days_active,
             "scheduled_times": list(self.scheduled_times),
@@ -1352,6 +2161,407 @@ class AMREditorDialog(QDialog):
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid AMR", str(exc))
+
+
+class PayloadTrackedItemDialog(QDialog):
+    MODES = [
+        "scheduled",
+        "threshold",
+        "continuous",
+        "sporadic",
+        "hybrid",
+        "scheduled_threshold",
+        "scheduled_sporadic",
+    ]
+
+    def __init__(self, parent, seed=None):
+        super().__init__(parent)
+        self.setWindowTitle("Tracked payload item")
+        self.seed = seed or {}
+        self.result = None
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.name_edit = QLineEdit(str(self.seed.get("name", "")))
+        self.max_edit = QLineEdit(str(self.seed.get("max", 100)))
+        self.threshold_edit = QLineEdit(str(self.seed.get("top_up_threshold", 15)))
+
+        self.usage_rate_combo = QComboBox()
+        self.usage_rate_combo.addItems(self.MODES)
+        self.usage_rate_combo.setCurrentText(
+            str(self.seed.get("usage_rate", "scheduled_sporadic"))
+        )
+
+        form.addRow("Item name", self.name_edit)
+        form.addRow("Maximum quantity", self.max_edit)
+        form.addRow("Top-up threshold", self.threshold_edit)
+        form.addRow("Usage rate", self.usage_rate_combo)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def accept(self):
+        try:
+            name = self.name_edit.text().strip()
+            if not name:
+                raise ValueError("Item name is required")
+
+            max_qty = float(self.max_edit.text() or 0)
+            threshold = float(self.threshold_edit.text() or 0)
+
+            if max_qty <= 0:
+                raise ValueError("Maximum quantity must be greater than 0")
+            if threshold < 0:
+                raise ValueError("Top-up threshold cannot be negative")
+            if threshold > max_qty:
+                raise ValueError("Top-up threshold cannot be greater than maximum")
+
+            self.result = {
+                "name": name,
+                "max": max_qty,
+                "top_up_threshold": threshold,
+                "usage_rate": self.usage_rate_combo.currentText().strip(),
+            }
+
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid tracked item", str(exc))
+
+
+class PayloadEditorDialog(QDialog):
+    def __init__(self, parent, seed=None):
+        super().__init__(parent)
+        self.setWindowTitle("Payload")
+        self.seed = seed or {}
+        self.result = None
+        self.tracked_items = self._normalise_tracked_items(self.seed.get("items", []))
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.name_edit = QLineEdit(str(self.seed.get("name", "")))
+        self.weight_edit = QLineEdit(str(self.seed.get("weight_kg", 0.0)))
+        self.length_edit = QLineEdit(str(self.seed.get("length_m", 0.0)))
+        self.width_edit = QLineEdit(str(self.seed.get("width_m", 0.0)))
+        self.height_edit = QLineEdit(str(self.seed.get("height_m", 0.0)))
+
+        self.track_items_check = QCheckBox("Track items held within this payload")
+        self.track_items_check.setChecked(bool(self.seed.get("track_items", False)))
+
+        form.addRow("Payload name", self.name_edit)
+        form.addRow("Weight kg", self.weight_edit)
+        form.addRow("Length m", self.length_edit)
+        form.addRow("Width m", self.width_edit)
+        form.addRow("Height m", self.height_edit)
+        form.addRow("Track items", self.track_items_check)
+
+        layout.addWidget(QLabel("Tracked items"))
+
+        self.items_table = QTableWidget(0, 4)
+        self.items_table.setHorizontalHeaderLabels(
+            ["Name", "Max", "Top-up threshold", "Usage rate"]
+        )
+        self.items_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.items_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.items_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.items_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Interactive
+        )
+        layout.addWidget(self.items_table, 1)
+
+        item_buttons = QHBoxLayout()
+        layout.addLayout(item_buttons)
+
+        add_item_btn = QPushButton("Add item")
+        edit_item_btn = QPushButton("Edit item")
+        delete_item_btn = QPushButton("Delete item")
+
+        add_item_btn.clicked.connect(self.add_tracked_item)
+        edit_item_btn.clicked.connect(self.edit_tracked_item)
+        delete_item_btn.clicked.connect(self.delete_tracked_item)
+
+        item_buttons.addWidget(add_item_btn)
+        item_buttons.addWidget(edit_item_btn)
+        item_buttons.addWidget(delete_item_btn)
+        item_buttons.addStretch(1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.resize(760, 560)
+        self._refresh_items_table()
+
+    def _normalise_tracked_items(self, value):
+        result = []
+
+        # Supports both requested object form and easier list form.
+        # Requested example:
+        # "items": {
+        #   "gloves": {"max": 100, "top_up_threshold": 15, "usage_rate": "scheduled_sporadic"}
+        # }
+        if isinstance(value, dict):
+            iterable = []
+            for name, cfg in value.items():
+                cfg = dict(cfg or {})
+                cfg["name"] = name
+                iterable.append(cfg)
+        else:
+            iterable = list(value or [])
+
+        for item in iterable:
+            if not isinstance(item, dict):
+                continue
+
+            name = str(item.get("name", "")).strip()
+            if not name:
+                continue
+
+            result.append(
+                {
+                    "name": name,
+                    "max": float(item.get("max", 100)),
+                    "top_up_threshold": float(item.get("top_up_threshold", 15)),
+                    "usage_rate": str(item.get("usage_rate", "scheduled_sporadic")),
+                }
+            )
+
+        return result
+
+    def _refresh_items_table(self):
+        self.items_table.setRowCount(0)
+
+        for item in self.tracked_items:
+            row = self.items_table.rowCount()
+            self.items_table.insertRow(row)
+
+            values = [
+                item.get("name", ""),
+                item.get("max", 100),
+                item.get("top_up_threshold", 15),
+                item.get("usage_rate", "scheduled_sporadic"),
+            ]
+
+            for col, value in enumerate(values):
+                self.items_table.setItem(row, col, QTableWidgetItem(str(value)))
+
+    def add_tracked_item(self):
+        dialog = PayloadTrackedItemDialog(self)
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            name = dialog.result["name"]
+            if any(str(x.get("name", "")).strip() == name for x in self.tracked_items):
+                QMessageBox.critical(self, "Duplicate", "Tracked item already exists")
+                return
+            self.tracked_items.append(dialog.result)
+            self._refresh_items_table()
+
+    def edit_tracked_item(self):
+        row = self.items_table.currentRow()
+        if row < 0:
+            return
+
+        dialog = PayloadTrackedItemDialog(self, self.tracked_items[row])
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            name = dialog.result["name"]
+            for idx, item in enumerate(self.tracked_items):
+                if idx != row and str(item.get("name", "")).strip() == name:
+                    QMessageBox.critical(
+                        self, "Duplicate", "Tracked item already exists"
+                    )
+                    return
+
+            self.tracked_items[row] = dialog.result
+            self._refresh_items_table()
+            self.items_table.selectRow(row)
+
+    def delete_tracked_item(self):
+        row = self.items_table.currentRow()
+        if row < 0:
+            return
+        del self.tracked_items[row]
+        self._refresh_items_table()
+
+    def accept(self):
+        try:
+            name = self.name_edit.text().strip()
+            if not name:
+                raise ValueError("Payload name is required")
+
+            items_payload = {
+                item["name"]: {
+                    "max": float(item.get("max", 100)),
+                    "top_up_threshold": float(item.get("top_up_threshold", 15)),
+                    "usage_rate": str(item.get("usage_rate", "scheduled_sporadic")),
+                }
+                for item in self.tracked_items
+            }
+
+            self.result = {
+                "name": name,
+                "weight_kg": float(self.weight_edit.text() or 0.0),
+                "length_m": float(self.length_edit.text() or 0.0),
+                "width_m": float(self.width_edit.text() or 0.0),
+                "height_m": float(self.height_edit.text() or 0.0),
+                "track_items": self.track_items_check.isChecked(),
+                "items": items_payload,
+            }
+
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid payload", str(exc))
+
+
+class PayloadListDialog(QDialog):
+    columns = [
+        ("name", "Name", 180),
+        ("weight_kg", "Weight kg", 90),
+        ("length_m", "Length m", 90),
+        ("width_m", "Width m", 90),
+        ("height_m", "Height m", 90),
+        ("track_items", "Track items", 90),
+        ("items", "Items", 260),
+    ]
+
+    def __init__(self, parent, items, on_save):
+        super().__init__(parent)
+        self.setWindowTitle("Payloads")
+        self.resize(980, 520)
+        self.items = [dict(x) for x in items]
+        self.on_save = on_save
+
+        layout = QVBoxLayout(self)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.cellDoubleClicked.connect(lambda _row, _col: self.edit_item())
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+
+        for idx, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(idx, width)
+
+        layout.addWidget(self.table, 1)
+
+        row = QHBoxLayout()
+        layout.addLayout(row)
+
+        add_btn = QPushButton("Add")
+        edit_btn = QPushButton("Edit")
+        delete_btn = QPushButton("Delete")
+        save_btn = QPushButton("Save")
+
+        add_btn.clicked.connect(self.add_item)
+        edit_btn.clicked.connect(self.edit_item)
+        delete_btn.clicked.connect(self.delete_item)
+        save_btn.clicked.connect(self.save_items)
+
+        row.addWidget(add_btn)
+        row.addWidget(edit_btn)
+        row.addWidget(delete_btn)
+        row.addStretch(1)
+        row.addWidget(save_btn)
+
+        self._refresh_table()
+
+    def _items_summary(self, payload):
+        items = payload.get("items", {})
+        if isinstance(items, dict):
+            names = list(items.keys())
+        else:
+            names = [
+                str(x.get("name", "")).strip()
+                for x in items or []
+                if isinstance(x, dict) and str(x.get("name", "")).strip()
+            ]
+
+        if not names:
+            return ""
+
+        if len(names) <= 3:
+            return ", ".join(names)
+
+        return ", ".join(names[:3]) + f", +{len(names) - 3} items"
+
+    def _refresh_table(self):
+        self.table.setRowCount(0)
+
+        for item in self.items:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+
+            values = [
+                str(item.get("name", "")),
+                str(item.get("weight_kg", "")),
+                str(item.get("length_m", "")),
+                str(item.get("width_m", "")),
+                str(item.get("height_m", "")),
+                "Yes" if item.get("track_items", False) else "No",
+                self._items_summary(item),
+            ]
+
+            for col, value in enumerate(values):
+                self.table.setItem(row, col, QTableWidgetItem(value))
+
+    def _suggest_next_payload_name(self):
+        existing = {str(x.get("name", "")).strip() for x in self.items}
+        base = "payload"
+        if base not in existing:
+            return base
+        counter = 2
+        while f"{base}_{counter}" in existing:
+            counter += 1
+        return f"{base}_{counter}"
+
+    def add_item(self):
+        dialog = PayloadEditorDialog(
+            self,
+            seed={"name": self._suggest_next_payload_name()},
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            name = dialog.result["name"]
+            if any(str(x.get("name", "")).strip() == name for x in self.items):
+                QMessageBox.critical(self, "Duplicate", "Payload already exists")
+                return
+            self.items.append(dialog.result)
+            self._refresh_table()
+
+    def edit_item(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+
+        dialog = PayloadEditorDialog(self, seed=self.items[row])
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            new_name = dialog.result["name"]
+            for idx, item in enumerate(self.items):
+                if idx != row and str(item.get("name", "")).strip() == new_name:
+                    QMessageBox.critical(self, "Duplicate", "Payload already exists")
+                    return
+
+            self.items[row] = dialog.result
+            self._refresh_table()
+            self.table.selectRow(row)
+
+    def delete_item(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        del self.items[row]
+        self._refresh_table()
+
+    def save_items(self):
+        self.on_save(self.items)
+        self.accept()
 
 
 class AMRListDialog(QDialog):
@@ -2551,8 +3761,9 @@ class DepartmentListDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        self.table = QTableWidget(0, 8)
-        self.table.setHorizontalHeaderLabels(
+        self.table = QTreeWidget()
+        self.table.setColumnCount(8)
+        self.table.setHeaderLabels(
             [
                 "ID",
                 "Name",
@@ -2564,10 +3775,10 @@ class DepartmentListDialog(QDialog):
                 "Waste streams",
             ]
         )
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table.itemDoubleClicked.connect(lambda _item, _col: self.edit_item())
+        self.table.header().setSectionResizeMode(QHeaderView.Interactive)
         layout.addWidget(self.table)
 
         row = QHBoxLayout()
@@ -2579,11 +3790,13 @@ class DepartmentListDialog(QDialog):
         save_btn = QPushButton("Save")
 
         auto_assign_btn = QPushButton("Auto assign locations")
+        bulk_waste_btn = QPushButton("Add waste streams to selected")
 
         row.addWidget(add_btn)
         row.addWidget(edit_btn)
         row.addWidget(del_btn)
         row.addWidget(auto_assign_btn)
+        row.addWidget(bulk_waste_btn)
         row.addStretch(1)
         row.addWidget(save_btn)
 
@@ -2591,44 +3804,76 @@ class DepartmentListDialog(QDialog):
         edit_btn.clicked.connect(self.edit_item)
         del_btn.clicked.connect(self.delete_item)
         auto_assign_btn.clicked.connect(self.auto_assign_locations)
+        bulk_waste_btn.clicked.connect(self.add_waste_streams_to_selected_departments)
         save_btn.clicked.connect(self.save_items)
 
         self._refresh_table()
 
     def _refresh_table(self):
-        self.table.setRowCount(0)
-        for item in self.items:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            self.table.setItem(row, 0, QTableWidgetItem(str(item.get("id", ""))))
-            self.table.setItem(row, 1, QTableWidgetItem(str(item.get("name", ""))))
-            self.table.setItem(row, 2, QTableWidgetItem(str(item.get("floor", ""))))
-            self.table.setItem(
-                row,
-                3,
-                QTableWidgetItem("Yes" if item.get("enabled", True) else "No"),
+        self.table.clear()
+        self._tree_item_to_index = {}
+
+        grouped = {}
+
+        for idx, item in enumerate(self.items):
+            try:
+                floor = int(item.get("floor", 0))
+            except Exception:
+                floor = 0
+            grouped.setdefault(floor, []).append((idx, item))
+
+        for floor in sorted(grouped.keys()):
+            floor_item = QTreeWidgetItem([f"Floor {floor}", "", "", "", "", "", "", ""])
+            floor_item.setFirstColumnSpanned(True)
+            floor_item.setExpanded(True)
+            self.table.addTopLevelItem(floor_item)
+
+            grouped[floor].sort(
+                key=lambda pair: (
+                    str(pair[1].get("name", "")).strip().lower()
+                    or str(pair[1].get("id", "")).strip().lower()
+                )
             )
-            self.table.setItem(row, 4, QTableWidgetItem(str(item.get("bed_count", 0))))
-            self.table.setItem(
-                row,
-                5,
-                QTableWidgetItem(str(item.get("patient_turnover", 0.0))),
-            )
-            self.table.setItem(
-                row,
-                6,
-                QTableWidgetItem(str(item.get("staff_count", 0))),
-            )
-            self.table.setItem(
-                row,
-                7,
-                QTableWidgetItem(
-                    ", ".join(
-                        x.get("name", str(x)) if isinstance(x, dict) else str(x)
-                        for x in item.get("waste_streams", [])
-                    )
-                ),
-            )
+
+            for idx, item in grouped[floor]:
+                waste_text = ", ".join(
+                    x.get("name", str(x)) if isinstance(x, dict) else str(x)
+                    for x in item.get("waste_streams", [])
+                )
+
+                child = QTreeWidgetItem(
+                    [
+                        str(item.get("id", "")),
+                        str(item.get("name", "")),
+                        str(item.get("floor", "")),
+                        "Yes" if item.get("enabled", True) else "No",
+                        str(item.get("bed_count", 0)),
+                        str(item.get("patient_turnover", 0.0)),
+                        str(item.get("staff_count", 0)),
+                        waste_text,
+                    ]
+                )
+
+                child.setData(0, Qt.UserRole, idx)
+                floor_item.addChild(child)
+                self._tree_item_to_index[id(child)] = idx
+
+        for col in range(self.table.columnCount()):
+            self.table.resizeColumnToContents(col)
+
+    def _selected_department_indexes(self):
+        indexes = []
+
+        for item in self.table.selectedItems():
+            idx = item.data(0, Qt.UserRole)
+            if idx is None:
+                continue
+            try:
+                indexes.append(int(idx))
+            except Exception:
+                continue
+
+        return sorted(set(indexes))
 
     def auto_assign_locations(self):
         if not self.task_generation_categories:
@@ -2692,6 +3937,75 @@ class DepartmentListDialog(QDialog):
             ),
         )
 
+    def add_waste_streams_to_selected_departments(self):
+        rows = self._selected_department_indexes()
+
+        if not rows:
+            QMessageBox.information(
+                self,
+                "Add waste streams",
+                "Select one or more departments first.",
+            )
+            return
+
+        picker = MultiSelectPicker(
+            self,
+            "Select waste streams to add",
+            self.waste_stream_names,
+            selected=[],
+            group_resolver=lambda item: "Waste streams",
+        )
+
+        if picker.exec() != QDialog.Accepted or picker.result is None:
+            return
+
+        selected_stream_names = [
+            str(x).strip() for x in picker.result if str(x).strip()
+        ]
+
+        if not selected_stream_names:
+            return
+
+        added_count = 0
+
+        for row in rows:
+            if row < 0 or row >= len(self.items):
+                continue
+
+            dept = self.items[row]
+            existing_items = dept.setdefault("waste_streams", [])
+
+            existing_names = {
+                str(x.get("name", x) if isinstance(x, dict) else x).strip()
+                for x in existing_items
+            }
+
+            for stream_name in selected_stream_names:
+                if stream_name in existing_names:
+                    continue
+
+                existing_items.append(
+                    {
+                        "name": stream_name,
+                        "generation_mode": "threshold",
+                        "frequency_per_day": 0.0,
+                        "volume_per_event_m3": 0.0,
+                        "threshold_volume_m3": 0.0,
+                        "base_daily_volume_m3": 0.0,
+                        "scheduled_times": [],
+                    }
+                )
+                existing_names.add(stream_name)
+                added_count += 1
+
+        self._refresh_table()
+
+        QMessageBox.information(
+            self,
+            "Add waste streams",
+            f"Added {added_count} waste stream assignment(s).",
+        )
+
     def add_item(self):
         dialog = DepartmentEditorDialog(
             self,
@@ -2722,9 +4036,12 @@ class DepartmentListDialog(QDialog):
             self._refresh_table()
 
     def edit_item(self):
-        row = self.table.currentRow()
-        if row < 0:
+        indexes = self._selected_department_indexes()
+        if not indexes:
             return
+
+        row = indexes[0]
+
         dialog = DepartmentEditorDialog(
             self,
             location_names=self.location_names,
@@ -2737,6 +4054,7 @@ class DepartmentListDialog(QDialog):
             default_y=float(self.items[row].get("y", 0.0)),
             task_generation_categories=self.task_generation_categories,
         )
+
         if dialog.exec() == QDialog.Accepted and dialog.result:
             new_id = str(dialog.result.get("id", "")).strip()
             new_name = str(dialog.result.get("name", "")).strip()
@@ -2757,13 +4075,26 @@ class DepartmentListDialog(QDialog):
 
             self.items[row] = dialog.result
             self._refresh_table()
-            self.table.selectRow(row)
 
     def delete_item(self):
-        row = self.table.currentRow()
-        if row < 0:
+        indexes = self._selected_department_indexes()
+        if not indexes:
             return
-        del self.items[row]
+
+        if (
+            QMessageBox.question(
+                self,
+                "Delete departments",
+                f"Delete {len(indexes)} selected department(s)?",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+
+        for idx in reversed(indexes):
+            if 0 <= idx < len(self.items):
+                del self.items[idx]
+
         self._refresh_table()
 
     def save_items(self):

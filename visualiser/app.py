@@ -60,6 +60,7 @@ from dialogs import (
     AMREditorDialog,
     InventorySpacesDialog,
     TaskGenerationSettingsDialog,
+    PayloadListDialog,
 )
 from advanced_dialogs import (
     MultiSelectPicker,
@@ -2057,20 +2058,12 @@ class AMRGraphEditor(QMainWindow):
             self.set_status("Validation passed")
 
     def manage_payloads(self):
-        columns = [
-            ("name", "Name", 220),
-            ("weight_kg", "Weight kg", 120),
-            ("length_m", "Length m", 100),
-            ("width_m", "Width m", 100),
-            ("height_m", "Height m", 100),
-        ]
-        TableListEditor(
+        dialog = PayloadListDialog(
             self,
-            "Payloads",
-            columns,
             self.store.data.get("payloads", []),
             self._save_payloads,
         )
+        dialog.exec()
 
     def _save_payloads(self, items):
         self.store.data["payloads"] = items

@@ -7052,9 +7052,6 @@
         "sat",
         "sun"
       ],
-      "waste_pickup_locations": [
-        "FRAILTY-DH"
-      ],
       "waste_streams": [
         {
           "name": "Clinical",
@@ -7093,16 +7090,6 @@
           "scheduled_times": []
         }
       ],
-      "waste": {
-        "alpha": 0.002,
-        "beta": 0.015,
-        "gamma": 0.001,
-        "pickup_location": "FRAILTY-DH",
-        "dropoff_location": "FRAILTY-DH"
-      },
-      "x": 37,
-      "y": -89,
-      "task_generation_location_suffixes": {},
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [
@@ -7120,6 +7107,9 @@
             "D1-PHARMACY"
           ]
         },
+        "ssd": {
+          "pickup_dropoff_locations": []
+        },
         "stores": {
           "pickup_dropoff_locations": [
             "D1-STORES"
@@ -7130,7 +7120,17 @@
             "D1-WASTE"
           ]
         }
-      }
+      },
+      "task_generation_location_suffixes": {
+        "catering": "-CATERING",
+        "linen": "-LINEN",
+        "pharmacy": "-PHARMACY",
+        "ssd": "-SSD",
+        "stores": "-STORES",
+        "waste": "-WASTE"
+      },
+      "x": 37.0,
+      "y": -89.0
     },
     {
       "id": "D2",
@@ -7151,7 +7151,17 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7194,7 +7204,17 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7252,7 +7272,17 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7293,7 +7323,17 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7339,7 +7379,17 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7380,7 +7430,17 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7426,7 +7486,17 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7478,7 +7548,17 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7521,7 +7601,17 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7569,7 +7659,17 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7601,7 +7701,17 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7633,7 +7743,17 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -7676,7 +7796,17 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -8729,7 +8859,17 @@
         "thu",
         "fri"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": []
@@ -8782,7 +8922,17 @@
         "thu",
         "fri"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
+      ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": []
@@ -8931,7 +9081,1391 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": ""
+        "notes": "",
+        "return_delay_minutes": 0,
+        "departments": {
+          "D1": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "dropoff_location": "D1-CATERING",
+            "dropoff_locations": [
+              "D1-CATERING"
+            ],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D2": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D3": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "D3-CATERING",
+            "dropoff_locations": [
+              "D3-CATERING"
+            ],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D8": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D14": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D12": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D13": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D11": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D15": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D10": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D6": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D4": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D5": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D44": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D45": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D7": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D9": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:30",
+              "12:30",
+              "16:30",
+              "17:30"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D19": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D25": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D26": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D22": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D46": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D20": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D31": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D32": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D33": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D34": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D30": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D29": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D37": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D39": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D40": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D36": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D38": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D35": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D41": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D43": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D42": {
+            "enabled": true,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "pickup_location": "KITCHEN",
+            "pickup_locations": [
+              "KITCHEN"
+            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "food_trolley",
+            "return_enabled": true,
+            "return_payload": "food_trolley",
+            "return_delay_minutes": 45.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "dropoff"
+          }
+        }
       },
       "pharmacy": {
         "enabled": false,
@@ -8960,7 +10494,34 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": ""
+        "notes": "",
+        "departments": {
+          "D1": {
+            "enabled": false,
+            "generation_mode": "scheduled_sporadic",
+            "priority": 30,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": false,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 2.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          }
+        }
       },
       "linen": {
         "enabled": false,
@@ -8986,7 +10547,35 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.8,
         "base_daily_volume_m3": 0.0,
-        "notes": ""
+        "notes": "",
+        "return_delay_minutes": 0,
+        "departments": {
+          "D1": {
+            "enabled": false,
+            "generation_mode": "threshold",
+            "priority": 55,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.8,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          }
+        }
       },
       "waste": {
         "enabled": true,
@@ -9012,7 +10601,210 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.24,
         "base_daily_volume_m3": 0.0,
-        "notes": ""
+        "notes": "",
+        "return_delay_minutes": 0,
+        "departments": {
+          "D1": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D2": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D3": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D4": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D5": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D7": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D6": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          },
+          "D8": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.24,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          }
+        }
       },
       "stores": {
         "enabled": false,
@@ -9041,7 +10833,34 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": ""
+        "notes": "",
+        "departments": {
+          "D1": {
+            "enabled": false,
+            "generation_mode": "scheduled",
+            "priority": 70,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": false,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          }
+        }
       },
       "ssd": {
         "enabled": false,
@@ -9071,7 +10890,35 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": ""
+        "notes": "",
+        "return_delay_minutes": 0,
+        "departments": {
+          "D1": {
+            "enabled": false,
+            "generation_mode": "scheduled_threshold",
+            "priority": 35,
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "return_enabled": true,
+            "return_payload": "",
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": ""
+          }
+        }
       }
     }
   }
