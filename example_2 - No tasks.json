@@ -4805,7 +4805,7 @@
       "id": "D1",
       "name": "Fraility",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 32,
       "patient_turnover": 0.1,
       "staff_count": 12,
@@ -4823,10 +4823,42 @@
         "FRAILTY-DH"
       ],
       "waste_streams": [
-        "Clinical",
-        "Confidential",
-        "Domestic",
-        "Linen"
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        },
+        {
+          "name": "Confidential",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 0.0,
+          "volume_per_event_m3": 0.0,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": []
+        }
       ],
       "waste": {
         "alpha": 0.002,
@@ -4835,8 +4867,8 @@
         "pickup_location": "FRAILTY-DH",
         "dropoff_location": "FRAILTY-DH"
       },
-      "x": 37.433,
-      "y": -89.387
+      "x": 37.0,
+      "y": -89.0
     },
     {
       "id": "D2",
@@ -6101,5 +6133,184 @@
       "container_capacity_m3": 0.036,
       "full_threshold_fraction": 0.6
     }
-  ]
+  ],
+  "task_generation": {
+    "enabled": true,
+    "department_waste": {
+      "enabled": true,
+      "priority": 60
+    },
+    "categories": {
+      "catering": {
+        "enabled": false,
+        "display_name": "Catering",
+        "generation_mode": "scheduled",
+        "priority": 40,
+        "pickup_location": "",
+        "dropoff_location": "",
+        "dropoff_locations": [],
+        "payload": "",
+        "return_enabled": true,
+        "return_payload": "",
+        "route_profile": "",
+        "days_active": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "schedule_times": [
+          "07:30",
+          "11:45",
+          "16:45"
+        ],
+        "frequency_per_day": 0.0,
+        "volume_per_event_m3": 0.0,
+        "threshold_volume_m3": 0.0,
+        "base_daily_volume_m3": 0.0,
+        "notes": ""
+      },
+      "pharmacy": {
+        "enabled": false,
+        "display_name": "Pharmacy",
+        "generation_mode": "scheduled_sporadic",
+        "priority": 30,
+        "pickup_location": "",
+        "dropoff_location": "",
+        "dropoff_locations": [],
+        "payload": "",
+        "return_enabled": false,
+        "return_payload": "",
+        "route_profile": "",
+        "days_active": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "schedule_times": [
+          "10:00",
+          "15:00"
+        ],
+        "frequency_per_day": 2.0,
+        "volume_per_event_m3": 0.0,
+        "threshold_volume_m3": 0.0,
+        "base_daily_volume_m3": 0.0,
+        "notes": ""
+      },
+      "linen": {
+        "enabled": false,
+        "display_name": "Linen",
+        "generation_mode": "threshold",
+        "priority": 55,
+        "pickup_location": "",
+        "dropoff_location": "",
+        "dropoff_locations": [],
+        "payload": "",
+        "return_enabled": true,
+        "return_payload": "",
+        "route_profile": "",
+        "days_active": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "schedule_times": [],
+        "frequency_per_day": 0.0,
+        "volume_per_event_m3": 0.0,
+        "threshold_volume_m3": 0.8,
+        "base_daily_volume_m3": 0.0,
+        "notes": ""
+      },
+      "waste": {
+        "enabled": true,
+        "display_name": "Waste",
+        "generation_mode": "threshold",
+        "priority": 60,
+        "pickup_location": "",
+        "dropoff_location": "",
+        "dropoff_locations": [],
+        "payload": "",
+        "return_enabled": true,
+        "return_payload": "",
+        "route_profile": "",
+        "days_active": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "schedule_times": [],
+        "frequency_per_day": 0.0,
+        "volume_per_event_m3": 0.0,
+        "threshold_volume_m3": 0.24,
+        "base_daily_volume_m3": 0.0,
+        "notes": ""
+      },
+      "stores": {
+        "enabled": false,
+        "display_name": "Stores",
+        "generation_mode": "scheduled",
+        "priority": 70,
+        "pickup_location": "",
+        "dropoff_location": "",
+        "dropoff_locations": [],
+        "payload": "",
+        "return_enabled": false,
+        "return_payload": "",
+        "route_profile": "",
+        "days_active": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "schedule_times": [
+          "09:30",
+          "14:30"
+        ],
+        "frequency_per_day": 0.0,
+        "volume_per_event_m3": 0.0,
+        "threshold_volume_m3": 0.0,
+        "base_daily_volume_m3": 0.0,
+        "notes": ""
+      },
+      "ssd": {
+        "enabled": false,
+        "display_name": "SSD",
+        "generation_mode": "scheduled_threshold",
+        "priority": 35,
+        "pickup_location": "",
+        "dropoff_location": "",
+        "dropoff_locations": [],
+        "payload": "",
+        "return_enabled": true,
+        "return_payload": "",
+        "route_profile": "",
+        "days_active": [
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "schedule_times": [
+          "08:00",
+          "12:00",
+          "17:00"
+        ],
+        "frequency_per_day": 0.0,
+        "volume_per_event_m3": 0.0,
+        "threshold_volume_m3": 0.0,
+        "base_daily_volume_m3": 0.0,
+        "notes": ""
+      }
+    }
+  }
 }

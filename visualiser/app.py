@@ -6,6 +6,9 @@ import math
 import sys
 from pathlib import Path
 
+import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
 from PySide6.QtCore import (
     QObject,
     QPoint,
@@ -67,19 +70,67 @@ from advanced_dialogs import (
 from models import JsonStore
 
 
+def _load_dxf_floor_process(args):
+    floor, path = args
+    try:
+        payload = DXFScene.load_content(path)
+        return {
+            "ok": True,
+            "floor": int(floor),
+            "path": str(path),
+            "entities": payload["entities"],
+            "bounds": payload["bounds"],
+            "error": "",
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "floor": int(floor),
+            "path": str(path),
+            "entities": None,
+            "bounds": None,
+            "error": str(exc),
+        }
+
+
 class DXFLoadWorker(QObject):
     loaded = Signal(int, str, object, object)
     failed = Signal(int, str, str)
+    finished_batch = Signal()
 
-    @Slot(int, str)
-    def load_floor(self, floor, path):
+    @Slot(object)
+    def load_floors(self, jobs):
+        jobs = list(jobs or [])
+        if not jobs:
+            self.finished_batch.emit()
+            return
+
+        worker_count = min(len(jobs), max(1, (os.cpu_count() or 2) - 1))
+
         try:
-            payload = DXFScene.load_content(path)
-            self.loaded.emit(
-                int(floor), str(path), payload["entities"], payload["bounds"]
-            )
-        except Exception as exc:
-            self.failed.emit(int(floor), str(path), str(exc))
+            with ProcessPoolExecutor(max_workers=worker_count) as pool:
+                futures = [pool.submit(_load_dxf_floor_process, job) for job in jobs]
+
+                for future in as_completed(futures):
+                    result = future.result()
+                    floor = int(result["floor"])
+                    path = str(result["path"])
+
+                    if result.get("ok"):
+                        self.loaded.emit(
+                            floor,
+                            path,
+                            result["entities"],
+                            result["bounds"],
+                        )
+                    else:
+                        self.failed.emit(
+                            floor,
+                            path,
+                            str(result.get("error", "Unknown DXF load error")),
+                        )
+        finally:
+            self.finished_batch.emit()
 
 
 class DXFLoadingDialog(QDialog):
@@ -206,7 +257,7 @@ class EditorGraphicsView(QGraphicsView):
 
 
 class AMRGraphEditor(QMainWindow):
-    _request_dxf_load = Signal(int, str)
+    _request_dxf_batch_load = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -240,7 +291,8 @@ class AMRGraphEditor(QMainWindow):
         self._dxf_worker.moveToThread(self._dxf_thread)
         self._dxf_worker.loaded.connect(self._on_dxf_loaded)
         self._dxf_worker.failed.connect(self._on_dxf_failed)
-        self._request_dxf_load.connect(self._dxf_worker.load_floor)
+        self._request_dxf_batch_load.connect(self._dxf_worker.load_floors)
+        self._dxf_worker.finished_batch.connect(self._update_loading_dialog)
         self._dxf_thread.start()
 
         self.scale = 5.0
@@ -485,18 +537,47 @@ class AMRGraphEditor(QMainWindow):
         floors = self._all_mapped_floors()
         if not floors:
             return
+
         if active_floor is not None:
-            floors = [int(active_floor)] + [
-                f for f in floors if int(f) != int(active_floor)
+            active_floor = int(active_floor)
+            floors = [active_floor] + [
+                int(floor) for floor in floors if int(floor) != active_floor
             ]
-        self._start_loading_batch(floors)
+
+        jobs = []
+
         for floor in floors:
-            self.request_floor_dxf_load(
-                floor,
-                force_reload=force_reload and int(floor) == int(active_floor),
-                prefetch=int(floor)
-                != int(active_floor if active_floor is not None else floor),
+            floor = int(floor)
+            path = self.get_floor_dxf_path(floor)
+            if not path:
+                continue
+
+            cached = self._dxf_cache.get(floor)
+            force_this = bool(
+                force_reload and active_floor is not None and floor == int(active_floor)
             )
+
+            if (not force_this) and cached and cached.get("path") == path:
+                if active_floor is not None and floor == int(active_floor):
+                    self._set_active_dxf_floor(floor)
+                continue
+
+            if floor in self._dxf_loading_floors:
+                continue
+
+            self._dxf_loading_floors.add(floor)
+            jobs.append((floor, path))
+
+        if not jobs:
+            self._update_loading_dialog()
+            return
+
+        self._start_loading_batch([floor for floor, _path in jobs])
+
+        if active_floor is not None:
+            self.set_status("Loading DXFs using multiple processes...")
+
+        self._request_dxf_batch_load.emit(jobs)
         self._update_loading_dialog()
 
     def _clear_dxf_cache(self):
@@ -527,6 +608,7 @@ class AMRGraphEditor(QMainWindow):
     def request_floor_dxf_load(self, floor, force_reload=False, prefetch=False):
         floor = int(floor)
         path = self.get_floor_dxf_path(floor)
+
         if not path:
             if not prefetch and floor == self.floor_spin.value():
                 self.dxf_scene.clear()
@@ -545,9 +627,12 @@ class AMRGraphEditor(QMainWindow):
             return False
 
         self._dxf_loading_floors.add(floor)
+        self._start_loading_batch([floor])
+
         if not prefetch and floor == self.floor_spin.value():
             self.set_status(f"Loading DXF for floor {floor}...")
-        self._request_dxf_load.emit(floor, path)
+
+        self._request_dxf_batch_load.emit([(floor, path)])
         self._update_loading_dialog()
         return False
 
