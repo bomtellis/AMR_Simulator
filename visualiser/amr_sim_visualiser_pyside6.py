@@ -1121,14 +1121,19 @@ class AmrTimelineWidget(QWidget):
         self.end_time: Optional[datetime] = None
         self.current_time: Optional[datetime] = None
 
-        self.row_height = 28
-        self.left_pad = 140
-        self.top_pad = 34
-        self.right_pad = 40
-        self.bottom_pad = 28
+        self.row_height = 34
+        self.left_pad = 150
+        self.top_pad = 58
+        self.right_pad = 60
+        self.bottom_pad = 30
 
+        # Long simulations can span several days.  The lane remains horizontally
+        # scrollable, while the AMR name column is redrawn at the visible left
+        # edge so the lane identity is always readable.
         self.seconds_per_pixel = 4.0
         self.min_lane_width = 1400
+        self.label_column_width = 142
+        self.min_tick_spacing_px = 120
         self._pressed = False
 
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -1185,33 +1190,118 @@ class AmrTimelineWidget(QWidget):
             return "-"
         return value.strftime("%Y-%m-%d %H:%M:%S")
 
+    def _visible_scroll_x(self) -> int:
+        parent = self.parent()
+        while parent is not None:
+            if isinstance(parent, QScrollArea):
+                return int(parent.horizontalScrollBar().value())
+            parent = parent.parent()
+        return 0
+
+    def _nice_tick_seconds(self) -> int:
+        seconds = max(1.0, self._timeline_seconds())
+        approximate_ticks = max(
+            2, int(self._usable_width() // self.min_tick_spacing_px)
+        )
+        raw_step = seconds / approximate_ticks
+        candidates = [
+            60,
+            5 * 60,
+            10 * 60,
+            15 * 60,
+            30 * 60,
+            60 * 60,
+            2 * 60 * 60,
+            3 * 60 * 60,
+            6 * 60 * 60,
+            12 * 60 * 60,
+            24 * 60 * 60,
+            2 * 24 * 60 * 60,
+            7 * 24 * 60 * 60,
+        ]
+        for step in candidates:
+            if step >= raw_step:
+                return step
+        return candidates[-1]
+
+    def _iter_tick_times(self):
+        if not self.start_time or not self.end_time:
+            return
+        step = self._nice_tick_seconds()
+        start_epoch = int(self.start_time.timestamp())
+        first_epoch = (start_epoch // step) * step
+        if first_epoch < start_epoch:
+            first_epoch += step
+        tick = datetime.fromtimestamp(first_epoch, tz=self.start_time.tzinfo)
+        while tick <= self.end_time:
+            yield tick
+            tick += timedelta(seconds=step)
+
+    def _format_tick_label(self, value: datetime, step_seconds: int) -> str:
+        if step_seconds >= 24 * 60 * 60:
+            return value.strftime("%d %b\n%Y")
+        if self.start_time and value.date() != self.start_time.date():
+            return value.strftime("%d %b\n%H:%M")
+        return value.strftime("%H:%M")
+
+    def _draw_day_bands(self, painter: QPainter, axis_y: int):
+        if not self.start_time or not self.end_time:
+            return
+
+        day = datetime(
+            self.start_time.year,
+            self.start_time.month,
+            self.start_time.day,
+            tzinfo=self.start_time.tzinfo,
+        )
+        if day < self.start_time:
+            day += timedelta(days=1)
+
+        while day <= self.end_time:
+            x = self._time_to_x(day)
+            painter.setPen(QPen(QColor("#555555"), 1))
+            painter.drawLine(
+                int(x), axis_y - 20, int(x), self.height() - self.bottom_pad + 2
+            )
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(
+                int(x) + 4,
+                4,
+                120,
+                18,
+                Qt.AlignLeft | Qt.AlignVCenter,
+                day.strftime("%a %d %b"),
+            )
+            day += timedelta(days=1)
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#101010"))
 
-        painter.setFont(QFont("", 9))
+        font = QFont("", 9)
+        painter.setFont(font)
 
         if not self.timeline_data or not self.start_time or not self.end_time:
             painter.setPen(QColor("#cfcfcf"))
             painter.drawText(self.rect(), Qt.AlignCenter, "No timeline data")
             return
 
-        axis_y = self.top_pad - 8
+        scroll_x = self._visible_scroll_x()
+        fixed_label_x = scroll_x + 8
+        fixed_label_panel = QRectF(scroll_x, 0, self.label_column_width, self.height())
+
+        axis_y = self.top_pad - 12
+        lane_start_x = self.left_pad
+        lane_end_x = int(self.left_pad + self._usable_width())
 
         painter.setPen(QColor("#8a8a8a"))
-        painter.drawLine(
-            self.left_pad,
-            axis_y,
-            int(self.left_pad + self._usable_width()),
-            axis_y,
-        )
+        painter.drawLine(lane_start_x, axis_y, lane_end_x, axis_y)
 
-        ticks = max(6, int(self._usable_width() // 180))
-        for i in range(ticks + 1):
-            frac = i / max(1, ticks)
-            x = self.left_pad + (self._usable_width() * frac)
-            tick_time = self.start_time + ((self.end_time - self.start_time) * frac)
+        self._draw_day_bands(painter, axis_y)
 
+        step_seconds = self._nice_tick_seconds()
+        for tick_time in self._iter_tick_times() or []:
+            x = self._time_to_x(tick_time)
             painter.setPen(QColor("#2a2a2a"))
             painter.drawLine(
                 int(x), axis_y - 4, int(x), self.height() - self.bottom_pad + 2
@@ -1219,27 +1309,19 @@ class AmrTimelineWidget(QWidget):
 
             painter.setPen(QColor("#d7d7d7"))
             painter.drawText(
-                int(x) - 65,
-                6,
-                130,
+                int(x) - 42,
                 22,
+                84,
+                30,
                 Qt.AlignCenter,
-                self._format_datetime(tick_time),
+                self._format_tick_label(tick_time, step_seconds),
             )
 
         for row, lane in enumerate(self.timeline_data):
             y = self.top_pad + (row * self.row_height)
 
-            painter.setPen(QColor("#d7d7d7"))
-            painter.drawText(8, y + 17, lane["amr_id"])
-
             painter.setPen(QColor("#2a2a2a"))
-            painter.drawLine(
-                self.left_pad,
-                y + 18,
-                int(self.left_pad + self._usable_width()),
-                y + 18,
-            )
+            painter.drawLine(lane_start_x, y + 22, lane_end_x, y + 22)
 
             for block in lane["blocks"]:
                 x1 = self._time_to_x(block["start"])
@@ -1247,16 +1329,59 @@ class AmrTimelineWidget(QWidget):
                 if x2 < x1 + 2:
                     x2 = x1 + 2
 
-                rect = QRectF(x1, y + 6, x2 - x1, 12)
+                rect = QRectF(x1, y + 7, x2 - x1, 16)
                 painter.fillRect(rect, QColor(block["color"]))
                 painter.setPen(QColor("#000000"))
                 painter.drawRect(rect)
+
+                label = str(block.get("label", "")).strip()
+                if label and rect.width() >= 54:
+                    metrics = painter.fontMetrics()
+                    text = metrics.elidedText(
+                        label, Qt.ElideRight, max(1, int(rect.width()) - 8)
+                    )
+                    painter.setPen(QColor("#ffffff"))
+                    painter.drawText(
+                        rect.adjusted(4, 0, -4, 0),
+                        Qt.AlignLeft | Qt.AlignVCenter,
+                        text,
+                    )
 
         if self.current_time is not None:
             x = self._time_to_x(self.current_time)
             painter.setPen(QPen(QColor("#ffffff"), 2))
             painter.drawLine(
-                int(x), self.top_pad - 10, int(x), self.height() - self.bottom_pad + 4
+                int(x), self.top_pad - 28, int(x), self.height() - self.bottom_pad + 4
+            )
+
+        # Redraw the lane labels last as a fixed overlay tied to the scroll view.
+        painter.fillRect(fixed_label_panel, QColor("#151515"))
+        painter.setPen(QPen(QColor("#333333"), 1))
+        painter.drawLine(
+            int(scroll_x + self.label_column_width),
+            0,
+            int(scroll_x + self.label_column_width),
+            self.height(),
+        )
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(
+            int(fixed_label_x),
+            22,
+            self.label_column_width - 16,
+            24,
+            Qt.AlignLeft | Qt.AlignVCenter,
+            "AMR",
+        )
+        for row, lane in enumerate(self.timeline_data):
+            y = self.top_pad + (row * self.row_height)
+            painter.setPen(QColor("#d7d7d7"))
+            painter.drawText(
+                int(fixed_label_x),
+                y + 3,
+                self.label_column_width - 16,
+                24,
+                Qt.AlignLeft | Qt.AlignVCenter,
+                str(lane["amr_id"]),
             )
 
     def mousePressEvent(self, event):
@@ -1551,6 +1676,12 @@ class SimulationVisualizer(QMainWindow):
         self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.timeline_scroll.setWidget(self.timeline_widget)
+        self.timeline_scroll.horizontalScrollBar().valueChanged.connect(
+            self.timeline_widget.update
+        )
+        self.timeline_scroll.verticalScrollBar().valueChanged.connect(
+            self.timeline_widget.update
+        )
 
         self.main_splitter = QSplitter(Qt.Vertical)
         self.main_splitter.addWidget(self.view)
@@ -3085,17 +3216,30 @@ class SimulationVisualizer(QMainWindow):
         csv_start = self.sim_log.start_time
         csv_end = self.sim_log.end_time
 
-        if layout_start is not None:
-            self.sim_log.start_time = layout_start
-        elif csv_start is not None:
-            self.sim_log.start_time = csv_start
+        # The JSON task list is only a planned schedule.  The simulation CSV is
+        # the executed timeline and can legitimately contain generated tasks that
+        # start before the first manual JSON task.  Use the earliest available
+        # start and latest available end so loading the JSON cannot clip the
+        # timeline and hide the first CSV task.
+        start_candidates = [x for x in (csv_start, layout_start) if x is not None]
+        end_candidates = [x for x in (csv_end, layout_end) if x is not None]
 
-        candidates = [x for x in (layout_end, csv_end) if x is not None]
+        self.sim_log.start_time = min(start_candidates) if start_candidates else None
         self.sim_log.end_time = (
-            max(candidates) if candidates else self.sim_log.start_time
+            max(end_candidates) if end_candidates else self.sim_log.start_time
         )
 
-        self.current_time = self.sim_log.start_time
+        if self.current_time is None:
+            self.current_time = self.sim_log.start_time
+        elif self.sim_log.start_time and self.current_time < self.sim_log.start_time:
+            self.current_time = self.sim_log.start_time
+        elif self.sim_log.end_time and self.current_time > self.sim_log.end_time:
+            self.current_time = self.sim_log.end_time
+
+        # When the data range changes, keep the first events reachable.
+        if hasattr(self, "timeline_scroll"):
+            self.timeline_scroll.horizontalScrollBar().setValue(0)
+
         self.update_time_display()
 
     def _follow_overlay_lines(self):
@@ -3471,12 +3615,19 @@ class SimulationVisualizer(QMainWindow):
                 block_type = "handling"
                 color = "#9b59b6"
 
+            task_id = (row.get("task_id") or "").strip()
+            payload = (row.get("payload") or "").strip()
+            label_parts = [task_id or block_type.title()]
+            if payload:
+                label_parts.append(payload)
+
             lanes.setdefault(amr_id, []).append(
                 {
                     "start": start_dt,
                     "end": end_dt,
                     "type": block_type,
                     "color": color,
+                    "label": " | ".join(label_parts),
                 }
             )
 
@@ -3511,15 +3662,38 @@ class SimulationVisualizer(QMainWindow):
 
         return result
 
+    def _timeline_display_range(self, timeline_data: List[dict]):
+        starts = []
+        ends = []
+
+        if self.sim_log.start_time is not None:
+            starts.append(self.sim_log.start_time)
+        if self.sim_log.end_time is not None:
+            ends.append(self.sim_log.end_time)
+
+        # Guard against stale start/end values if a JSON file is loaded after a
+        # CSV.  The painted range must always include the actual event blocks.
+        for lane in timeline_data or []:
+            for block in lane.get("blocks", []):
+                if block.get("start") is not None:
+                    starts.append(block["start"])
+                if block.get("end") is not None:
+                    ends.append(block["end"])
+
+        start_time = min(starts) if starts else None
+        end_time = max(ends) if ends else start_time
+        return start_time, end_time
+
     def refresh_timeline(self):
         if not hasattr(self, "timeline_widget"):
             return
 
         timeline_data = self.build_amr_timeline_data() if self.sim_log.events else []
+        start_time, end_time = self._timeline_display_range(timeline_data)
         self.timeline_widget.set_data(
             timeline_data,
-            self.sim_log.start_time,
-            self.sim_log.end_time,
+            start_time,
+            end_time,
             self.current_time,
         )
 
