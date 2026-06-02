@@ -1,4 +1,5 @@
 import json
+import math
 from typing import Any, List, Optional
 
 from advanced_dialogs import MultiSelectPicker
@@ -4499,8 +4500,15 @@ class InventorySpacesDialog(QDialog):
         self.drag_whole_space = False
         self.drag_start_world = None
         self.drag_start_points = []
+        self.drag_payload_index = None
+        self.drag_payload_start_world = None
+        self.drag_payload_start = None
         self.copied_space = None
         self._initial_fit_done = False
+        self.selected_payload_index = None
+        self.drag_payload_index = None
+        self.drag_payload_start_world = None
+        self.drag_payload_start = None
 
         layout = QHBoxLayout(self)
 
@@ -4565,6 +4573,24 @@ class InventorySpacesDialog(QDialog):
 
         right.addLayout(size_row)
 
+        payload_tools = QHBoxLayout()
+        self.payload_combo = QComboBox()
+        self.payload_combo.addItems([""] + self._payload_names())
+        self.payload_edit_check = QCheckBox("Edit payloads")
+        add_payload_btn = QPushButton("Add payload")
+        auto_align_btn = QPushButton("Auto align")
+        clear_payloads_btn = QPushButton("Clear payloads")
+        add_payload_btn.clicked.connect(self.add_payload_slot)
+        auto_align_btn.clicked.connect(self.auto_align_payloads)
+        clear_payloads_btn.clicked.connect(self.clear_payload_slots)
+        payload_tools.addWidget(QLabel("Payload"))
+        payload_tools.addWidget(self.payload_combo, 1)
+        payload_tools.addWidget(self.payload_edit_check)
+        payload_tools.addWidget(add_payload_btn)
+        payload_tools.addWidget(auto_align_btn)
+        payload_tools.addWidget(clear_payloads_btn)
+        right.addLayout(payload_tools)
+
         self.scene = QGraphicsScene(self)
         self.view = ZoomableInventoryView(self.scene)
         self.view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -4579,12 +4605,302 @@ class InventorySpacesDialog(QDialog):
         right.addWidget(self.view, 1)
 
         self.status_label = QLabel(
-            "Left-click to add points. Drag yellow points to edit. Right-click a point to remove it."
+            "Space mode: left-click to add points, drag yellow points to edit, right-click a point to remove it. Payload mode: drag blue payloads, right-click to rotate."
         )
         right.addWidget(self.status_label)
 
         self.refresh_list()
         self.refresh_scene()
+
+    def _payload_names(self):
+        return sorted(
+            str(p.get("name", "")).strip()
+            for p in self.store.data.get("payloads", [])
+            if str(p.get("name", "")).strip()
+        )
+
+    def _payload_by_name(self, name):
+        name = str(name or "").strip()
+        for payload in self.store.data.get("payloads", []):
+            if str(payload.get("name", "")).strip() == name:
+                return payload
+        return None
+
+    def _payload_dimensions(self, name):
+        payload = self._payload_by_name(name)
+        if not payload:
+            return 0.0, 0.0
+        length = float(payload.get("length_m", 0.0) or 0.0)
+        width = float(payload.get("width_m", 0.0) or 0.0)
+        return max(0.0, length), max(0.0, width)
+
+    def _current_space_slots(self):
+        if self.selected_space_index is None:
+            return []
+        if 0 <= self.selected_space_index < len(self.spaces):
+            return self.spaces[self.selected_space_index].setdefault(
+                "payload_slots", []
+            )
+        return []
+
+    def _space_bounds(self):
+        if not self.current_points:
+            return None
+        xs = [float(p["x"]) for p in self.current_points]
+        ys = [float(p["y"]) for p in self.current_points]
+        return min(xs), min(ys), max(xs), max(ys)
+
+    def _slot_center_absolute(self, slot):
+        lx = float(self.location.get("x", 0.0))
+        ly = float(self.location.get("y", 0.0))
+        if "dx" in slot and "dy" in slot:
+            return lx + float(slot.get("dx", 0.0)), ly + float(slot.get("dy", 0.0))
+        return float(slot.get("x", lx)), float(slot.get("y", ly))
+
+    def _set_slot_center_absolute(self, slot, x, y):
+        lx = float(self.location.get("x", 0.0))
+        ly = float(self.location.get("y", 0.0))
+        slot["dx"] = round(float(x) - lx, 3)
+        slot["dy"] = round(float(y) - ly, 3)
+        slot.pop("x", None)
+        slot.pop("y", None)
+
+    def _slot_polygon_points(self, slot):
+        payload_name = str(slot.get("payload", "")).strip()
+        length, width = self._payload_dimensions(payload_name)
+        if length <= 0 or width <= 0:
+            return []
+        cx, cy = self._slot_center_absolute(slot)
+        angle = math.radians(float(slot.get("rotation_deg", 0.0) or 0.0))
+        c = math.cos(angle)
+        s = math.sin(angle)
+        corners = [
+            (-length / 2.0, -width / 2.0),
+            (length / 2.0, -width / 2.0),
+            (length / 2.0, width / 2.0),
+            (-length / 2.0, width / 2.0),
+        ]
+        return [
+            {
+                "x": round(cx + (dx * c) - (dy * s), 3),
+                "y": round(cy + (dx * s) + (dy * c), 3),
+            }
+            for dx, dy in corners
+        ]
+
+    def _point_in_polygon(self, x, y, points):
+        if len(points) < 3:
+            return False
+        inside = False
+        j = len(points) - 1
+        for i in range(len(points)):
+            xi = float(points[i]["x"])
+            yi = float(points[i]["y"])
+            xj = float(points[j]["x"])
+            yj = float(points[j]["y"])
+            if ((yi > y) != (yj > y)) and (
+                x < ((xj - xi) * (y - yi) / ((yj - yi) or 1e-9)) + xi
+            ):
+                inside = not inside
+            j = i
+        return inside
+
+    def _slot_contains_point(self, slot, x, y):
+        return self._point_in_polygon(x, y, self._slot_polygon_points(slot))
+
+    def _nearest_payload_slot_index(self, x, y):
+        for idx in reversed(range(len(self._current_space_slots()))):
+            if self._slot_contains_point(self._current_space_slots()[idx], x, y):
+                return idx
+        return None
+
+    def _slot_fits_current_space(self, slot):
+        if not self.current_points:
+            return True
+        return all(
+            self._point_in_polygon(p["x"], p["y"], self.current_points)
+            for p in self._slot_polygon_points(slot)
+        )
+
+    def add_payload_slot(self):
+        payload_name = self.payload_combo.currentText().strip()
+        if not payload_name:
+            QMessageBox.information(self, "Payload", "Select a payload first.")
+            return
+
+        length, width = self._payload_dimensions(payload_name)
+        if length <= 0 or width <= 0:
+            QMessageBox.critical(
+                self,
+                "Payload",
+                "Payload length and width must be greater than zero.",
+            )
+            return
+
+        # Add payload now creates a dedicated inventory space that is exactly
+        # the fixed footprint of the selected payload.  The payload slot is
+        # centred inside that space, so it can still be moved/rotated with the
+        # existing payload-edit tools if required.
+        cx, cy = self._next_payload_space_centre(length, width)
+        min_x = cx - (length / 2.0)
+        min_y = cy - (width / 2.0)
+        max_x = cx + (length / 2.0)
+        max_y = cy + (width / 2.0)
+
+        points_abs = [
+            {"x": round(min_x, 3), "y": round(min_y, 3)},
+            {"x": round(max_x, 3), "y": round(min_y, 3)},
+            {"x": round(max_x, 3), "y": round(max_y, 3)},
+            {"x": round(min_x, 3), "y": round(max_y, 3)},
+        ]
+
+        lx = float(self.location.get("x", 0.0))
+        ly = float(self.location.get("y", 0.0))
+        name = self._next_payload_space_name(payload_name)
+        space = {
+            "name": name,
+            "points": [
+                {
+                    "dx": round(float(p["x"]) - lx, 3),
+                    "dy": round(float(p["y"]) - ly, 3),
+                }
+                for p in points_abs
+            ],
+            "payload_slots": [
+                {
+                    "payload": payload_name,
+                    "dx": round(cx - lx, 3),
+                    "dy": round(cy - ly, 3),
+                    "rotation_deg": 0.0,
+                }
+            ],
+        }
+
+        self.spaces.append(space)
+        self.selected_space_index = len(self.spaces) - 1
+        self.current_points = points_abs
+        self.name_edit.setText(name)
+        self.selected_payload_index = 0
+        self.payload_edit_check.setChecked(True)
+        self.lock_size_check.setChecked(True)
+        self.refresh_list()
+        self.space_list.setCurrentRow(self.selected_space_index)
+        self.refresh_scene()
+        self.status_label.setText(
+            f"Created inventory space '{name}' sized to {payload_name} "
+            f"({length:.3f} m × {width:.3f} m)."
+        )
+
+    def _next_payload_space_name(self, payload_name):
+        base = str(payload_name).strip() or "Payload"
+        existing = {str(space.get("name", "")).strip() for space in self.spaces}
+        index = 1
+        while True:
+            name = f"{base} space {index}"
+            if name not in existing:
+                return name
+            index += 1
+
+    def _next_payload_space_centre(self, length, width):
+        # Prefer placing inside the location bounding box when one exists;
+        # otherwise start at the location origin.  Each added payload is
+        # offset by one payload width/length plus a small gap so new spaces do
+        # not sit exactly on top of each other.
+        gap = 0.1
+        location_box = self.store.get_location_bounding_box_points(self.location_name)
+
+        if location_box:
+            xs = [float(p["x"]) for p in location_box]
+            ys = [float(p["y"]) for p in location_box]
+            min_x = min(xs)
+            max_x = max(xs)
+            min_y = min(ys)
+            max_y = max(ys)
+
+            usable_width = max(0.0, max_x - min_x)
+            columns = max(1, int((usable_width + gap) // (float(length) + gap)))
+            index = len(self.spaces)
+            col = index % columns
+            row = index // columns
+            cx = min_x + (float(length) / 2.0) + (col * (float(length) + gap))
+            cy = min_y + (float(width) / 2.0) + (row * (float(width) + gap))
+
+            # If the calculated row would run beyond the bounding box, keep it
+            # visible by falling back to the lower-left origin plus stagger.
+            if cy + (float(width) / 2.0) <= max_y + 1e-9:
+                return round(cx, 3), round(cy, 3)
+
+        lx = float(self.location.get("x", 0.0))
+        ly = float(self.location.get("y", 0.0))
+        offset = len(self.spaces) * (max(float(length), float(width)) + gap)
+        return round(lx + (float(length) / 2.0) + offset, 3), round(
+            ly + (float(width) / 2.0), 3
+        )
+
+    def clear_payload_slots(self):
+        if not self._current_space_slots():
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Clear payloads",
+                "Remove all placed payloads from this inventory space?",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        self._current_space_slots().clear()
+        self.selected_payload_index = None
+        self.save_current_space()
+
+    def auto_align_payloads(self):
+        payload_name = self.payload_combo.currentText().strip()
+        if not payload_name:
+            QMessageBox.information(
+                self, "Auto align", "Select a payload to align first."
+            )
+            return
+        if len(self.current_points) < 3:
+            QMessageBox.information(
+                self, "Auto align", "Select or draw an inventory space first."
+            )
+            return
+        length, width = self._payload_dimensions(payload_name)
+        if length <= 0 or width <= 0:
+            QMessageBox.critical(
+                self,
+                "Auto align",
+                "Payload length and width must be greater than zero.",
+            )
+            return
+        bounds = self._space_bounds()
+        if not bounds:
+            return
+        min_x, min_y, max_x, max_y = bounds
+        gap = 0.05
+
+        def make_grid(item_len, item_wid, rotation):
+            slots = []
+            y = min_y + item_wid / 2.0
+            while y + item_wid / 2.0 <= max_y + 1e-9:
+                x = min_x + item_len / 2.0
+                while x + item_len / 2.0 <= max_x + 1e-9:
+                    slot = {"payload": payload_name, "rotation_deg": rotation}
+                    self._set_slot_center_absolute(slot, x, y)
+                    if self._slot_fits_current_space(slot):
+                        slots.append(slot)
+                    x += item_len + gap
+                y += item_wid + gap
+            return slots
+
+        normal = make_grid(length, width, 0.0)
+        rotated = make_grid(width, length, 90.0)
+        slots = rotated if len(rotated) > len(normal) else normal
+        current = self._current_space_slots()
+        current[:] = slots
+        self.selected_payload_index = 0 if slots else None
+        self.payload_edit_check.setChecked(True)
+        self.save_current_space()
 
     def _apply_size_from_fields(self):
         if len(self.current_points) != 4:
@@ -4700,6 +5016,7 @@ class InventorySpacesDialog(QDialog):
             self.location_name,
             space,
         )
+        self.selected_payload_index = None
 
         self.refresh_scene()
 
@@ -4723,6 +5040,18 @@ class InventorySpacesDialog(QDialog):
         lx = float(self.location.get("x", 0.0))
         ly = float(self.location.get("y", 0.0))
 
+        existing_slots = []
+        if (
+            self.selected_space_index is not None
+            and 0 <= self.selected_space_index < len(self.spaces)
+        ):
+            existing_slots = [
+                dict(slot)
+                for slot in self.spaces[self.selected_space_index].get(
+                    "payload_slots", []
+                )
+            ]
+
         payload = {
             "name": name,
             "points": [
@@ -4732,6 +5061,7 @@ class InventorySpacesDialog(QDialog):
                 }
                 for p in self.current_points
             ],
+            "payload_slots": existing_slots,
         }
 
         if self.selected_space_index is None:
@@ -4844,6 +5174,25 @@ class InventorySpacesDialog(QDialog):
         scene_pos = self.view.mapToScene(event.position().toPoint())
         x, y = self.scene_to_world(scene_pos)
 
+        if self.payload_edit_check.isChecked():
+            hit_payload = self._nearest_payload_slot_index(x, y)
+            if event.button() == Qt.RightButton:
+                if hit_payload is not None:
+                    slots = self._current_space_slots()
+                    slots[hit_payload]["rotation_deg"] = (
+                        float(slots[hit_payload].get("rotation_deg", 0.0) or 0.0) + 90.0
+                    ) % 180.0
+                    self.selected_payload_index = hit_payload
+                    self.save_current_space()
+                return
+            if event.button() == Qt.LeftButton and hit_payload is not None:
+                self.selected_payload_index = hit_payload
+                self.drag_payload_index = hit_payload
+                self.drag_payload_start_world = {"x": x, "y": y}
+                self.drag_payload_start = dict(self._current_space_slots()[hit_payload])
+                self.refresh_scene()
+                return
+
         hit = self._nearest_current_point(x, y)
 
         if event.button() == Qt.RightButton:
@@ -4881,6 +5230,23 @@ class InventorySpacesDialog(QDialog):
         scene_pos = self.view.mapToScene(event.position().toPoint())
         x, y = self.scene_to_world(scene_pos)
 
+        if (
+            self.drag_payload_index is not None
+            and self.drag_payload_start_world is not None
+            and self.drag_payload_start is not None
+        ):
+            slots = self._current_space_slots()
+            if 0 <= self.drag_payload_index < len(slots):
+                start_x, start_y = self._slot_center_absolute(self.drag_payload_start)
+                dx = x - float(self.drag_payload_start_world["x"])
+                dy = y - float(self.drag_payload_start_world["y"])
+                candidate = dict(self.drag_payload_start)
+                self._set_slot_center_absolute(candidate, start_x + dx, start_y + dy)
+                if self._slot_fits_current_space(candidate):
+                    slots[self.drag_payload_index].update(candidate)
+                self.refresh_scene()
+            return
+
         if self.drag_whole_space and self.drag_start_world is not None:
             dx = round(x - float(self.drag_start_world["x"]), 3)
             dy = round(y - float(self.drag_start_world["y"]), 3)
@@ -4912,6 +5278,9 @@ class InventorySpacesDialog(QDialog):
         self.drag_whole_space = False
         self.drag_start_world = None
         self.drag_start_points = []
+        self.drag_payload_index = None
+        self.drag_payload_start_world = None
+        self.drag_payload_start = None
 
     def _location_box_scene_rect(self):
         location_box = self.store.get_location_bounding_box_points(self.location_name)
@@ -4938,6 +5307,9 @@ class InventorySpacesDialog(QDialog):
         self.copied_space = {
             "name": self.spaces[row].get("name", "Inventory space"),
             "points": [dict(p) for p in self.spaces[row].get("points", [])],
+            "payload_slots": [
+                dict(slot) for slot in self.spaces[row].get("payload_slots", [])
+            ],
         }
 
         self.status_label.setText(f"Copied {self.copied_space['name']}")
@@ -4949,12 +5321,18 @@ class InventorySpacesDialog(QDialog):
         pasted = {
             "name": f"{self.copied_space.get('name', 'Inventory space')} copy",
             "points": [dict(p) for p in self.copied_space.get("points", [])],
+            "payload_slots": [
+                dict(slot) for slot in self.copied_space.get("payload_slots", [])
+            ],
         }
 
         # Small offset so pasted space is visible and selectable separately
         for p in pasted["points"]:
             p["dx"] = round(float(p.get("dx", 0.0)) + 0.25, 3)
             p["dy"] = round(float(p.get("dy", 0.0)) + 0.25, 3)
+        for slot in pasted.get("payload_slots", []):
+            slot["dx"] = round(float(slot.get("dx", 0.0)) + 0.25, 3)
+            slot["dy"] = round(float(slot.get("dy", 0.0)) + 0.25, 3)
 
         self.spaces.append(pasted)
         self.selected_space_index = len(self.spaces) - 1
@@ -5117,6 +5495,26 @@ class InventorySpacesDialog(QDialog):
                     QBrush(QColor("#ffdd57")),
                 )
                 handle.setZValue(10)
+
+        for slot_index, slot in enumerate(self._current_space_slots()):
+            payload_name = str(slot.get("payload", "")).strip()
+            poly_points = self._slot_polygon_points(slot)
+            if len(poly_points) < 3:
+                continue
+            pts = [self.world_to_scene(p["x"], p["y"]) for p in poly_points]
+            item = QGraphicsPolygonItem(QPolygonF(pts))
+            selected = slot_index == self.selected_payload_index
+            item.setPen(QPen(QColor("#ffffff" if selected else "#3da5ff"), 0.05))
+            item.setBrush(QBrush(QColor(61, 165, 255, 95 if selected else 60)))
+            item.setZValue(15)
+            self.scene.addItem(item)
+            cx, cy = self._slot_center_absolute(slot)
+            label = QGraphicsSimpleTextItem(payload_name)
+            label.setBrush(QBrush(QColor("#e3f2ff")))
+            label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+            label.setPos(self.world_to_scene(cx, cy))
+            label.setZValue(16)
+            self.scene.addItem(label)
 
         base_rect = self._location_box_scene_rect()
 

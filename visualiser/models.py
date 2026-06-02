@@ -545,11 +545,33 @@ class JsonStore:
                         }
                     )
 
+            payload_slots = []
+            for slot in space.get("payload_slots", []):
+                if not isinstance(slot, dict):
+                    continue
+                payload_name = str(slot.get("payload", "")).strip()
+                if not payload_name:
+                    continue
+                clean_slot = {
+                    "payload": payload_name,
+                    "rotation_deg": round(
+                        float(slot.get("rotation_deg", 0.0) or 0.0), 3
+                    ),
+                }
+                if "dx" in slot and "dy" in slot:
+                    clean_slot["dx"] = round(float(slot.get("dx", 0.0)), 3)
+                    clean_slot["dy"] = round(float(slot.get("dy", 0.0)), 3)
+                else:
+                    clean_slot["dx"] = round(float(slot.get("x", lx)) - lx, 3)
+                    clean_slot["dy"] = round(float(slot.get("y", ly)) - ly, 3)
+                payload_slots.append(clean_slot)
+
             if len(points) >= 3:
                 clean_spaces.append(
                     {
                         "name": name,
                         "points": points,
+                        "payload_slots": payload_slots,
                     }
                 )
 
