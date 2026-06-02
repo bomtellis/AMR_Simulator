@@ -1114,6 +1114,214 @@ def build_report(
 
     # --- END Payload Summary ---
 
+    # --- START Location space utilisation ---
+
+    story += [
+        NextPageTemplate("landscape"),
+        PageBreak(),
+        Paragraph("Location space utilisation", styles["Section"]),
+        Paragraph(
+            "Locations are mapped to departments and service categories from the simulator JSON. Area is calculated from each location bounding box; utilisation compares defined inventory-space area with the location area where inventory spaces are present.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    location_util_df = results.get("location_space_utilisation", pd.DataFrame()).copy()
+    if location_util_df.empty:
+        story.append(
+            Paragraph(
+                "No location space utilisation data was available. Provide --config-json to include location, department and inventory-space analysis.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        location_util_df = location_util_df.rename(
+            columns={
+                "department": "Department",
+                "category": "Category",
+                "location": "Location",
+                "floor": "Floor",
+                "length_m": "Length m",
+                "width_m": "Width m",
+                "area_m2": "Area m²",
+                "inventory_spaces_current": "Spaces",
+                "deliveries_completed": "Completed",
+                "failed_delivery_attempts": "Failed",
+                "capacity_related_failures": "Capacity failures",
+                "utilisation_pct": "Util %",
+                "recommended_area_m2": "Recommended area m²",
+                "recommended_inventory_spaces": "Recommended spaces",
+            }
+        )
+        story.append(
+            table_from_df(
+                location_util_df,
+                [
+                    25 * mm,
+                    18 * mm,
+                    35 * mm,
+                    10 * mm,
+                    14 * mm,
+                    14 * mm,
+                    15 * mm,
+                    12 * mm,
+                    14 * mm,
+                    12 * mm,
+                    20 * mm,
+                    14 * mm,
+                    22 * mm,
+                    22 * mm,
+                ],
+                styles,
+                right_align=[3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+            )
+        )
+
+    # --- END Location space utilisation ---
+
+    # --- START Failed delivery analysis ---
+
+    story += [
+        PageBreak(),
+        Paragraph("Failed delivery analysis", styles["Section"]),
+        Paragraph(
+            "Failed deliveries are grouped with their logged reason and payload dimensions so capacity failures can be traced back to the attempted load size.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    failed_delivery_df = results.get("failed_delivery_summary", pd.DataFrame()).copy()
+    if failed_delivery_df.empty:
+        story.append(
+            Paragraph(
+                "No failed deliveries were identified in the simulation event log.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        failed_delivery_df = failed_delivery_df.rename(
+            columns={
+                "time": "Time",
+                "task_id": "Task",
+                "amr": "AMR",
+                "department": "Department",
+                "category": "Category",
+                "location": "Location",
+                "payload": "Payload",
+                "payload_length_m": "Payload L",
+                "payload_width_m": "Payload W",
+                "payload_height_m": "Payload H",
+                "payload_area_m2": "Payload area",
+                "failure_reason": "Failure reason",
+            }
+        )
+        story.append(
+            table_from_df(
+                failed_delivery_df,
+                [
+                    26 * mm,
+                    25 * mm,
+                    14 * mm,
+                    25 * mm,
+                    18 * mm,
+                    30 * mm,
+                    24 * mm,
+                    13 * mm,
+                    13 * mm,
+                    13 * mm,
+                    16 * mm,
+                    45 * mm,
+                ],
+                styles,
+                right_align=[7, 8, 9, 10],
+            )
+        )
+
+    failed_payload_sizes_df = results.get("failed_payload_sizes", pd.DataFrame()).copy()
+    if not failed_payload_sizes_df.empty:
+        story += [Spacer(1, 8), Paragraph("Failed payload sizes", styles["Heading3"])]
+        failed_payload_sizes_df = failed_payload_sizes_df.rename(
+            columns={
+                "location": "Location",
+                "payload": "Payload",
+                "payload_length_m": "Length m",
+                "payload_width_m": "Width m",
+                "payload_height_m": "Height m",
+                "failed_count": "Failed count",
+            }
+        )
+        story.append(
+            table_from_df(
+                failed_payload_sizes_df,
+                [45 * mm, 45 * mm, 22 * mm, 22 * mm, 22 * mm, 24 * mm],
+                styles,
+                right_align=[2, 3, 4, 5],
+            )
+        )
+
+    # --- END Failed delivery analysis ---
+
+    # --- START Location recommendations ---
+
+    story += [
+        PageBreak(),
+        Paragraph("Location storage recommendations", styles["Section"]),
+        Paragraph(
+            "Recommended area keeps the current location area as a baseline and adds failed payload footprints with a 30% handling allowance. Recommended spaces add capacity-related failed attempts to the current defined inventory-space count.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    location_recommendations_df = results.get(
+        "location_recommendations", pd.DataFrame()
+    ).copy()
+    if location_recommendations_df.empty:
+        story.append(
+            Paragraph(
+                "No location recommendation data was available.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        location_recommendations_df = location_recommendations_df.rename(
+            columns={
+                "department": "Department",
+                "category": "Category",
+                "location": "Location",
+                "current_area_m2": "Current area m²",
+                "recommended_area_m2": "Recommended area m²",
+                "additional_area_m2": "Additional area m²",
+                "current_inventory_spaces": "Current spaces",
+                "recommended_inventory_spaces": "Recommended spaces",
+                "additional_inventory_spaces": "Additional spaces",
+                "reason": "Reason",
+            }
+        )
+        story.append(
+            table_from_df(
+                location_recommendations_df,
+                [
+                    25 * mm,
+                    18 * mm,
+                    35 * mm,
+                    20 * mm,
+                    23 * mm,
+                    20 * mm,
+                    18 * mm,
+                    23 * mm,
+                    18 * mm,
+                    50 * mm,
+                ],
+                styles,
+                right_align=[3, 4, 5, 6, 7, 8],
+            )
+        )
+
+    # --- END Location recommendations ---
+
     report_progress(9, 11, "Adding AMR sections")
 
     # --- START AMR Task Summary ---

@@ -75,6 +75,18 @@ COLUMN_ALIASES = {
         "consumption_kwh",
         "recharge_energy_kwh",
     ],
+    "reason": [
+        "failure_reason",
+        "reason",
+        "failed_reason",
+        "fail_reason",
+        "pending_reason",
+        "message",
+        "detail",
+        "details",
+        "note",
+        "notes",
+    ],
     "start_x": ["start_x", "from_x", "x_from", "origin_x", "x1"],
     "start_y": ["start_y", "from_y", "y_from", "origin_y", "y1"],
     "end_x": ["end_x", "to_x", "x_to", "destination_x", "x2"],
@@ -262,6 +274,467 @@ def load_payload_weights(json_path: Path) -> Dict[str, float]:
     return weights
 
 
+def _to_float(value, default: float = 0.0) -> float:
+    try:
+        if value is None or pd.isna(value):
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def polygon_area(points: List[dict]) -> float:
+    if not points or len(points) < 3:
+        return 0.0
+    coords = [(_to_float(p.get("dx")), _to_float(p.get("dy"))) for p in points]
+    total = 0.0
+    for i, (x1, y1) in enumerate(coords):
+        x2, y2 = coords[(i + 1) % len(coords)]
+        total += x1 * y2 - x2 * y1
+    return abs(total) / 2.0
+
+
+def polygon_dimensions(points: List[dict]) -> Tuple[float, float]:
+    if not points:
+        return 0.0, 0.0
+    xs = [_to_float(p.get("dx")) for p in points]
+    ys = [_to_float(p.get("dy")) for p in points]
+    return max(xs) - min(xs), max(ys) - min(ys)
+
+
+def load_payload_dimensions(json_path: Path) -> pd.DataFrame:
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    rows: List[dict] = []
+    for item in data.get("payloads", []):
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        length = _to_float(item.get("length_m"))
+        width = _to_float(item.get("width_m"))
+        height = _to_float(item.get("height_m"))
+        rows.append(
+            {
+                "payload": name,
+                "payload_weight_kg": _to_float(item.get("weight_kg")),
+                "payload_length_m": length,
+                "payload_width_m": width,
+                "payload_height_m": height,
+                "payload_area_m2": round(length * width, 3),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def load_location_catalog(json_path: Path) -> pd.DataFrame:
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    location_to_department: Dict[str, str] = {}
+    location_to_category: Dict[str, str] = {}
+    for dept in data.get("departments", []):
+        dept_name = str(dept.get("name") or dept.get("id") or "-").strip() or "-"
+        task_locations = dept.get("task_generation_locations", {}) or {}
+        for category, cfg in task_locations.items():
+            for loc_name in (cfg or {}).get("pickup_dropoff_locations", []) or []:
+                if not loc_name:
+                    continue
+                location_to_department[str(loc_name)] = dept_name
+                location_to_category[str(loc_name)] = str(category).title()
+
+    rows: List[dict] = []
+    for loc in data.get("locations", []):
+        name = str(loc.get("name", "")).strip()
+        if not name:
+            continue
+        bbox = loc.get("bounding_box", []) or []
+        length, width = polygon_dimensions(bbox)
+        area = polygon_area(bbox)
+        spaces = loc.get("inventory_spaces", None)
+        spaces_list = spaces if isinstance(spaces, list) else []
+        explicit_spaces = spaces is not None
+        inventory_area = sum(
+            polygon_area((space or {}).get("points", []) or []) for space in spaces_list
+        )
+        rows.append(
+            {
+                "location": name,
+                "department": location_to_department.get(name, "-"),
+                "category": location_to_category.get(name, "-"),
+                "floor": loc.get("floor", "-"),
+                "length_m": round(length, 2),
+                "width_m": round(width, 2),
+                "area_m2": round(area, 2),
+                "inventory_spaces_current": len(spaces_list),
+                "inventory_area_m2": round(inventory_area, 2),
+                "inventory_spaces_defined": explicit_spaces,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _empty_location_outputs() -> (
+    Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
+):
+    return (
+        pd.DataFrame(
+            columns=[
+                "department",
+                "category",
+                "location",
+                "floor",
+                "length_m",
+                "width_m",
+                "area_m2",
+                "inventory_spaces_current",
+                "deliveries_completed",
+                "failed_delivery_attempts",
+                "capacity_related_failures",
+                "utilisation_pct",
+                "recommended_area_m2",
+                "recommended_inventory_spaces",
+            ]
+        ),
+        pd.DataFrame(
+            columns=[
+                "time",
+                "task_id",
+                "amr",
+                "department",
+                "category",
+                "location",
+                "payload",
+                "payload_length_m",
+                "payload_width_m",
+                "payload_height_m",
+                "payload_area_m2",
+                "failure_reason",
+            ]
+        ),
+        pd.DataFrame(
+            columns=[
+                "department",
+                "category",
+                "location",
+                "current_area_m2",
+                "recommended_area_m2",
+                "additional_area_m2",
+                "current_inventory_spaces",
+                "recommended_inventory_spaces",
+                "additional_inventory_spaces",
+                "reason",
+            ]
+        ),
+        pd.DataFrame(
+            columns=[
+                "location",
+                "payload",
+                "payload_length_m",
+                "payload_width_m",
+                "payload_height_m",
+                "failed_count",
+            ]
+        ),
+    )
+
+
+def build_location_space_analysis(
+    tasks: pd.DataFrame,
+    location_catalog: Optional[pd.DataFrame],
+    payload_dimensions: Optional[pd.DataFrame],
+    has_datetime: bool,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    if location_catalog is None or location_catalog.empty:
+        return _empty_location_outputs()
+
+    loc = location_catalog.copy()
+    payload_dims = (
+        payload_dimensions.copy() if payload_dimensions is not None else pd.DataFrame()
+    )
+    if payload_dims.empty:
+        payload_dims = pd.DataFrame(
+            columns=[
+                "payload",
+                "payload_length_m",
+                "payload_width_m",
+                "payload_height_m",
+                "payload_area_m2",
+            ]
+        )
+
+    task_ext = tasks.copy()
+    task_ext = task_ext.merge(payload_dims, on="payload", how="left")
+    loc_meta = loc[["location", "department", "category"]].copy()
+    task_ext = task_ext.merge(
+        loc_meta, left_on="destination", right_on="location", how="left"
+    )
+    task_ext["location"] = task_ext["location"].fillna(task_ext["destination"])
+    task_ext["department"] = task_ext["department"].fillna("-")
+    task_ext["category"] = task_ext["category"].fillna("-")
+
+    reason_col = "failure_reason" if "failure_reason" in task_ext.columns else None
+    if reason_col is None:
+        task_ext["failure_reason"] = task_ext.apply(
+            lambda r: (
+                "Task failed; no detailed reason was present in the CSV event log."
+                if r.get("outcome") == "failed"
+                else "-"
+            ),
+            axis=1,
+        )
+
+    failed_attempts = task_ext[task_ext["outcome"] == "failed"].copy()
+    failed_attempts["capacity_related_failure"] = (
+        failed_attempts["failure_reason"]
+        .astype(str)
+        .str.contains(
+            r"invent|space|capacity|full|store|storage|dimension|fit|area",
+            case=False,
+            na=False,
+        )
+    )
+
+    delivery_counts = (
+        task_ext[task_ext["outcome"] == "completed"]
+        .groupby("location", dropna=False)
+        .size()
+        .reset_index(name="deliveries_completed")
+    )
+    failed_counts = (
+        failed_attempts.groupby("location", dropna=False)
+        .size()
+        .reset_index(name="failed_delivery_attempts")
+    )
+    capacity_failed_counts = (
+        failed_attempts[failed_attempts["capacity_related_failure"]]
+        .groupby("location", dropna=False)
+        .size()
+        .reset_index(name="capacity_related_failures")
+    )
+    failed_area = (
+        failed_attempts.groupby("location", dropna=False)["payload_area_m2"]
+        .sum()
+        .reset_index(name="failed_payload_area_m2")
+    )
+    max_failed_area = (
+        failed_attempts.groupby("location", dropna=False)["payload_area_m2"]
+        .max()
+        .reset_index(name="max_failed_payload_area_m2")
+    )
+
+    util = loc.merge(delivery_counts, on="location", how="left")
+    util = util.merge(failed_counts, on="location", how="left")
+    util = util.merge(capacity_failed_counts, on="location", how="left")
+    util = util.merge(failed_area, on="location", how="left")
+    util = util.merge(max_failed_area, on="location", how="left")
+    for col in [
+        "deliveries_completed",
+        "failed_delivery_attempts",
+        "capacity_related_failures",
+    ]:
+        util[col] = util[col].fillna(0).astype(int)
+    for col in ["failed_payload_area_m2", "max_failed_payload_area_m2", "area_m2"]:
+        util[col] = pd.to_numeric(util[col], errors="coerce").fillna(0.0)
+
+    util["inventory_spaces_current"] = (
+        pd.to_numeric(util["inventory_spaces_current"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
+    inventory_area_numeric = pd.to_numeric(
+        util["inventory_area_m2"], errors="coerce"
+    ).fillna(0.0)
+    location_area_numeric = pd.to_numeric(util["area_m2"], errors="coerce").fillna(0.0)
+    util["utilisation_pct"] = (
+        (
+            inventory_area_numeric.div(
+                location_area_numeric.where(location_area_numeric > 0)
+            )
+            * 100
+        )
+        .fillna(0)
+        .round(1)
+    )
+
+    # Capacity recommendation: keep current space, then add failed payload footprints with 30% handling allowance.
+    util["recommended_area_m2"] = util.apply(
+        lambda r: max(
+            float(r["area_m2"]),
+            float(r["area_m2"]) + (float(r["failed_payload_area_m2"]) * 1.30),
+            float(r["max_failed_payload_area_m2"])
+            * max(int(r["inventory_spaces_current"]), 1)
+            * 1.30,
+        ),
+        axis=1,
+    ).round(2)
+    util["recommended_inventory_spaces"] = util.apply(
+        lambda r: max(
+            int(r["inventory_spaces_current"]),
+            int(r["inventory_spaces_current"]) + int(r["capacity_related_failures"]),
+            (
+                1
+                if int(r["failed_delivery_attempts"]) > 0
+                else int(r["inventory_spaces_current"])
+            ),
+        ),
+        axis=1,
+    ).astype(int)
+
+    failed_detail = (
+        failed_attempts[
+            [
+                "start",
+                "task_id",
+                "amr",
+                "department",
+                "category",
+                "location",
+                "payload",
+                "payload_length_m",
+                "payload_width_m",
+                "payload_height_m",
+                "payload_area_m2",
+                "failure_reason",
+            ]
+        ].copy()
+        if not failed_attempts.empty
+        else pd.DataFrame(
+            columns=[
+                "start",
+                "task_id",
+                "amr",
+                "department",
+                "category",
+                "location",
+                "payload",
+                "payload_length_m",
+                "payload_width_m",
+                "payload_height_m",
+                "payload_area_m2",
+                "failure_reason",
+            ]
+        )
+    )
+    failed_detail = failed_detail.rename(columns={"start": "time"})
+    if not failed_detail.empty:
+        failed_detail["time"] = failed_detail["time"].map(
+            lambda v: fmt_ts(v, has_datetime) if not pd.isna(v) else "-"
+        )
+        for c in [
+            "payload_length_m",
+            "payload_width_m",
+            "payload_height_m",
+            "payload_area_m2",
+        ]:
+            failed_detail[c] = (
+                pd.to_numeric(failed_detail[c], errors="coerce").fillna(0).round(2)
+            )
+
+    failed_payload_sizes = (
+        failed_attempts.groupby(
+            [
+                "location",
+                "payload",
+                "payload_length_m",
+                "payload_width_m",
+                "payload_height_m",
+            ],
+            dropna=False,
+        )
+        .size()
+        .reset_index(name="failed_count")
+        .sort_values(["location", "failed_count"], ascending=[True, False])
+        if not failed_attempts.empty
+        else pd.DataFrame(
+            columns=[
+                "location",
+                "payload",
+                "payload_length_m",
+                "payload_width_m",
+                "payload_height_m",
+                "failed_count",
+            ]
+        )
+    )
+
+    recommendations = util.copy()
+    recommendations["additional_area_m2"] = (
+        (recommendations["recommended_area_m2"] - recommendations["area_m2"])
+        .clip(lower=0)
+        .round(2)
+    )
+    recommendations["additional_inventory_spaces"] = (
+        (
+            recommendations["recommended_inventory_spaces"]
+            - recommendations["inventory_spaces_current"]
+        )
+        .clip(lower=0)
+        .astype(int)
+    )
+    recommendations["reason"] = recommendations.apply(
+        lambda r: (
+            "Increase storage for failed capacity-related delivery attempts."
+            if int(r["capacity_related_failures"]) > 0
+            else (
+                "Review location: failed deliveries occurred but no capacity keyword was logged."
+                if int(r["failed_delivery_attempts"]) > 0
+                else "No failed delivery pressure identified."
+            )
+        ),
+        axis=1,
+    )
+    recommendations = recommendations[
+        [
+            "department",
+            "category",
+            "location",
+            "area_m2",
+            "recommended_area_m2",
+            "additional_area_m2",
+            "inventory_spaces_current",
+            "recommended_inventory_spaces",
+            "additional_inventory_spaces",
+            "reason",
+        ]
+    ].rename(
+        columns={
+            "area_m2": "current_area_m2",
+            "inventory_spaces_current": "current_inventory_spaces",
+        }
+    )
+
+    util = (
+        util[
+            [
+                "department",
+                "category",
+                "location",
+                "floor",
+                "length_m",
+                "width_m",
+                "area_m2",
+                "inventory_spaces_current",
+                "deliveries_completed",
+                "failed_delivery_attempts",
+                "capacity_related_failures",
+                "utilisation_pct",
+                "recommended_area_m2",
+                "recommended_inventory_spaces",
+            ]
+        ]
+        .sort_values(["department", "category", "location"])
+        .reset_index(drop=True)
+    )
+
+    return (
+        util,
+        failed_detail.reset_index(drop=True),
+        recommendations.reset_index(drop=True),
+        failed_payload_sizes.reset_index(drop=True),
+    )
+
+
 def load_amr_parameters(json_path: Path) -> pd.DataFrame:
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -373,6 +846,8 @@ def analyse(
     payload_weights: Optional[Dict[str, float]] = None,
     amr_parameters: Optional[pd.DataFrame] = None,
     floor_dxf_map: Optional[Dict[int, str]] = None,
+    location_catalog: Optional[pd.DataFrame] = None,
+    payload_dimensions: Optional[pd.DataFrame] = None,
 ) -> Dict[str, pd.DataFrame]:
     raw = pd.read_csv(csv_path)
     df, ctx = parse_time_column(raw)
@@ -391,6 +866,7 @@ def analyse(
     from_col = cols["from"]
     to_col = cols["to"]
     outcome_col = cols["outcome"]
+    reason_col = cols.get("reason")
 
     payload_col = cols["payload"]
     distance_col = cols["distance"]
@@ -471,11 +947,36 @@ def analyse(
             pd.to_numeric(g["_distance_m"], errors="coerce").fillna(0).sum()
         )
         payload_weight_kg = float(payload_weights.get(str(payload), 0.0))
+        failure_reason = "-"
+        if outcome == "failed":
+            reason_values: List[str] = []
+            if reason_col and reason_col in g.columns:
+                reason_values.extend(
+                    [
+                        str(v).strip()
+                        for v in g[reason_col].dropna().tolist()
+                        if str(v).strip()
+                    ]
+                )
+            event_reasons = [
+                str(v).strip()
+                for v in g["_event_text"].dropna().tolist()
+                if FAIL_PATTERNS.search(str(v))
+            ]
+            if reason_values:
+                failure_reason = reason_values[-1]
+            elif event_reasons:
+                failure_reason = event_reasons[-1]
+            else:
+                failure_reason = (
+                    "Task failed; no detailed reason was present in the CSV event log."
+                )
         task_rows.append(
             {
                 "amr": safe_text(amr),
                 "task_id": safe_text(task_id),
                 "outcome": outcome,
+                "failure_reason": failure_reason,
                 "start": start,
                 "finish": end,
                 "duration_s": duration_s,
@@ -928,6 +1429,62 @@ def analyse(
         1
     )
 
+    (
+        location_space_utilisation,
+        failed_delivery_summary,
+        location_recommendations,
+        failed_payload_sizes,
+    ) = build_location_space_analysis(
+        tasks,
+        location_catalog,
+        payload_dimensions,
+        ctx.has_datetime,
+    )
+
+    if not location_space_utilisation.empty:
+        over_capacity = int(
+            (location_space_utilisation["capacity_related_failures"] > 0).sum()
+        )
+        additional_spaces = int(
+            location_recommendations.get(
+                "additional_inventory_spaces", pd.Series(dtype=int)
+            ).sum()
+        )
+        additional_area = float(
+            location_recommendations.get(
+                "additional_area_m2", pd.Series(dtype=float)
+            ).sum()
+        )
+        capacity_blocked = int(
+            location_space_utilisation["capacity_related_failures"].sum()
+        )
+        summary = pd.concat(
+            [
+                summary,
+                pd.DataFrame(
+                    [
+                        {
+                            "metric": "Deliveries blocked by location capacity",
+                            "value": f"{capacity_blocked}",
+                        },
+                        {
+                            "metric": "Locations with capacity failures",
+                            "value": f"{over_capacity}",
+                        },
+                        {
+                            "metric": "Additional inventory spaces required",
+                            "value": f"{additional_spaces}",
+                        },
+                        {
+                            "metric": "Additional storage area required",
+                            "value": f"{additional_area:.2f} m²",
+                        },
+                    ]
+                ),
+            ],
+            ignore_index=True,
+        )
+
     return {
         "summary": summary,
         "amr_summary": amr_summary,
@@ -936,6 +1493,10 @@ def analyse(
         "tasks": tasks.sort_values(["amr", "start", "task_id"]).reset_index(drop=True),
         "methodology": methodology,
         "payload_schedule": payload_schedule,
+        "location_space_utilisation": location_space_utilisation,
+        "failed_delivery_summary": failed_delivery_summary,
+        "location_recommendations": location_recommendations,
+        "failed_payload_sizes": failed_payload_sizes,
         "lift_wait_schedule": lift_wait_schedule,
         "recharge_summary": recharge_summary,
         "amr_list": (

@@ -4,6 +4,8 @@ from amr_report_analysis import (
     analyse,
     load_amr_parameters,
     load_floor_dxf_map,
+    load_location_catalog,
+    load_payload_dimensions,
     load_payload_weights,
 )
 from amr_report_pdf_report import build_report
@@ -47,6 +49,12 @@ def main() -> None:
         if args.config_json and not args.omit_drawings
         else {}
     )
+    location_catalog = (
+        load_location_catalog(Path(args.config_json)) if args.config_json else None
+    )
+    payload_dimensions = (
+        load_payload_dimensions(Path(args.config_json)) if args.config_json else None
+    )
 
     print_progress(15, 100, "Analysing simulation data")
 
@@ -57,6 +65,8 @@ def main() -> None:
         payload_weights,
         amr_parameters,
         floor_dxf_map,
+        location_catalog,
+        payload_dimensions,
     )
 
     print_progress(35, 100, "Building PDF report")
