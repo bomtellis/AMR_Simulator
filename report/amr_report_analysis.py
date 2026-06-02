@@ -9,7 +9,6 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import pandas as pd
 import json
 
-
 COLUMN_ALIASES = {
     "timestamp": [
         "timestamp",

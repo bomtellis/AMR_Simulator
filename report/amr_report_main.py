@@ -43,7 +43,9 @@ def main() -> None:
         load_amr_parameters(Path(args.config_json)) if args.config_json else None
     )
     floor_dxf_map = (
-        load_floor_dxf_map(Path(args.config_json)) if args.config_json else {}
+        load_floor_dxf_map(Path(args.config_json))
+        if args.config_json and not args.omit_drawings
+        else {}
     )
 
     print_progress(15, 100, "Analysing simulation data")
@@ -72,6 +74,7 @@ def main() -> None:
         out_path,
         progress_callback=report_progress,
         heatmap_workers=args.heatmap_workers,
+        include_drawings=not args.omit_drawings,
     )
 
     print_progress(100, 100, f"Report written to {out_path}")

@@ -30,4 +30,13 @@ def parse_args():
         default=None,
         help="Number of worker threads used to prepare heatmap floors",
     )
+    parser.add_argument(
+        "--omit-drawings",
+        "--no-drawings",
+        action="store_true",
+        help=(
+            "Do not render DXF drawings behind congestion heatmaps. "
+            "Heatmaps will still be included using the simulation path extents."
+        ),
+    )
     return parser.parse_args()

@@ -646,17 +646,18 @@ class FloorOverlayFlowable(Flowable):
                 fill=1,
             )
 
+
 def prepare_heatmap_floor(
     floor: int,
     floor_df: pd.DataFrame,
     floor_dxf_map: Dict[int, str],
+    include_drawings: bool = True,
 ) -> tuple[int, dict]:
-    floor_df = (
-        floor_df.sort_values("congestion_score", ascending=False)
-        .reset_index(drop=True)
+    floor_df = floor_df.sort_values("congestion_score", ascending=False).reset_index(
+        drop=True
     )
 
-    dxf_path = floor_dxf_map.get(int(floor))
+    dxf_path = floor_dxf_map.get(int(floor)) if include_drawings else None
     dxf_drawing = None
 
     if dxf_path:
@@ -690,6 +691,7 @@ def build_report(
     pdf_path: Path,
     progress_callback=None,
     heatmap_workers: Optional[int] = None,
+    include_drawings: bool = True,
 ) -> None:
     styles = make_styles()
     doc = NumberedDocTemplate(
@@ -1216,6 +1218,7 @@ def build_report(
                     floor,
                     floor_df,
                     floor_dxf_map,
+                    include_drawings,
                 ): floor
                 for floor, floor_df in grouped_floor_dfs.items()
             }
@@ -1239,7 +1242,7 @@ def build_report(
                     max(len(floors), 1),
                     f"Prepared heatmap floor {floor} ({idx}/{len(floors)})",
                 )
-                
+
     heatmap_story: List = []
     if prepared_heatmaps:
         heatmap_story += [NextPageTemplate("a0_landscape"), PageBreak()]
