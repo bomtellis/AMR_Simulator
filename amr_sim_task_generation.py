@@ -1,22 +1,22 @@
 """
 Automatic task generation for the AMR simulator.
 
-This module keeps generated task logic outside ``simulator.py``.  The current
-implementation preserves the existing department waste behaviour and JSON schema,
-while providing a registry that can be extended with catering, linen, pharmacy,
-parcel and other generators later.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional
+from datetime import datetime, time as dt_time, timedelta
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from amr_sim_models import Location, PayloadType, Task
 from amr_sim_time_utils import SimulationClock
 
-
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+SCHEDULED_MODES = {"scheduled", "scheduled_threshold", "scheduled_sporadic"}
+THRESHOLD_MODES = {"threshold", "hybrid", "scheduled_threshold"}
+CONTINUOUS_MODES = {"continuous", "hybrid", "threshold", "scheduled_threshold"}
+SPORADIC_MODES = {"sporadic", "hybrid", "scheduled_sporadic"}
 
 
 @dataclass
@@ -43,6 +43,696 @@ class BaseTaskGenerator:
 
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         return []
+
+
+def _clean_text(value) -> str:
+    return str(value or "").strip()
+
+
+def _as_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _as_int(value, default: int = 0) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return int(default)
+
+
+def _unique_clean(values: Iterable[str]) -> List[str]:
+    result: List[str] = []
+    seen = set()
+    for value in values or []:
+        text = _clean_text(value)
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+    return result
+
+
+def _scheduled_times_from_cfg(cfg: dict) -> List[str]:
+    values = cfg.get("scheduled_times", cfg.get("schedule_times", []))
+    if isinstance(values, str):
+        values = [x.strip() for x in values.split(",")]
+    clean = []
+    for value in values or []:
+        text = _clean_text(value)
+        if not text:
+            continue
+        # Accept HH:MM and HH:MM:SS, normalise to HH:MM.
+        try:
+            parts = [int(x) for x in text.split(":")[:2]]
+            if len(parts) == 2 and 0 <= parts[0] <= 23 and 0 <= parts[1] <= 59:
+                clean.append(f"{parts[0]:02d}:{parts[1]:02d}")
+        except Exception:
+            continue
+    return sorted(set(clean))
+
+
+def _day_key_for_datetime(value: datetime) -> str:
+    return DAY_KEYS[value.weekday()]
+
+
+def _datetime_for_day_and_hhmm(day_start: datetime, hhmm: str) -> datetime:
+    hour, minute = [int(x) for x in hhmm.split(":")[:2]]
+    return datetime.combine(day_start.date(), dt_time(hour=hour, minute=minute))
+
+
+def _payload_tracked_items(payload: Optional[PayloadType]) -> Dict[str, dict]:
+    if payload is None or not getattr(payload, "track_items", False):
+        return {}
+    items = getattr(payload, "items", {}) or {}
+    if not isinstance(items, dict):
+        return {}
+
+    result: Dict[str, dict] = {}
+    for name, cfg in items.items():
+        if not isinstance(cfg, dict):
+            continue
+        item_name = _clean_text(name)
+        if not item_name:
+            continue
+        result[item_name] = {
+            "target_quantity": _as_float(cfg.get("max", 100), 100),
+            "trigger_quantity": _as_float(cfg.get("top_up_threshold", 15), 15),
+            "usage_rate": _clean_text(cfg.get("usage_rate", "scheduled_sporadic"))
+            or "scheduled_sporadic",
+            "consumption_per_day": _as_float(cfg.get("consumption_per_day", 0.0), 0.0),
+            "exchange_payload": _clean_text(cfg.get("exchange_payload", "")),
+            "source_location": _clean_text(cfg.get("source_location", "")),
+        }
+    return result
+
+
+def _apply_tracked_item_metadata(
+    task: Task, cfg: dict, payloads: Dict[str, PayloadType]
+) -> None:
+    if not bool(cfg.get("tracked_item_exchange", False)):
+        return
+
+    base_payload_name = _clean_text(cfg.get("payload", task.payload))
+    base_payload = payloads.get(base_payload_name)
+    tracked_items = _payload_tracked_items(base_payload)
+    if not tracked_items:
+        return
+
+    task.tracked_item_exchange = True
+    task.exchange_mode = (
+        _clean_text(cfg.get("exchange_mode", "top_up_only")) or "top_up_only"
+    )
+    task.tracked_item_source_payload = base_payload_name
+    task.tracked_items = tracked_items
+
+    # If every tracked item points to the same source or payload, use it as a more
+    # specific task instruction. Mixed item sources remain as task metadata only.
+    source_locations = {
+        _clean_text(item.get("source_location", ""))
+        for item in tracked_items.values()
+        if _clean_text(item.get("source_location", ""))
+    }
+    exchange_payloads = {
+        _clean_text(item.get("exchange_payload", ""))
+        for item in tracked_items.values()
+        if _clean_text(item.get("exchange_payload", ""))
+    }
+
+    if len(source_locations) == 1:
+        task.pickup = next(iter(source_locations))
+    if len(exchange_payloads) == 1:
+        task.payload = next(iter(exchange_payloads))
+
+
+class DynamicCategoryTaskGenerator(BaseTaskGenerator):
+    """
+    Generates tasks from task_generation.categories.
+
+    This is the simulator-side counterpart of the editor's task generation dialog.
+    It honours category defaults, department overrides and per-department location
+    assignments created in the department dialog.
+    """
+
+    generator_type = "dynamic_category"
+
+    def __init__(
+        self,
+        task_generation: dict,
+        departments: Iterable[dict],
+        locations: Dict[str, Location],
+        payloads: Dict[str, PayloadType],
+        clock: SimulationClock,
+    ):
+        self.task_generation = task_generation or {}
+        self.departments = list(departments or [])
+        self.locations = locations or {}
+        self.payloads = payloads or {}
+        self.clock = clock
+        self.task_counter = 0
+        self.return_counter = 0
+        self.scheduled_emitted = set()
+        self.runtime: Dict[str, dict] = {}
+        self.item_runtime: Dict[str, dict] = {}
+        self.instances = self._build_instances()
+
+    def _next_task_id(self, category_key: str, department_id: str = "") -> str:
+        self.task_counter += 1
+        safe_cat = "".join(
+            c if c.isalnum() else "_" for c in category_key.upper()
+        ).strip("_")
+        safe_dept = "".join(
+            c if c.isalnum() else "_" for c in department_id.upper()
+        ).strip("_")
+        if safe_dept:
+            return f"GEN_{safe_cat}_{safe_dept}_{self.task_counter:05d}"
+        return f"GEN_{safe_cat}_{self.task_counter:05d}"
+
+    def _next_return_task_id(self, outbound_id: str) -> str:
+        self.return_counter += 1
+        safe = "".join(c if c.isalnum() else "_" for c in outbound_id.upper()).strip(
+            "_"
+        )
+        return f"RETURN_{safe}_{self.return_counter:05d}"
+
+    def _category_is_active(self, cfg: dict, sim_time_sec: float) -> bool:
+        if not bool(cfg.get("enabled", False)):
+            return False
+        active_days = cfg.get("days_active", []) or []
+        if active_days:
+            allowed = {_clean_text(x).lower() for x in active_days if _clean_text(x)}
+            if self._day_key_for_sim_time(sim_time_sec) not in allowed:
+                return False
+        return True
+
+    def _day_key_for_sim_time(self, sim_time_sec: float) -> str:
+        return _day_key_for_datetime(self.clock.sim_seconds_to_datetime(sim_time_sec))
+
+    def _merge_category_with_override(
+        self, category: dict, override: Optional[dict]
+    ) -> dict:
+        merged = dict(category or {})
+        merged.pop("departments", None)
+        if isinstance(override, dict):
+            merged.update(override)
+        return merged
+
+    def _department_id(self, dept: dict) -> str:
+        return _clean_text(dept.get("id")) or _clean_text(dept.get("name"))
+
+    def _department_name(self, dept: dict) -> str:
+        return _clean_text(dept.get("name")) or self._department_id(dept)
+
+    def _department_category_locations(
+        self, dept: dict, category_key: str
+    ) -> List[str]:
+        category_locations = dept.get("task_generation_locations", {}) or {}
+        entry = category_locations.get(category_key, {}) or {}
+        values = entry.get("pickup_dropoff_locations", [])
+        return _unique_clean(values)
+
+    def _dropoff_locations_from_cfg(self, cfg: dict) -> List[str]:
+        values = []
+        if isinstance(cfg.get("dropoff_locations"), list):
+            values.extend(cfg.get("dropoff_locations", []))
+        if cfg.get("dropoff_location"):
+            values.insert(0, cfg.get("dropoff_location"))
+        return _unique_clean(values)
+
+    def _pickup_locations_from_cfg(self, cfg: dict) -> List[str]:
+        values = []
+        if isinstance(cfg.get("pickup_locations"), list):
+            values.extend(cfg.get("pickup_locations", []))
+        if cfg.get("pickup_location"):
+            values.insert(0, cfg.get("pickup_location"))
+        return _unique_clean(values)
+
+    def _build_instances(self) -> List[dict]:
+        categories = self.task_generation.get("categories", {}) or {}
+        instances: List[dict] = []
+
+        for category_key, category in categories.items():
+            if not isinstance(category, dict):
+                continue
+            if not bool(category.get("enabled", False)):
+                continue
+
+            overrides = category.get("departments", {}) or {}
+            used_department_ids = set()
+
+            # Department overrides created by Configure multiple / individual override.
+            for dept in self.departments:
+                dept_id = self._department_id(dept)
+                if not dept_id or dept_id not in overrides:
+                    continue
+                used_department_ids.add(dept_id)
+                cfg = self._merge_category_with_override(
+                    category, overrides.get(dept_id, {})
+                )
+                dept_locations = self._department_category_locations(
+                    dept, str(category_key)
+                )
+                role = (
+                    _clean_text(cfg.get("department_location_role", "dropoff"))
+                    or "dropoff"
+                )
+
+                pickup_locations = self._pickup_locations_from_cfg(cfg)
+                dropoff_locations = self._dropoff_locations_from_cfg(cfg)
+
+                if role == "pickup" and dept_locations:
+                    pickup_locations = dept_locations
+                elif role != "pickup" and dept_locations:
+                    dropoff_locations = dept_locations
+
+                instances.append(
+                    {
+                        "key": f"{category_key}:{dept_id}",
+                        "category_key": str(category_key),
+                        "department_id": dept_id,
+                        "department_name": self._department_name(dept),
+                        "cfg": cfg,
+                        "pickup_locations": pickup_locations,
+                        "dropoff_locations": dropoff_locations,
+                    }
+                )
+
+            # Category-level generation, for categories without department overrides.
+            # This keeps older/global category configs working.
+            if not overrides:
+                instances.append(
+                    {
+                        "key": str(category_key),
+                        "category_key": str(category_key),
+                        "department_id": "",
+                        "department_name": "",
+                        "cfg": self._merge_category_with_override(category, None),
+                        "pickup_locations": self._pickup_locations_from_cfg(category),
+                        "dropoff_locations": self._dropoff_locations_from_cfg(category),
+                    }
+                )
+
+        return instances
+
+    def _valid_locations_and_payload(
+        self, pickup: str, dropoff: str, payload: str
+    ) -> bool:
+        return bool(
+            pickup in self.locations
+            and dropoff in self.locations
+            and payload in self.payloads
+        )
+
+    def _base_task(
+        self,
+        instance: dict,
+        pickup: str,
+        dropoff: str,
+        payload_name: str,
+        release_time: float,
+        label_suffix: str = "",
+    ) -> Optional[Task]:
+        cfg = instance["cfg"]
+        if not self._valid_locations_and_payload(pickup, dropoff, payload_name):
+            return None
+
+        category_key = instance["category_key"]
+        department_id = instance.get("department_id", "")
+        labels = [category_key]
+        if department_id:
+            labels.append(department_id)
+        if label_suffix:
+            labels.append(label_suffix)
+
+        task = Task(
+            id=self._next_task_id(category_key, department_id),
+            pickup=pickup,
+            dropoff=dropoff,
+            payload=payload_name,
+            release_time=release_time,
+            target_time=_as_float(cfg.get("target_time", 0.0), 0.0),
+            quantity=1,
+            priority=_as_int(cfg.get("priority", 100), 100),
+            created_during_runtime=True,
+            labels=labels,
+            route_profile=_clean_text(cfg.get("route_profile")) or None,
+            task_source="task_generation",
+            department_id=department_id,
+            container_type=payload_name,
+        )
+        if bool(cfg.get("return_enabled", False)):
+            return_payload = _clean_text(cfg.get("return_payload", ""))
+            if return_payload in self.payloads:
+                task.return_enabled = True
+                task.return_payload = return_payload
+                task.return_delay_minutes = _as_float(
+                    cfg.get("return_delay_minutes", 0.0), 0.0
+                )
+                task.return_route_profile = _clean_text(
+                    cfg.get("return_route_profile", cfg.get("route_profile", ""))
+                )
+                task.return_priority = _as_int(
+                    cfg.get("return_priority", cfg.get("priority", 100)), 100
+                )
+
+        _apply_tracked_item_metadata(task, cfg, self.payloads)
+
+        # Metadata may override pickup/payload using item-specific source/payload.
+        if task.pickup not in self.locations or task.payload not in self.payloads:
+            return None
+        return task
+
+    def _record_for_task(
+        self, task: Task, instance: dict, event_type: str, details: str
+    ) -> GeneratedTaskRecord:
+        return GeneratedTaskRecord(
+            task=task,
+            event_type=event_type,
+            details=details,
+            pickup_location=task.pickup,
+            dropoff_location=task.dropoff,
+            payload_name=task.payload,
+            task_source=getattr(task, "task_source", "task_generation"),
+            department_id=getattr(
+                task, "department_id", instance.get("department_id", "")
+            ),
+            container_type=task.payload,
+        )
+
+    def _create_return_task(self, outbound: Task, instance: dict) -> Optional[Task]:
+        cfg = instance["cfg"]
+        if not bool(cfg.get("return_enabled", False)):
+            return None
+
+        return_payload = _clean_text(cfg.get("return_payload", ""))
+        if not return_payload:
+            # Deliberately do not invent a payload. Use a configured "none" payload if
+            # you need empty returns.
+            return None
+        if return_payload not in self.payloads:
+            return None
+
+        delay_minutes = _as_float(cfg.get("return_delay_minutes", 0.0), 0.0)
+        release_time = outbound.release_time + (delay_minutes * 60.0)
+
+        task = Task(
+            id=self._next_return_task_id(outbound.id),
+            pickup=outbound.dropoff,
+            dropoff=outbound.pickup,
+            payload=return_payload,
+            release_time=release_time,
+            target_time=_as_float(
+                cfg.get("return_target_time", cfg.get("target_time", 0.0)), 0.0
+            ),
+            quantity=1,
+            priority=_as_int(cfg.get("return_priority", cfg.get("priority", 100)), 100),
+            created_during_runtime=True,
+            labels=list(outbound.labels) + ["return"],
+            route_profile=_clean_text(
+                cfg.get("return_route_profile", cfg.get("route_profile", ""))
+            )
+            or None,
+            task_source="task_generation_return",
+            department_id=getattr(outbound, "department_id", ""),
+            container_type=return_payload,
+        )
+        return task
+
+    def _records_for_outbound(
+        self, outbound: Optional[Task], instance: dict, reason: str
+    ) -> List[GeneratedTaskRecord]:
+        if outbound is None:
+            return []
+        return [
+            self._record_for_task(
+                outbound,
+                instance,
+                "task_generated",
+                reason,
+            )
+        ]
+
+    def _pick_pairs(self, instance: dict) -> List[Tuple[str, str]]:
+        pickups = [
+            x for x in instance.get("pickup_locations", []) if x in self.locations
+        ]
+        dropoffs = [
+            x for x in instance.get("dropoff_locations", []) if x in self.locations
+        ]
+        if not pickups or not dropoffs:
+            return []
+        pairs: List[Tuple[str, str]] = []
+        for pickup in pickups:
+            for dropoff in dropoffs:
+                if pickup != dropoff:
+                    pairs.append((pickup, dropoff))
+        return pairs
+
+    def _schedule_records(
+        self, instance: dict, now: float
+    ) -> List[GeneratedTaskRecord]:
+        cfg = instance["cfg"]
+        mode = _clean_text(cfg.get("generation_mode", "scheduled")) or "scheduled"
+        if mode not in SCHEDULED_MODES:
+            return []
+
+        payload_name = _clean_text(cfg.get("payload", ""))
+        if payload_name not in self.payloads:
+            return []
+
+        current_dt = self.clock.sim_seconds_to_datetime(now)
+        day_start = current_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        records: List[GeneratedTaskRecord] = []
+
+        for hhmm in _scheduled_times_from_cfg(cfg):
+            release_dt = _datetime_for_day_and_hhmm(day_start, hhmm)
+            release_time = (release_dt - self.clock.start_datetime).total_seconds()
+            if release_time < 0 or release_time > now:
+                continue
+            if not self._category_is_active(cfg, release_time):
+                continue
+
+            schedule_key = (instance["key"], release_dt.date().isoformat(), hhmm)
+            if schedule_key in self.scheduled_emitted:
+                continue
+            self.scheduled_emitted.add(schedule_key)
+
+            for pickup, dropoff in self._pick_pairs(instance):
+                task = self._base_task(
+                    instance=instance,
+                    pickup=pickup,
+                    dropoff=dropoff,
+                    payload_name=payload_name,
+                    release_time=release_time,
+                    label_suffix="scheduled",
+                )
+                records.extend(
+                    self._records_for_outbound(
+                        task,
+                        instance,
+                        f"Generated scheduled {instance['category_key']} task at {hhmm}",
+                    )
+                )
+
+        return records
+
+    def _volume_records(self, instance: dict, now: float) -> List[GeneratedTaskRecord]:
+        cfg = instance["cfg"]
+        mode = _clean_text(cfg.get("generation_mode", "scheduled")) or "scheduled"
+        if mode not in (THRESHOLD_MODES | CONTINUOUS_MODES | SPORADIC_MODES):
+            return []
+
+        payload_name = _clean_text(cfg.get("payload", ""))
+        if payload_name not in self.payloads:
+            return []
+        if not self._category_is_active(cfg, now):
+            # Still advance the clock to avoid back-generating when re-entering active time.
+            self.runtime.setdefault(
+                instance["key"],
+                {"last_update_time": now, "volume": 0.0, "sporadic_accumulator": 0.0},
+            )["last_update_time"] = now
+            return []
+
+        runtime = self.runtime.setdefault(
+            instance["key"],
+            {
+                "last_update_time": 0.0,
+                "volume": 0.0,
+                "sporadic_accumulator": 0.0,
+            },
+        )
+        last_time = _as_float(runtime.get("last_update_time", 0.0), 0.0)
+        if now <= last_time:
+            return []
+
+        elapsed_days = (now - last_time) / 86400.0
+        elapsed_hours = (now - last_time) / 3600.0
+        records: List[GeneratedTaskRecord] = []
+
+        if mode in CONTINUOUS_MODES:
+            runtime["volume"] += max(
+                0.0, elapsed_days * _as_float(cfg.get("base_daily_volume_m3", 0.0), 0.0)
+            )
+
+        if mode in SPORADIC_MODES:
+            freq_per_day = max(0.0, _as_float(cfg.get("frequency_per_day", 0.0), 0.0))
+            runtime["sporadic_accumulator"] += elapsed_days * freq_per_day
+            while runtime["sporadic_accumulator"] >= 1.0:
+                runtime["sporadic_accumulator"] -= 1.0
+                for pickup, dropoff in self._pick_pairs(instance):
+                    task = self._base_task(
+                        instance, pickup, dropoff, payload_name, now, "sporadic"
+                    )
+                    records.extend(
+                        self._records_for_outbound(
+                            task,
+                            instance,
+                            f"Generated sporadic {instance['category_key']} task",
+                        )
+                    )
+
+        threshold_volume = _as_float(cfg.get("threshold_volume_m3", 0.0), 0.0)
+        volume_per_event = _as_float(
+            cfg.get("volume_per_event_m3", threshold_volume), threshold_volume
+        )
+        if mode in THRESHOLD_MODES and threshold_volume > 0:
+            while runtime["volume"] >= threshold_volume:
+                runtime["volume"] -= threshold_volume
+                for pickup, dropoff in self._pick_pairs(instance):
+                    task = self._base_task(
+                        instance, pickup, dropoff, payload_name, now, "threshold"
+                    )
+                    if task is not None:
+                        task.generated_volume_m3 = volume_per_event
+                    records.extend(
+                        self._records_for_outbound(
+                            task,
+                            instance,
+                            f"Generated threshold {instance['category_key']} task",
+                        )
+                    )
+
+        runtime["last_update_time"] = now
+        return records
+
+    def _tracked_item_records(
+        self, instance: dict, now: float
+    ) -> List[GeneratedTaskRecord]:
+        cfg = instance["cfg"]
+        if not bool(cfg.get("tracked_item_exchange", False)):
+            return []
+        payload_name = _clean_text(cfg.get("payload", ""))
+        payload = self.payloads.get(payload_name)
+        items = _payload_tracked_items(payload)
+        if not items:
+            return []
+        if not self._category_is_active(cfg, now):
+            self.item_runtime.setdefault(
+                instance["key"], {"last_update_time": now, "quantities": {}}
+            )["last_update_time"] = now
+            return []
+
+        runtime = self.item_runtime.setdefault(
+            instance["key"],
+            {
+                "last_update_time": 0.0,
+                "quantities": {
+                    name: item["target_quantity"] for name, item in items.items()
+                },
+            },
+        )
+        quantities = runtime.setdefault("quantities", {})
+        for name, item in items.items():
+            quantities.setdefault(name, item["target_quantity"])
+
+        last_time = _as_float(runtime.get("last_update_time", 0.0), 0.0)
+        if now <= last_time:
+            return []
+
+        elapsed_days = (now - last_time) / 86400.0
+        triggered: Dict[str, dict] = {}
+        for name, item in items.items():
+            consumption = max(0.0, item.get("consumption_per_day", 0.0)) * elapsed_days
+            quantities[name] = max(
+                0.0,
+                _as_float(
+                    quantities.get(name, item["target_quantity"]),
+                    item["target_quantity"],
+                )
+                - consumption,
+            )
+            if quantities[name] <= item["trigger_quantity"]:
+                triggered[name] = {
+                    **item,
+                    "current_quantity": round(quantities[name], 3),
+                    "target_quantity": item["target_quantity"],
+                }
+                # Assume an exchange/top-up request resets the local store to full.
+                quantities[name] = item["target_quantity"]
+
+        runtime["last_update_time"] = now
+        if not triggered:
+            return []
+
+        records: List[GeneratedTaskRecord] = []
+        exchange_mode = (
+            _clean_text(cfg.get("exchange_mode", "top_up_only")) or "top_up_only"
+        )
+
+        for pickup, dropoff in self._pick_pairs(instance):
+            task_payload = payload_name
+            source_locations = {
+                _clean_text(item.get("source_location"))
+                for item in triggered.values()
+                if _clean_text(item.get("source_location"))
+            }
+            exchange_payloads = {
+                _clean_text(item.get("exchange_payload"))
+                for item in triggered.values()
+                if _clean_text(item.get("exchange_payload"))
+            }
+            task_pickup = (
+                next(iter(source_locations)) if len(source_locations) == 1 else pickup
+            )
+            if len(exchange_payloads) == 1:
+                task_payload = next(iter(exchange_payloads))
+
+            task = self._base_task(
+                instance,
+                task_pickup,
+                dropoff,
+                task_payload,
+                now,
+                "tracked_item_exchange",
+            )
+            if task is None:
+                continue
+            task.tracked_item_exchange = True
+            task.exchange_mode = exchange_mode
+            task.tracked_item_source_payload = payload_name
+            task.tracked_items = triggered
+            records.extend(
+                self._records_for_outbound(
+                    task,
+                    instance,
+                    f"Generated tracked item exchange for {', '.join(sorted(triggered.keys()))}",
+                )
+            )
+
+        return records
+
+    def update_until(self, now: float) -> List[GeneratedTaskRecord]:
+        generated: List[GeneratedTaskRecord] = []
+        if not self.instances:
+            return generated
+
+        for instance in self.instances:
+            generated.extend(self._schedule_records(instance, now))
+            generated.extend(self._volume_records(instance, now))
+            generated.extend(self._tracked_item_records(instance, now))
+
+        return generated
 
 
 class DepartmentWasteTaskGenerator(BaseTaskGenerator):
@@ -92,9 +782,10 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
                 continue
 
             stream_names = [
-                str(x).strip()
+                str(x.get("name", x) if isinstance(x, dict) else x).strip()
                 for x in dept.get("waste_streams", [])
-                if str(x).strip() in self.waste_streams
+                if str(x.get("name", x) if isinstance(x, dict) else x).strip()
+                in self.waste_streams
             ]
             if not stream_names:
                 continue
@@ -192,7 +883,10 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
             release_time=release_time,
             target_time=0.0,
             quantity=1,
-            priority=int(waste_cfg.get("priority", self.default_priority) or self.default_priority),
+            priority=int(
+                waste_cfg.get("priority", self.default_priority)
+                or self.default_priority
+            ),
             created_during_runtime=True,
             labels=["waste", stream_name],
             route_profile=waste_cfg.get("route_profile") or None,
@@ -284,28 +978,66 @@ class TaskGenerationManager:
         self.generators: List[BaseTaskGenerator] = []
         self._build_generators()
 
+    def _task_generation_cfg(self) -> dict:
+        return self.config.get("task_generation", {}) or {}
+
     def _generation_enabled(self, name: str, default: bool = True) -> bool:
-        # Backwards compatible: if task_generation is missing, department waste
-        # still runs exactly as it did previously when waste streams/departments exist.
-        cfg = self.config.get("task_generation", {}) or {}
+        cfg = self._task_generation_cfg()
         if cfg and not bool(cfg.get("enabled", True)):
             return False
         specific = cfg.get(name, {}) or {}
         return bool(specific.get("enabled", default))
 
+    def _has_dynamic_categories(self) -> bool:
+        categories = self._task_generation_cfg().get("categories", {}) or {}
+        return any(
+            isinstance(v, dict) and bool(v.get("enabled", False))
+            for v in categories.values()
+        )
+
     def _build_generators(self) -> None:
+        task_generation = self._task_generation_cfg()
+        departments = list(self.config.get("departments", []))
+
+        if self._has_dynamic_categories() and bool(
+            task_generation.get("enabled", True)
+        ):
+            self.generators.append(
+                DynamicCategoryTaskGenerator(
+                    task_generation=task_generation,
+                    departments=departments,
+                    locations=self.locations,
+                    payloads=self.payloads,
+                    clock=self.clock,
+                )
+            )
+
+        # Keep legacy department waste support, but avoid duplicating new waste category
+        # generation when the dynamic Waste category is enabled.
+        categories = task_generation.get("categories", {}) or {}
+        dynamic_waste_enabled = bool(
+            isinstance(categories.get("waste"), dict)
+            and categories.get("waste", {}).get("enabled", False)
+            and (
+                categories.get("waste", {}).get("departments")
+                or categories.get("waste", {}).get("payload")
+            )
+        )
+
         waste_streams = {
             str(item.get("name", "")).strip(): dict(item)
             for item in self.config.get("waste_streams", [])
             if str(item.get("name", "")).strip()
         }
-        departments = list(self.config.get("departments", []))
 
-        if waste_streams and departments and self._generation_enabled("department_waste", True):
+        if (
+            waste_streams
+            and departments
+            and not dynamic_waste_enabled
+            and self._generation_enabled("department_waste", True)
+        ):
             priority = int(
-                ((self.config.get("task_generation", {}) or {})
-                 .get("department_waste", {}) or {})
-                .get("priority", 60)
+                (task_generation.get("department_waste", {}) or {}).get("priority", 60)
                 or 60
             )
             self.generators.append(

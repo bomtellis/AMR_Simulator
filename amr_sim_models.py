@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 
 @dataclass(order=True)
@@ -27,6 +27,9 @@ class PayloadType:
     height_m: float = 1.0
     # Legacy compatibility only. New editor files use length/width/height.
     size_units: float = 1.0
+    # Payload-in-payload / consumables tracking.
+    track_items: bool = False
+    items: Dict[str, dict] = field(default_factory=dict)
 
     @property
     def footprint_area_m2(self) -> float:
@@ -58,6 +61,23 @@ class Task:
     container_type: str = ""
     pending_reason: str = ""
     assigned_inventory_space: str = ""
+
+    # Tracked item exchange metadata. These fields are populated by automatic
+    # task generation when a payload has track_items enabled. They are kept on
+    # the Task object so verbose logging, completed task reporting and future
+    # stock-state logic can use them without changing the core routing code.
+    tracked_item_exchange: bool = False
+    exchange_mode: str = ""
+    tracked_item_source_payload: str = ""
+    tracked_items: Dict[str, dict] = field(default_factory=dict)
+    generated_volume_m3: float = 0.0
+
+    # Optional delayed return/exchange task generated when this task completes.
+    return_enabled: bool = False
+    return_payload: str = ""
+    return_delay_minutes: float = 0.0
+    return_route_profile: str = ""
+    return_priority: int = 0
 
 
 @dataclass

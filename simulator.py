@@ -141,6 +141,36 @@ class Simulation:
         self.payloads: Dict[str, PayloadType] = {}
         for p in config["payloads"]:
             legacy_size = float(p.get("size_units", 1.0))
+            raw_items = p.get("items", {}) or {}
+            if isinstance(raw_items, list):
+                converted_items = {}
+                for item in raw_items:
+                    if not isinstance(item, dict):
+                        continue
+                    item_name = str(item.get("name", "")).strip()
+                    if item_name:
+                        converted_items[item_name] = dict(item)
+                raw_items = converted_items
+            if not isinstance(raw_items, dict):
+                raw_items = {}
+            clean_items = {}
+            for item_name, item_cfg in raw_items.items():
+                item_name = str(item_name).strip()
+                if not item_name:
+                    continue
+                item_cfg = item_cfg if isinstance(item_cfg, dict) else {}
+                clean_items[item_name] = {
+                    "max": float(item_cfg.get("max", 100)),
+                    "top_up_threshold": float(item_cfg.get("top_up_threshold", 15)),
+                    "usage_rate": str(item_cfg.get("usage_rate", "scheduled_sporadic")),
+                    "consumption_per_day": float(
+                        item_cfg.get("consumption_per_day", 0.0)
+                    ),
+                    "exchange_payload": str(
+                        item_cfg.get("exchange_payload", "")
+                    ).strip(),
+                    "source_location": str(item_cfg.get("source_location", "")).strip(),
+                }
             self.payloads[p["name"]] = PayloadType(
                 name=p["name"],
                 weight_kg=float(p["weight_kg"]),
@@ -148,6 +178,8 @@ class Simulation:
                 width_m=float(p.get("width_m", legacy_size)),
                 height_m=float(p.get("height_m", legacy_size)),
                 size_units=legacy_size,
+                track_items=bool(p.get("track_items", False)),
+                items=clean_items,
             )
 
         # Parse waste streams and departments
@@ -168,6 +200,10 @@ class Simulation:
             locations=self.locations,
             payloads=self.payloads,
         )
+        self.task_generation_interval_sec = float(
+            (config.get("task_generation", {}) or {}).get("update_interval_sec", 900.0)
+        )
+        self.task_generation_horizon_sec = self._task_generation_horizon_seconds(config)
 
         # Parse lifts from configuration
 
@@ -304,6 +340,37 @@ class Simulation:
             config["building"].get("enable_idle_return", True)
         )
         self.synthetic_task_counter = 0
+
+        if getattr(self.task_generation_manager, "generators", []):
+            self.push_event(0.0, "generator_tick", {})
+
+    def _task_generation_horizon_seconds(self, config: dict) -> float:
+        sim_cfg = config.get("simulation", {}) or {}
+        if sim_cfg.get("end_datetime"):
+            try:
+                return max(
+                    0.0,
+                    (
+                        parse_datetime(sim_cfg["end_datetime"])
+                        - self.clock.start_datetime
+                    ).total_seconds(),
+                )
+            except Exception:
+                pass
+        if sim_cfg.get("duration_hours") is not None:
+            return max(0.0, float(sim_cfg.get("duration_hours", 0.0)) * 3600.0)
+        if sim_cfg.get("duration_days") is not None:
+            return max(0.0, float(sim_cfg.get("duration_days", 0.0)) * 86400.0)
+
+        latest = 0.0
+        for task in config.get("tasks", []):
+            try:
+                latest = max(
+                    latest, parse_release_time(dict(task), self.clock.start_datetime)
+                )
+            except Exception:
+                continue
+        return max(latest + 86400.0, 86400.0)
 
     def _space_points_dimensions(self, points: list) -> Tuple[float, float]:
         if not points:
@@ -517,6 +584,84 @@ class Simulation:
             task.pending_reason = str(reason or "").strip()
         except Exception:
             pass
+
+    def _task_tracking_log_kwargs(self, task: Optional[Task]) -> dict:
+        if task is None:
+            return {}
+        return {
+            "tracked_item_exchange": bool(
+                getattr(task, "tracked_item_exchange", False)
+            ),
+            "exchange_mode": str(getattr(task, "exchange_mode", "") or ""),
+            "tracked_item_source_payload": str(
+                getattr(task, "tracked_item_source_payload", "") or ""
+            ),
+            "tracked_items": getattr(task, "tracked_items", {}) or {},
+        }
+
+    def _schedule_configured_return_task(self, task: Task, finish_time: float) -> None:
+        if not bool(getattr(task, "return_enabled", False)):
+            return
+
+        return_payload = str(getattr(task, "return_payload", "") or "").strip()
+        if not return_payload or return_payload not in self.payloads:
+            return
+
+        self.synthetic_task_counter += 1
+        delay_sec = (
+            max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
+        )
+        return_task = Task(
+            id=f"RETURN-{task.id}-{self.synthetic_task_counter}",
+            pickup=task.dropoff,
+            dropoff=task.pickup,
+            payload=return_payload,
+            release_time=finish_time + delay_sec,
+            target_time=0.0,
+            quantity=1,
+            priority=int(
+                getattr(task, "return_priority", 0) or getattr(task, "priority", 100)
+            ),
+            created_during_runtime=True,
+            labels=list(getattr(task, "labels", []) or []) + ["return"],
+            route_profile=(
+                str(getattr(task, "return_route_profile", "") or "").strip() or None
+            ),
+            task_source="task_generation_return",
+            department_id=str(getattr(task, "department_id", "") or ""),
+            container_type=return_payload,
+        )
+        self.schedule_task_release(return_task)
+
+        pickup = self.locations.get(return_task.pickup)
+        dropoff = self.locations.get(return_task.dropoff)
+        self.log_step(
+            event_time=return_task.release_time,
+            event_type="return_task_generated",
+            task_id=return_task.id,
+            details=f"Generated delayed return for {task.id}",
+            from_location=return_task.pickup,
+            to_location=return_task.dropoff,
+            payload_name=return_task.payload,
+            duration_sec=0.0,
+            wait_time_sec=0.0,
+            distance_m=0.0,
+            start_time=return_task.release_time,
+            end_time=return_task.release_time,
+            start_node=return_task.pickup,
+            end_node=return_task.dropoff,
+            start_x=getattr(pickup, "x", None),
+            start_y=getattr(pickup, "y", None),
+            start_floor=getattr(pickup, "floor", None),
+            end_x=getattr(dropoff, "x", None),
+            end_y=getattr(dropoff, "y", None),
+            end_floor=getattr(dropoff, "floor", None),
+            status="generated",
+            energy_kwh=0.0,
+            task_source=return_task.task_source,
+            department_id=return_task.department_id,
+            container_type=return_payload,
+        )
 
     def _fail_task(self, task: Task, reason: str, now: Optional[float] = None) -> None:
         reason = str(reason or "Task failed").strip()
@@ -2353,6 +2498,7 @@ class Simulation:
                 waste_stream=getattr(task, "waste_stream", ""),
                 waste_volume_m3=getattr(task, "waste_volume_m3", 0.0),
                 container_type=getattr(task, "container_type", ""),
+                **self._task_tracking_log_kwargs(task),
             )
 
             segment_start_time = start_time
@@ -2510,6 +2656,8 @@ class Simulation:
     def _update_task_generators_until(self, now: float):
         if not getattr(self, "task_generation_manager", None):
             return
+        if now > getattr(self, "task_generation_horizon_sec", now):
+            return
 
         for record in self.task_generation_manager.update_until(now):
             task = record.task
@@ -2546,6 +2694,7 @@ class Simulation:
                 waste_stream=record.waste_stream,
                 waste_volume_m3=record.waste_volume_m3,
                 container_type=record.container_type,
+                **self._task_tracking_log_kwargs(task),
             )
 
     def run(self):
@@ -2648,8 +2797,18 @@ class Simulation:
                     "lift_loaded_sec_total": round(
                         event.payload.get("lift_loaded_sec_total", 0.0), 3
                     ),
+                    "tracked_item_exchange": bool(
+                        getattr(task, "tracked_item_exchange", False)
+                    ),
+                    "exchange_mode": str(getattr(task, "exchange_mode", "") or ""),
+                    "tracked_item_source_payload": str(
+                        getattr(task, "tracked_item_source_payload", "") or ""
+                    ),
+                    "tracked_items": getattr(task, "tracked_items", {}) or {},
                 }
             )
+
+            self._schedule_configured_return_task(task, event.payload["finish_time"])
 
             target_time = event.payload.get("target_time", 0.0)
             actual_duration = event.payload["duration"]
@@ -2681,6 +2840,12 @@ class Simulation:
                 status="waiting",
                 energy_kwh=0.0,
             )
+            self._try_assign_tasks(event.time)
+
+        elif event.event_type == "generator_tick":
+            next_tick = event.time + max(60.0, self.task_generation_interval_sec)
+            if next_tick <= self.task_generation_horizon_sec:
+                self.push_event(next_tick, "generator_tick", {})
             self._try_assign_tasks(event.time)
 
         elif event.event_type == "charge_cycle_start":
@@ -2829,6 +2994,10 @@ class Simulation:
         waste_volume_m3: float = 0.0,
         container_type: str = "",
         pending_reason: str = "",
+        tracked_item_exchange: bool = False,
+        exchange_mode: str = "",
+        tracked_item_source_payload: str = "",
+        tracked_items: Optional[dict] = None,
     ):
         if not self.verbose:
             return
@@ -2872,6 +3041,10 @@ class Simulation:
                 "waste_volume_m3": round(float(waste_volume_m3 or 0.0), 6),
                 "container_type": container_type,
                 "pending_reason": pending_reason,
+                "tracked_item_exchange": bool(tracked_item_exchange),
+                "exchange_mode": exchange_mode,
+                "tracked_item_source_payload": tracked_item_source_payload,
+                "tracked_items": json.dumps(tracked_items or {}, ensure_ascii=False),
             }
         )
 
@@ -2916,6 +3089,10 @@ class Simulation:
             "waste_volume_m3",
             "container_type",
             "pending_reason",
+            "tracked_item_exchange",
+            "exchange_mode",
+            "tracked_item_source_payload",
+            "tracked_items",
         ]
 
         with open(self.verbose_csv_path, "w", newline="", encoding="utf-8") as f:
@@ -2943,6 +3120,11 @@ class Simulation:
                     for dt in finish_times
                 )
             )
+
+        if getattr(self, "task_generation_manager", None) and getattr(
+            self.task_generation_manager, "generators", []
+        ):
+            times.append(getattr(self, "task_generation_horizon_sec", 0.0))
 
         return max(times)
 
@@ -3170,17 +3352,17 @@ class RuntimeInputThread(threading.Thread):
         self.sim = sim
 
     def _update_task_generators_until(self, now: float):
-        if not getattr(self, "task_generation_manager", None):
+        if not getattr(self.sim, "task_generation_manager", None):
             return
 
-        for record in self.task_generation_manager.update_until(now):
+        for record in self.sim.task_generation_manager.update_until(now):
             task = record.task
-            self.schedule_task_release(task)
+            self.sim.schedule_task_release(task)
 
-            pickup = self.locations.get(record.pickup_location)
-            dropoff = self.locations.get(record.dropoff_location)
+            pickup = self.sim.locations.get(record.pickup_location)
+            dropoff = self.sim.locations.get(record.dropoff_location)
 
-            self.log_step(
+            self.sim.log_step(
                 event_time=task.release_time,
                 event_type=record.event_type,
                 task_id=task.id,
@@ -3208,6 +3390,7 @@ class RuntimeInputThread(threading.Thread):
                 waste_stream=record.waste_stream,
                 waste_volume_m3=record.waste_volume_m3,
                 container_type=record.container_type,
+                **self.sim._task_tracking_log_kwargs(task),
             )
 
     def run(self):
