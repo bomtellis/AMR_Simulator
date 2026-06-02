@@ -6284,7 +6284,7 @@
       "pickup": "KITCHEN",
       "dropoff": "D1-CATERING",
       "payload": "Clinical Waste Bin",
-      "release_datetime": "2026-06-02T08:06:00",
+      "release_datetime": "2026-01-01T08:06:00",
       "target_time": 300,
       "priority": 10,
       "labels": [

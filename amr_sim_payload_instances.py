@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 import re
 
-
 EMPTY_PAYLOAD_NAME = "__empty__"
 
 
@@ -13,7 +12,16 @@ def clean_text(value) -> str:
 
 
 def is_empty_payload_name(payload_name: str) -> bool:
-    return clean_text(payload_name) in {"", EMPTY_PAYLOAD_NAME, "none", "None", "NONE", "-", "empty", "EMPTY"}
+    return clean_text(payload_name) in {
+        "",
+        EMPTY_PAYLOAD_NAME,
+        "none",
+        "None",
+        "NONE",
+        "-",
+        "empty",
+        "EMPTY",
+    }
 
 
 def normalise_payload_name(payload_name: str) -> str:
@@ -96,7 +104,9 @@ class PayloadInstanceStore:
         if not ids and location_name in self._by_location:
             self._by_location.pop(location_name, None)
 
-    def pickup(self, location_name: str, payload_name: str = "", instance_id: str = "") -> Optional[PayloadInstanceRecord]:
+    def pickup(
+        self, location_name: str, payload_name: str = "", instance_id: str = ""
+    ) -> Optional[PayloadInstanceRecord]:
         location_name = clean_text(location_name)
         payload_name = normalise_payload_name(payload_name)
         instance_id = clean_text(instance_id)
@@ -125,7 +135,9 @@ class PayloadInstanceStore:
 
         return None
 
-    def has_instance_at(self, location_name: str, instance_id: str, payload_name: str = "") -> bool:
+    def has_instance_at(
+        self, location_name: str, instance_id: str, payload_name: str = ""
+    ) -> bool:
         record = self._records.get(clean_text(instance_id))
         if not record:
             return False
