@@ -1925,6 +1925,7 @@ class AMRGraphEditor(QMainWindow):
             location_names,
             payload_names,
             profile_names,
+            self.store.data.get("departments", []),
             self._save_task_generation,
         )
         dialog.exec()

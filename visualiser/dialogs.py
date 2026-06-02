@@ -175,6 +175,7 @@ class TaskGenerationSettingsDialog(QDialog):
         location_names,
         payload_names,
         profile_names,
+        departments,
         on_save,
     ):
         super().__init__(parent)
@@ -183,6 +184,8 @@ class TaskGenerationSettingsDialog(QDialog):
         self.location_names = sorted(location_names)
         self.payload_names = sorted(payload_names)
         self.profile_names = list(profile_names)
+        self.departments = [dict(x) for x in (departments or [])]
+        self.current_department_id = None
         self.on_save = on_save
         self.current_key = None
         self.selected_dropoffs = []
@@ -200,9 +203,31 @@ class TaskGenerationSettingsDialog(QDialog):
 
         left = QVBoxLayout()
         body.addLayout(left, 0)
+
+        lists_row = QHBoxLayout()
+        left.addLayout(lists_row, 1)
+
+        category_col = QVBoxLayout()
+        lists_row.addLayout(category_col)
+
+        category_col.addWidget(QLabel("Categories"))
         self.category_list = QListWidget()
-        self.category_list.setFixedWidth(220)
-        left.addWidget(self.category_list, 1)
+        self.category_list.setFixedWidth(190)
+        category_col.addWidget(self.category_list, 1)
+
+        department_col = QVBoxLayout()
+        lists_row.addLayout(department_col)
+
+        department_col.addWidget(QLabel("Departments"))
+        self.department_list = QListWidget()
+        self.department_list.setFixedWidth(230)
+        department_col.addWidget(self.department_list, 1)
+
+        self.department_hint = QLabel(
+            "Select a department to override category defaults"
+        )
+        self.department_hint.setWordWrap(True)
+        department_col.addWidget(self.department_hint)
 
         category_buttons = QHBoxLayout()
         left.addLayout(category_buttons)
@@ -323,12 +348,135 @@ class TaskGenerationSettingsDialog(QDialog):
         self.mode_combo.currentTextChanged.connect(self._update_mode_field_state)
         self.return_enabled_check.toggled.connect(self._update_mode_field_state)
 
-        self._refresh_category_list()
         self.category_list.currentItemChanged.connect(self._on_category_changed)
+        self.department_list.currentItemChanged.connect(self._on_department_changed)
+
+        self._refresh_category_list()
+
         if self.category_list.count() > 0:
             self.category_list.setCurrentRow(0)
+            current = self.category_list.currentItem()
+            if current is not None:
+                self.current_key = current.data(Qt.UserRole)
+
+        self.current_department_id = ""
+
+        self._loading = True
+        self._refresh_department_list(select_dept_id="")
+        if self.current_key:
+            self._load_category(self.current_key)
+        self._loading = False
 
         self._refresh_schedule_summary()
+
+    def _department_label(self, dept):
+        name = str(dept.get("name", "")).strip()
+        dept_id = str(dept.get("id", "")).strip()
+        enabled = bool(dept.get("enabled", True))
+
+        label = name or dept_id or "Department"
+        if dept_id and dept_id != label:
+            label = f"{label} ({dept_id})"
+
+        if not enabled:
+            label += " [disabled]"
+
+        return label
+
+    def _refresh_department_list(self, select_dept_id=None):
+        current_dept_id = select_dept_id or self.current_department_id
+
+        self.department_list.blockSignals(True)
+        self.department_list.clear()
+
+        selected_row = 0
+        row_index = 0
+
+        valid_departments = []
+
+        for dept in self.departments:
+            dept_id = str(dept.get("id", "")).strip()
+            if not dept_id:
+                dept_id = str(dept.get("name", "")).strip()
+
+            if not dept_id:
+                continue
+
+            valid_departments.append((dept_id, dept))
+
+        if not valid_departments:
+            item = QListWidgetItem("Category defaults")
+            item.setData(Qt.UserRole, "")
+            self.department_list.addItem(item)
+        else:
+            for dept_id, dept in valid_departments:
+                item = QListWidgetItem(self._department_label(dept))
+                item.setData(Qt.UserRole, dept_id)
+                self.department_list.addItem(item)
+
+                if dept_id == current_dept_id:
+                    selected_row = row_index
+
+                row_index += 1
+
+        self.department_list.blockSignals(False)
+
+        if self.department_list.count() > 0:
+            self.department_list.setCurrentRow(selected_row)
+            current = self.department_list.currentItem()
+            self.current_department_id = current.data(Qt.UserRole) if current else ""
+            self.current_department_id = self.current_department_id or ""
+
+    def _on_department_changed(self, current, previous):
+        if self._loading:
+            return
+
+        if previous is not None and self.current_key:
+            previous_dept_id = previous.data(Qt.UserRole) or ""
+            try:
+                self._store_category(
+                    self.current_key,
+                    list_item=self.category_list.currentItem(),
+                    department_id=previous_dept_id,
+                )
+            except Exception as exc:
+                self._loading = True
+                self.department_list.setCurrentItem(previous)
+                self._loading = False
+                QMessageBox.critical(self, "Invalid department settings", str(exc))
+                return
+
+        self.current_department_id = current.data(Qt.UserRole) if current else ""
+        self.current_department_id = self.current_department_id or ""
+
+        if self.current_key:
+            self._loading = True
+            self._load_category(self.current_key)
+            self._loading = False
+
+    def _department_overrides_for_category(self, category_key):
+        category = self.config.setdefault("categories", {}).setdefault(category_key, {})
+        overrides = category.setdefault("departments", {})
+
+        if not isinstance(overrides, dict):
+            overrides = {}
+            category["departments"] = overrides
+
+        return overrides
+
+    def _effective_category_item(self, category_key, department_id=None):
+        category = dict(self.config.get("categories", {}).get(category_key, {}))
+
+        if department_id:
+            overrides = self._department_overrides_for_category(category_key)
+            dept_cfg = overrides.get(department_id, {})
+            if isinstance(dept_cfg, dict):
+                merged = dict(category)
+                merged.update(dept_cfg)
+                merged["departments"] = category.get("departments", {})
+                return merged
+
+        return category
 
     def edit_scheduled_times(self):
         dialog = ScheduledTimesDialog(self, self.scheduled_times)
@@ -567,7 +715,11 @@ class TaskGenerationSettingsDialog(QDialog):
         if previous is not None:
             previous_key = previous.data(Qt.UserRole)
             try:
-                self._store_category(previous_key, list_item=previous)
+                self._store_category(
+                    previous_key,
+                    list_item=previous,
+                    department_id=self.current_department_id or "",
+                )
             except Exception as exc:
                 self._loading = True
                 self.category_list.setCurrentItem(previous)
@@ -580,15 +732,24 @@ class TaskGenerationSettingsDialog(QDialog):
             return
 
         self.current_key = current.data(Qt.UserRole)
+        self.current_department_id = ""
+        self._loading = True
+        self._refresh_department_list(select_dept_id="")
         self._load_category(self.current_key)
+        self._loading = False
 
     def _load_category(self, key):
+        was_loading = self._loading
         self._loading = True
-        item = self.config["categories"].get(key, {})
+        item = self._effective_category_item(key, self.current_department_id)
         self._normalise_category_dropoffs(item)
         self.selected_dropoffs = list(item.get("dropoff_locations", []))
         self.enabled_check.setChecked(bool(item.get("enabled", False)))
         self.display_name_edit.setText(str(item.get("display_name", key.title())))
+        if self.current_department_id:
+            self.display_name_edit.setEnabled(False)
+        else:
+            self.display_name_edit.setEnabled(True)
         self.mode_combo.setCurrentText(str(item.get("generation_mode", "scheduled")))
         self.priority_edit.setText(str(item.get("priority", 100)))
         self.pickup_combo.setCurrentText(str(item.get("pickup_location", "")))
@@ -614,7 +775,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.threshold_volume_edit.setText(str(item.get("threshold_volume_m3", 0.0)))
         self.base_daily_volume_edit.setText(str(item.get("base_daily_volume_m3", 0.0)))
         self.notes_edit.setPlainText(str(item.get("notes", "")))
-        self._loading = False
+        self._loading = was_loading
         self._update_mode_field_state()
 
     def _set_widget_enabled(self, widget, enabled):
@@ -663,11 +824,14 @@ class TaskGenerationSettingsDialog(QDialog):
     def _store_current_category(self):
         if not self.current_key:
             return
+
         self._store_category(
-            self.current_key, list_item=self.category_list.currentItem()
+            self.current_key,
+            list_item=self.category_list.currentItem(),
+            department_id=self.current_department_id or "",
         )
 
-    def _store_category(self, category_key, list_item=None):
+    def _store_category(self, category_key, list_item=None, department_id=""):
         if not category_key:
             return
 
@@ -683,7 +847,7 @@ class TaskGenerationSettingsDialog(QDialog):
         dropoff_locations = [
             str(x).strip() for x in self.selected_dropoffs if str(x).strip()
         ]
-        self.config["categories"][category_key] = {
+        payload = {
             "enabled": self.enabled_check.isChecked(),
             "display_name": display_name,
             "generation_mode": self.mode_combo.currentText().strip(),
@@ -704,7 +868,26 @@ class TaskGenerationSettingsDialog(QDialog):
             "notes": self.notes_edit.toPlainText().strip(),
         }
 
-        if list_item is not None:
+        if department_id:
+            # Store only the selected department override under this category.
+            category = self.config.setdefault("categories", {}).setdefault(
+                category_key, {}
+            )
+            overrides = category.setdefault("departments", {})
+            payload.pop("display_name", None)
+            payload.pop("departments", None)
+            overrides[department_id] = payload
+        else:
+            # Store category defaults.
+            existing_departments = (
+                self.config.setdefault("categories", {})
+                .setdefault(category_key, {})
+                .get("departments", {})
+            )
+            payload["departments"] = existing_departments
+            self.config["categories"][category_key] = payload
+
+        if list_item is not None and not department_id:
             list_item.setText(display_name)
 
     def accept(self):

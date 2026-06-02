@@ -19,7 +19,18 @@ from PySide6.QtGui import (
     QPainterPath,
     QMouseEvent,
 )
-from PySide6.QtCore import QPointF, QTimer, Qt, QRectF, QRect, QObject, Signal, QThread
+from PySide6.QtCore import (
+    QPointF,
+    QTimer,
+    Qt,
+    QRectF,
+    QRect,
+    QObject,
+    Signal,
+    Slot,
+    QRunnable,
+    QThreadPool,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -490,52 +501,48 @@ class GraphicsView(QGraphicsView):
             painter.restore()
 
 
-class DxfLoadWorker(QObject):
+class DxfLoadSignals(QObject):
     progress = Signal(int, int, str)
-    floor_loaded = Signal(int, str, object)
+    floor_loaded = Signal(int, str, object, object)
     error = Signal(int, str)
-    finished = Signal()
+    finished_one = Signal()
 
-    def __init__(self, floor_dxf_files):
+
+class DxfLoadTask(QRunnable):
+    def __init__(
+        self, floor: int, path: str, index: int, total: int, signals: DxfLoadSignals
+    ):
         super().__init__()
-        self.floor_dxf_files = list(floor_dxf_files)
-        self._cancelled = False
+        self.floor = int(floor)
+        self.path = str(path)
+        self.index = int(index)
+        self.total = int(total)
+        self.signals = signals
 
-    def cancel(self):
-        self._cancelled = True
-
+    @Slot()
     def run(self):
-        total = len(self.floor_dxf_files)
+        self.signals.progress.emit(
+            self.index,
+            self.total,
+            f"Loading floor {self.floor}...\n{Path(self.path).name if self.path else ''}",
+        )
 
-        for i, entry in enumerate(self.floor_dxf_files, start=1):
-            if self._cancelled:
-                break
+        try:
+            if not self.path or not Path(self.path).exists():
+                self.signals.error.emit(self.floor, f"DXF file not found: {self.path}")
+                return
 
-            try:
-                floor = int(entry.get("floor"))
-                path = str(entry.get("filepath") or "").strip()
-            except Exception:
-                continue
-
-            self.progress.emit(
-                i - 1,
-                total,
-                f"Loading floor {floor}...\n{Path(path).name if path else ''}",
+            payload = DXFScene.load_content(self.path)
+            self.signals.floor_loaded.emit(
+                self.floor,
+                self.path,
+                payload["entities"],
+                payload["bounds"],
             )
-
-            try:
-                if not path or not Path(path).exists():
-                    self.error.emit(floor, f"DXF file not found: {path}")
-                    continue
-
-                dxf_scene = DXFScene()
-                dxf_scene.load(path)
-                self.floor_loaded.emit(floor, path, dxf_scene)
-
-            except Exception as exc:
-                self.error.emit(floor, str(exc))
-
-        self.finished.emit()
+        except Exception as exc:
+            self.signals.error.emit(self.floor, str(exc))
+        finally:
+            self.signals.finished_one.emit()
 
 
 class TaskJumpDialog(QDialog):
@@ -1155,8 +1162,13 @@ class SimulationVisualizer(QMainWindow):
 
         self.layout_model = LayoutModel()
         self.dxf_scenes: Dict[int, DXFScene] = {}
-        self.dxf_load_thread: Optional[QThread] = None
-        self.dxf_load_worker: Optional[DxfLoadWorker] = None
+        self.dxf_thread_pool = QThreadPool.globalInstance()
+        self.dxf_thread_pool.setMaxThreadCount(
+            max(2, min(6, self.dxf_thread_pool.maxThreadCount()))
+        )
+        self.dxf_load_signals: Optional[DxfLoadSignals] = None
+        self.dxf_load_total = 0
+        self.dxf_load_completed = 0
         self.dxf_progress_dialog: Optional[QProgressDialog] = None
         self.dxf_paths_by_floor: Dict[int, str] = {}
         self.dxf_items_by_floor: Dict[int, List[QGraphicsItem]] = {}
@@ -1443,8 +1455,11 @@ class SimulationVisualizer(QMainWindow):
             self.refresh_static_scene()
             return
 
+        self.dxf_load_total = len(floor_dxf_files)
+        self.dxf_load_completed = 0
+
         self.dxf_progress_dialog = QProgressDialog(
-            "Loading DXFs...", "Cancel", 0, len(floor_dxf_files), self
+            "Loading DXFs...", "Cancel", 0, self.dxf_load_total, self
         )
         self.dxf_progress_dialog.setWindowTitle("Loading")
         self.dxf_progress_dialog.setWindowModality(Qt.WindowModal)
@@ -1454,20 +1469,28 @@ class SimulationVisualizer(QMainWindow):
 
         self.view.setUpdatesEnabled(False)
 
-        self.dxf_load_thread = QThread(self)
-        self.dxf_load_worker = DxfLoadWorker(floor_dxf_files)
-        self.dxf_load_worker.moveToThread(self.dxf_load_thread)
+        self.dxf_load_signals = DxfLoadSignals()
+        self.dxf_load_signals.progress.connect(self.on_dxf_load_progress)
+        self.dxf_load_signals.floor_loaded.connect(self.on_dxf_floor_loaded)
+        self.dxf_load_signals.error.connect(self.on_dxf_load_error)
+        self.dxf_load_signals.finished_one.connect(self.on_dxf_load_finished_one)
 
-        self.dxf_load_thread.started.connect(self.dxf_load_worker.run)
-        self.dxf_load_worker.progress.connect(self.on_dxf_load_progress)
-        self.dxf_load_worker.floor_loaded.connect(self.on_dxf_floor_loaded)
-        self.dxf_load_worker.error.connect(self.on_dxf_load_error)
-        self.dxf_load_worker.finished.connect(self.on_dxf_load_finished)
-        self.dxf_load_worker.finished.connect(self.dxf_load_thread.quit)
-        self.dxf_load_thread.finished.connect(self.dxf_load_thread.deleteLater)
-        self.dxf_progress_dialog.canceled.connect(self.dxf_load_worker.cancel)
+        for index, entry in enumerate(floor_dxf_files):
+            try:
+                floor = int(entry.get("floor"))
+                path = str(entry.get("filepath") or "").strip()
+            except Exception:
+                self.dxf_load_completed += 1
+                continue
 
-        self.dxf_load_thread.start()
+            task = DxfLoadTask(
+                floor=floor,
+                path=path,
+                index=index,
+                total=self.dxf_load_total,
+                signals=self.dxf_load_signals,
+            )
+            self.dxf_thread_pool.start(task)
 
     def on_dxf_load_progress(self, value: int, total: int, label: str):
         if self.dxf_progress_dialog is None:
@@ -1480,12 +1503,17 @@ class SimulationVisualizer(QMainWindow):
             except NameError as e:
                 return
 
-    def on_dxf_floor_loaded(self, floor: int, path: str, dxf_scene):
+    def on_dxf_floor_loaded(self, floor: int, path: str, entities, bounds):
+        dxf_scene = DXFScene()
+        dxf_scene.set_content(path, entities, bounds)
+
         self.dxf_scenes[floor] = dxf_scene
         self.dxf_paths_by_floor[floor] = path
-        self.ensure_dxf_floor_loaded(floor)
+
         self.update_loaded_files()
+
         if floor == self.current_floor():
+            self.ensure_dxf_floor_loaded(floor)
             self.show_dxf_floor(floor)
             self.refresh_static_scene()
             self.view.viewport().update()
@@ -1504,8 +1532,14 @@ class SimulationVisualizer(QMainWindow):
         self.refresh_static_scene()
         self.view.viewport().update()
 
-        self.dxf_load_worker = None
-        self.dxf_load_thread = None
+    def on_dxf_load_finished_one(self):
+        self.dxf_load_completed += 1
+
+        if self.dxf_progress_dialog:
+            self.dxf_progress_dialog.setValue(self.dxf_load_completed)
+
+        if self.dxf_load_completed >= self.dxf_load_total:
+            self.on_dxf_load_finished()
 
     def current_dxf_scene(self) -> Optional[DXFScene]:
         return self.dxf_scenes.get(self.current_floor())
