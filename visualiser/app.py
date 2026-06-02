@@ -286,6 +286,12 @@ class AMRGraphEditor(QMainWindow):
         self.route_profile_selection_rect_start = None
         self.route_profile_selection_rect_item = None
 
+        self.department_location_placement_active = False
+        self.department_location_placement_name = None
+        self.department_location_placement_category_key = None
+        self.department_location_placement_callback = None
+        self.department_location_placement_return_dialog = None
+
         self._dxf_thread = QThread(self)
         self._dxf_worker = DXFLoadWorker()
         self._dxf_worker.moveToThread(self._dxf_thread)
@@ -427,6 +433,132 @@ class AMRGraphEditor(QMainWindow):
 
     def set_status(self, text):
         self.status_label.setText(text)
+
+    def start_department_location_placement(
+        self,
+        location_name,
+        category_key,
+        callback,
+        return_dialog=None,
+    ):
+        self.department_location_placement_active = True
+        self.department_location_placement_name = str(location_name).strip()
+        self.department_location_placement_category_key = str(category_key).strip()
+        self.department_location_placement_callback = callback
+        self.department_location_placement_return_dialog = return_dialog
+
+        self.mode_combo.setCurrentText("select_move")
+        self.set_status(
+            f"Click the DXF/editor scene to place location {self.department_location_placement_name}"
+        )
+
+    def cancel_department_location_placement(self):
+        self.department_location_placement_active = False
+        self.department_location_placement_name = None
+        self.department_location_placement_category_key = None
+        self.department_location_placement_callback = None
+
+        dialog = self.department_location_placement_return_dialog
+        self.department_location_placement_return_dialog = None
+
+        if dialog is not None:
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+
+        self.set_status("Department location placement cancelled")
+
+    def finish_department_location_placement(self, x, y, floor):
+        if not self.department_location_placement_active:
+            return False
+
+        location_name = self.department_location_placement_name
+        category_key = self.department_location_placement_category_key
+        callback = self.department_location_placement_callback
+        dialog = self.department_location_placement_return_dialog
+
+        self.department_location_placement_active = False
+        self.department_location_placement_name = None
+        self.department_location_placement_category_key = None
+        self.department_location_placement_callback = None
+        self.department_location_placement_return_dialog = None
+
+        payload = {
+            "category": category_key,
+            "name": location_name,
+            "floor": int(floor),
+            "x": round(float(x), 3),
+            "y": round(float(y), 3),
+        }
+
+        if location_name in self.store.names_in_use():
+            QMessageBox.critical(
+                self,
+                "Duplicate location",
+                f"A point or location named '{location_name}' already exists.",
+            )
+            if dialog is not None:
+                dialog.show()
+                dialog.raise_()
+                dialog.activateWindow()
+            return True
+
+        self.store.add_location(
+            location_name,
+            int(floor),
+            round(float(x), 3),
+            round(float(y), 3),
+        )
+
+        if callable(callback):
+            callback(category_key, payload)
+
+        if dialog is not None:
+            dialog.show()
+            dialog.raise_()
+            dialog.activateWindow()
+
+        self.set_status(f"Created location {location_name}")
+        self.refresh_canvas()
+        return True
+
+    def task_generation_category_pairs(self):
+        task_generation = (
+            self.store.task_generation()
+            if hasattr(self.store, "task_generation")
+            else self.store.data.setdefault("task_generation", {})
+        )
+
+        pairs = []
+        for key, item in task_generation.get("categories", {}).items():
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("display_name", "")).strip() or str(key).title()
+            suffix = str(
+                item.get("department_location_suffix", f"-{key.upper()}")
+            ).strip()
+            pairs.append((str(key), label, suffix))
+
+        return sorted(pairs, key=lambda x: x[1].lower())
+
+    def create_department_generated_locations(self, department_result):
+        created = 0
+
+        for item in department_result.get("_create_locations", []):
+            name = str(item.get("name", "")).strip()
+            if not name or name in self.store.names_in_use():
+                continue
+
+            self.store.add_location(
+                name,
+                int(item.get("floor", department_result.get("floor", 0))),
+                float(item.get("x", department_result.get("x", 0.0))),
+                float(item.get("y", department_result.get("y", 0.0))),
+            )
+            created += 1
+
+        department_result.pop("_create_locations", None)
+        return created
 
     def on_floor_changed(self, *_):
         self.refresh_canvas()
@@ -959,6 +1091,7 @@ class AMRGraphEditor(QMainWindow):
         self.store.set_location_bounding_box(name, self.bounding_box_points)
         self.bounding_box_location_name = None
         self.bounding_box_points = []
+        self.mode_combo.setCurrentText("select_move")
         self.set_status(f"Saved bounding box for {name}")
         self.refresh_canvas()
 
@@ -1155,6 +1288,7 @@ class AMRGraphEditor(QMainWindow):
             default_x=point["x"],
             default_y=point["y"],
             group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+            task_generation_categories=self.task_generation_category_pairs(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             if dialog.result["name"] in self.store.names_in_use():
@@ -1162,6 +1296,9 @@ class AMRGraphEditor(QMainWindow):
                     self, "Duplicate name", "Department name already exists"
                 )
                 return
+            created_locations = self.create_department_generated_locations(
+                dialog.result
+            )
             self.store.upsert_department(dialog.result)
             self.set_status(f"Added department {dialog.result['name']}")
             self.refresh_canvas()
@@ -1181,6 +1318,7 @@ class AMRGraphEditor(QMainWindow):
             default_x=x,
             default_y=y,
             group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+            task_generation_categories=self.task_generation_category_pairs(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             dept_name = str(dialog.result.get("name", "")).strip()
@@ -1189,6 +1327,9 @@ class AMRGraphEditor(QMainWindow):
                     self, "Duplicate name", "Department name already exists"
                 )
                 return
+            created_locations = self.create_department_generated_locations(
+                dialog.result
+            )
             self.store.upsert_department(dialog.result)
             self.selected_point_name = dept_name
             self.set_status(f"Added department {dept_name}")
@@ -1221,6 +1362,7 @@ class AMRGraphEditor(QMainWindow):
             default_x=float(dept.get("x", 0.0)),
             default_y=float(dept.get("y", 0.0)),
             group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+            task_generation_categories=self.task_generation_category_pairs(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             for other in self.store.data.get("departments", []):
@@ -1246,6 +1388,9 @@ class AMRGraphEditor(QMainWindow):
             old_name = str(dept.get("name", "")).strip()
             new_name = str(dialog.result.get("name", "")).strip()
 
+            created_locations = self.create_department_generated_locations(
+                dialog.result
+            )
             self.store.upsert_department(dialog.result)
 
             if old_name and new_name and old_name != new_name:
@@ -1259,6 +1404,10 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         x, y = self.snap(x, y)
+
+        if self.department_location_placement_active:
+            self.finish_department_location_placement(x, y, floor)
+            return
 
         if self.route_profile_selection_active:
             picked = self._route_profile_pickable_point_at(x, y, floor)
@@ -1545,6 +1694,10 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)
+
+        if self.department_location_placement_active:
+            self.cancel_department_location_placement()
+            return
 
         if self.route_profile_selection_active:
             if picked:
@@ -2077,6 +2230,7 @@ class AMRGraphEditor(QMainWindow):
             on_save=self._save_departments,
             suggest_department_id=self.store.suggest_next_department_id,
             group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+            task_generation_categories=self.task_generation_category_pairs(),
         )
         dialog.exec()
 

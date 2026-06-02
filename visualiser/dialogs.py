@@ -2079,6 +2079,7 @@ class DepartmentEditorDialog(QDialog):
         group_resolver=None,
         default_x=0.0,
         default_y=0.0,
+        task_generation_categories=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Department")
@@ -2087,8 +2088,13 @@ class DepartmentEditorDialog(QDialog):
         self.location_names = sorted(location_names)
         self.waste_stream_names = sorted(waste_stream_names)
         self.group_resolver = group_resolver or (lambda item: "Other")
+        self.task_generation_categories = list(task_generation_categories or [])
+        self.category_location_selections = self._normalise_task_generation_locations()
+        self.category_location_summaries = {}
+        self.category_suffix_edits = {}
+        self.category_place_location_buttons = {}
+        self.category_pending_locations = {}
 
-        self.selected_locations = list(self.seed.get("waste_pickup_locations", []))
         self.selected_waste_streams = self._normalise_department_waste_streams(
             self.seed.get("waste_streams", [])
         )
@@ -2121,14 +2127,6 @@ class DepartmentEditorDialog(QDialog):
             self.day_checks[key] = chk
             days_layout.addWidget(chk)
 
-        pickup_row = QHBoxLayout()
-        self.pickup_summary = QLabel("None selected")
-        self.pickup_summary.setWordWrap(True)
-        pickup_btn = QPushButton("Select...")
-        pickup_btn.clicked.connect(self._pick_locations)
-        pickup_row.addWidget(self.pickup_summary, 1)
-        pickup_row.addWidget(pickup_btn)
-
         waste_row = QHBoxLayout()
         self.waste_summary = QLabel("None selected")
         self.waste_summary.setWordWrap(True)
@@ -2136,19 +2134,6 @@ class DepartmentEditorDialog(QDialog):
         waste_btn.clicked.connect(self._pick_waste_streams)
         waste_row.addWidget(self.waste_summary, 1)
         waste_row.addWidget(waste_btn)
-
-        waste_cfg = self.seed.get("waste", {})
-        self.alpha_edit = QLineEdit(str(waste_cfg.get("alpha", 0.0)))
-        self.beta_edit = QLineEdit(str(waste_cfg.get("beta", 0.0)))
-        self.gamma_edit = QLineEdit(str(waste_cfg.get("gamma", 0.0)))
-
-        self.waste_pickup_combo = QComboBox()
-        self.waste_pickup_combo.addItems([""] + self.location_names)
-        self.waste_pickup_combo.setCurrentText(waste_cfg.get("pickup_location", ""))
-
-        self.waste_dropoff_combo = QComboBox()
-        self.waste_dropoff_combo.addItems([""] + self.location_names)
-        self.waste_dropoff_combo.setCurrentText(waste_cfg.get("dropoff_location", ""))
 
         self.x_edit = QLineEdit(str(self.seed.get("x", default_x)))
         self.y_edit = QLineEdit(str(self.seed.get("y", default_y)))
@@ -2162,13 +2147,50 @@ class DepartmentEditorDialog(QDialog):
         form.addRow("Staff count", self.staff_count_edit)
         form.addRow("Hours operated/day", self.hours_edit)
         form.addRow("Days active", days_widget)
-        form.addRow("Waste pickup locations", pickup_row)
         form.addRow("Assigned waste streams", waste_row)
-        form.addRow("Alpha", self.alpha_edit)
-        form.addRow("Beta", self.beta_edit)
-        form.addRow("Gamma", self.gamma_edit)
-        form.addRow("Waste pickup", self.waste_pickup_combo)
-        form.addRow("Waste dropoff", self.waste_dropoff_combo)
+
+        for (
+            category_key,
+            category_label,
+            default_suffix,
+        ) in self.task_generation_categories:
+            row = QHBoxLayout()
+
+            summary = QLabel("None selected")
+            summary.setWordWrap(True)
+
+            select_btn = QPushButton("Select...")
+            select_btn.clicked.connect(
+                lambda _=False, key=category_key: self._pick_category_locations(key)
+            )
+
+            suffix_edit = QLineEdit(
+                str(
+                    self.seed.get("task_generation_location_suffixes", {}).get(
+                        category_key, default_suffix
+                    )
+                )
+            )
+            suffix_edit.setFixedWidth(90)
+
+            place_btn = QPushButton("Place...")
+            place_btn.setToolTip("Place location on the DXF/editor scene")
+            place_btn.clicked.connect(
+                lambda _=False, key=category_key: self._place_category_location(key)
+            )
+
+            row.addWidget(summary, 1)
+            row.addWidget(select_btn)
+            row.addWidget(QLabel("Suffix"))
+            row.addWidget(suffix_edit)
+            row.addWidget(place_btn)
+
+            self.category_location_summaries[category_key] = summary
+            self.category_suffix_edits[category_key] = suffix_edit
+            self.category_place_location_buttons[category_key] = place_btn
+
+            form.addRow(f"{category_label} pickup / drop-off", row)
+
         form.addRow("X", self.x_edit)
         form.addRow("Y", self.y_edit)
 
@@ -2177,8 +2199,130 @@ class DepartmentEditorDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self._refresh_pickup_summary()
+        self._refresh_all_category_location_summaries()
         self._refresh_waste_summary()
+
+    def _place_category_location(self, category_key):
+        parent = self.parent()
+
+        if parent is None or not hasattr(parent, "start_department_location_placement"):
+            QMessageBox.critical(
+                self,
+                "Placement unavailable",
+                "The editor does not support graphical location placement.",
+            )
+            return
+
+        dept_id = self.id_edit.text().strip()
+        if not dept_id:
+            QMessageBox.critical(
+                self, "Missing department ID", "Enter a department ID first."
+            )
+            return
+
+        suffix = self.category_suffix_edits[category_key].text().strip()
+        location_name = self._next_category_location_name(category_key)
+
+        self.hide()
+
+        parent.start_department_location_placement(
+            location_name=location_name,
+            category_key=category_key,
+            callback=self._finish_category_location_placement,
+            return_dialog=self,
+        )
+
+    def _finish_category_location_placement(self, category_key, location_payload):
+        location_name = str(location_payload.get("name", "")).strip()
+        if not location_name:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+            return
+
+        selected = self.category_location_selections.setdefault(category_key, [])
+        if location_name not in selected:
+            selected.append(location_name)
+            selected.sort()
+
+        if location_name not in self.location_names:
+            self.location_names.append(location_name)
+            self.location_names.sort()
+
+        self._refresh_category_location_summary(category_key)
+
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _next_category_location_name(self, category_key):
+        dept_id = self.id_edit.text().strip()
+        suffix = self.category_suffix_edits[category_key].text().strip()
+        base_name = f"{dept_id}{suffix}"
+
+        used = set(self.location_names)
+
+        for locations in self.category_location_selections.values():
+            used.update(str(x).strip() for x in locations if str(x).strip())
+
+        if base_name not in used:
+            return base_name
+
+        counter = 2
+        while True:
+            candidate = f"{base_name}_{counter}"
+            if candidate not in used:
+                return candidate
+            counter += 1
+
+    def _normalise_task_generation_locations(self):
+        result = {}
+
+        existing = self.seed.get("task_generation_locations", {})
+        if isinstance(existing, dict):
+            for category_key, item in existing.items():
+                if isinstance(item, dict):
+                    locations = item.get(
+                        "pickup_dropoff_locations", item.get("locations", [])
+                    )
+                else:
+                    locations = item
+
+                result[str(category_key)] = [
+                    str(x).strip() for x in locations or [] if str(x).strip()
+                ]
+
+        return result
+
+    def _refresh_category_location_summary(self, category_key):
+        summary = self.category_location_summaries.get(category_key)
+        if summary is None:
+            return
+
+        values = self.category_location_selections.get(category_key, [])
+        if not values:
+            summary.setText("None selected")
+        elif len(values) <= 4:
+            summary.setText(", ".join(values))
+        else:
+            summary.setText(f"{len(values)} selected")
+
+    def _refresh_all_category_location_summaries(self):
+        for category_key, *_ in self.task_generation_categories:
+            self._refresh_category_location_summary(category_key)
+
+    def _pick_category_locations(self, category_key):
+        picker = MultiSelectPicker(
+            self,
+            "Select pickup / drop-off locations",
+            self.location_names,
+            selected=self.category_location_selections.get(category_key, []),
+            group_resolver=self.group_resolver,
+        )
+
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.category_location_selections[category_key] = sorted(picker.result)
+            self._refresh_category_location_summary(category_key)
 
     def _normalise_department_waste_streams(self, value):
         result = []
@@ -2224,14 +2368,6 @@ class DepartmentEditorDialog(QDialog):
 
         return result
 
-    def _refresh_pickup_summary(self):
-        if not self.selected_locations:
-            self.pickup_summary.setText("None selected")
-        elif len(self.selected_locations) <= 4:
-            self.pickup_summary.setText(", ".join(self.selected_locations))
-        else:
-            self.pickup_summary.setText(f"{len(self.selected_locations)} selected")
-
     def _refresh_waste_summary(self):
         names = [
             str(x.get("name", "")).strip()
@@ -2246,18 +2382,6 @@ class DepartmentEditorDialog(QDialog):
         else:
             self.waste_summary.setText(f"{len(names)} selected")
 
-    def _pick_locations(self):
-        picker = MultiSelectPicker(
-            self,
-            "Select waste pickup locations",
-            self.location_names,
-            selected=self.selected_locations,
-            group_resolver=self.group_resolver,
-        )
-        if picker.exec() == QDialog.Accepted and picker.result is not None:
-            self.selected_locations = sorted(picker.result)
-            self._refresh_pickup_summary()
-
     def _pick_waste_streams(self):
         dialog = DepartmentWasteStreamSettingsDialog(
             self,
@@ -2268,6 +2392,70 @@ class DepartmentEditorDialog(QDialog):
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
             self.selected_waste_streams = list(dialog.result)
             self._refresh_waste_summary()
+
+    def _normalise_task_generation_locations(self):
+        result = {}
+
+        existing = self.seed.get("task_generation_locations", {})
+        if isinstance(existing, dict):
+            for category_key, item in existing.items():
+                if isinstance(item, dict):
+                    locations = item.get(
+                        "pickup_dropoff_locations", item.get("locations", [])
+                    )
+                else:
+                    locations = item
+
+                result[str(category_key)] = [
+                    str(x).strip() for x in (locations or []) if str(x).strip()
+                ]
+
+        # Legacy migration from old waste fields
+        legacy = []
+
+        for value in self.seed.get("waste_pickup_locations", []):
+            text = str(value).strip()
+            if text and text not in legacy:
+                legacy.append(text)
+
+        waste_cfg = self.seed.get("waste", {}) or {}
+        for key in ["pickup_location", "dropoff_location"]:
+            text = str(waste_cfg.get(key, "")).strip()
+            if text and text not in legacy:
+                legacy.append(text)
+
+        if legacy and "waste" not in result:
+            result["waste"] = legacy
+
+        return result
+
+    def _location_summary_text(self, locations):
+        if not locations:
+            return "None selected"
+        if len(locations) <= 4:
+            return ", ".join(locations)
+        return f"{len(locations)} selected"
+
+    def _refresh_category_location_summary(self, category_key):
+        summary = self.category_location_summaries.get(category_key)
+        if summary is None:
+            return
+
+        locations = self.category_location_selections.get(category_key, [])
+        summary.setText(self._location_summary_text(locations))
+
+    def _pick_category_locations(self, category_key):
+        picker = MultiSelectPicker(
+            self,
+            "Select pickup / drop-off locations",
+            self.location_names,
+            selected=self.category_location_selections.get(category_key, []),
+            group_resolver=self.group_resolver,
+        )
+
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.category_location_selections[category_key] = sorted(picker.result)
+            self._refresh_category_location_summary(category_key)
 
     def accept(self):
         try:
@@ -2284,8 +2472,23 @@ class DepartmentEditorDialog(QDialog):
             if not days_active:
                 raise ValueError("Select at least one active day")
 
-            pickup_location = self.waste_pickup_combo.currentText().strip()
-            dropoff_location = self.waste_dropoff_combo.currentText().strip()
+            dept_id = self.id_edit.text().strip()
+            floor = int(self.floor_label.text())
+            x = float(self.x_edit.text())
+            y = float(self.y_edit.text())
+
+            location_suffixes = {}
+
+            for (
+                category_key,
+                _category_label,
+                _default_suffix,
+            ) in self.task_generation_categories:
+                location_suffixes[category_key] = (
+                    self.category_suffix_edits[category_key].text().strip()
+                )
+
+            create_locations = list(self.category_pending_locations.values())
 
             self.result = {
                 "id": dept_id,
@@ -2297,15 +2500,21 @@ class DepartmentEditorDialog(QDialog):
                 "staff_count": int(float(self.staff_count_edit.text())),
                 "hours_operated_per_day": float(self.hours_edit.text()),
                 "days_active": days_active,
-                "waste_pickup_locations": list(self.selected_locations),
                 "waste_streams": [dict(x) for x in self.selected_waste_streams],
-                "waste": {
-                    "alpha": float(self.alpha_edit.text()),
-                    "beta": float(self.beta_edit.text()),
-                    "gamma": float(self.gamma_edit.text()),
-                    "pickup_location": pickup_location,
-                    "dropoff_location": dropoff_location,
+                "task_generation_locations": {
+                    category_key: {
+                        "pickup_dropoff_locations": [
+                            str(x).strip()
+                            for x in self.category_location_selections.get(
+                                category_key, []
+                            )
+                            if str(x).strip()
+                        ]
+                    }
+                    for category_key, *_ in self.task_generation_categories
                 },
+                "task_generation_location_suffixes": location_suffixes,
+                "_create_locations": create_locations,
                 "x": float(self.x_edit.text()),
                 "y": float(self.y_edit.text()),
             }
@@ -2315,6 +2524,7 @@ class DepartmentEditorDialog(QDialog):
 
 
 class DepartmentListDialog(QDialog):
+
     def __init__(
         self,
         parent,
@@ -2325,6 +2535,7 @@ class DepartmentListDialog(QDialog):
         on_save,
         suggest_department_id,
         group_resolver=None,
+        task_generation_categories=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Departments")
@@ -2336,6 +2547,7 @@ class DepartmentListDialog(QDialog):
         self.on_save = on_save
         self.suggest_department_id = suggest_department_id
         self.group_resolver = group_resolver or (lambda item: "Other")
+        self.task_generation_categories = list(task_generation_categories or [])
 
         layout = QVBoxLayout(self)
 
@@ -2366,15 +2578,19 @@ class DepartmentListDialog(QDialog):
         del_btn = QPushButton("Delete")
         save_btn = QPushButton("Save")
 
+        auto_assign_btn = QPushButton("Auto assign locations")
+
         row.addWidget(add_btn)
         row.addWidget(edit_btn)
         row.addWidget(del_btn)
+        row.addWidget(auto_assign_btn)
         row.addStretch(1)
         row.addWidget(save_btn)
 
         add_btn.clicked.connect(self.add_item)
         edit_btn.clicked.connect(self.edit_item)
         del_btn.clicked.connect(self.delete_item)
+        auto_assign_btn.clicked.connect(self.auto_assign_locations)
         save_btn.clicked.connect(self.save_items)
 
         self._refresh_table()
@@ -2414,6 +2630,68 @@ class DepartmentListDialog(QDialog):
                 ),
             )
 
+    def auto_assign_locations(self):
+        if not self.task_generation_categories:
+            QMessageBox.information(
+                self,
+                "Auto assign locations",
+                "No task generation categories are available.",
+            )
+            return
+
+        location_set = {str(x).strip() for x in self.location_names if str(x).strip()}
+        assigned_count = 0
+        kept_count = 0
+
+        for dept in self.items:
+            dept_id = str(dept.get("id", "")).strip()
+            if not dept_id:
+                continue
+
+            suffixes = dept.setdefault("task_generation_location_suffixes", {})
+            category_locations = dept.setdefault("task_generation_locations", {})
+
+            for (
+                category_key,
+                _category_label,
+                default_suffix,
+            ) in self.task_generation_categories:
+                suffix = str(suffixes.get(category_key, default_suffix)).strip()
+                expected_prefix = f"{dept_id}{suffix}"
+
+                matching_locations = sorted(
+                    name
+                    for name in location_set
+                    if name == expected_prefix or name.startswith(f"{expected_prefix}_")
+                )
+
+                if not matching_locations:
+                    continue
+
+                entry = category_locations.setdefault(category_key, {})
+                selected = entry.setdefault("pickup_dropoff_locations", [])
+
+                existing = {str(x).strip() for x in selected if str(x).strip()}
+
+                kept_count += len(existing)
+
+                for location_name in matching_locations:
+                    if location_name not in existing:
+                        selected.append(location_name)
+                        existing.add(location_name)
+                        assigned_count += 1
+
+        self._refresh_table()
+
+        QMessageBox.information(
+            self,
+            "Auto assign locations",
+            (
+                f"Assigned {assigned_count} location reference(s).\n"
+                f"Kept {kept_count} existing assigned location reference(s)."
+            ),
+        )
+
     def add_item(self):
         dialog = DepartmentEditorDialog(
             self,
@@ -2422,6 +2700,7 @@ class DepartmentListDialog(QDialog):
             current_floor=self.current_floor,
             default_department_id=self.suggest_department_id(),
             group_resolver=self.group_resolver,
+            task_generation_categories=self.task_generation_categories,
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             new_id = str(dialog.result.get("id", "")).strip()
@@ -2456,6 +2735,7 @@ class DepartmentListDialog(QDialog):
             group_resolver=self.group_resolver,
             default_x=float(self.items[row].get("x", 0.0)),
             default_y=float(self.items[row].get("y", 0.0)),
+            task_generation_categories=self.task_generation_categories,
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             new_id = str(dialog.result.get("id", "")).strip()
