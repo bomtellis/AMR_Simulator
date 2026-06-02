@@ -203,6 +203,46 @@ class JsonStore:
     def __init__(self, data: Optional[dict] = None):
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
         self.ensure_task_generation_defaults()
+        self.ensure_payload_defaults()
+
+    def ensure_payload_defaults(self) -> None:
+        for payload in self.data.setdefault("payloads", []):
+            payload.setdefault("track_items", False)
+
+            items = payload.get("items", {})
+
+            if isinstance(items, list):
+                converted = {}
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    name = str(item.get("name", "")).strip()
+                    if not name:
+                        continue
+                    converted[name] = item
+                items = converted
+
+            if not isinstance(items, dict):
+                items = {}
+
+            clean = {}
+
+            for name, cfg in items.items():
+                if not str(name).strip():
+                    continue
+
+                cfg = cfg if isinstance(cfg, dict) else {}
+
+                clean[str(name).strip()] = {
+                    "max": float(cfg.get("max", 100)),
+                    "top_up_threshold": float(cfg.get("top_up_threshold", 15)),
+                    "usage_rate": str(cfg.get("usage_rate", "scheduled_sporadic")),
+                    "consumption_per_day": float(cfg.get("consumption_per_day", 0.0)),
+                    "exchange_payload": str(cfg.get("exchange_payload", "")),
+                    "source_location": str(cfg.get("source_location", "")),
+                }
+
+            payload["items"] = clean
 
     def ensure_task_generation_defaults(self) -> dict:
         self.data["task_generation"] = merge_task_generation_defaults(

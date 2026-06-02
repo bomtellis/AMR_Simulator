@@ -276,6 +276,25 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.payload_combo.addItems([""] + self.payload_names)
         self.payload_combo.setCurrentText(str(self.base_category.get("payload", "")))
 
+        self.tracked_item_exchange_check = QCheckBox(
+            "Generate tracked item exchange tasks"
+        )
+        self.tracked_item_exchange_check.setChecked(
+            bool(self.base_category.get("tracked_item_exchange", False))
+        )
+
+        self.exchange_mode_combo = QComboBox()
+        self.exchange_mode_combo.addItems(
+            [
+                "full_exchange",
+                "top_up_only",
+                "replace_empty",
+            ]
+        )
+        self.exchange_mode_combo.setCurrentText(
+            str(self.base_category.get("exchange_mode", "top_up_only"))
+        )
+
         self.route_profile_combo = QComboBox()
         self.route_profile_combo.addItems([""] + self.profile_names)
         self.route_profile_combo.setCurrentText(
@@ -343,6 +362,8 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Pickup / source locations", pickup_row)
         form.addRow("Drop-off destinations", dropoff_row)
         form.addRow("Payload", self.payload_combo)
+        form.addRow("Tracked item exchange", self.tracked_item_exchange_check)
+        form.addRow("Exchange mode", self.exchange_mode_combo)
         form.addRow("Route profile", self.route_profile_combo)
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
@@ -576,6 +597,8 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "dropoff_location": dropoff_locations[0] if dropoff_locations else "",
                 "dropoff_locations": dropoff_locations,
                 "payload": self.payload_combo.currentText().strip(),
+                "tracked_item_exchange": self.tracked_item_exchange_check.isChecked(),
+                "exchange_mode": self.exchange_mode_combo.currentText().strip(),
                 "return_enabled": self.return_enabled_check.isChecked(),
                 "return_payload": self.return_payload_combo.currentText().strip(),
                 "return_delay_minutes": float(self.return_delay_edit.text() or 0),
@@ -807,6 +830,20 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.payload_combo = QComboBox()
         self.payload_combo.addItems([""] + self.payload_names)
+
+        self.tracked_item_exchange_check = QCheckBox(
+            "Generate tracked item exchange tasks"
+        )
+
+        self.exchange_mode_combo = QComboBox()
+        self.exchange_mode_combo.addItems(
+            [
+                "full_exchange",
+                "top_up_only",
+                "replace_empty",
+            ]
+        )
+
         self.route_profile_combo = QComboBox()
         self.route_profile_combo.addItems([""] + self.profile_names)
 
@@ -859,6 +896,8 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Pickup / source location", self.pickup_combo)
         form.addRow("Drop-off destinations", dropoff_row)
         form.addRow("Payload", self.payload_combo)
+        form.addRow("Tracked item exchange", self.tracked_item_exchange_check)
+        form.addRow("Exchange mode", self.exchange_mode_combo)
         form.addRow("Route profile", self.route_profile_combo)
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
@@ -1562,6 +1601,12 @@ class TaskGenerationSettingsDialog(QDialog):
         self.pickup_combo.setCurrentText(str(item.get("pickup_location", "")))
         self._refresh_dropoff_summary()
         self.payload_combo.setCurrentText(str(item.get("payload", "")))
+        self.tracked_item_exchange_check.setChecked(
+            bool(item.get("tracked_item_exchange", False))
+        )
+        self.exchange_mode_combo.setCurrentText(
+            str(item.get("exchange_mode", "top_up_only"))
+        )
         self.route_profile_combo.setCurrentText(str(item.get("route_profile", "")))
         self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
         self.return_payload_combo.setCurrentText(str(item.get("return_payload", "")))
@@ -1664,6 +1709,8 @@ class TaskGenerationSettingsDialog(QDialog):
             "dropoff_location": dropoff_locations[0] if dropoff_locations else "",
             "dropoff_locations": dropoff_locations,
             "payload": self.payload_combo.currentText().strip(),
+            "tracked_item_exchange": self.tracked_item_exchange_check.isChecked(),
+            "exchange_mode": self.exchange_mode_combo.currentText().strip(),
             "return_enabled": self.return_enabled_check.isChecked(),
             "return_payload": self.return_payload_combo.currentText().strip(),
             "return_delay_minutes": float(self.return_delay_edit.text() or 0),
@@ -2174,11 +2221,19 @@ class PayloadTrackedItemDialog(QDialog):
         "scheduled_sporadic",
     ]
 
-    def __init__(self, parent, seed=None):
+    def __init__(self, parent, seed=None, payload_names=None, location_names=None):
         super().__init__(parent)
         self.setWindowTitle("Tracked payload item")
         self.seed = seed or {}
         self.result = None
+
+        self.payload_names = sorted(payload_names or [])
+        self.location_names = sorted(location_names or [])
+        self.selected_source_locations = (
+            [str(self.seed.get("source_location", "")).strip()]
+            if str(self.seed.get("source_location", "")).strip()
+            else []
+        )
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -2187,6 +2242,29 @@ class PayloadTrackedItemDialog(QDialog):
         self.name_edit = QLineEdit(str(self.seed.get("name", "")))
         self.max_edit = QLineEdit(str(self.seed.get("max", 100)))
         self.threshold_edit = QLineEdit(str(self.seed.get("top_up_threshold", 15)))
+        self.consumption_edit = QLineEdit(
+            str(self.seed.get("consumption_per_day", 0.0))
+        )
+
+        self.exchange_payload_combo = QComboBox()
+        self.exchange_payload_combo.addItems([""] + self.payload_names)
+        self.exchange_payload_combo.setCurrentText(
+            str(self.seed.get("exchange_payload", ""))
+        )
+
+        source_row = QHBoxLayout()
+        self.source_location_summary = QLabel("None selected")
+        self.source_location_summary.setWordWrap(True)
+
+        source_btn = QPushButton("Select...")
+        source_btn.clicked.connect(self.pick_source_locations)
+
+        clear_source_btn = QPushButton("Clear")
+        clear_source_btn.clicked.connect(self.clear_source_locations)
+
+        source_row.addWidget(self.source_location_summary, 1)
+        source_row.addWidget(source_btn)
+        source_row.addWidget(clear_source_btn)
 
         self.usage_rate_combo = QComboBox()
         self.usage_rate_combo.addItems(self.MODES)
@@ -2199,10 +2277,40 @@ class PayloadTrackedItemDialog(QDialog):
         form.addRow("Top-up threshold", self.threshold_edit)
         form.addRow("Usage rate", self.usage_rate_combo)
 
+        form.addRow("Consumption/day", self.consumption_edit)
+
+        form.addRow("Exchange payload", self.exchange_payload_combo)
+        form.addRow("Source location", source_row)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+        self.refresh_source_location_summary()
+
+    def pick_source_locations(self):
+        picker = MultiSelectPicker(
+            self,
+            "Select source location",
+            self.location_names,
+            selected=self.selected_source_locations,
+            group_resolver=lambda item: "Locations",
+        )
+
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.selected_source_locations = sorted(picker.result[:1])
+            self.refresh_source_location_summary()
+
+    def clear_source_locations(self):
+        self.selected_source_locations = []
+        self.refresh_source_location_summary()
+
+    def refresh_source_location_summary(self):
+        if not self.selected_source_locations:
+            self.source_location_summary.setText("None selected")
+        else:
+            self.source_location_summary.setText(self.selected_source_locations[0])
 
     def accept(self):
         try:
@@ -2225,6 +2333,13 @@ class PayloadTrackedItemDialog(QDialog):
                 "max": max_qty,
                 "top_up_threshold": threshold,
                 "usage_rate": self.usage_rate_combo.currentText().strip(),
+                "consumption_per_day": float(self.consumption_edit.text() or 0.0),
+                "exchange_payload": self.exchange_payload_combo.currentText().strip(),
+                "source_location": (
+                    self.selected_source_locations[0]
+                    if self.selected_source_locations
+                    else ""
+                ),
             }
 
             super().accept()
@@ -2233,12 +2348,16 @@ class PayloadTrackedItemDialog(QDialog):
 
 
 class PayloadEditorDialog(QDialog):
-    def __init__(self, parent, seed=None):
+
+    def __init__(self, parent, seed=None, payload_names=None, location_names=None):
         super().__init__(parent)
         self.setWindowTitle("Payload")
         self.seed = seed or {}
         self.result = None
         self.tracked_items = self._normalise_tracked_items(self.seed.get("items", []))
+
+        self.payload_names = sorted(payload_names or [])
+        self.location_names = sorted(location_names or [])
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -2329,6 +2448,9 @@ class PayloadEditorDialog(QDialog):
                     "max": float(item.get("max", 100)),
                     "top_up_threshold": float(item.get("top_up_threshold", 15)),
                     "usage_rate": str(item.get("usage_rate", "scheduled_sporadic")),
+                    "consumption_per_day": float(item.get("consumption_per_day", 0.0)),
+                    "exchange_payload": str(item.get("exchange_payload", "")),
+                    "source_location": str(item.get("source_location", "")),
                 }
             )
 
@@ -2346,13 +2468,20 @@ class PayloadEditorDialog(QDialog):
                 item.get("max", 100),
                 item.get("top_up_threshold", 15),
                 item.get("usage_rate", "scheduled_sporadic"),
+                item.get("consumption_per_day", 0.0),
+                item.get("exchange_payload", ""),
+                item.get("source_location", ""),
             ]
 
             for col, value in enumerate(values):
                 self.items_table.setItem(row, col, QTableWidgetItem(str(value)))
 
     def add_tracked_item(self):
-        dialog = PayloadTrackedItemDialog(self)
+        dialog = PayloadTrackedItemDialog(
+            self,
+            payload_names=self.payload_names,
+            location_names=self.location_names,
+        )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             name = dialog.result["name"]
             if any(str(x.get("name", "")).strip() == name for x in self.tracked_items):
@@ -2366,7 +2495,12 @@ class PayloadEditorDialog(QDialog):
         if row < 0:
             return
 
-        dialog = PayloadTrackedItemDialog(self, self.tracked_items[row])
+        dialog = PayloadTrackedItemDialog(
+            self,
+            self.tracked_items[row],
+            payload_names=self.payload_names,
+            location_names=self.location_names,
+        )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             name = dialog.result["name"]
             for idx, item in enumerate(self.tracked_items):
@@ -2398,6 +2532,9 @@ class PayloadEditorDialog(QDialog):
                     "max": float(item.get("max", 100)),
                     "top_up_threshold": float(item.get("top_up_threshold", 15)),
                     "usage_rate": str(item.get("usage_rate", "scheduled_sporadic")),
+                    "consumption_per_day": float(item.get("consumption_per_day", 0.0)),
+                    "exchange_payload": str(item.get("exchange_payload", "")),
+                    "source_location": str(item.get("source_location", "")),
                 }
                 for item in self.tracked_items
             }
@@ -2428,12 +2565,13 @@ class PayloadListDialog(QDialog):
         ("items", "Items", 260),
     ]
 
-    def __init__(self, parent, items, on_save):
+    def __init__(self, parent, items, on_save, location_names=None):
         super().__init__(parent)
         self.setWindowTitle("Payloads")
         self.resize(980, 520)
         self.items = [dict(x) for x in items]
         self.on_save = on_save
+        self.location_names = sorted(location_names or [])
 
         layout = QVBoxLayout(self)
 
@@ -2526,6 +2664,8 @@ class PayloadListDialog(QDialog):
         dialog = PayloadEditorDialog(
             self,
             seed={"name": self._suggest_next_payload_name()},
+            payload_names=[x.get("name", "") for x in self.items],
+            location_names=self.location_names,
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             name = dialog.result["name"]
@@ -2540,7 +2680,14 @@ class PayloadListDialog(QDialog):
         if row < 0:
             return
 
-        dialog = PayloadEditorDialog(self, seed=self.items[row])
+        dialog = PayloadEditorDialog(
+            self,
+            seed=self.items[row],
+            payload_names=[
+                x.get("name", "") for idx, x in enumerate(self.items) if idx != row
+            ],
+            location_names=self.location_names,
+        )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             new_name = dialog.result["name"]
             for idx, item in enumerate(self.items):

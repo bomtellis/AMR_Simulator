@@ -2058,10 +2058,17 @@ class AMRGraphEditor(QMainWindow):
             self.set_status("Validation passed")
 
     def manage_payloads(self):
+        location_names = sorted(
+            str(x.get("name", "")).strip()
+            for x in self.store.data.get("locations", [])
+            if str(x.get("name", "")).strip()
+        )
+
         dialog = PayloadListDialog(
             self,
             self.store.data.get("payloads", []),
             self._save_payloads,
+            location_names=location_names,
         )
         dialog.exec()
 
