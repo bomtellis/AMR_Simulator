@@ -175,6 +175,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         payload_names,
         profile_names,
         selected_department_ids=None,
+        result_key="",
     ):
         super().__init__(parent)
         self.setWindowTitle(f"Configure multiple departments - {category_label}")
@@ -187,6 +188,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.payload_names = list(payload_names)
         self.profile_names = list(profile_names)
         self.result = None
+        self.result_key = str(result_key or "").strip()
         self.selected_department_ids = list(selected_department_ids or [])
         self.department_location_role = "dropoff"
         self.department_location_role = str(
@@ -652,7 +654,7 @@ class ConfiguredGroupSelectDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.resize(860, 520)
-        self.result_key = None
+        self.result_key = None      
 
         layout = QVBoxLayout(self)
 
@@ -1073,22 +1075,7 @@ class TaskGenerationSettingsDialog(QDialog):
             self.current_key, {}
         )
         overrides = category.setdefault("departments", {})
-
-        groups = {}
-
-        for dept_id, payload in overrides.items():
-            if not isinstance(payload, dict):
-                continue
-
-            signature = self._bulk_group_signature(payload)
-            groups.setdefault(signature, {"payload": dict(payload), "departments": []})
-            groups[signature]["departments"].append(str(dept_id))
-
-        groups = {
-            key: value
-            for key, value in groups.items()
-            if len(value.get("departments", [])) > 1
-        }
+        groups = self._stored_department_group_map(self.current_key)
 
         if not groups:
             QMessageBox.information(
@@ -1128,6 +1115,12 @@ class TaskGenerationSettingsDialog(QDialog):
         for dept_id in dept_ids:
             overrides.pop(dept_id, None)
 
+        category["department_groups"] = [
+            group
+            for group in self._department_groups_for_category(self.current_key)
+            if str(group.get("id", "")).strip() != str(dialog.result_key).strip()
+        ]
+
         remaining_dept = None
 
         for index in range(self.department_list.count()):
@@ -1165,6 +1158,206 @@ class TaskGenerationSettingsDialog(QDialog):
     def _bulk_group_signature(self, payload):
         return json.dumps(payload or {}, sort_keys=True)
 
+    def _department_groups_for_category(self, category_key):
+        category = self.config.setdefault("categories", {}).setdefault(category_key, {})
+        groups = category.setdefault("department_groups", [])
+
+        if not isinstance(groups, list):
+            groups = []
+            category["department_groups"] = groups
+
+        clean_groups = []
+        seen_ids = set()
+
+        for group in groups:
+            if not isinstance(group, dict):
+                continue
+
+            group_id = str(group.get("id", "")).strip()
+            if not group_id:
+                group_id = self._new_department_group_id(category)
+
+            if group_id in seen_ids:
+                group_id = self._new_department_group_id(category)
+
+            departments = [
+                str(x).strip()
+                for x in group.get("departments", [])
+                if str(x).strip()
+            ]
+
+            payload = group.get("payload", {})
+            if not departments or not isinstance(payload, dict):
+                continue
+
+            seen_ids.add(group_id)
+            clean_groups.append(
+                {
+                    "id": group_id,
+                    "departments": sorted(set(departments)),
+                    "payload": dict(payload),
+                }
+            )
+
+        category["department_groups"] = clean_groups
+        return clean_groups
+
+    def _new_department_group_id(self, category):
+        existing = {
+            str(group.get("id", "")).strip()
+            for group in category.get("department_groups", [])
+            if isinstance(group, dict)
+        }
+
+        counter = 1
+        while True:
+            group_id = f"GROUP-{counter}"
+            if group_id not in existing:
+                return group_id
+            counter += 1
+
+
+    def _stored_department_group_map(self, category_key):
+        groups = self._department_groups_for_category(category_key)
+        return {
+            str(group.get("id", "")).strip(): group
+            for group in groups
+            if str(group.get("id", "")).strip()
+        }
+
+
+    def _remove_departments_from_groups(
+        self,
+        category_key,
+        department_ids,
+        except_group_id=None,
+    ):
+        department_ids = {
+            str(x).strip()
+            for x in department_ids
+            if str(x).strip()
+        }
+
+        if not department_ids:
+            return
+
+        groups = self._department_groups_for_category(category_key)
+        kept_groups = []
+
+        for group in groups:
+            group_id = str(group.get("id", "")).strip()
+
+            if except_group_id and group_id == str(except_group_id).strip():
+                kept_groups.append(group)
+                continue
+
+            group["departments"] = [
+                dept_id
+                for dept_id in group.get("departments", [])
+                if str(dept_id).strip() not in department_ids
+            ]
+
+            if group["departments"]:
+                kept_groups.append(group)
+
+        category = self.config.setdefault("categories", {}).setdefault(category_key, {})
+        category["department_groups"] = kept_groups
+
+
+    def _remove_department_from_group_if_settings_changed(
+        self,
+        category_key,
+        department_id,
+        payload,
+    ):
+        department_id = str(department_id or "").strip()
+        if not department_id:
+            return
+
+        current_signature = self._bulk_group_signature(payload)
+        groups = self._department_groups_for_category(category_key)
+        changed = False
+
+        for group in groups:
+            group_payload = group.get("payload", {})
+            group_signature = self._bulk_group_signature(group_payload)
+
+            if department_id not in group.get("departments", []):
+                continue
+
+            if group_signature != current_signature:
+                group["departments"] = [
+                    dept_id
+                    for dept_id in group.get("departments", [])
+                    if dept_id != department_id
+                ]
+                changed = True
+
+        if changed:
+            category = self.config.setdefault("categories", {}).setdefault(category_key, {})
+            category["department_groups"] = [
+                group
+                for group in groups
+                if group.get("departments")
+            ]
+
+
+    def _upsert_department_group(self, category_key, group_id, department_ids, payload):
+        category = self.config.setdefault("categories", {}).setdefault(category_key, {})
+        groups = self._department_groups_for_category(category_key)
+
+        group_id = str(group_id or "").strip()
+        if not group_id:
+            group_id = self._new_department_group_id(category)
+
+        department_ids = sorted(
+            {
+                str(x).strip()
+                for x in department_ids
+                if str(x).strip()
+            }
+        )
+
+        if not department_ids:
+            return ""
+
+        self._remove_departments_from_groups(
+            category_key,
+            department_ids,
+            except_group_id=group_id,
+        )
+
+        groups = self._department_groups_for_category(category_key)
+
+        existing = next(
+            (
+                group
+                for group in groups
+                if str(group.get("id", "")).strip() == group_id
+            ),
+            None,
+        )
+
+        if existing is None:
+            groups.append(
+                {
+                    "id": group_id,
+                    "departments": department_ids,
+                    "payload": dict(payload),
+                }
+            )
+        else:
+            existing["departments"] = department_ids
+            existing["payload"] = dict(payload)
+
+        category["department_groups"] = [
+            group
+            for group in groups
+            if group.get("departments")
+        ]
+
+        return group_id
+
     def edit_configured_department_group(self):
         if not self.current_key:
             QMessageBox.information(
@@ -1184,22 +1377,7 @@ class TaskGenerationSettingsDialog(QDialog):
             self.current_key, {}
         )
         overrides = category.setdefault("departments", {})
-
-        groups = {}
-
-        for dept_id, payload in overrides.items():
-            if not isinstance(payload, dict):
-                continue
-
-            signature = self._bulk_group_signature(payload)
-            groups.setdefault(signature, {"payload": dict(payload), "departments": []})
-            groups[signature]["departments"].append(str(dept_id))
-
-        groups = {
-            key: value
-            for key, value in groups.items()
-            if len(value.get("departments", [])) > 1
-        }
+        groups = self._stored_department_group_map(self.current_key)
 
         if not groups:
             QMessageBox.information(
@@ -1237,14 +1415,25 @@ class TaskGenerationSettingsDialog(QDialog):
             payload_names=self.payload_names,
             profile_names=self.profile_names,
             selected_department_ids=selected_department_ids,
+            result_key=dialog.result_key,
         )
 
         if dialog.exec() == QDialog.Accepted and dialog.result:
+            result_dept_ids = sorted(dialog.result.keys())
+            result_payload = next(iter(dialog.result.values()))
+
             for dept_id in selected_department_ids:
                 overrides.pop(dept_id, None)
 
             for dept_id, payload in dialog.result.items():
                 overrides[dept_id] = payload
+
+            self._upsert_department_group(
+                self.current_key,
+                getattr(dialog, "result_key", ""),
+                result_dept_ids,
+                result_payload,
+            )
 
             self._load_category(self.current_key)
 
@@ -1349,8 +1538,18 @@ class TaskGenerationSettingsDialog(QDialog):
             )
             overrides = category.setdefault("departments", {})
 
+            result_dept_ids = sorted(dialog.result.keys())
+            result_payload = next(iter(dialog.result.values()))
+
             for dept_id, payload in dialog.result.items():
                 overrides[dept_id] = payload
+
+            self._upsert_department_group(
+                self.current_key,
+                group_id="",
+                department_ids=result_dept_ids,
+                payload=result_payload,
+            )
 
             self._load_category(self.current_key)
 
@@ -1873,6 +2072,7 @@ class TaskGenerationSettingsDialog(QDialog):
         # of writing disabled/default config into the JSON.
         if not self._current_form_has_generation_settings():
             overrides.pop(department_id, None)
+            self._remove_departments_from_groups(category_key, [department_id])
             return
 
         # Also remove empty disabled overrides. This prevents switching departments
@@ -1899,9 +2099,15 @@ class TaskGenerationSettingsDialog(QDialog):
 
             if not has_meaningful_disabled_config:
                 overrides.pop(department_id, None)
+                self._remove_departments_from_groups(category_key, [department_id])
                 return
 
         overrides[department_id] = payload
+        self._remove_department_from_group_if_settings_changed(
+            category_key,
+            department_id,
+            payload,
+        )
 
         if list_item is not None and not department_id:
             list_item.setText(display_name)
