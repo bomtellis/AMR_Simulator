@@ -2489,6 +2489,12 @@ class SimulationVisualizer(QMainWindow):
                 return base_id
         return amr_id.rsplit("-", 1)[0] if "-" in amr_id else amr_id
 
+    def _split_csv_cell(self, value) -> List[str]:
+        text = str(value or "").strip()
+        if not text:
+            return []
+        return [part.strip() for part in text.split(",") if part.strip()]
+
     def _parse_onboard_payloads_from_row(self, row: dict) -> Optional[List[dict]]:
         raw = str(row.get("onboard_payloads", "") or "").strip()
         if not raw:
@@ -2517,14 +2523,83 @@ class SimulationVisualizer(QMainWindow):
                     "payload_instance_id": str(
                         item.get("payload_instance_id", "") or ""
                     ).strip(),
-                    "from_location": str(item.get("pickup", "") or "").strip(),
-                    "to_location": str(item.get("dropoff", "") or "").strip(),
+                    "from_location": str(
+                        item.get("pickup", "")
+                        or item.get("from_location", "")
+                        or item.get("origin", "")
+                        or ""
+                    ).strip(),
+                    "to_location": str(
+                        item.get("dropoff", "")
+                        or item.get("to_location", "")
+                        or item.get("destination", "")
+                        or ""
+                    ).strip(),
                     "slot": str(
                         item.get("slot_name", "") or item.get("slot", "") or ""
                     ).strip(),
                 }
             )
         return records
+
+    def _records_from_grouped_payload_row(self, row: dict) -> List[dict]:
+        """Build per-payload records from grouped multi-pickup CSV cells.
+
+        The simulator writes grouped pickup/dropoff rows as comma-separated
+        task_id/payload/payload_slot values.  The monitor needs one record per
+        payload, not just the first cell value.
+        """
+        task_ids = self._split_csv_cell(row.get("task_id", ""))
+        payloads = self._split_csv_cell(row.get("payload", ""))
+        slots = self._split_csv_cell(
+            row.get("payload_slot", "") or row.get("slot_name", "")
+        )
+        instances = self._split_csv_cell(row.get("payload_instance_id", ""))
+
+        if not task_ids or not payloads:
+            return []
+
+        records = []
+        for idx, task_id in enumerate(task_ids):
+            payload = payloads[idx] if idx < len(payloads) else payloads[-1]
+            if not payload:
+                continue
+            records.append(
+                {
+                    "task_id": task_id,
+                    "payload": payload,
+                    "payload_instance_id": instances[idx] if idx < len(instances) else "",
+                    "from_location": str(
+                        row.get("from_location", "") or row.get("start_node", "") or ""
+                    ).strip(),
+                    "to_location": str(
+                        row.get("to_location", "") or row.get("end_node", "") or ""
+                    ).strip(),
+                    "slot": slots[idx] if idx < len(slots) else "",
+                }
+            )
+        return records
+
+    def _format_onboard_payloads_for_label(self, row: dict) -> str:
+        records = self._parse_onboard_payloads_from_row(row or {})
+        if not records:
+            records = self._records_from_grouped_payload_row(row or {})
+        if not records:
+            return ""
+        parts = []
+        for rec in records:
+            payload = str(rec.get("payload", "") or "").strip()
+            task_id = str(rec.get("task_id", "") or "").strip()
+            slot = str(rec.get("slot", "") or "").strip()
+            if not payload:
+                continue
+            text = payload
+            if task_id:
+                text = f"{text} ({task_id})"
+            if slot:
+                text = f"{slot}: {text}"
+            parts.append(text)
+        return ", ".join(parts)
 
     def build_amr_payload_monitor_rows(self) -> List[dict]:
         if not self.current_time or not self.sim_log.events:
@@ -2547,9 +2622,12 @@ class SimulationVisualizer(QMainWindow):
 
             last_seen[amr_id] = min(self.current_time, event.end_time)
 
-            # New simulator CSVs provide the complete onboard slot state on
-            # every multi-stop segment. Treat that as authoritative so payloads
-            # persist across travel rows instead of disappearing after pickup.
+            event_type = str(row.get("event_type", "") or "").strip().lower()
+            segment_type = str(row.get("segment_type", "") or "").strip().lower()
+            status = str(row.get("status", "") or "").strip().lower()
+            text = " ".join([event_type, segment_type, status])
+
+            # Authoritative state from the latest patched simulator.
             parsed_onboard = self._parse_onboard_payloads_from_row(row)
             if parsed_onboard is not None:
                 amr_payloads = {}
@@ -2560,17 +2638,34 @@ class SimulationVisualizer(QMainWindow):
                 onboard[amr_id] = amr_payloads
                 continue
 
-            # Backwards-compatible inference for older CSVs without onboard state.
-            event_type = str(row.get("event_type", "") or "").strip().lower()
-            segment_type = str(row.get("segment_type", "") or "").strip().lower()
-            status = str(row.get("status", "") or "").strip().lower()
-            text = " ".join([event_type, segment_type, status])
+            grouped_records = self._records_from_grouped_payload_row(row)
+            amr_payloads = onboard.setdefault(amr_id, {})
+
+            if grouped_records and (
+                "pickup" in text or "pick_up" in text or "load" in text
+            ):
+                for item in grouped_records:
+                    item = dict(item)
+                    item["updated"] = event.start_time
+                    amr_payloads[item["task_id"]] = item
+                continue
+
+            if grouped_records and (
+                "dropoff" in text
+                or "drop_off" in text
+                or "unload" in text
+                or "complete" in text
+            ):
+                for item in grouped_records:
+                    amr_payloads.pop(item["task_id"], None)
+                continue
+
+            # Backwards-compatible inference for older single-payload CSVs.
             task_id = str(row.get("task_id", "") or "").strip()
             payload = str(row.get("payload", "") or "").strip()
             if not task_id or not payload:
                 continue
 
-            amr_payloads = onboard.setdefault(amr_id, {})
             if "pickup" in text or "pick_up" in text or "load" in text:
                 amr_payloads[task_id] = {
                     "task_id": task_id,
@@ -3232,7 +3327,8 @@ class SimulationVisualizer(QMainWindow):
                 self.graphics_scene.addItem(item)
                 self.dynamic_items.append(item)
 
-            payload = state.get("payload") or ""
+            onboard_label = self._format_onboard_payloads_for_label(state.get("raw", {}))
+            payload = onboard_label or (state.get("payload") or "")
             label = amr_id if not payload else f"{amr_id} | {payload}"
             self.draw_text_item(
                 x, y - 1.2, label, "#cfe5ff", dynamic=True, ignore_transform=True
@@ -3560,7 +3656,8 @@ class SimulationVisualizer(QMainWindow):
             return None
 
         task_id = state.get("task_id") or "-"
-        payload = state.get("payload") or "-"
+        onboard_label = self._format_onboard_payloads_for_label(state.get("raw", {}))
+        payload = onboard_label or state.get("payload") or "-"
         start_pos = state.get("from_location") or state.get("start_node") or "-"
         end_pos = state.get("to_location") or state.get("end_node") or "-"
         start_time = (

@@ -3437,6 +3437,9 @@ class Simulation:
                         "finish_time": finish_time,
                         "duration": committed["duration"],
                         "segments": committed["segments"],
+                        "end_location": committed.get(
+                            "end_location", amr.location_name
+                        ),
                         "energy_kwh": committed["energy_kwh"],
                         "battery_soc_after": amr.battery_soc_percent,
                         "lift_energy_kwh": committed["lift_energy_kwh"],
@@ -3669,19 +3672,115 @@ class Simulation:
     def _log_multi_stop_segments(
         self, amr: AMR, tasks: List[Task], committed: dict, start_time: float
     ) -> None:
-        tasks_by_id = {task.id: task for task in tasks}
+        """Write visualiser-friendly rows for a committed multi-stop route.
+
+        The visualiser needs the complete AMR slot/onboard state on every row,
+        not just the payload associated with the current segment.  This logger
+        therefore writes grouped pickup/dropoff rows and repeats the current
+        onboard state across all movement, wait and lift rows.
+        """
+        tasks_by_id = {str(task.id): task for task in tasks}
         fallback_task = tasks[0] if tasks else None
+        slot_assignments = committed.get("slot_assignments", {}) or {}
+        all_task_ids = [str(task.id) for task in tasks]
         segment_start_time = start_time
         carrying_task_ids = set()
 
+        def _task_ids_for_segment(segment: dict) -> List[str]:
+            raw_ids = segment.get("task_ids")
+            if isinstance(raw_ids, list):
+                ids = [str(x).strip() for x in raw_ids if str(x).strip()]
+                if ids:
+                    return ids
+
+            raw_id = str(segment.get("task_id", "") or "").strip()
+            if raw_id:
+                ids = [x.strip() for x in raw_id.split(",") if x.strip()]
+                if ids:
+                    return ids
+
+            return []
+
+        def _payload_name_for_ids(task_ids: List[str]) -> str:
+            names = []
+            for task_id in task_ids:
+                task = tasks_by_id.get(task_id)
+                if task is None:
+                    continue
+                payload_name = self._payload_log_name(getattr(task, "payload", ""))
+                if payload_name:
+                    names.append(payload_name)
+            return ",".join(names)
+
+        def _payload_instance_for_ids(task_ids: List[str]) -> str:
+            values = []
+            for task_id in task_ids:
+                task = tasks_by_id.get(task_id)
+                if task is None:
+                    continue
+                value = str(getattr(task, "payload_instance_id", "") or "").strip()
+                if value:
+                    values.append(value)
+            return ",".join(values)
+
+        def _payload_slot_for_ids(task_ids: List[str]) -> str:
+            values = []
+            for task_id in task_ids:
+                value = str(slot_assignments.get(task_id, "") or "").strip()
+                if value:
+                    values.append(value)
+            return ",".join(values)
+
+        def _onboard_payload_records(task_ids) -> List[dict]:
+            records = []
+            for task_id in sorted(str(x) for x in task_ids):
+                task = tasks_by_id.get(task_id)
+                if task is None:
+                    continue
+                payload_name = self._payload_log_name(getattr(task, "payload", ""))
+                if not payload_name:
+                    continue
+                slot_name = str(slot_assignments.get(task_id, "") or "").strip()
+                records.append(
+                    {
+                        "task_id": task_id,
+                        "payload": payload_name,
+                        "payload_instance_id": str(
+                            getattr(task, "payload_instance_id", "") or ""
+                        ).strip(),
+                        "pickup": str(getattr(task, "pickup", "") or "").strip(),
+                        "dropoff": str(getattr(task, "dropoff", "") or "").strip(),
+                        "slot_name": slot_name,
+                    }
+                )
+            return records
+
+        def _onboard_slot_records(task_ids) -> List[dict]:
+            records = []
+            for item in _onboard_payload_records(task_ids):
+                records.append(
+                    {
+                        "slot_name": item.get("slot_name", ""),
+                        "task_id": item.get("task_id", ""),
+                        "payload": item.get("payload", ""),
+                        "payload_instance_id": item.get("payload_instance_id", ""),
+                    }
+                )
+            return records
+
         for segment in committed["segments"]:
-            segment_task_id = str(segment.get("task_id", "") or "")
-            task = tasks_by_id.get(segment_task_id, fallback_task)
+            segment_type = str(segment.get("type", "") or "").strip()
+            segment_task_ids = _task_ids_for_segment(segment)
+            task = (
+                tasks_by_id.get(segment_task_ids[0])
+                if segment_task_ids
+                else fallback_task
+            )
+
             from_node = segment.get("from", "") or segment.get("location", "")
             to_node = segment.get("to", "") or segment.get("location", "")
             from_coords = self.graph_nodes.get(from_node)
             to_coords = self.graph_nodes.get(to_node)
-            segment_type = segment.get("type", "")
             lift_id = segment.get("lift_id", "")
             if not lift_id and segment_type.startswith("lift_"):
                 for key_node in (from_node, to_node):
@@ -3694,18 +3793,27 @@ class Simulation:
                         if lift_id:
                             break
 
-            duration = float(segment.get("duration", 0.0))
-            wait_time = float(segment.get("wait_time", 0.0))
+            duration = float(segment.get("duration", 0.0) or 0.0)
+            wait_time = float(segment.get("wait_time", 0.0) or 0.0)
             explicit_wait = duration if segment_type.startswith("wait_") else 0.0
             segment_end_time = segment_start_time + duration
-            carried_payloads = sorted(carrying_task_ids)
-            segment_payload_name = ""
-            segment_payload_instance_id = ""
-            if task is not None and (
-                segment_type in {"pickup", "dropoff"} or carried_payloads
-            ):
-                segment_payload_name = task.payload
-                segment_payload_instance_id = getattr(task, "payload_instance_id", "")
+
+            # For pickup/dropoff rows, publish the onboard state AFTER the load
+            # action.  For movement/wait/lift rows, publish the state carried
+            # through the segment.  This makes slot occupancy persist during
+            # travel in the visualiser.
+            onboard_after = set(carrying_task_ids)
+            if segment_type == "pickup":
+                onboard_after.update(segment_task_ids)
+            elif segment_type == "dropoff":
+                for task_id in segment_task_ids:
+                    onboard_after.discard(task_id)
+
+            visible_task_ids = segment_task_ids or sorted(carrying_task_ids)
+            segment_task_id = ",".join(visible_task_ids)
+            segment_payload_name = _payload_name_for_ids(visible_task_ids)
+            segment_payload_instance_id = _payload_instance_for_ids(visible_task_ids)
+            segment_payload_slot = _payload_slot_for_ids(visible_task_ids)
 
             self.log_step(
                 event_time=segment_start_time,
@@ -3717,6 +3825,16 @@ class Simulation:
                 to_location=to_node or (task.dropoff if task is not None else ""),
                 payload_name=segment_payload_name,
                 payload_instance_id=segment_payload_instance_id,
+                payload_slot=segment_payload_slot,
+                onboard_payloads=_onboard_payload_records(onboard_after),
+                onboard_slots=_onboard_slot_records(onboard_after),
+                multi_stop_task_ids=all_task_ids,
+                multi_stop_pickup_count=(
+                    len(segment_task_ids) if segment_type == "pickup" else 0
+                ),
+                multi_stop_dropoff_count=(
+                    len(segment_task_ids) if segment_type == "dropoff" else 0
+                ),
                 lift_id=lift_id,
                 duration_sec=duration,
                 wait_time_sec=wait_time or explicit_wait,
@@ -3750,10 +3868,8 @@ class Simulation:
                     getattr(task, "container_type", "") if task is not None else ""
                 ),
             )
-            if segment_type == "pickup" and segment_task_id:
-                carrying_task_ids.add(segment_task_id)
-            elif segment_type == "dropoff" and segment_task_id:
-                carrying_task_ids.discard(segment_task_id)
+
+            carrying_task_ids = onboard_after
             segment_start_time = segment_end_time
 
     def _update_task_generators_until(self, now: float):
@@ -3823,10 +3939,45 @@ class Simulation:
         self.print_short_summary()
         print()
 
+    def _queue_same_time_task_releases(self, event: Event) -> List[Task]:
+        """Queue the current task release and all other releases at the same
+        simulation time before trying to assign work.
+
+        Generated multi-stop workloads often create several tasks with the same
+        release timestamp.  Assigning after the first release lets a single task
+        win before the rest of the batch has reached pending_tasks.
+        """
+        released_tasks: List[Task] = []
+
+        task = event.payload.get("task")
+        if task is not None:
+            self._queue_pending_task(task)
+            released_tasks.append(task)
+
+        deferred_event = None
+        while self.events:
+            next_event = heapq.heappop(self.events)
+            if (
+                next_event.event_type == "task_release"
+                and abs(float(next_event.time) - float(event.time)) <= 1e-9
+            ):
+                next_task = next_event.payload.get("task")
+                if next_task is not None:
+                    self._queue_pending_task(next_task)
+                    released_tasks.append(next_task)
+                continue
+
+            deferred_event = next_event
+            break
+
+        if deferred_event is not None:
+            heapq.heappush(self.events, deferred_event)
+
+        return released_tasks
+
     def _handle_event(self, event: Event):
         if event.event_type == "task_release":
-            task: Task = event.payload["task"]
-            self._queue_pending_task(task)
+            self._queue_same_time_task_releases(event)
             self._try_assign_tasks(event.time)
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]
@@ -3957,14 +4108,23 @@ class Simulation:
                     self._store_payload_instance_for_task(task)
                     self._occupy_inventory_space_for_completed_task(task, payload_obj)
 
+                final_location_name = str(
+                    event.payload.get("end_location") or task.dropoff or ""
+                )
+                final_location = self.locations.get(final_location_name)
+
                 self.log_step(
                     event_time=event.payload["finish_time"],
                     event_type="multi_stop_task_complete",
                     task_id=task.id,
                     amr_id=event.payload["amr_id"],
-                    details=f"Task {task.id} completed as part of a multi-stop route",
-                    from_location=task.pickup,
-                    to_location=task.dropoff,
+                    details=(
+                        f"Task {task.id} completed as part of a multi-stop route; "
+                        f"planned_origin={task.pickup}; planned_destination={task.dropoff}; "
+                        f"amr_final_location={final_location_name}"
+                    ),
+                    from_location=final_location_name,
+                    to_location=final_location_name,
                     payload_name=self._payload_log_name(task.payload),
                     payload_instance_id=getattr(task, "payload_instance_id", ""),
                     duration_sec=0.0,
@@ -3972,6 +4132,14 @@ class Simulation:
                     distance_m=0.0,
                     start_time=event.payload["finish_time"],
                     end_time=event.payload["finish_time"],
+                    start_node=final_location_name,
+                    end_node=final_location_name,
+                    start_x=getattr(final_location, "x", None),
+                    start_y=getattr(final_location, "y", None),
+                    start_floor=getattr(final_location, "floor", None),
+                    end_x=getattr(final_location, "x", None),
+                    end_y=getattr(final_location, "y", None),
+                    end_floor=getattr(final_location, "floor", None),
                     status="finish",
                     task_source=getattr(task, "task_source", ""),
                     department_id=getattr(task, "department_id", ""),
@@ -4213,6 +4381,12 @@ class Simulation:
         waste_volume_m3: float = 0.0,
         container_type: str = "",
         pending_reason: str = "",
+        payload_slot: str = "",
+        onboard_payloads=None,
+        onboard_slots=None,
+        multi_stop_task_ids=None,
+        multi_stop_pickup_count: int = 0,
+        multi_stop_dropoff_count: int = 0,
         tracked_item_exchange: bool = False,
         exchange_mode: str = "",
         tracked_item_source_payload: str = "",
@@ -4261,6 +4435,16 @@ class Simulation:
                 "waste_volume_m3": round(float(waste_volume_m3 or 0.0), 6),
                 "container_type": container_type,
                 "pending_reason": pending_reason,
+                "payload_slot": payload_slot,
+                "onboard_payloads": json.dumps(
+                    onboard_payloads or [], ensure_ascii=False
+                ),
+                "onboard_slots": json.dumps(onboard_slots or [], ensure_ascii=False),
+                "multi_stop_task_ids": json.dumps(
+                    multi_stop_task_ids or [], ensure_ascii=False
+                ),
+                "multi_stop_pickup_count": int(multi_stop_pickup_count or 0),
+                "multi_stop_dropoff_count": int(multi_stop_dropoff_count or 0),
                 "tracked_item_exchange": bool(tracked_item_exchange),
                 "exchange_mode": exchange_mode,
                 "tracked_item_source_payload": tracked_item_source_payload,
@@ -4294,6 +4478,12 @@ class Simulation:
             "event_type",
             "payload",
             "payload_instance_id",
+            "payload_slot",
+            "onboard_payloads",
+            "onboard_slots",
+            "multi_stop_task_ids",
+            "multi_stop_pickup_count",
+            "multi_stop_dropoff_count",
             "weight_kg",
             "from_location",
             "to_location",
