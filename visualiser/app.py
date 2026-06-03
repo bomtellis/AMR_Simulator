@@ -61,6 +61,7 @@ from dialogs import (
     InventorySpacesDialog,
     TaskGenerationSettingsDialog,
     PayloadListDialog,
+    SimulationSettingsDialog,
 )
 from advanced_dialogs import (
     MultiSelectPicker,
@@ -402,6 +403,7 @@ class AMRGraphEditor(QMainWindow):
         for text, handler in [
             ("Open JSON", self.open_json),
             ("Save JSON", self.save_json),
+            ("Simulation Settings", self.manage_simulation_settings),
             ("Map DXF to Floor", self.load_dxf),
             ("Clear Floor DXF", self.clear_floor_dxf),
             ("Fit View", self.fit_view),
@@ -1997,6 +1999,16 @@ class AMRGraphEditor(QMainWindow):
         self.current_json_path = path
         self.set_status(f"Saved {Path(path).name}")
         self.refresh_canvas()
+
+    def manage_simulation_settings(self):
+        dialog = SimulationSettingsDialog(
+            self,
+            self.store.data.setdefault("simulation", {}),
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.store.data["simulation"] = dialog.result
+            end_text = dialog.result.get("end_datetime", "") or "not set"
+            self.set_status(f"Simulation end date set to {end_text}")
 
     def load_dxf(self):
         floor = self.floor_spin.value()

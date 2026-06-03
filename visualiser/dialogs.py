@@ -200,6 +200,16 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.selected_dropoffs = list(self.base_category.get("dropoff_locations", []))
         self.scheduled_times = list(self.base_category.get("scheduled_times", []))
 
+        # In the bulk/multiple department configuration dialog, only departments
+        # with an existing assigned location for the selected category are valid.
+        # This prevents applying generation settings to departments where the
+        # category has not yet been placed/assigned in the Department editor.
+        self.selected_department_ids = [
+            dept_id
+            for dept_id in self.selected_department_ids
+            if self._department_has_assigned_category_location_by_id(dept_id)
+        ]
+
         layout = QVBoxLayout(self)
 
         dept_row = QHBoxLayout()
@@ -418,17 +428,116 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.pick_dropoffs_btn.setEnabled(using_dept_as_pickup)
         self.clear_dropoffs_btn.setEnabled(using_dept_as_pickup)
 
+    def _department_location_picker_rows(self):
+        """Return picker rows for departments with assigned category locations.
+
+        The picker should be readable to the user, so it shows the department
+        identity/name.  The saved task-generation value must still be the real
+        placed location assigned to this category.
+        """
+        placed_locations = {
+            str(x).strip() for x in self.location_names if str(x).strip()
+        }
+
+        rows = []
+        used_labels = set()
+
+        sorted_departments = sorted(
+            self.departments,
+            key=lambda d: (
+                (
+                    int(d.get("floor", 0))
+                    if str(d.get("floor", "")).strip().lstrip("-").isdigit()
+                    else 999999
+                ),
+                str(d.get("name", "")).strip().lower()
+                or str(d.get("id", "")).strip().lower(),
+            ),
+        )
+
+        for dept in sorted_departments:
+            dept_id = self._department_id_for_item(dept)
+            if not dept_id:
+                continue
+
+            dept_name = str(dept.get("name", "")).strip()
+            floor = str(dept.get("floor", "Other")).strip() or "Other"
+            base_label = f"{dept_name} ({dept_id})" if dept_name else dept_id
+
+            assigned_locations = []
+            for location_name in self._category_locations_for_department(dept):
+                if location_name in placed_locations:
+                    assigned_locations.append(location_name)
+
+            for location_name in sorted(set(assigned_locations)):
+                label = f"{base_label}    [{location_name}]"
+                if label in used_labels:
+                    label = f"{base_label}    [{location_name}]    Floor {floor}"
+                used_labels.add(label)
+                rows.append(
+                    {
+                        "label": label,
+                        "location": location_name,
+                        "floor_group": f"Floor {floor}",
+                        "department_id": dept_id,
+                        "department_name": dept_name,
+                    }
+                )
+
+        return rows
+
+    def _department_label_for_location(self, location_name):
+        location_name = str(location_name or "").strip()
+        if not location_name:
+            return ""
+
+        for row in self._department_location_picker_rows():
+            if row.get("location") == location_name:
+                return row.get("label", location_name)
+
+        return location_name
+
     def pick_pickups(self):
+        rows = self._department_location_picker_rows()
+
+        if not rows:
+            QMessageBox.information(
+                self,
+                "Select pickup / source locations",
+                (
+                    f"No departments have an assigned placed location for "
+                    f"the {self.category_key} category.\n\n"
+                    "Assign or auto-assign category locations in the Department "
+                    "editor first."
+                ),
+            )
+            return
+
+        label_to_location = {row["label"]: row["location"] for row in rows}
+        label_to_group = {row["label"]: row["floor_group"] for row in rows}
+
+        selected_labels = [
+            row["label"]
+            for row in rows
+            if row["location"] in set(self.selected_pickup_locations)
+        ]
+
         picker = MultiSelectPicker(
             self,
-            "Select pickup / source locations",
-            self.location_names,
-            selected=self.selected_pickup_locations,
-            group_resolver=lambda item: "Locations",
+            "Select pickup / source department locations",
+            [row["label"] for row in rows],
+            selected=selected_labels,
+            group_resolver=lambda item: label_to_group.get(item, "Departments"),
         )
 
         if picker.exec() == QDialog.Accepted and picker.result is not None:
-            self.selected_pickup_locations = sorted(picker.result)
+            self.selected_pickup_locations = sorted(
+                {
+                    label_to_location[label]
+                    for label in picker.result
+                    if label in label_to_location
+                }
+            )
             self.refresh_pickup_summary()
 
     def clear_pickups(self):
@@ -438,12 +547,59 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
     def refresh_pickup_summary(self):
         if not self.selected_pickup_locations:
             self.pickup_summary.setText("None selected")
-        elif len(self.selected_pickup_locations) <= 4:
-            self.pickup_summary.setText(", ".join(self.selected_pickup_locations))
+            return
+
+        display_values = [
+            self._department_label_for_location(location_name)
+            for location_name in self.selected_pickup_locations
+        ]
+
+        if len(display_values) <= 4:
+            self.pickup_summary.setText(", ".join(display_values))
         else:
-            self.pickup_summary.setText(
-                f"{len(self.selected_pickup_locations)} selected"
+            self.pickup_summary.setText(f"{len(display_values)} selected")
+
+    def _department_id_for_item(self, dept):
+        return str(dept.get("id", "")).strip() or str(dept.get("name", "")).strip()
+
+    def _category_locations_for_department(self, dept):
+        category_locations = dept.get("task_generation_locations", {}) or {}
+
+        if not isinstance(category_locations, dict):
+            return []
+
+        category_entry = category_locations.get(self.category_key, {})
+
+        if isinstance(category_entry, dict):
+            raw_locations = category_entry.get(
+                "pickup_dropoff_locations",
+                category_entry.get("locations", []),
             )
+        else:
+            raw_locations = category_entry
+
+        return [str(x).strip() for x in (raw_locations or []) if str(x).strip()]
+
+    def _department_has_assigned_category_location(self, dept):
+        placed_locations = {
+            str(x).strip() for x in self.location_names if str(x).strip()
+        }
+
+        return any(
+            location_name in placed_locations
+            for location_name in self._category_locations_for_department(dept)
+        )
+
+    def _department_has_assigned_category_location_by_id(self, dept_id):
+        dept_id = str(dept_id or "").strip()
+        if not dept_id:
+            return False
+
+        for dept in self.departments:
+            if self._department_id_for_item(dept) == dept_id:
+                return self._department_has_assigned_category_location(dept)
+
+        return False
 
     def pick_departments(self):
         options = []
@@ -460,19 +616,42 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         )
 
         for dept in sorted_departments:
-            dept_id = (
-                str(dept.get("id", "")).strip() or str(dept.get("name", "")).strip()
-            )
+            dept_id = self._department_id_for_item(dept)
             if not dept_id:
+                continue
+
+            # Only show departments that have a valid placed/assigned location
+            # for the category currently being configured.
+            if not self._department_has_assigned_category_location(dept):
                 continue
 
             name = str(dept.get("name", "")).strip()
             floor = str(dept.get("floor", "Other")).strip() or "Other"
+            category_locations = self._category_locations_for_department(dept)
+            location_summary = ", ".join(category_locations[:3])
+            if len(category_locations) > 3:
+                location_summary += f", +{len(category_locations) - 3}"
 
             display = f"{dept_id} - {name}" if name else dept_id
+            if location_summary:
+                display = f"{display}    [{location_summary}]"
+
             options.append(display)
             label_by_id[display] = dept_id
             floor_by_label[display] = f"Floor {floor}"
+
+        if not options:
+            QMessageBox.information(
+                self,
+                "Select departments",
+                (
+                    f"No departments have an assigned placed location for "
+                    f"the {self.category_key} category.\n\n"
+                    "Assign or auto-assign category locations in the Department "
+                    "editor first."
+                ),
+            )
+            return
 
         picker = MultiSelectPicker(
             self,
@@ -556,19 +735,18 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             self.schedule_summary.setText(f"{len(self.scheduled_times)} times selected")
 
     def _department_default_location(self, dept_id):
+        placed_locations = {
+            str(x).strip() for x in self.location_names if str(x).strip()
+        }
+
         for dept in self.departments:
-            current_id = (
-                str(dept.get("id", "")).strip() or str(dept.get("name", "")).strip()
-            )
+            current_id = self._department_id_for_item(dept)
             if current_id != dept_id:
                 continue
 
-            category_locations = dept.get("task_generation_locations", {})
-            category_entry = category_locations.get(self.category_key, {})
-
-            locations = category_entry.get("pickup_dropoff_locations", [])
-            if locations:
-                return str(locations[0]).strip()
+            for location_name in self._category_locations_for_department(dept):
+                if location_name in placed_locations:
+                    return location_name
 
         return ""
 
@@ -654,7 +832,7 @@ class ConfiguredGroupSelectDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.resize(860, 520)
-        self.result_key = None      
+        self.result_key = None
 
         layout = QVBoxLayout(self)
 
@@ -1181,9 +1359,7 @@ class TaskGenerationSettingsDialog(QDialog):
                 group_id = self._new_department_group_id(category)
 
             departments = [
-                str(x).strip()
-                for x in group.get("departments", [])
-                if str(x).strip()
+                str(x).strip() for x in group.get("departments", []) if str(x).strip()
             ]
 
             payload = group.get("payload", {})
@@ -1216,7 +1392,6 @@ class TaskGenerationSettingsDialog(QDialog):
                 return group_id
             counter += 1
 
-
     def _stored_department_group_map(self, category_key):
         groups = self._department_groups_for_category(category_key)
         return {
@@ -1225,18 +1400,13 @@ class TaskGenerationSettingsDialog(QDialog):
             if str(group.get("id", "")).strip()
         }
 
-
     def _remove_departments_from_groups(
         self,
         category_key,
         department_ids,
         except_group_id=None,
     ):
-        department_ids = {
-            str(x).strip()
-            for x in department_ids
-            if str(x).strip()
-        }
+        department_ids = {str(x).strip() for x in department_ids if str(x).strip()}
 
         if not department_ids:
             return
@@ -1262,7 +1432,6 @@ class TaskGenerationSettingsDialog(QDialog):
 
         category = self.config.setdefault("categories", {}).setdefault(category_key, {})
         category["department_groups"] = kept_groups
-
 
     def _remove_department_from_group_if_settings_changed(
         self,
@@ -1294,13 +1463,12 @@ class TaskGenerationSettingsDialog(QDialog):
                 changed = True
 
         if changed:
-            category = self.config.setdefault("categories", {}).setdefault(category_key, {})
+            category = self.config.setdefault("categories", {}).setdefault(
+                category_key, {}
+            )
             category["department_groups"] = [
-                group
-                for group in groups
-                if group.get("departments")
+                group for group in groups if group.get("departments")
             ]
-
 
     def _upsert_department_group(self, category_key, group_id, department_ids, payload):
         category = self.config.setdefault("categories", {}).setdefault(category_key, {})
@@ -1311,11 +1479,7 @@ class TaskGenerationSettingsDialog(QDialog):
             group_id = self._new_department_group_id(category)
 
         department_ids = sorted(
-            {
-                str(x).strip()
-                for x in department_ids
-                if str(x).strip()
-            }
+            {str(x).strip() for x in department_ids if str(x).strip()}
         )
 
         if not department_ids:
@@ -1330,11 +1494,7 @@ class TaskGenerationSettingsDialog(QDialog):
         groups = self._department_groups_for_category(category_key)
 
         existing = next(
-            (
-                group
-                for group in groups
-                if str(group.get("id", "")).strip() == group_id
-            ),
+            (group for group in groups if str(group.get("id", "")).strip() == group_id),
             None,
         )
 
@@ -1351,9 +1511,7 @@ class TaskGenerationSettingsDialog(QDialog):
             existing["payload"] = dict(payload)
 
         category["department_groups"] = [
-            group
-            for group in groups
-            if group.get("departments")
+            group for group in groups if group.get("departments")
         ]
 
         return group_id
@@ -2483,10 +2641,18 @@ def _normalise_amr_payload_slots(amr):
             clean.append(
                 {
                     "name": str(slot.get("name", "")).strip() or f"Slot {idx}",
-                    "payload_capacity_kg": float(slot.get("payload_capacity_kg", 0.0) or 0.0),
-                    "payload_length_capacity_m": float(slot.get("payload_length_capacity_m", 0.0) or 0.0),
-                    "payload_width_capacity_m": float(slot.get("payload_width_capacity_m", 0.0) or 0.0),
-                    "payload_height_capacity_m": float(slot.get("payload_height_capacity_m", 0.0) or 0.0),
+                    "payload_capacity_kg": float(
+                        slot.get("payload_capacity_kg", 0.0) or 0.0
+                    ),
+                    "payload_length_capacity_m": float(
+                        slot.get("payload_length_capacity_m", 0.0) or 0.0
+                    ),
+                    "payload_width_capacity_m": float(
+                        slot.get("payload_width_capacity_m", 0.0) or 0.0
+                    ),
+                    "payload_height_capacity_m": float(
+                        slot.get("payload_height_capacity_m", 0.0) or 0.0
+                    ),
                 }
             )
 
@@ -2494,10 +2660,18 @@ def _normalise_amr_payload_slots(amr):
         clean = [
             {
                 "name": "Slot 1",
-                "payload_capacity_kg": float(amr.get("payload_capacity_kg", 100) or 100),
-                "payload_length_capacity_m": float(amr.get("payload_length_capacity_m", 1.0) or 1.0),
-                "payload_width_capacity_m": float(amr.get("payload_width_capacity_m", 1.0) or 1.0),
-                "payload_height_capacity_m": float(amr.get("payload_height_capacity_m", 1.0) or 1.0),
+                "payload_capacity_kg": float(
+                    amr.get("payload_capacity_kg", 100) or 100
+                ),
+                "payload_length_capacity_m": float(
+                    amr.get("payload_length_capacity_m", 1.0) or 1.0
+                ),
+                "payload_width_capacity_m": float(
+                    amr.get("payload_width_capacity_m", 1.0) or 1.0
+                ),
+                "payload_height_capacity_m": float(
+                    amr.get("payload_height_capacity_m", 1.0) or 1.0
+                ),
             }
         ]
 
@@ -2581,7 +2755,9 @@ class AMREditorDialog(QDialog):
         )
         self.slots_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.slots_table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.slots_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.slots_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Interactive
+        )
         layout.addWidget(self.slots_table, 1)
 
         slot_buttons = QHBoxLayout()
@@ -2664,9 +2840,15 @@ class AMREditorDialog(QDialog):
             duplicate = {
                 "name": f"{source_name} Copy",
                 "payload_capacity_kg": float(kg_item.text() if kg_item else 0.0),
-                "payload_length_capacity_m": float(length_item.text() if length_item else 0.0),
-                "payload_width_capacity_m": float(width_item.text() if width_item else 0.0),
-                "payload_height_capacity_m": float(height_item.text() if height_item else 0.0),
+                "payload_length_capacity_m": float(
+                    length_item.text() if length_item else 0.0
+                ),
+                "payload_width_capacity_m": float(
+                    width_item.text() if width_item else 0.0
+                ),
+                "payload_height_capacity_m": float(
+                    height_item.text() if height_item else 0.0
+                ),
             }
 
             insert_at = row + 1
@@ -2686,7 +2868,9 @@ class AMREditorDialog(QDialog):
         if row < 0:
             return
         if len(self.payload_slots) <= 1:
-            QMessageBox.critical(self, "Payload slots", "AMRs must have at least one payload slot.")
+            QMessageBox.critical(
+                self, "Payload slots", "AMRs must have at least one payload slot."
+            )
             return
         del self.payload_slots[row]
         self._refresh_slots_table()
@@ -2700,17 +2884,32 @@ class AMREditorDialog(QDialog):
             width_item = self.slots_table.item(row, 3)
             height_item = self.slots_table.item(row, 4)
             slot = {
-                "name": (name_item.text().strip() if name_item else "") or f"Slot {row + 1}",
+                "name": (name_item.text().strip() if name_item else "")
+                or f"Slot {row + 1}",
                 "payload_capacity_kg": float(kg_item.text() if kg_item else 0.0),
-                "payload_length_capacity_m": float(length_item.text() if length_item else 0.0),
-                "payload_width_capacity_m": float(width_item.text() if width_item else 0.0),
-                "payload_height_capacity_m": float(height_item.text() if height_item else 0.0),
+                "payload_length_capacity_m": float(
+                    length_item.text() if length_item else 0.0
+                ),
+                "payload_width_capacity_m": float(
+                    width_item.text() if width_item else 0.0
+                ),
+                "payload_height_capacity_m": float(
+                    height_item.text() if height_item else 0.0
+                ),
             }
             if slot["payload_capacity_kg"] <= 0:
-                raise ValueError(f"{slot['name']} weight capacity must be greater than 0")
-            for key in ["payload_length_capacity_m", "payload_width_capacity_m", "payload_height_capacity_m"]:
+                raise ValueError(
+                    f"{slot['name']} weight capacity must be greater than 0"
+                )
+            for key in [
+                "payload_length_capacity_m",
+                "payload_width_capacity_m",
+                "payload_height_capacity_m",
+            ]:
                 if slot[key] <= 0:
-                    raise ValueError(f"{slot['name']} dimensions must be greater than 0")
+                    raise ValueError(
+                        f"{slot['name']} dimensions must be greater than 0"
+                    )
             slots.append(slot)
         if not slots:
             raise ValueError("Add at least one payload slot")
@@ -2724,16 +2923,24 @@ class AMREditorDialog(QDialog):
 
             payload_slots = self._collect_payload_slots()
             primary_slot = payload_slots[0]
-            multi_stop_enabled = bool(self.multi_stop_check.isChecked() and len(payload_slots) > 1)
+            multi_stop_enabled = bool(
+                self.multi_stop_check.isChecked() and len(payload_slots) > 1
+            )
 
             self.result = {
                 "id": amr_id,
                 "quantity": int(float(self.quantity_edit.text())),
                 "payload_slots": payload_slots,
                 "payload_capacity_kg": float(primary_slot["payload_capacity_kg"]),
-                "payload_length_capacity_m": float(primary_slot["payload_length_capacity_m"]),
-                "payload_width_capacity_m": float(primary_slot["payload_width_capacity_m"]),
-                "payload_height_capacity_m": float(primary_slot["payload_height_capacity_m"]),
+                "payload_length_capacity_m": float(
+                    primary_slot["payload_length_capacity_m"]
+                ),
+                "payload_width_capacity_m": float(
+                    primary_slot["payload_width_capacity_m"]
+                ),
+                "payload_height_capacity_m": float(
+                    primary_slot["payload_height_capacity_m"]
+                ),
                 "multi_stop_enabled": multi_stop_enabled,
                 "manual_task_compatible": len(payload_slots) == 1,
                 "length_m": float(self.amr_length_edit.text()),
@@ -2916,7 +3123,9 @@ class PayloadEditorDialog(QDialog):
         self.track_items_check = QCheckBox("Track items held within this payload")
         self.track_items_check.setChecked(bool(self.seed.get("track_items", False)))
 
-        self.prefer_multi_stop_amr_check = QCheckBox("Prefer multi-stop AMRs for this payload")
+        self.prefer_multi_stop_amr_check = QCheckBox(
+            "Prefer multi-stop AMRs for this payload"
+        )
         self.prefer_multi_stop_amr_check.setChecked(
             bool(self.seed.get("prefer_multi_stop_amr", False))
         )
@@ -3345,7 +3554,9 @@ class AMRListDialog(QDialog):
                 if key == "payload_slot_summary":
                     value = _amr_payload_slot_summary(item)
                 elif key == "manual_task_compatible":
-                    value = "Yes" if len(_normalise_amr_payload_slots(item)) == 1 else "No"
+                    value = (
+                        "Yes" if len(_normalise_amr_payload_slots(item)) == 1 else "No"
+                    )
                 else:
                     value = item.get(key, "")
                 self.table.setItem(row, col, QTableWidgetItem(str(value)))
@@ -3517,6 +3728,208 @@ class RouteProfilesEditor(QDialog):
         )
         self.on_save = on_save
         self.profiles = profiles
+
+
+class SimulationSettingsDialog(QDialog):
+    def __init__(self, parent, simulation=None):
+        super().__init__(parent)
+        self.setWindowTitle("Simulation settings")
+        self.resize(720, 520)
+
+        self.simulation = dict(simulation or {})
+        simulation = self._normalise_simulation(self.simulation)
+        self.result = None
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.start_datetime_edit = QLineEdit(
+            str(simulation.get("start_datetime", "2026-01-05T06:00:00") or "")
+        )
+        self.end_datetime_edit = QLineEdit(
+            str(simulation.get("end_datetime", "2026-01-06T06:00:00") or "")
+        )
+        self.tick_rate_edit = QLineEdit(str(simulation.get("tick_rate", 1000) or 1000))
+
+        self.generated_stagger_edit = QLineEdit(
+            str(simulation.get("generated_task_release_stagger_sec", 0.25))
+        )
+
+        self.precompute_routes_check = QCheckBox("Precompute static route cache")
+        self.precompute_routes_check.setChecked(
+            bool(simulation.get("precompute_static_routes", True))
+        )
+
+        self.route_precompute_max_pairs_edit = QLineEdit(
+            str(simulation.get("route_precompute_max_pairs", 100000))
+        )
+        self.max_multi_stop_candidate_tasks_edit = QLineEdit(
+            str(simulation.get("max_multi_stop_candidate_tasks", 8))
+        )
+        self.max_single_candidate_tasks_edit = QLineEdit(
+            str(simulation.get("max_single_candidate_tasks", 8))
+        )
+        self.max_assignments_per_tick_edit = QLineEdit(
+            str(simulation.get("max_assignments_per_tick", 25))
+        )
+        self.assignment_continue_delay_edit = QLineEdit(
+            str(simulation.get("assignment_continue_delay_sec", 0.001))
+        )
+
+        form.addRow("Start datetime", self.start_datetime_edit)
+        form.addRow("End datetime", self.end_datetime_edit)
+        form.addRow("Tick rate", self.tick_rate_edit)
+        form.addRow("Generated release stagger sec", self.generated_stagger_edit)
+        form.addRow("Static route precompute", self.precompute_routes_check)
+        form.addRow("Route precompute max pairs", self.route_precompute_max_pairs_edit)
+        form.addRow("Max multi-stop candidate tasks", self.max_multi_stop_candidate_tasks_edit)
+        form.addRow("Max single candidate tasks", self.max_single_candidate_tasks_edit)
+        form.addRow("Max assignments per tick", self.max_assignments_per_tick_edit)
+        form.addRow("Assignment continue delay sec", self.assignment_continue_delay_edit)
+
+        help_label = QLabel(
+            "Use ISO format, for example 2026-01-05T06:00:00. "
+            "generated_task_release_stagger_sec spreads generated tasks that would "
+            "otherwise release at the same instant. Static route precompute fills "
+            "the route cache before the run. Candidate and assignment limits reduce "
+            "large release bursts from blocking the simulator UI/event loop."
+        )
+        help_label.setWordWrap(True)
+        layout.addWidget(help_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _normalise_simulation(self, simulation):
+        result = dict(simulation or {})
+        result.setdefault("start_datetime", "2026-01-05T06:00:00")
+        result.setdefault("end_datetime", "2026-01-06T06:00:00")
+        result.setdefault("tick_rate", 1000)
+        result.setdefault("generated_task_release_stagger_sec", 0.25)
+        result.setdefault("precompute_static_routes", True)
+        result.setdefault("route_precompute_max_pairs", 100000)
+        result.setdefault("max_multi_stop_candidate_tasks", 8)
+        result.setdefault("max_single_candidate_tasks", 8)
+        result.setdefault("max_assignments_per_tick", 25)
+        result.setdefault("assignment_continue_delay_sec", 0.001)
+        return result
+
+    def _validate_datetime(self, value, field_name, allow_blank=False):
+        text = str(value or "").strip()
+        if not text and allow_blank:
+            return ""
+        if not text:
+            raise ValueError(f"{field_name} is required")
+        try:
+            from datetime import datetime
+
+            datetime.fromisoformat(text)
+        except Exception:
+            raise ValueError(
+                f"{field_name} must use ISO format, e.g. 2026-01-05T06:00:00"
+            )
+        return text
+
+    def _float_value(self, widget, field_name, minimum=None, allow_zero=True):
+        try:
+            value = float(widget.text() or 0.0)
+        except Exception:
+            raise ValueError(f"{field_name} must be a number")
+
+        if minimum is not None:
+            if allow_zero and value == 0:
+                return value
+            if value < minimum:
+                raise ValueError(f"{field_name} must be at least {minimum}")
+        return value
+
+    def _int_value(self, widget, field_name, minimum=None):
+        try:
+            value = int(float(widget.text() or 0))
+        except Exception:
+            raise ValueError(f"{field_name} must be a whole number")
+        if minimum is not None and value < minimum:
+            raise ValueError(f"{field_name} must be at least {minimum}")
+        return value
+
+    def accept(self):
+        try:
+            start_datetime = self._validate_datetime(
+                self.start_datetime_edit.text(), "Start datetime"
+            )
+            end_datetime = self._validate_datetime(
+                self.end_datetime_edit.text(), "End datetime", allow_blank=True
+            )
+            tick_rate = self._float_value(
+                self.tick_rate_edit, "Tick rate", minimum=0.0, allow_zero=False
+            )
+
+            if end_datetime:
+                from datetime import datetime
+
+                if datetime.fromisoformat(end_datetime) <= datetime.fromisoformat(
+                    start_datetime
+                ):
+                    raise ValueError("End datetime must be after the start datetime")
+
+            generated_stagger = self._float_value(
+                self.generated_stagger_edit,
+                "Generated release stagger seconds",
+                minimum=0.0,
+                allow_zero=True,
+            )
+            route_precompute_max_pairs = self._int_value(
+                self.route_precompute_max_pairs_edit,
+                "Route precompute max pairs",
+                minimum=0,
+            )
+            max_multi_stop_candidate_tasks = self._int_value(
+                self.max_multi_stop_candidate_tasks_edit,
+                "Max multi-stop candidate tasks",
+                minimum=1,
+            )
+            max_single_candidate_tasks = self._int_value(
+                self.max_single_candidate_tasks_edit,
+                "Max single candidate tasks",
+                minimum=1,
+            )
+            max_assignments_per_tick = self._int_value(
+                self.max_assignments_per_tick_edit,
+                "Max assignments per tick",
+                minimum=1,
+            )
+            assignment_continue_delay = self._float_value(
+                self.assignment_continue_delay_edit,
+                "Assignment continue delay seconds",
+                minimum=0.0,
+                allow_zero=True,
+            )
+
+            result = dict(self.simulation)
+            result.update(
+                {
+                    "start_datetime": start_datetime,
+                    "end_datetime": end_datetime,
+                    "tick_rate": tick_rate,
+                    "generated_task_release_stagger_sec": generated_stagger,
+                    "precompute_static_routes": self.precompute_routes_check.isChecked(),
+                    "route_precompute_max_pairs": route_precompute_max_pairs,
+                    "max_multi_stop_candidate_tasks": max_multi_stop_candidate_tasks,
+                    "max_single_candidate_tasks": max_single_candidate_tasks,
+                    "max_assignments_per_tick": max_assignments_per_tick,
+                    "assignment_continue_delay_sec": assignment_continue_delay,
+                }
+            )
+
+            self.result = result
+        except Exception as exc:
+            QMessageBox.warning(self, "Invalid simulation settings", str(exc))
+            return
+
+        super().accept()
 
 
 class WasteStreamEditorDialog(QDialog):
@@ -4438,6 +4851,469 @@ class DepartmentEditorDialog(QDialog):
             QMessageBox.critical(self, "Invalid department", str(exc))
 
 
+class BulkDepartmentWasteStreamControlDialog(QDialog):
+    """Bulk add/remove/edit department waste streams for selected departments.
+
+    Checked      = assign/update the stream on every selected department.
+    Unchecked    = remove the stream from every selected department.
+    Part checked = leave mixed existing assignments unchanged.
+    """
+
+    MODES = [
+        "scheduled",
+        "threshold",
+        "continuous",
+        "sporadic",
+        "hybrid",
+        "scheduled_threshold",
+        "scheduled_sporadic",
+    ]
+
+    DEFAULT_STREAM_SETTINGS = {
+        "generation_mode": "threshold",
+        "frequency_per_day": 0.0,
+        "volume_per_event_m3": 0.0,
+        "threshold_volume_m3": 0.0,
+        "base_daily_volume_m3": 0.0,
+        "scheduled_times": [],
+    }
+
+    def __init__(self, parent, waste_stream_names, departments):
+        super().__init__(parent)
+        self.setWindowTitle("Manage waste streams for selected departments")
+        self.resize(1180, 650)
+
+        self.global_waste_stream_names = {
+            str(x).strip() for x in waste_stream_names if str(x).strip()
+        }
+        self.departments = [dict(x) for x in departments or []]
+
+        # Include deleted/orphaned stream names that still exist on the selected
+        # departments. They must remain visible so they can be unchecked and
+        # removed even after the global waste stream definition has been deleted.
+        assigned_names = set()
+        for dept in self.departments:
+            assigned_names.update(self._stream_names_for_department(dept))
+
+        self.waste_stream_names = sorted(
+            self.global_waste_stream_names | assigned_names
+        )
+        self.orphan_waste_stream_names = sorted(
+            assigned_names - self.global_waste_stream_names
+        )
+        self.result = None
+        self._row_widgets = {}
+
+        layout = QVBoxLayout(self)
+
+        help_label = QLabel(
+            "Tick a stream to assign it to all selected departments. "
+            "Untick a stream to remove it from all selected departments. "
+            "A partially ticked stream is currently assigned to only some departments; "
+            "leave it partially ticked to make no assignment/settings change. "
+            "For checked streams, the generation settings below are applied to every "
+            "selected department at the same time. Deleted/orphaned streams are shown "
+            "so they can be unchecked and removed."
+        )
+        help_label.setWordWrap(True)
+        layout.addWidget(help_label)
+
+        self.summary_label = QLabel()
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        self.table = QTreeWidget()
+        self.table.setColumnCount(10)
+        self.table.setHeaderLabels(
+            [
+                "Waste stream",
+                "Status",
+                "Currently assigned",
+                "Bulk action",
+                "Generation mode",
+                "Frequency / day",
+                "Volume / event m³",
+                "Threshold m³",
+                "Base daily m³",
+                "Scheduled times",
+            ]
+        )
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.table.setRootIsDecorated(False)
+        self.table.header().setSectionResizeMode(QHeaderView.Interactive)
+        layout.addWidget(self.table, 1)
+
+        tools = QHBoxLayout()
+        layout.addLayout(tools)
+
+        check_all_btn = QPushButton("Assign all")
+        clear_all_btn = QPushButton("Remove all")
+        unchanged_btn = QPushButton("Leave mixed unchanged")
+
+        check_all_btn.clicked.connect(lambda: self._set_all(Qt.Checked))
+        clear_all_btn.clicked.connect(lambda: self._set_all(Qt.Unchecked))
+        unchanged_btn.clicked.connect(self._restore_partial_states)
+
+        tools.addWidget(check_all_btn)
+        tools.addWidget(clear_all_btn)
+        tools.addWidget(unchanged_btn)
+        tools.addStretch(1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self._initial_partial_streams = set()
+        self._refresh_table()
+
+    def _stream_names_for_department(self, dept):
+        names = set()
+        for item in dept.get("waste_streams", []) or []:
+            if isinstance(item, dict):
+                name = str(item.get("name", "")).strip()
+            else:
+                name = str(item).strip()
+            if name:
+                names.add(name)
+        return names
+
+    def _normalise_stream_item(self, item):
+        if isinstance(item, dict):
+            name = str(item.get("name", "")).strip()
+            if not name:
+                return None
+            return {
+                "name": name,
+                "generation_mode": str(
+                    item.get(
+                        "generation_mode",
+                        self.DEFAULT_STREAM_SETTINGS["generation_mode"],
+                    )
+                    or self.DEFAULT_STREAM_SETTINGS["generation_mode"]
+                ),
+                "frequency_per_day": float(item.get("frequency_per_day", 0.0) or 0.0),
+                "volume_per_event_m3": float(
+                    item.get("volume_per_event_m3", 0.0) or 0.0
+                ),
+                "threshold_volume_m3": float(
+                    item.get("threshold_volume_m3", 0.0) or 0.0
+                ),
+                "base_daily_volume_m3": float(
+                    item.get("base_daily_volume_m3", 0.0) or 0.0
+                ),
+                "scheduled_times": list(item.get("scheduled_times", []) or []),
+            }
+
+        name = str(item).strip()
+        if not name:
+            return None
+        return {"name": name, **self.DEFAULT_STREAM_SETTINGS}
+
+    def _first_settings_for_stream(self, stream_name):
+        """Use the first existing department settings as the edit seed."""
+        for dept in self.departments:
+            for item in dept.get("waste_streams", []) or []:
+                normalised = self._normalise_stream_item(item)
+                if not normalised:
+                    continue
+                if str(normalised.get("name", "")).strip() == stream_name:
+                    return normalised
+        return {"name": stream_name, **self.DEFAULT_STREAM_SETTINGS}
+
+    def _make_number_edit(self, value):
+        edit = QLineEdit(str(value))
+        edit.setMinimumWidth(90)
+        return edit
+
+    def _refresh_table(self):
+        self.table.clear()
+        self._row_widgets = {}
+        self._initial_partial_streams = set()
+
+        dept_count = len(self.departments)
+        orphan_count = len(self.orphan_waste_stream_names)
+        if orphan_count:
+            self.summary_label.setText(
+                f"Selected departments: {dept_count} | "
+                f"Deleted/orphaned assigned streams: {orphan_count}"
+            )
+        else:
+            self.summary_label.setText(f"Selected departments: {dept_count}")
+
+        for stream_name in self.waste_stream_names:
+            assigned_count = sum(
+                1
+                for dept in self.departments
+                if stream_name in self._stream_names_for_department(dept)
+            )
+
+            is_orphan = stream_name not in self.global_waste_stream_names
+            item = QTreeWidgetItem(
+                [
+                    stream_name,
+                    (
+                        "Deleted / not in global waste streams"
+                        if is_orphan
+                        else "Configured"
+                    ),
+                    f"{assigned_count} / {dept_count}",
+                    (
+                        "Preserve or remove"
+                        if is_orphan
+                        else (
+                            "Apply settings to all"
+                            if assigned_count == dept_count and dept_count > 0
+                            else (
+                                "Assign/update all"
+                                if assigned_count == 0
+                                else "Mixed - leave unchanged unless checked/unchecked"
+                            )
+                        )
+                    ),
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                ]
+            )
+            item.setData(0, Qt.UserRole, stream_name)
+            item.setFlags(
+                item.flags()
+                | Qt.ItemIsUserCheckable
+                | Qt.ItemIsEnabled
+                | Qt.ItemIsSelectable
+            )
+
+            if assigned_count <= 0:
+                state = Qt.Unchecked
+            elif assigned_count >= dept_count:
+                state = Qt.Checked
+            else:
+                state = Qt.PartiallyChecked
+                self._initial_partial_streams.add(stream_name)
+
+            item.setCheckState(0, state)
+            self.table.addTopLevelItem(item)
+
+            seed = self._first_settings_for_stream(stream_name)
+            mode_combo = QComboBox()
+            mode_combo.addItems(self.MODES)
+            mode = str(seed.get("generation_mode", "threshold") or "threshold")
+            if mode not in self.MODES:
+                mode = "threshold"
+            mode_combo.setCurrentText(mode)
+
+            frequency_edit = self._make_number_edit(seed.get("frequency_per_day", 0.0))
+            volume_edit = self._make_number_edit(seed.get("volume_per_event_m3", 0.0))
+            threshold_edit = self._make_number_edit(
+                seed.get("threshold_volume_m3", 0.0)
+            )
+            base_daily_edit = self._make_number_edit(
+                seed.get("base_daily_volume_m3", 0.0)
+            )
+
+            scheduled_times = list(seed.get("scheduled_times", []) or [])
+            schedule_label = QLabel()
+            schedule_label.setWordWrap(True)
+            edit_times_btn = QPushButton("Edit...")
+            clear_times_btn = QPushButton("Clear")
+
+            schedule_widget = QWidget()
+            schedule_row = QHBoxLayout(schedule_widget)
+            schedule_row.setContentsMargins(0, 0, 0, 0)
+            schedule_row.addWidget(schedule_label, 1)
+            schedule_row.addWidget(edit_times_btn)
+            schedule_row.addWidget(clear_times_btn)
+
+            self._row_widgets[stream_name] = {
+                "mode_combo": mode_combo,
+                "frequency_edit": frequency_edit,
+                "volume_edit": volume_edit,
+                "threshold_edit": threshold_edit,
+                "base_daily_edit": base_daily_edit,
+                "scheduled_times": scheduled_times,
+                "schedule_label": schedule_label,
+                "edit_times_btn": edit_times_btn,
+                "clear_times_btn": clear_times_btn,
+            }
+
+            edit_times_btn.clicked.connect(
+                lambda _checked=False, name=stream_name: self._edit_times_for_stream(
+                    name
+                )
+            )
+            clear_times_btn.clicked.connect(
+                lambda _checked=False, name=stream_name: self._clear_times_for_stream(
+                    name
+                )
+            )
+            mode_combo.currentTextChanged.connect(
+                lambda _value, name=stream_name: self._update_stream_field_state(name)
+            )
+
+            self.table.setItemWidget(item, 4, mode_combo)
+            self.table.setItemWidget(item, 5, frequency_edit)
+            self.table.setItemWidget(item, 6, volume_edit)
+            self.table.setItemWidget(item, 7, threshold_edit)
+            self.table.setItemWidget(item, 8, base_daily_edit)
+            self.table.setItemWidget(item, 9, schedule_widget)
+
+            self._refresh_schedule_summary(stream_name)
+            self._update_stream_field_state(stream_name)
+
+            if is_orphan:
+                # Orphaned stream definitions no longer exist globally. They can
+                # be preserved or removed, but not bulk-edited/reassigned.
+                for widget in (
+                    mode_combo,
+                    frequency_edit,
+                    volume_edit,
+                    threshold_edit,
+                    base_daily_edit,
+                    edit_times_btn,
+                    clear_times_btn,
+                ):
+                    widget.setEnabled(False)
+                schedule_label.setEnabled(False)
+
+        for col in range(self.table.columnCount()):
+            self.table.resizeColumnToContents(col)
+
+    def _set_all(self, state):
+        for idx in range(self.table.topLevelItemCount()):
+            item = self.table.topLevelItem(idx)
+            item.setCheckState(0, state)
+
+    def _restore_partial_states(self):
+        for idx in range(self.table.topLevelItemCount()):
+            item = self.table.topLevelItem(idx)
+            stream_name = str(item.data(0, Qt.UserRole) or "").strip()
+            if stream_name in self._initial_partial_streams:
+                item.setCheckState(0, Qt.PartiallyChecked)
+
+    def _refresh_schedule_summary(self, stream_name):
+        widgets = self._row_widgets.get(stream_name, {})
+        label = widgets.get("schedule_label")
+        if label is None:
+            return
+        times = list(widgets.get("scheduled_times", []) or [])
+        if not times:
+            label.setText("No times")
+        elif len(times) <= 3:
+            label.setText(", ".join(times))
+        else:
+            label.setText(f"{len(times)} times")
+
+    def _edit_times_for_stream(self, stream_name):
+        widgets = self._row_widgets.get(stream_name, {})
+        dialog = ScheduledTimesDialog(self, widgets.get("scheduled_times", []))
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            widgets["scheduled_times"] = list(dialog.result)
+            self._refresh_schedule_summary(stream_name)
+
+    def _clear_times_for_stream(self, stream_name):
+        widgets = self._row_widgets.get(stream_name, {})
+        widgets["scheduled_times"] = []
+        self._refresh_schedule_summary(stream_name)
+
+    def _update_stream_field_state(self, stream_name):
+        widgets = self._row_widgets.get(stream_name, {})
+        mode_combo = widgets.get("mode_combo")
+        if mode_combo is None:
+            return
+
+        mode = mode_combo.currentText().strip()
+        uses_schedule = mode in {
+            "scheduled",
+            "scheduled_threshold",
+            "scheduled_sporadic",
+        }
+        uses_threshold = mode in {
+            "threshold",
+            "hybrid",
+            "scheduled_threshold",
+        }
+        uses_continuous = mode in {
+            "continuous",
+            "hybrid",
+        }
+        uses_sporadic = mode in {
+            "sporadic",
+            "hybrid",
+            "scheduled_sporadic",
+        }
+
+        for key in ("schedule_label", "edit_times_btn", "clear_times_btn"):
+            widget = widgets.get(key)
+            if widget is not None:
+                widget.setEnabled(uses_schedule)
+
+        if widgets.get("threshold_edit") is not None:
+            widgets["threshold_edit"].setEnabled(uses_threshold)
+        if widgets.get("base_daily_edit") is not None:
+            widgets["base_daily_edit"].setEnabled(uses_continuous or uses_threshold)
+        if widgets.get("frequency_edit") is not None:
+            widgets["frequency_edit"].setEnabled(uses_sporadic)
+        if widgets.get("volume_edit") is not None:
+            widgets["volume_edit"].setEnabled(uses_sporadic)
+
+    def _settings_for_stream(self, stream_name):
+        widgets = self._row_widgets.get(stream_name, {})
+        return {
+            "generation_mode": widgets["mode_combo"].currentText().strip(),
+            "frequency_per_day": float(widgets["frequency_edit"].text() or 0.0),
+            "volume_per_event_m3": float(widgets["volume_edit"].text() or 0.0),
+            "threshold_volume_m3": float(widgets["threshold_edit"].text() or 0.0),
+            "base_daily_volume_m3": float(widgets["base_daily_edit"].text() or 0.0),
+            "scheduled_times": list(widgets.get("scheduled_times", []) or []),
+        }
+
+    def accept(self):
+        add_streams = []
+        remove_streams = []
+        unchanged_streams = []
+        update_stream_settings = {}
+
+        try:
+            for idx in range(self.table.topLevelItemCount()):
+                item = self.table.topLevelItem(idx)
+                stream_name = str(item.data(0, Qt.UserRole) or "").strip()
+                if not stream_name:
+                    continue
+
+                state = item.checkState(0)
+                is_orphan = stream_name not in self.global_waste_stream_names
+                if state == Qt.Checked:
+                    # Orphaned/deleted streams cannot be newly assigned or edited
+                    # because there is no global stream definition to back them.
+                    # Keeping them checked means preserve existing assignments.
+                    if is_orphan:
+                        unchanged_streams.append(stream_name)
+                    else:
+                        add_streams.append(stream_name)
+                        update_stream_settings[stream_name] = self._settings_for_stream(
+                            stream_name
+                        )
+                elif state == Qt.Unchecked:
+                    remove_streams.append(stream_name)
+                else:
+                    unchanged_streams.append(stream_name)
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid waste stream settings", str(exc))
+            return
+
+        self.result = {
+            "add_streams": add_streams,
+            "remove_streams": remove_streams,
+            "unchanged_streams": unchanged_streams,
+            "update_stream_settings": update_stream_settings,
+        }
+        super().accept()
+
+
 class DepartmentListDialog(QDialog):
 
     def __init__(
@@ -4495,7 +5371,7 @@ class DepartmentListDialog(QDialog):
         save_btn = QPushButton("Save")
 
         auto_assign_btn = QPushButton("Auto assign locations")
-        bulk_waste_btn = QPushButton("Add waste streams to selected")
+        bulk_waste_btn = QPushButton("Manage waste streams...")
 
         row.addWidget(add_btn)
         row.addWidget(edit_btn)
@@ -4509,7 +5385,9 @@ class DepartmentListDialog(QDialog):
         edit_btn.clicked.connect(self.edit_item)
         del_btn.clicked.connect(self.delete_item)
         auto_assign_btn.clicked.connect(self.auto_assign_locations)
-        bulk_waste_btn.clicked.connect(self.add_waste_streams_to_selected_departments)
+        bulk_waste_btn.clicked.connect(
+            self.manage_waste_streams_for_selected_departments
+        )
         save_btn.clicked.connect(self.save_items)
 
         self._refresh_table()
@@ -4642,56 +5520,41 @@ class DepartmentListDialog(QDialog):
             ),
         )
 
-    def add_waste_streams_to_selected_departments(self):
-        rows = self._selected_department_indexes()
-
-        if not rows:
-            QMessageBox.information(
-                self,
-                "Add waste streams",
-                "Select one or more departments first.",
-            )
-            return
-
-        picker = MultiSelectPicker(
-            self,
-            "Select waste streams to add",
-            self.waste_stream_names,
-            selected=[],
-            group_resolver=lambda item: "Waste streams",
-        )
-
-        if picker.exec() != QDialog.Accepted or picker.result is None:
-            return
-
-        selected_stream_names = [
-            str(x).strip() for x in picker.result if str(x).strip()
-        ]
-
-        if not selected_stream_names:
-            return
-
-        added_count = 0
-
-        for row in rows:
-            if row < 0 or row >= len(self.items):
+    def _normalise_department_waste_streams(self, value):
+        result = []
+        for item in value or []:
+            if isinstance(item, dict):
+                name = str(item.get("name", "")).strip()
+                if not name:
+                    continue
+                result.append(
+                    {
+                        "name": name,
+                        "generation_mode": str(
+                            item.get("generation_mode", "threshold")
+                        ),
+                        "frequency_per_day": float(
+                            item.get("frequency_per_day", 0.0) or 0.0
+                        ),
+                        "volume_per_event_m3": float(
+                            item.get("volume_per_event_m3", 0.0) or 0.0
+                        ),
+                        "threshold_volume_m3": float(
+                            item.get("threshold_volume_m3", 0.0) or 0.0
+                        ),
+                        "base_daily_volume_m3": float(
+                            item.get("base_daily_volume_m3", 0.0) or 0.0
+                        ),
+                        "scheduled_times": list(item.get("scheduled_times", []) or []),
+                    }
+                )
                 continue
 
-            dept = self.items[row]
-            existing_items = dept.setdefault("waste_streams", [])
-
-            existing_names = {
-                str(x.get("name", x) if isinstance(x, dict) else x).strip()
-                for x in existing_items
-            }
-
-            for stream_name in selected_stream_names:
-                if stream_name in existing_names:
-                    continue
-
-                existing_items.append(
+            name = str(item).strip()
+            if name:
+                result.append(
                     {
-                        "name": stream_name,
+                        "name": name,
                         "generation_mode": "threshold",
                         "frequency_per_day": 0.0,
                         "volume_per_event_m3": 0.0,
@@ -4700,15 +5563,146 @@ class DepartmentListDialog(QDialog):
                         "scheduled_times": [],
                     }
                 )
+
+        # De-duplicate while preserving the first existing settings for each stream.
+        seen = set()
+        clean = []
+        for item in result:
+            name = str(item.get("name", "")).strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            clean.append(item)
+        return clean
+
+    def manage_waste_streams_for_selected_departments(self):
+        rows = self._selected_department_indexes()
+
+        if not rows:
+            QMessageBox.information(
+                self,
+                "Manage waste streams",
+                "Select one or more departments first.",
+            )
+            return
+
+        selected_departments = [
+            self.items[row] for row in rows if 0 <= row < len(self.items)
+        ]
+
+        if not selected_departments:
+            return
+
+        selected_assigned_streams = set()
+        for dept in selected_departments:
+            for item in dept.get("waste_streams", []) or []:
+                if isinstance(item, dict):
+                    name = str(item.get("name", "")).strip()
+                else:
+                    name = str(item).strip()
+                if name:
+                    selected_assigned_streams.add(name)
+
+        if not self.waste_stream_names and not selected_assigned_streams:
+            QMessageBox.information(
+                self,
+                "Manage waste streams",
+                "No global or currently assigned waste streams are available.",
+            )
+            return
+
+        dialog = BulkDepartmentWasteStreamControlDialog(
+            self,
+            waste_stream_names=self.waste_stream_names,
+            departments=selected_departments,
+        )
+
+        if dialog.exec() != QDialog.Accepted or not dialog.result:
+            return
+
+        add_streams = {
+            str(x).strip()
+            for x in dialog.result.get("add_streams", [])
+            if str(x).strip()
+        }
+        remove_streams = {
+            str(x).strip()
+            for x in dialog.result.get("remove_streams", [])
+            if str(x).strip()
+        }
+        update_stream_settings = {
+            str(name).strip(): dict(settings or {})
+            for name, settings in (
+                dialog.result.get("update_stream_settings", {}) or {}
+            ).items()
+            if str(name).strip()
+        }
+
+        if not add_streams and not remove_streams and not update_stream_settings:
+            return
+
+        added_count = 0
+        removed_count = 0
+        updated_count = 0
+
+        for row in rows:
+            if row < 0 or row >= len(self.items):
+                continue
+
+            dept = self.items[row]
+            existing_items = self._normalise_department_waste_streams(
+                dept.get("waste_streams", [])
+            )
+
+            filtered_items = []
+            existing_names = set()
+
+            for item in existing_items:
+                name = str(item.get("name", "")).strip()
+                if not name:
+                    continue
+                if name in remove_streams:
+                    removed_count += 1
+                    continue
+
+                if name in update_stream_settings:
+                    updated_item = dict(item)
+                    updated_item.update(update_stream_settings[name])
+                    updated_item["name"] = name
+                    filtered_items.append(updated_item)
+                    updated_count += 1
+                else:
+                    filtered_items.append(item)
+
+                existing_names.add(name)
+
+            for stream_name in sorted(add_streams):
+                if stream_name in existing_names:
+                    continue
+                settings = dict(
+                    update_stream_settings.get(
+                        stream_name,
+                        BulkDepartmentWasteStreamControlDialog.DEFAULT_STREAM_SETTINGS,
+                    )
+                )
+                filtered_items.append({"name": stream_name, **settings})
                 existing_names.add(stream_name)
                 added_count += 1
+                updated_count += 1
+
+            dept["waste_streams"] = filtered_items
 
         self._refresh_table()
 
         QMessageBox.information(
             self,
-            "Add waste streams",
-            f"Added {added_count} waste stream assignment(s).",
+            "Manage waste streams",
+            (
+                f"Updated {len(rows)} selected department(s).\n"
+                f"Added {added_count} waste stream assignment(s).\n"
+                f"Removed {removed_count} waste stream assignment(s).\n"
+                f"Applied generation settings to {updated_count} department stream assignment(s)."
+            ),
         )
 
     def add_item(self):
@@ -4993,7 +5987,9 @@ class InventorySpacesDialog(QDialog):
 
         rotate_row = QHBoxLayout()
         self.rotation_edit = QLineEdit("0.0")
-        self.rotation_edit.setToolTip("Free-angle rotation in degrees for the selected payload inventory space")
+        self.rotation_edit.setToolTip(
+            "Free-angle rotation in degrees for the selected payload inventory space"
+        )
         self.rotation_edit.editingFinished.connect(self.apply_rotation_from_field)
         rotate_left_btn = QPushButton("-5°")
         rotate_right_btn = QPushButton("+5°")
@@ -5064,7 +6060,10 @@ class InventorySpacesDialog(QDialog):
             item = self.space_list.item(index)
             if item is not None:
                 item.setSelected(True)
-        if self.selected_space_index is not None and 0 <= self.selected_space_index < self.space_list.count():
+        if (
+            self.selected_space_index is not None
+            and 0 <= self.selected_space_index < self.space_list.count()
+        ):
             self.space_list.setCurrentRow(self.selected_space_index)
         self.space_list.blockSignals(False)
 
@@ -5085,7 +6084,9 @@ class InventorySpacesDialog(QDialog):
             pts = self._space_slot_polygon_points(index)
             if pts and self._point_in_polygon(x, y, pts):
                 return index
-            pts_abs = self.store.inventory_space_points_absolute(self.location_name, self.spaces[index])
+            pts_abs = self.store.inventory_space_points_absolute(
+                self.location_name, self.spaces[index]
+            )
             if pts_abs and self._point_in_polygon(x, y, pts_abs):
                 return index
         return None
@@ -5143,7 +6144,9 @@ class InventorySpacesDialog(QDialog):
         if self.selected_space_index is None:
             return []
         if 0 <= self.selected_space_index < len(self.spaces):
-            return self.spaces[self.selected_space_index].setdefault("payload_slots", [])
+            return self.spaces[self.selected_space_index].setdefault(
+                "payload_slots", []
+            )
         return []
 
     def _space_bounds(self):
@@ -5220,7 +6223,9 @@ class InventorySpacesDialog(QDialog):
 
         lx = float(self.location.get("x", 0.0))
         ly = float(self.location.get("y", 0.0))
-        name = self.name_edit.text().strip() or self.spaces[self.selected_space_index].get("name", f"Inventory {self.selected_space_index + 1}")
+        name = self.name_edit.text().strip() or self.spaces[
+            self.selected_space_index
+        ].get("name", f"Inventory {self.selected_space_index + 1}")
         self.spaces[self.selected_space_index] = {
             "name": name,
             "points": [
@@ -5230,7 +6235,12 @@ class InventorySpacesDialog(QDialog):
                 }
                 for p in self.current_points
             ],
-            "payload_slots": [dict(slot) for slot in self.spaces[self.selected_space_index].get("payload_slots", [])],
+            "payload_slots": [
+                dict(slot)
+                for slot in self.spaces[self.selected_space_index].get(
+                    "payload_slots", []
+                )
+            ],
         }
         return True
 
@@ -5245,12 +6255,15 @@ class InventorySpacesDialog(QDialog):
         s = math.sin(angle)
         corners = [
             (-length / 2.0, -width / 2.0),
-            ( length / 2.0, -width / 2.0),
-            ( length / 2.0,  width / 2.0),
-            (-length / 2.0,  width / 2.0),
+            (length / 2.0, -width / 2.0),
+            (length / 2.0, width / 2.0),
+            (-length / 2.0, width / 2.0),
         ]
         return [
-            {"x": round(cx + (dx * c) - (dy * s), 3), "y": round(cy + (dx * s) + (dy * c), 3)}
+            {
+                "x": round(cx + (dx * c) - (dy * s), 3),
+                "y": round(cy + (dx * s) + (dy * c), 3),
+            }
             for dx, dy in corners
         ]
 
@@ -5260,9 +6273,13 @@ class InventorySpacesDialog(QDialog):
         inside = False
         j = len(points) - 1
         for i in range(len(points)):
-            xi = float(points[i]["x"]); yi = float(points[i]["y"])
-            xj = float(points[j]["x"]); yj = float(points[j]["y"])
-            if ((yi > y) != (yj > y)) and (x < ((xj - xi) * (y - yi) / ((yj - yi) or 1e-9)) + xi):
+            xi = float(points[i]["x"])
+            yi = float(points[i]["y"])
+            xj = float(points[j]["x"])
+            yj = float(points[j]["y"])
+            if ((yi > y) != (yj > y)) and (
+                x < ((xj - xi) * (y - yi) / ((yj - yi) or 1e-9)) + xi
+            ):
                 inside = not inside
             j = i
         return inside
@@ -5279,7 +6296,10 @@ class InventorySpacesDialog(QDialog):
     def _slot_fits_current_space(self, slot):
         if not self.current_points:
             return True
-        return all(self._point_in_polygon(p["x"], p["y"], self.current_points) for p in self._slot_polygon_points(slot))
+        return all(
+            self._point_in_polygon(p["x"], p["y"], self.current_points)
+            for p in self._slot_polygon_points(slot)
+        )
 
     def add_payload_slot(self):
         payload_name = self.payload_combo.currentText().strip()
@@ -5392,7 +6412,9 @@ class InventorySpacesDialog(QDialog):
         lx = float(self.location.get("x", 0.0))
         ly = float(self.location.get("y", 0.0))
         offset = len(self.spaces) * (max(float(length), float(width)) + gap)
-        return round(lx + (float(length) / 2.0) + offset, 3), round(ly + (float(width) / 2.0), 3)
+        return round(lx + (float(length) / 2.0) + offset, 3), round(
+            ly + (float(width) / 2.0), 3
+        )
 
     def _sync_space_from_payload_index(self, index):
         if not (0 <= int(index) < len(self.spaces)):
@@ -5493,7 +6515,9 @@ class InventorySpacesDialog(QDialog):
                 row_height = 0.0
 
                 for item_len, item_wid, rotation in orientations:
-                    if (x + item_len <= max_x + 1e-9) and (y + item_wid <= max_y + 1e-9):
+                    if (x + item_len <= max_x + 1e-9) and (
+                        y + item_wid <= max_y + 1e-9
+                    ):
                         chosen = (item_len, item_wid, rotation)
                         break
 
@@ -5518,9 +6542,13 @@ class InventorySpacesDialog(QDialog):
         self.refresh_list()
         self.refresh_scene()
 
-        message = f"Auto aligned {placed} payload space(s) within the location bounding box."
+        message = (
+            f"Auto aligned {placed} payload space(s) within the location bounding box."
+        )
         if overflow:
-            message += f" {overflow} payload space(s) did not fit and were left unchanged."
+            message += (
+                f" {overflow} payload space(s) did not fit and were left unchanged."
+            )
         if skipped:
             message += f" {skipped} non-payload/invalid space(s) skipped."
         self.status_label.setText(message)
@@ -5674,7 +6702,9 @@ class InventorySpacesDialog(QDialog):
             self.refresh_scene()
 
     def delete_selected_space(self):
-        rows = sorted(self.selected_space_indices or {self.space_list.currentRow()}, reverse=True)
+        rows = sorted(
+            self.selected_space_indices or {self.space_list.currentRow()}, reverse=True
+        )
         rows = [row for row in rows if 0 <= row < len(self.spaces)]
         if not rows:
             return
@@ -5783,7 +6813,9 @@ class InventorySpacesDialog(QDialog):
         if not slot:
             self.rotation_edit.setText("0.0")
             return
-        self.rotation_edit.setText(f"{self._normalise_degrees(slot.get('rotation_deg', 0.0)):.1f}")
+        self.rotation_edit.setText(
+            f"{self._normalise_degrees(slot.get('rotation_deg', 0.0)):.1f}"
+        )
 
     def apply_rotation_from_field(self):
         slot = self._selected_space_slot()
@@ -5805,7 +6837,9 @@ class InventorySpacesDialog(QDialog):
         slot = self._selected_space_slot()
         if not slot or self.selected_space_index is None:
             return
-        slot["rotation_deg"] = self._normalise_degrees(float(slot.get("rotation_deg", 0.0) or 0.0) + float(delta))
+        slot["rotation_deg"] = self._normalise_degrees(
+            float(slot.get("rotation_deg", 0.0) or 0.0) + float(delta)
+        )
         self.selected_payload_index = 0
         self._sync_space_from_payload_index(self.selected_space_index)
         self._commit_current_space(show_errors=False)
@@ -5868,7 +6902,9 @@ class InventorySpacesDialog(QDialog):
                 self.drag_spaces_start_world = None
                 self.drag_spaces_start_slots = {}
                 self.selected_payload_index = 0
-                self.status_label.setText("Drag to rotate freely. Release to save the angle.")
+                self.status_label.setText(
+                    "Drag to rotate freely. Release to save the angle."
+                )
                 return
 
         if event.button() == Qt.RightButton:
@@ -5944,7 +6980,9 @@ class InventorySpacesDialog(QDialog):
             slot = self._space_payload_slot(self.rotate_space_index)
             if slot:
                 cx, cy = self.rotate_start_center
-                angle = math.degrees(math.atan2(float(y) - float(cy), float(x) - float(cx)))
+                angle = math.degrees(
+                    math.atan2(float(y) - float(cy), float(x) - float(cx))
+                )
                 if event.modifiers() & Qt.ShiftModifier:
                     angle = round(angle / 90.0) * 90.0
                 slot["rotation_deg"] = self._normalise_degrees(angle)
@@ -5964,7 +7002,11 @@ class InventorySpacesDialog(QDialog):
             self.refresh_scene()
             return
 
-        if self.drag_payload_index is not None and self.drag_payload_start_world is not None and self.drag_payload_start is not None:
+        if (
+            self.drag_payload_index is not None
+            and self.drag_payload_start_world is not None
+            and self.drag_payload_start is not None
+        ):
             slots = self._current_space_slots()
             if 0 <= self.drag_payload_index < len(slots):
                 start_x, start_y = self._slot_center_absolute(self.drag_payload_start)
@@ -6049,7 +7091,9 @@ class InventorySpacesDialog(QDialog):
         self.copied_space = {
             "name": self.spaces[row].get("name", "Inventory space"),
             "points": [dict(p) for p in self.spaces[row].get("points", [])],
-            "payload_slots": [dict(slot) for slot in self.spaces[row].get("payload_slots", [])],
+            "payload_slots": [
+                dict(slot) for slot in self.spaces[row].get("payload_slots", [])
+            ],
         }
 
         self.status_label.setText(f"Copied {self.copied_space['name']}")
@@ -6061,7 +7105,9 @@ class InventorySpacesDialog(QDialog):
         pasted = {
             "name": f"{self.copied_space.get('name', 'Inventory space')} copy",
             "points": [dict(p) for p in self.copied_space.get("points", [])],
-            "payload_slots": [dict(slot) for slot in self.copied_space.get("payload_slots", [])],
+            "payload_slots": [
+                dict(slot) for slot in self.copied_space.get("payload_slots", [])
+            ],
         }
 
         # Small offset so pasted space is visible and selectable separately
@@ -6205,8 +7251,12 @@ class InventorySpacesDialog(QDialog):
             pts = [self.world_to_scene(p["x"], p["y"]) for p in pts_abs]
             poly = QGraphicsPolygonItem(QPolygonF(pts))
             is_multi_selected = idx in self.selected_space_indices
-            poly.setPen(QPen(QColor("#ffffff" if is_multi_selected else "#6aa9ff"), 0.0))
-            poly.setBrush(QBrush(QColor(106, 169, 255, 38 if is_multi_selected else 18)))
+            poly.setPen(
+                QPen(QColor("#ffffff" if is_multi_selected else "#6aa9ff"), 0.0)
+            )
+            poly.setBrush(
+                QBrush(QColor(106, 169, 255, 38 if is_multi_selected else 18))
+            )
             poly.setZValue(-10)
             self.scene.addItem(poly)
 

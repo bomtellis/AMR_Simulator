@@ -3,8 +3,10 @@ import csv
 import heapq
 import json
 import math
+import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -58,6 +60,7 @@ class Simulation:
         self.pending_tasks: List[Tuple[int, float, int, Task]] = []
         self.pending_task_counter = 0
         self.lock = threading.RLock()
+        self.route_cache_lock = threading.RLock()
         self.stop_requested = False
         self.completed_task_records: List[dict] = []
         self.failed_tasks: List[dict] = []
@@ -82,7 +85,59 @@ class Simulation:
             building_cfg.get("node_clearance_time_sec", 0.5)
         )
 
-        self.route_cache: Dict[Tuple[int, str, str, Tuple, Tuple], Optional[dict]] = {}
+        self.route_cache: Dict[Tuple, Optional[dict]] = {}
+        self.generated_release_stagger_sec = max(
+            0.0,
+            float(
+                sim_cfg.get(
+                    "generated_task_release_stagger_sec",
+                    sim_cfg.get("task_release_stagger_sec", 0.25),
+                )
+                or 0.0
+            ),
+        )
+        self._generated_release_stagger_counts: Dict[float, int] = defaultdict(int)
+        self.route_precompute_enabled = bool(
+            sim_cfg.get("precompute_static_routes", True)
+        )
+        self.route_precompute_max_pairs = max(
+            0, int(sim_cfg.get("route_precompute_max_pairs", 100000) or 0)
+        )
+        self.max_single_candidate_tasks = max(
+            1, int(sim_cfg.get("max_single_candidate_tasks", 8) or 8)
+        )
+        self.max_multi_stop_candidate_tasks = max(
+            2, int(sim_cfg.get("max_multi_stop_candidate_tasks", 8) or 8)
+        )
+        self.max_assignments_per_tick = max(
+            0, int(sim_cfg.get("max_assignments_per_tick", 25) or 0)
+        )
+        self.assignment_continue_delay_sec = max(
+            0.001, float(sim_cfg.get("assignment_continue_delay_sec", 0.001) or 0.001)
+        )
+        self._assignment_continue_scheduled = False
+        default_route_workers = max(1, min(8, os.cpu_count() or 1))
+        self.routing_worker_threads = max(
+            1,
+            int(
+                sim_cfg.get(
+                    "routing_worker_threads",
+                    sim_cfg.get("route_worker_threads", default_route_workers),
+                )
+            ),
+        )
+        self.parallel_routing_enabled = (
+            bool(sim_cfg.get("parallel_routing", True))
+            and self.routing_worker_threads > 1
+        )
+        self.routing_executor = (
+            ThreadPoolExecutor(
+                max_workers=self.routing_worker_threads,
+                thread_name_prefix="amr-route",
+            )
+            if self.parallel_routing_enabled
+            else None
+        )
 
         self.amr_spacing_m = float(building_cfg.get("amr_spacing_m", 1.5))
         self.edge_max_concurrency = int(building_cfg.get("edge_max_concurrency", 1))
@@ -285,7 +340,11 @@ class Simulation:
         self.floor_graphs: Dict[int, Dict[str, List[dict]]] = defaultdict(
             lambda: defaultdict(list)
         )
+        self.floor_reverse_graphs: Dict[int, Dict[str, List[dict]]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         self._build_floor_graphs(config.get("corridors", {}))
+        self._precompute_static_routes()
 
         # Parse AMRS from configuration
 
@@ -672,7 +731,10 @@ class Simulation:
             return None
         selected: List[Task] = []
         route_signature = None
-        for task in released[: max(12, slot_count * 3)]:
+        candidate_limit = max(
+            slot_count, min(len(released), self.max_multi_stop_candidate_tasks)
+        )
+        for task in released[:candidate_limit]:
             # Keep a batch on the same route profile / dirty-label state so route restrictions stay predictable.
             signature = (
                 str(getattr(task, "route_profile", "") or ""),
@@ -1613,12 +1675,14 @@ class Simulation:
         for location in self.locations.values():
             self.graph_nodes[location.name] = location
             self.floor_graphs[location.floor][location.name]
+            self.floor_reverse_graphs[location.floor][location.name]
 
         for lift in self.lifts:
             for floor in lift.served_floors:
                 node = lift.location_on_floor(floor)
                 self.graph_nodes[node.name] = node
                 self.floor_graphs[floor][node.name]
+                self.floor_reverse_graphs[floor][node.name]
 
         for node_data in corridor_cfg.get("nodes", []):
             node = Location(
@@ -1629,6 +1693,19 @@ class Simulation:
             )
             self.graph_nodes[node.name] = node
             self.floor_graphs[node.floor][node.name]
+            self.floor_reverse_graphs[node.floor][node.name]
+
+        def add_directed_edge(a_name: str, b_name: str, distance_m: float):
+            a = self.graph_nodes[a_name]
+            self.floor_graphs[a.floor][a_name].append(
+                {"to": b_name, "distance_m": distance_m}
+            )
+            # Reverse adjacency is used by bidirectional Dijkstra.  Each reverse
+            # edge points from the original destination back to the original
+            # source but keeps the same distance.
+            self.floor_reverse_graphs[a.floor][b_name].append(
+                {"to": a_name, "distance_m": distance_m}
+            )
 
         def add_edge(
             a_name: str,
@@ -1651,13 +1728,9 @@ class Simulation:
                 if distance_m is not None
                 else self._distance_same_floor(a, b)
             )
-            self.floor_graphs[a.floor][a_name].append(
-                {"to": b_name, "distance_m": dist}
-            )
+            add_directed_edge(a_name, b_name, dist)
             if bidirectional:
-                self.floor_graphs[b.floor][b_name].append(
-                    {"to": a_name, "distance_m": dist}
-                )
+                add_directed_edge(b_name, a_name, dist)
 
         for edge in corridor_cfg.get("edges", []):
             add_edge(
@@ -1705,6 +1778,65 @@ class Simulation:
                     )
                     add_edge(lift_name, nearest)
 
+    def _static_route_endpoint_names_by_floor(self) -> Dict[int, List[str]]:
+        """Return route endpoint nodes worth pre-caching.
+
+        Corridor nodes can be numerous, but route estimates repeatedly ask for
+        paths between locations and lift floor nodes.  Pre-caching those endpoint
+        pairs removes the first large scheduling spike without exploding the
+        cache for every corridor-node pair.
+        """
+        by_floor: Dict[int, List[str]] = defaultdict(list)
+        for name, loc in self.locations.items():
+            if name in self.graph_nodes:
+                by_floor[loc.floor].append(name)
+        for lift in self.lifts:
+            for floor in lift.served_floors:
+                name = f"{lift.id}-F{floor}"
+                if name in self.graph_nodes:
+                    by_floor[floor].append(name)
+        return {
+            floor: sorted(set(names))
+            for floor, names in by_floor.items()
+            if len(set(names)) > 1
+        }
+
+    def _precompute_static_routes(self) -> None:
+        if not self.route_precompute_enabled:
+            return
+
+        endpoint_names = self._static_route_endpoint_names_by_floor()
+        jobs = []
+        for floor, names in endpoint_names.items():
+            for start_name in names:
+                for end_name in names:
+                    if start_name != end_name:
+                        jobs.append((floor, start_name, end_name))
+
+        if not jobs:
+            return
+        if (
+            self.route_precompute_max_pairs
+            and len(jobs) > self.route_precompute_max_pairs
+        ):
+            return
+
+        def run_job(job):
+            floor, start_name, end_name = job
+            self._shortest_path_same_floor(floor, start_name, end_name)
+
+        if self.routing_executor is None or len(jobs) < 128:
+            for job in jobs:
+                run_job(job)
+            return
+
+        futures = [self.routing_executor.submit(run_job, job) for job in jobs]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception:
+                pass
+
     def _shortest_path_same_floor(
         self,
         floor: int,
@@ -1713,68 +1845,120 @@ class Simulation:
         rules: Optional[dict] = None,
     ) -> Optional[dict]:
         graph = self.floor_graphs.get(floor, {})
+        reverse_graph = self.floor_reverse_graphs.get(floor, {})
         rules = rules or self._empty_route_rules()
         cache_key = (floor, start_name, end_name, *self._rules_cache_key(rules))
+        cache_miss = object()
+
+        with self.route_cache_lock:
+            cached = self.route_cache.get(cache_key, cache_miss)
+        if cached is not cache_miss:
+            return cached
+
+        def cache_and_return(value: Optional[dict]) -> Optional[dict]:
+            with self.route_cache_lock:
+                self.route_cache[cache_key] = value
+            return value
 
         if start_name not in graph or end_name not in graph:
-            self.route_cache[cache_key] = None
-            return None
-
-        if cache_key in self.route_cache:
-            return self.route_cache[cache_key]
-
+            return cache_and_return(None)
         if not self._node_allowed(start_name, rules):
-            self.route_cache[cache_key] = None
-            return None
+            return cache_and_return(None)
         if not self._node_allowed(end_name, rules):
-            self.route_cache[cache_key] = None
-            return None
+            return cache_and_return(None)
+        if start_name == end_name:
+            return cache_and_return({"distance_m": 0.0, "edges": []})
 
-        heap = [(0.0, start_name)]
-        best = {start_name: 0.0}
-        prev: Dict[str, Tuple[str, float]] = {}
+        # Bidirectional Dijkstra.  The forward search expands from the start and
+        # the reverse search expands from the destination over reverse adjacency.
+        # This normally touches far fewer corridor nodes than a single-source
+        # search on large floors while still supporting directed edges and route
+        # profile restrictions.
+        f_heap = [(0.0, start_name)]
+        b_heap = [(0.0, end_name)]
+        f_best = {start_name: 0.0}
+        b_best = {end_name: 0.0}
+        f_prev: Dict[str, Tuple[str, float]] = {}
+        # b_prev maps a node to the next node on the path towards end_name.
+        b_prev: Dict[str, Tuple[str, float]] = {}
+        best_distance = math.inf
+        meeting_node = None
 
-        while heap:
-            dist, node = heapq.heappop(heap)
-            if node == end_name:
+        while f_heap and b_heap:
+            if f_heap[0][0] + b_heap[0][0] >= best_distance:
                 break
-            if dist > best.get(node, math.inf):
-                continue
 
-            for edge in graph[node]:
-                nxt = edge["to"]
-                if not self._node_allowed(nxt, rules):
+            if f_heap[0][0] <= b_heap[0][0]:
+                dist, node = heapq.heappop(f_heap)
+                if dist > f_best.get(node, math.inf):
                     continue
-                if not self._edge_allowed(node, nxt, rules):
+                if node in b_best:
+                    candidate = dist + b_best[node]
+                    if candidate < best_distance:
+                        best_distance = candidate
+                        meeting_node = node
+                for edge in graph.get(node, []):
+                    nxt = edge["to"]
+                    if not self._node_allowed(nxt, rules):
+                        continue
+                    if not self._edge_allowed(node, nxt, rules):
+                        continue
+                    new_dist = dist + edge["distance_m"]
+                    if new_dist < f_best.get(nxt, math.inf):
+                        f_best[nxt] = new_dist
+                        f_prev[nxt] = (node, edge["distance_m"])
+                        heapq.heappush(f_heap, (new_dist, nxt))
+                    if nxt in b_best:
+                        candidate = new_dist + b_best[nxt]
+                        if candidate < best_distance:
+                            best_distance = candidate
+                            meeting_node = nxt
+            else:
+                dist, node = heapq.heappop(b_heap)
+                if dist > b_best.get(node, math.inf):
                     continue
+                if node in f_best:
+                    candidate = dist + f_best[node]
+                    if candidate < best_distance:
+                        best_distance = candidate
+                        meeting_node = node
+                for edge in reverse_graph.get(node, []):
+                    nxt = edge["to"]
+                    # Reverse edge node -> nxt corresponds to original edge nxt -> node.
+                    if not self._node_allowed(nxt, rules):
+                        continue
+                    if not self._edge_allowed(nxt, node, rules):
+                        continue
+                    new_dist = dist + edge["distance_m"]
+                    if new_dist < b_best.get(nxt, math.inf):
+                        b_best[nxt] = new_dist
+                        b_prev[nxt] = (node, edge["distance_m"])
+                        heapq.heappush(b_heap, (new_dist, nxt))
+                    if nxt in f_best:
+                        candidate = new_dist + f_best[nxt]
+                        if candidate < best_distance:
+                            best_distance = candidate
+                            meeting_node = nxt
 
-                new_dist = dist + edge["distance_m"]
-                if new_dist < best.get(nxt, math.inf):
-                    best[nxt] = new_dist
-                    prev[nxt] = (node, edge["distance_m"])
-                    heapq.heappush(heap, (new_dist, nxt))
-
-        if end_name not in best:
-            self.route_cache[cache_key] = None
-            return None
+        if meeting_node is None:
+            return cache_and_return(None)
 
         path_edges = []
-        node = end_name
+        node = meeting_node
         while node != start_name:
-            parent, distance_m = prev[node]
-            path_edges.append(
-                {
-                    "from": parent,
-                    "to": node,
-                    "distance_m": distance_m,
-                }
-            )
+            parent, distance_m = f_prev[node]
+            path_edges.append({"from": parent, "to": node, "distance_m": distance_m})
             node = parent
         path_edges.reverse()
 
-        result = {"distance_m": best[end_name], "edges": path_edges}
-        self.route_cache[cache_key] = result
-        return result
+        node = meeting_node
+        while node != end_name:
+            child, distance_m = b_prev[node]
+            path_edges.append({"from": node, "to": child, "distance_m": distance_m})
+            node = child
+
+        result = {"distance_m": best_distance, "edges": path_edges}
+        return cache_and_return(result)
 
     def _find_next_available_time(
         self,
@@ -3200,20 +3384,49 @@ class Simulation:
             print(f"_estimate_task_for_amr failed for {task.id} on {amr.id}: {exc}")
             return None
 
+    def _estimate_candidate_jobs(
+        self, jobs: List[dict]
+    ) -> List[Tuple[dict, Optional[dict]]]:
+        """Run independent, read-only route estimates.
+
+        Only reserve=False estimation jobs are submitted here.  The event loop and
+        all reservation/commit updates remain single-threaded so that simulation
+        ordering stays deterministic.
+        """
+        if not jobs:
+            return []
+
+        if self.routing_executor is None or len(jobs) == 1:
+            results = []
+            for job in jobs:
+                try:
+                    results.append((job, job["fn"](*job.get("args", ()))))
+                except Exception as exc:
+                    print(f"Parallel estimate job failed: {exc}")
+                    results.append((job, None))
+            return results
+
+        futures = {
+            self.routing_executor.submit(job["fn"], *job.get("args", ())): job
+            for job in jobs
+        }
+        results = []
+        for future in as_completed(futures):
+            job = futures[future]
+            try:
+                estimate = future.result()
+            except Exception as exc:
+                print(f"Parallel estimate job failed: {exc}")
+                estimate = None
+            results.append((job, estimate))
+        return results
+
     def _select_best_assignment(self) -> Optional[Tuple[AMR, Task, dict]]:
         if not self.pending_tasks:
             return None
 
-        best = None
-        best_finish = math.inf
-        multi_stop_best = None
-        multi_stop_best_finish = math.inf
-
-        candidate_tasks = []
-        for item in self.pending_tasks[: min(8, len(self.pending_tasks))]:
-            candidate_tasks.append(item)
-
-        for amr in self.amrs:
+        multi_stop_jobs = []
+        for order, amr in enumerate(self.amrs):
             if getattr(amr, "is_charging", False):
                 continue
             if self._needs_post_task_recharge(amr):
@@ -3221,23 +3434,45 @@ class Simulation:
             batch = self._multi_stop_batch_for_amr(amr)
             if not batch:
                 continue
-            estimate = self._estimate_multi_stop_for_amr(amr, batch, reserve=False)
+            multi_stop_jobs.append(
+                {
+                    "order": order,
+                    "amr": amr,
+                    "task_or_tasks": batch,
+                    "fn": self._estimate_multi_stop_for_amr,
+                    "args": (amr, batch, False),
+                }
+            )
+
+        multi_stop_best = None
+        multi_stop_best_finish = math.inf
+        multi_stop_best_order = math.inf
+        for job, estimate in self._estimate_candidate_jobs(multi_stop_jobs):
             if estimate is None:
                 continue
             finish_time = estimate["finish_time"]
-            if finish_time < multi_stop_best_finish:
+            order = int(job.get("order", 0))
+            if (finish_time, order) < (multi_stop_best_finish, multi_stop_best_order):
                 multi_stop_best_finish = finish_time
-                multi_stop_best = (amr, batch, estimate)
+                multi_stop_best_order = order
+                multi_stop_best = (job["amr"], job["task_or_tasks"], estimate)
 
-        # Multi-stop is a route-shape preference, not just a quickest-finish
-        # estimate.  If a feasible batch exists, commit it before comparing
-        # against single-task assignments; otherwise the first nearby task can
-        # win on finish time and make the AMR return to the same pickup location
-        # repeatedly.
+        # Multi-stop remains a route-shape preference.  If a feasible batch exists,
+        # commit it before comparing against single-task assignments.
         if multi_stop_best is not None:
             return multi_stop_best
 
-        for _, _, _, task in candidate_tasks:
+        candidate_tasks = []
+        for item in self.pending_tasks[
+            : min(self.max_single_candidate_tasks, len(self.pending_tasks))
+        ]:
+            candidate_tasks.append(item)
+
+        best = None
+        best_finish = math.inf
+        best_order = math.inf
+
+        for task_order, (_, _, _, task) in enumerate(candidate_tasks):
             if task.release_time > self.current_time:
                 self._set_task_pending_reason(task, "Waiting for release time")
                 continue
@@ -3256,48 +3491,214 @@ class Simulation:
                     continue
 
             task_prefers_multi_stop = self._task_prefers_multi_stop_amr(task)
-            task_best = None
-            task_best_finish = math.inf
-            preferred_task_best = None
-            preferred_task_best_finish = math.inf
-
-            for amr in self.amrs:
+            jobs = []
+            for amr_order, amr in enumerate(self.amrs):
                 if getattr(amr, "is_charging", False):
                     continue
-
                 if self._needs_post_task_recharge(amr):
                     continue
+                jobs.append(
+                    {
+                        "order": (task_order, amr_order),
+                        "amr": amr,
+                        "task_or_tasks": task,
+                        "task_prefers_multi_stop": task_prefers_multi_stop,
+                        "is_preferred_multi_stop_amr": task_prefers_multi_stop
+                        and self._is_multi_stop_amr(amr),
+                        "fn": self._estimate_task_for_amr,
+                        "args": (amr, task, False),
+                    }
+                )
 
-                estimate = self._estimate_task_for_amr(amr, task, reserve=False)
+            task_best = None
+            task_best_finish = math.inf
+            task_best_order = math.inf
+            preferred_task_best = None
+            preferred_task_best_finish = math.inf
+            preferred_task_best_order = math.inf
+
+            for job, estimate in self._estimate_candidate_jobs(jobs):
                 if estimate is None:
                     continue
-
                 finish_time = estimate["finish_time"]
-                if finish_time < task_best_finish:
+                order_tuple = job.get("order", (0, 0))
+                flat_order = (order_tuple[0] * max(len(self.amrs), 1)) + order_tuple[1]
+
+                if (finish_time, flat_order) < (task_best_finish, task_best_order):
                     task_best_finish = finish_time
-                    task_best = (amr, task, estimate)
+                    task_best_order = flat_order
+                    task_best = (job["amr"], task, estimate)
 
-                if task_prefers_multi_stop and self._is_multi_stop_amr(amr):
-                    if finish_time < preferred_task_best_finish:
+                if bool(job.get("is_preferred_multi_stop_amr", False)):
+                    if (finish_time, flat_order) < (
+                        preferred_task_best_finish,
+                        preferred_task_best_order,
+                    ):
                         preferred_task_best_finish = finish_time
-                        preferred_task_best = (amr, task, estimate)
+                        preferred_task_best_order = flat_order
+                        preferred_task_best = (job["amr"], task, estimate)
 
-            # If this payload prefers multi-stop AMRs and at least one compatible
-            # multi-stop AMR can perform the task, use that AMR even if a
-            # single-slot AMR would finish slightly earlier. If no multi-stop
-            # AMR is feasible, fall back to the normal best assignment.
             chosen_for_task = preferred_task_best or task_best
             chosen_finish = (
                 preferred_task_best_finish
                 if preferred_task_best is not None
                 else task_best_finish
             )
+            chosen_order = (
+                preferred_task_best_order
+                if preferred_task_best is not None
+                else task_best_order
+            )
 
-            if chosen_for_task is not None and chosen_finish < best_finish:
+            if chosen_for_task is not None and (chosen_finish, chosen_order) < (
+                best_finish,
+                best_order,
+            ):
                 best_finish = chosen_finish
+                best_order = chosen_order
                 best = chosen_for_task
 
         return best
+
+    def _route_possible_between_locations(
+        self,
+        amr: AMR,
+        from_loc: Location,
+        to_loc: Location,
+        payload: PayloadType,
+        rules: Optional[dict] = None,
+    ) -> bool:
+        """Return True when the graph/lift network can physically route this leg.
+
+        This is deliberately a feasibility check, not an assignment estimate.  It
+        ignores whether a particular AMR is currently busy and does not reserve
+        anything, so it is safe to use when deciding whether a pending task is
+        impossible and should be failed.
+        """
+        try:
+            if from_loc.floor == to_loc.floor:
+                return (
+                    self._shortest_path_same_floor(
+                        from_loc.floor,
+                        from_loc.name,
+                        to_loc.name,
+                        rules=rules,
+                    )
+                    is not None
+                )
+
+            return (
+                self._nearest_compatible_lift_plan(
+                    self.current_time,
+                    amr,
+                    from_loc,
+                    to_loc,
+                    payload,
+                    rules=rules,
+                )
+                is not None
+            )
+        except Exception:
+            return False
+
+    def _released_task_terminal_failure_reason(self, task: Task) -> str:
+        """Return a failure reason only for tasks that cannot ever run.
+
+        Temporary states such as waiting for release time, AMRs being busy, AMRs
+        charging, or a return payload not yet being available are intentionally
+        left pending.
+        """
+        if task.release_time > self.current_time:
+            return ""
+
+        pickup_name = str(getattr(task, "pickup", "") or "").strip()
+        dropoff_name = str(getattr(task, "dropoff", "") or "").strip()
+
+        if pickup_name not in self.locations:
+            return f"Pickup location '{pickup_name}' does not exist"
+        if dropoff_name not in self.locations:
+            return f"Drop-off location '{dropoff_name}' does not exist"
+
+        payload = self._payload_for_task(task)
+        payload_name = str(getattr(task, "payload", "") or "").strip()
+        if payload is None:
+            return f"Payload '{payload_name}' does not exist"
+
+        compatible_amrs = [
+            amr for amr in self.amrs if self._amr_can_carry_payload(amr, payload)
+        ]
+        if not compatible_amrs:
+            return (
+                f"No AMR has sufficient payload capacity/dimensions for "
+                f"{payload.name} ({payload.weight_kg}kg, "
+                f"{payload.length_m}m x {payload.width_m}m x {payload.height_m}m)"
+            )
+
+        if self._location_has_inventory_spaces(dropoff_name):
+            spaces = self.inventory_spaces_by_location.get(dropoff_name, [])
+            compatible_space_count = sum(
+                1
+                for space in spaces
+                if self._inventory_space_can_fit_payload(space, payload)
+            )
+            if compatible_space_count <= 0:
+                return self._inventory_pending_reason(dropoff_name, payload)
+            if self._find_free_inventory_space(dropoff_name, payload) is None:
+                return self._inventory_pending_reason(dropoff_name, payload)
+
+        # Do not fail a return/exchange task just because the physical payload has
+        # not appeared at the pickup yet.  It can become available when the
+        # outbound task completes.
+        if not self._pickup_instance_available(task):
+            return ""
+
+        pickup_loc = self.locations[pickup_name]
+        dropoff_loc = self.locations[dropoff_name]
+        loaded_rules = self._resolve_task_route_rules(task)
+
+        dropoff_reachable = any(
+            self._route_possible_between_locations(
+                amr, pickup_loc, dropoff_loc, payload, rules=loaded_rules
+            )
+            for amr in compatible_amrs
+        )
+        if not dropoff_reachable:
+            return (
+                f"No graph/lift route from {pickup_name} to {dropoff_name} "
+                f"for payload {payload.name} using the task route restrictions"
+            )
+
+        # If no compatible AMR can currently reach the pickup, keep it pending
+        # only when every compatible AMR is busy or charging.  Otherwise this is a
+        # static graph/lift problem and should not hang the simulation.
+        any_busy_or_charging = any(
+            getattr(amr, "is_charging", False) or amr.available_time > self.current_time
+            for amr in compatible_amrs
+        )
+        pickup_reachable_now = any(
+            self._route_possible_between_locations(
+                amr,
+                self.locations.get(amr.location_name, pickup_loc),
+                pickup_loc,
+                self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
+                rules=None,
+            )
+            for amr in compatible_amrs
+            if amr.location_name in self.locations
+        )
+        if not pickup_reachable_now and not any_busy_or_charging:
+            return f"No graph/lift route for any compatible AMR to reach pickup {pickup_name}"
+
+        return ""
+
+    def _fail_released_terminal_pending_task(self, now: float) -> bool:
+        """Fail one released task that is terminally impossible, if any."""
+        for _priority, _release, _counter, pending_task in list(self.pending_tasks):
+            reason = self._released_task_terminal_failure_reason(pending_task)
+            if reason:
+                self._fail_task(pending_task, reason, now=now)
+                return True
+        return False
 
     def _remove_pending_task(self, target_task: Task):
         rebuilt = []
@@ -3313,11 +3714,30 @@ class Simulation:
 
     # Task Runner - steps thru sequentially until task end
 
+    def _schedule_assignment_continue(self, now: float) -> None:
+        if self._assignment_continue_scheduled:
+            return
+        self._assignment_continue_scheduled = True
+        self.push_event(
+            now + self.assignment_continue_delay_sec, "assignment_continue", {}
+        )
+
     def _try_assign_tasks(self, now: float):
         self.current_time = max(self.current_time, now)
+        self._assignment_continue_scheduled = False
         self._queue_idle_return_tasks(self.current_time)
+        processed_this_tick = 0
+
+        def chunk_limit_reached() -> bool:
+            return (
+                self.max_assignments_per_tick > 0
+                and processed_this_tick >= self.max_assignments_per_tick
+            )
 
         while self.pending_tasks:
+            if chunk_limit_reached():
+                self._schedule_assignment_continue(self.current_time)
+                return
             # First, send any idle AMRs that need recharge to charge immediately
             charge_scheduled = False
             for amr in self.amrs:
@@ -3338,32 +3758,18 @@ class Simulation:
 
             choice = self._select_best_assignment()
             if choice is None:
-                failed_inventory_task = False
-                for _priority, _release, _counter, pending_task in list(
-                    self.pending_tasks
-                ):
-                    if pending_task.release_time > self.current_time:
-                        continue
-                    payload = self._payload_for_task(pending_task)
-                    if payload is None:
-                        continue
-                    if not self._location_has_inventory_spaces(pending_task.dropoff):
-                        continue
-                    if (
-                        self._find_free_inventory_space(pending_task.dropoff, payload)
-                        is None
-                    ):
-                        self._fail_task(
-                            pending_task,
-                            self._inventory_pending_reason(
-                                pending_task.dropoff, payload
-                            ),
-                            now=self.current_time,
-                        )
-                        failed_inventory_task = True
-                        break
-                if failed_inventory_task:
+                # If the scheduler cannot find any assignment, fail one released
+                # task that is terminally impossible.  This prevents invalid
+                # locations, missing payloads, impossible route restrictions,
+                # incompatible AMR dimensions, or full/unsuitable inventory spaces
+                # from remaining pending forever.
+                if self._fail_released_terminal_pending_task(self.current_time):
+                    processed_this_tick += 1
+                    if chunk_limit_reached():
+                        self._schedule_assignment_continue(self.current_time)
+                        return
                     continue
+
                 self._create_wait_event_for_pending_tasks(self.current_time)
                 return
 
@@ -3380,6 +3786,10 @@ class Simulation:
                             or "No feasible multi-stop AMR/lift/battery/graph combination"
                         )
                         self._fail_task(failed_task, reason, now=self.current_time)
+                    processed_this_tick += max(1, len(tasks))
+                    if chunk_limit_reached():
+                        self._schedule_assignment_continue(self.current_time)
+                        return
                     continue
 
                 for multi_task in tasks:
@@ -3448,6 +3858,10 @@ class Simulation:
                         "slot_assignments": committed.get("slot_assignments", {}),
                     },
                 )
+                processed_this_tick += max(1, len(tasks))
+                if chunk_limit_reached():
+                    self._schedule_assignment_continue(self.current_time)
+                    return
                 continue
 
             task = task_or_tasks
@@ -3459,6 +3873,10 @@ class Simulation:
                     or "No feasible AMR/lift/battery/graph combination"
                 )
                 self._fail_task(task, reason, now=self.current_time)
+                processed_this_tick += 1
+                if chunk_limit_reached():
+                    self._schedule_assignment_continue(self.current_time)
+                    return
                 continue
 
             self._remove_pending_task(task)
@@ -3668,6 +4086,10 @@ class Simulation:
                     "lift_loaded_sec_total": committed["lift_loaded_sec_total"],
                 },
             )
+            processed_this_tick += 1
+            if chunk_limit_reached():
+                self._schedule_assignment_continue(self.current_time)
+                return
 
     def _log_multi_stop_segments(
         self, amr: AMR, tasks: List[Task], committed: dict, start_time: float
@@ -3872,6 +4294,18 @@ class Simulation:
             carrying_task_ids = onboard_after
             segment_start_time = segment_end_time
 
+    def _stagger_generated_task_release(self, task: Task) -> None:
+        if self.generated_release_stagger_sec <= 0.0:
+            return
+        release_time = float(getattr(task, "release_time", 0.0) or 0.0)
+        key = round(release_time, 6)
+        index = self._generated_release_stagger_counts[key]
+        self._generated_release_stagger_counts[key] += 1
+        if index > 0:
+            task.release_time = release_time + (
+                index * self.generated_release_stagger_sec
+            )
+
     def _update_task_generators_until(self, now: float):
         if not getattr(self, "task_generation_manager", None):
             return
@@ -3880,6 +4314,7 @@ class Simulation:
 
         for record in self.task_generation_manager.update_until(now):
             task = record.task
+            self._stagger_generated_task_release(task)
             self.schedule_task_release(task)
 
             pickup = self.locations.get(record.pickup_location)
@@ -3920,20 +4355,25 @@ class Simulation:
     def run(self):
         self.wall_start_time = time.time()
 
-        while True:
-            with self.lock:
-                if not self.events:
+        try:
+            while True:
+                with self.lock:
+                    if not self.events:
+                        break
+
+                    event = heapq.heappop(self.events)
+                    self._update_task_generators_until(event.time)
+                    self.current_time = max(self.current_time, event.time)
+                    self._handle_event(event)
+
+                self._print_progress()
+
+                if self.stop_requested:
                     break
-
-                event = heapq.heappop(self.events)
-                self._update_task_generators_until(event.time)
-                self.current_time = max(self.current_time, event.time)
-                self._handle_event(event)
-
-            self._print_progress()
-
-            if self.stop_requested:
-                break
+        finally:
+            if self.routing_executor is not None:
+                self.routing_executor.shutdown(wait=True, cancel_futures=False)
+                self.routing_executor = None
 
         self._print_progress_complete()
         self.print_short_summary()
@@ -3978,6 +4418,9 @@ class Simulation:
     def _handle_event(self, event: Event):
         if event.event_type == "task_release":
             self._queue_same_time_task_releases(event)
+            self._try_assign_tasks(event.time)
+        elif event.event_type == "assignment_continue":
+            self._assignment_continue_scheduled = False
             self._try_assign_tasks(event.time)
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]

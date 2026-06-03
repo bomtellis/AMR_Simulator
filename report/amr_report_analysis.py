@@ -381,6 +381,163 @@ def build_multi_stop_task_paths(
             paths[str(task_id)] = path
     return paths
 
+
+def _multi_stop_task_ids_from_row(
+    row,
+    task_col: str,
+    multi_stop_col: Optional[str] = None,
+) -> List[str]:
+    """Extract all task IDs that define a multi-stop batch for a row."""
+    ids: List[str] = []
+    if multi_stop_col and multi_stop_col in row.index:
+        ids = split_task_ids(row.get(multi_stop_col))
+    if ids:
+        return ids
+
+    details = str(row.get("details", "") or "").strip()
+    if details.startswith("{"):
+        try:
+            decoded = json.loads(details)
+            for key in ("multi_stop_task_ids", "task_ids"):
+                values = decoded.get(key)
+                if isinstance(values, list):
+                    ids = [str(x).strip() for x in values if str(x).strip()]
+                    if ids:
+                        return ids
+        except Exception:
+            pass
+
+    return split_task_ids(row.get(task_col))
+
+
+def build_multi_stop_task_leg_overrides(
+    df: pd.DataFrame,
+    ctx: Context,
+    amr_col: str,
+    task_col: str,
+    from_col: Optional[str],
+    to_col: Optional[str],
+) -> Dict[str, dict]:
+    """Map each task in a multi-stop route to its stop-to-stop leg.
+
+    Task detail should describe the leg that delivered each payload, not the
+    whole batch route.  For a pharmacy batch this produces rows such as:
+
+        D7-PHARMACY -> D1-PHARMACY
+        D1-PHARMACY -> D2-PHARMACY
+        D2-PHARMACY -> D3-PHARMACY
+
+    The returned override also carries leg start/finish/duration so the PDF
+    does not repeat the full multi-stop batch duration on every payload row.
+    """
+    if df is None or df.empty or not from_col or not to_col:
+        return {}
+
+    multi_stop_col = "multi_stop_task_ids" if "multi_stop_task_ids" in df.columns else None
+    route_rows = df[
+        df["_event_text"].astype(str).str.contains(
+            r"multi_stop_segment", case=False, na=False
+        )
+    ].copy()
+    if route_rows.empty:
+        grouped_task_mask = df[task_col].astype(str).str.contains(",", na=False)
+        route_rows = df[grouped_task_mask].copy()
+    if route_rows.empty:
+        return {}
+
+    grouped: Dict[Tuple[str, Tuple[str, ...]], List[pd.Series]] = {}
+    for _, row in route_rows.sort_values([amr_col, ctx.time_col]).iterrows():
+        batch_ids = _multi_stop_task_ids_from_row(row, task_col, multi_stop_col)
+        if len(batch_ids) < 2:
+            continue
+        key = (safe_text(row.get(amr_col)), tuple(batch_ids))
+        grouped.setdefault(key, []).append(row)
+
+    overrides: Dict[str, dict] = {}
+
+    for (_amr, _batch_ids), rows in grouped.items():
+        rows = sorted(rows, key=lambda r: r.get(ctx.time_col))
+        current_stop: Optional[str] = None
+        current_depart_time = None
+        current_wait_s = 0.0
+
+        for row in rows:
+            seg = str(row.get("_segment_text", "") or "").strip().lower()
+            event = str(row.get("_event_text", "") or "").strip().lower()
+            from_value = safe_text(row.get(from_col)) if from_col else "-"
+            to_value = safe_text(row.get(to_col)) if to_col else "-"
+            stop = to_value if to_value != "-" else from_value
+            row_start = row.get(ctx.time_col)
+            row_duration = float(pd.to_numeric(row.get("_duration_s", 0.0), errors="coerce") or 0.0)
+            row_finish = add_seconds_to_event_time(row_start, row_duration, ctx.has_datetime)
+            row_wait = float(pd.to_numeric(row.get("_wait_s", 0.0), errors="coerce") or 0.0)
+
+            if "pickup" in seg or "pickup" in event:
+                if stop != "-":
+                    current_stop = stop
+                # The first delivery leg starts once loading has finished.
+                current_depart_time = row_finish
+                current_wait_s = 0.0
+                continue
+
+            if current_stop is not None and ("wait" in seg or "wait" in event):
+                # Count waits between stops against the leg that follows.
+                current_wait_s += max(0.0, row_wait or row_duration)
+                continue
+
+            if "dropoff" not in seg and "dropoff" not in event:
+                continue
+            if stop == "-":
+                continue
+
+            drop_task_ids = split_task_ids(row.get(task_col))
+            if not drop_task_ids:
+                # Only use the whole batch as a last resort.  Current simulator
+                # drop-off rows should identify the specific delivered task.
+                drop_task_ids = _multi_stop_task_ids_from_row(row, task_col, multi_stop_col)
+
+            leg_start = current_depart_time if current_depart_time is not None else row_start
+            leg_finish = row_finish
+            leg_duration = _duration_between_event_times(leg_start, leg_finish, ctx.has_datetime)
+            if leg_duration is None or leg_duration < 0:
+                leg_duration = row_duration
+
+            start_stop = current_stop or (from_value if from_value != "-" else None)
+            if start_stop:
+                for task_id in drop_task_ids:
+                    overrides[str(task_id)] = {
+                        "origin": start_stop,
+                        "destination": stop,
+                        "start": leg_start,
+                        "finish": leg_finish,
+                        "duration_s": float(leg_duration),
+                        "wait_s": float(current_wait_s),
+                    }
+
+            # The next delivery leg starts after this drop-off is complete.
+            current_stop = stop
+            current_depart_time = row_finish
+            current_wait_s = 0.0
+
+    return overrides
+
+
+def build_multi_stop_task_endpoint_overrides(
+    df: pd.DataFrame,
+    ctx: Context,
+    amr_col: str,
+    task_col: str,
+    from_col: Optional[str],
+    to_col: Optional[str],
+) -> Dict[str, Tuple[str, str]]:
+    # Backwards-compatible wrapper for older callers.
+    return {
+        task_id: (data.get("origin", "-"), data.get("destination", "-"))
+        for task_id, data in build_multi_stop_task_leg_overrides(
+            df, ctx, amr_col, task_col, from_col, to_col
+        ).items()
+    }
+
 def time_delta_seconds(start, end, has_datetime: bool) -> Optional[float]:
     if pd.isna(start) or pd.isna(end):
         return None
@@ -395,6 +552,18 @@ def event_time_to_float(value, has_datetime: bool) -> Optional[float]:
     if pd.isna(value):
         return None
     return pd.Timestamp(value).timestamp() if has_datetime else float(value)
+
+
+def add_seconds_to_event_time(value, seconds: float, has_datetime: bool):
+    if pd.isna(value):
+        return value
+    if has_datetime:
+        return pd.Timestamp(value) + pd.to_timedelta(float(seconds or 0.0), unit="s")
+    return float(value) + float(seconds or 0.0)
+
+
+def _duration_between_event_times(start, finish, has_datetime: bool) -> Optional[float]:
+    return time_delta_seconds(start, finish, has_datetime)
 
 
 def percentile_95_concurrency(intervals: Iterable[Tuple[float, float]]) -> int:
@@ -1226,6 +1395,9 @@ def analyse(
     multi_stop_task_paths = build_multi_stop_task_paths(
         df, ctx, amr_col, task_col, from_col, to_col
     )
+    multi_stop_task_leg_overrides = build_multi_stop_task_leg_overrides(
+        df, ctx, amr_col, task_col, from_col, to_col
+    )
 
     task_rows: List[dict] = []
     active_intervals: List[Tuple[float, float]] = []
@@ -1273,6 +1445,14 @@ def analyse(
         amr = g[amr_col].dropna().iloc[0] if g[amr_col].notna().any() else "-"
         origin = choose_task_endpoint(g, ctx, from_col, to_col, "from")
         destination = choose_task_endpoint(g, ctx, from_col, to_col, "to")
+        multi_stop_leg_override = multi_stop_task_leg_overrides.get(str(task_id))
+        if multi_stop_leg_override:
+            origin = multi_stop_leg_override.get("origin", origin)
+            destination = multi_stop_leg_override.get("destination", destination)
+            start = multi_stop_leg_override.get("start", start)
+            end = multi_stop_leg_override.get("finish", end)
+            duration_s = multi_stop_leg_override.get("duration_s", duration_s)
+            wait_s = multi_stop_leg_override.get("wait_s", wait_s)
 
         payload = (
             primary_payload_name(g[payload_col].dropna().iloc[0])

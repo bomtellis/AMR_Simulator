@@ -1381,20 +1381,11 @@ def build_report(
             "outcome",
             "origin",
             "destination",
-            "route_path",
             "start",
             "finish",
             "duration_s",
             "wait_s",
         ]
-        for optional_col in task_detail_cols:
-            if optional_col not in sub.columns:
-                if optional_col == "route_path":
-                    sub = sub.copy()
-                    sub[optional_col] = sub.apply(
-                        lambda r: f"{r.get('origin', '-')} → {r.get('destination', '-')}",
-                        axis=1,
-                    )
         display = sub[task_detail_cols].copy()
         display["start"] = display["start"].map(
             lambda v: fmt_ts(v, has_dt) if not pd.isna(v) else "-"
@@ -1409,7 +1400,6 @@ def build_report(
             "Outcome",
             "From",
             "To",
-            "Route stops",
             "Start",
             "Finish",
             "Duration",
@@ -1419,15 +1409,14 @@ def build_report(
             table_from_df(
                 display,
                 [
+                    40 * mm,
+                    20 * mm,
+                    42 * mm,
+                    42 * mm,
+                    35 * mm,
                     35 * mm,
                     18 * mm,
-                    28 * mm,
-                    28 * mm,
-                    68 * mm,
-                    30 * mm,
-                    30 * mm,
                     16 * mm,
-                    14 * mm,
                 ],
                 styles,
             )

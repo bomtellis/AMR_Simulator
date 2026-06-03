@@ -225,7 +225,15 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
 DEFAULT_JSON = {
     "simulation": {
         "start_datetime": "2026-01-05T06:00:00",
+        "end_datetime": "2026-01-06T06:00:00",
         "tick_rate": 1000,
+        "generated_task_release_stagger_sec": 0.25,
+        "precompute_static_routes": True,
+        "route_precompute_max_pairs": 100000,
+        "max_multi_stop_candidate_tasks": 8,
+        "max_single_candidate_tasks": 8,
+        "max_assignments_per_tick": 25,
+        "assignment_continue_delay_sec": 0.001,
     },
     "building": {
         "load_unload_time_sec": 20.0,
@@ -259,9 +267,51 @@ DEFAULT_JSON = {
 class JsonStore:
     def __init__(self, data: Optional[dict] = None):
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
+        self.ensure_simulation_defaults()
         self.ensure_task_generation_defaults()
         self.ensure_payload_defaults()
         self.ensure_amr_defaults()
+
+    def ensure_simulation_defaults(self) -> None:
+        simulation = self.data.setdefault("simulation", {})
+        default_simulation = DEFAULT_JSON.get("simulation", {})
+        simulation.setdefault(
+            "start_datetime",
+            default_simulation.get("start_datetime", "2026-01-05T06:00:00"),
+        )
+        simulation.setdefault(
+            "end_datetime",
+            default_simulation.get("end_datetime", "2026-01-06T06:00:00"),
+        )
+        simulation.setdefault("tick_rate", default_simulation.get("tick_rate", 1000))
+        simulation.setdefault(
+            "generated_task_release_stagger_sec",
+            default_simulation.get("generated_task_release_stagger_sec", 0.25),
+        )
+        simulation.setdefault(
+            "precompute_static_routes",
+            default_simulation.get("precompute_static_routes", True),
+        )
+        simulation.setdefault(
+            "route_precompute_max_pairs",
+            default_simulation.get("route_precompute_max_pairs", 100000),
+        )
+        simulation.setdefault(
+            "max_multi_stop_candidate_tasks",
+            default_simulation.get("max_multi_stop_candidate_tasks", 8),
+        )
+        simulation.setdefault(
+            "max_single_candidate_tasks",
+            default_simulation.get("max_single_candidate_tasks", 8),
+        )
+        simulation.setdefault(
+            "max_assignments_per_tick",
+            default_simulation.get("max_assignments_per_tick", 25),
+        )
+        simulation.setdefault(
+            "assignment_continue_delay_sec",
+            default_simulation.get("assignment_continue_delay_sec", 0.001),
+        )
 
     def ensure_payload_defaults(self) -> None:
         for payload in self.data.setdefault("payloads", []):
@@ -356,6 +406,7 @@ class JsonStore:
             return cls(json.load(f))
 
     def save(self, path: str) -> None:
+        self.ensure_simulation_defaults()
         self.ensure_amr_defaults()
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
