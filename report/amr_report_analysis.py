@@ -208,6 +208,111 @@ def percentile_95_concurrency(intervals: Iterable[Tuple[float, float]]) -> int:
     return int(math.ceil(pd.Series(values).quantile(0.95))) if values else 0
 
 
+def merge_intervals(intervals: Iterable[Tuple[float, float]]) -> List[Tuple[float, float]]:
+    clean: List[Tuple[float, float]] = []
+    for start, end in intervals:
+        if (
+            start is None
+            or end is None
+            or pd.isna(start)
+            or pd.isna(end)
+            or float(end) < float(start)
+        ):
+            continue
+        clean.append((float(start), float(end)))
+    if not clean:
+        return []
+    clean.sort()
+    merged = [clean[0]]
+    for start, end in clean[1:]:
+        prev_start, prev_end = merged[-1]
+        if start <= prev_end:
+            merged[-1] = (prev_start, max(prev_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def interval_duration(intervals: Iterable[Tuple[float, float]]) -> float:
+    return sum(max(0.0, end - start) for start, end in intervals)
+
+
+def parse_json_or_csv_list(value) -> List[str]:
+    if value is None or pd.isna(value):
+        return []
+    text = str(value).strip()
+    if not text or text in {"-", "[]", "{}", "nan", "NaN"}:
+        return []
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return [str(x).strip() for x in parsed if str(x).strip()]
+    except Exception:
+        pass
+    return [x.strip() for x in text.split(",") if x.strip()]
+
+
+def parse_json_or_csv_payload_count(value) -> int:
+    if value is None or pd.isna(value):
+        return 0
+    text = str(value).strip()
+    if not text or text in {"-", "[]", "{}", "nan", "NaN"}:
+        return 0
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return len(parsed)
+        if isinstance(parsed, dict):
+            return len(parsed)
+    except Exception:
+        pass
+    return len([x for x in text.split(",") if x.strip()])
+
+
+def event_interval_columns(df: pd.DataFrame, ctx: Context) -> pd.DataFrame:
+    df = df.copy()
+
+    start_col = "start_time" if "start_time" in df.columns else None
+    end_col = "end_time" if "end_time" in df.columns else None
+
+    if start_col:
+        if ctx.has_datetime:
+            df["_row_start_time"] = pd.to_datetime(df[start_col], errors="coerce")
+        else:
+            df["_row_start_time"] = pd.to_numeric(df[start_col], errors="coerce")
+    else:
+        df["_row_start_time"] = df[ctx.time_col]
+
+    if end_col:
+        if ctx.has_datetime:
+            df["_row_end_time"] = pd.to_datetime(df[end_col], errors="coerce")
+        else:
+            df["_row_end_time"] = pd.to_numeric(df[end_col], errors="coerce")
+    else:
+        df["_row_end_time"] = pd.NA
+
+    duration = pd.to_numeric(df.get("_duration_s", 0.0), errors="coerce").fillna(0.0)
+    missing_end = df["_row_end_time"].isna()
+    if ctx.has_datetime:
+        df.loc[missing_end, "_row_end_time"] = df.loc[missing_end, "_row_start_time"] + pd.to_timedelta(
+            duration.loc[missing_end], unit="s"
+        )
+    else:
+        df.loc[missing_end, "_row_end_time"] = (
+            pd.to_numeric(df.loc[missing_end, "_row_start_time"], errors="coerce")
+            + duration.loc[missing_end]
+        )
+
+    return df
+
+
+def amr_base_id(amr_id: str) -> str:
+    text = str(amr_id or "").strip()
+    if not text or text == "-":
+        return "-"
+    return re.sub(r"-\d+$", "", text)
+
+
 def extract_lift_and_floor(value) -> Tuple[Optional[str], Optional[int]]:
     if value is None or pd.isna(value):
         return None, None
@@ -743,11 +848,35 @@ def load_amr_parameters(json_path: Path) -> pd.DataFrame:
     rows: List[dict] = []
 
     for item in amrs:
+        slots = item.get("payload_slots", []) or []
+        if not isinstance(slots, list):
+            slots = []
+        slot_count = len(slots) if slots else 1
+        slot_capacity_kg = []
+        slot_names = []
+        for index, slot in enumerate(slots, start=1):
+            if not isinstance(slot, dict):
+                continue
+            slot_names.append(str(slot.get("name", "")).strip() or f"Slot {index}")
+            try:
+                slot_capacity_kg.append(float(slot.get("payload_capacity_kg", 0.0) or 0.0))
+            except (TypeError, ValueError):
+                slot_capacity_kg.append(0.0)
+        if not slot_capacity_kg:
+            try:
+                slot_capacity_kg = [float(item.get("payload_capacity_kg", 0.0) or 0.0)]
+            except (TypeError, ValueError):
+                slot_capacity_kg = [0.0]
         rows.append(
             {
                 "amr": str(item.get("id", "")).strip() or "-",
                 "quantity": int(item.get("quantity", 1) or 1),
+                "multi_stop_enabled": bool(item.get("multi_stop_enabled", slot_count > 1)),
+                "payload_slots": slot_count,
+                "slot_names": ", ".join(slot_names) if slot_names else "Slot 1",
                 "payload_capacity_kg": item.get("payload_capacity_kg", "-"),
+                "slot_capacity_kg_each": ", ".join(f"{x:g}" for x in slot_capacity_kg),
+                "payload_capacity_kg_total": round(sum(slot_capacity_kg), 3),
                 "payload_capacity_size_units": item.get(
                     "payload_capacity_size_units", "-"
                 ),
@@ -888,6 +1017,7 @@ def analyse(
     df["_wait_s"] = (
         pd.to_numeric(df[wait_col], errors="coerce").fillna(0) if wait_col else 0.0
     )
+    df = event_interval_columns(df, ctx)
 
     if not wait_col and duration_col:
         wait_mask = df["_event_text"].str.contains(WAIT_PATTERNS, na=False)
@@ -999,6 +1129,93 @@ def analyse(
     completed = tasks[tasks["outcome"] == "completed"].copy()
     failed = tasks[tasks["outcome"] == "failed"].copy()
 
+    # Multi-stop-aware route workload.
+    # Task rows remain one row per delivery/payload, but AMR utilisation and fleet sizing
+    # must be based on route occupancy rather than multiplying the same multi-stop route
+    # duration by every payload carried on that route.
+    segment_mask = df["_segment_text"].astype(str).str.strip().ne("")
+    event_segment_mask = df["_event_text"].astype(str).str.contains(
+        r"(?:^segment_)|(?:^multi_stop_segment_)", case=False, na=False
+    )
+    non_charge_mask = ~df["_segment_text"].astype(str).str.contains(
+        r"charge", case=False, na=False
+    )
+    route_source = df[
+        df[amr_col].notna()
+        & (segment_mask | event_segment_mask)
+        & non_charge_mask
+    ].copy()
+
+    route_intervals_by_amr: Dict[str, List[Tuple[float, float]]] = {}
+    route_rows: List[dict] = []
+    if not route_source.empty:
+        for amr_id, route_g in route_source.groupby(amr_col, dropna=False):
+            intervals: List[Tuple[float, float]] = []
+            distance_m = float(pd.to_numeric(route_g["_distance_m"], errors="coerce").fillna(0).sum())
+            energy_kwh = float(pd.to_numeric(route_g["_energy_kwh"], errors="coerce").fillna(0).sum())
+            wait_s = float(pd.to_numeric(route_g["_wait_s"], errors="coerce").fillna(0).sum())
+            route_count = 0
+            multi_stop_routes = 0
+            route_payload_counts: List[int] = []
+
+            for _, row in route_g.iterrows():
+                start_n = event_time_to_float(row.get("_row_start_time"), ctx.has_datetime)
+                end_n = event_time_to_float(row.get("_row_end_time"), ctx.has_datetime)
+                if start_n is not None and end_n is not None and end_n >= start_n:
+                    intervals.append((start_n, end_n))
+
+                event_text = str(row.get("_event_text", "") or "").lower()
+                segment_text = str(row.get("_segment_text", "") or "").lower()
+                if "pickup" in event_text or segment_text == "pickup":
+                    route_count += 1
+                    multi_ids = parse_json_or_csv_list(row.get("multi_stop_task_ids", ""))
+                    payload_count = max(
+                        parse_json_or_csv_payload_count(row.get("onboard_payloads", "")),
+                        parse_json_or_csv_payload_count(row.get("task_id", "")),
+                        len(multi_ids),
+                        1,
+                    )
+                    route_payload_counts.append(payload_count)
+                    if payload_count > 1 or "multi_stop" in event_text:
+                        multi_stop_routes += 1
+
+            merged = merge_intervals(intervals)
+            route_intervals_by_amr[safe_text(amr_id)] = merged
+            route_rows.append(
+                {
+                    "amr": safe_text(amr_id),
+                    "base_amr": amr_base_id(safe_text(amr_id)),
+                    "route_count": int(route_count),
+                    "multi_stop_routes": int(multi_stop_routes),
+                    "max_payloads_on_route": max(route_payload_counts) if route_payload_counts else 1,
+                    "avg_payloads_per_route": (
+                        round(sum(route_payload_counts) / len(route_payload_counts), 2)
+                        if route_payload_counts
+                        else 1.0
+                    ),
+                    "total_route_time_s": interval_duration(merged),
+                    "total_wait_s": wait_s,
+                    "total_distance_km": round(distance_m / 1000, 2),
+                    "route_energy_kwh": round(energy_kwh, 4),
+                }
+            )
+
+    route_summary = pd.DataFrame(
+        route_rows,
+        columns=[
+            "amr",
+            "base_amr",
+            "route_count",
+            "multi_stop_routes",
+            "max_payloads_on_route",
+            "avg_payloads_per_route",
+            "total_route_time_s",
+            "total_wait_s",
+            "total_distance_km",
+            "route_energy_kwh",
+        ],
+    )
+
     amr_summary = (
         tasks.groupby("amr", dropna=False)
         .agg(
@@ -1017,18 +1234,63 @@ def analyse(
         2
     )
 
+    if not route_summary.empty:
+        route_cols = [
+            "amr",
+            "route_count",
+            "multi_stop_routes",
+            "max_payloads_on_route",
+            "avg_payloads_per_route",
+            "total_route_time_s",
+            "route_energy_kwh",
+        ]
+        amr_summary = amr_summary.merge(
+            route_summary[route_cols], on="amr", how="left"
+        )
+        amr_summary["total_task_time_s"] = amr_summary["total_route_time_s"].fillna(
+            amr_summary["total_task_time_s"]
+        )
+        amr_summary["total_wait_s"] = amr_summary["total_wait_s"].fillna(0.0)
+        for col in ["route_count", "multi_stop_routes", "max_payloads_on_route"]:
+            amr_summary[col] = amr_summary[col].fillna(0).astype(int)
+        amr_summary["avg_payloads_per_route"] = amr_summary[
+            "avg_payloads_per_route"
+        ].fillna(1.0)
+        amr_summary["route_energy_kwh"] = amr_summary["route_energy_kwh"].fillna(0.0)
+    else:
+        amr_summary["route_count"] = amr_summary["tasks_total"]
+        amr_summary["multi_stop_routes"] = 0
+        amr_summary["max_payloads_on_route"] = 1
+        amr_summary["avg_payloads_per_route"] = 1.0
+        amr_summary["route_energy_kwh"] = 0.0
+
     # Utilisation
 
-    amr_utilisation = (
-        tasks.groupby("amr", dropna=False)
-        .agg(
-            tasks_total=("task_id", "count"),
-            total_task_time_s=("duration_s", "sum"),
-            total_wait_s=("wait_s", "sum"),
+    if not route_summary.empty:
+        amr_utilisation = route_summary[
+            ["amr", "route_count", "total_route_time_s", "total_wait_s"]
+        ].rename(columns={"total_route_time_s": "total_task_time_s"})
+        task_counts_for_util = (
+            tasks.groupby("amr", dropna=False)
+            .size()
+            .reset_index(name="tasks_total")
         )
-        .reset_index()
-    )
+        amr_utilisation = amr_utilisation.merge(
+            task_counts_for_util, on="amr", how="left"
+        )
+    else:
+        amr_utilisation = (
+            tasks.groupby("amr", dropna=False)
+            .agg(
+                tasks_total=("task_id", "count"),
+                total_task_time_s=("duration_s", "sum"),
+                total_wait_s=("wait_s", "sum"),
+            )
+            .reset_index()
+        )
+        amr_utilisation["route_count"] = amr_utilisation["tasks_total"]
 
+    amr_utilisation["tasks_total"] = amr_utilisation["tasks_total"].fillna(0).astype(int)
     amr_utilisation["utilisation_pct"] = (
         amr_utilisation["total_task_time_s"] / horizon_s * 100
     ).round(1)
@@ -1335,14 +1597,37 @@ def analyse(
     )
 
     active_amrs = max(int(tasks["amr"].nunique()), 1)
+    all_route_intervals: List[Tuple[float, float]] = []
+    total_amr_route_time_s = 0.0
+    for intervals in route_intervals_by_amr.values():
+        merged = merge_intervals(intervals)
+        total_amr_route_time_s += interval_duration(merged)
+        all_route_intervals.extend(merged)
+
+    # Fallback for legacy CSVs that have no segment-level timing.
+    if total_amr_route_time_s <= 0.0:
+        total_amr_route_time_s = float(tasks["duration_s"].fillna(0).sum())
+        all_route_intervals = active_intervals
+
     workload_based_amrs = int(
         math.ceil(
-            tasks["duration_s"].fillna(0).sum()
+            total_amr_route_time_s
             / (horizon_s * max(target_amr_util, 0.01))
         )
     )
-    recommended_amrs = max(
-        1, workload_based_amrs, percentile_95_concurrency(active_intervals)
+    route_concurrency_amrs = percentile_95_concurrency(all_route_intervals)
+    recommended_amrs = max(1, workload_based_amrs, route_concurrency_amrs)
+
+    total_deliveries = max(int(len(completed)), 0)
+    total_routes = int(route_summary["route_count"].sum()) if not route_summary.empty else len(tasks)
+    total_multi_stop_routes = (
+        int(route_summary["multi_stop_routes"].sum()) if not route_summary.empty else 0
+    )
+    max_payloads_on_route = (
+        int(route_summary["max_payloads_on_route"].max()) if not route_summary.empty else 1
+    )
+    avg_payloads_per_route = (
+        round(total_deliveries / max(total_routes, 1), 2) if total_routes else 1.0
     )
 
     lift_intervals: List[Tuple[float, float]] = []
@@ -1377,6 +1662,14 @@ def analyse(
             {"metric": "Tasks total", "value": f"{len(tasks)}"},
             {"metric": "Tasks completed", "value": f"{len(completed)}"},
             {"metric": "Tasks failed", "value": f"{len(failed)}"},
+            {"metric": "AMR routes observed", "value": f"{total_routes}"},
+            {"metric": "Multi-stop routes observed", "value": f"{total_multi_stop_routes}"},
+            {"metric": "Average payloads per route", "value": f"{avg_payloads_per_route:.2f}"},
+            {"metric": "Max payloads on one route", "value": f"{max_payloads_on_route}"},
+            {
+                "metric": "Total AMR route time",
+                "value": fmt_duration(total_amr_route_time_s),
+            },
             {
                 "metric": "Total waiting time",
                 "value": fmt_duration(tasks["wait_s"].sum()),
@@ -1392,7 +1685,7 @@ def analyse(
         [
             {
                 "item": "Recommended AMRs",
-                "detail": f"Maximum of workload model and 95th percentile task concurrency using target utilisation {target_amr_util:.0%}.",
+                "detail": f"Maximum of route workload model and 95th percentile AMR route concurrency using target utilisation {target_amr_util:.0%}. Multi-stop deliveries are counted once for AMR occupancy rather than once per payload/task.",
             },
             {
                 "item": "Recommended lifts",
@@ -1404,7 +1697,7 @@ def analyse(
             },
             {
                 "item": "Idle percentage",
-                "detail": "Calculated against the full simulation duration for each AMR and each lift.",
+                "detail": "Calculated against the full simulation duration for each AMR and each lift. AMR utilisation uses route/segment occupancy so multi-pickup batches do not inflate fleet demand.",
             },
         ]
     )
@@ -1489,6 +1782,7 @@ def analyse(
         "summary": summary,
         "amr_summary": amr_summary,
         "utilisation_summary": amr_utilisation,
+        "route_summary": route_summary,
         "lift_summary": lift_summary,
         "tasks": tasks.sort_values(["amr", "start", "task_id"]).reset_index(drop=True),
         "methodology": methodology,
