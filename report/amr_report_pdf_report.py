@@ -17,7 +17,7 @@ try:
     from ezdxf import bbox
     from ezdxf.addons.drawing import Frontend, RenderContext
     from ezdxf.addons.drawing.svg import SVGBackend
-except Exception:  # pragma: no cover - drawing overlays are optional with --omit-drawings
+except Exception:  # DXF rendering is optional when --omit-drawings is used
     ezdxf = None
     layout = None
     bbox = None
@@ -365,6 +365,9 @@ def render_dxf_to_svg(
     output_path: str,
 ) -> tuple[float, float, float, float]:
 
+    if ezdxf is None or layout is None or SVGBackend is None or Frontend is None or RenderContext is None:
+        raise RuntimeError("ezdxf is required to render DXF drawings. Use --omit-drawings to skip drawing overlays.")
+
     xmin, xmax, ymin, ymax = get_dxf_extents(dxf_path)
 
     doc = ezdxf.readfile(dxf_path)
@@ -665,7 +668,7 @@ def prepare_heatmap_floor(
         drop=True
     )
 
-    dxf_path = floor_dxf_map.get(int(floor)) if include_drawings and ezdxf is not None else None
+    dxf_path = floor_dxf_map.get(int(floor)) if include_drawings else None
     dxf_drawing = None
 
     if dxf_path:
@@ -743,7 +746,7 @@ def build_report(
     # --- START AMR List Summary ---
 
     amr_list_df = results["amr_list"].copy()
-    amr_list_df = amr_list_df.drop(columns=["payload_capacity_size_units"], errors="ignore")
+    amr_list_df = amr_list_df.drop(columns=["payload_capacity_size_units"])
     story += [Spacer(1, 8), Paragraph("AMR list", styles["Section"])]
 
     if amr_list_df.empty:
@@ -754,28 +757,16 @@ def build_report(
             )
         )
     else:
-        wanted = [
-            "amr",
-            "quantity",
-            "multi_stop_enabled",
-            "payload_slots",
-            "payload_capacity_kg_total",
-            "slot_capacity_kg_each",
-            "speed_m_per_sec",
-            "battery_capacity_kwh",
-            "start_location",
-        ]
-        amr_list_df = amr_list_df[[c for c in wanted if c in amr_list_df.columns]]
         amr_list_df = amr_list_df.rename(
             columns={
                 "amr": "AMR ID",
                 "quantity": "Qty",
-                "multi_stop_enabled": "Multi-stop",
-                "payload_slots": "Slots",
-                "payload_capacity_kg_total": "Total payload kg",
-                "slot_capacity_kg_each": "Slot kg",
+                "payload_capacity_kg": "Payload (kg)",
                 "speed_m_per_sec": "Speed (m/s)",
                 "battery_capacity_kwh": "Battery (kWh)",
+                "battery_charge_rate_kw": "Charge rate (kW)",
+                "recharge_threshold_percent": "Recharge threshold (%)",
+                "battery_soc_percent": "Start SoC %",
                 "start_location": "Start location",
             }
         )
@@ -784,17 +775,16 @@ def build_report(
                 amr_list_df,
                 [
                     18 * mm,
-                    10 * mm,
-                    18 * mm,
                     12 * mm,
-                    22 * mm,
-                    24 * mm,
                     18 * mm,
-                    20 * mm,
-                    35 * mm,
+                    16 * mm,
+                    18 * mm,
+                    18 * mm,
+                    18 * mm,
+                    18 * mm,
+                    25 * mm,
                 ],
                 styles,
-                right_align=[1, 3, 4, 6, 7],
             )
         )
 
@@ -811,11 +801,9 @@ def build_report(
         "tasks_total": amr_df["tasks_total"].sum(),
         "tasks_completed": amr_df["tasks_completed"].sum(),
         "tasks_failed": amr_df["tasks_failed"].sum(),
-        "route_count": amr_df.get("route_count", pd.Series(dtype=float)).sum(),
-        "multi_stop_routes": amr_df.get("multi_stop_routes", pd.Series(dtype=float)).sum(),
-        "max_payloads_on_route": amr_df.get("max_payloads_on_route", pd.Series(dtype=float)).max(),
-        "avg_payloads_per_route": amr_df.get("avg_payloads_per_route", pd.Series(dtype=float)).mean(),
+        "routes": amr_df.get("routes", pd.Series(dtype=float)).sum(),
         "total_task_time_s": amr_df["total_task_time_s"].sum(),
+        "total_route_time_s": amr_df.get("total_route_time_s", amr_df["total_task_time_s"]).sum(),
         "total_wait_s": amr_df["total_wait_s"].sum(),
         "avg_task_time_s": amr_df["avg_task_time_s"].mean(),
         "total_distance_km": amr_df["total_distance_km"].sum(),
@@ -824,7 +812,12 @@ def build_report(
     }
 
     amr_df = pd.concat([amr_df, pd.DataFrame([amr_df_total])], ignore_index=True)
+    if "total_route_time_s" not in amr_df.columns:
+        amr_df["total_route_time_s"] = amr_df["total_task_time_s"]
     amr_df["total_task_time_s"] = amr_df["total_task_time_s"].map(
+        lambda x: fmt_duration(x) if isinstance(x, (int, float)) else x
+    )
+    amr_df["total_route_time_s"] = amr_df["total_route_time_s"].map(
         lambda x: fmt_duration(x) if isinstance(x, (int, float)) else x
     )
     amr_df["total_wait_s"] = amr_df["total_wait_s"].map(
@@ -835,62 +828,52 @@ def build_report(
     )
 
     amr_df = amr_df.sort_values(by="amr", key=lambda col: col.map(natural_key))
-    fleet_cols = [
-        "amr",
-        "tasks_total",
-        "tasks_completed",
-        "tasks_failed",
-        "route_count",
-        "multi_stop_routes",
-        "max_payloads_on_route",
-        "avg_payloads_per_route",
-        "total_task_time_s",
-        "total_wait_s",
-        "total_distance_km",
-        "recharges",
-        "recharge_energy_kwh",
-    ]
-    for col in fleet_cols:
-        if col not in amr_df.columns:
-            amr_df[col] = "-"
-    amr_df = amr_df[fleet_cols]
     amr_df = amr_df.rename(
         columns={
             "amr": "AMR ID",
-            "tasks_total": "Payload tasks",
+            "tasks_total": "Tasks",
             "tasks_completed": "Completed",
             "tasks_failed": "Failed",
-            "route_count": "Routes",
-            "multi_stop_routes": "Multi-stop",
-            "max_payloads_on_route": "Max payloads/route",
-            "avg_payloads_per_route": "Avg payloads/route",
+            "routes": "Routes",
             "total_task_time_s": "Route time",
+            "total_route_time_s": "Route time",
             "total_wait_s": "Wait time",
+            "avg_task_time_s": "Avg task",
             "total_distance_km": "Distance (km)",
             "recharges": "Recharges",
             "recharge_energy_kwh": "Energy kWh",
         }
     )
 
+    # Keep a stable, compact column order.  total_route_time_s is retained for
+    # analysis but displayed as Route time through total_task_time_s above.
+    duplicate_cols = [c for c in ["Route time"] if list(amr_df.columns).count(c) > 1]
+    if duplicate_cols:
+        amr_df = amr_df.loc[:, ~amr_df.columns.duplicated()]
+    amr_display_cols = [
+        c
+        for c in [
+            "AMR ID",
+            "Tasks",
+            "Completed",
+            "Failed",
+            "Routes",
+            "Route time",
+            "Wait time",
+            "Avg task",
+            "Distance (km)",
+            "Recharges",
+            "Energy kWh",
+        ]
+        if c in amr_df.columns
+    ]
+    amr_df = amr_df[amr_display_cols]
+
     amr_df_table = table_from_df(
         amr_df,
-        [
-            18 * mm,
-            18 * mm,
-            18 * mm,
-            14 * mm,
-            14 * mm,
-            18 * mm,
-            24 * mm,
-            24 * mm,
-            22 * mm,
-            20 * mm,
-            20 * mm,
-            18 * mm,
-            20 * mm,
-        ],
+        [20 * mm, 14 * mm, 18 * mm, 14 * mm, 14 * mm, 22 * mm, 20 * mm, 18 * mm, 22 * mm, 18 * mm, 20 * mm][: len(amr_df.columns)],
         styles,
-        right_align=[1, 2, 3, 4, 5, 6, 7, 10, 11, 12],
+        right_align=list(range(1, len(amr_df.columns))),
     )
     amr_df_table_last_row = len(amr_df)
     amr_df_table.setStyle(
@@ -922,7 +905,7 @@ def build_report(
     # Add AMR DF to story
     story += [
         Paragraph("AMR fleet summary", styles["Section"]),
-        Paragraph("Route time is calculated from AMR route/segment occupancy, so multi-stop batches are counted once for fleet utilisation rather than once per payload. Times use mm:ss format.", styles["BodyText"]),
+        Paragraph("All times in the format of mm:ss", styles["BodyText"]),
         Spacer(1, 8),
         amr_df_table,
         NextPageTemplate("standard"),
@@ -935,7 +918,7 @@ def build_report(
 
     amr_utilisation_df = results["utilisation_summary"].copy()
     amr_utilisation_df = amr_utilisation_df.drop(
-        columns=["tasks_total", "total_task_time_s", "total_wait_s"],
+        columns=["tasks_total", "total_task_time_s", "total_route_time_s", "total_wait_s"],
         errors="ignore",
     )
     amr_utilisation_df = amr_utilisation_df.sort_values(
@@ -945,7 +928,7 @@ def build_report(
     amr_utilisation_df = amr_utilisation_df.rename(
         columns={
             "amr": "AMR ID",
-            "route_count": "Routes",
+            "routes": "Routes",
             "utilisation_pct": "Util %",
             "idle_pct": "Idle %",
             "wait_share_pct": "Wait %",
@@ -956,62 +939,13 @@ def build_report(
         Paragraph("AMR Utilisation, Idle and Wait %", styles["Section"]),
         table_from_df(
             amr_utilisation_df,
-            [25 * mm, 20 * mm, 25 * mm, 25 * mm, 25 * mm],
+            [25 * mm, 20 * mm, 25 * mm, 25 * mm, 25 * mm][: len(amr_utilisation_df.columns)],
             styles,
-            right_align=[1, 2, 3, 4],
         ),
         Spacer(1, 8),
     ]
 
     # --- END AMR Utilisation Summary ---
-
-    # --- START Multi-stop Route Summary ---
-
-    route_df = results.get("route_summary", pd.DataFrame()).copy()
-    story += [Spacer(1, 8), Paragraph("Multi-stop route summary", styles["Section"])]
-    if route_df.empty:
-        story.append(
-            Paragraph(
-                "No AMR route-level segment data was identified in the CSV.",
-                styles["BodyText"],
-            )
-        )
-    else:
-        route_display = route_df[
-            [
-                "amr",
-                "route_count",
-                "multi_stop_routes",
-                "max_payloads_on_route",
-                "avg_payloads_per_route",
-                "total_route_time_s",
-                "total_distance_km",
-                "route_energy_kwh",
-            ]
-        ].copy()
-        route_display["total_route_time_s"] = route_display["total_route_time_s"].map(fmt_duration)
-        route_display = route_display.rename(
-            columns={
-                "amr": "AMR",
-                "route_count": "Routes",
-                "multi_stop_routes": "Multi-stop routes",
-                "max_payloads_on_route": "Max payloads/route",
-                "avg_payloads_per_route": "Avg payloads/route",
-                "total_route_time_s": "Route time",
-                "total_distance_km": "Distance km",
-                "route_energy_kwh": "Route kWh",
-            }
-        )
-        story.append(
-            table_from_df(
-                route_display,
-                [24 * mm, 16 * mm, 26 * mm, 28 * mm, 28 * mm, 24 * mm, 22 * mm, 20 * mm],
-                styles,
-                right_align=[1, 2, 3, 4, 6, 7],
-            )
-        )
-
-    # --- END Multi-stop Route Summary ---
 
     # --- START AMR Recharge Summary ---
     story += [Spacer(1, 8), Paragraph("AMR recharge summary", styles["Section"])]
@@ -1442,18 +1376,26 @@ def build_report(
         has_dt = pd.api.types.is_datetime64_any_dtype(sub["start"]) or any(
             hasattr(v, "strftime") for v in sub["start"].dropna().tolist()
         )
-        display = sub[
-            [
-                "task_id",
-                "outcome",
-                "origin",
-                "destination",
-                "start",
-                "finish",
-                "duration_s",
-                "wait_s",
-            ]
-        ].copy()
+        task_detail_cols = [
+            "task_id",
+            "outcome",
+            "origin",
+            "destination",
+            "route_path",
+            "start",
+            "finish",
+            "duration_s",
+            "wait_s",
+        ]
+        for optional_col in task_detail_cols:
+            if optional_col not in sub.columns:
+                if optional_col == "route_path":
+                    sub = sub.copy()
+                    sub[optional_col] = sub.apply(
+                        lambda r: f"{r.get('origin', '-')} → {r.get('destination', '-')}",
+                        axis=1,
+                    )
+        display = sub[task_detail_cols].copy()
         display["start"] = display["start"].map(
             lambda v: fmt_ts(v, has_dt) if not pd.isna(v) else "-"
         )
@@ -1467,6 +1409,7 @@ def build_report(
             "Outcome",
             "From",
             "To",
+            "Route stops",
             "Start",
             "Finish",
             "Duration",
@@ -1476,14 +1419,15 @@ def build_report(
             table_from_df(
                 display,
                 [
-                    45 * mm,
-                    20 * mm,
-                    50 * mm,
-                    50 * mm,
-                    35 * mm,
                     35 * mm,
                     18 * mm,
+                    28 * mm,
+                    28 * mm,
+                    68 * mm,
+                    30 * mm,
+                    30 * mm,
                     16 * mm,
+                    14 * mm,
                 ],
                 styles,
             )

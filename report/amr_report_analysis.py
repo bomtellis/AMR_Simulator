@@ -168,6 +168,219 @@ def safe_text(value) -> str:
     return text if text.strip() else "-"
 
 
+
+
+def split_payload_names(value) -> List[str]:
+    """Return real payload names from a simulator payload cell.
+
+    Multi-stop pickup rows can contain comma-separated payload names, while
+    empty/return/charging rows may contain blanks or explicit empty payload
+    labels.  Reporting should count physical payloads, not the literal CSV
+    cell text.
+    """
+    if value is None:
+        return []
+    try:
+        if pd.isna(value):
+            return []
+    except Exception:
+        pass
+
+    text = str(value).strip()
+    if not text:
+        return []
+
+    # Some upstream rows may carry JSON arrays/dicts; accept the common forms
+    # without requiring the caller to know which schema version produced them.
+    if text.startswith("["):
+        try:
+            decoded = json.loads(text)
+            names: List[str] = []
+            if isinstance(decoded, list):
+                for item in decoded:
+                    if isinstance(item, dict):
+                        names.extend(split_payload_names(item.get("payload", "")))
+                    else:
+                        names.extend(split_payload_names(item))
+            return names
+        except Exception:
+            pass
+
+    empty_tokens = {
+        "",
+        "-",
+        "none",
+        "nan",
+        "null",
+        "empty",
+        "no payload",
+        "no_payload",
+        "empty_payload",
+        "__empty__",
+        "__empty_payload__",
+    }
+    names: List[str] = []
+    for part in text.split(","):
+        name = part.strip()
+        normalised = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        if not name or name.lower() in empty_tokens or normalised in empty_tokens:
+            continue
+        names.append(name)
+    return names
+
+
+def primary_payload_name(value) -> str:
+    names = split_payload_names(value)
+    return names[0] if names else "-"
+
+
+def build_payload_schedule(tasks: pd.DataFrame, payload_weights: Dict[str, float]) -> pd.DataFrame:
+    """Build a de-duplicated physical payload schedule.
+
+    The task table is the safe source because each completed delivery appears
+    once there.  The raw segment log repeats payload state on every corridor,
+    lift and wait row so it must not be used directly for payload counting.
+    """
+    if tasks is None or tasks.empty:
+        return pd.DataFrame(columns=["payload", "tasks", "payload_weight_kg"])
+
+    source = tasks.copy()
+    if "outcome" in source.columns and (source["outcome"] == "completed").any():
+        source = source[source["outcome"] == "completed"].copy()
+
+    rows: List[dict] = []
+    for _, row in source.iterrows():
+        task_id = safe_text(row.get("task_id"))
+        for payload_name in split_payload_names(row.get("payload")):
+            rows.append(
+                {
+                    "task_id": task_id,
+                    "payload": payload_name,
+                    "payload_weight_kg": float(payload_weights.get(str(payload_name), 0.0)),
+                }
+            )
+
+    if not rows:
+        return pd.DataFrame(columns=["payload", "tasks", "payload_weight_kg"])
+
+    payload_events = pd.DataFrame(rows).drop_duplicates(["task_id", "payload"])
+    payload_schedule = (
+        payload_events.groupby("payload", dropna=False)
+        .agg(
+            tasks=("task_id", "count"),
+            payload_weight_kg=("payload_weight_kg", "first"),
+        )
+        .reset_index()
+        .sort_values(["payload"])
+    )
+    payload_schedule["payload_weight_kg"] = (
+        pd.to_numeric(payload_schedule["payload_weight_kg"], errors="coerce")
+        .fillna(0.0)
+        .round(1)
+    )
+    return payload_schedule.reset_index(drop=True)
+
+
+
+def split_task_ids(value) -> List[str]:
+    """Return task IDs from CSV cells that may contain JSON or comma lists."""
+    if value is None or pd.isna(value):
+        return []
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "null", "-"}:
+        return []
+    if text.startswith("["):
+        try:
+            decoded = json.loads(text)
+            if isinstance(decoded, list):
+                return [str(x).strip() for x in decoded if str(x).strip()]
+        except Exception:
+            pass
+    return [x.strip() for x in text.split(",") if x.strip()]
+
+
+def _append_unique_stop(stops: List[str], item: str) -> None:
+    item = str(item or "").strip()
+    if not item or item == "-":
+        return
+    if not stops or stops[-1] != item:
+        stops.append(item)
+
+
+def build_multi_stop_task_paths(
+    df: pd.DataFrame,
+    ctx: Context,
+    amr_col: str,
+    task_col: str,
+    from_col: Optional[str],
+    to_col: Optional[str],
+) -> Dict[str, str]:
+    """Build a readable stop path for every task inside a multi-stop batch.
+
+    Multi-stop segment rows use grouped task IDs, so the normal per-task rows
+    cannot show the actual route sequence.  This function reconstructs the stop
+    sequence from the grouped pickup/dropoff rows and maps it back to each
+    component task ID.
+    """
+    if df is None or df.empty:
+        return {}
+
+    multi_stop_col = "multi_stop_task_ids" if "multi_stop_task_ids" in df.columns else None
+    route_rows = df[df["_event_text"].astype(str).str.contains("multi_stop_segment", case=False, na=False)].copy()
+    if route_rows.empty:
+        grouped_task_mask = df[task_col].astype(str).str.contains(",", na=False)
+        route_rows = df[grouped_task_mask].copy()
+    if route_rows.empty:
+        return {}
+
+    route_rows = route_rows.sort_values([amr_col, ctx.time_col]).copy()
+    grouped: Dict[Tuple[str, Tuple[str, ...]], List[pd.Series]] = {}
+    for _, row in route_rows.iterrows():
+        task_ids = split_task_ids(row.get(multi_stop_col)) if multi_stop_col else []
+        if not task_ids:
+            task_ids = split_task_ids(row.get(task_col))
+        if len(task_ids) < 2:
+            continue
+        key = (safe_text(row.get(amr_col)), tuple(task_ids))
+        grouped.setdefault(key, []).append(row)
+
+    paths: Dict[str, str] = {}
+    for (_amr, task_ids_tuple), rows in grouped.items():
+        rows = sorted(rows, key=lambda r: r.get(ctx.time_col))
+        stops: List[str] = []
+        for row in rows:
+            seg = str(row.get("_segment_text", "") or "").strip().lower()
+            event = str(row.get("_event_text", "") or "").strip().lower()
+            from_value = safe_text(row.get(from_col)) if from_col else "-"
+            to_value = safe_text(row.get(to_col)) if to_col else "-"
+
+            # Only show operational stops, not every graph/corridor node.
+            # Pickup/dropoff rows normally have the location in from/to.
+            if "pickup" in seg or "pickup" in event:
+                loc = to_value if to_value != "-" else from_value
+                _append_unique_stop(stops, f"Pickup: {loc}")
+            elif "dropoff" in seg or "dropoff" in event:
+                loc = to_value if to_value != "-" else from_value
+                _append_unique_stop(stops, f"Drop-off: {loc}")
+            elif "wait_for_location" in seg or "wait_for_location" in event:
+                loc = to_value if to_value != "-" else from_value
+                _append_unique_stop(stops, f"Wait: {loc}")
+
+        if not stops:
+            # Fallback: use unique from/to locations in time order.
+            for row in rows:
+                if from_col:
+                    _append_unique_stop(stops, safe_text(row.get(from_col)))
+                if to_col:
+                    _append_unique_stop(stops, safe_text(row.get(to_col)))
+
+        if not stops:
+            continue
+        path = " → ".join(stops)
+        for task_id in task_ids_tuple:
+            paths[str(task_id)] = path
+    return paths
+
 def time_delta_seconds(start, end, has_datetime: bool) -> Optional[float]:
     if pd.isna(start) or pd.isna(end):
         return None
@@ -208,109 +421,116 @@ def percentile_95_concurrency(intervals: Iterable[Tuple[float, float]]) -> int:
     return int(math.ceil(pd.Series(values).quantile(0.95))) if values else 0
 
 
-def merge_intervals(intervals: Iterable[Tuple[float, float]]) -> List[Tuple[float, float]]:
-    clean: List[Tuple[float, float]] = []
-    for start, end in intervals:
-        if (
-            start is None
-            or end is None
-            or pd.isna(start)
-            or pd.isna(end)
-            or float(end) < float(start)
-        ):
-            continue
-        clean.append((float(start), float(end)))
+def merge_intervals(intervals: Iterable[Tuple[float, float]], gap_tolerance: float = 1.0) -> List[Tuple[float, float]]:
+    clean = sorted(
+        (float(start), float(end))
+        for start, end in intervals
+        if start is not None
+        and end is not None
+        and not pd.isna(start)
+        and not pd.isna(end)
+        and float(end) >= float(start)
+    )
     if not clean:
         return []
-    clean.sort()
-    merged = [clean[0]]
+
+    merged: List[Tuple[float, float]] = []
+    cur_start, cur_end = clean[0]
     for start, end in clean[1:]:
-        prev_start, prev_end = merged[-1]
-        if start <= prev_end:
-            merged[-1] = (prev_start, max(prev_end, end))
+        if start <= cur_end + gap_tolerance:
+            cur_end = max(cur_end, end)
         else:
-            merged.append((start, end))
+            merged.append((cur_start, cur_end))
+            cur_start, cur_end = start, end
+    merged.append((cur_start, cur_end))
     return merged
 
 
-def interval_duration(intervals: Iterable[Tuple[float, float]]) -> float:
-    return sum(max(0.0, end - start) for start, end in intervals)
+def build_amr_busy_intervals(
+    df: pd.DataFrame,
+    ctx: Context,
+    amr_col: str,
+) -> Tuple[Dict[str, List[Tuple[float, float]]], pd.DataFrame]:
+    """Return actual AMR busy intervals from segment rows.
+
+    Multi-stop logs repeat one route across several component task IDs.  Counting
+    task duration therefore overstates AMR demand.  Segment rows are the correct
+    source: each AMR is busy once on each corridor, lift, wait, pickup/dropoff or
+    charge segment, regardless of how many payload slots are occupied.
+    """
+    if df is None or df.empty or amr_col not in df.columns:
+        return {}, pd.DataFrame(columns=["amr", "route_start", "route_finish", "route_time_s"])
+
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    seg_text = df.get("_segment_text", pd.Series("", index=df.index)).astype(str)
+    duration = pd.to_numeric(df.get("_duration_s", pd.Series(0, index=df.index)), errors="coerce").fillna(0.0)
+
+    segment_mask = (
+        event_text.str.contains(r"segment|multi_stop_segment|charge", case=False, na=False)
+        | seg_text.str.contains(r"corridor|lift|pickup|dropoff|wait|charge|reposition", case=False, na=False)
+    )
+    rows = df[segment_mask & df[amr_col].notna() & (duration > 0)].copy()
+    if rows.empty:
+        return {}, pd.DataFrame(columns=["amr", "route_start", "route_finish", "route_time_s"])
+
+    per_amr: Dict[str, List[Tuple[float, float]]] = {}
+    route_rows: List[dict] = []
+    for amr, sub in rows.groupby(amr_col, dropna=False):
+        intervals: List[Tuple[float, float]] = []
+        for idx, row in sub.iterrows():
+            start = event_time_to_float(row.get(ctx.time_col), ctx.has_datetime)
+            if start is None:
+                continue
+            end = start + float(duration.loc[idx])
+            intervals.append((start, end))
+        merged = merge_intervals(intervals, gap_tolerance=1.0)
+        amr_name = safe_text(amr)
+        per_amr[amr_name] = merged
+        for start, end in merged:
+            route_rows.append(
+                {
+                    "amr": amr_name,
+                    "route_start": start,
+                    "route_finish": end,
+                    "route_time_s": end - start,
+                }
+            )
+
+    return per_amr, pd.DataFrame(route_rows)
 
 
-def parse_json_or_csv_list(value) -> List[str]:
-    if value is None or pd.isna(value):
-        return []
-    text = str(value).strip()
-    if not text or text in {"-", "[]", "{}", "nan", "NaN"}:
-        return []
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return [str(x).strip() for x in parsed if str(x).strip()]
-    except Exception:
-        pass
-    return [x.strip() for x in text.split(",") if x.strip()]
+def interval_total(intervals: Iterable[Tuple[float, float]]) -> float:
+    return float(sum(max(0.0, float(end) - float(start)) for start, end in intervals))
 
 
-def parse_json_or_csv_payload_count(value) -> int:
-    if value is None or pd.isna(value):
-        return 0
-    text = str(value).strip()
-    if not text or text in {"-", "[]", "{}", "nan", "NaN"}:
-        return 0
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return len(parsed)
-        if isinstance(parsed, dict):
-            return len(parsed)
-    except Exception:
-        pass
-    return len([x for x in text.split(",") if x.strip()])
+def choose_task_endpoint(
+    g: pd.DataFrame,
+    ctx: Context,
+    from_col: Optional[str],
+    to_col: Optional[str],
+    which: str,
+):
+    """Prefer generated/assigned task endpoints over completion/segment state.
 
+    Multi-stop completion rows can describe the route final AMR location.  For
+    the task detail table, From/To should describe the delivery request itself.
+    """
+    if g is None or g.empty:
+        return None
+    col = from_col if which == "from" else to_col
+    if not col or col not in g.columns:
+        return None
 
-def event_interval_columns(df: pd.DataFrame, ctx: Context) -> pd.DataFrame:
-    df = df.copy()
-
-    start_col = "start_time" if "start_time" in df.columns else None
-    end_col = "end_time" if "end_time" in df.columns else None
-
-    if start_col:
-        if ctx.has_datetime:
-            df["_row_start_time"] = pd.to_datetime(df[start_col], errors="coerce")
-        else:
-            df["_row_start_time"] = pd.to_numeric(df[start_col], errors="coerce")
-    else:
-        df["_row_start_time"] = df[ctx.time_col]
-
-    if end_col:
-        if ctx.has_datetime:
-            df["_row_end_time"] = pd.to_datetime(df[end_col], errors="coerce")
-        else:
-            df["_row_end_time"] = pd.to_numeric(df[end_col], errors="coerce")
-    else:
-        df["_row_end_time"] = pd.NA
-
-    duration = pd.to_numeric(df.get("_duration_s", 0.0), errors="coerce").fillna(0.0)
-    missing_end = df["_row_end_time"].isna()
-    if ctx.has_datetime:
-        df.loc[missing_end, "_row_end_time"] = df.loc[missing_end, "_row_start_time"] + pd.to_timedelta(
-            duration.loc[missing_end], unit="s"
-        )
-    else:
-        df.loc[missing_end, "_row_end_time"] = (
-            pd.to_numeric(df.loc[missing_end, "_row_start_time"], errors="coerce")
-            + duration.loc[missing_end]
-        )
-
-    return df
-
-
-def amr_base_id(amr_id: str) -> str:
-    text = str(amr_id or "").strip()
-    if not text or text == "-":
-        return "-"
-    return re.sub(r"-\d+$", "", text)
+    preferred = g[
+        g.get("_event_text", pd.Series("", index=g.index))
+        .astype(str)
+        .str.contains(r"task_generated|task_assigned|multi_stop_task_assigned|waste_task_generated|return_task_generated", case=False, na=False)
+    ]
+    for source in (preferred, g):
+        values = [str(v).strip() for v in source[col].dropna().tolist() if str(v).strip() and str(v).strip() != "-"]
+        if values:
+            return values[0] if which == "from" else values[-1]
+    return None
 
 
 def extract_lift_and_floor(value) -> Tuple[Optional[str], Optional[int]]:
@@ -848,35 +1068,11 @@ def load_amr_parameters(json_path: Path) -> pd.DataFrame:
     rows: List[dict] = []
 
     for item in amrs:
-        slots = item.get("payload_slots", []) or []
-        if not isinstance(slots, list):
-            slots = []
-        slot_count = len(slots) if slots else 1
-        slot_capacity_kg = []
-        slot_names = []
-        for index, slot in enumerate(slots, start=1):
-            if not isinstance(slot, dict):
-                continue
-            slot_names.append(str(slot.get("name", "")).strip() or f"Slot {index}")
-            try:
-                slot_capacity_kg.append(float(slot.get("payload_capacity_kg", 0.0) or 0.0))
-            except (TypeError, ValueError):
-                slot_capacity_kg.append(0.0)
-        if not slot_capacity_kg:
-            try:
-                slot_capacity_kg = [float(item.get("payload_capacity_kg", 0.0) or 0.0)]
-            except (TypeError, ValueError):
-                slot_capacity_kg = [0.0]
         rows.append(
             {
                 "amr": str(item.get("id", "")).strip() or "-",
                 "quantity": int(item.get("quantity", 1) or 1),
-                "multi_stop_enabled": bool(item.get("multi_stop_enabled", slot_count > 1)),
-                "payload_slots": slot_count,
-                "slot_names": ", ".join(slot_names) if slot_names else "Slot 1",
                 "payload_capacity_kg": item.get("payload_capacity_kg", "-"),
-                "slot_capacity_kg_each": ", ".join(f"{x:g}" for x in slot_capacity_kg),
-                "payload_capacity_kg_total": round(sum(slot_capacity_kg), 3),
                 "payload_capacity_size_units": item.get(
                     "payload_capacity_size_units", "-"
                 ),
@@ -978,6 +1174,7 @@ def analyse(
     location_catalog: Optional[pd.DataFrame] = None,
     payload_dimensions: Optional[pd.DataFrame] = None,
 ) -> Dict[str, pd.DataFrame]:
+    payload_weights = payload_weights or {}
     raw = pd.read_csv(csv_path)
     df, ctx = parse_time_column(raw)
     df = df.sort_values(ctx.time_col).reset_index(drop=True)
@@ -1017,7 +1214,6 @@ def analyse(
     df["_wait_s"] = (
         pd.to_numeric(df[wait_col], errors="coerce").fillna(0) if wait_col else 0.0
     )
-    df = event_interval_columns(df, ctx)
 
     if not wait_col and duration_col:
         wait_mask = df["_event_text"].str.contains(WAIT_PATTERNS, na=False)
@@ -1027,10 +1223,26 @@ def analyse(
     t1 = df[ctx.time_col].dropna().max()
     horizon_s = max(time_delta_seconds(t0, t1, ctx.has_datetime) or 0.0, 1.0)
 
+    multi_stop_task_paths = build_multi_stop_task_paths(
+        df, ctx, amr_col, task_col, from_col, to_col
+    )
+
     task_rows: List[dict] = []
     active_intervals: List[Tuple[float, float]] = []
 
+    raw_task_ids = [str(x).strip() for x in df[task_col].dropna().tolist() if str(x).strip()]
+    single_task_ids = {task_id for task_id in raw_task_ids if "," not in task_id}
+
     for task_id, g in df[df[task_col].notna()].groupby(task_col, sort=False):
+        task_id_text = str(task_id).strip()
+        if "," in task_id_text:
+            component_ids = [x.strip() for x in task_id_text.split(",") if x.strip()]
+            # Grouped multi-pickup segment rows are visualiser state rows, not
+            # extra tasks.  When their component task IDs also exist as normal
+            # assignment/completion rows, skip the grouped pseudo-task so reports
+            # do not count the same payloads multiple times.
+            if component_ids and all(x in single_task_ids for x in component_ids):
+                continue
         g = g.sort_values(ctx.time_col)
         first = g.iloc[0]
         last = g.iloc[-1]
@@ -1059,19 +1271,13 @@ def analyse(
         duration_s = time_delta_seconds(start, end, ctx.has_datetime)
         wait_s = float(pd.to_numeric(g["_wait_s"], errors="coerce").fillna(0).sum())
         amr = g[amr_col].dropna().iloc[0] if g[amr_col].notna().any() else "-"
-        origin = (
-            g[from_col].dropna().iloc[0]
-            if from_col and g[from_col].notna().any()
-            else None
-        )
-        destination = (
-            g[to_col].dropna().iloc[-1] if to_col and g[to_col].notna().any() else None
-        )
+        origin = choose_task_endpoint(g, ctx, from_col, to_col, "from")
+        destination = choose_task_endpoint(g, ctx, from_col, to_col, "to")
 
         payload = (
-            g[payload_col].dropna().iloc[0]
+            primary_payload_name(g[payload_col].dropna().iloc[0])
             if payload_col and g[payload_col].notna().any()
-            else None
+            else "-"
         )
         distance_m = float(
             pd.to_numeric(g["_distance_m"], errors="coerce").fillna(0).sum()
@@ -1113,15 +1319,19 @@ def analyse(
                 "wait_s": wait_s,
                 "origin": safe_text(origin),
                 "destination": safe_text(destination),
+                "route_path": multi_stop_task_paths.get(
+                    str(task_id),
+                    f"{safe_text(origin)} → {safe_text(destination)}",
+                ),
                 "payload": safe_text(payload),
                 "distance_m": distance_m,
                 "payload_weight_kg": payload_weight_kg,
             }
         )
-        start_n = event_time_to_float(start, ctx.has_datetime)
-        end_n = event_time_to_float(end, ctx.has_datetime)
-        if start_n is not None and end_n is not None and end_n >= start_n:
-            active_intervals.append((start_n, end_n))
+        # Do not add per-task active intervals here.  A multi-stop route can
+        # complete several tasks at the same time, so task intervals would count
+        # the same AMR route once per payload slot.  Resource recommendations are
+        # derived later from actual AMR segment busy intervals.
 
     # How many tasks did each AMR complete
 
@@ -1129,92 +1339,21 @@ def analyse(
     completed = tasks[tasks["outcome"] == "completed"].copy()
     failed = tasks[tasks["outcome"] == "failed"].copy()
 
-    # Multi-stop-aware route workload.
-    # Task rows remain one row per delivery/payload, but AMR utilisation and fleet sizing
-    # must be based on route occupancy rather than multiplying the same multi-stop route
-    # duration by every payload carried on that route.
-    segment_mask = df["_segment_text"].astype(str).str.strip().ne("")
-    event_segment_mask = df["_event_text"].astype(str).str.contains(
-        r"(?:^segment_)|(?:^multi_stop_segment_)", case=False, na=False
+    amr_busy_intervals_by_amr, amr_route_summary = build_amr_busy_intervals(
+        df, ctx, amr_col
     )
-    non_charge_mask = ~df["_segment_text"].astype(str).str.contains(
-        r"charge", case=False, na=False
-    )
-    route_source = df[
-        df[amr_col].notna()
-        & (segment_mask | event_segment_mask)
-        & non_charge_mask
-    ].copy()
-
-    route_intervals_by_amr: Dict[str, List[Tuple[float, float]]] = {}
-    route_rows: List[dict] = []
-    if not route_source.empty:
-        for amr_id, route_g in route_source.groupby(amr_col, dropna=False):
-            intervals: List[Tuple[float, float]] = []
-            distance_m = float(pd.to_numeric(route_g["_distance_m"], errors="coerce").fillna(0).sum())
-            energy_kwh = float(pd.to_numeric(route_g["_energy_kwh"], errors="coerce").fillna(0).sum())
-            wait_s = float(pd.to_numeric(route_g["_wait_s"], errors="coerce").fillna(0).sum())
-            route_count = 0
-            multi_stop_routes = 0
-            route_payload_counts: List[int] = []
-
-            for _, row in route_g.iterrows():
-                start_n = event_time_to_float(row.get("_row_start_time"), ctx.has_datetime)
-                end_n = event_time_to_float(row.get("_row_end_time"), ctx.has_datetime)
-                if start_n is not None and end_n is not None and end_n >= start_n:
-                    intervals.append((start_n, end_n))
-
-                event_text = str(row.get("_event_text", "") or "").lower()
-                segment_text = str(row.get("_segment_text", "") or "").lower()
-                if "pickup" in event_text or segment_text == "pickup":
-                    route_count += 1
-                    multi_ids = parse_json_or_csv_list(row.get("multi_stop_task_ids", ""))
-                    payload_count = max(
-                        parse_json_or_csv_payload_count(row.get("onboard_payloads", "")),
-                        parse_json_or_csv_payload_count(row.get("task_id", "")),
-                        len(multi_ids),
-                        1,
-                    )
-                    route_payload_counts.append(payload_count)
-                    if payload_count > 1 or "multi_stop" in event_text:
-                        multi_stop_routes += 1
-
-            merged = merge_intervals(intervals)
-            route_intervals_by_amr[safe_text(amr_id)] = merged
-            route_rows.append(
-                {
-                    "amr": safe_text(amr_id),
-                    "base_amr": amr_base_id(safe_text(amr_id)),
-                    "route_count": int(route_count),
-                    "multi_stop_routes": int(multi_stop_routes),
-                    "max_payloads_on_route": max(route_payload_counts) if route_payload_counts else 1,
-                    "avg_payloads_per_route": (
-                        round(sum(route_payload_counts) / len(route_payload_counts), 2)
-                        if route_payload_counts
-                        else 1.0
-                    ),
-                    "total_route_time_s": interval_duration(merged),
-                    "total_wait_s": wait_s,
-                    "total_distance_km": round(distance_m / 1000, 2),
-                    "route_energy_kwh": round(energy_kwh, 4),
-                }
-            )
-
-    route_summary = pd.DataFrame(
-        route_rows,
-        columns=[
-            "amr",
-            "base_amr",
-            "route_count",
-            "multi_stop_routes",
-            "max_payloads_on_route",
-            "avg_payloads_per_route",
-            "total_route_time_s",
-            "total_wait_s",
-            "total_distance_km",
-            "route_energy_kwh",
-        ],
-    )
+    active_intervals = [
+        interval
+        for intervals in amr_busy_intervals_by_amr.values()
+        for interval in intervals
+    ]
+    amr_busy_time_by_amr = {
+        amr: interval_total(intervals)
+        for amr, intervals in amr_busy_intervals_by_amr.items()
+    }
+    amr_route_count_by_amr = {
+        amr: len(intervals) for amr, intervals in amr_busy_intervals_by_amr.items()
+    }
 
     amr_summary = (
         tasks.groupby("amr", dropna=False)
@@ -1229,68 +1368,32 @@ def analyse(
         )
         .reset_index()
     )
+    # Replace duplicated task-duration workload with actual AMR route busy time.
+    # For multi-slot AMRs, several completed payload tasks can share one route;
+    # summing task durations would overstate AMR demand and fleet size.
+    amr_summary["routes"] = amr_summary["amr"].map(amr_route_count_by_amr).fillna(0).astype(int)
+    amr_summary["total_route_time_s"] = amr_summary["amr"].map(amr_busy_time_by_amr).fillna(0.0)
+    amr_summary["total_task_time_s"] = amr_summary["total_route_time_s"]
 
     amr_summary["total_distance_km"] = (amr_summary["total_distance_km"] / 1000).round(
         2
     )
 
-    if not route_summary.empty:
-        route_cols = [
-            "amr",
-            "route_count",
-            "multi_stop_routes",
-            "max_payloads_on_route",
-            "avg_payloads_per_route",
-            "total_route_time_s",
-            "route_energy_kwh",
-        ]
-        amr_summary = amr_summary.merge(
-            route_summary[route_cols], on="amr", how="left"
-        )
-        amr_summary["total_task_time_s"] = amr_summary["total_route_time_s"].fillna(
-            amr_summary["total_task_time_s"]
-        )
-        amr_summary["total_wait_s"] = amr_summary["total_wait_s"].fillna(0.0)
-        for col in ["route_count", "multi_stop_routes", "max_payloads_on_route"]:
-            amr_summary[col] = amr_summary[col].fillna(0).astype(int)
-        amr_summary["avg_payloads_per_route"] = amr_summary[
-            "avg_payloads_per_route"
-        ].fillna(1.0)
-        amr_summary["route_energy_kwh"] = amr_summary["route_energy_kwh"].fillna(0.0)
-    else:
-        amr_summary["route_count"] = amr_summary["tasks_total"]
-        amr_summary["multi_stop_routes"] = 0
-        amr_summary["max_payloads_on_route"] = 1
-        amr_summary["avg_payloads_per_route"] = 1.0
-        amr_summary["route_energy_kwh"] = 0.0
-
     # Utilisation
 
-    if not route_summary.empty:
-        amr_utilisation = route_summary[
-            ["amr", "route_count", "total_route_time_s", "total_wait_s"]
-        ].rename(columns={"total_route_time_s": "total_task_time_s"})
-        task_counts_for_util = (
-            tasks.groupby("amr", dropna=False)
-            .size()
-            .reset_index(name="tasks_total")
+    amr_utilisation = (
+        tasks.groupby("amr", dropna=False)
+        .agg(
+            tasks_total=("task_id", "count"),
+            total_task_time_s=("duration_s", "sum"),
+            total_wait_s=("wait_s", "sum"),
         )
-        amr_utilisation = amr_utilisation.merge(
-            task_counts_for_util, on="amr", how="left"
-        )
-    else:
-        amr_utilisation = (
-            tasks.groupby("amr", dropna=False)
-            .agg(
-                tasks_total=("task_id", "count"),
-                total_task_time_s=("duration_s", "sum"),
-                total_wait_s=("wait_s", "sum"),
-            )
-            .reset_index()
-        )
-        amr_utilisation["route_count"] = amr_utilisation["tasks_total"]
+        .reset_index()
+    )
+    amr_utilisation["routes"] = amr_utilisation["amr"].map(amr_route_count_by_amr).fillna(0).astype(int)
+    amr_utilisation["total_route_time_s"] = amr_utilisation["amr"].map(amr_busy_time_by_amr).fillna(0.0)
+    amr_utilisation["total_task_time_s"] = amr_utilisation["total_route_time_s"]
 
-    amr_utilisation["tasks_total"] = amr_utilisation["tasks_total"].fillna(0).astype(int)
     amr_utilisation["utilisation_pct"] = (
         amr_utilisation["total_task_time_s"] / horizon_s * 100
     ).round(1)
@@ -1597,38 +1700,15 @@ def analyse(
     )
 
     active_amrs = max(int(tasks["amr"].nunique()), 1)
-    all_route_intervals: List[Tuple[float, float]] = []
-    total_amr_route_time_s = 0.0
-    for intervals in route_intervals_by_amr.values():
-        merged = merge_intervals(intervals)
-        total_amr_route_time_s += interval_duration(merged)
-        all_route_intervals.extend(merged)
-
-    # Fallback for legacy CSVs that have no segment-level timing.
-    if total_amr_route_time_s <= 0.0:
-        total_amr_route_time_s = float(tasks["duration_s"].fillna(0).sum())
-        all_route_intervals = active_intervals
-
+    total_amr_route_time_s = interval_total(active_intervals)
     workload_based_amrs = int(
         math.ceil(
             total_amr_route_time_s
             / (horizon_s * max(target_amr_util, 0.01))
         )
     )
-    route_concurrency_amrs = percentile_95_concurrency(all_route_intervals)
-    recommended_amrs = max(1, workload_based_amrs, route_concurrency_amrs)
-
-    total_deliveries = max(int(len(completed)), 0)
-    total_routes = int(route_summary["route_count"].sum()) if not route_summary.empty else len(tasks)
-    total_multi_stop_routes = (
-        int(route_summary["multi_stop_routes"].sum()) if not route_summary.empty else 0
-    )
-    max_payloads_on_route = (
-        int(route_summary["max_payloads_on_route"].max()) if not route_summary.empty else 1
-    )
-    avg_payloads_per_route = (
-        round(total_deliveries / max(total_routes, 1), 2) if total_routes else 1.0
-    )
+    peak_route_concurrency_amrs = percentile_95_concurrency(active_intervals)
+    recommended_amrs = max(1, workload_based_amrs, peak_route_concurrency_amrs)
 
     lift_intervals: List[Tuple[float, float]] = []
     for _, row in lift_rows.dropna(subset=["lift_time_s", ctx.time_col]).iterrows():
@@ -1662,13 +1742,18 @@ def analyse(
             {"metric": "Tasks total", "value": f"{len(tasks)}"},
             {"metric": "Tasks completed", "value": f"{len(completed)}"},
             {"metric": "Tasks failed", "value": f"{len(failed)}"},
-            {"metric": "AMR routes observed", "value": f"{total_routes}"},
-            {"metric": "Multi-stop routes observed", "value": f"{total_multi_stop_routes}"},
-            {"metric": "Average payloads per route", "value": f"{avg_payloads_per_route:.2f}"},
-            {"metric": "Max payloads on one route", "value": f"{max_payloads_on_route}"},
+            {"metric": "AMR routes observed", "value": f"{len(amr_route_summary)}"},
             {
                 "metric": "Total AMR route time",
                 "value": fmt_duration(total_amr_route_time_s),
+            },
+            {
+                "metric": "AMR workload model requirement",
+                "value": f"{workload_based_amrs}",
+            },
+            {
+                "metric": "AMR route concurrency requirement",
+                "value": f"{peak_route_concurrency_amrs}",
             },
             {
                 "metric": "Total waiting time",
@@ -1685,7 +1770,7 @@ def analyse(
         [
             {
                 "item": "Recommended AMRs",
-                "detail": f"Maximum of route workload model and 95th percentile AMR route concurrency using target utilisation {target_amr_util:.0%}. Multi-stop deliveries are counted once for AMR occupancy rather than once per payload/task.",
+                "detail": f"Maximum of actual AMR route-time workload and 95th percentile AMR route concurrency using target utilisation {target_amr_util:.0%}. Multi-stop payload tasks sharing one route are counted once for fleet demand.",
             },
             {
                 "item": "Recommended lifts",
@@ -1697,30 +1782,12 @@ def analyse(
             },
             {
                 "item": "Idle percentage",
-                "detail": "Calculated against the full simulation duration for each AMR and each lift. AMR utilisation uses route/segment occupancy so multi-pickup batches do not inflate fleet demand.",
+                "detail": "Calculated against the full simulation duration for each AMR and each lift.",
             },
         ]
     )
 
-    payload_schedule = (
-        tasks.groupby(["payload"], dropna=False)
-        .agg(
-            tasks=("task_id", "count"),
-            payload_weight_kg=("payload_weight_kg", "first"),
-        )
-        .reset_index()
-        .sort_values(["payload"])
-    )
-
-    payload_schedule["payload_weight_kg"] = (
-        pd.to_numeric(payload_schedule["payload_weight_kg"], errors="coerce")
-        .fillna(0.0)
-        .round(1)
-    )
-
-    payload_schedule["payload_weight_kg"] = payload_schedule["payload_weight_kg"].round(
-        1
-    )
+    payload_schedule = build_payload_schedule(tasks, payload_weights)
 
     (
         location_space_utilisation,
@@ -1781,8 +1848,8 @@ def analyse(
     return {
         "summary": summary,
         "amr_summary": amr_summary,
+        "amr_route_summary": amr_route_summary,
         "utilisation_summary": amr_utilisation,
-        "route_summary": route_summary,
         "lift_summary": lift_summary,
         "tasks": tasks.sort_values(["amr", "start", "task_id"]).reset_index(drop=True),
         "methodology": methodology,
