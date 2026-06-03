@@ -3899,6 +3899,12 @@ class SimulationSettingsDialog(QDialog):
         self.assignment_continue_delay_edit = QLineEdit(
             str(simulation.get("assignment_continue_delay_sec", 0.001))
         )
+        self.seed_waste_containers_check = QCheckBox(
+            "Seed waste stream containers at department pickup locations"
+        )
+        self.seed_waste_containers_check.setChecked(
+            bool(simulation.get("seed_waste_stream_containers_at_start", False))
+        )
 
         form.addRow("Start datetime", self.start_datetime_edit)
         form.addRow("End datetime", self.end_datetime_edit)
@@ -3914,13 +3920,18 @@ class SimulationSettingsDialog(QDialog):
         form.addRow(
             "Assignment continue delay sec", self.assignment_continue_delay_edit
         )
+        form.addRow(
+            "Waste containers present at start", self.seed_waste_containers_check
+        )
 
         help_label = QLabel(
             "Use ISO format, for example 2026-01-05T06:00:00. "
             "generated_task_release_stagger_sec spreads generated tasks that would "
             "otherwise release at the same instant. Static route precompute fills "
             "the route cache before the run. Candidate and assignment limits reduce "
-            "large release bursts from blocking the simulator UI/event loop."
+            "large release bursts from blocking the simulator UI/event loop. "
+            "Waste containers present at start seeds a physical bin/container into "
+            "department waste pickup locations before the first generated waste task."
         )
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
@@ -3942,6 +3953,7 @@ class SimulationSettingsDialog(QDialog):
         result.setdefault("max_single_candidate_tasks", 8)
         result.setdefault("max_assignments_per_tick", 25)
         result.setdefault("assignment_continue_delay_sec", 0.001)
+        result.setdefault("seed_waste_stream_containers_at_start", False)
         return result
 
     def _validate_datetime(self, value, field_name, allow_blank=False):
@@ -4048,6 +4060,7 @@ class SimulationSettingsDialog(QDialog):
                     "max_single_candidate_tasks": max_single_candidate_tasks,
                     "max_assignments_per_tick": max_assignments_per_tick,
                     "assignment_continue_delay_sec": assignment_continue_delay,
+                    "seed_waste_stream_containers_at_start": self.seed_waste_containers_check.isChecked(),
                 }
             )
 
@@ -4251,7 +4264,7 @@ class DepartmentWasteStreamSettingsDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
             [
                 "Stream",
@@ -4261,6 +4274,8 @@ class DepartmentWasteStreamSettingsDialog(QDialog):
                 "Threshold m³",
                 "Base daily m³",
                 "Scheduled times",
+                "Initial container",
+                "Shared bin group",
             ]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
@@ -4305,6 +4320,9 @@ class DepartmentWasteStreamSettingsDialog(QDialog):
                 item.get("threshold_volume_m3", 0.0),
                 item.get("base_daily_volume_m3", 0.0),
                 ", ".join(item.get("scheduled_times", [])),
+                "Yes" if item.get("initial_container_present", True) else "No",
+                item.get("shared_container_group", "")
+                or ("Shared by pickup" if item.get("shared_container", False) else ""),
             ]
 
             for col, value in enumerate(values):
@@ -4405,6 +4423,28 @@ class DepartmentWasteStreamItemDialog(QDialog):
         self.base_daily_edit = QLineEdit(
             str(self.seed.get("base_daily_volume_m3", 0.0))
         )
+        self.initial_container_check = QCheckBox(
+            "Container/bin is present at the department when simulation starts"
+        )
+        self.initial_container_check.setChecked(
+            bool(self.seed.get("initial_container_present", True))
+        )
+        self.shared_container_check = QCheckBox(
+            "Share this physical bin/container with other departments"
+        )
+        self.shared_container_check.setChecked(
+            bool(self.seed.get("shared_container", False))
+        )
+        self.shared_container_group_edit = QLineEdit(
+            str(
+                self.seed.get(
+                    "shared_container_group", self.seed.get("shared_container_id", "")
+                )
+            )
+        )
+        self.shared_container_group_edit.setPlaceholderText(
+            "Optional ID, e.g. Ground Floor Clinical Bin A. Blank shares by pickup location."
+        )
 
         schedule_row = QHBoxLayout()
         self.schedule_summary = QLabel()
@@ -4437,6 +4477,7 @@ class DepartmentWasteStreamItemDialog(QDialog):
         layout.addWidget(buttons)
 
         self.mode_combo.currentTextChanged.connect(self.update_field_state)
+        self.shared_container_check.toggled.connect(self.update_field_state)
 
         self.refresh_schedule_summary()
         self.update_field_state()
@@ -4482,14 +4523,23 @@ class DepartmentWasteStreamItemDialog(QDialog):
             "scheduled_sporadic",
         }
 
+        # Department waste-stream settings feed the Waste task generator.
+        # Threshold mode can still accumulate volume from discrete events, so
+        # frequency/volume must remain editable for threshold streams as well
+        # as sporadic streams.  Scheduled streams can use volume/event too.
+        uses_event_volume = uses_sporadic or uses_threshold or uses_schedule
+
         self.schedule_summary.setEnabled(uses_schedule)
         self.edit_times_btn.setEnabled(uses_schedule)
         self.clear_times_btn.setEnabled(uses_schedule)
 
         self.threshold_edit.setEnabled(uses_threshold)
         self.base_daily_edit.setEnabled(uses_continuous or uses_threshold)
-        self.frequency_edit.setEnabled(uses_sporadic)
-        self.volume_edit.setEnabled(uses_sporadic)
+        self.frequency_edit.setEnabled(uses_event_volume)
+        self.volume_edit.setEnabled(uses_event_volume)
+        self.shared_container_group_edit.setEnabled(
+            self.shared_container_check.isChecked()
+        )
 
     def accept(self):
         try:
@@ -4505,6 +4555,9 @@ class DepartmentWasteStreamItemDialog(QDialog):
                 "threshold_volume_m3": float(self.threshold_edit.text() or 0.0),
                 "base_daily_volume_m3": float(self.base_daily_edit.text() or 0.0),
                 "scheduled_times": list(self.scheduled_times),
+                "initial_container_present": self.initial_container_check.isChecked(),
+                "shared_container": self.shared_container_check.isChecked(),
+                "shared_container_group": self.shared_container_group_edit.text().strip(),
             }
 
             super().accept()
@@ -4811,6 +4864,16 @@ class DepartmentEditorDialog(QDialog):
                             item.get("base_daily_volume_m3", 0.0)
                         ),
                         "scheduled_times": list(item.get("scheduled_times", [])),
+                        "initial_container_present": bool(
+                            item.get("initial_container_present", True)
+                        ),
+                        "shared_container": bool(item.get("shared_container", False)),
+                        "shared_container_group": str(
+                            item.get(
+                                "shared_container_group",
+                                item.get("shared_container_id", ""),
+                            )
+                        ).strip(),
                     }
                 )
             else:
@@ -4825,6 +4888,9 @@ class DepartmentEditorDialog(QDialog):
                             "threshold_volume_m3": 0.0,
                             "base_daily_volume_m3": 0.0,
                             "scheduled_times": [],
+                            "initial_container_present": True,
+                            "shared_container": False,
+                            "shared_container_group": "",
                         }
                     )
 
@@ -5057,7 +5123,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         layout.addWidget(self.summary_label)
 
         self.table = QTreeWidget()
-        self.table.setColumnCount(10)
+        self.table.setColumnCount(12)
         self.table.setHeaderLabels(
             [
                 "Waste stream",
@@ -5070,6 +5136,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                 "Threshold m³",
                 "Base daily m³",
                 "Scheduled times",
+                "Initial container",
+                "Shared bin group",
             ]
         )
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -5137,12 +5205,27 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                     item.get("base_daily_volume_m3", 0.0) or 0.0
                 ),
                 "scheduled_times": list(item.get("scheduled_times", []) or []),
+                "initial_container_present": bool(
+                    item.get("initial_container_present", True)
+                ),
+                "shared_container": bool(item.get("shared_container", False)),
+                "shared_container_group": str(
+                    item.get(
+                        "shared_container_group", item.get("shared_container_id", "")
+                    )
+                ).strip(),
             }
 
         name = str(item).strip()
         if not name:
             return None
-        return {"name": name, **self.DEFAULT_STREAM_SETTINGS}
+        return {
+            "name": name,
+            **self.DEFAULT_STREAM_SETTINGS,
+            "initial_container_present": True,
+            "shared_container": False,
+            "shared_container_group": "",
+        }
 
     def _first_settings_for_stream(self, stream_name):
         """Use the first existing department settings as the edit seed."""
@@ -5211,6 +5294,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                     "",
                     "",
                     "",
+                    "",
+                    "",
                 ]
             )
             item.setData(0, Qt.UserRole, stream_name)
@@ -5248,6 +5333,19 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             base_daily_edit = self._make_number_edit(
                 seed.get("base_daily_volume_m3", 0.0)
             )
+            initial_container_check = QCheckBox("Present")
+            initial_container_check.setChecked(
+                bool(seed.get("initial_container_present", True))
+            )
+            shared_group_edit = QLineEdit(
+                str(
+                    seed.get(
+                        "shared_container_group", seed.get("shared_container_id", "")
+                    )
+                    or ""
+                )
+            )
+            shared_group_edit.setPlaceholderText("Optional shared bin ID")
 
             scheduled_times = list(seed.get("scheduled_times", []) or [])
             schedule_label = QLabel()
@@ -5272,6 +5370,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                 "schedule_label": schedule_label,
                 "edit_times_btn": edit_times_btn,
                 "clear_times_btn": clear_times_btn,
+                "initial_container_check": initial_container_check,
+                "shared_group_edit": shared_group_edit,
             }
 
             edit_times_btn.clicked.connect(
@@ -5294,6 +5394,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             self.table.setItemWidget(item, 7, threshold_edit)
             self.table.setItemWidget(item, 8, base_daily_edit)
             self.table.setItemWidget(item, 9, schedule_widget)
+            self.table.setItemWidget(item, 10, initial_container_check)
+            self.table.setItemWidget(item, 11, shared_group_edit)
 
             self._refresh_schedule_summary(stream_name)
             self._update_stream_field_state(stream_name)
@@ -5309,6 +5411,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                     base_daily_edit,
                     edit_times_btn,
                     clear_times_btn,
+                    initial_container_check,
+                    shared_group_edit,
                 ):
                     widget.setEnabled(False)
                 schedule_label.setEnabled(False)
@@ -5380,6 +5484,11 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             "scheduled_sporadic",
         }
 
+        # Threshold waste streams can be filled by event counts
+        # (frequency_per_day × volume_per_event_m3), so these fields are not
+        # sporadic-only.  Scheduled streams may also use volume per event.
+        uses_event_volume = uses_sporadic or uses_threshold or uses_schedule
+
         for key in ("schedule_label", "edit_times_btn", "clear_times_btn"):
             widget = widgets.get(key)
             if widget is not None:
@@ -5390,9 +5499,9 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         if widgets.get("base_daily_edit") is not None:
             widgets["base_daily_edit"].setEnabled(uses_continuous or uses_threshold)
         if widgets.get("frequency_edit") is not None:
-            widgets["frequency_edit"].setEnabled(uses_sporadic)
+            widgets["frequency_edit"].setEnabled(uses_event_volume)
         if widgets.get("volume_edit") is not None:
-            widgets["volume_edit"].setEnabled(uses_sporadic)
+            widgets["volume_edit"].setEnabled(uses_event_volume)
 
     def _settings_for_stream(self, stream_name):
         widgets = self._row_widgets.get(stream_name, {})
@@ -5403,6 +5512,9 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             "threshold_volume_m3": float(widgets["threshold_edit"].text() or 0.0),
             "base_daily_volume_m3": float(widgets["base_daily_edit"].text() or 0.0),
             "scheduled_times": list(widgets.get("scheduled_times", []) or []),
+            "initial_container_present": widgets["initial_container_check"].isChecked(),
+            "shared_container": bool(widgets["shared_group_edit"].text().strip()),
+            "shared_container_group": widgets["shared_group_edit"].text().strip(),
         }
 
     def accept(self):
@@ -5680,6 +5792,16 @@ class DepartmentListDialog(QDialog):
                             item.get("base_daily_volume_m3", 0.0) or 0.0
                         ),
                         "scheduled_times": list(item.get("scheduled_times", []) or []),
+                        "initial_container_present": bool(
+                            item.get("initial_container_present", True)
+                        ),
+                        "shared_container": bool(item.get("shared_container", False)),
+                        "shared_container_group": str(
+                            item.get(
+                                "shared_container_group",
+                                item.get("shared_container_id", ""),
+                            )
+                        ).strip(),
                     }
                 )
                 continue
@@ -5695,6 +5817,9 @@ class DepartmentListDialog(QDialog):
                         "threshold_volume_m3": 0.0,
                         "base_daily_volume_m3": 0.0,
                         "scheduled_times": [],
+                        "initial_container_present": True,
+                        "shared_container": False,
+                        "shared_container_group": "",
                     }
                 )
 

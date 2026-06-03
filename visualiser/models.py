@@ -239,6 +239,7 @@ DEFAULT_JSON = {
         "max_single_candidate_tasks": 8,
         "max_assignments_per_tick": 25,
         "assignment_continue_delay_sec": 0.001,
+        "seed_waste_stream_containers_at_start": False,
     },
     "building": {
         "load_unload_time_sec": 20.0,
@@ -316,6 +317,10 @@ class JsonStore:
         simulation.setdefault(
             "assignment_continue_delay_sec",
             default_simulation.get("assignment_continue_delay_sec", 0.001),
+        )
+        simulation.setdefault(
+            "seed_waste_stream_containers_at_start",
+            default_simulation.get("seed_waste_stream_containers_at_start", False),
         )
 
     def ensure_payload_defaults(self) -> None:

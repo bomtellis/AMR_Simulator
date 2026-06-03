@@ -9,7 +9,8 @@
     "max_multi_stop_candidate_tasks": 8,
     "max_single_candidate_tasks": 8,
     "max_assignments_per_tick": 5,
-    "assignment_continue_delay_sec": 0.001
+    "assignment_continue_delay_sec": 0.001,
+    "seed_waste_stream_containers_at_start": true
   },
   "building": {
     "load_unload_time_sec": 20.0,
@@ -1140,6 +1141,37 @@
         {
           "dx": -1.361,
           "dy": -2.771
+        }
+      ],
+      "inventory_spaces": [
+        {
+          "name": "Clinical Waste Bin space 1",
+          "points": [
+            {
+              "dx": -0.309,
+              "dy": -2.504
+            },
+            {
+              "dx": -0.309,
+              "dy": -1.304
+            },
+            {
+              "dx": -1.109,
+              "dy": -1.304
+            },
+            {
+              "dx": -1.109,
+              "dy": -2.504
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 90.0,
+              "dx": -0.709,
+              "dy": -1.904
+            }
+          ]
         }
       ]
     },
@@ -12417,17 +12449,7 @@
         "sat",
         "sun"
       ],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [
@@ -12467,6 +12489,7 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
+      "_create_locations": [],
       "x": 37.0,
       "y": -89.0
     },
@@ -12489,17 +12512,7 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -12563,17 +12576,7 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -12644,12 +12647,15 @@
       "waste_streams": [
         {
           "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
+          "generation_mode": "threshold",
+          "frequency_per_day": 6.0,
           "volume_per_event_m3": 0.08,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "OPD_SET_1"
         }
       ],
       "waste": {
@@ -12711,17 +12717,7 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -12783,17 +12779,7 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -12853,17 +12839,7 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -12924,17 +12900,7 @@
         "thu",
         "fri"
       ],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": []
@@ -12992,17 +12958,7 @@
         "fri"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -13064,17 +13020,7 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -13138,17 +13084,7 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -13206,17 +13142,7 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -13274,17 +13200,7 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -13346,17 +13262,7 @@
         "sun"
       ],
       "waste_pickup_locations": [],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "waste": {
         "alpha": 0.0,
         "beta": 0.0,
@@ -13411,17 +13317,7 @@
         "thu",
         "fri"
       ],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": []
@@ -15402,12 +15298,15 @@
       "waste_streams": [
         {
           "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
+          "generation_mode": "threshold",
+          "frequency_per_day": 6.0,
           "volume_per_event_m3": 0.08,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "OPD_SET_1"
         }
       ],
       "task_generation_locations": {
@@ -15462,17 +15361,7 @@
         "thu",
         "fri"
       ],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "sporadic",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
-        }
-      ],
+      "waste_streams": [],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": []
@@ -16878,40 +16767,6 @@
             "base_daily_volume_m3": 0.0,
             "notes": ""
           },
-          "D15": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D15-WASTE",
-            "pickup_locations": [
-              "D15-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
           "D1": {
             "enabled": true,
             "generation_mode": "threshold",
@@ -16946,13 +16801,81 @@
             "notes": "",
             "department_location_role": "pickup"
           },
-          "D6": {
+          "D15": {
             "enabled": true,
             "generation_mode": "threshold",
             "priority": 60,
-            "pickup_location": "D6-WASTE",
+            "pickup_location": "D15-WASTE",
             "pickup_locations": [
-              "D6-WASTE"
+              "D15-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D2": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D2-WASTE",
+            "pickup_locations": [
+              "D2-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D3": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D3-WASTE",
+            "pickup_locations": [
+              "D3-WASTE"
             ],
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
@@ -16987,40 +16910,6 @@
             "pickup_location": "D4-WASTE",
             "pickup_locations": [
               "D4-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
-          "D5": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D5-WASTE",
-            "pickup_locations": [
-              "D5-WASTE"
             ],
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
@@ -17116,6 +17005,74 @@
             "notes": "",
             "department_location_role": "pickup"
           },
+          "D5": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D5-WASTE",
+            "pickup_locations": [
+              "D5-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D6": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D6-WASTE",
+            "pickup_locations": [
+              "D6-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
           "D7": {
             "enabled": true,
             "generation_mode": "threshold",
@@ -17183,74 +17140,6 @@
             "base_daily_volume_m3": 0.0,
             "notes": "",
             "department_location_role": "pickup"
-          },
-          "D2": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D2-WASTE",
-            "pickup_locations": [
-              "D2-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
-          "D3": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D3-WASTE",
-            "pickup_locations": [
-              "D3-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
           }
         },
         "department_groups": [
@@ -17273,9 +17162,9 @@
               "enabled": true,
               "generation_mode": "threshold",
               "priority": 60,
-              "pickup_location": "D8-WASTE",
+              "pickup_location": "D1-WASTE",
               "pickup_locations": [
-                "D8-WASTE"
+                "D1-WASTE"
               ],
               "dropoff_location": "D47-WASTE",
               "dropoff_locations": [

@@ -97,6 +97,14 @@ class Simulation:
             ),
         )
         self._generated_release_stagger_counts: Dict[float, int] = defaultdict(int)
+        self.seed_waste_stream_containers_at_start = bool(
+            sim_cfg.get(
+                "seed_waste_stream_containers_at_start",
+                sim_cfg.get("waste_stream_containers_present_at_start", False),
+            )
+        )
+        self._reserved_existing_payload_instance_ids = set()
+        self.initial_waste_container_instances: Dict[Tuple[str, str, str], str] = {}
         self.route_precompute_enabled = bool(
             sim_cfg.get("precompute_static_routes", True)
         )
@@ -276,6 +284,7 @@ class Simulation:
         self.departments: List[dict] = list(config.get("departments", []))
         self.department_runtime: Dict[str, Dict[str, dict]] = {}
         self.department_task_counter = 0
+        self._seed_initial_waste_stream_containers()
 
         self.route_profiles = config.get("route_profiles", {})
         self.task_generation_manager = TaskGenerationManager(
@@ -1206,23 +1215,34 @@ class Simulation:
             return
         if payload_name not in self.payloads:
             return
+        if self._task_requires_existing_payload_instance(task):
+            # Existing-container tasks must collect a physical payload already in
+            # the store. Do not create a new synthetic instance at scheduling time.
+            return
         self.payload_instance_store.ensure_task_instance_id(task)
 
     def _task_requires_existing_payload_instance(self, task: Task) -> bool:
         # Outbound tasks can create a new physical object at their source.
         # Return tasks must collect the exact instance that the outbound task left
         # at the destination.
-        return bool(getattr(task, "is_return_task", False))
+        return bool(getattr(task, "is_return_task", False)) or bool(
+            getattr(task, "requires_existing_payload_instance", False)
+        )
 
     def _pickup_instance_available(self, task: Task) -> bool:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
-        if not payload_name or not instance_id:
+        if not payload_name:
             return True
         if not self._task_requires_existing_payload_instance(task):
             return True
-        return self.payload_instance_store.has_instance_at(
-            task.pickup, instance_id, payload_name
+        if instance_id:
+            return self.payload_instance_store.has_instance_at(
+                task.pickup, instance_id, payload_name
+            )
+        return any(
+            record.payload == payload_name
+            for record in self.payload_instance_store.records_at(task.pickup)
         )
 
     def _pickup_instance_pending_reason(self, task: Task) -> str:
@@ -1233,9 +1253,7 @@ class Simulation:
                 f"Payload instance {instance_id} ({payload_name}) is not available "
                 f"at pickup location {task.pickup}"
             )
-        return (
-            f"Payload {payload_name} is not available at pickup location {task.pickup}"
-        )
+        return f"Existing payload {payload_name} is not available at pickup location {task.pickup}"
 
     def _pickup_payload_instance_for_task(self, task: Task) -> None:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
@@ -1254,12 +1272,25 @@ class Simulation:
             if record is None and self._task_requires_existing_payload_instance(task):
                 raise RuntimeError(self._pickup_instance_pending_reason(task))
 
+        if (
+            record is None
+            and not instance_id
+            and self._task_requires_existing_payload_instance(task)
+        ):
+            record = self.payload_instance_store.pickup(
+                task.pickup, payload_name=payload_name
+            )
+            if record is None:
+                raise RuntimeError(self._pickup_instance_pending_reason(task))
+            instance_id = record.instance_id
+
         if record is None and not instance_id:
             # Normal outbound tasks can create a new physical object at the source.
             instance_id = self.payload_instance_store.ensure_task_instance_id(task)
 
         if instance_id:
             task.payload_instance_id = instance_id
+            self._reserved_existing_payload_instance_ids.discard(instance_id)
 
     def _store_payload_instance_for_task(self, task: Task) -> None:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
@@ -2034,6 +2065,230 @@ class Simulation:
                 self._try_assign_tasks(self.current_time)
             else:
                 self.schedule_task_release(task)
+
+    def _department_id_from_config(self, dept: dict) -> str:
+        return str(dept.get("id", "")).strip() or str(dept.get("name", "")).strip()
+
+    def _normalise_department_waste_stream_items_for_seed(
+        self, dept: dict
+    ) -> List[dict]:
+        result = []
+        seen = set()
+        for raw in dept.get("waste_streams", []) or []:
+            if isinstance(raw, dict):
+                item = dict(raw)
+                name = str(item.get("name", "")).strip()
+            else:
+                name = str(raw).strip()
+                item = {"name": name}
+            if not name or name in seen or name not in self.waste_streams:
+                continue
+            item["name"] = name
+            result.append(item)
+            seen.add(name)
+        return result
+
+    def _department_waste_pickup_locations_for_seed(self, dept: dict) -> List[str]:
+        locations = []
+        category_locations = dept.get("task_generation_locations", {}) or {}
+        waste_entry = category_locations.get("waste", {}) or {}
+        if isinstance(waste_entry, dict):
+            locations.extend(waste_entry.get("pickup_dropoff_locations", []) or [])
+            locations.extend(waste_entry.get("locations", []) or [])
+        elif isinstance(waste_entry, list):
+            locations.extend(waste_entry)
+
+        waste_cfg = dept.get("waste", {}) or {}
+        if isinstance(waste_cfg, dict):
+            if waste_cfg.get("pickup_location"):
+                locations.append(waste_cfg.get("pickup_location"))
+            locations.extend(waste_cfg.get("pickup_locations", []) or [])
+
+        locations.extend(dept.get("waste_pickup_locations", []) or [])
+
+        clean = []
+        seen = set()
+        for name in locations:
+            text = str(name or "").strip()
+            if text and text in self.locations and text not in seen:
+                clean.append(text)
+                seen.add(text)
+        return clean
+
+    def _waste_container_group_key_for_seed(
+        self, dept_id: str, stream_name: str, stream_item: dict, pickup_location: str
+    ) -> str:
+        explicit = str(
+            stream_item.get(
+                "shared_container_group", stream_item.get("shared_container_id", "")
+            )
+            or ""
+        ).strip()
+        if explicit:
+            return f"shared:{explicit}"
+        if bool(stream_item.get("shared_container", False)):
+            return f"pickup:{stream_name}:{pickup_location}"
+        return f"department:{dept_id}:{stream_name}:{pickup_location}"
+
+    def _occupy_initial_inventory_space(
+        self, location_name: str, payload: PayloadType, instance_id: str, task_id: str
+    ) -> None:
+        if not self._location_has_inventory_spaces(location_name):
+            return
+        space = self._find_free_inventory_space(location_name, payload)
+        if space is None:
+            return
+        space["occupied"] = True
+        space["payload"] = payload.name
+        space["payload_instance_id"] = instance_id
+        space["task_id"] = task_id
+        space["reserved_by_task"] = ""
+
+    def _seed_initial_waste_stream_containers(self) -> None:
+        if not getattr(self, "seed_waste_stream_containers_at_start", False):
+            return
+        if not self.waste_streams or not self.departments:
+            return
+
+        seeded_groups = set()
+        for dept in self.departments:
+            if not bool(dept.get("enabled", True)):
+                continue
+            dept_id = self._department_id_from_config(dept)
+            if not dept_id:
+                continue
+            pickup_locations = self._department_waste_pickup_locations_for_seed(dept)
+            if not pickup_locations:
+                continue
+            for stream_item in self._normalise_department_waste_stream_items_for_seed(
+                dept
+            ):
+                if not bool(stream_item.get("initial_container_present", True)):
+                    continue
+                stream_name = str(stream_item.get("name", "")).strip()
+                stream_cfg = self.waste_streams.get(stream_name, {}) or {}
+                payload_name = str(
+                    stream_cfg.get("payload", stream_item.get("payload", "")) or ""
+                ).strip()
+                payload = self.payloads.get(payload_name)
+                if payload is None:
+                    continue
+                for pickup_location in pickup_locations:
+                    group_key = self._waste_container_group_key_for_seed(
+                        dept_id, stream_name, stream_item, pickup_location
+                    )
+                    if group_key in seeded_groups:
+                        continue
+                    seeded_groups.add(group_key)
+                    instance_id = self.payload_instance_store.make_instance_id(
+                        payload_name, group_key
+                    )
+                    self.payload_instance_store.store(
+                        pickup_location,
+                        payload_name,
+                        instance_id,
+                        source_task_id="initial_waste_container",
+                        metadata={
+                            "task_source": "initial_waste_container",
+                            "department_id": dept_id,
+                            "waste_stream": stream_name,
+                            "container_group": group_key,
+                            "container_type": payload_name,
+                        },
+                    )
+                    self.initial_waste_container_instances[
+                        (group_key, pickup_location, payload_name)
+                    ] = instance_id
+                    self._occupy_initial_inventory_space(
+                        pickup_location,
+                        payload,
+                        instance_id,
+                        "initial_waste_container",
+                    )
+
+    def _mark_generated_waste_task_requires_existing_container(
+        self, task: Task
+    ) -> None:
+        if not getattr(self, "seed_waste_stream_containers_at_start", False):
+            return
+
+        is_waste_task = bool(str(getattr(task, "waste_stream", "") or "").strip()) or (
+            str(getattr(task, "task_source", "") or "").strip() == "department_waste"
+        )
+        if not is_waste_task:
+            return
+
+        # Department waste streams may deliberately opt out of having a physical
+        # container present at the start.  In that case the task should keep the
+        # normal outbound behaviour and create a new payload instance instead of
+        # waiting forever for an existing bin.
+        if not bool(getattr(task, "initial_container_present", True)):
+            return
+
+        task.requires_existing_payload_instance = True
+        self._assign_available_existing_payload_instance(task)
+
+        # A seeded waste container is a physical bin, so after it has been emptied
+        # at the waste destination it must be returned to the department pickup
+        # location.  The task-generation category may have an empty return_payload
+        # because the payload is resolved from the waste stream, so force the
+        # return to use the same payload and instance when a seeded container was
+        # found.
+        if str(getattr(task, "payload_instance_id", "") or "").strip():
+            task.return_enabled = True
+            task.return_payload = normalise_payload_name(getattr(task, "payload", ""))
+            if not getattr(task, "return_priority", 0):
+                task.return_priority = int(getattr(task, "priority", 100) or 100)
+            if not str(getattr(task, "return_route_profile", "") or "").strip():
+                task.return_route_profile = str(
+                    getattr(task, "route_profile", "") or ""
+                ).strip()
+
+    def _assign_available_existing_payload_instance(self, task: Task) -> None:
+        payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        if not payload_name:
+            return
+        current_instance_id = str(
+            getattr(task, "payload_instance_id", "") or ""
+        ).strip()
+        if current_instance_id:
+            return
+
+        # First try the task's requested pickup.  This is correct for
+        # non-shared bins and for shared bins where all departments point at the
+        # same physical waste room.
+        for record in self.payload_instance_store.records_at(task.pickup):
+            if record.payload != payload_name:
+                continue
+            if record.instance_id in self._reserved_existing_payload_instance_ids:
+                continue
+            task.payload_instance_id = record.instance_id
+            self._reserved_existing_payload_instance_ids.add(record.instance_id)
+            return
+
+        # Shared-bin waste tasks may be generated by whichever department pushes
+        # the shared volume over the threshold.  The physical seeded bin may
+        # actually be stored at another department/shared waste room.  In that
+        # case, move the task pickup to the current physical bin location rather
+        # than leaving a generated task pending forever at the contributing
+        # department's own pickup point.
+        container_group = str(getattr(task, "container_group", "") or "").strip()
+        if not container_group:
+            return
+
+        records = getattr(self.payload_instance_store, "_records", {}) or {}
+        for record in list(records.values()):
+            if getattr(record, "payload", "") != payload_name:
+                continue
+            if getattr(record, "instance_id", "") in self._reserved_existing_payload_instance_ids:
+                continue
+            metadata = getattr(record, "metadata", {}) or {}
+            if str(metadata.get("container_group", "") or "").strip() != container_group:
+                continue
+            task.payload_instance_id = record.instance_id
+            task.pickup = record.location
+            self._reserved_existing_payload_instance_ids.add(record.instance_id)
+            return
 
     def _init_department_runtime(self):
         self.department_runtime = {}
@@ -4314,19 +4569,25 @@ class Simulation:
 
         for record in self.task_generation_manager.update_until(now):
             task = record.task
+            self._mark_generated_waste_task_requires_existing_container(task)
             self._stagger_generated_task_release(task)
             self.schedule_task_release(task)
 
-            pickup = self.locations.get(record.pickup_location)
-            dropoff = self.locations.get(record.dropoff_location)
+            # The simulator may adjust the task pickup for shared physical
+            # containers so that the task collects the actual seeded bin location
+            # rather than the contributing department that triggered the threshold.
+            pickup_location_name = str(getattr(task, "pickup", record.pickup_location) or record.pickup_location)
+            dropoff_location_name = str(getattr(task, "dropoff", record.dropoff_location) or record.dropoff_location)
+            pickup = self.locations.get(pickup_location_name)
+            dropoff = self.locations.get(dropoff_location_name)
 
             self.log_step(
                 event_time=task.release_time,
                 event_type=record.event_type,
                 task_id=task.id,
                 details=record.details,
-                from_location=record.pickup_location,
-                to_location=record.dropoff_location,
+                from_location=pickup_location_name,
+                to_location=dropoff_location_name,
                 payload_name=self._payload_log_name(record.payload_name),
                 payload_instance_id=getattr(task, "payload_instance_id", ""),
                 duration_sec=0.0,
@@ -4334,8 +4595,8 @@ class Simulation:
                 distance_m=0.0,
                 start_time=task.release_time,
                 end_time=task.release_time,
-                start_node=record.pickup_location,
-                end_node=record.dropoff_location,
+                start_node=pickup_location_name,
+                end_node=dropoff_location_name,
                 start_x=getattr(pickup, "x", None),
                 start_y=getattr(pickup, "y", None),
                 start_floor=getattr(pickup, "floor", None),
@@ -5229,8 +5490,8 @@ class RuntimeInputThread(threading.Thread):
                 distance_m=0.0,
                 start_time=task.release_time,
                 end_time=task.release_time,
-                start_node=record.pickup_location,
-                end_node=record.dropoff_location,
+                start_node=pickup_location_name,
+                end_node=dropoff_location_name,
                 start_x=getattr(pickup, "x", None),
                 start_y=getattr(pickup, "y", None),
                 start_floor=getattr(pickup, "floor", None),

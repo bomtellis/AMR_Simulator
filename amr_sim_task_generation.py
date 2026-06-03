@@ -310,6 +310,19 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         fallback = capacity * fraction
         return fallback if fallback > 0 else 0.0
 
+    def _waste_container_group_for_instance(
+        self, dept_id: str, stream_name: str, cfg: dict, pickup_locations: List[str]
+    ) -> str:
+        explicit = _clean_text(
+            cfg.get("shared_container_group", cfg.get("shared_container_id", ""))
+        )
+        if explicit:
+            return f"shared:{explicit}"
+        if bool(cfg.get("shared_container", False)):
+            pickup_signature = ",".join(sorted(_unique_clean(pickup_locations)))
+            return f"pickup:{stream_name}:{pickup_signature}"
+        return f"department:{dept_id}:{stream_name}"
+
     def _waste_stream_cfg_for_department(
         self, category_cfg: dict, dept_override: dict, stream_item: dict
     ) -> Optional[dict]:
@@ -343,6 +356,13 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         cfg["waste_stream"] = stream_name
         cfg["task_source"] = "department_waste"
+        cfg["initial_container_present"] = bool(
+            cfg.get("initial_container_present", True)
+        )
+        cfg["shared_container"] = bool(cfg.get("shared_container", False))
+        cfg["shared_container_group"] = _clean_text(
+            cfg.get("shared_container_group", cfg.get("shared_container_id", ""))
+        )
 
         payload_name = _clean_text(cfg.get("payload", ""))
         if not payload_name:
@@ -417,9 +437,16 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                             if not stream_cfg:
                                 continue
                             stream_name = _clean_text(stream_cfg.get("waste_stream"))
+                            container_group = self._waste_container_group_for_instance(
+                                dept_id, stream_name, stream_cfg, pickup_locations
+                            )
+                            stream_cfg["container_group"] = container_group
+                            unique_key = f"waste:{dept_id}:{stream_name}"
                             instances.append(
                                 {
-                                    "key": f"waste:{dept_id}:{stream_name}",
+                                    "key": unique_key,
+                                    "volume_key": container_group,
+                                    "schedule_key": container_group,
                                     "category_key": "waste",
                                     "department_id": dept_id,
                                     "department_name": self._department_name(dept),
@@ -427,6 +454,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                                     "pickup_locations": pickup_locations,
                                     "dropoff_locations": dropoff_locations,
                                     "waste_stream": stream_name,
+                                    "container_group": container_group,
                                 }
                             )
                         continue
@@ -528,6 +556,23 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 task.return_priority = _as_int(
                     cfg.get("return_priority", cfg.get("priority", 100)), 100
                 )
+
+        # Waste-only runtime metadata.  These are deliberately attached as
+        # dynamic attributes so amr_sim_models.Task remains backwards-compatible.
+        # The simulator uses them to decide whether generated waste tasks must
+        # collect an existing seeded container and whether several departments
+        # share the same physical bin.
+        if _clean_text(cfg.get("waste_stream", "")) or (
+            _clean_text(cfg.get("task_source", "")) == "department_waste"
+        ):
+            task.initial_container_present = bool(
+                cfg.get("initial_container_present", True)
+            )
+            task.shared_container = bool(cfg.get("shared_container", False))
+            task.shared_container_group = _clean_text(
+                cfg.get("shared_container_group", cfg.get("shared_container_id", ""))
+            )
+            task.container_group = _clean_text(cfg.get("container_group", ""))
 
         _apply_tracked_item_metadata(task, cfg, self.payloads)
 
@@ -636,6 +681,55 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     pairs.append((pickup, dropoff))
         return pairs
 
+    def _is_waste_instance(self, instance: dict) -> bool:
+        cfg = instance.get("cfg", {}) or {}
+        return bool(_clean_text(cfg.get("waste_stream", ""))) or (
+            _clean_text(cfg.get("task_source", "")) == "department_waste"
+        )
+
+    def _runtime_for_volume_key(self, instance: dict) -> dict:
+        return self.runtime.setdefault(
+            instance.get("volume_key", instance["key"]),
+            {
+                "volume": 0.0,
+                "contributors": {},
+                "sporadic_accumulator": {},
+                "volume_event_accumulator": {},
+            },
+        )
+
+    def _threshold_collection_records(
+        self, instance: dict, release_time: float, details: str
+    ) -> List[GeneratedTaskRecord]:
+        cfg = instance["cfg"]
+        threshold_volume = _as_float(cfg.get("threshold_volume_m3", 0.0), 0.0)
+        if threshold_volume <= 0.0:
+            return []
+
+        payload_name = _clean_text(cfg.get("payload", ""))
+        if payload_name not in self.payloads:
+            return []
+
+        runtime = self._runtime_for_volume_key(instance)
+        records: List[GeneratedTaskRecord] = []
+        while _as_float(runtime.get("volume", 0.0), 0.0) >= threshold_volume:
+            runtime["volume"] = (
+                _as_float(runtime.get("volume", 0.0), 0.0) - threshold_volume
+            )
+            for pickup, dropoff in self._pick_pairs(instance):
+                task = self._base_task(
+                    instance, pickup, dropoff, payload_name, release_time, "threshold"
+                )
+                if task is not None:
+                    # This is the amount being collected from the bin, not the
+                    # individual fill-event volume.  Using volume_per_event_m3
+                    # here made threshold collections look like nearly empty bin
+                    # swaps in the CSV/visualiser.
+                    task.generated_volume_m3 = threshold_volume
+                    task.waste_volume_m3 = threshold_volume
+                records.extend(self._records_for_outbound(task, instance, details))
+        return records
+
     def _schedule_records(
         self, instance: dict, now: float
     ) -> List[GeneratedTaskRecord]:
@@ -660,10 +754,32 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if not self._category_is_active(cfg, release_time):
                 continue
 
-            schedule_key = (instance["key"], release_dt.date().isoformat(), hhmm)
+            schedule_key = (
+                instance.get("schedule_key", instance["key"]),
+                release_dt.date().isoformat(),
+                hhmm,
+            )
             if schedule_key in self.scheduled_emitted:
                 continue
             self.scheduled_emitted.add(schedule_key)
+
+            if self._is_waste_instance(instance) and mode == "scheduled_threshold":
+                # For seeded/physical waste containers a scheduled-threshold entry
+                # is a fill event, not an instruction to swap the bin immediately.
+                # Only create a collection task when the accumulated fill reaches
+                # the threshold.
+                runtime = self._runtime_for_volume_key(instance)
+                runtime["volume"] = _as_float(runtime.get("volume", 0.0), 0.0) + max(
+                    0.0, _as_float(cfg.get("volume_per_event_m3", 0.0), 0.0)
+                )
+                records.extend(
+                    self._threshold_collection_records(
+                        instance,
+                        release_time,
+                        f"Generated scheduled-threshold {instance['category_key']} task at {hhmm}",
+                    )
+                )
+                continue
 
             for pickup, dropoff in self._pick_pairs(instance):
                 task = self._base_task(
@@ -700,27 +816,31 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             return []
         if not self._category_is_active(cfg, now):
             # Still advance the clock to avoid back-generating when re-entering active time.
-            self.runtime.setdefault(
-                instance["key"],
+            runtime = self.runtime.setdefault(
+                instance.get("volume_key", instance["key"]),
                 {
-                    "last_update_time": now,
                     "volume": 0.0,
-                    "sporadic_accumulator": 0.0,
-                    "volume_event_accumulator": 0.0,
+                    "contributors": {},
+                    "sporadic_accumulator": {},
+                    "volume_event_accumulator": {},
                 },
-            )["last_update_time"] = now
+            )
+            runtime.setdefault("contributors", {})[instance["key"]] = now
             return []
 
+        volume_key = instance.get("volume_key", instance["key"])
         runtime = self.runtime.setdefault(
-            instance["key"],
+            volume_key,
             {
-                "last_update_time": 0.0,
                 "volume": 0.0,
-                "sporadic_accumulator": 0.0,
-                "volume_event_accumulator": 0.0,
+                "contributors": {},
+                "sporadic_accumulator": {},
+                "volume_event_accumulator": {},
             },
         )
-        last_time = _as_float(runtime.get("last_update_time", 0.0), 0.0)
+        contributor_key = instance["key"]
+        contributors = runtime.setdefault("contributors", {})
+        last_time = _as_float(contributors.get(contributor_key, 0.0), 0.0)
         if now <= last_time:
             return []
 
@@ -743,19 +863,25 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             )
             event_volume = max(0.0, _as_float(cfg.get("volume_per_event_m3", 0.0), 0.0))
             if event_frequency > 0.0 and event_volume > 0.0:
-                runtime["volume_event_accumulator"] = _as_float(
-                    runtime.get("volume_event_accumulator", 0.0), 0.0
+                volume_event_accumulators = runtime.setdefault(
+                    "volume_event_accumulator", {}
+                )
+                volume_event_accumulators[contributor_key] = _as_float(
+                    volume_event_accumulators.get(contributor_key, 0.0), 0.0
                 ) + (elapsed_days * event_frequency)
-                whole_events = int(runtime["volume_event_accumulator"])
+                whole_events = int(volume_event_accumulators[contributor_key])
                 if whole_events > 0:
                     runtime["volume"] += whole_events * event_volume
-                    runtime["volume_event_accumulator"] -= whole_events
+                    volume_event_accumulators[contributor_key] -= whole_events
 
         if mode in SPORADIC_MODES:
             freq_per_day = max(0.0, _as_float(cfg.get("frequency_per_day", 0.0), 0.0))
-            runtime["sporadic_accumulator"] += elapsed_days * freq_per_day
-            while runtime["sporadic_accumulator"] >= 1.0:
-                runtime["sporadic_accumulator"] -= 1.0
+            sporadic_accumulators = runtime.setdefault("sporadic_accumulator", {})
+            sporadic_accumulators[contributor_key] = _as_float(
+                sporadic_accumulators.get(contributor_key, 0.0), 0.0
+            ) + (elapsed_days * freq_per_day)
+            while sporadic_accumulators[contributor_key] >= 1.0:
+                sporadic_accumulators[contributor_key] -= 1.0
                 for pickup, dropoff in self._pick_pairs(instance):
                     task = self._base_task(
                         instance, pickup, dropoff, payload_name, now, "sporadic"
@@ -774,29 +900,16 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         )
                     )
 
-        threshold_volume = _as_float(cfg.get("threshold_volume_m3", 0.0), 0.0)
-        volume_per_event = _as_float(
-            cfg.get("volume_per_event_m3", threshold_volume), threshold_volume
-        )
-        if mode in THRESHOLD_MODES and threshold_volume > 0:
-            while runtime["volume"] >= threshold_volume:
-                runtime["volume"] -= threshold_volume
-                for pickup, dropoff in self._pick_pairs(instance):
-                    task = self._base_task(
-                        instance, pickup, dropoff, payload_name, now, "threshold"
-                    )
-                    if task is not None:
-                        task.generated_volume_m3 = volume_per_event
-                        task.waste_volume_m3 = volume_per_event
-                    records.extend(
-                        self._records_for_outbound(
-                            task,
-                            instance,
-                            f"Generated threshold {instance['category_key']} task",
-                        )
-                    )
+        if mode in THRESHOLD_MODES:
+            records.extend(
+                self._threshold_collection_records(
+                    instance,
+                    now,
+                    f"Generated threshold {instance['category_key']} task",
+                )
+            )
 
-        runtime["last_update_time"] = now
+        contributors[contributor_key] = now
         return records
 
     def _tracked_item_records(

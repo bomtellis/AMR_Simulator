@@ -285,7 +285,19 @@ class SimulationLog:
                 break
 
             row = event.row
-            amr_id = (row.get("amr_id") or "").strip() or "AMR"
+            amr_id = (row.get("amr_id") or "").strip()
+
+            # Rows such as task_generated / return_task_generated are planning
+            # events.  They can carry task coordinates and payload data but do
+            # not represent a physical AMR.  Older visualiser logic defaulted
+            # these rows to an AMR called "AMR", which made a ghost vehicle
+            # appear at the generated task destination.
+            if not amr_id:
+                recent_events.append(
+                    {"timestamp": min(current_time, event.end_time), "row": row}
+                )
+                continue
+
             task_id = (row.get("task_id") or "").strip()
             payload = (row.get("payload") or "").strip()
             event_type = (row.get("event_type") or "").strip()
@@ -915,11 +927,17 @@ class LocationInventoryPayloadDialog(QDialog):
     columns = [
         ("space", "Inventory space", 180),
         ("payload", "Current payload", 170),
+        ("details", "Payload details", 260),
+        ("waste_volume_display", "Waste volume filled", 160),
+        ("fill_percent_display", "Fill", 90),
+        ("payload_instance_id", "Payload instance", 210),
+        ("waste_stream", "Waste stream", 120),
+        ("container_group", "Container group", 160),
         ("task_id", "Task", 100),
         ("amr_id", "AMR", 100),
         ("status", "Status", 130),
         ("timestamp", "Updated", 160),
-        ("source", "Source", 120),
+        ("source", "Source", 150),
     ]
 
     def __init__(
@@ -1505,17 +1523,19 @@ class LocationInventoryPayloadDialog(QDialog):
     columns = [
         ("space", "Inventory space", 180),
         ("payload", "Current payload", 170),
+        ("waste_stream", "Waste stream", 120),
+        ("container_group", "Container group", 160),
         ("task_id", "Task", 100),
         ("amr_id", "AMR", 100),
         ("status", "Status", 130),
         ("timestamp", "Updated", 160),
-        ("source", "Source", 120),
+        ("source", "Source", 150),
     ]
 
     def __init__(self, parent, location_name, rows, current_time):
         super().__init__(parent)
         self.setWindowTitle(f"Inventory payloads - {location_name}")
-        self.resize(980, 420)
+        self.resize(1420, 520)
 
         layout = QVBoxLayout(self)
 
@@ -1546,9 +1566,13 @@ class LocationInventoryPayloadDialog(QDialog):
         for row_data in rows:
             r = self.table.rowCount()
             self.table.insertRow(r)
+            tooltip = row_data.get("tooltip", "") or row_data.get("details", "")
             for c, (key, _heading, _width) in enumerate(self.columns):
                 value = row_data.get(key, "-")
-                self.table.setItem(r, c, QTableWidgetItem(str(value or "-")))
+                item = QTableWidgetItem(str(value or "-"))
+                if tooltip:
+                    item.setToolTip(str(tooltip))
+                self.table.setItem(r, c, item)
 
 
 class SimulationVisualizer(QMainWindow):
@@ -1684,6 +1708,23 @@ class SimulationVisualizer(QMainWindow):
         self.show_amr_box_check.toggled.connect(self.refresh_dynamic_scene)
         side_layout.addWidget(self.show_amr_box_check)
 
+        self.show_seeded_waste_containers_check = QCheckBox(
+            "Show seeded waste containers"
+        )
+        self.show_seeded_waste_containers_check.setChecked(True)
+        self.show_seeded_waste_containers_check.toggled.connect(self.refresh_all)
+        side_layout.addWidget(self.show_seeded_waste_containers_check)
+
+        self.show_room_payloads_check = QCheckBox("Show payloads in room spaces")
+        self.show_room_payloads_check.setChecked(True)
+        self.show_room_payloads_check.toggled.connect(self.refresh_dynamic_scene)
+        side_layout.addWidget(self.show_room_payloads_check)
+
+        self.live_waste_fill_check = QCheckBox("Update waste fill rate during playback")
+        self.live_waste_fill_check.setChecked(True)
+        self.live_waste_fill_check.toggled.connect(self.refresh_dynamic_scene)
+        side_layout.addWidget(self.live_waste_fill_check)
+
         side_layout.addWidget(QLabel("AMR width (m)"))
         self.amr_width_spin = QDoubleSpinBox()
         self.amr_width_spin.setRange(0.1, 5.0)
@@ -1800,6 +1841,23 @@ class SimulationVisualizer(QMainWindow):
                 if isinstance(value, list):
                     return ", ".join(str(x) for x in value if str(x).strip()) or "-"
                 return str(value)
+
+        # Inventory spaces are usually defined with payload_slots rather than a
+        # top-level current payload.  Treat those configured slots as initially
+        # stored payloads so seeded/starting containers are visible before the
+        # first CSV event has moved them.
+        slots = space.get("payload_slots", []) or []
+        if isinstance(slots, list):
+            payloads = []
+            for slot in slots:
+                if not isinstance(slot, dict):
+                    continue
+                payload = str(slot.get("payload", "") or "").strip()
+                if payload:
+                    payloads.append(payload)
+            if payloads:
+                return ", ".join(payloads)
+
         return "-"
 
     def _inventory_payload_rows_for_location(self, location_name):
@@ -2077,6 +2135,7 @@ class SimulationVisualizer(QMainWindow):
 
     def refresh_dynamic_scene(self):
         self.clear_items(self.dynamic_items)
+        self.draw_room_payloads_qt(self.current_floor())
         self.draw_dynamic_state_qt(self.current_floor())
         self.update_follow_view()
         self.update_lift_monitor_dialog()
@@ -2272,6 +2331,694 @@ class SimulationVisualizer(QMainWindow):
                 )
                 label_item.setData(0, "layout_node_label")
                 label_item.setData(1, name)
+
+    def _payload_lookup(self) -> Dict[str, dict]:
+        lookup = {}
+        for payload in self.layout_model.data.get("payloads", []) or []:
+            if not isinstance(payload, dict):
+                continue
+            name = str(payload.get("name", "") or "").strip()
+            if name:
+                lookup[name] = payload
+        return lookup
+
+    def _payload_dimensions_for_name(self, payload_name: str) -> Tuple[float, float]:
+        payload_name = str(payload_name or "").strip()
+        payload = self._payload_lookup().get(payload_name, {})
+        try:
+            length = float(
+                payload.get(
+                    "length_m", payload.get("length", payload.get("depth_m", 0.9))
+                )
+                or 0.9
+            )
+        except Exception:
+            length = 0.9
+        try:
+            width = float(payload.get("width_m", payload.get("width", 0.65)) or 0.65)
+        except Exception:
+            width = 0.65
+        return max(0.15, length), max(0.15, width)
+
+    def _payload_full_details_for_name(self, payload_name: str) -> dict:
+        payload_name = str(payload_name or "").strip()
+        payload = self._payload_lookup().get(payload_name, {}) or {}
+        length, width = self._payload_dimensions_for_name(payload_name)
+
+        def num(*keys, default=0.0):
+            for key in keys:
+                try:
+                    value = payload.get(key, None)
+                    if value not in (None, ""):
+                        return float(value)
+                except Exception:
+                    pass
+            return float(default)
+
+        height = num("height_m", "height", default=0.0)
+        weight = num("weight_kg", "payload_weight_kg", "mass_kg", default=0.0)
+        return {
+            "name": payload_name,
+            "length_m": length,
+            "width_m": width,
+            "height_m": height,
+            "weight_kg": weight,
+            "raw": payload,
+        }
+
+    def _waste_stream_capacity_for_name(self, stream_name: str) -> float:
+        stream_name = str(stream_name or "").strip()
+        if not stream_name:
+            return 0.0
+        stream_def = self._waste_stream_lookup().get(stream_name, {}) or {}
+        for key in ("container_capacity_m3", "capacity_m3", "volume_m3"):
+            try:
+                value = stream_def.get(key, None)
+                if value not in (None, ""):
+                    return max(0.0, float(value))
+            except Exception:
+                pass
+        return 0.0
+
+    def _waste_stream_threshold_for_name(self, stream_name: str) -> float:
+        """Return the visual collection threshold for a stream in m³.
+
+        The physical capacity is still shown in labels, but a threshold waste
+        container should not visually fill beyond the configured collection
+        threshold, for example 80% of a 0.77 m³ bin.
+        """
+        stream_name = str(stream_name or "").strip()
+        if not stream_name:
+            return 0.0
+        stream_def = self._waste_stream_lookup().get(stream_name, {}) or {}
+        explicit = self._row_float(stream_def, "threshold_volume_m3", default=0.0)
+        if explicit > 0.0:
+            return explicit
+        capacity = self._waste_stream_capacity_for_name(stream_name)
+        fraction = self._row_float(stream_def, "full_threshold_fraction", default=0.8)
+        if capacity > 0.0 and fraction > 0.0:
+            return max(0.0, capacity * fraction)
+        return 0.0
+
+    def _row_float(self, row: dict, *keys, default: float = 0.0) -> float:
+        for key in keys:
+            try:
+                value = row.get(key, None)
+                if value not in (None, ""):
+                    return float(value)
+            except Exception:
+                pass
+        return float(default)
+
+    def _waste_stream_daily_volume_m3(self, stream_cfg: dict) -> float:
+        """Return the configured waste accumulation rate in m³/day."""
+        if not isinstance(stream_cfg, dict):
+            return 0.0
+
+        base_daily = self._row_float(stream_cfg, "base_daily_volume_m3", default=0.0)
+        frequency = self._row_float(stream_cfg, "frequency_per_day", default=0.0)
+        volume_per_event = self._row_float(
+            stream_cfg, "volume_per_event_m3", default=0.0
+        )
+
+        rate = max(0.0, base_daily)
+        if frequency > 0.0 and volume_per_event > 0.0:
+            rate += max(0.0, frequency * volume_per_event)
+
+        # Scheduled streams may use volume_per_event without a frequency.  In
+        # that case treat each configured scheduled time as one fill event.
+        scheduled_times = (
+            stream_cfg.get("scheduled_times", [])
+            or stream_cfg.get("schedule_times", [])
+            or []
+        )
+        if (
+            isinstance(scheduled_times, list)
+            and scheduled_times
+            and volume_per_event > 0.0
+            and frequency <= 0.0
+        ):
+            rate += (
+                len([x for x in scheduled_times if str(x).strip()]) * volume_per_event
+            )
+
+        return max(0.0, rate)
+
+    def _parse_row_timestamp(self, value) -> Optional[datetime]:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if text.lower() in {"simulation start", "start"}:
+            return self.sim_log.start_time or self.layout_model.task_start_time
+        return SimulationLog._parse_datetime(text) or LayoutModel._parse_datetime(text)
+
+    def _live_waste_fill_enabled(self) -> bool:
+        return bool(
+            not hasattr(self, "live_waste_fill_check")
+            or self.live_waste_fill_check.isChecked()
+        )
+
+    def _apply_live_waste_fill(
+        self, row: dict, at_time: Optional[datetime] = None
+    ) -> dict:
+        """Continuously update waste container fill while it is present in a location."""
+        row = dict(row or {})
+        if not self._live_waste_fill_enabled():
+            return row
+
+        if at_time is None:
+            at_time = self.current_time
+        if at_time is None:
+            return row
+
+        payload = str(row.get("payload", "") or "").strip()
+        if not payload or payload == "-":
+            return row
+
+        stream_name = str(row.get("waste_stream", "") or "").strip()
+        daily_rate = self._row_float(
+            row,
+            "live_waste_volume_m3_per_day",
+            "daily_waste_volume_m3",
+            "fill_rate_m3_per_day",
+            default=0.0,
+        )
+        capacity = self._row_float(
+            row, "container_capacity_m3", "capacity_m3", default=0.0
+        )
+        if capacity <= 0.0 and stream_name:
+            capacity = self._waste_stream_capacity_for_name(stream_name)
+        threshold_m3 = self._row_float(
+            row, "container_threshold_m3", "threshold_volume_m3", default=0.0
+        )
+        if threshold_m3 <= 0.0 and stream_name:
+            threshold_m3 = self._waste_stream_threshold_for_name(stream_name)
+
+        if not stream_name and daily_rate <= 0.0 and capacity <= 0.0:
+            return row
+
+        start_time = (
+            self._parse_row_timestamp(row.get("fill_start_time"))
+            or self._parse_row_timestamp(row.get("timestamp"))
+            or self.sim_log.start_time
+            or self.layout_model.task_start_time
+        )
+        if start_time is None or at_time <= start_time:
+            return row
+
+        # Do not use CSV waste_volume_m3 as the starting fill value.  In the
+        # simulator CSV that field means "volume collected by this task", not
+        # "current volume inside the returned/seeded bin".
+        base_volume = self._row_float(
+            row,
+            "fill_start_volume_m3",
+            "initial_waste_volume_m3",
+            "initial_volume_m3",
+            "current_volume_m3",
+            "volume_filled_m3",
+            "filled_volume_m3",
+            default=0.0,
+        )
+
+        elapsed_days = max(0.0, (at_time - start_time).total_seconds() / 86400.0)
+        volume = base_volume + (daily_rate * elapsed_days)
+        visual_cap = threshold_m3 if threshold_m3 > 0.0 else capacity
+        if visual_cap > 0.0:
+            volume = min(visual_cap, volume)
+        row["waste_volume_m3"] = max(0.0, volume)
+        row["container_capacity_m3"] = capacity
+        if threshold_m3 > 0.0:
+            row["container_threshold_m3"] = threshold_m3
+        if daily_rate > 0.0:
+            row["fill_rate_display"] = f"{daily_rate:.3f} m³/day"
+        return row
+
+    def _enrich_payload_row_details(self, row: dict) -> dict:
+        row = self._apply_live_waste_fill(dict(row or {}))
+        payload_name = str(row.get("payload", "") or "").strip()
+        if not payload_name or payload_name == "-":
+            row.setdefault("details", "-")
+            row.setdefault("waste_volume_display", "-")
+            row.setdefault("fill_percent_display", "-")
+            row.setdefault(
+                "payload_instance_id", row.get("payload_instance_id", "-") or "-"
+            )
+            row.setdefault("tooltip", "")
+            return row
+
+        details = self._payload_full_details_for_name(payload_name)
+        dims = f"{details['length_m']:.2f} x {details['width_m']:.2f}"
+        if details.get("height_m", 0.0) > 0:
+            dims += f" x {details['height_m']:.2f} m"
+        else:
+            dims += " m"
+
+        detail_parts = [f"Size {dims}"]
+        if details.get("weight_kg", 0.0) > 0:
+            detail_parts.append(f"Weight {details['weight_kg']:.1f} kg")
+        row["details"] = " | ".join(detail_parts)
+
+        stream_name = str(row.get("waste_stream", "") or "").strip()
+        volume = self._row_float(
+            row,
+            "waste_volume_m3",
+            "volume_filled_m3",
+            "filled_volume_m3",
+            "current_volume_m3",
+            default=0.0,
+        )
+        capacity = self._row_float(
+            row, "container_capacity_m3", "capacity_m3", default=0.0
+        )
+        if capacity <= 0.0 and stream_name:
+            capacity = self._waste_stream_capacity_for_name(stream_name)
+
+        if stream_name or volume > 0.0 or capacity > 0.0:
+            if capacity > 0.0:
+                percent = max(0.0, min(999.0, (volume / capacity) * 100.0))
+                row["waste_volume_display"] = f"{volume:.3f} / {capacity:.3f} m³"
+                row["fill_percent_display"] = f"{percent:.0f}%"
+            else:
+                row["waste_volume_display"] = f"{volume:.3f} m³"
+                row["fill_percent_display"] = "-"
+            row["waste_volume_m3"] = volume
+            row["container_capacity_m3"] = capacity
+        else:
+            row.setdefault("waste_volume_display", "-")
+            row.setdefault("fill_percent_display", "-")
+
+        row["payload_instance_id"] = str(row.get("payload_instance_id", "") or "-")
+        tooltip_lines = [
+            f"Payload: {payload_name}",
+            f"Details: {row.get('details', '-')}",
+        ]
+        if row.get("waste_volume_display", "-") != "-":
+            tooltip_lines.append(
+                f"Waste volume filled: {row.get('waste_volume_display')} ({row.get('fill_percent_display', '-')})"
+            )
+        for label, key in [
+            ("Fill rate", "fill_rate_display"),
+            ("Waste stream", "waste_stream"),
+            ("Container group", "container_group"),
+            ("Instance", "payload_instance_id"),
+            ("Task", "task_id"),
+            ("Status", "status"),
+            ("Source", "source"),
+        ]:
+            value = str(row.get(key, "") or "").strip()
+            if value and value != "-":
+                tooltip_lines.append(f"{label}: {value}")
+        row["tooltip"] = "\n".join(tooltip_lines)
+        return row
+
+    def _csv_waste_row_payload_details(
+        self, row: dict, reset_fill: bool = False
+    ) -> dict:
+        collected_volume = self._row_float(row, "waste_volume_m3", default=0.0)
+        result = {
+            "payload_instance_id": str(
+                row.get("payload_instance_id", "") or ""
+            ).strip(),
+            "waste_stream": str(row.get("waste_stream", "") or "").strip(),
+            "collected_waste_volume_m3": collected_volume,
+            "container_type": str(row.get("container_type", "") or "").strip(),
+        }
+        if reset_fill:
+            result["waste_volume_m3"] = 0.0
+            result["fill_start_volume_m3"] = 0.0
+        if result["waste_stream"]:
+            result["container_capacity_m3"] = self._waste_stream_capacity_for_name(
+                result["waste_stream"]
+            )
+            result["container_threshold_m3"] = self._waste_stream_threshold_for_name(
+                result["waste_stream"]
+            )
+        return result
+
+    def _space_points_world(
+        self, location: dict, space: dict
+    ) -> List[Tuple[float, float]]:
+        lx = float(location.get("x", 0.0) or 0.0)
+        ly = float(location.get("y", 0.0) or 0.0)
+        result = []
+        for point in space.get("points", []) or []:
+            if not isinstance(point, dict):
+                continue
+            try:
+                if "dx" in point and "dy" in point:
+                    result.append(
+                        (
+                            lx + float(point.get("dx", 0.0) or 0.0),
+                            ly + float(point.get("dy", 0.0) or 0.0),
+                        )
+                    )
+                else:
+                    result.append(
+                        (
+                            float(point.get("x", lx) or lx),
+                            float(point.get("y", ly) or ly),
+                        )
+                    )
+            except Exception:
+                continue
+        return result
+
+    def _space_centroid_world(self, location: dict, space: dict) -> Tuple[float, float]:
+        points = self._space_points_world(location, space)
+        if points:
+            return (
+                sum(p[0] for p in points) / len(points),
+                sum(p[1] for p in points) / len(points),
+            )
+        return float(location.get("x", 0.0) or 0.0), float(
+            location.get("y", 0.0) or 0.0
+        )
+
+    def _payload_slot_world_position(
+        self, location: dict, space: dict, slot: dict
+    ) -> Tuple[float, float]:
+        lx = float(location.get("x", 0.0) or 0.0)
+        ly = float(location.get("y", 0.0) or 0.0)
+        if isinstance(slot, dict):
+            try:
+                if "dx" in slot and "dy" in slot:
+                    return lx + float(slot.get("dx", 0.0) or 0.0), ly + float(
+                        slot.get("dy", 0.0) or 0.0
+                    )
+                if "x" in slot and "y" in slot:
+                    return float(slot.get("x", lx) or lx), float(
+                        slot.get("y", ly) or ly
+                    )
+            except Exception:
+                pass
+        return self._space_centroid_world(location, space)
+
+    def _payloads_from_display_value(self, value) -> List[str]:
+        text = str(value or "").strip()
+        if not text or text == "-":
+            return []
+        return [
+            part.strip()
+            for part in text.split(",")
+            if part.strip() and part.strip() != "-"
+        ]
+
+    def _draw_payload_box_at_world(
+        self,
+        x: float,
+        y: float,
+        payload_name: str,
+        rotation_deg: float = 0.0,
+        status: str = "Stored",
+        source: str = "",
+        row_details: Optional[dict] = None,
+    ):
+        length, width = self._payload_dimensions_for_name(payload_name)
+        heading = math.radians(float(rotation_deg or 0.0))
+        hl = length / 2.0
+        hw = width / 2.0
+        corners = [(-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw)]
+        points = []
+        for dx, dy in corners:
+            rx = (dx * math.cos(heading)) - (dy * math.sin(heading))
+            ry = (dx * math.sin(heading)) + (dy * math.cos(heading))
+            sx, sy = self.world_to_scene(x + rx, y + ry)
+            points.append(QPointF(sx, sy))
+
+        item = QGraphicsPolygonItem(QPolygonF(points))
+        status_lower = str(status or "").lower()
+        if "seed" in status_lower:
+            fill = QColor(142, 68, 173, 160)
+            outline = QColor("#e8d5ff")
+        elif "empty" in status_lower:
+            fill = QColor(90, 90, 90, 80)
+            outline = QColor("#777777")
+        else:
+            fill = QColor(46, 204, 113, 145)
+            outline = QColor("#d7ffe7")
+        item.setBrush(QBrush(fill))
+        item.setPen(QPen(outline, 0.0))
+        item.setData(0, "room_payload")
+        item.setData(1, payload_name)
+        self.graphics_scene.addItem(item)
+        self.dynamic_items.append(item)
+
+        details = self._enrich_payload_row_details(
+            row_details or {"payload": payload_name, "status": status, "source": source}
+        )
+        tooltip = details.get("tooltip", "")
+        if tooltip:
+            item.setToolTip(str(tooltip))
+
+        if self.show_labels_check.isChecked():
+            sx, sy = self.world_to_scene(x, y)
+            label = payload_name
+            if "seed" in status_lower:
+                label = f"Seeded {payload_name}"
+            volume_label = str(details.get("waste_volume_display", "") or "").strip()
+            fill_label = str(details.get("fill_percent_display", "") or "").strip()
+            if volume_label and volume_label != "-":
+                label = f"{label} | {volume_label}"
+                if fill_label and fill_label != "-":
+                    label = f"{label} ({fill_label})"
+            label_item = self.draw_text_item(
+                sx + 0.15,
+                sy - 0.35,
+                label,
+                "#e8d5ff" if "seed" in status_lower else "#d7ffe7",
+                dynamic=True,
+                ignore_transform=True,
+                pixel_size=max(6, self.get_text_pixel_size() - 1),
+            )
+            if tooltip:
+                label_item.setToolTip(str(tooltip))
+
+    def _draw_seeded_fallback_rows_for_location(self, location: dict, rows: List[dict]):
+        if not rows:
+            return
+        lx = float(location.get("x", 0.0) or 0.0)
+        ly = float(location.get("y", 0.0) or 0.0)
+        for idx, row in enumerate(rows[:8]):
+            payload = str(row.get("payload", "") or "").strip()
+            if not payload or payload == "-":
+                continue
+            offset_x = 0.75 + ((idx % 4) * 0.45)
+            offset_y = 0.75 + ((idx // 4) * 0.45)
+            self._draw_payload_box_at_world(
+                lx + offset_x,
+                ly + offset_y,
+                payload,
+                rotation_deg=0.0,
+                status=str(row.get("status", "Seeded")),
+                source=str(row.get("source", "")),
+                row_details=row,
+            )
+
+    def draw_room_payloads_qt(self, floor: int):
+        if hasattr(self, "show_room_payloads_check"):
+            if not self.show_room_payloads_check.isChecked():
+                return
+
+        for location in self.layout_model.data.get("locations", []) or []:
+            try:
+                if int(location.get("floor", -999999)) != int(floor):
+                    continue
+            except Exception:
+                continue
+
+            location_name = str(location.get("name", "") or "").strip()
+            if not location_name:
+                continue
+
+            rows = self._inventory_payload_rows_for_location(location_name)
+            rows_by_space = {
+                str(row.get("space", "") or "").strip(): row for row in rows
+            }
+            used_seeded_rows = set()
+            seeded_row_indexes_by_payload: Dict[str, List[int]] = {}
+            for row_index, seeded_row in enumerate(rows):
+                if (
+                    not str(seeded_row.get("source", "") or "")
+                    .lower()
+                    .startswith("seeded")
+                ):
+                    continue
+                seeded_payload = str(seeded_row.get("payload", "") or "").strip()
+                if seeded_payload and seeded_payload != "-":
+                    seeded_row_indexes_by_payload.setdefault(seeded_payload, []).append(
+                        row_index
+                    )
+
+            spaces = location.get("inventory_spaces", []) or []
+            for space_index, space in enumerate(spaces, start=1):
+                if not isinstance(space, dict):
+                    continue
+                space_name = (
+                    str(space.get("name", "") or "").strip()
+                    or f"Inventory {space_index}"
+                )
+                row = rows_by_space.get(space_name, {})
+                row_payloads = self._payloads_from_display_value(row.get("payload", ""))
+                row_status = str(row.get("status", "Stored") or "Stored")
+                row_source = str(row.get("source", "") or "")
+
+                slots = [
+                    slot
+                    for slot in (space.get("payload_slots", []) or [])
+                    if isinstance(slot, dict)
+                ]
+                if not slots and row_payloads:
+                    # Older layouts may have no payload slot coordinates.  Draw the
+                    # first current payload in the centre of the inventory space.
+                    cx, cy = self._space_centroid_world(location, space)
+                    self._draw_payload_box_at_world(
+                        cx,
+                        cy,
+                        row_payloads[0],
+                        0.0,
+                        row_status,
+                        row_source,
+                        row_details=row,
+                    )
+                    continue
+
+                for slot_index, slot in enumerate(slots):
+                    configured_payload = str(slot.get("payload", "") or "").strip()
+                    payload_to_draw = configured_payload
+                    details_row = row
+                    draw_status = row_status
+                    draw_source = row_source
+
+                    # Waste payload slots are designated positions.  When a seeded
+                    # waste container exists, draw the live seeded row in the first
+                    # matching slot instead of drawing every configured slot as a
+                    # static full bin.  This keeps the fill label live and avoids
+                    # fake duplicate bins.
+                    if configured_payload:
+                        for seeded_idx in seeded_row_indexes_by_payload.get(
+                            configured_payload, []
+                        ):
+                            if seeded_idx in used_seeded_rows:
+                                continue
+                            seeded_candidate = rows[seeded_idx]
+                            details_row = seeded_candidate
+                            payload_to_draw = configured_payload
+                            draw_status = str(
+                                seeded_candidate.get("status", "Seeded") or "Seeded"
+                            )
+                            draw_source = str(
+                                seeded_candidate.get("source", "Seeded waste container")
+                                or "Seeded waste container"
+                            )
+                            used_seeded_rows.add(seeded_idx)
+                            break
+
+                    if details_row is row:
+                        if row_payloads:
+                            if (
+                                configured_payload
+                                and configured_payload not in row_payloads
+                            ):
+                                # A CSV drop-off may have changed the payload in this space;
+                                # draw the current payload instead of the configured default.
+                                payload_to_draw = row_payloads[
+                                    min(slot_index, len(row_payloads) - 1)
+                                ]
+                            elif not configured_payload:
+                                payload_to_draw = row_payloads[
+                                    min(slot_index, len(row_payloads) - 1)
+                                ]
+                        elif configured_payload:
+                            # The row exists but has been emptied by a pickup event.
+                            if row and str(row.get("payload", "-")).strip() in {
+                                "",
+                                "-",
+                            }:
+                                continue
+                        else:
+                            continue
+
+                        # If seeded rows are present for this configured payload and
+                        # they have all been consumed, do not draw extra static waste
+                        # bins just because the slot definition contains a payload name.
+                        if (
+                            configured_payload
+                            and configured_payload in seeded_row_indexes_by_payload
+                            and str(details_row.get("source", "") or "")
+                            .lower()
+                            .startswith("layout")
+                        ):
+                            continue
+
+                    if not payload_to_draw:
+                        continue
+
+                    x, y = self._payload_slot_world_position(location, space, slot)
+                    try:
+                        rotation = float(slot.get("rotation_deg", 0.0) or 0.0)
+                    except Exception:
+                        rotation = 0.0
+                    self._draw_payload_box_at_world(
+                        x,
+                        y,
+                        payload_to_draw,
+                        rotation,
+                        draw_status,
+                        draw_source,
+                        row_details=details_row,
+                    )
+
+            # If a seeded/shared container has no matching physical inventory slot,
+            # keep showing it near the location as a fallback marker.
+            fallback_rows = []
+            for idx, row in enumerate(rows):
+                if idx in used_seeded_rows:
+                    continue
+                if str(row.get("source", "")).lower().startswith("seeded"):
+                    space_name = str(row.get("space", "") or "").strip()
+                    if space_name not in rows_by_space or space_name.lower().startswith(
+                        "seeded"
+                    ):
+                        fallback_rows.append(row)
+            if fallback_rows:
+                self._draw_seeded_fallback_rows_for_location(location, fallback_rows)
+
+    def draw_seeded_waste_container_markers(self, floor: int):
+        if hasattr(self, "show_seeded_waste_containers_check"):
+            if not self.show_seeded_waste_containers_check.isChecked():
+                return
+
+        for name, point in self.layout_model.points_for_floor(floor).items():
+            if point.get("kind") != "location":
+                continue
+            seeded_rows = self._seeded_waste_container_rows_for_location(name)
+            if not seeded_rows:
+                continue
+
+            x, y = self.world_to_scene(point["x"], point["y"])
+            count = len(seeded_rows)
+            size = 0.35
+            for idx, seeded in enumerate(seeded_rows[:6]):
+                offset_x = 0.65 + ((idx % 3) * 0.42)
+                offset_y = 0.65 + ((idx // 3) * 0.42)
+                item = QGraphicsRectItem(x + offset_x, y + offset_y, size, size)
+                item.setBrush(QBrush(QColor("#8e44ad")))
+                item.setPen(QPen(QColor("#ffffff"), 0.0))
+                item.setData(0, "seeded_waste_container")
+                item.setData(1, name)
+                self.graphics_scene.addItem(item)
+                self.static_items.append(item)
+
+            if self.show_labels_check.isChecked():
+                label = f"{count} seeded bin" + ("s" if count != 1 else "")
+                self.draw_text_item(
+                    x + 1.0,
+                    y + 1.15,
+                    label,
+                    "#e8d5ff",
+                    ignore_transform=True,
+                    pixel_size=max(6, self.get_text_pixel_size() - 1),
+                )
 
     def _draw_amr_box_colored_qt(self, state: dict, fill="#4da3ff"):
         x = float(state["x"])
@@ -2568,7 +3315,9 @@ class SimulationVisualizer(QMainWindow):
                 {
                     "task_id": task_id,
                     "payload": payload,
-                    "payload_instance_id": instances[idx] if idx < len(instances) else "",
+                    "payload_instance_id": (
+                        instances[idx] if idx < len(instances) else ""
+                    ),
                     "from_location": str(
                         row.get("from_location", "") or row.get("start_node", "") or ""
                     ).strip(),
@@ -2944,6 +3693,23 @@ class SimulationVisualizer(QMainWindow):
                 if isinstance(value, list):
                     return ", ".join(str(x) for x in value if str(x).strip()) or "-"
                 return str(value)
+
+        # Inventory spaces are usually defined with payload_slots rather than a
+        # top-level current payload.  Treat those configured slots as initially
+        # stored payloads so seeded/starting containers are visible before the
+        # first CSV event has moved them.
+        slots = space.get("payload_slots", []) or []
+        if isinstance(slots, list):
+            payloads = []
+            for slot in slots:
+                if not isinstance(slot, dict):
+                    continue
+                payload = str(slot.get("payload", "") or "").strip()
+                if payload:
+                    payloads.append(payload)
+            if payloads:
+                return ", ".join(payloads)
+
         return "-"
 
     def _find_inventory_space_row(self, rows: List[dict], space_name: str):
@@ -2952,6 +3718,17 @@ class SimulationVisualizer(QMainWindow):
             return None
         for row in rows:
             if str(row.get("space", "")).strip() == space_name:
+                return row
+        return None
+
+    def _find_inventory_row_by_payload_instance(
+        self, rows: List[dict], instance_id: str
+    ):
+        instance_id = str(instance_id or "").strip()
+        if not instance_id:
+            return None
+        for row in rows:
+            if str(row.get("payload_instance_id", "") or "").strip() == instance_id:
                 return row
         return None
 
@@ -2983,6 +3760,49 @@ class SimulationVisualizer(QMainWindow):
                 return True
         return False
 
+    def _inventory_physical_payload_event_kind(self, row: dict) -> str:
+        """Return pickup/dropoff only for rows that physically move a payload.
+
+        Planning rows such as task_generated, return_task_generated,
+        waste_task_generated and task_assigned can contain a payload, pickup and
+        drop-off location, but the payload has not moved yet.  Treating those
+        rows as inventory updates makes a return bin appear in the department
+        slot as soon as the return task is created rather than when it is
+        delivered.
+        """
+        event_type = str(row.get("event_type", "") or "").strip().lower()
+        segment_type = str(row.get("segment_type", "") or "").strip().lower()
+        status = str(row.get("status", "") or "").strip().lower()
+        amr_id = str(row.get("amr_id", "") or "").strip()
+
+        # Generated rows and assignment rows are task metadata, not physical
+        # inventory movement.  Most generated rows also have no AMR id.
+        if (
+            event_type
+            in {
+                "task_generated",
+                "return_task_generated",
+                "waste_task_generated",
+                "task_assigned",
+                "multi_stop_task_assigned",
+            }
+            or event_type.endswith("_generated")
+            or (status == "generated" and not amr_id)
+        ):
+            return ""
+
+        physical_text = " ".join([event_type, segment_type])
+        if any(
+            token in physical_text
+            for token in ["dropoff", "drop_off", "deliver", "delivery", "unload"]
+        ):
+            return "dropoff"
+        if any(
+            token in physical_text for token in ["pickup", "pick_up", "collect", "load"]
+        ):
+            return "pickup"
+        return ""
+
     def _inventory_space_name_from_event(self, row: dict, event_kind: str) -> str:
         keys = [
             "inventory_space",
@@ -3000,6 +3820,185 @@ class SimulationVisualizer(QMainWindow):
                 return value
         return ""
 
+    def _simulation_seed_waste_containers_enabled(self) -> bool:
+        simulation = self.layout_model.data.get("simulation", {}) or {}
+        return bool(simulation.get("seed_waste_stream_containers_at_start", False))
+
+    def _waste_stream_lookup(self) -> Dict[str, dict]:
+        result = {}
+        for stream in self.layout_model.data.get("waste_streams", []) or []:
+            if not isinstance(stream, dict):
+                continue
+            name = str(stream.get("name", "") or "").strip()
+            if name:
+                result[name] = stream
+        return result
+
+    def _department_id_for_item(self, department: dict) -> str:
+        return (
+            str(department.get("id", "") or "").strip()
+            or str(department.get("name", "") or "").strip()
+        )
+
+    def _waste_locations_for_department(self, department: dict) -> List[str]:
+        locations = []
+        tg_locations = department.get("task_generation_locations", {}) or {}
+        waste_entry = (
+            tg_locations.get("waste", {}) if isinstance(tg_locations, dict) else {}
+        )
+
+        if isinstance(waste_entry, dict):
+            raw = waste_entry.get(
+                "pickup_dropoff_locations", waste_entry.get("locations", [])
+            )
+        else:
+            raw = waste_entry
+
+        if isinstance(raw, list):
+            locations.extend(str(x).strip() for x in raw if str(x).strip())
+        elif raw:
+            locations.append(str(raw).strip())
+
+        for key in ("waste_pickup_locations", "waste_locations"):
+            raw_extra = department.get(key, [])
+            if isinstance(raw_extra, list):
+                locations.extend(str(x).strip() for x in raw_extra if str(x).strip())
+
+        return sorted(set(locations))
+
+    def _seeded_waste_container_rows_for_location(
+        self, location_name: str
+    ) -> List[dict]:
+        if hasattr(self, "show_seeded_waste_containers_check"):
+            if not self.show_seeded_waste_containers_check.isChecked():
+                return []
+
+        location_name = str(location_name or "").strip()
+        if not location_name:
+            return []
+
+        global_seed_enabled = self._simulation_seed_waste_containers_enabled()
+        stream_lookup = self._waste_stream_lookup()
+        container_rows: Dict[tuple, dict] = {}
+
+        for department in self.layout_model.data.get("departments", []) or []:
+            if not isinstance(department, dict):
+                continue
+            department_locations = self._waste_locations_for_department(department)
+            if location_name not in department_locations:
+                continue
+
+            dept_id = self._department_id_for_item(department)
+            dept_name = str(department.get("name", "") or "").strip() or dept_id
+
+            for stream_cfg in department.get("waste_streams", []) or []:
+                if not isinstance(stream_cfg, dict):
+                    continue
+
+                stream_name = str(stream_cfg.get("name", "") or "").strip()
+                if not stream_name:
+                    continue
+
+                initial_present = stream_cfg.get("initial_container_present", None)
+                if initial_present is None:
+                    initial_present = global_seed_enabled
+                if not bool(initial_present):
+                    continue
+
+                stream_def = stream_lookup.get(stream_name, {})
+                payload = (
+                    str(stream_cfg.get("payload", "") or "").strip()
+                    or str(stream_def.get("payload", "") or "").strip()
+                    or str(stream_def.get("container_type", "") or "").strip()
+                    or stream_name
+                )
+
+                shared = bool(
+                    stream_cfg.get(
+                        "shared_container", stream_cfg.get("shared_bin", False)
+                    )
+                )
+                shared_group = str(
+                    stream_cfg.get("shared_container_group", "")
+                    or stream_cfg.get("shared_bin_group", "")
+                    or ""
+                ).strip()
+
+                if shared:
+                    container_group = shared_group or f"{stream_name}:{location_name}"
+                    container_key = ("shared", stream_name, container_group)
+                else:
+                    container_group = f"{dept_id}:{stream_name}:{location_name}"
+                    container_key = ("department", dept_id, stream_name, location_name)
+
+                capacity_m3 = self._waste_stream_capacity_for_name(stream_name)
+                threshold_m3 = self._waste_stream_threshold_for_name(stream_name)
+                initial_volume_m3 = self._row_float(
+                    stream_cfg,
+                    "initial_waste_volume_m3",
+                    "initial_volume_m3",
+                    "current_volume_m3",
+                    "waste_volume_m3",
+                    default=0.0,
+                )
+                daily_rate_m3 = self._waste_stream_daily_volume_m3(stream_cfg)
+
+                existing = container_rows.get(container_key)
+                if existing is None:
+                    container_rows[container_key] = {
+                        "space": f"Seeded {stream_name} container",
+                        "payload": payload,
+                        "payload_instance_id": str(
+                            stream_cfg.get("payload_instance_id", "") or ""
+                        ),
+                        "task_id": "-",
+                        "amr_id": "-",
+                        "status": "Seeded",
+                        "timestamp": "Simulation start",
+                        "fill_start_time": "Simulation start",
+                        "source": "Seeded waste container",
+                        "waste_stream": stream_name,
+                        "waste_volume_m3": initial_volume_m3,
+                        "fill_start_volume_m3": initial_volume_m3,
+                        "live_waste_volume_m3_per_day": daily_rate_m3,
+                        "container_capacity_m3": capacity_m3,
+                        "container_threshold_m3": threshold_m3,
+                        "container_group": container_group,
+                        "department_id": dept_id,
+                        "department_name": dept_name,
+                        "departments_served": dept_name,
+                    }
+                else:
+                    # Shared containers accumulate the generated volume from all
+                    # departments that use the same shared bin group/location.
+                    existing["live_waste_volume_m3_per_day"] = (
+                        float(existing.get("live_waste_volume_m3_per_day", 0.0) or 0.0)
+                        + daily_rate_m3
+                    )
+                    existing["fill_start_volume_m3"] = (
+                        float(existing.get("fill_start_volume_m3", 0.0) or 0.0)
+                        + initial_volume_m3
+                    )
+                    existing["waste_volume_m3"] = existing["fill_start_volume_m3"]
+                    if capacity_m3 > 0.0 and not existing.get("container_capacity_m3"):
+                        existing["container_capacity_m3"] = capacity_m3
+                    if threshold_m3 > 0.0 and not existing.get(
+                        "container_threshold_m3"
+                    ):
+                        existing["container_threshold_m3"] = threshold_m3
+                    names = [
+                        x.strip()
+                        for x in str(existing.get("departments_served", "")).split(",")
+                        if x.strip()
+                    ]
+                    if dept_name not in names:
+                        names.append(dept_name)
+                    existing["departments_served"] = ", ".join(names)
+
+        return [
+            self._enrich_payload_row_details(row) for row in container_rows.values()
+        ]
+
     def _inventory_payload_rows_for_location(self, location_name: str) -> List[dict]:
         location = self._location_by_name(location_name)
         if not location:
@@ -3014,50 +4013,154 @@ class SimulationVisualizer(QMainWindow):
                 payload = self._payload_value_from_space(space)
 
                 rows.append(
-                    {
-                        "space": space_name,
-                        "payload": payload,
-                        "task_id": space.get("task_id", "-"),
-                        "amr_id": space.get("amr_id", "-"),
-                        "status": "Stored" if payload != "-" else "Empty",
-                        "timestamp": space.get("timestamp", "-"),
-                        "source": "Layout JSON",
-                    }
+                    self._enrich_payload_row_details(
+                        {
+                            "space": space_name,
+                            "payload": payload,
+                            "payload_instance_id": space.get("payload_instance_id", ""),
+                            "task_id": space.get("task_id", "-"),
+                            "amr_id": space.get("amr_id", "-"),
+                            "status": "Stored" if payload != "-" else "Empty",
+                            "timestamp": space.get("timestamp", "-"),
+                            "source": "Layout JSON",
+                        }
+                    )
                 )
         else:
             # No defined inventory spaces: still show the location contents.
             rows.append(
-                {
-                    "space": "Location",
-                    "payload": "-",
-                    "task_id": "-",
-                    "amr_id": "-",
-                    "status": "Empty",
-                    "timestamp": "-",
-                    "source": "Location fallback",
-                }
+                self._enrich_payload_row_details(
+                    {
+                        "space": "Location",
+                        "payload": "-",
+                        "task_id": "-",
+                        "amr_id": "-",
+                        "status": "Empty",
+                        "timestamp": "-",
+                        "source": "Location fallback",
+                    }
+                )
             )
 
+        seeded_rows = self._seeded_waste_container_rows_for_location(location_name)
+        if seeded_rows:
+            # If there are explicit inventory spaces already containing the same
+            # payload, annotate those rows as seeded rather than adding visual
+            # duplicates.  Otherwise add a virtual seeded-container row.
+            for seeded in seeded_rows:
+                existing = None
+                seeded_payload = str(seeded.get("payload", "") or "").strip()
+                for candidate in rows:
+                    candidate_payload = str(candidate.get("payload", "") or "").strip()
+                    if seeded_payload and candidate_payload == seeded_payload:
+                        existing = candidate
+                        break
+                if existing is not None:
+                    existing.update(
+                        {
+                            "status": "Seeded",
+                            "timestamp": "Simulation start",
+                            "fill_start_time": seeded.get(
+                                "fill_start_time", "Simulation start"
+                            ),
+                            "source": "Seeded waste container",
+                            "waste_stream": seeded.get("waste_stream", ""),
+                            "waste_volume_m3": seeded.get("waste_volume_m3", 0.0),
+                            "fill_start_volume_m3": seeded.get(
+                                "fill_start_volume_m3",
+                                seeded.get("waste_volume_m3", 0.0),
+                            ),
+                            "live_waste_volume_m3_per_day": seeded.get(
+                                "live_waste_volume_m3_per_day", 0.0
+                            ),
+                            "container_capacity_m3": seeded.get(
+                                "container_capacity_m3", 0.0
+                            ),
+                            "container_threshold_m3": seeded.get(
+                                "container_threshold_m3", 0.0
+                            ),
+                            "container_group": seeded.get("container_group", ""),
+                            "departments_served": seeded.get(
+                                "departments_served",
+                                existing.get("departments_served", ""),
+                            ),
+                            "payload_instance_id": seeded.get(
+                                "payload_instance_id",
+                                existing.get("payload_instance_id", ""),
+                            ),
+                        }
+                    )
+                    existing.update(self._enrich_payload_row_details(existing))
+                else:
+                    rows.append(seeded)
+
         if not self.current_time or not self.sim_log.events:
-            return rows
+            return [self._enrich_payload_row_details(row) for row in rows]
 
         for event in self.sim_log.events:
             if event.start_time > self.current_time:
                 break
 
             row = event.row
-            event_type = str(row.get("event_type", "")).strip().lower()
-            segment_type = str(row.get("segment_type", "")).strip().lower()
-            status = str(row.get("status", "")).strip().lower()
-            text = " ".join([event_type, segment_type, status])
+            physical_event_kind = self._inventory_physical_payload_event_kind(row)
+            is_dropoff = physical_event_kind == "dropoff"
+            is_pickup = physical_event_kind == "pickup"
 
-            is_dropoff = any(
-                token in text
-                for token in ["dropoff", "drop_off", "deliver", "delivery", "unload"]
+            payload_from_row = str(
+                row.get("payload", "") or row.get("container_type", "") or ""
+            ).strip()
+            has_waste_volume = str(
+                row.get("waste_volume_m3", "") or ""
+            ).strip() not in {"", "0", "0.0", "0.000"}
+            is_waste_update = bool(
+                payload_from_row
+                and str(row.get("waste_stream", "") or "").strip()
+                and has_waste_volume
             )
-            is_pickup = any(
-                token in text for token in ["pickup", "pick_up", "collect", "load"]
-            )
+
+            # Planning rows such as task_generated/task_assigned carry the collected
+            # volume for the future collection.  They must not change the live fill
+            # of the bin in the room.  Only physical pickup/dropoff rows move/reset
+            # containers.
+            if (
+                False
+                and (not is_dropoff and not is_pickup)
+                and is_waste_update
+                and self._event_location_matches(row, location_name, "pickup")
+            ):
+                target = None
+                for candidate in rows:
+                    candidate_payload = str(candidate.get("payload", "") or "").strip()
+                    candidate_stream = str(
+                        candidate.get("waste_stream", "") or ""
+                    ).strip()
+                    if (
+                        candidate_payload == payload_from_row
+                        or candidate_stream
+                        == str(row.get("waste_stream", "") or "").strip()
+                    ):
+                        target = candidate
+                        break
+                if target is None:
+                    target = self._first_empty_inventory_space_row(rows)
+                if target is not None:
+                    target.update(
+                        {
+                            "payload": payload_from_row,
+                            "task_id": str(row.get("task_id", "") or "-").strip()
+                            or "-",
+                            "amr_id": str(row.get("amr_id", "") or "-").strip() or "-",
+                            "status": "Filled",
+                            "timestamp": event.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "fill_start_time": event.start_time.strftime(
+                                "%Y-%m-%d %H:%M:%S"
+                            ),
+                            "source": "Simulation CSV",
+                            **self._csv_waste_row_payload_details(row),
+                        }
+                    )
+                    target.update(self._enrich_payload_row_details(target))
+                continue
 
             if not is_dropoff and not is_pickup:
                 continue
@@ -3065,21 +4168,54 @@ class SimulationVisualizer(QMainWindow):
             if is_dropoff and self._event_location_matches(
                 row, location_name, "dropoff"
             ):
-                target = self._find_inventory_space_row(
-                    rows, self._inventory_space_name_from_event(row, "dropoff")
-                ) or self._first_empty_inventory_space_row(rows)
+                instance_id = str(row.get("payload_instance_id", "") or "").strip()
+                target = (
+                    self._find_inventory_row_by_payload_instance(rows, instance_id)
+                    or self._find_inventory_space_row(
+                        rows, self._inventory_space_name_from_event(row, "dropoff")
+                    )
+                    or self._first_empty_inventory_space_row(rows)
+                )
                 if target is None:
                     continue
+
+                # A returned waste bin has been emptied at the waste destination,
+                # so when it comes back to the department its fill restarts from
+                # zero.  Preserve the seeded row's waste stream/rate metadata when
+                # the return CSV row does not carry it.
+                csv_details = self._csv_waste_row_payload_details(row, reset_fill=True)
+                for preserve_key in (
+                    "waste_stream",
+                    "container_capacity_m3",
+                    "container_threshold_m3",
+                    "container_group",
+                    "live_waste_volume_m3_per_day",
+                    "departments_served",
+                ):
+                    if not csv_details.get(preserve_key) and target.get(preserve_key):
+                        csv_details[preserve_key] = target.get(preserve_key)
+
                 target.update(
                     {
-                        "payload": str(row.get("payload", "")).strip() or "-",
+                        "payload": str(row.get("payload", "")).strip()
+                        or str(row.get("container_type", "")).strip()
+                        or "-",
                         "task_id": str(row.get("task_id", "")).strip() or "-",
                         "amr_id": str(row.get("amr_id", "")).strip() or "-",
-                        "status": "Occupied",
+                        "status": (
+                            "Returned empty"
+                            if str(row.get("task_id", "")).upper().startswith("RETURN")
+                            else "Occupied"
+                        ),
                         "timestamp": event.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "fill_start_time": event.start_time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
                         "source": "Simulation CSV",
+                        **csv_details,
                     }
                 )
+                target.update(self._enrich_payload_row_details(target))
 
             if is_pickup and self._event_location_matches(row, location_name, "pickup"):
                 payload = str(row.get("payload", "")).strip()
@@ -3096,15 +4232,30 @@ class SimulationVisualizer(QMainWindow):
                 target.update(
                     {
                         "payload": "-",
+                        # Once the bin has physically left this inventory slot,
+                        # clear the instance id from the slot.  Otherwise a later
+                        # planning row for the return task can match the empty
+                        # slot by instance id and make the bin appear to be back
+                        # before the AMR has delivered it.
+                        "payload_instance_id": "-",
                         "task_id": str(row.get("task_id", "")).strip() or "-",
                         "amr_id": str(row.get("amr_id", "")).strip() or "-",
                         "status": "Empty",
                         "timestamp": event.start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "fill_start_time": event.start_time.strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        ),
                         "source": "Simulation CSV",
+                        "waste_volume_m3": 0.0,
+                        "fill_start_volume_m3": 0.0,
                     }
                 )
+                target.update(self._enrich_payload_row_details(target))
 
-        return rows
+        # Re-enrich every row at the current timeline position.  This is what
+        # makes waste container labels/tooltips continue to fill while the
+        # visualiser plays, even when there is no new CSV event on this tick.
+        return [self._enrich_payload_row_details(row) for row in rows]
 
     def _inventory_space_rows_for_location(self, location_name: str) -> List[dict]:
         location = self._location_by_name(location_name)
@@ -3327,7 +4478,9 @@ class SimulationVisualizer(QMainWindow):
                 self.graphics_scene.addItem(item)
                 self.dynamic_items.append(item)
 
-            onboard_label = self._format_onboard_payloads_for_label(state.get("raw", {}))
+            onboard_label = self._format_onboard_payloads_for_label(
+                state.get("raw", {})
+            )
             payload = onboard_label or (state.get("payload") or "")
             label = amr_id if not payload else f"{amr_id} | {payload}"
             self.draw_text_item(
@@ -3708,6 +4861,8 @@ class SimulationVisualizer(QMainWindow):
             "Yellow square = corridor node",
             "Red diamond = lift node",
             "Blue AMR = active AMR, orange = followed AMR",
+            "Green rectangles = payloads in room spaces",
+            "Purple rectangles = seeded waste containers",
             "Timeline:",
             "blue=move, orange=lift, ",
             "green=charge, purple=pickup/dropoff",
