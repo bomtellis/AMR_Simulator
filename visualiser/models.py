@@ -13,6 +13,61 @@ LOGISTICS_TASK_GENERATION_CATEGORIES = [
 ]
 
 
+def normalise_amr_payload_slots(amr: dict) -> list:
+    """Return payload slot definitions, migrating legacy single-capacity AMRs."""
+    if not isinstance(amr, dict):
+        amr = {}
+
+    slots = amr.get("payload_slots", [])
+    clean = []
+
+    if isinstance(slots, list):
+        for idx, slot in enumerate(slots, start=1):
+            if not isinstance(slot, dict):
+                continue
+            clean_slot = {
+                "name": str(slot.get("name", "")).strip() or f"Slot {idx}",
+                "payload_capacity_kg": float(
+                    slot.get("payload_capacity_kg", 0.0) or 0.0
+                ),
+                "payload_length_capacity_m": float(
+                    slot.get("payload_length_capacity_m", 0.0) or 0.0
+                ),
+                "payload_width_capacity_m": float(
+                    slot.get("payload_width_capacity_m", 0.0) or 0.0
+                ),
+                "payload_height_capacity_m": float(
+                    slot.get("payload_height_capacity_m", 0.0) or 0.0
+                ),
+            }
+            clean.append(clean_slot)
+
+    if not clean:
+        clean = [
+            {
+                "name": "Slot 1",
+                "payload_capacity_kg": float(
+                    amr.get("payload_capacity_kg", 100) or 100
+                ),
+                "payload_length_capacity_m": float(
+                    amr.get("payload_length_capacity_m", 1.0) or 1.0
+                ),
+                "payload_width_capacity_m": float(
+                    amr.get("payload_width_capacity_m", 1.0) or 1.0
+                ),
+                "payload_height_capacity_m": float(
+                    amr.get("payload_height_capacity_m", 1.0) or 1.0
+                ),
+            }
+        ]
+
+    return clean
+
+
+def amr_supports_manual_tasks(amr: dict) -> bool:
+    return len(normalise_amr_payload_slots(amr)) == 1
+
+
 def default_task_generation_category(label: str) -> dict:
     return {
         "enabled": False,
@@ -206,6 +261,7 @@ class JsonStore:
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
         self.ensure_task_generation_defaults()
         self.ensure_payload_defaults()
+        self.ensure_amr_defaults()
 
     def ensure_payload_defaults(self) -> None:
         for payload in self.data.setdefault("payloads", []):
@@ -246,6 +302,42 @@ class JsonStore:
 
             payload["items"] = clean
 
+    def ensure_amr_defaults(self) -> None:
+        for amr in self.data.setdefault("amrs", []):
+            slots = normalise_amr_payload_slots(amr)
+            amr["payload_slots"] = slots
+
+            # Keep the legacy top-level fields populated from the first slot so older
+            # simulator/reporting code continues to read a sensible single-slot value.
+            primary = slots[0]
+            amr["payload_capacity_kg"] = float(primary.get("payload_capacity_kg", 0.0))
+            amr["payload_length_capacity_m"] = float(
+                primary.get("payload_length_capacity_m", 0.0)
+            )
+            amr["payload_width_capacity_m"] = float(
+                primary.get("payload_width_capacity_m", 0.0)
+            )
+            amr["payload_height_capacity_m"] = float(
+                primary.get("payload_height_capacity_m", 0.0)
+            )
+            amr["manual_task_compatible"] = len(slots) == 1
+            amr["multi_stop_enabled"] = bool(
+                amr.get("multi_stop_enabled", len(slots) > 1) and len(slots) > 1
+            )
+
+    def has_manual_task_compatible_amr(self) -> bool:
+        self.ensure_amr_defaults()
+        return any(amr_supports_manual_tasks(amr) for amr in self.data.get("amrs", []))
+
+    def multi_stop_enabled_amrs(self) -> list:
+        self.ensure_amr_defaults()
+        return [
+            amr
+            for amr in self.data.get("amrs", [])
+            if bool(amr.get("multi_stop_enabled", False))
+            and len(normalise_amr_payload_slots(amr)) > 1
+        ]
+
     def ensure_task_generation_defaults(self) -> dict:
         self.data["task_generation"] = merge_task_generation_defaults(
             self.data.get("task_generation", {})
@@ -264,6 +356,7 @@ class JsonStore:
             return cls(json.load(f))
 
     def save(self, path: str) -> None:
+        self.ensure_amr_defaults()
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
 
@@ -990,6 +1083,32 @@ class JsonStore:
                 errors.append(
                     f"AMR {amr.get('id')} has unknown start location: {amr.get('start_location')}"
                 )
+
+            slots = normalise_amr_payload_slots(amr)
+            if not slots:
+                errors.append(
+                    f"AMR {amr.get('id')} must have at least one payload slot"
+                )
+            for slot in slots:
+                slot_name = slot.get("name", "Slot")
+                try:
+                    if float(slot.get("payload_capacity_kg", 0.0)) <= 0:
+                        errors.append(
+                            f"AMR {amr.get('id')} {slot_name} payload kg must be greater than 0"
+                        )
+                    for key, label in [
+                        ("payload_length_capacity_m", "length"),
+                        ("payload_width_capacity_m", "width"),
+                        ("payload_height_capacity_m", "height"),
+                    ]:
+                        if float(slot.get(key, 0.0)) <= 0:
+                            errors.append(
+                                f"AMR {amr.get('id')} {slot_name} {label} capacity must be greater than 0"
+                            )
+                except Exception:
+                    errors.append(
+                        f"AMR {amr.get('id')} {slot_name} has invalid payload slot dimensions"
+                    )
 
         seen_floors = set()
         for entry in self.data.get("floor_dxf_files", []):

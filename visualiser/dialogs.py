@@ -2265,6 +2265,52 @@ class LiftEditorDialog(QDialog):
             QMessageBox.critical(self, "Invalid lift", str(exc))
 
 
+def _normalise_amr_payload_slots(amr):
+    """Return the AMR payload slot list, migrating legacy single-slot fields."""
+    slots = amr.get("payload_slots", []) if isinstance(amr, dict) else []
+    clean = []
+
+    if isinstance(slots, list):
+        for idx, slot in enumerate(slots, start=1):
+            if not isinstance(slot, dict):
+                continue
+            clean.append(
+                {
+                    "name": str(slot.get("name", "")).strip() or f"Slot {idx}",
+                    "payload_capacity_kg": float(slot.get("payload_capacity_kg", 0.0) or 0.0),
+                    "payload_length_capacity_m": float(slot.get("payload_length_capacity_m", 0.0) or 0.0),
+                    "payload_width_capacity_m": float(slot.get("payload_width_capacity_m", 0.0) or 0.0),
+                    "payload_height_capacity_m": float(slot.get("payload_height_capacity_m", 0.0) or 0.0),
+                }
+            )
+
+    if not clean:
+        clean = [
+            {
+                "name": "Slot 1",
+                "payload_capacity_kg": float(amr.get("payload_capacity_kg", 100) or 100),
+                "payload_length_capacity_m": float(amr.get("payload_length_capacity_m", 1.0) or 1.0),
+                "payload_width_capacity_m": float(amr.get("payload_width_capacity_m", 1.0) or 1.0),
+                "payload_height_capacity_m": float(amr.get("payload_height_capacity_m", 1.0) or 1.0),
+            }
+        ]
+
+    return clean
+
+
+def _amr_payload_slot_summary(amr):
+    slots = _normalise_amr_payload_slots(amr)
+    if len(slots) == 1:
+        slot = slots[0]
+        return (
+            f"1 slot ({slot.get('payload_capacity_kg', 0):g} kg, "
+            f"{slot.get('payload_length_capacity_m', 0):g} x "
+            f"{slot.get('payload_width_capacity_m', 0):g} x "
+            f"{slot.get('payload_height_capacity_m', 0):g} m)"
+        )
+    return f"{len(slots)} slots"
+
+
 class AMREditorDialog(QDialog):
     def __init__(self, parent, location_names, seed=None, default_amr_id="AMR-1"):
         super().__init__(parent)
@@ -2272,6 +2318,7 @@ class AMREditorDialog(QDialog):
         self.result = None
         self.seed = seed or {}
         self.location_names = sorted(location_names)
+        self.payload_slots = _normalise_amr_payload_slots(self.seed)
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -2279,18 +2326,6 @@ class AMREditorDialog(QDialog):
 
         self.id_edit = QLineEdit(str(self.seed.get("id", default_amr_id)))
         self.quantity_edit = QLineEdit(str(self.seed.get("quantity", 1)))
-        self.payload_capacity_edit = QLineEdit(
-            str(self.seed.get("payload_capacity_kg", 100))
-        )
-        self.payload_length_edit = QLineEdit(
-            str(self.seed.get("payload_length_capacity_m", 1.0))
-        )
-        self.payload_width_edit = QLineEdit(
-            str(self.seed.get("payload_width_capacity_m", 1.0))
-        )
-        self.payload_height_edit = QLineEdit(
-            str(self.seed.get("payload_height_capacity_m", 1.0))
-        )
         self.amr_length_edit = QLineEdit(str(self.seed.get("length_m", 0.8)))
         self.amr_width_edit = QLineEdit(str(self.seed.get("width_m", 0.6)))
         self.amr_height_edit = QLineEdit(str(self.seed.get("height_m", 1.2)))
@@ -2308,6 +2343,10 @@ class AMREditorDialog(QDialog):
         self.battery_soc_edit = QLineEdit(
             str(self.seed.get("battery_soc_percent", 100))
         )
+        self.multi_stop_check = QCheckBox("Allow multi-stop route batching")
+        self.multi_stop_check.setChecked(
+            bool(self.seed.get("multi_stop_enabled", len(self.payload_slots) > 1))
+        )
 
         self.start_location_combo = QComboBox()
         self.start_location_combo.addItems([""] + self.location_names)
@@ -2317,10 +2356,6 @@ class AMREditorDialog(QDialog):
 
         form.addRow("AMR ID", self.id_edit)
         form.addRow("Quantity", self.quantity_edit)
-        form.addRow("Payload capacity kg", self.payload_capacity_edit)
-        form.addRow("Payload length capacity m", self.payload_length_edit)
-        form.addRow("Payload width capacity m", self.payload_width_edit)
-        form.addRow("Payload height capacity m", self.payload_height_edit)
         form.addRow("AMR length m", self.amr_length_edit)
         form.addRow("AMR width m", self.amr_width_edit)
         form.addRow("AMR height m", self.amr_height_edit)
@@ -2331,13 +2366,149 @@ class AMREditorDialog(QDialog):
         form.addRow("Recharge threshold %", self.recharge_threshold_edit)
         form.addRow("Battery SOC %", self.battery_soc_edit)
         form.addRow("Start location", self.start_location_combo)
+        form.addRow("Multi-stop", self.multi_stop_check)
+
+        layout.addWidget(QLabel("Payload slots"))
+        self.slots_table = QTableWidget(0, 5)
+        self.slots_table.setHorizontalHeaderLabels(
+            ["Slot", "Weight kg", "Length m", "Width m", "Height m"]
+        )
+        self.slots_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.slots_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.slots_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        layout.addWidget(self.slots_table, 1)
+
+        slot_buttons = QHBoxLayout()
+        layout.addLayout(slot_buttons)
+
+        add_slot_btn = QPushButton("Add slot")
+        duplicate_slot_btn = QPushButton("Duplicate selected slot")
+        delete_slot_btn = QPushButton("Delete selected slot")
+
+        add_slot_btn.clicked.connect(self.add_payload_slot)
+        duplicate_slot_btn.clicked.connect(self.duplicate_payload_slot)
+        delete_slot_btn.clicked.connect(self.delete_payload_slot)
+
+        slot_buttons.addWidget(add_slot_btn)
+        slot_buttons.addWidget(duplicate_slot_btn)
+        slot_buttons.addWidget(delete_slot_btn)
+        slot_buttons.addStretch(1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self.resize(520, 420)
+        self._refresh_slots_table()
+        self.resize(720, 620)
+
+    def _refresh_slots_table(self):
+        self.slots_table.setRowCount(0)
+        for slot in self.payload_slots:
+            row = self.slots_table.rowCount()
+            self.slots_table.insertRow(row)
+            values = [
+                slot.get("name", f"Slot {row + 1}"),
+                slot.get("payload_capacity_kg", 0.0),
+                slot.get("payload_length_capacity_m", 0.0),
+                slot.get("payload_width_capacity_m", 0.0),
+                slot.get("payload_height_capacity_m", 0.0),
+            ]
+            for col, value in enumerate(values):
+                self.slots_table.setItem(row, col, QTableWidgetItem(str(value)))
+
+    def add_payload_slot(self):
+        self.payload_slots.append(
+            {
+                "name": f"Slot {len(self.payload_slots) + 1}",
+                "payload_capacity_kg": 100.0,
+                "payload_length_capacity_m": 1.0,
+                "payload_width_capacity_m": 1.0,
+                "payload_height_capacity_m": 1.0,
+            }
+        )
+        self._refresh_slots_table()
+        self.slots_table.selectRow(self.slots_table.rowCount() - 1)
+
+    def duplicate_payload_slot(self):
+        row = self.slots_table.currentRow()
+        if row < 0:
+            QMessageBox.information(
+                self,
+                "Payload slots",
+                "Select a payload slot to duplicate.",
+            )
+            return
+
+        try:
+            # Read from the table first so any unsaved edits in the selected row
+            # are copied rather than the last refreshed backing data.
+            name_item = self.slots_table.item(row, 0)
+            kg_item = self.slots_table.item(row, 1)
+            length_item = self.slots_table.item(row, 2)
+            width_item = self.slots_table.item(row, 3)
+            height_item = self.slots_table.item(row, 4)
+
+            source_name = (
+                name_item.text().strip()
+                if name_item and name_item.text().strip()
+                else f"Slot {row + 1}"
+            )
+
+            duplicate = {
+                "name": f"{source_name} Copy",
+                "payload_capacity_kg": float(kg_item.text() if kg_item else 0.0),
+                "payload_length_capacity_m": float(length_item.text() if length_item else 0.0),
+                "payload_width_capacity_m": float(width_item.text() if width_item else 0.0),
+                "payload_height_capacity_m": float(height_item.text() if height_item else 0.0),
+            }
+
+            insert_at = row + 1
+            self.payload_slots.insert(insert_at, duplicate)
+            self._refresh_slots_table()
+            self.slots_table.selectRow(insert_at)
+
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Payload slots",
+                f"Could not duplicate selected slot: {exc}",
+            )
+
+    def delete_payload_slot(self):
+        row = self.slots_table.currentRow()
+        if row < 0:
+            return
+        if len(self.payload_slots) <= 1:
+            QMessageBox.critical(self, "Payload slots", "AMRs must have at least one payload slot.")
+            return
+        del self.payload_slots[row]
+        self._refresh_slots_table()
+
+    def _collect_payload_slots(self):
+        slots = []
+        for row in range(self.slots_table.rowCount()):
+            name_item = self.slots_table.item(row, 0)
+            kg_item = self.slots_table.item(row, 1)
+            length_item = self.slots_table.item(row, 2)
+            width_item = self.slots_table.item(row, 3)
+            height_item = self.slots_table.item(row, 4)
+            slot = {
+                "name": (name_item.text().strip() if name_item else "") or f"Slot {row + 1}",
+                "payload_capacity_kg": float(kg_item.text() if kg_item else 0.0),
+                "payload_length_capacity_m": float(length_item.text() if length_item else 0.0),
+                "payload_width_capacity_m": float(width_item.text() if width_item else 0.0),
+                "payload_height_capacity_m": float(height_item.text() if height_item else 0.0),
+            }
+            if slot["payload_capacity_kg"] <= 0:
+                raise ValueError(f"{slot['name']} weight capacity must be greater than 0")
+            for key in ["payload_length_capacity_m", "payload_width_capacity_m", "payload_height_capacity_m"]:
+                if slot[key] <= 0:
+                    raise ValueError(f"{slot['name']} dimensions must be greater than 0")
+            slots.append(slot)
+        if not slots:
+            raise ValueError("Add at least one payload slot")
+        return slots
 
     def accept(self):
         try:
@@ -2345,13 +2516,20 @@ class AMREditorDialog(QDialog):
             if not amr_id:
                 raise ValueError("AMR ID is required")
 
+            payload_slots = self._collect_payload_slots()
+            primary_slot = payload_slots[0]
+            multi_stop_enabled = bool(self.multi_stop_check.isChecked() and len(payload_slots) > 1)
+
             self.result = {
                 "id": amr_id,
                 "quantity": int(float(self.quantity_edit.text())),
-                "payload_capacity_kg": float(self.payload_capacity_edit.text()),
-                "payload_length_capacity_m": float(self.payload_length_edit.text()),
-                "payload_width_capacity_m": float(self.payload_width_edit.text()),
-                "payload_height_capacity_m": float(self.payload_height_edit.text()),
+                "payload_slots": payload_slots,
+                "payload_capacity_kg": float(primary_slot["payload_capacity_kg"]),
+                "payload_length_capacity_m": float(primary_slot["payload_length_capacity_m"]),
+                "payload_width_capacity_m": float(primary_slot["payload_width_capacity_m"]),
+                "payload_height_capacity_m": float(primary_slot["payload_height_capacity_m"]),
+                "multi_stop_enabled": multi_stop_enabled,
+                "manual_task_compatible": len(payload_slots) == 1,
                 "length_m": float(self.amr_length_edit.text()),
                 "width_m": float(self.amr_width_edit.text()),
                 "height_m": float(self.amr_height_edit.text()),
@@ -2875,10 +3053,9 @@ class AMRListDialog(QDialog):
     columns = [
         ("id", "ID", 120),
         ("quantity", "Qty", 70),
-        ("payload_capacity_kg", "Payload kg", 100),
-        ("payload_length_capacity_m", "Length cap. m", 110),
-        ("payload_width_capacity_m", "Width cap. m", 110),
-        ("payload_height_capacity_m", "Height cap. m", 110),
+        ("payload_slot_summary", "Payload slots", 180),
+        ("multi_stop_enabled", "Multi-stop", 90),
+        ("manual_task_compatible", "Manual task", 100),
         ("speed_m_per_sec", "Speed", 80),
         ("motor_power_w", "Motor W", 90),
         ("battery_capacity_kwh", "Battery kWh", 100),
@@ -2950,7 +3127,13 @@ class AMRListDialog(QDialog):
             row = self.table.rowCount()
             self.table.insertRow(row)
             for col, (key, _heading, _width) in enumerate(self.columns):
-                self.table.setItem(row, col, QTableWidgetItem(str(item.get(key, ""))))
+                if key == "payload_slot_summary":
+                    value = _amr_payload_slot_summary(item)
+                elif key == "manual_task_compatible":
+                    value = "Yes" if len(_normalise_amr_payload_slots(item)) == 1 else "No"
+                else:
+                    value = item.get(key, "")
+                self.table.setItem(row, col, QTableWidgetItem(str(value)))
 
     def add_item(self):
         dialog = AMREditorDialog(
@@ -4497,6 +4680,8 @@ class InventorySpacesDialog(QDialog):
         self.current_points = []
         self.selected_space_index = None
         self.selected_space_indices = set()
+        self.rotate_space_index = None
+        self.rotate_start_center = None
         self.drag_point_index = None
         self.drag_whole_space = False
         self.drag_start_world = None
@@ -4510,6 +4695,8 @@ class InventorySpacesDialog(QDialog):
         self.drag_space_indices = set()
         self.drag_spaces_start_world = None
         self.drag_spaces_start_slots = {}
+        self.rotate_space_index = None
+        self.rotate_start_center = None
         self.copied_space = None
         self._initial_fit_done = False
         self.selected_payload_index = None
@@ -4589,6 +4776,20 @@ class InventorySpacesDialog(QDialog):
 
         right.addLayout(size_row)
 
+        rotate_row = QHBoxLayout()
+        self.rotation_edit = QLineEdit("0.0")
+        self.rotation_edit.setToolTip("Free-angle rotation in degrees for the selected payload inventory space")
+        self.rotation_edit.editingFinished.connect(self.apply_rotation_from_field)
+        rotate_left_btn = QPushButton("-5°")
+        rotate_right_btn = QPushButton("+5°")
+        rotate_left_btn.clicked.connect(lambda: self.nudge_selected_rotation(-5.0))
+        rotate_right_btn.clicked.connect(lambda: self.nudge_selected_rotation(5.0))
+        rotate_row.addWidget(QLabel("Rotation °"))
+        rotate_row.addWidget(self.rotation_edit)
+        rotate_row.addWidget(rotate_left_btn)
+        rotate_row.addWidget(rotate_right_btn)
+        right.addLayout(rotate_row)
+
         payload_tools = QHBoxLayout()
         self.payload_combo = QComboBox()
         self.payload_combo.addItems([""] + self._payload_names())
@@ -4616,7 +4817,7 @@ class InventorySpacesDialog(QDialog):
         right.addWidget(self.view, 1)
 
         self.status_label = QLabel(
-            "Inventory spaces are payload footprints only. Use Add payload to create a fixed-size space, drag the payload/space to position it, and right-click it to rotate."
+            "Inventory spaces are payload footprints only. Use Add payload to create a fixed-size space, drag to position it, or drag the rotate handle / enter an angle for free rotation."
         )
         right.addWidget(self.status_label)
 
@@ -4777,7 +4978,7 @@ class InventorySpacesDialog(QDialog):
         slots = self._current_space_slots()
         if not slots:
             return False
-        points = self._payload_slot_rect_points(slots[0])
+        points = self._slot_polygon_points(slots[0])
         if len(points) < 3:
             return False
         self.current_points = points
@@ -4987,7 +5188,7 @@ class InventorySpacesDialog(QDialog):
         if not slots:
             return False
 
-        points = self._payload_slot_rect_points(slots[0])
+        points = self._slot_polygon_points(slots[0])
         if len(points) < 3:
             return False
 
@@ -5227,15 +5428,17 @@ class InventorySpacesDialog(QDialog):
 
         slots = space.setdefault("payload_slots", [])
         if slots:
-            self.current_points = self._payload_slot_rect_points(slots[0])
+            self.current_points = self._slot_polygon_points(slots[0])
             self.selected_payload_index = 0
             self.payload_combo.setCurrentText(str(slots[0].get("payload", "")))
+            self._refresh_rotation_field()
         else:
             self.current_points = self.store.inventory_space_points_absolute(
                 self.location_name,
                 space,
             )
             self.selected_payload_index = None
+            self._refresh_rotation_field()
 
         self.refresh_scene()
 
@@ -5343,6 +5546,83 @@ class InventorySpacesDialog(QDialog):
                 {"x": x1, "y": y1},
             ]
 
+    def _normalise_degrees(self, angle):
+        try:
+            angle = float(angle)
+        except Exception:
+            angle = 0.0
+        angle = angle % 360.0
+        if angle < 0:
+            angle += 360.0
+        return round(angle, 3)
+
+    def _selected_space_slot(self):
+        if self.selected_space_index is None:
+            return None
+        return self._space_payload_slot(self.selected_space_index)
+
+    def _refresh_rotation_field(self):
+        if not hasattr(self, "rotation_edit"):
+            return
+        slot = self._selected_space_slot()
+        if not slot:
+            self.rotation_edit.setText("0.0")
+            return
+        self.rotation_edit.setText(f"{self._normalise_degrees(slot.get('rotation_deg', 0.0)):.1f}")
+
+    def apply_rotation_from_field(self):
+        slot = self._selected_space_slot()
+        if not slot or self.selected_space_index is None:
+            self._refresh_rotation_field()
+            return
+        try:
+            angle = float(self.rotation_edit.text())
+        except ValueError:
+            self._refresh_rotation_field()
+            return
+        slot["rotation_deg"] = self._normalise_degrees(angle)
+        self.selected_payload_index = 0
+        self._sync_space_from_payload_index(self.selected_space_index)
+        self._commit_current_space(show_errors=False)
+        self.refresh_scene()
+
+    def nudge_selected_rotation(self, delta):
+        slot = self._selected_space_slot()
+        if not slot or self.selected_space_index is None:
+            return
+        slot["rotation_deg"] = self._normalise_degrees(float(slot.get("rotation_deg", 0.0) or 0.0) + float(delta))
+        self.selected_payload_index = 0
+        self._sync_space_from_payload_index(self.selected_space_index)
+        self._commit_current_space(show_errors=False)
+        self.refresh_scene()
+
+    def _rotation_handle_world(self, slot):
+        payload_name = str(slot.get("payload", "")).strip()
+        length, width = self._payload_dimensions(payload_name)
+        if length <= 0 or width <= 0:
+            return None
+        cx, cy = self._slot_center_absolute(slot)
+        angle = math.radians(float(slot.get("rotation_deg", 0.0) or 0.0))
+        distance = (max(length, width) / 2.0) + 0.35
+        return {
+            "x": cx + (math.cos(angle) * distance),
+            "y": cy + (math.sin(angle) * distance),
+        }
+
+    def _nearest_rotation_handle_index_at(self, x, y, radius=0.25):
+        # Only the current space exposes the handle to avoid accidental rotation
+        # of a space hidden under another selected payload.
+        if self.selected_space_index is None:
+            return None
+        slot = self._selected_space_slot()
+        if not slot:
+            return None
+        handle = self._rotation_handle_world(slot)
+        if not handle:
+            return None
+        dist = math.hypot(float(handle["x"]) - float(x), float(handle["y"]) - float(y))
+        return self.selected_space_index if dist <= radius else None
+
     def _nearest_current_point(self, x, y, radius=0.5):
         best = None
         best_dist = radius
@@ -5363,18 +5643,28 @@ class InventorySpacesDialog(QDialog):
         modifiers = event.modifiers()
         additive = bool(modifiers & (Qt.ControlModifier | Qt.ShiftModifier))
 
+        rotate_hit = self._nearest_rotation_handle_index_at(x, y)
+        if event.button() == Qt.LeftButton and rotate_hit is not None:
+            slot = self._space_payload_slot(rotate_hit)
+            if slot:
+                self.rotate_space_index = rotate_hit
+                self.rotate_start_center = self._slot_center_absolute(slot)
+                self.drag_space_indices = set()
+                self.drag_spaces_start_world = None
+                self.drag_spaces_start_slots = {}
+                self.selected_payload_index = 0
+                self.status_label.setText("Drag to rotate freely. Release to save the angle.")
+                return
+
         if event.button() == Qt.RightButton:
             if hit_space is not None:
                 previous_index = self.selected_space_index
                 if previous_index is not None and previous_index != hit_space:
                     self._commit_current_space(show_errors=False)
                 self.select_space(hit_space)
-                slot = self._space_payload_slot(hit_space)
-                if slot:
-                    slot["rotation_deg"] = (float(slot.get("rotation_deg", 0.0) or 0.0) + 90.0) % 180.0
-                    self.selected_payload_index = 0
-                    self._sync_space_from_payload_index(hit_space)
-                    self.save_current_space()
+                self.status_label.setText(
+                    "Use the rotation angle field, +/- buttons, or drag the rotate handle for free-angle rotation."
+                )
             return
 
         if event.button() != Qt.LeftButton:
@@ -5413,6 +5703,42 @@ class InventorySpacesDialog(QDialog):
     def _mouse_move(self, event):
         scene_pos = self.view.mapToScene(event.position().toPoint())
         x, y = self.scene_to_world(scene_pos)
+
+        # Qt can still deliver a move event after the mouse button has been
+        # released, especially if the cursor leaves the rotate handle/viewport.
+        # Treat that as a cancelled drag so rotation cannot continue running.
+        if not (event.buttons() & Qt.LeftButton):
+            if self.rotate_space_index is not None:
+                self.rotate_space_index = None
+                self.rotate_start_center = None
+                self._commit_current_space(show_errors=False)
+                self.refresh_scene()
+            self.drag_point_index = None
+            self.drag_whole_space = False
+            self.drag_start_world = None
+            self.drag_start_points = []
+            self.drag_payload_index = None
+            self.drag_payload_start_world = None
+            self.drag_payload_start = None
+            self.drag_space_indices = set()
+            self.drag_spaces_start_world = None
+            self.drag_spaces_start_slots = {}
+            return
+
+        if self.rotate_space_index is not None and self.rotate_start_center is not None:
+            slot = self._space_payload_slot(self.rotate_space_index)
+            if slot:
+                cx, cy = self.rotate_start_center
+                angle = math.degrees(math.atan2(float(y) - float(cy), float(x) - float(cx)))
+                if event.modifiers() & Qt.ShiftModifier:
+                    angle = round(angle / 90.0) * 90.0
+                slot["rotation_deg"] = self._normalise_degrees(angle)
+                self.selected_space_index = self.rotate_space_index
+                self.selected_payload_index = 0
+                self._sync_space_from_payload_index(self.rotate_space_index)
+                self.current_points = self._slot_polygon_points(slot)
+                self.refresh_scene()
+            return
 
         if self.drag_spaces_start_world is not None and self.drag_spaces_start_slots:
             dx = x - float(self.drag_spaces_start_world["x"])
@@ -5465,6 +5791,12 @@ class InventorySpacesDialog(QDialog):
             self.refresh_scene()
 
     def _mouse_release(self, event):
+        if self.rotate_space_index is not None:
+            self.rotate_space_index = None
+            self.rotate_start_center = None
+            self._commit_current_space(show_errors=False)
+            self.refresh_scene()
+
         self.drag_point_index = None
         self.drag_whole_space = False
         self.drag_start_world = None
@@ -5475,6 +5807,7 @@ class InventorySpacesDialog(QDialog):
         self.drag_space_indices = set()
         self.drag_spaces_start_world = None
         self.drag_spaces_start_slots = {}
+        event.accept()
 
     def _location_box_scene_rect(self):
         location_box = self.store.get_location_bounding_box_points(self.location_name)
@@ -5698,6 +6031,30 @@ class InventorySpacesDialog(QDialog):
             label.setPos(self.world_to_scene(cx, cy))
             label.setZValue(16)
             self.scene.addItem(label)
+
+            if selected:
+                handle = self._rotation_handle_world(slot)
+                if handle:
+                    centre_scene = self.world_to_scene(cx, cy)
+                    handle_scene = self.world_to_scene(handle["x"], handle["y"])
+                    line = self.scene.addLine(
+                        centre_scene.x(),
+                        centre_scene.y(),
+                        handle_scene.x(),
+                        handle_scene.y(),
+                        QPen(QColor("#ffffff"), 0.0),
+                    )
+                    line.setZValue(17)
+                    r = 0.12
+                    ellipse = self.scene.addEllipse(
+                        handle_scene.x() - r,
+                        handle_scene.y() - r,
+                        r * 2.0,
+                        r * 2.0,
+                        QPen(QColor("#ffffff"), 0.0),
+                        QBrush(QColor("#ffdd57")),
+                    )
+                    ellipse.setZValue(18)
 
         base_rect = self._location_box_scene_rect()
 

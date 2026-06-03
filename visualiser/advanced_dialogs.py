@@ -239,6 +239,7 @@ class RouteProfilesEditorV2(QDialog):
         corridor_edges,
         on_save,
         floor_map=None,
+        manual_single_payload_available=True,
     ):
         self.editor = master
         super().__init__(master)
@@ -597,6 +598,8 @@ class TaskFormDialog(QDialog):
                 "priority": int(self.priority_edit.text()),
                 "labels": [x.strip() for x in self.labels_edit.text().split(",")],
                 "route_profile": self.route_profile_combo.currentText().strip(),
+                "manual_task": True,
+                "manual_single_payload_only": True,
             }
             super().accept()
         except Exception as exc:
@@ -707,6 +710,8 @@ class BulkOneToManyTaskDialog(QDialog):
                 "priority": int(self.priority_edit.text()),
                 "labels": labels,
                 "route_profile": self.route_combo.currentText().strip(),
+                "manual_task": True,
+                "manual_single_payload_only": True,
             }
             super().accept()
         except Exception as exc:
@@ -844,6 +849,7 @@ class TaskPlannerDialog(QMainWindow):
         suggest_task_id,
         on_save,
         floor_map=None,
+        manual_single_payload_available=True,
     ):
         super().__init__(master)
         self.setWindowTitle("Task Planner")
@@ -856,6 +862,7 @@ class TaskPlannerDialog(QMainWindow):
         self.profile_names = profile_names
         self.suggest_task_id = suggest_task_id
         self.on_save = on_save
+        self.manual_single_payload_available = bool(manual_single_payload_available)
         self.day_start = self._initial_day()
         self.selected_task_index = None
         self.selected_row_name = None
@@ -1199,6 +1206,16 @@ class TaskPlannerDialog(QMainWindow):
                 f"Selected destination row: {self.selected_row_name}"
             )
 
+    def _can_create_manual_task(self):
+        if self.manual_single_payload_available:
+            return True
+        QMessageBox.critical(
+            self,
+            "Manual task unavailable",
+            "Manual task creation requires at least one AMR with exactly one payload slot. Multi-stop AMRs are reserved for simulator route batching.",
+        )
+        return False
+
     def on_cell_double_clicked(self, row, col):
         if self.grouped_rows[row][0] != "row":
             return
@@ -1224,6 +1241,9 @@ class TaskPlannerDialog(QMainWindow):
                 self.selected_row_name = dialog.result.get("dropoff", "")
                 self.status_label.setText(f"Updated {dialog.result.get('id', '')}")
                 self.refresh_matrix()
+            return
+
+        if not self._can_create_manual_task():
             return
 
         seed = {
@@ -1326,6 +1346,8 @@ class TaskPlannerDialog(QMainWindow):
         self.paste_to_row(self.selected_row_name)
 
     def paste_to_row(self, row_name, when=None):
+        if not self._can_create_manual_task():
+            return
         if not self.copied_task:
             self.status_label.setText("Copy a task first")
             return
@@ -1576,6 +1598,7 @@ class TaskEditorWindow(QMainWindow):
         suggest_task_id,
         on_save,
         floor_map=None,
+        manual_single_payload_available=True,
     ):
         super().__init__(master)
         self.setWindowTitle("Tasks")
@@ -1587,6 +1610,7 @@ class TaskEditorWindow(QMainWindow):
         self.suggest_task_id = suggest_task_id
         self.on_save = on_save
         self.floor_map = floor_map or {}
+        self.manual_single_payload_available = bool(manual_single_payload_available)
 
         central = QWidget(self)
         self.setCentralWidget(central)
@@ -1669,7 +1693,19 @@ class TaskEditorWindow(QMainWindow):
         floor = getattr(self, "floor_map", {}).get(item)
         return f"Floor {floor}" if floor is not None else "Other"
 
+    def _can_create_manual_task(self):
+        if self.manual_single_payload_available:
+            return True
+        QMessageBox.critical(
+            self,
+            "Manual task unavailable",
+            "Manual task creation requires at least one AMR with exactly one payload slot. Multi-stop AMRs are reserved for simulator route batching.",
+        )
+        return False
+
     def add_item(self):
+        if not self._can_create_manual_task():
+            return
         dialog = TaskFormDialog(
             self,
             self.location_names,
@@ -1818,6 +1854,8 @@ class TaskEditorWindow(QMainWindow):
         self.edit_item()
 
     def _create_one_to_many_tasks(self):
+        if not self._can_create_manual_task():
+            return
         dialog = BulkOneToManyTaskDialog(
             self,
             self.location_names,
@@ -1845,6 +1883,8 @@ class TaskEditorWindow(QMainWindow):
                     "priority": payload["priority"],
                     "labels": list(payload["labels"]),
                     "route_profile": payload["route_profile"],
+                    "manual_task": True,
+                    "manual_single_payload_only": True,
                 }
             )
         self.items.extend(created)

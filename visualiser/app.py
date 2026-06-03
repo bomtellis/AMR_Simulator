@@ -2089,6 +2089,8 @@ class AMRGraphEditor(QMainWindow):
 
     def _save_amrs(self, items):
         self.store.data["amrs"] = items
+        if hasattr(self.store, "ensure_amr_defaults"):
+            self.store.ensure_amr_defaults()
         self.set_status("AMRs updated")
 
     def build_floor_map(self, store):
@@ -2106,6 +2108,11 @@ class AMRGraphEditor(QMainWindow):
                 floor_map[f"{lift['id']}-F{floor_str}"] = int(floor_str)
         return floor_map
 
+    def _manual_task_amr_available(self):
+        if not hasattr(self.store, "has_manual_task_compatible_amr"):
+            return True
+        return self.store.has_manual_task_compatible_amr()
+
     def manage_tasks(self):
         locations = self.store.data.get("locations", [])
         location_names = sorted(x["name"] for x in locations)
@@ -2121,6 +2128,7 @@ class AMRGraphEditor(QMainWindow):
             self.store.suggest_next_task_id,
             self._save_tasks,
             floor_map=floor_map,
+            manual_single_payload_available=self._manual_task_amr_available(),
         )
 
     def _save_tasks(self, items):
@@ -2144,6 +2152,7 @@ class AMRGraphEditor(QMainWindow):
             self.store.suggest_next_task_id,
             self._save_tasks,
             floor_map=floor_map,
+            manual_single_payload_available=self._manual_task_amr_available(),
         )
 
     def manage_task_generation(self):
