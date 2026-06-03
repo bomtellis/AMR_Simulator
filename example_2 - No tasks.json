@@ -446,28 +446,28 @@
           "name": "food_trolley space 1",
           "points": [
             {
-              "dx": -1.309,
-              "dy": -0.582
+              "dx": -1.124,
+              "dy": -0.371
             },
             {
-              "dx": -0.509,
-              "dy": -0.582
+              "dx": 0.076,
+              "dy": -0.371
             },
             {
-              "dx": -0.509,
-              "dy": 0.618
+              "dx": 0.076,
+              "dy": 0.429
             },
             {
-              "dx": -1.309,
-              "dy": 0.618
+              "dx": -1.124,
+              "dy": 0.429
             }
           ],
           "payload_slots": [
             {
               "payload": "food_trolley",
-              "rotation_deg": 90.0,
-              "dx": -0.909,
-              "dy": 0.018
+              "rotation_deg": 0.0,
+              "dx": -0.524,
+              "dy": 0.029
             }
           ]
         },
@@ -475,28 +475,28 @@
           "name": "food_trolley space 2",
           "points": [
             {
-              "dx": 0.479,
-              "dy": -0.576
+              "dx": 0.303,
+              "dy": -0.57
             },
             {
-              "dx": 1.279,
-              "dy": -0.576
+              "dx": 1.103,
+              "dy": -0.57
             },
             {
-              "dx": 1.279,
-              "dy": 0.624
+              "dx": 1.103,
+              "dy": 0.63
             },
             {
-              "dx": 0.479,
-              "dy": 0.624
+              "dx": 0.303,
+              "dy": 0.63
             }
           ],
           "payload_slots": [
             {
               "payload": "food_trolley",
               "rotation_deg": 90.0,
-              "dx": 0.879,
-              "dy": 0.024
+              "dx": 0.703,
+              "dy": 0.03
             }
           ]
         }
@@ -579,6 +579,37 @@
           "dx": -0.839,
           "dy": -0.821
         }
+      ],
+      "inventory_spaces": [
+        {
+          "name": "Linen Trolley space 1",
+          "points": [
+            {
+              "dx": -0.565,
+              "dy": -0.203
+            },
+            {
+              "dx": 0.635,
+              "dy": -0.203
+            },
+            {
+              "dx": 0.635,
+              "dy": 0.547
+            },
+            {
+              "dx": -0.565,
+              "dy": 0.547
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Linen Trolley",
+              "rotation_deg": 0.0,
+              "dx": 0.035,
+              "dy": 0.172
+            }
+          ]
+        }
       ]
     },
     {
@@ -627,6 +658,124 @@
           "dx": -2.191,
           "dy": -1.285
         }
+      ],
+      "inventory_spaces": [
+        {
+          "name": "Goods Cage space 1",
+          "points": [
+            {
+              "dx": -2.026,
+              "dy": -1.195
+            },
+            {
+              "dx": -1.226,
+              "dy": -1.195
+            },
+            {
+              "dx": -1.226,
+              "dy": -0.345
+            },
+            {
+              "dx": -2.026,
+              "dy": -0.345
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Goods Cage",
+              "rotation_deg": 90.0,
+              "dx": -1.626,
+              "dy": -0.77
+            }
+          ]
+        },
+        {
+          "name": "Goods Cage space 2",
+          "points": [
+            {
+              "dx": -1.041,
+              "dy": -1.195
+            },
+            {
+              "dx": -0.241,
+              "dy": -1.195
+            },
+            {
+              "dx": -0.241,
+              "dy": -0.345
+            },
+            {
+              "dx": -1.041,
+              "dy": -0.345
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Goods Cage",
+              "rotation_deg": 90.0,
+              "dx": -0.641,
+              "dy": -0.77
+            }
+          ]
+        },
+        {
+          "name": "Goods Cage space 3",
+          "points": [
+            {
+              "dx": -0.04,
+              "dy": -1.203
+            },
+            {
+              "dx": 0.76,
+              "dy": -1.203
+            },
+            {
+              "dx": 0.76,
+              "dy": -0.353
+            },
+            {
+              "dx": -0.04,
+              "dy": -0.353
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Goods Cage",
+              "rotation_deg": 90.0,
+              "dx": 0.36,
+              "dy": -0.778
+            }
+          ]
+        },
+        {
+          "name": "Goods Cage space 4",
+          "points": [
+            {
+              "dx": 0.978,
+              "dy": -1.204
+            },
+            {
+              "dx": 1.778,
+              "dy": -1.204
+            },
+            {
+              "dx": 1.778,
+              "dy": -0.354
+            },
+            {
+              "dx": 0.978,
+              "dy": -0.354
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Goods Cage",
+              "rotation_deg": 90.0,
+              "dx": 1.378,
+              "dy": -0.779
+            }
+          ]
+        }
       ]
     },
     {
@@ -657,28 +806,28 @@
           "name": "Clinical Waste Bin space 1",
           "points": [
             {
-              "dx": -2.323,
-              "dy": 0.465
+              "dx": -2.381,
+              "dy": 0.505
             },
             {
-              "dx": -1.123,
-              "dy": 0.465
+              "dx": -1.181,
+              "dy": 0.505
             },
             {
-              "dx": -1.123,
-              "dy": 1.265
+              "dx": -1.181,
+              "dy": 1.305
             },
             {
-              "dx": -2.323,
-              "dy": 1.265
+              "dx": -2.381,
+              "dy": 1.305
             }
           ],
           "payload_slots": [
             {
               "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
-              "dx": -1.723,
-              "dy": 0.865
+              "dx": -1.781,
+              "dy": 0.905
             }
           ]
         },
@@ -686,28 +835,28 @@
           "name": "Clinical Waste Bin space 2",
           "points": [
             {
-              "dx": -2.334,
-              "dy": -0.567
+              "dx": -2.368,
+              "dy": -0.398
             },
             {
-              "dx": -1.134,
-              "dy": -0.567
+              "dx": -1.168,
+              "dy": -0.398
             },
             {
-              "dx": -1.134,
-              "dy": 0.233
+              "dx": -1.168,
+              "dy": 0.402
             },
             {
-              "dx": -2.334,
-              "dy": 0.233
+              "dx": -2.368,
+              "dy": 0.402
             }
           ],
           "payload_slots": [
             {
               "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
-              "dx": -1.734,
-              "dy": -0.167
+              "dx": -1.768,
+              "dy": 0.002
             }
           ]
         },
@@ -715,28 +864,28 @@
           "name": "Clinical Waste Bin space 3",
           "points": [
             {
-              "dx": -2.314,
-              "dy": -1.585
+              "dx": -2.364,
+              "dy": -1.347
             },
             {
-              "dx": -1.114,
-              "dy": -1.585
+              "dx": -1.164,
+              "dy": -1.347
             },
             {
-              "dx": -1.114,
-              "dy": -0.785
+              "dx": -1.164,
+              "dy": -0.547
             },
             {
-              "dx": -2.314,
-              "dy": -0.785
+              "dx": -2.364,
+              "dy": -0.547
             }
           ],
           "payload_slots": [
             {
               "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
-              "dx": -1.714,
-              "dy": -1.185
+              "dx": -1.764,
+              "dy": -0.947
             }
           ]
         },
@@ -744,28 +893,28 @@
           "name": "Clinical Waste Bin space 4",
           "points": [
             {
-              "dx": 0.745,
-              "dy": -1.764
+              "dx": 0.797,
+              "dy": -1.815
             },
             {
-              "dx": 1.545,
-              "dy": -1.764
+              "dx": 1.597,
+              "dy": -1.815
             },
             {
-              "dx": 1.545,
-              "dy": -0.564
+              "dx": 1.597,
+              "dy": -0.615
             },
             {
-              "dx": 0.745,
-              "dy": -0.564
+              "dx": 0.797,
+              "dy": -0.615
             }
           ],
           "payload_slots": [
             {
               "payload": "Clinical Waste Bin",
               "rotation_deg": 90.0,
-              "dx": 1.145,
-              "dy": -1.164
+              "dx": 1.197,
+              "dy": -1.215
             }
           ]
         }
@@ -6070,6 +6219,15 @@
           "source_location": "Linen Deliveries"
         }
       }
+    },
+    {
+      "name": "Goods Cage",
+      "weight_kg": 75.0,
+      "length_m": 0.85,
+      "width_m": 0.8,
+      "height_m": 1.545,
+      "track_items": false,
+      "items": {}
     }
   ],
   "amrs": [
@@ -6469,7 +6627,7 @@
       "id": "T1",
       "pickup": "KITCHEN",
       "dropoff": "D1-CATERING",
-      "payload": "Clinical Waste Bin",
+      "payload": "food_trolley",
       "release_datetime": "2026-01-01T08:06:00",
       "target_time": 300,
       "priority": 10,

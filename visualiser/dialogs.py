@@ -4496,6 +4496,7 @@ class InventorySpacesDialog(QDialog):
 
         self.current_points = []
         self.selected_space_index = None
+        self.selected_space_indices = set()
         self.drag_point_index = None
         self.drag_whole_space = False
         self.drag_start_world = None
@@ -4503,12 +4504,21 @@ class InventorySpacesDialog(QDialog):
         self.drag_payload_index = None
         self.drag_payload_start_world = None
         self.drag_payload_start = None
+        self.drag_space_indices = set()
+        self.drag_spaces_start_world = None
+        self.drag_spaces_start_slots = {}
+        self.drag_space_indices = set()
+        self.drag_spaces_start_world = None
+        self.drag_spaces_start_slots = {}
         self.copied_space = None
         self._initial_fit_done = False
         self.selected_payload_index = None
         self.drag_payload_index = None
         self.drag_payload_start_world = None
         self.drag_payload_start = None
+        self.drag_space_indices = set()
+        self.drag_spaces_start_world = None
+        self.drag_spaces_start_slots = {}
 
         layout = QHBoxLayout(self)
 
@@ -4516,7 +4526,9 @@ class InventorySpacesDialog(QDialog):
         layout.addLayout(left, 0)
 
         self.space_list = QListWidget()
+        self.space_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.space_list.currentRowChanged.connect(self.select_space)
+        self.space_list.itemSelectionChanged.connect(self._sync_space_list_selection)
         self.space_list.setContextMenuPolicy(Qt.CustomContextMenu)
         self.space_list.customContextMenuRequested.connect(self._show_space_list_menu)
 
@@ -4610,6 +4622,84 @@ class InventorySpacesDialog(QDialog):
 
         self.refresh_list()
         self.refresh_scene()
+
+    def _sync_space_list_selection(self):
+        rows = set()
+        for item in self.space_list.selectedItems():
+            row = self.space_list.row(item)
+            if row >= 0:
+                rows.add(row)
+        if rows:
+            self.selected_space_indices = rows
+        elif self.selected_space_index is not None:
+            self.selected_space_indices = {self.selected_space_index}
+        self.refresh_scene()
+
+    def _set_space_selection(self, indices, current_index=None):
+        clean = {int(i) for i in indices if 0 <= int(i) < len(self.spaces)}
+        if current_index is not None and 0 <= int(current_index) < len(self.spaces):
+            clean.add(int(current_index))
+            self.selected_space_index = int(current_index)
+        self.selected_space_indices = clean
+
+        self.space_list.blockSignals(True)
+        self.space_list.clearSelection()
+        for index in sorted(clean):
+            item = self.space_list.item(index)
+            if item is not None:
+                item.setSelected(True)
+        if self.selected_space_index is not None and 0 <= self.selected_space_index < self.space_list.count():
+            self.space_list.setCurrentRow(self.selected_space_index)
+        self.space_list.blockSignals(False)
+
+    def _space_payload_slot(self, index):
+        if not (0 <= int(index) < len(self.spaces)):
+            return None
+        slots = self.spaces[int(index)].setdefault("payload_slots", [])
+        return slots[0] if slots else None
+
+    def _space_slot_polygon_points(self, index):
+        slot = self._space_payload_slot(index)
+        if not slot:
+            return []
+        return self._slot_polygon_points(slot)
+
+    def _nearest_space_index_at(self, x, y):
+        for index in reversed(range(len(self.spaces))):
+            pts = self._space_slot_polygon_points(index)
+            if pts and self._point_in_polygon(x, y, pts):
+                return index
+            pts_abs = self.store.inventory_space_points_absolute(self.location_name, self.spaces[index])
+            if pts_abs and self._point_in_polygon(x, y, pts_abs):
+                return index
+        return None
+
+    def _space_group_fits_location_box(self, starts, dx, dy):
+        location_box = self.store.get_location_bounding_box_points(self.location_name)
+        if len(location_box) < 3:
+            return True
+        for index, slot_start in starts.items():
+            candidate = dict(slot_start)
+            sx, sy = self._slot_center_absolute(slot_start)
+            self._set_slot_center_absolute(candidate, sx + dx, sy + dy)
+            for p in self._slot_polygon_points(candidate):
+                if not self._point_in_polygon(p["x"], p["y"], location_box):
+                    return False
+        return True
+
+    def _move_space_group(self, starts, dx, dy):
+        if not self._space_group_fits_location_box(starts, dx, dy):
+            return False
+        for index, slot_start in starts.items():
+            slot = self._space_payload_slot(index)
+            if not slot:
+                continue
+            sx, sy = self._slot_center_absolute(slot_start)
+            candidate = dict(slot_start)
+            self._set_slot_center_absolute(candidate, sx + dx, sy + dy)
+            slot.update(candidate)
+            self._sync_space_from_payload_index(index)
+        return True
 
     def _payload_names(self):
         return sorted(
@@ -4834,6 +4924,7 @@ class InventorySpacesDialog(QDialog):
         self.name_edit.setText(name)
         self._sync_current_space_from_payload()
         self.selected_payload_index = 0
+        self.selected_space_indices = {self.selected_space_index}
         self.lock_size_check.setChecked(True)
         self.refresh_list()
         self.space_list.setCurrentRow(self.selected_space_index)
@@ -5129,6 +5220,8 @@ class InventorySpacesDialog(QDialog):
             return
 
         self.selected_space_index = row
+        if not self.selected_space_indices or row not in self.selected_space_indices:
+            self.selected_space_indices = {row}
         space = self.spaces[row]
         self.name_edit.setText(space.get("name", ""))
 
@@ -5163,12 +5256,15 @@ class InventorySpacesDialog(QDialog):
             self.refresh_scene()
 
     def delete_selected_space(self):
-        row = self.space_list.currentRow()
-        if row < 0 or row >= len(self.spaces):
+        rows = sorted(self.selected_space_indices or {self.space_list.currentRow()}, reverse=True)
+        rows = [row for row in rows if 0 <= row < len(self.spaces)]
+        if not rows:
             return
 
-        del self.spaces[row]
+        for row in rows:
+            del self.spaces[row]
         self.selected_space_index = None
+        self.selected_space_indices = set()
         self.current_points = []
         self.name_edit.clear()
         self.refresh_list()
@@ -5263,40 +5359,69 @@ class InventorySpacesDialog(QDialog):
         scene_pos = self.view.mapToScene(event.position().toPoint())
         x, y = self.scene_to_world(scene_pos)
 
-        hit_payload = self._nearest_payload_slot_index(x, y)
+        hit_space = self._nearest_space_index_at(x, y)
+        modifiers = event.modifiers()
+        additive = bool(modifiers & (Qt.ControlModifier | Qt.ShiftModifier))
 
         if event.button() == Qt.RightButton:
-            if hit_payload is not None:
-                slots = self._current_space_slots()
-                slots[hit_payload]["rotation_deg"] = (float(slots[hit_payload].get("rotation_deg", 0.0) or 0.0) + 90.0) % 180.0
-                self.selected_payload_index = hit_payload
-                self._sync_current_space_from_payload()
-                self.save_current_space()
+            if hit_space is not None:
+                previous_index = self.selected_space_index
+                if previous_index is not None and previous_index != hit_space:
+                    self._commit_current_space(show_errors=False)
+                self.select_space(hit_space)
+                slot = self._space_payload_slot(hit_space)
+                if slot:
+                    slot["rotation_deg"] = (float(slot.get("rotation_deg", 0.0) or 0.0) + 90.0) % 180.0
+                    self.selected_payload_index = 0
+                    self._sync_space_from_payload_index(hit_space)
+                    self.save_current_space()
             return
 
         if event.button() != Qt.LeftButton:
             return
 
-        if hit_payload is not None:
-            self.selected_payload_index = hit_payload
-            self.drag_payload_index = hit_payload
-            self.drag_payload_start_world = {"x": x, "y": y}
-            self.drag_payload_start = dict(self._current_space_slots()[hit_payload])
+        if hit_space is not None:
+            previous_index = self.selected_space_index
+            if previous_index is not None and previous_index != hit_space:
+                self._commit_current_space(show_errors=False)
+
+            if additive:
+                selected = set(self.selected_space_indices)
+                if hit_space in selected and len(selected) > 1:
+                    selected.remove(hit_space)
+                else:
+                    selected.add(hit_space)
+                self._set_space_selection(selected, current_index=hit_space)
+            elif hit_space not in self.selected_space_indices:
+                self._set_space_selection({hit_space}, current_index=hit_space)
+            else:
+                self.selected_space_index = hit_space
+
+            self.select_space(hit_space)
+            self.selected_payload_index = 0
+            drag_indices = set(self.selected_space_indices or {hit_space})
+            self.drag_space_indices = drag_indices
+            self.drag_spaces_start_world = {"x": x, "y": y}
+            self.drag_spaces_start_slots = {}
+            for index in drag_indices:
+                slot = self._space_payload_slot(index)
+                if slot:
+                    self.drag_spaces_start_slots[index] = dict(slot)
             self.refresh_scene()
             return
-
-        if self._point_inside_current_space(x, y) and self._current_space_slots():
-            # Dragging the space body moves the underlying payload slot because
-            # the inventory space is now payload-derived.
-            self.selected_payload_index = 0
-            self.drag_payload_index = 0
-            self.drag_payload_start_world = {"x": x, "y": y}
-            self.drag_payload_start = dict(self._current_space_slots()[0])
-            self.refresh_scene()
 
     def _mouse_move(self, event):
         scene_pos = self.view.mapToScene(event.position().toPoint())
         x, y = self.scene_to_world(scene_pos)
+
+        if self.drag_spaces_start_world is not None and self.drag_spaces_start_slots:
+            dx = x - float(self.drag_spaces_start_world["x"])
+            dy = y - float(self.drag_spaces_start_world["y"])
+            self._move_space_group(self.drag_spaces_start_slots, dx, dy)
+            if self.selected_space_index is not None:
+                self._sync_space_from_payload_index(self.selected_space_index)
+            self.refresh_scene()
+            return
 
         if self.drag_payload_index is not None and self.drag_payload_start_world is not None and self.drag_payload_start is not None:
             slots = self._current_space_slots()
@@ -5347,6 +5472,9 @@ class InventorySpacesDialog(QDialog):
         self.drag_payload_index = None
         self.drag_payload_start_world = None
         self.drag_payload_start = None
+        self.drag_space_indices = set()
+        self.drag_spaces_start_world = None
+        self.drag_spaces_start_slots = {}
 
     def _location_box_scene_rect(self):
         location_box = self.store.get_location_bounding_box_points(self.location_name)
@@ -5398,6 +5526,7 @@ class InventorySpacesDialog(QDialog):
 
         self.spaces.append(pasted)
         self.selected_space_index = len(self.spaces) - 1
+        self.selected_space_indices = {self.selected_space_index}
         self.refresh_list()
         self.space_list.setCurrentRow(self.selected_space_index)
         self.select_space(self.selected_space_index)
@@ -5527,8 +5656,9 @@ class InventorySpacesDialog(QDialog):
 
             pts = [self.world_to_scene(p["x"], p["y"]) for p in pts_abs]
             poly = QGraphicsPolygonItem(QPolygonF(pts))
-            poly.setPen(QPen(QColor("#6aa9ff"), 0.0))
-            poly.setBrush(QBrush(QColor(106, 169, 255, 25)))
+            is_multi_selected = idx in self.selected_space_indices
+            poly.setPen(QPen(QColor("#ffffff" if is_multi_selected else "#6aa9ff"), 0.0))
+            poly.setBrush(QBrush(QColor(106, 169, 255, 38 if is_multi_selected else 18)))
             poly.setZValue(-10)
             self.scene.addItem(poly)
 
