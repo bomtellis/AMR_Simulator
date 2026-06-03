@@ -2916,12 +2916,18 @@ class PayloadEditorDialog(QDialog):
         self.track_items_check = QCheckBox("Track items held within this payload")
         self.track_items_check.setChecked(bool(self.seed.get("track_items", False)))
 
+        self.prefer_multi_stop_amr_check = QCheckBox("Prefer multi-stop AMRs for this payload")
+        self.prefer_multi_stop_amr_check.setChecked(
+            bool(self.seed.get("prefer_multi_stop_amr", False))
+        )
+
         form.addRow("Payload name", self.name_edit)
         form.addRow("Weight kg", self.weight_edit)
         form.addRow("Length m", self.length_edit)
         form.addRow("Width m", self.width_edit)
         form.addRow("Height m", self.height_edit)
         form.addRow("Track items", self.track_items_check)
+        form.addRow("Prefer multi-stop AMR", self.prefer_multi_stop_amr_check)
 
         layout.addWidget(QLabel("Tracked items"))
 
@@ -3090,6 +3096,7 @@ class PayloadEditorDialog(QDialog):
                 "width_m": float(self.width_edit.text() or 0.0),
                 "height_m": float(self.height_edit.text() or 0.0),
                 "track_items": self.track_items_check.isChecked(),
+                "prefer_multi_stop_amr": self.prefer_multi_stop_amr_check.isChecked(),
                 "items": items_payload,
             }
 
@@ -3106,6 +3113,7 @@ class PayloadListDialog(QDialog):
         ("width_m", "Width m", 90),
         ("height_m", "Height m", 90),
         ("track_items", "Track items", 90),
+        ("prefer_multi_stop_amr", "Prefer multi-stop", 120),
         ("items", "Items", 260),
     ]
 
@@ -3188,6 +3196,7 @@ class PayloadListDialog(QDialog):
                 str(item.get("width_m", "")),
                 str(item.get("height_m", "")),
                 "Yes" if item.get("track_items", False) else "No",
+                "Yes" if item.get("prefer_multi_stop_amr", False) else "No",
                 self._items_summary(item),
             ]
 

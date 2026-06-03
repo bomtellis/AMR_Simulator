@@ -179,7 +179,7 @@ class Simulation:
                     ).strip(),
                     "source_location": str(item_cfg.get("source_location", "")).strip(),
                 }
-            self.payloads[p["name"]] = PayloadType(
+            payload_type = PayloadType(
                 name=p["name"],
                 weight_kg=float(p["weight_kg"]),
                 length_m=float(p.get("length_m", legacy_size)),
@@ -189,11 +189,18 @@ class Simulation:
                 track_items=bool(p.get("track_items", False)),
                 items=clean_items,
             )
+            # Optional payload-level preference from the visualiser payload dialog.
+            # Kept as a runtime attribute so older amr_sim_models.PayloadType
+            # dataclasses do not need to change just to carry this scheduling hint.
+            payload_type.prefer_multi_stop_amr = bool(
+                p.get("prefer_multi_stop_amr", False)
+            )
+            self.payloads[p["name"]] = payload_type
 
         # Internal zero-load payload used for empty idle return, recharge and no-load moves.
         # It is deliberately not written as a real payload in verbose output.
         if EMPTY_PAYLOAD_NAME not in self.payloads:
-            self.payloads[EMPTY_PAYLOAD_NAME] = PayloadType(
+            empty_payload = PayloadType(
                 name=EMPTY_PAYLOAD_NAME,
                 weight_kg=0.0,
                 length_m=0.0,
@@ -201,6 +208,8 @@ class Simulation:
                 height_m=0.0,
                 size_units=0.0,
             )
+            empty_payload.prefer_multi_stop_amr = False
+            self.payloads[EMPTY_PAYLOAD_NAME] = empty_payload
 
         # Parse waste streams and departments
         self.waste_streams: Dict[str, dict] = {
@@ -485,6 +494,14 @@ class Simulation:
             return self.payloads.get(EMPTY_PAYLOAD_NAME)
         return self.payloads.get(payload_name)
 
+    def _payload_prefers_multi_stop_amr(self, payload: Optional[PayloadType]) -> bool:
+        if payload is None or is_empty_payload_name(payload.name):
+            return False
+        return bool(getattr(payload, "prefer_multi_stop_amr", False))
+
+    def _task_prefers_multi_stop_amr(self, task: Task) -> bool:
+        return self._payload_prefers_multi_stop_amr(self._payload_for_task(task))
+
     def _runtime_amr_payload_slots(self, amr: AMR) -> List[dict]:
         slots = getattr(amr, "payload_slots", None)
         clean = []
@@ -640,6 +657,17 @@ class Simulation:
             for item in sorted(self.pending_tasks)
             if self._multi_stop_task_is_eligible(item[3])
         ]
+        # Payloads marked as preferring multi-stop AMRs should get first access
+        # to multi-stop slots, while the existing priority/release order is
+        # retained inside each preference group.
+        released.sort(
+            key=lambda task: (
+                0 if self._task_prefers_multi_stop_amr(task) else 1,
+                int(getattr(task, "priority", 100) or 100),
+                float(getattr(task, "release_time", 0.0) or 0.0),
+                str(getattr(task, "id", "")),
+            )
+        )
         if len(released) < 2:
             return None
         selected: List[Task] = []
@@ -945,7 +973,31 @@ class Simulation:
                     ),
                 )
 
-            for action, task in ordered_legs:
+            grouped_legs: List[Tuple[str, List[Task]]] = []
+            idx = 0
+            while idx < len(ordered_legs):
+                action, task = ordered_legs[idx]
+                if action == "pickup":
+                    pickup_location_name = task.pickup
+                    group = [task]
+                    idx += 1
+                    while idx < len(ordered_legs):
+                        next_action, next_task = ordered_legs[idx]
+                        if (
+                            next_action != "pickup"
+                            or next_task.pickup != pickup_location_name
+                        ):
+                            break
+                        group.append(next_task)
+                        idx += 1
+                    grouped_legs.append(("pickup", group))
+                    continue
+
+                grouped_legs.append((action, [task]))
+                idx += 1
+
+            for action, leg_tasks in grouped_legs:
+                task = leg_tasks[0]
                 target_location = self.locations[
                     task.pickup if action == "pickup" else task.dropoff
                 ]
@@ -953,7 +1005,6 @@ class Simulation:
                     aggregate_payload if carrying_count > 0 else empty_payload
                 )
                 rules = loaded_rules if carrying_count > 0 else None
-                before_move = t
                 t, new_segments, seg_time, _distance = move_between(
                     current_location, target_location, t, payload_for_leg, rules=rules
                 )
@@ -981,7 +1032,7 @@ class Simulation:
                             "duration": location_wait,
                             "distance_m": 0.0,
                             "location": target_location.name,
-                            "task_id": task.id,
+                            "task_ids": [x.id for x in leg_tasks],
                             "multi_stop_task_ids": [x.id for x in tasks],
                         }
                     )
@@ -1013,17 +1064,26 @@ class Simulation:
                         if reserved_space is not None:
                             inventory_space_name = str(reserved_space.get("name", ""))
 
+                segment_task_ids = [x.id for x in leg_tasks]
                 segments.append(
                     {
                         "type": action,
                         "location": target_location.name,
                         "duration": self.load_unload_time_sec,
-                        "task_id": task.id,
-                        "payload": task.payload,
-                        "payload_instance_id": str(
-                            getattr(task, "payload_instance_id", "") or ""
+                        "task_id": ",".join(segment_task_ids),
+                        "task_ids": segment_task_ids,
+                        "payload": ",".join(
+                            str(getattr(x, "payload", "") or "") for x in leg_tasks
                         ),
-                        "slot_name": slot_assignments.get(task.id, ""),
+                        "payload_instance_id": ",".join(
+                            str(getattr(x, "payload_instance_id", "") or "")
+                            for x in leg_tasks
+                        ),
+                        "slot_name": ",".join(
+                            slot_assignments.get(x.id, "")
+                            for x in leg_tasks
+                            if slot_assignments.get(x.id, "")
+                        ),
                         "inventory_space": inventory_space_name
                         or getattr(task, "assigned_inventory_space", ""),
                         "multi_stop_task_ids": [x.id for x in tasks],
@@ -1033,9 +1093,9 @@ class Simulation:
                 total += self.load_unload_time_sec
                 current_location = target_location
                 if action == "pickup":
-                    carrying_count += 1
+                    carrying_count += len(leg_tasks)
                 elif action == "dropoff":
-                    carrying_count = max(0, carrying_count - 1)
+                    carrying_count = max(0, carrying_count - len(leg_tasks))
 
             corridor_energy_kwh = total_route_energy_kwh(
                 amr,
@@ -3146,6 +3206,8 @@ class Simulation:
 
         best = None
         best_finish = math.inf
+        multi_stop_best = None
+        multi_stop_best_finish = math.inf
 
         candidate_tasks = []
         for item in self.pending_tasks[: min(8, len(self.pending_tasks))]:
@@ -3162,9 +3224,18 @@ class Simulation:
             estimate = self._estimate_multi_stop_for_amr(amr, batch, reserve=False)
             if estimate is None:
                 continue
-            if estimate["finish_time"] < best_finish:
-                best_finish = estimate["finish_time"]
-                best = (amr, batch, estimate)
+            finish_time = estimate["finish_time"]
+            if finish_time < multi_stop_best_finish:
+                multi_stop_best_finish = finish_time
+                multi_stop_best = (amr, batch, estimate)
+
+        # Multi-stop is a route-shape preference, not just a quickest-finish
+        # estimate.  If a feasible batch exists, commit it before comparing
+        # against single-task assignments; otherwise the first nearby task can
+        # win on finish time and make the AMR return to the same pickup location
+        # repeatedly.
+        if multi_stop_best is not None:
+            return multi_stop_best
 
         for _, _, _, task in candidate_tasks:
             if task.release_time > self.current_time:
@@ -3184,6 +3255,12 @@ class Simulation:
                     )
                     continue
 
+            task_prefers_multi_stop = self._task_prefers_multi_stop_amr(task)
+            task_best = None
+            task_best_finish = math.inf
+            preferred_task_best = None
+            preferred_task_best_finish = math.inf
+
             for amr in self.amrs:
                 if getattr(amr, "is_charging", False):
                     continue
@@ -3195,9 +3272,30 @@ class Simulation:
                 if estimate is None:
                     continue
 
-                if estimate["finish_time"] < best_finish:
-                    best_finish = estimate["finish_time"]
-                    best = (amr, task, estimate)
+                finish_time = estimate["finish_time"]
+                if finish_time < task_best_finish:
+                    task_best_finish = finish_time
+                    task_best = (amr, task, estimate)
+
+                if task_prefers_multi_stop and self._is_multi_stop_amr(amr):
+                    if finish_time < preferred_task_best_finish:
+                        preferred_task_best_finish = finish_time
+                        preferred_task_best = (amr, task, estimate)
+
+            # If this payload prefers multi-stop AMRs and at least one compatible
+            # multi-stop AMR can perform the task, use that AMR even if a
+            # single-slot AMR would finish slightly earlier. If no multi-stop
+            # AMR is feasible, fall back to the normal best assignment.
+            chosen_for_task = preferred_task_best or task_best
+            chosen_finish = (
+                preferred_task_best_finish
+                if preferred_task_best is not None
+                else task_best_finish
+            )
+
+            if chosen_for_task is not None and chosen_finish < best_finish:
+                best_finish = chosen_finish
+                best = chosen_for_task
 
         return best
 

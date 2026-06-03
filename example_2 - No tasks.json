@@ -6496,107 +6496,50 @@
     },
     {
       "name": "Pharmacy Box",
-      "weight_kg": 5.0,
+      "weight_kg": 4.0,
       "length_m": 0.3,
       "width_m": 0.2,
-      "height_m": 0.4,
+      "height_m": 0.3,
       "track_items": false,
+      "prefer_multi_stop_amr": true,
       "items": {}
     }
   ],
   "amrs": [
     {
       "id": "AMR-A",
-      "quantity": 18,
-      "payload_slots": [
-        {
-          "name": "Slot 1",
-          "payload_capacity_kg": 500.0,
-          "payload_length_capacity_m": 1.5,
-          "payload_width_capacity_m": 1.0,
-          "payload_height_capacity_m": 1.8
-        }
-      ],
-      "payload_capacity_kg": 500.0,
-      "payload_length_capacity_m": 1.5,
-      "payload_width_capacity_m": 1.0,
-      "payload_height_capacity_m": 1.8,
-      "multi_stop_enabled": false,
-      "manual_task_compatible": true,
-      "length_m": 1.2,
-      "width_m": 0.6,
-      "height_m": 0.2,
-      "speed_m_per_sec": 1.2,
-      "motor_power_w": 900.0,
-      "battery_capacity_kwh": 6.5,
-      "battery_charge_rate_kw": 2.2,
-      "recharge_threshold_percent": 20.0,
-      "battery_soc_percent": 100.0,
-      "start_location": "AMR-CENTRE"
-    },
-    {
-      "id": "AMR-B",
-      "quantity": 4,
-      "payload_capacity_kg": 500.0,
-      "payload_length_capacity_m": 1.5,
-      "payload_width_capacity_m": 1.0,
-      "payload_height_capacity_m": 1.8,
-      "length_m": 0.8,
-      "width_m": 0.6,
-      "height_m": 0.2,
-      "speed_m_per_sec": 1.2,
-      "motor_power_w": 1500.0,
-      "battery_capacity_kwh": 10.0,
-      "battery_charge_rate_kw": 1.8,
-      "recharge_threshold_percent": 20.0,
-      "battery_soc_percent": 100.0,
-      "start_location": "AMR-CENTRE",
-      "payload_slots": [
-        {
-          "name": "Slot 1",
-          "payload_capacity_kg": 500.0,
-          "payload_length_capacity_m": 1.5,
-          "payload_width_capacity_m": 1.0,
-          "payload_height_capacity_m": 1.8
-        }
-      ],
-      "manual_task_compatible": true,
-      "multi_stop_enabled": false
-    },
-    {
-      "id": "AMR-C",
       "quantity": 1,
       "payload_slots": [
         {
           "name": "Slot 1",
-          "payload_capacity_kg": 4.5,
+          "payload_capacity_kg": 5.0,
           "payload_length_capacity_m": 0.42,
           "payload_width_capacity_m": 0.35,
           "payload_height_capacity_m": 0.32
         },
         {
           "name": "Slot 2",
-          "payload_capacity_kg": 4.5,
+          "payload_capacity_kg": 5.0,
           "payload_length_capacity_m": 0.42,
           "payload_width_capacity_m": 0.35,
           "payload_height_capacity_m": 0.32
         },
         {
           "name": "Slot 3",
-          "payload_capacity_kg": 4.5,
+          "payload_capacity_kg": 5.0,
           "payload_length_capacity_m": 0.42,
           "payload_width_capacity_m": 0.35,
           "payload_height_capacity_m": 0.32
         },
         {
           "name": "Slot 4",
-          "payload_capacity_kg": 4.5,
+          "payload_capacity_kg": 5.0,
           "payload_length_capacity_m": 0.42,
           "payload_width_capacity_m": 0.35,
           "payload_height_capacity_m": 0.32
         }
       ],
-      "payload_capacity_kg": 4.5,
+      "payload_capacity_kg": 5.0,
       "payload_length_capacity_m": 0.42,
       "payload_width_capacity_m": 0.35,
       "payload_height_capacity_m": 0.32,
@@ -6604,9 +6547,38 @@
       "manual_task_compatible": false,
       "length_m": 0.6,
       "width_m": 0.6,
-      "height_m": 1.5,
+      "height_m": 0.2,
       "speed_m_per_sec": 1.2,
       "motor_power_w": 600.0,
+      "battery_capacity_kwh": 10.0,
+      "battery_charge_rate_kw": 3.0,
+      "recharge_threshold_percent": 20.0,
+      "battery_soc_percent": 100.0,
+      "start_location": "AMR-CENTRE"
+    },
+    {
+      "id": "AMR-B",
+      "quantity": 1,
+      "payload_slots": [
+        {
+          "name": "Slot 1",
+          "payload_capacity_kg": 500.0,
+          "payload_length_capacity_m": 1.2,
+          "payload_width_capacity_m": 1.2,
+          "payload_height_capacity_m": 1.6
+        }
+      ],
+      "payload_capacity_kg": 500.0,
+      "payload_length_capacity_m": 1.2,
+      "payload_width_capacity_m": 1.2,
+      "payload_height_capacity_m": 1.6,
+      "multi_stop_enabled": false,
+      "manual_task_compatible": true,
+      "length_m": 0.8,
+      "width_m": 0.6,
+      "height_m": 0.2,
+      "speed_m_per_sec": 1.2,
+      "motor_power_w": 1000.0,
       "battery_capacity_kwh": 10.0,
       "battery_charge_rate_kw": 3.0,
       "recharge_threshold_percent": 20.0,

@@ -1041,6 +1041,90 @@ class LocationInventorySpacesDialog(QDialog):
                 )
 
 
+class AmrPayloadMonitorDialog(QDialog):
+    columns = [
+        ("amr_id", "AMR", 120),
+        ("payloads", "Payloads onboard", 260),
+        ("payload_count", "Count", 70),
+        ("slots", "Slots", 90),
+        ("task_ids", "Task(s)", 190),
+        ("status", "Status", 130),
+        ("segment_type", "Segment", 130),
+        ("from_location", "From", 150),
+        ("to_location", "To", 150),
+        ("floor", "Floor", 70),
+        ("updated", "Updated", 160),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("AMR Payload Monitor")
+        self.setWindowModality(Qt.NonModal)
+        self.resize(1320, 520)
+        self._rows = []
+
+        layout = QVBoxLayout(self)
+        self.summary_label = QLabel("No simulation loaded")
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for idx, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(idx, width)
+        layout.addWidget(self.table, 1)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.close)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close_btn)
+        layout.addLayout(row)
+
+    def update_states(self, rows: List[dict], current_time: Optional[datetime]):
+        self._rows = list(rows or [])
+        stamp = current_time.strftime("%Y-%m-%d %H:%M:%S") if current_time else "-"
+        payload_total = sum(int(row.get("payload_count", 0) or 0) for row in self._rows)
+        self.summary_label.setText(
+            f"Time: {stamp}\nAMRs: {len(self._rows)} | Payloads onboard: {payload_total}"
+        )
+        self._refresh_table()
+
+    def _refresh_table(self):
+        selected_amr = ""
+        selected_rows = (
+            self.table.selectionModel().selectedRows()
+            if self.table.selectionModel()
+            else []
+        )
+        if selected_rows:
+            item = self.table.item(selected_rows[0].row(), 0)
+            selected_amr = item.text() if item else ""
+
+        self.table.setRowCount(0)
+        for row_data in self._rows:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            for col, (key, _heading, _width) in enumerate(self.columns):
+                value = row_data.get(key, "")
+                text = str(value if value not in (None, "") else "-")
+                item = QTableWidgetItem(text)
+                if key == "payload_count":
+                    try:
+                        item.setData(Qt.DisplayRole, int(value or 0))
+                    except Exception:
+                        pass
+                self.table.setItem(row, col, item)
+            if selected_amr and str(row_data.get("amr_id", "")) == selected_amr:
+                self.table.selectRow(row)
+
+
 class LiftMonitorDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1492,6 +1576,7 @@ class SimulationVisualizer(QMainWindow):
         self.is_playing = False
         self.play_speed = 60.0
         self.lift_monitor_dialog: Optional[LiftMonitorDialog] = None
+        self.amr_payload_monitor_dialog: Optional[AmrPayloadMonitorDialog] = None
         self.play_timer = QTimer(self)
         self.play_timer.timeout.connect(self._tick)
 
@@ -1572,6 +1657,7 @@ class SimulationVisualizer(QMainWindow):
         add_btn("Open Simulation CSV", self.open_csv)
         add_btn("Jump to Task", self.open_task_jump_dialog)
         add_btn("Lift Monitor", self.open_lift_monitor_dialog)
+        add_btn("AMR Payload Monitor", self.open_amr_payload_monitor_dialog)
         add_btn("Fit View", self.fit_view)
 
         side_layout.addWidget(QLabel("Floor"))
@@ -1994,6 +2080,7 @@ class SimulationVisualizer(QMainWindow):
         self.draw_dynamic_state_qt(self.current_floor())
         self.update_follow_view()
         self.update_lift_monitor_dialog()
+        self.update_amr_payload_monitor_dialog()
         self.view.viewport().update()
 
     def draw_line_item(self, x1, y1, x2, y2, color="#858585", width=0.0, dynamic=False):
@@ -2378,6 +2465,219 @@ class SimulationVisualizer(QMainWindow):
         self.lift_monitor_dialog = LiftMonitorDialog(self)
         self.lift_monitor_dialog.set_lifts(lift_states)
         self.lift_monitor_dialog.show()
+
+    def _configured_amr_slot_summary_by_base_id(self) -> Dict[str, str]:
+        summaries: Dict[str, str] = {}
+        for amr_cfg in self.layout_model.data.get("amrs", []) or []:
+            base_id = str(amr_cfg.get("id", "")).strip()
+            if not base_id:
+                continue
+            slots = amr_cfg.get("payload_slots", []) or []
+            if not isinstance(slots, list) or not slots:
+                summaries[base_id] = "1/1"
+                continue
+            summaries[base_id] = f"0/{len(slots)}"
+        return summaries
+
+    def _base_amr_id_from_runtime_id(self, amr_id: str) -> str:
+        amr_id = str(amr_id or "").strip()
+        for amr_cfg in self.layout_model.data.get("amrs", []) or []:
+            base_id = str(amr_cfg.get("id", "")).strip()
+            if not base_id:
+                continue
+            if amr_id == base_id or amr_id.startswith(base_id + "-"):
+                return base_id
+        return amr_id.rsplit("-", 1)[0] if "-" in amr_id else amr_id
+
+    def _parse_onboard_payloads_from_row(self, row: dict) -> Optional[List[dict]]:
+        raw = str(row.get("onboard_payloads", "") or "").strip()
+        if not raw:
+            return None
+
+        try:
+            value = json.loads(raw)
+        except Exception:
+            return None
+
+        if not isinstance(value, list):
+            return None
+
+        records = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            task_id = str(item.get("task_id", "") or "").strip()
+            payload = str(item.get("payload", "") or "").strip()
+            if not task_id or not payload:
+                continue
+            records.append(
+                {
+                    "task_id": task_id,
+                    "payload": payload,
+                    "payload_instance_id": str(
+                        item.get("payload_instance_id", "") or ""
+                    ).strip(),
+                    "from_location": str(item.get("pickup", "") or "").strip(),
+                    "to_location": str(item.get("dropoff", "") or "").strip(),
+                    "slot": str(
+                        item.get("slot_name", "") or item.get("slot", "") or ""
+                    ).strip(),
+                }
+            )
+        return records
+
+    def build_amr_payload_monitor_rows(self) -> List[dict]:
+        if not self.current_time or not self.sim_log.events:
+            return []
+
+        amr_states, _recent = self.sim_log.state_at(
+            self.current_time, self.layout_model
+        )
+        onboard: Dict[str, Dict[str, dict]] = {}
+        last_seen: Dict[str, datetime] = {}
+
+        for event in self.sim_log.events:
+            if event.start_time > self.current_time:
+                break
+
+            row = event.row
+            amr_id = str(row.get("amr_id", "") or "").strip()
+            if not amr_id:
+                continue
+
+            last_seen[amr_id] = min(self.current_time, event.end_time)
+
+            # New simulator CSVs provide the complete onboard slot state on
+            # every multi-stop segment. Treat that as authoritative so payloads
+            # persist across travel rows instead of disappearing after pickup.
+            parsed_onboard = self._parse_onboard_payloads_from_row(row)
+            if parsed_onboard is not None:
+                amr_payloads = {}
+                for item in parsed_onboard:
+                    item = dict(item)
+                    item["updated"] = event.start_time
+                    amr_payloads[item["task_id"]] = item
+                onboard[amr_id] = amr_payloads
+                continue
+
+            # Backwards-compatible inference for older CSVs without onboard state.
+            event_type = str(row.get("event_type", "") or "").strip().lower()
+            segment_type = str(row.get("segment_type", "") or "").strip().lower()
+            status = str(row.get("status", "") or "").strip().lower()
+            text = " ".join([event_type, segment_type, status])
+            task_id = str(row.get("task_id", "") or "").strip()
+            payload = str(row.get("payload", "") or "").strip()
+            if not task_id or not payload:
+                continue
+
+            amr_payloads = onboard.setdefault(amr_id, {})
+            if "pickup" in text or "pick_up" in text or "load" in text:
+                amr_payloads[task_id] = {
+                    "task_id": task_id,
+                    "payload": payload,
+                    "from_location": str(
+                        row.get("from_location", "") or row.get("start_node", "") or ""
+                    ).strip(),
+                    "to_location": str(
+                        row.get("to_location", "") or row.get("end_node", "") or ""
+                    ).strip(),
+                    "slot": str(
+                        row.get("payload_slot", "") or row.get("slot_name", "") or ""
+                    ).strip(),
+                    "updated": event.start_time,
+                }
+            elif (
+                "dropoff" in text
+                or "drop_off" in text
+                or "unload" in text
+                or "complete" in text
+            ):
+                amr_payloads.pop(task_id, None)
+
+        amr_ids = sorted(set(amr_states.keys()) | set(last_seen.keys()))
+        base_slot_summary = self._configured_amr_slot_summary_by_base_id()
+        rows = []
+
+        for amr_id in amr_ids:
+            state = amr_states.get(amr_id, {})
+            payload_records = list(onboard.get(amr_id, {}).values())
+            payload_records.sort(
+                key=lambda rec: (str(rec.get("slot", "")), str(rec.get("task_id", "")))
+            )
+            payload_text = ", ".join(
+                f"{rec['slot'] + ': ' if rec.get('slot') else ''}{rec['payload']} ({rec['task_id']})"
+                for rec in payload_records
+            )
+            task_text = ", ".join(rec["task_id"] for rec in payload_records)
+
+            base_id = self._base_amr_id_from_runtime_id(amr_id)
+            configured_slots = base_slot_summary.get(base_id, "")
+            if configured_slots and "/" in configured_slots:
+                total_slots = configured_slots.split("/", 1)[1]
+                slots_text = f"{len(payload_records)}/{total_slots}"
+            else:
+                slots_text = str(len(payload_records))
+
+            updated = last_seen.get(amr_id) or state.get("timestamp")
+            rows.append(
+                {
+                    "amr_id": amr_id,
+                    "payloads": payload_text or "-",
+                    "payload_count": len(payload_records),
+                    "slots": slots_text,
+                    "task_ids": task_text or (state.get("task_id") or "-"),
+                    "status": state.get("status") or state.get("event_type") or "-",
+                    "segment_type": state.get("segment_type") or "-",
+                    "from_location": state.get("from_location")
+                    or state.get("start_node")
+                    or "-",
+                    "to_location": state.get("to_location")
+                    or state.get("end_node")
+                    or "-",
+                    "floor": (
+                        state.get("floor") if state.get("floor") is not None else "-"
+                    ),
+                    "updated": (
+                        updated.strftime("%Y-%m-%d %H:%M:%S") if updated else "-"
+                    ),
+                }
+            )
+
+        return rows
+
+    def update_amr_payload_monitor_dialog(self):
+        if self.amr_payload_monitor_dialog is None:
+            return
+        if not self.amr_payload_monitor_dialog.isVisible():
+            return
+        self.amr_payload_monitor_dialog.update_states(
+            self.build_amr_payload_monitor_rows(),
+            self.current_time,
+        )
+
+    def open_amr_payload_monitor_dialog(self):
+        if not self.sim_log.events:
+            QMessageBox.information(
+                self,
+                "No simulation loaded",
+                "Load a simulation CSV first.",
+            )
+            return
+
+        if (
+            self.amr_payload_monitor_dialog
+            and self.amr_payload_monitor_dialog.isVisible()
+        ):
+            self.amr_payload_monitor_dialog.raise_()
+            self.amr_payload_monitor_dialog.activateWindow()
+            return
+
+        self.amr_payload_monitor_dialog = AmrPayloadMonitorDialog(self)
+        self.amr_payload_monitor_dialog.update_states(
+            self.build_amr_payload_monitor_rows(),
+            self.current_time,
+        )
+        self.amr_payload_monitor_dialog.show()
 
     def _node_name_at_view_event(self, event: QMouseEvent) -> Optional[str]:
         scene_pos = self.view.mapToScene(event.position().toPoint())
@@ -2971,6 +3271,7 @@ class SimulationVisualizer(QMainWindow):
         if not self.current_time:
             self.time_label.setText("No simulation loaded")
             self.update_lift_monitor_dialog()
+            self.update_amr_payload_monitor_dialog()
             return
         fraction = (
             self.sim_log.time_to_fraction(self.current_time)
@@ -2995,6 +3296,7 @@ class SimulationVisualizer(QMainWindow):
         )
         self.refresh_timeline()
         self.update_lift_monitor_dialog()
+        self.update_amr_payload_monitor_dialog()
 
     def on_slider_change(self, value):
         if not self.sim_log.start_time:
