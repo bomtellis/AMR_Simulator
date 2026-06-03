@@ -184,12 +184,14 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         locations: Dict[str, Location],
         payloads: Dict[str, PayloadType],
         clock: SimulationClock,
+        waste_streams: Optional[Dict[str, dict]] = None,
     ):
         self.task_generation = task_generation or {}
         self.departments = list(departments or [])
         self.locations = locations or {}
         self.payloads = payloads or {}
         self.clock = clock
+        self.waste_streams = waste_streams or {}
         self.task_counter = 0
         self.return_counter = 0
         self.scheduled_emitted = set()
@@ -268,6 +270,97 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             values.insert(0, cfg.get("pickup_location"))
         return _unique_clean(values)
 
+    def _department_waste_stream_items(self, dept: dict) -> List[dict]:
+        """Return configured waste stream entries for a department.
+
+        Waste is the only logistics category that expands one configured
+        department/category override into per-stream generator instances.  The
+        department dialog stores waste streams as either names or dictionaries
+        containing per-department generation settings.  This normalises both
+        forms and ignores blank entries.
+        """
+        result: List[dict] = []
+        seen = set()
+
+        for raw in dept.get("waste_streams", []) or []:
+            if isinstance(raw, dict):
+                item = dict(raw)
+                name = _clean_text(item.get("name"))
+            else:
+                name = _clean_text(raw)
+                item = {"name": name}
+
+            if not name or name in seen:
+                continue
+
+            item["name"] = name
+            result.append(item)
+            seen.add(name)
+
+        return result
+
+    def _threshold_from_waste_stream(self, stream_name: str, cfg: dict) -> float:
+        threshold = _as_float(cfg.get("threshold_volume_m3", 0.0), 0.0)
+        if threshold > 0:
+            return threshold
+
+        stream_cfg = self.waste_streams.get(stream_name, {}) or {}
+        capacity = _as_float(stream_cfg.get("container_capacity_m3", 0.0), 0.0)
+        fraction = _as_float(stream_cfg.get("full_threshold_fraction", 0.8), 0.8)
+        fallback = capacity * fraction
+        return fallback if fallback > 0 else 0.0
+
+    def _waste_stream_cfg_for_department(
+        self, category_cfg: dict, dept_override: dict, stream_item: dict
+    ) -> Optional[dict]:
+        stream_name = _clean_text(stream_item.get("name"))
+        if not stream_name:
+            return None
+
+        global_stream = dict(self.waste_streams.get(stream_name, {}) or {})
+
+        # Deleted/orphaned stream assignments should be removable in the UI but
+        # should not create new tasks unless they still carry a valid payload in
+        # the saved department stream item.
+        if stream_name not in self.waste_streams and not _clean_text(
+            stream_item.get("payload")
+        ):
+            return None
+
+        cfg = self._merge_category_with_override(category_cfg, dept_override)
+
+        # Global stream definition supplies the container/payload defaults.
+        for key in ("payload", "container_capacity_m3", "full_threshold_fraction"):
+            if key in global_stream and _clean_text(global_stream.get(key)):
+                cfg[key] = global_stream.get(key)
+
+        # The department's selected stream item supplies generation settings and
+        # may intentionally override the global stream payload if present.
+        for key, value in stream_item.items():
+            if key == "name":
+                continue
+            cfg[key] = value
+
+        cfg["waste_stream"] = stream_name
+        cfg["task_source"] = "department_waste"
+
+        payload_name = _clean_text(cfg.get("payload", ""))
+        if not payload_name:
+            payload_name = _clean_text(global_stream.get("payload", ""))
+            cfg["payload"] = payload_name
+
+        if payload_name not in self.payloads:
+            return None
+
+        threshold = self._threshold_from_waste_stream(stream_name, cfg)
+        if threshold > 0:
+            cfg["threshold_volume_m3"] = threshold
+
+        if _as_float(cfg.get("volume_per_event_m3", 0.0), 0.0) <= 0.0:
+            cfg["volume_per_event_m3"] = threshold
+
+        return cfg
+
     def _build_instances(self) -> List[dict]:
         categories = self.task_generation.get("categories", {}) or {}
         instances: List[dict] = []
@@ -276,6 +369,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if not isinstance(category, dict):
                 continue
 
+            category_key_text = str(category_key)
             overrides = (
                 category.get("departments", {})
                 if isinstance(category.get("departments", {}), dict)
@@ -284,22 +378,20 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
             # Department overrides are independently enabled.  The category
             # default "enabled" flag must not disable configured departments.
-            # This lets the editor keep "Category defaults" disabled so no
-            # default task is generated, while still allowing selected
-            # department overrides to generate tasks.
+            # Waste is the only category that expands into one instance per
+            # configured department waste stream.
             for dept in self.departments:
                 dept_id = self._department_id(dept)
                 if not dept_id or dept_id not in overrides:
                     continue
 
-                cfg = self._merge_category_with_override(
-                    category, overrides.get(dept_id, {})
-                )
+                override = overrides.get(dept_id, {})
+                cfg = self._merge_category_with_override(category, override)
                 if not bool(cfg.get("enabled", False)):
                     continue
 
                 dept_locations = self._department_category_locations(
-                    dept, str(category_key)
+                    dept, category_key_text
                 )
                 role = (
                     _clean_text(cfg.get("department_location_role", "dropoff"))
@@ -314,10 +406,38 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 elif role != "pickup" and dept_locations:
                     dropoff_locations = dept_locations
 
+                if category_key_text.lower() == "waste":
+                    stream_items = self._department_waste_stream_items(dept)
+
+                    if stream_items:
+                        for stream_item in stream_items:
+                            stream_cfg = self._waste_stream_cfg_for_department(
+                                category, override, stream_item
+                            )
+                            if not stream_cfg:
+                                continue
+                            stream_name = _clean_text(stream_cfg.get("waste_stream"))
+                            instances.append(
+                                {
+                                    "key": f"waste:{dept_id}:{stream_name}",
+                                    "category_key": "waste",
+                                    "department_id": dept_id,
+                                    "department_name": self._department_name(dept),
+                                    "cfg": stream_cfg,
+                                    "pickup_locations": pickup_locations,
+                                    "dropoff_locations": dropoff_locations,
+                                    "waste_stream": stream_name,
+                                }
+                            )
+                        continue
+
+                    # Backwards compatibility: if no department streams are set,
+                    # use the old department waste category override.
+
                 instances.append(
                     {
-                        "key": f"{category_key}:{dept_id}",
-                        "category_key": str(category_key),
+                        "key": f"{category_key_text}:{dept_id}",
+                        "category_key": category_key_text,
                         "department_id": dept_id,
                         "department_name": self._department_name(dept),
                         "cfg": cfg,
@@ -333,8 +453,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if bool(category.get("enabled", False)) and not overrides:
                 instances.append(
                     {
-                        "key": str(category_key),
-                        "category_key": str(category_key),
+                        "key": category_key_text,
+                        "category_key": category_key_text,
                         "department_id": "",
                         "department_name": "",
                         "cfg": self._merge_category_with_override(category, None),
@@ -387,8 +507,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             created_during_runtime=True,
             labels=labels,
             route_profile=_clean_text(cfg.get("route_profile")) or None,
-            task_source="task_generation",
+            task_source=_clean_text(cfg.get("task_source", "task_generation"))
+            or "task_generation",
             department_id=department_id,
+            waste_stream=_clean_text(cfg.get("waste_stream", "")),
+            waste_volume_m3=_as_float(cfg.get("waste_volume_m3", 0.0), 0.0),
             container_type=payload_name,
         )
         if bool(cfg.get("return_enabled", False)):
@@ -426,6 +549,18 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             task_source=getattr(task, "task_source", "task_generation"),
             department_id=getattr(
                 task, "department_id", instance.get("department_id", "")
+            ),
+            waste_stream=getattr(
+                task, "waste_stream", instance.get("waste_stream", "")
+            ),
+            waste_volume_m3=float(
+                getattr(
+                    task,
+                    "waste_volume_m3",
+                    getattr(task, "generated_volume_m3", 0.0),
+                )
+                or getattr(task, "generated_volume_m3", 0.0)
+                or 0.0
             ),
             container_type=task.payload,
         )
@@ -539,6 +674,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     release_time=release_time,
                     label_suffix="scheduled",
                 )
+                if task is not None and _clean_text(cfg.get("waste_stream", "")):
+                    task.generated_volume_m3 = _as_float(
+                        cfg.get("volume_per_event_m3", 0.0), 0.0
+                    )
+                    task.waste_volume_m3 = task.generated_volume_m3
                 records.extend(
                     self._records_for_outbound(
                         task,
@@ -562,7 +702,12 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             # Still advance the clock to avoid back-generating when re-entering active time.
             self.runtime.setdefault(
                 instance["key"],
-                {"last_update_time": now, "volume": 0.0, "sporadic_accumulator": 0.0},
+                {
+                    "last_update_time": now,
+                    "volume": 0.0,
+                    "sporadic_accumulator": 0.0,
+                    "volume_event_accumulator": 0.0,
+                },
             )["last_update_time"] = now
             return []
 
@@ -572,6 +717,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 "last_update_time": 0.0,
                 "volume": 0.0,
                 "sporadic_accumulator": 0.0,
+                "volume_event_accumulator": 0.0,
             },
         )
         last_time = _as_float(runtime.get("last_update_time", 0.0), 0.0)
@@ -587,6 +733,24 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 0.0, elapsed_days * _as_float(cfg.get("base_daily_volume_m3", 0.0), 0.0)
             )
 
+        # For threshold-based waste streams, frequency_per_day and
+        # volume_per_event_m3 represent bin-fill events.  The previous dynamic
+        # category path only used base_daily_volume_m3, so department stream
+        # settings with event volumes never accumulated to the threshold.
+        if mode in THRESHOLD_MODES:
+            event_frequency = max(
+                0.0, _as_float(cfg.get("frequency_per_day", 0.0), 0.0)
+            )
+            event_volume = max(0.0, _as_float(cfg.get("volume_per_event_m3", 0.0), 0.0))
+            if event_frequency > 0.0 and event_volume > 0.0:
+                runtime["volume_event_accumulator"] = _as_float(
+                    runtime.get("volume_event_accumulator", 0.0), 0.0
+                ) + (elapsed_days * event_frequency)
+                whole_events = int(runtime["volume_event_accumulator"])
+                if whole_events > 0:
+                    runtime["volume"] += whole_events * event_volume
+                    runtime["volume_event_accumulator"] -= whole_events
+
         if mode in SPORADIC_MODES:
             freq_per_day = max(0.0, _as_float(cfg.get("frequency_per_day", 0.0), 0.0))
             runtime["sporadic_accumulator"] += elapsed_days * freq_per_day
@@ -596,6 +760,12 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     task = self._base_task(
                         instance, pickup, dropoff, payload_name, now, "sporadic"
                     )
+                    if task is not None:
+                        generated_volume = _as_float(
+                            cfg.get("volume_per_event_m3", 0.0), 0.0
+                        )
+                        task.generated_volume_m3 = generated_volume
+                        task.waste_volume_m3 = generated_volume
                     records.extend(
                         self._records_for_outbound(
                             task,
@@ -617,6 +787,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     )
                     if task is not None:
                         task.generated_volume_m3 = volume_per_event
+                        task.waste_volume_m3 = volume_per_event
                     records.extend(
                         self._records_for_outbound(
                             task,
@@ -1025,6 +1196,12 @@ class TaskGenerationManager:
         task_generation = self._task_generation_cfg()
         departments = list(self.config.get("departments", []))
 
+        waste_streams = {
+            str(item.get("name", "")).strip(): dict(item)
+            for item in self.config.get("waste_streams", [])
+            if str(item.get("name", "")).strip()
+        }
+
         if self._has_dynamic_categories() and bool(
             task_generation.get("enabled", True)
         ):
@@ -1035,6 +1212,7 @@ class TaskGenerationManager:
                     locations=self.locations,
                     payloads=self.payloads,
                     clock=self.clock,
+                    waste_streams=waste_streams,
                 )
             )
 
@@ -1052,23 +1230,12 @@ class TaskGenerationManager:
             else {}
         )
         dynamic_waste_enabled = bool(
-            (
-                bool(waste_category.get("enabled", False))
-                and _clean_text(waste_category.get("payload", ""))
-            )
+            bool(waste_category.get("enabled", False))
             or any(
-                isinstance(override, dict)
-                and bool(override.get("enabled", False))
-                and _clean_text(override.get("payload", ""))
+                isinstance(override, dict) and bool(override.get("enabled", False))
                 for override in waste_overrides.values()
             )
         )
-
-        waste_streams = {
-            str(item.get("name", "")).strip(): dict(item)
-            for item in self.config.get("waste_streams", [])
-            if str(item.get("name", "")).strip()
-        }
 
         if (
             waste_streams

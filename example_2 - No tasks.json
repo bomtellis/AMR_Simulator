@@ -15675,11 +15675,13 @@
         "base_daily_volume_m3": 0.0,
         "notes": "",
         "return_delay_minutes": 0,
+        "uses_department_waste_streams": false,
         "departments": {
           "D8": {
             "enabled": false,
             "generation_mode": "scheduled",
             "priority": 40,
+            "department_location_role": "dropoff",
             "pickup_location": "",
             "dropoff_location": "",
             "dropoff_locations": [],
@@ -16562,6 +16564,7 @@
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
         "notes": "",
+        "uses_department_waste_streams": false,
         "departments": {
           "D8": {
             "enabled": false,
@@ -16811,7 +16814,8 @@
         "threshold_volume_m3": 0.8,
         "base_daily_volume_m3": 0.0,
         "notes": "",
-        "return_delay_minutes": 0
+        "return_delay_minutes": 0,
+        "uses_department_waste_streams": false
       },
       "waste": {
         "enabled": true,
@@ -16837,25 +16841,27 @@
         "schedule_times": [],
         "frequency_per_day": 0.0,
         "volume_per_event_m3": 0.0,
-        "threshold_volume_m3": 0.24,
+        "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
         "notes": "",
+        "uses_department_waste_streams": true,
         "return_delay_minutes": 0,
         "departments": {
           "D8": {
             "enabled": true,
             "generation_mode": "threshold",
             "priority": 60,
+            "department_location_role": "pickup",
             "pickup_location": "D8-WASTE",
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
               "D47-WASTE"
             ],
-            "payload": "Clinical Waste Bin",
+            "payload": "",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
+            "return_payload": "",
             "return_delay_minutes": 0.0,
             "route_profile": "",
             "days_active": [
@@ -16868,43 +16874,9 @@
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
+            "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": ""
-          },
-          "D1": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D1-WASTE",
-            "pickup_locations": [
-              "D1-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "Clinical Waste Bin",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
           },
           "D15": {
             "enabled": true,
@@ -16918,11 +16890,11 @@
             "dropoff_locations": [
               "D47-WASTE"
             ],
-            "payload": "Clinical Waste Bin",
+            "payload": "",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
+            "return_payload": "",
             "return_delay_minutes": 0.0,
             "route_profile": "",
             "days_active": [
@@ -16935,28 +16907,28 @@
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
+            "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": "",
             "department_location_role": "pickup"
           },
-          "D2": {
+          "D1": {
             "enabled": true,
             "generation_mode": "threshold",
             "priority": 60,
-            "pickup_location": "D2-WASTE",
+            "pickup_location": "D1-WASTE",
             "pickup_locations": [
-              "D2-WASTE"
+              "D1-WASTE"
             ],
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
               "D47-WASTE"
             ],
-            "payload": "Clinical Waste Bin",
+            "payload": "",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
+            "return_payload": "",
             "return_delay_minutes": 0.0,
             "route_profile": "",
             "days_active": [
@@ -16969,211 +16941,7 @@
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
-          "D3": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D3-WASTE",
-            "pickup_locations": [
-              "D3-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "Clinical Waste Bin",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
-          "D4": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D4-WASTE",
-            "pickup_locations": [
-              "D4-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "Clinical Waste Bin",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
-          "D44": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D44-WASTE",
-            "pickup_locations": [
-              "D44-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "Clinical Waste Bin",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
-          "D45": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D45-WASTE",
-            "pickup_locations": [
-              "D45-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "Clinical Waste Bin",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
-          "D47": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D47-WASTE",
-            "pickup_locations": [
-              "D47-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "Clinical Waste Bin",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
-            "base_daily_volume_m3": 0.0,
-            "notes": "",
-            "department_location_role": "pickup"
-          },
-          "D5": {
-            "enabled": true,
-            "generation_mode": "threshold",
-            "priority": 60,
-            "pickup_location": "D5-WASTE",
-            "pickup_locations": [
-              "D5-WASTE"
-            ],
-            "dropoff_location": "D47-WASTE",
-            "dropoff_locations": [
-              "D47-WASTE"
-            ],
-            "payload": "Clinical Waste Bin",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
-            "return_delay_minutes": 0.0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
+            "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": "",
             "department_location_role": "pickup"
@@ -17190,11 +16958,11 @@
             "dropoff_locations": [
               "D47-WASTE"
             ],
-            "payload": "Clinical Waste Bin",
+            "payload": "",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
+            "return_payload": "",
             "return_delay_minutes": 0.0,
             "route_profile": "",
             "days_active": [
@@ -17207,7 +16975,143 @@
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D4": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D4-WASTE",
+            "pickup_locations": [
+              "D4-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D5": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D5-WASTE",
+            "pickup_locations": [
+              "D5-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D44": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D44-WASTE",
+            "pickup_locations": [
+              "D44-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D45": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D45-WASTE",
+            "pickup_locations": [
+              "D45-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": "",
             "department_location_role": "pickup"
@@ -17224,11 +17128,11 @@
             "dropoff_locations": [
               "D47-WASTE"
             ],
-            "payload": "Clinical Waste Bin",
+            "payload": "",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
+            "return_payload": "",
             "return_delay_minutes": 0.0,
             "route_profile": "",
             "days_active": [
@@ -17241,7 +17145,7 @@
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
+            "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": "",
             "department_location_role": "pickup"
@@ -17258,11 +17162,11 @@
             "dropoff_locations": [
               "D47-WASTE"
             ],
-            "payload": "Clinical Waste Bin",
+            "payload": "",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
-            "return_payload": "Clinical Waste Bin",
+            "return_payload": "",
             "return_delay_minutes": 0.0,
             "route_profile": "",
             "days_active": [
@@ -17275,7 +17179,75 @@
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.6,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D2": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D2-WASTE",
+            "pickup_locations": [
+              "D2-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "department_location_role": "pickup"
+          },
+          "D3": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 60,
+            "pickup_location": "D3-WASTE",
+            "pickup_locations": [
+              "D3-WASTE"
+            ],
+            "dropoff_location": "D47-WASTE",
+            "dropoff_locations": [
+              "D47-WASTE"
+            ],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": "",
             "department_location_role": "pickup"
@@ -17292,7 +17264,6 @@
               "D4",
               "D44",
               "D45",
-              "D47",
               "D5",
               "D6",
               "D7",
@@ -17302,19 +17273,19 @@
               "enabled": true,
               "generation_mode": "threshold",
               "priority": 60,
-              "pickup_location": "D1-WASTE",
+              "pickup_location": "D8-WASTE",
               "pickup_locations": [
-                "D1-WASTE"
+                "D8-WASTE"
               ],
               "dropoff_location": "D47-WASTE",
               "dropoff_locations": [
                 "D47-WASTE"
               ],
-              "payload": "Clinical Waste Bin",
+              "payload": "",
               "tracked_item_exchange": false,
               "exchange_mode": "top_up_only",
               "return_enabled": true,
-              "return_payload": "Clinical Waste Bin",
+              "return_payload": "",
               "return_delay_minutes": 0.0,
               "route_profile": "",
               "days_active": [
@@ -17327,7 +17298,7 @@
               "scheduled_times": [],
               "frequency_per_day": 0.0,
               "volume_per_event_m3": 0.0,
-              "threshold_volume_m3": 0.6,
+              "threshold_volume_m3": 0.0,
               "base_daily_volume_m3": 0.0,
               "notes": "",
               "department_location_role": "pickup"
@@ -17364,7 +17335,8 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": ""
+        "notes": "",
+        "uses_department_waste_streams": false
       },
       "ssd": {
         "enabled": false,
@@ -17398,6 +17370,7 @@
         "base_daily_volume_m3": 0.0,
         "notes": "",
         "return_delay_minutes": 0,
+        "uses_department_waste_streams": false,
         "departments": {
           "D8": {
             "enabled": false,

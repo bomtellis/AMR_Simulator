@@ -130,8 +130,9 @@ def default_task_generation_config() -> dict:
         {
             "enabled": True,
             "generation_mode": "threshold",
+            "uses_department_waste_streams": True,
             "priority": 60,
-            "threshold_volume_m3": 0.24,
+            "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "return_enabled": True,
             "return_delay_minutes": 0,
@@ -156,7 +157,8 @@ def default_task_generation_config() -> dict:
 
     return {
         "enabled": True,
-        # Backwards compatibility for the current waste generator module.
+        # Legacy compatibility only. Runtime Waste generation is now driven by
+        # task_generation.categories.waste plus departments[].waste_streams[].
         "department_waste": {
             "enabled": True,
             "priority": 60,
@@ -204,8 +206,11 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
         category["dropoff_locations"] = clean
         category["dropoff_location"] = clean[0] if clean else legacy_dropoff
 
-    # Keep waste category and department_waste switch in step.
+    # Keep the legacy department_waste mirror in step for older configs/tools.
+    # It is not a separate editor workflow; Waste stream volume settings live on
+    # departments[].waste_streams[] and are consumed by the Waste task generator.
     if "waste" in merged["categories"]:
+        merged["categories"]["waste"]["uses_department_waste_streams"] = True
         merged["department_waste"]["enabled"] = bool(
             merged["categories"]["waste"].get(
                 "enabled", merged["department_waste"].get("enabled", True)

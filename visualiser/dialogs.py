@@ -182,6 +182,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.resize(920, 720)
 
         self.category_key = category_key
+        self.is_waste_category = str(category_key).strip().lower() == "waste"
         self.departments = [dict(x) for x in departments or []]
         self.base_category = dict(base_category or {})
         self.location_names = sorted(location_names)
@@ -389,6 +390,14 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Base daily volume m³", self.base_daily_volume_edit)
         form.addRow("Notes", self.notes_edit)
 
+        self.waste_stream_notice_label = QLabel(
+            "For Waste, stream-specific generation settings are applied from "
+            "Departments → Manage waste streams. This dialog only applies collection "
+            "routing, destination, priority and return-task settings to the selected departments."
+        )
+        self.waste_stream_notice_label.setWordWrap(True)
+        layout.addWidget(self.waste_stream_notice_label)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -427,6 +436,23 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.dropoff_summary.setEnabled(using_dept_as_pickup)
         self.pick_dropoffs_btn.setEnabled(using_dept_as_pickup)
         self.clear_dropoffs_btn.setEnabled(using_dept_as_pickup)
+
+        if getattr(self, "is_waste_category", False):
+            for widget in (
+                self.mode_combo,
+                self.payload_combo,
+                self.tracked_item_exchange_check,
+                self.exchange_mode_combo,
+                self.schedule_summary,
+                self.frequency_edit,
+                self.volume_per_event_edit,
+                self.threshold_volume_edit,
+                self.base_daily_volume_edit,
+            ):
+                widget.setEnabled(False)
+            self.waste_stream_notice_label.setVisible(True)
+        elif hasattr(self, "waste_stream_notice_label"):
+            self.waste_stream_notice_label.setVisible(False)
 
     def _department_location_picker_rows(self):
         """Return picker rows for departments with assigned category locations.
@@ -795,6 +821,17 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "notes": self.notes_edit.toPlainText().strip(),
             }
 
+            if self.is_waste_category:
+                payload["generation_mode"] = "threshold"
+                payload["payload"] = ""
+                payload["tracked_item_exchange"] = False
+                payload["exchange_mode"] = "top_up_only"
+                payload["scheduled_times"] = []
+                payload["frequency_per_day"] = 0.0
+                payload["volume_per_event_m3"] = 0.0
+                payload["threshold_volume_m3"] = 0.0
+                payload["base_daily_volume_m3"] = 0.0
+
             self.result = {}
 
             for dept_id in self.selected_department_ids:
@@ -992,6 +1029,20 @@ class TaskGenerationSettingsDialog(QDialog):
         self.mode_combo.addItems(self.MODES)
         self.priority_edit = QLineEdit()
 
+        self.role_pickup_radio = QCheckBox("Use department locations as pickup/source")
+        self.role_dropoff_radio = QCheckBox("Use department locations as drop-off")
+        self.role_dropoff_radio.setChecked(True)
+        self.role_pickup_radio.toggled.connect(
+            lambda checked: self._set_department_location_role("pickup", checked)
+        )
+        self.role_dropoff_radio.toggled.connect(
+            lambda checked: self._set_department_location_role("dropoff", checked)
+        )
+        role_row = QHBoxLayout()
+        role_row.addWidget(self.role_pickup_radio)
+        role_row.addWidget(self.role_dropoff_radio)
+        role_row.addStretch(1)
+
         self.pickup_combo = QComboBox()
         self.pickup_combo.addItems([""] + self.location_names)
 
@@ -1074,6 +1125,7 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Display name", self.display_name_edit)
         form.addRow("Generation mode", self.mode_combo)
         form.addRow("Priority", self.priority_edit)
+        form.addRow("Department location role", role_row)
         form.addRow("Pickup / source location", self.pickup_combo)
         form.addRow("Drop-off destinations", dropoff_row)
         form.addRow("Payload", self.payload_combo)
@@ -1093,11 +1145,21 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Base daily volume m³", self.base_daily_volume_edit)
         form.addRow("Notes", self.notes_edit)
 
+        self.waste_stream_notice_label = QLabel(
+            "Waste task generation uses the waste streams assigned in the Departments dialog. "
+            "Edit generation mode, frequency, volume per event, threshold and scheduled times via "
+            "Departments → Manage waste streams. The Waste category here only controls enablement, "
+            "priority, pickup/drop-off role, destinations, route profile and return task settings."
+        )
+        self.waste_stream_notice_label.setWordWrap(True)
+        layout.addWidget(self.waste_stream_notice_label)
+
         help_label = QLabel(
             "Schedule times are comma-separated HH:MM values. "
             "Drop-off destinations can contain multiple locations; the first is also saved as "
             "dropoff_location for compatibility with existing generators. "
-            "The Waste category also keeps the legacy department_waste settings in step."
+            "For Waste, stream-specific generated volume is configured on the departments' waste streams, "
+            "not on the task-generation category override."
         )
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
@@ -1854,7 +1916,7 @@ class TaskGenerationSettingsDialog(QDialog):
             QMessageBox.critical(
                 self,
                 "Delete category",
-                "The Waste category cannot be deleted because it is used by the current department waste generator.",
+                "The Waste category cannot be deleted because it is used by the waste-stream task generator.",
             )
             return
         if (
@@ -1901,6 +1963,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "generation_mode": (
                 "threshold" if key in {"waste", "linen"} else "scheduled"
             ),
+            "uses_department_waste_streams": key == "waste",
             "priority": {
                 "catering": 40,
                 "pharmacy": 30,
@@ -1925,7 +1988,7 @@ class TaskGenerationSettingsDialog(QDialog):
             }.get(key, []),
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.24 if key == "waste" else 0.0,
+            "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
             "notes": "",
         }
@@ -2067,7 +2130,29 @@ class TaskGenerationSettingsDialog(QDialog):
         self.threshold_volume_edit.setText("0.0")
         self.base_daily_volume_edit.setText("0.0")
         self.notes_edit.setPlainText("")
+        self._set_department_location_role("dropoff", True)
         self._update_mode_field_state()
+
+    def _is_waste_category(self):
+        return str(self.current_key or "").strip().lower() == "waste"
+
+    def _set_department_location_role(self, role, checked):
+        if not checked:
+            return
+
+        role = "pickup" if str(role).strip() == "pickup" else "dropoff"
+
+        self.role_pickup_radio.blockSignals(True)
+        self.role_dropoff_radio.blockSignals(True)
+        self.role_pickup_radio.setChecked(role == "pickup")
+        self.role_dropoff_radio.setChecked(role == "dropoff")
+        self.role_pickup_radio.blockSignals(False)
+        self.role_dropoff_radio.blockSignals(False)
+
+        self._update_mode_field_state()
+
+    def _current_department_location_role(self):
+        return "pickup" if self.role_pickup_radio.isChecked() else "dropoff"
 
     def _load_category(self, key):
         was_loading = self._loading
@@ -2083,6 +2168,10 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.mode_combo.setCurrentText(str(item.get("generation_mode", "scheduled")))
         self.priority_edit.setText(str(item.get("priority", 100)))
+        role = str(item.get("department_location_role", "dropoff") or "dropoff").strip()
+        self._set_department_location_role(
+            "pickup" if role == "pickup" else "dropoff", True
+        )
         self.pickup_combo.setCurrentText(str(item.get("pickup_location", "")))
         self._refresh_dropoff_summary()
         self.payload_combo.setCurrentText(str(item.get("payload", "")))
@@ -2121,6 +2210,7 @@ class TaskGenerationSettingsDialog(QDialog):
 
     def _update_mode_field_state(self, *_):
         mode = self.mode_combo.currentText().strip()
+        is_waste = self._is_waste_category()
 
         uses_schedule = mode in {
             "scheduled",
@@ -2145,17 +2235,32 @@ class TaskGenerationSettingsDialog(QDialog):
             "scheduled_sporadic",
         }
 
-        self.schedule_summary.setEnabled(uses_schedule)
-        self.schedule_button.setEnabled(uses_schedule)
-        self.clear_schedule_button.setEnabled(uses_schedule)
+        # Waste stream generation values are now edited on the Department
+        # waste-stream assignments.  The Waste category only controls routing,
+        # collection/destination and return-task behaviour.
+        self.waste_stream_notice_label.setVisible(is_waste)
 
-        self.threshold_volume_edit.setEnabled(uses_threshold)
+        self.mode_combo.setEnabled(not is_waste)
+        self.payload_combo.setEnabled(not is_waste)
+        self.tracked_item_exchange_check.setEnabled(not is_waste)
+        self.exchange_mode_combo.setEnabled(not is_waste)
 
-        self.base_daily_volume_edit.setEnabled(uses_continuous or uses_threshold)
+        self.schedule_summary.setEnabled((not is_waste) and uses_schedule)
+        self.schedule_button.setEnabled((not is_waste) and uses_schedule)
+        self.clear_schedule_button.setEnabled((not is_waste) and uses_schedule)
 
-        self.frequency_edit.setEnabled(uses_sporadic)
+        self.threshold_volume_edit.setEnabled((not is_waste) and uses_threshold)
+        self.base_daily_volume_edit.setEnabled(
+            (not is_waste) and (uses_continuous or uses_threshold)
+        )
+        self.frequency_edit.setEnabled((not is_waste) and uses_sporadic)
+        self.volume_per_event_edit.setEnabled((not is_waste) and uses_sporadic)
 
-        self.volume_per_event_edit.setEnabled(uses_sporadic)
+        using_dept_as_pickup = self._current_department_location_role() == "pickup"
+        self.pickup_combo.setEnabled(not using_dept_as_pickup)
+        self.dropoff_summary.setEnabled(using_dept_as_pickup)
+        self.pick_dropoffs_btn.setEnabled(using_dept_as_pickup)
+        self.clear_dropoffs_btn.setEnabled(using_dept_as_pickup)
 
         self.return_payload_combo.setEnabled(self.return_enabled_check.isChecked())
 
@@ -2201,6 +2306,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "display_name": display_name,
             "generation_mode": self.mode_combo.currentText().strip(),
             "priority": int(float(self.priority_edit.text() or 100)),
+            "department_location_role": self._current_department_location_role(),
             "pickup_location": self.pickup_combo.currentText().strip(),
             "dropoff_location": dropoff_locations[0] if dropoff_locations else "",
             "dropoff_locations": dropoff_locations,
@@ -2220,6 +2326,21 @@ class TaskGenerationSettingsDialog(QDialog):
             "notes": self.notes_edit.toPlainText().strip(),
         }
 
+        if str(category_key).strip().lower() == "waste":
+            # Waste generation mode, volumes and stream payloads now come from
+            # departments[].waste_streams[] and the global waste_streams list.
+            # Keep the category override focused on task-generator routing and
+            # collection metadata only.
+            payload["generation_mode"] = "threshold"
+            payload["payload"] = ""
+            payload["tracked_item_exchange"] = False
+            payload["exchange_mode"] = "top_up_only"
+            payload["scheduled_times"] = []
+            payload["frequency_per_day"] = 0.0
+            payload["volume_per_event_m3"] = 0.0
+            payload["threshold_volume_m3"] = 0.0
+            payload["base_daily_volume_m3"] = 0.0
+
         category = self.config.setdefault("categories", {}).setdefault(category_key, {})
         overrides = category.setdefault("departments", {})
 
@@ -2238,6 +2359,8 @@ class TaskGenerationSettingsDialog(QDialog):
         if not payload.get("enabled", False):
             has_meaningful_disabled_config = any(
                 [
+                    payload.get("department_location_role")
+                    not in {"", "dropoff", None},
                     payload.get("pickup_location"),
                     payload.get("dropoff_location"),
                     payload.get("dropoff_locations"),
@@ -3783,10 +3906,14 @@ class SimulationSettingsDialog(QDialog):
         form.addRow("Generated release stagger sec", self.generated_stagger_edit)
         form.addRow("Static route precompute", self.precompute_routes_check)
         form.addRow("Route precompute max pairs", self.route_precompute_max_pairs_edit)
-        form.addRow("Max multi-stop candidate tasks", self.max_multi_stop_candidate_tasks_edit)
+        form.addRow(
+            "Max multi-stop candidate tasks", self.max_multi_stop_candidate_tasks_edit
+        )
         form.addRow("Max single candidate tasks", self.max_single_candidate_tasks_edit)
         form.addRow("Max assignments per tick", self.max_assignments_per_tick_edit)
-        form.addRow("Assignment continue delay sec", self.assignment_continue_delay_edit)
+        form.addRow(
+            "Assignment continue delay sec", self.assignment_continue_delay_edit
+        )
 
         help_label = QLabel(
             "Use ISO format, for example 2026-01-05T06:00:00. "
@@ -4476,6 +4603,13 @@ class DepartmentEditorDialog(QDialog):
         form.addRow("Hours operated/day", self.hours_edit)
         form.addRow("Days active", days_widget)
         form.addRow("Assigned waste streams", waste_row)
+        waste_help = QLabel(
+            "Waste streams drive Waste task generation. Configure the generation mode, "
+            "frequency, volume per event, threshold and scheduled times here rather than "
+            "in the Task Generation category override."
+        )
+        waste_help.setWordWrap(True)
+        form.addRow("", waste_help)
 
         for (
             category_key,
