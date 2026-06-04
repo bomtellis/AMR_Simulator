@@ -13693,7 +13693,20 @@
         "sat",
         "sun"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 10.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        }
+      ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [
@@ -13773,7 +13786,20 @@
         "sat",
         "sun"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 10.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        }
+      ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [],
@@ -13843,7 +13869,20 @@
         "sat",
         "sun"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 10.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        }
+      ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [
@@ -13934,7 +13973,7 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "OPD_SET_1"
+          "shared_container_group": "SHARED-BIN-D4-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -14011,7 +14050,7 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "OPD_SET_2"
+          "shared_container_group": "SHARED-BIN-D5-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -14349,7 +14388,20 @@
         "sat",
         "sun"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 10.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "SHARED-BIN-D14-WASTE"
+        }
+      ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [],
@@ -14434,7 +14486,7 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "ED_DEPTS"
+          "shared_container_group": "SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -14509,7 +14561,7 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "ED_DEPTS"
+          "shared_container_group": "SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -14592,7 +14644,7 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "ED_DEPTS"
+          "shared_container_group": "SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -14675,7 +14727,7 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "ED_DEPTS"
+          "shared_container_group": "SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -14810,8 +14862,8 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "SHARED-BIN-D17-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -14897,8 +14949,8 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "SHARED-BIN-D17-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -15425,8 +15477,8 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "SHARED-BIN-D27-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -15502,8 +15554,8 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "SHARED-BIN-D27-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -15581,8 +15633,8 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "SHARED-BIN-D26-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -15662,8 +15714,8 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "SHARED-BIN-D26-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -15747,8 +15799,8 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "SHARED-BIN-D27-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -15898,7 +15950,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D29-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -15990,7 +16045,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D29-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -16082,7 +16140,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D31-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -16174,7 +16235,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D31-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -16266,7 +16330,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D33-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -16358,7 +16425,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D33-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -16622,7 +16692,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D37-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -16714,7 +16787,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D37-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -16804,7 +16880,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D39-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -16896,7 +16975,10 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container_group": "SHARED-BIN-D39-WASTE",
+          "shared_container": true
         }
       ],
       "task_generation_locations": {
@@ -17257,7 +17339,7 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "OPD_SET_1"
+          "shared_container_group": "SHARED-BIN-D4-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -17334,7 +17416,7 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "OPD_SET_2"
+          "shared_container_group": "SHARED-BIN-D5-WASTE"
         }
       ],
       "task_generation_locations": {

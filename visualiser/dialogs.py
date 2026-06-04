@@ -6113,6 +6113,748 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         super().accept()
 
 
+class TaskCategoryCommonLocationWizard(QDialog):
+    """Assign one shared task-category location to a group of departments."""
+
+    def __init__(
+        self,
+        parent,
+        departments,
+        location_names,
+        task_generation_categories,
+        preselected_indexes=None,
+        current_floor=0,
+        group_resolver=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Task category shared-location wizard")
+        self.resize(920, 620)
+        self.departments = [dict(x) for x in departments or []]
+        self.location_names = sorted({str(x).strip() for x in location_names if str(x).strip()})
+        self.task_generation_categories = list(task_generation_categories or [])
+        self.preselected_indexes = set(preselected_indexes or [])
+        self.current_floor = int(current_floor)
+        self.group_resolver = group_resolver or (lambda item: "Other")
+        self.selected_locations = []
+        self.result = None
+
+        layout = QVBoxLayout(self)
+
+        intro = QLabel(
+            "Assign the same pickup / drop-off location to several departments for a "
+            "task generation category. This is useful where multiple departments share "
+            "one store, bin, collection point or common drop-off location."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.category_combo = QComboBox()
+        for category_key, category_label, _suffix in self.task_generation_categories:
+            self.category_combo.addItem(str(category_label), str(category_key))
+        form.addRow("Task category", self.category_combo)
+
+        location_row = QHBoxLayout()
+        self.location_summary = QLabel("None selected")
+        self.location_summary.setWordWrap(True)
+        pick_locations_btn = QPushButton("Select shared location...")
+        pick_locations_btn.clicked.connect(self.pick_locations)
+        clear_locations_btn = QPushButton("Clear")
+        clear_locations_btn.clicked.connect(self.clear_locations)
+        location_row.addWidget(self.location_summary, 1)
+        location_row.addWidget(pick_locations_btn)
+        location_row.addWidget(clear_locations_btn)
+        form.addRow("Shared location(s)", location_row)
+
+        options_row = QHBoxLayout()
+        self.replace_existing_check = QCheckBox("Replace existing assignments for this category")
+        self.replace_existing_check.setChecked(True)
+        self.only_enabled_check = QCheckBox("Only enabled departments")
+        self.only_enabled_check.setChecked(True)
+        options_row.addWidget(self.replace_existing_check)
+        options_row.addWidget(self.only_enabled_check)
+        options_row.addStretch(1)
+        form.addRow("Options", options_row)
+
+        dept_tools = QHBoxLayout()
+        layout.addLayout(dept_tools)
+        select_all_btn = QPushButton("Select all")
+        select_none_btn = QPushButton("Select none")
+        select_floor_btn = QPushButton("Select current floor")
+        select_existing_btn = QPushButton("Select departments already using category")
+        select_all_btn.clicked.connect(self.select_all_departments)
+        select_none_btn.clicked.connect(self.select_no_departments)
+        select_floor_btn.clicked.connect(self.select_current_floor_departments)
+        select_existing_btn.clicked.connect(self.select_departments_with_category)
+        dept_tools.addWidget(select_all_btn)
+        dept_tools.addWidget(select_none_btn)
+        dept_tools.addWidget(select_floor_btn)
+        dept_tools.addWidget(select_existing_btn)
+        dept_tools.addStretch(1)
+
+        self.department_table = QTreeWidget()
+        self.department_table.setColumnCount(6)
+        self.department_table.setHeaderLabels(
+            ["Use", "ID", "Name", "Floor", "Enabled", "Current category locations"]
+        )
+        self.department_table.setRootIsDecorated(False)
+        self.department_table.setAlternatingRowColors(True)
+        self.department_table.header().setSectionResizeMode(QHeaderView.Interactive)
+        layout.addWidget(self.department_table, 1)
+
+        self.summary_label = QLabel()
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.category_combo.currentIndexChanged.connect(self.refresh_department_table)
+        self.refresh_department_table()
+        self.refresh_location_summary()
+
+    def _department_id(self, dept):
+        return str(dept.get("id", "") or dept.get("name", "")).strip()
+
+    def _category_key(self):
+        return str(self.category_combo.currentData() or "").strip()
+
+    def _category_locations_for_department(self, dept, category_key=None):
+        category_key = str(category_key or self._category_key()).strip()
+        if not category_key:
+            return []
+        category_locations = dept.get("task_generation_locations", {}) or {}
+        if not isinstance(category_locations, dict):
+            return []
+        entry = category_locations.get(category_key, {})
+        if isinstance(entry, dict):
+            raw = entry.get("pickup_dropoff_locations", entry.get("locations", []))
+        else:
+            raw = entry
+        if isinstance(raw, str):
+            raw = [raw]
+        return [str(x).strip() for x in (raw or []) if str(x).strip()]
+
+    def _department_label_group(self, dept):
+        try:
+            floor = int(dept.get("floor", 0))
+            return f"Floor {floor}"
+        except Exception:
+            return "Other"
+
+    def pick_locations(self):
+        if not self.location_names:
+            QMessageBox.information(
+                self,
+                "Shared location",
+                "No locations are available. Create or place a location first.",
+            )
+            return
+
+        picker = MultiSelectPicker(
+            self,
+            "Select shared category location(s)",
+            self.location_names,
+            selected=self.selected_locations,
+            group_resolver=self.group_resolver,
+        )
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.selected_locations = sorted({str(x).strip() for x in picker.result if str(x).strip()})
+            self.refresh_location_summary()
+            self.refresh_summary()
+
+    def clear_locations(self):
+        self.selected_locations = []
+        self.refresh_location_summary()
+        self.refresh_summary()
+
+    def refresh_location_summary(self):
+        if not self.selected_locations:
+            self.location_summary.setText("None selected")
+        elif len(self.selected_locations) <= 4:
+            self.location_summary.setText(", ".join(self.selected_locations))
+        else:
+            self.location_summary.setText(f"{len(self.selected_locations)} selected")
+
+    def refresh_department_table(self):
+        previous_checked = self.checked_department_ids()
+        self.department_table.clear()
+        category_key = self._category_key()
+
+        sorted_departments = sorted(
+            enumerate(self.departments),
+            key=lambda pair: (
+                int(pair[1].get("floor", 0)) if str(pair[1].get("floor", "")).strip().lstrip("-").isdigit() else 999999,
+                str(pair[1].get("name", "") or pair[1].get("id", "")).strip().lower(),
+            ),
+        )
+
+        for index, dept in sorted_departments:
+            dept_id = self._department_id(dept)
+            if not dept_id:
+                continue
+            current_locations = self._category_locations_for_department(dept, category_key)
+            item = QTreeWidgetItem(
+                [
+                    "",
+                    dept_id,
+                    str(dept.get("name", "")),
+                    str(dept.get("floor", "")),
+                    "Yes" if dept.get("enabled", True) else "No",
+                    ", ".join(current_locations),
+                ]
+            )
+            item.setData(0, Qt.UserRole, index)
+            item.setData(1, Qt.UserRole, dept_id)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+
+            checked = False
+            if previous_checked:
+                checked = dept_id in previous_checked
+            elif self.preselected_indexes:
+                checked = index in self.preselected_indexes
+            item.setCheckState(0, Qt.Checked if checked else Qt.Unchecked)
+            self.department_table.addTopLevelItem(item)
+
+        for col in range(self.department_table.columnCount()):
+            self.department_table.resizeColumnToContents(col)
+        self.refresh_summary()
+
+    def checked_department_ids(self):
+        ids = []
+        for row in range(self.department_table.topLevelItemCount()):
+            item = self.department_table.topLevelItem(row)
+            if item.checkState(0) != Qt.Checked:
+                continue
+            dept_id = str(item.data(1, Qt.UserRole) or "").strip()
+            if dept_id:
+                ids.append(dept_id)
+        return ids
+
+    def _set_department_checked_by_predicate(self, predicate):
+        for row in range(self.department_table.topLevelItemCount()):
+            item = self.department_table.topLevelItem(row)
+            index = item.data(0, Qt.UserRole)
+            try:
+                dept = self.departments[int(index)]
+            except Exception:
+                dept = {}
+            item.setCheckState(0, Qt.Checked if predicate(dept) else Qt.Unchecked)
+        self.refresh_summary()
+
+    def select_all_departments(self):
+        self._set_department_checked_by_predicate(
+            lambda dept: (not self.only_enabled_check.isChecked()) or bool(dept.get("enabled", True))
+        )
+
+    def select_no_departments(self):
+        self._set_department_checked_by_predicate(lambda _dept: False)
+
+    def select_current_floor_departments(self):
+        self._set_department_checked_by_predicate(
+            lambda dept: (
+                ((not self.only_enabled_check.isChecked()) or bool(dept.get("enabled", True)))
+                and int(dept.get("floor", -999999)) == self.current_floor
+            )
+        )
+
+    def select_departments_with_category(self):
+        category_key = self._category_key()
+        self._set_department_checked_by_predicate(
+            lambda dept: (
+                ((not self.only_enabled_check.isChecked()) or bool(dept.get("enabled", True)))
+                and bool(self._category_locations_for_department(dept, category_key))
+            )
+        )
+
+    def refresh_summary(self):
+        checked = self.checked_department_ids()
+        location_count = len(self.selected_locations)
+        self.summary_label.setText(
+            f"Ready to assign {location_count} shared location(s) to {len(checked)} department(s)."
+        )
+
+    def accept(self):
+        try:
+            category_key = self._category_key()
+            if not category_key:
+                raise ValueError("Select a task category")
+            if not self.selected_locations:
+                raise ValueError("Select at least one shared location")
+            selected_ids = self.checked_department_ids()
+            if not selected_ids:
+                raise ValueError("Select at least one department")
+
+            selected_set = set(selected_ids)
+            assignments = {}
+            for index, dept in enumerate(self.departments):
+                dept_id = self._department_id(dept)
+                if dept_id not in selected_set:
+                    continue
+                assignments[dept_id] = {
+                    "department_index": index,
+                    "locations": list(self.selected_locations),
+                }
+
+            self.result = {
+                "category_key": category_key,
+                "locations": list(self.selected_locations),
+                "department_ids": selected_ids,
+                "replace_existing": self.replace_existing_check.isChecked(),
+                "assignments": assignments,
+            }
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid shared-location assignment", str(exc))
+
+
+
+class TaskCategorySharedBinGroupWizard(QDialog):
+    """Assign waste-stream shared bin groups from departments that share category locations."""
+
+    def __init__(
+        self,
+        parent,
+        departments,
+        waste_stream_names,
+        task_generation_categories,
+        preselected_indexes=None,
+        current_floor=0,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Auto shared bin groups from category locations")
+        self.resize(1040, 680)
+        self.departments = [dict(x) for x in departments or []]
+        self.preselected_indexes = set(preselected_indexes or [])
+        self.current_floor = int(current_floor)
+        self.task_generation_categories = list(task_generation_categories or [])
+        self.waste_stream_names = sorted(
+            {
+                str(x).strip()
+                for x in (waste_stream_names or [])
+                if str(x).strip()
+            }
+            | self._assigned_waste_stream_names()
+        )
+        self.selected_waste_streams = list(self.waste_stream_names)
+        self.result = None
+
+        layout = QVBoxLayout(self)
+
+        intro = QLabel(
+            "Find departments that already share the same assigned task-category "
+            "location, then write a matching shared bin group onto their assigned "
+            "waste streams. This does not change the existing category location "
+            "assignments."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.category_combo = QComboBox()
+        for category_key, category_label, _suffix in self.task_generation_categories:
+            self.category_combo.addItem(str(category_label), str(category_key))
+        # Waste is normally the relevant category. Select it by default when available.
+        for idx in range(self.category_combo.count()):
+            if str(self.category_combo.itemData(idx)).strip().lower() == "waste":
+                self.category_combo.setCurrentIndex(idx)
+                break
+        form.addRow("Source task category", self.category_combo)
+
+        stream_row = QHBoxLayout()
+        self.stream_summary = QLabel("All assigned waste streams")
+        self.stream_summary.setWordWrap(True)
+        pick_streams_btn = QPushButton("Select streams...")
+        pick_streams_btn.clicked.connect(self.pick_waste_streams)
+        all_streams_btn = QPushButton("All")
+        all_streams_btn.clicked.connect(self.select_all_waste_streams)
+        stream_row.addWidget(self.stream_summary, 1)
+        stream_row.addWidget(pick_streams_btn)
+        stream_row.addWidget(all_streams_btn)
+        form.addRow("Waste streams to update", stream_row)
+
+        self.group_prefix_edit = QLineEdit("SHARED-BIN")
+        form.addRow("Shared bin group prefix", self.group_prefix_edit)
+
+        options_row = QHBoxLayout()
+        self.only_enabled_check = QCheckBox("Only enabled departments")
+        self.only_enabled_check.setChecked(True)
+        self.only_selected_check = QCheckBox("Only selected departments")
+        self.only_selected_check.setChecked(bool(self.preselected_indexes))
+        self.overwrite_existing_check = QCheckBox("Overwrite existing shared bin groups")
+        self.overwrite_existing_check.setChecked(True)
+        self.minimum_group_size_edit = QLineEdit("2")
+        self.minimum_group_size_edit.setFixedWidth(48)
+        options_row.addWidget(self.only_enabled_check)
+        options_row.addWidget(self.only_selected_check)
+        options_row.addWidget(self.overwrite_existing_check)
+        options_row.addWidget(QLabel("Minimum departments per group"))
+        options_row.addWidget(self.minimum_group_size_edit)
+        options_row.addStretch(1)
+        form.addRow("Options", options_row)
+
+        tool_row = QHBoxLayout()
+        layout.addLayout(tool_row)
+        refresh_btn = QPushButton("Refresh preview")
+        select_all_btn = QPushButton("Select all groups")
+        select_none_btn = QPushButton("Select none")
+        current_floor_btn = QPushButton("Select current floor groups")
+        refresh_btn.clicked.connect(self.refresh_preview)
+        select_all_btn.clicked.connect(lambda: self._set_group_checks(lambda _group: True))
+        select_none_btn.clicked.connect(lambda: self._set_group_checks(lambda _group: False))
+        current_floor_btn.clicked.connect(self.select_current_floor_groups)
+        tool_row.addWidget(refresh_btn)
+        tool_row.addWidget(select_all_btn)
+        tool_row.addWidget(select_none_btn)
+        tool_row.addWidget(current_floor_btn)
+        tool_row.addStretch(1)
+
+        self.preview = QTreeWidget()
+        self.preview.setColumnCount(7)
+        self.preview.setHeaderLabels(
+            [
+                "Use",
+                "Shared location",
+                "Shared bin group",
+                "Departments",
+                "Floors",
+                "Streams updated",
+                "Skipped existing",
+            ]
+        )
+        self.preview.setRootIsDecorated(False)
+        self.preview.setAlternatingRowColors(True)
+        self.preview.header().setSectionResizeMode(QHeaderView.Interactive)
+        layout.addWidget(self.preview, 1)
+
+        self.summary_label = QLabel()
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.category_combo.currentIndexChanged.connect(self.refresh_preview)
+        self.only_enabled_check.toggled.connect(self.refresh_preview)
+        self.only_selected_check.toggled.connect(self.refresh_preview)
+        self.overwrite_existing_check.toggled.connect(self.refresh_preview)
+        self.group_prefix_edit.textChanged.connect(self.refresh_preview)
+        self.minimum_group_size_edit.textChanged.connect(self.refresh_preview)
+
+        self.refresh_stream_summary()
+        self.refresh_preview()
+
+    def _department_id(self, dept):
+        return str(dept.get("id", "") or dept.get("name", "")).strip()
+
+    def _category_key(self):
+        return str(self.category_combo.currentData() or "").strip()
+
+    def _assigned_waste_stream_names(self):
+        names = set()
+        for dept in self.departments:
+            for item in dept.get("waste_streams", []) or []:
+                if isinstance(item, dict):
+                    name = str(item.get("name", "")).strip()
+                else:
+                    name = str(item).strip()
+                if name:
+                    names.add(name)
+        return names
+
+    def _normalise_stream_item(self, item):
+        if isinstance(item, dict):
+            name = str(item.get("name", "")).strip()
+            if not name:
+                return None
+            result = dict(item)
+            result["name"] = name
+            result["shared_container_group"] = str(
+                result.get("shared_container_group", result.get("shared_container_id", ""))
+                or ""
+            ).strip()
+            result["shared_container"] = bool(
+                result.get("shared_container", bool(result["shared_container_group"]))
+            )
+            return result
+
+        name = str(item).strip()
+        if not name:
+            return None
+        return {
+            "name": name,
+            "generation_mode": "threshold",
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "scheduled_times": [],
+            "initial_container_present": True,
+            "shared_container": False,
+            "shared_container_group": "",
+        }
+
+    def _department_streams_by_name(self, dept):
+        result = {}
+        for item in dept.get("waste_streams", []) or []:
+            normalised = self._normalise_stream_item(item)
+            if normalised:
+                result[normalised["name"]] = normalised
+        return result
+
+    def _category_locations_for_department(self, dept, category_key=None):
+        category_key = str(category_key or self._category_key()).strip()
+        category_locations = dept.get("task_generation_locations", {}) or {}
+        if not category_key or not isinstance(category_locations, dict):
+            return []
+
+        entry = category_locations.get(category_key, {})
+        if isinstance(entry, dict):
+            raw = entry.get("pickup_dropoff_locations", entry.get("locations", []))
+        else:
+            raw = entry
+        if isinstance(raw, str):
+            raw = [raw]
+        return [str(x).strip() for x in (raw or []) if str(x).strip()]
+
+    def _safe_group_suffix(self, value):
+        text = str(value or "").strip().upper()
+        text = "".join(ch if ch.isalnum() else "-" for ch in text)
+        while "--" in text:
+            text = text.replace("--", "-")
+        return text.strip("-") or "GROUP"
+
+    def _group_id_for_location(self, location_name):
+        prefix = self.group_prefix_edit.text().strip() or "SHARED-BIN"
+        return f"{prefix}-{self._safe_group_suffix(location_name)}"
+
+    def pick_waste_streams(self):
+        if not self.waste_stream_names:
+            QMessageBox.information(
+                self,
+                "Waste streams",
+                "No waste streams are available on the selected departments.",
+            )
+            return
+
+        picker = MultiSelectPicker(
+            self,
+            "Select waste streams to update",
+            self.waste_stream_names,
+            selected=self.selected_waste_streams,
+            group_resolver=lambda _item: "Waste streams",
+        )
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.selected_waste_streams = sorted(
+                {str(x).strip() for x in picker.result if str(x).strip()}
+            )
+            self.refresh_stream_summary()
+            self.refresh_preview()
+
+    def select_all_waste_streams(self):
+        self.selected_waste_streams = list(self.waste_stream_names)
+        self.refresh_stream_summary()
+        self.refresh_preview()
+
+    def refresh_stream_summary(self):
+        if not self.selected_waste_streams:
+            self.stream_summary.setText("No streams selected")
+        elif len(self.selected_waste_streams) == len(self.waste_stream_names):
+            self.stream_summary.setText("All assigned waste streams")
+        elif len(self.selected_waste_streams) <= 5:
+            self.stream_summary.setText(", ".join(self.selected_waste_streams))
+        else:
+            self.stream_summary.setText(f"{len(self.selected_waste_streams)} streams selected")
+
+    def _minimum_group_size(self):
+        try:
+            return max(2, int(float(self.minimum_group_size_edit.text() or 2)))
+        except Exception:
+            return 2
+
+    def _candidate_department_indexes(self):
+        selected_filter = set(self.preselected_indexes)
+        only_selected = self.only_selected_check.isChecked() and bool(selected_filter)
+        indexes = []
+        for index, dept in enumerate(self.departments):
+            if only_selected and index not in selected_filter:
+                continue
+            if self.only_enabled_check.isChecked() and not bool(dept.get("enabled", True)):
+                continue
+            if not self._department_id(dept):
+                continue
+            indexes.append(index)
+        return indexes
+
+    def _build_location_groups(self):
+        category_key = self._category_key()
+        grouped = {}
+        for index in self._candidate_department_indexes():
+            dept = self.departments[index]
+            for location_name in self._category_locations_for_department(dept, category_key):
+                grouped.setdefault(location_name, []).append(index)
+
+        minimum_group_size = self._minimum_group_size()
+        groups = []
+        for location_name, indexes in sorted(grouped.items(), key=lambda pair: pair[0].lower()):
+            unique_indexes = []
+            seen = set()
+            for idx in indexes:
+                if idx not in seen:
+                    seen.add(idx)
+                    unique_indexes.append(idx)
+            if len(unique_indexes) < minimum_group_size:
+                continue
+
+            stream_update_count = 0
+            skipped_existing_count = 0
+            missing_stream_count = 0
+            selected_streams = set(self.selected_waste_streams)
+            overwrite = self.overwrite_existing_check.isChecked()
+
+            for idx in unique_indexes:
+                streams_by_name = self._department_streams_by_name(self.departments[idx])
+                for stream_name in selected_streams:
+                    stream = streams_by_name.get(stream_name)
+                    if not stream:
+                        missing_stream_count += 1
+                        continue
+                    existing_group = str(stream.get("shared_container_group", "")).strip()
+                    if existing_group and not overwrite:
+                        skipped_existing_count += 1
+                    else:
+                        stream_update_count += 1
+
+            groups.append(
+                {
+                    "location": location_name,
+                    "group_id": self._group_id_for_location(location_name),
+                    "department_indexes": unique_indexes,
+                    "stream_update_count": stream_update_count,
+                    "skipped_existing_count": skipped_existing_count,
+                    "missing_stream_count": missing_stream_count,
+                }
+            )
+        return groups
+
+    def refresh_preview(self):
+        previous_checked = set()
+        for row in range(self.preview.topLevelItemCount()):
+            item = self.preview.topLevelItem(row)
+            if item.checkState(0) == Qt.Checked:
+                previous_checked.add(str(item.data(1, Qt.UserRole) or ""))
+
+        self.preview.clear()
+        groups = self._build_location_groups()
+        had_previous = bool(previous_checked)
+
+        for group in groups:
+            dept_names = []
+            floors = set()
+            for idx in group["department_indexes"]:
+                dept = self.departments[idx]
+                dept_names.append(
+                    str(dept.get("name", "")).strip()
+                    or str(dept.get("id", "")).strip()
+                    or f"Department {idx + 1}"
+                )
+                floors.add(str(dept.get("floor", "")))
+
+            item = QTreeWidgetItem(
+                [
+                    "",
+                    group["location"],
+                    group["group_id"],
+                    ", ".join(dept_names[:6]) + (f", +{len(dept_names) - 6}" if len(dept_names) > 6 else ""),
+                    ", ".join(sorted(floors)),
+                    str(group["stream_update_count"]),
+                    str(group["skipped_existing_count"]),
+                ]
+            )
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setData(1, Qt.UserRole, group["location"])
+            item.setData(2, Qt.UserRole, group)
+            checked = group["location"] in previous_checked if had_previous else True
+            item.setCheckState(0, Qt.Checked if checked else Qt.Unchecked)
+            self.preview.addTopLevelItem(item)
+
+        for col in range(self.preview.columnCount()):
+            self.preview.resizeColumnToContents(col)
+        self.refresh_summary()
+
+    def _checked_groups(self):
+        groups = []
+        for row in range(self.preview.topLevelItemCount()):
+            item = self.preview.topLevelItem(row)
+            if item.checkState(0) != Qt.Checked:
+                continue
+            group = item.data(2, Qt.UserRole)
+            if isinstance(group, dict):
+                groups.append(group)
+        return groups
+
+    def _set_group_checks(self, predicate):
+        for row in range(self.preview.topLevelItemCount()):
+            item = self.preview.topLevelItem(row)
+            group = item.data(2, Qt.UserRole)
+            item.setCheckState(0, Qt.Checked if predicate(group) else Qt.Unchecked)
+        self.refresh_summary()
+
+    def select_current_floor_groups(self):
+        current_floor = str(self.current_floor)
+        self._set_group_checks(
+            lambda group: any(
+                str(self.departments[idx].get("floor", "")) == current_floor
+                for idx in (group or {}).get("department_indexes", [])
+            )
+        )
+
+    def refresh_summary(self):
+        checked_groups = self._checked_groups()
+        dept_ids = set()
+        stream_updates = 0
+        skipped = 0
+        for group in checked_groups:
+            stream_updates += int(group.get("stream_update_count", 0) or 0)
+            skipped += int(group.get("skipped_existing_count", 0) or 0)
+            for idx in group.get("department_indexes", []):
+                dept_ids.add(self._department_id(self.departments[idx]))
+        self.summary_label.setText(
+            f"Selected {len(checked_groups)} shared-location group(s), "
+            f"covering {len(dept_ids)} department(s), with {stream_updates} waste stream update(s)"
+            + (f" and {skipped} existing group(s) skipped." if skipped else ".")
+        )
+
+    def accept(self):
+        try:
+            category_key = self._category_key()
+            if not category_key:
+                raise ValueError("Select a source task category")
+            if not self.selected_waste_streams:
+                raise ValueError("Select at least one waste stream")
+            groups = self._checked_groups()
+            if not groups:
+                raise ValueError("Select at least one shared-location group")
+
+            self.result = {
+                "category_key": category_key,
+                "waste_streams": list(self.selected_waste_streams),
+                "overwrite_existing": self.overwrite_existing_check.isChecked(),
+                "groups": groups,
+            }
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid shared bin group assignment", str(exc))
+
+
 class DepartmentListDialog(QDialog):
 
     def __init__(
@@ -6172,12 +6914,16 @@ class DepartmentListDialog(QDialog):
         save_btn = QPushButton("Save")
 
         auto_assign_btn = QPushButton("Auto assign locations")
+        category_wizard_btn = QPushButton("Task category wizard...")
+        shared_bin_groups_btn = QPushButton("Auto shared bin groups...")
         bulk_waste_btn = QPushButton("Manage waste streams...")
 
         row.addWidget(add_btn)
         row.addWidget(edit_btn)
         row.addWidget(del_btn)
         row.addWidget(auto_assign_btn)
+        row.addWidget(category_wizard_btn)
+        row.addWidget(shared_bin_groups_btn)
         row.addWidget(bulk_waste_btn)
         row.addStretch(1)
         row.addWidget(save_btn)
@@ -6186,6 +6932,8 @@ class DepartmentListDialog(QDialog):
         edit_btn.clicked.connect(self.edit_item)
         del_btn.clicked.connect(self.delete_item)
         auto_assign_btn.clicked.connect(self.auto_assign_locations)
+        category_wizard_btn.clicked.connect(self.open_task_category_wizard)
+        shared_bin_groups_btn.clicked.connect(self.open_shared_bin_group_wizard)
         bulk_waste_btn.clicked.connect(
             self.manage_waste_streams_for_selected_departments
         )
@@ -6222,10 +6970,26 @@ class DepartmentListDialog(QDialog):
             )
 
             for idx, item in grouped[floor]:
-                waste_text = ", ".join(
-                    x.get("name", str(x)) if isinstance(x, dict) else str(x)
-                    for x in item.get("waste_streams", [])
-                )
+                waste_labels = []
+                for stream in item.get("waste_streams", []):
+                    if isinstance(stream, dict):
+                        stream_name = str(stream.get("name", "")).strip()
+                        shared_group = str(
+                            stream.get(
+                                "shared_container_group",
+                                stream.get("shared_container_id", ""),
+                            )
+                            or ""
+                        ).strip()
+                        if stream_name and shared_group:
+                            waste_labels.append(f"{stream_name} [{shared_group}]")
+                        elif stream_name:
+                            waste_labels.append(stream_name)
+                    else:
+                        stream_name = str(stream).strip()
+                        if stream_name:
+                            waste_labels.append(stream_name)
+                waste_text = ", ".join(waste_labels)
 
                 operating_start = str(
                     item.get("operating_start_time", "00:00") or "00:00"
@@ -6274,6 +7038,264 @@ class DepartmentListDialog(QDialog):
                 continue
 
         return sorted(set(indexes))
+
+    def open_task_category_wizard(self):
+        if not self.task_generation_categories:
+            QMessageBox.information(
+                self,
+                "Task category wizard",
+                "No task generation categories are available.",
+            )
+            return
+
+        selected_indexes = self._selected_department_indexes()
+
+        dialog = TaskCategoryCommonLocationWizard(
+            self,
+            departments=self.items,
+            location_names=self.location_names,
+            task_generation_categories=self.task_generation_categories,
+            preselected_indexes=selected_indexes,
+            current_floor=self.current_floor,
+            group_resolver=self.group_resolver,
+        )
+
+        if dialog.exec() != QDialog.Accepted or not dialog.result:
+            return
+
+        category_key = str(dialog.result.get("category_key", "")).strip()
+        shared_locations = [
+            str(x).strip()
+            for x in dialog.result.get("locations", [])
+            if str(x).strip()
+        ]
+        replace_existing = bool(dialog.result.get("replace_existing", True))
+        assignments = dialog.result.get("assignments", {}) or {}
+
+        if not category_key or not shared_locations or not assignments:
+            return
+
+        updated_count = 0
+        location_reference_count = 0
+
+        for assignment in assignments.values():
+            try:
+                index = int(assignment.get("department_index"))
+            except Exception:
+                continue
+            if index < 0 or index >= len(self.items):
+                continue
+
+            dept = self.items[index]
+            category_locations = dept.setdefault("task_generation_locations", {})
+            if not isinstance(category_locations, dict):
+                category_locations = {}
+                dept["task_generation_locations"] = category_locations
+
+            entry = category_locations.setdefault(category_key, {})
+            if not isinstance(entry, dict):
+                entry = {"pickup_dropoff_locations": list(entry or [])}
+                category_locations[category_key] = entry
+
+            if replace_existing:
+                selected = []
+            else:
+                existing = entry.get("pickup_dropoff_locations", entry.get("locations", []))
+                if isinstance(existing, str):
+                    selected = [existing]
+                elif isinstance(existing, list):
+                    selected = list(existing)
+                else:
+                    selected = list(existing or [])
+
+            seen = {str(x).strip() for x in selected if str(x).strip()}
+            for location_name in shared_locations:
+                if location_name not in seen:
+                    selected.append(location_name)
+                    seen.add(location_name)
+                    location_reference_count += 1
+
+            entry["pickup_dropoff_locations"] = [
+                str(x).strip() for x in selected if str(x).strip()
+            ]
+            entry["locations"] = list(entry["pickup_dropoff_locations"])
+            updated_count += 1
+
+        for location_name in shared_locations:
+            if location_name not in self.location_names:
+                self.location_names.append(location_name)
+        self.location_names = sorted(set(self.location_names))
+
+        self._refresh_table()
+
+        QMessageBox.information(
+            self,
+            "Task category wizard",
+            (
+                f"Updated {updated_count} department(s).\n"
+                f"Assigned {location_reference_count} new shared location reference(s)."
+            ),
+        )
+
+    def open_shared_bin_group_wizard(self):
+        if not self.task_generation_categories:
+            QMessageBox.information(
+                self,
+                "Auto shared bin groups",
+                "No task generation categories are available.",
+            )
+            return
+
+        selected_indexes = self._selected_department_indexes()
+
+        dialog = TaskCategorySharedBinGroupWizard(
+            self,
+            departments=self.items,
+            waste_stream_names=self.waste_stream_names,
+            task_generation_categories=self.task_generation_categories,
+            preselected_indexes=selected_indexes,
+            current_floor=self.current_floor,
+        )
+
+        if dialog.exec() != QDialog.Accepted or not dialog.result:
+            return
+
+        selected_streams = {
+            str(x).strip()
+            for x in dialog.result.get("waste_streams", [])
+            if str(x).strip()
+        }
+        overwrite_existing = bool(dialog.result.get("overwrite_existing", True))
+        groups = list(dialog.result.get("groups", []) or [])
+
+        if not selected_streams or not groups:
+            return
+
+        updated_count = 0
+        skipped_existing_count = 0
+        missing_stream_count = 0
+        departments_touched = set()
+
+        for group in groups:
+            group_id = str(group.get("group_id", "")).strip()
+            if not group_id:
+                continue
+
+            for index in group.get("department_indexes", []) or []:
+                try:
+                    index = int(index)
+                except Exception:
+                    continue
+                if index < 0 or index >= len(self.items):
+                    continue
+
+                dept = self.items[index]
+                streams = []
+                streams_by_name = {}
+
+                for item in dept.get("waste_streams", []) or []:
+                    normalised = self._normalise_waste_stream_for_shared_group(item)
+                    if not normalised:
+                        continue
+                    streams.append(normalised)
+                    streams_by_name[normalised["name"]] = normalised
+
+                for stream_name in selected_streams:
+                    stream = streams_by_name.get(stream_name)
+                    if stream is None:
+                        missing_stream_count += 1
+                        continue
+
+                    existing_group = str(
+                        stream.get(
+                            "shared_container_group",
+                            stream.get("shared_container_id", ""),
+                        )
+                        or ""
+                    ).strip()
+
+                    if existing_group and not overwrite_existing:
+                        skipped_existing_count += 1
+                        continue
+
+                    if existing_group != group_id or not stream.get("shared_container"):
+                        updated_count += 1
+
+                    stream["shared_container"] = True
+                    stream["shared_container_group"] = group_id
+                    stream.pop("shared_container_id", None)
+                    departments_touched.add(index)
+
+                dept["waste_streams"] = streams
+
+        self._refresh_table()
+
+        QMessageBox.information(
+            self,
+            "Auto shared bin groups",
+            (
+                f"Updated {updated_count} waste stream assignment(s) "
+                f"across {len(departments_touched)} department(s).\n"
+                f"Skipped {skipped_existing_count} existing shared bin group(s).\n"
+                f"Skipped {missing_stream_count} department/stream combination(s) where the selected stream was not assigned."
+            ),
+        )
+
+    def _normalise_waste_stream_for_shared_group(self, item):
+        if isinstance(item, dict):
+            name = str(item.get("name", "")).strip()
+            if not name:
+                return None
+            normalised = dict(item)
+            normalised["name"] = name
+            normalised.setdefault("generation_mode", "threshold")
+            normalised["frequency_per_day"] = float(
+                normalised.get("frequency_per_day", 0.0) or 0.0
+            )
+            normalised["volume_per_event_m3"] = float(
+                normalised.get("volume_per_event_m3", 0.0) or 0.0
+            )
+            normalised["threshold_volume_m3"] = float(
+                normalised.get("threshold_volume_m3", 0.0) or 0.0
+            )
+            normalised["base_daily_volume_m3"] = float(
+                normalised.get("base_daily_volume_m3", 0.0) or 0.0
+            )
+            normalised["scheduled_times"] = list(
+                normalised.get("scheduled_times", []) or []
+            )
+            normalised["initial_container_present"] = bool(
+                normalised.get("initial_container_present", True)
+            )
+            normalised["shared_container_group"] = str(
+                normalised.get(
+                    "shared_container_group",
+                    normalised.get("shared_container_id", ""),
+                )
+                or ""
+            ).strip()
+            normalised["shared_container"] = bool(
+                normalised.get(
+                    "shared_container", bool(normalised["shared_container_group"])
+                )
+            )
+            return normalised
+
+        name = str(item).strip()
+        if not name:
+            return None
+        return {
+            "name": name,
+            "generation_mode": "threshold",
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "scheduled_times": [],
+            "initial_container_present": True,
+            "shared_container": False,
+            "shared_container_group": "",
+        }
 
     def auto_assign_locations(self):
         if not self.task_generation_categories:
