@@ -3067,6 +3067,46 @@ class Simulation:
         dt = self.clock.sim_seconds_to_datetime(sim_time_sec)
         return ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][dt.weekday()]
 
+    def _parse_hhmm_to_minutes(self, value, default=None):
+        text = str(value or "").strip()
+        if not text:
+            return default
+        try:
+            parts = text.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+            if hour == 24 and minute == 0:
+                return 24 * 60
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return (hour * 60) + minute
+        except Exception:
+            return default
+        return default
+
+    def _department_operating_start_minutes(self, dept: dict) -> int:
+        return int(
+            self._parse_hhmm_to_minutes(dept.get("operating_start_time"), 0) or 0
+        )
+
+    def _department_operating_end_minutes(self, dept: dict) -> int:
+        explicit = self._parse_hhmm_to_minutes(dept.get("operating_end_time"), None)
+        if explicit is not None:
+            return int(explicit)
+        start = self._department_operating_start_minutes(dept)
+        hours = float(dept.get("hours_operated_per_day", 24.0) or 24.0)
+        if hours >= 24.0:
+            return start + (24 * 60)
+        return start + int(round(max(0.0, hours) * 60.0))
+
+    def _department_operating_hours_per_day(self, dept: dict) -> float:
+        start = self._department_operating_start_minutes(dept)
+        end = self._department_operating_end_minutes(dept)
+        if end == start:
+            return 24.0
+        if end < start:
+            end += 24 * 60
+        return max(1.0, min((end - start) / 60.0, 24.0))
+
     def _department_is_active(self, dept: dict, sim_time_sec: float) -> bool:
         if not bool(dept.get("enabled", True)):
             return False
@@ -3076,13 +3116,22 @@ class Simulation:
             if self._day_key_for_sim_time(sim_time_sec) not in set(active_days):
                 return False
 
-        hours_operated = float(dept.get("hours_operated_per_day", 24.0) or 0.0)
-        if hours_operated <= 0:
-            return False
+        start = self._department_operating_start_minutes(dept)
+        end = self._department_operating_end_minutes(dept)
+        if end == start:
+            return True
 
         dt = self.clock.sim_seconds_to_datetime(sim_time_sec)
-        hour_decimal = dt.hour + (dt.minute / 60.0) + (dt.second / 3600.0)
-        return hour_decimal < hours_operated
+        current = (dt.hour * 60) + dt.minute + (dt.second / 60.0)
+
+        if end > 24 * 60:
+            end = end % (24 * 60)
+
+        if end > start:
+            return start <= current < end
+
+        # Overnight window, e.g. 20:00 to 06:00.
+        return current >= start or current < end
 
     def _department_hourly_waste_rate_m3(
         self, dept: dict, sim_time_sec: float
@@ -3096,9 +3145,7 @@ class Simulation:
         bed_count = float(dept.get("bed_count", 0.0) or 0.0)
         patient_turnover = float(dept.get("patient_turnover", 0.0) or 0.0)
         staff_count = float(dept.get("staff_count", 0.0) or 0.0)
-        hours_operated = max(
-            float(dept.get("hours_operated_per_day", 24.0) or 24.0), 1.0
-        )
+        hours_operated = self._department_operating_hours_per_day(dept)
 
         # Turnover is assumed to be per active day, spread across operating hours
         turnover_per_hour = patient_turnover / hours_operated

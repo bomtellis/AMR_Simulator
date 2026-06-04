@@ -1,3 +1,4 @@
+import ast
 import csv
 import json
 import math
@@ -83,6 +84,8 @@ class LayoutModel:
         self.points: Dict[str, dict] = {}
         self.task_start_time: Optional[datetime] = None
         self.task_end_time: Optional[datetime] = None
+        self.simulation_start_time: Optional[datetime] = None
+        self.simulation_end_time: Optional[datetime] = None
 
     @staticmethod
     def _parse_datetime(value: str) -> Optional[datetime]:
@@ -124,11 +127,25 @@ class LayoutModel:
             self.task_start_time = None
             self.task_end_time = None
 
+    def _rebuild_simulation_timeline(self):
+        simulation = self.data.get("simulation", {}) or {}
+        self.simulation_start_time = self._parse_datetime(
+            simulation.get("start_datetime", "")
+            or simulation.get("start_time", "")
+            or simulation.get("sim_start", "")
+        )
+        self.simulation_end_time = self._parse_datetime(
+            simulation.get("end_datetime", "")
+            or simulation.get("end_time", "")
+            or simulation.get("sim_end", "")
+        )
+
     def load(self, path: str):
         with open(path, "r", encoding="utf-8") as f:
             self.data = json.load(f)
         self._rebuild_points()
         self._rebuild_task_timeline()
+        self._rebuild_simulation_timeline()
 
     def _rebuild_points(self):
         self.points = {}
@@ -242,10 +259,35 @@ class SimulationLog:
         with open(path, "r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                start_dt = self._parse_datetime(
-                    row.get("start_time", "")
-                ) or self._parse_datetime(row.get("sim_datetime", ""))
-                end_dt = self._parse_datetime(row.get("end_time", "")) or start_dt
+                event_type = str(row.get("event_type", "") or "").strip().lower()
+                sim_dt = self._parse_datetime(row.get("sim_datetime", ""))
+                start_dt_raw = self._parse_datetime(row.get("start_time", ""))
+                end_dt_raw = self._parse_datetime(row.get("end_time", ""))
+
+                # Some zero-duration bookkeeping rows, especially third-party
+                # mass collection visits, are logged with the simulation start in
+                # start_time/end_time and the real event time in sim_datetime.
+                # Use sim_datetime for those rows so inventory changes and the
+                # event list occur at the correct point on the visual timeline.
+                prefer_sim_datetime = (
+                    event_type == "mass_collection_visit"
+                    or event_type.endswith("_generated")
+                    or event_type in {"task_assigned", "multi_stop_task_assigned"}
+                )
+
+                if prefer_sim_datetime and sim_dt is not None:
+                    start_dt = sim_dt
+                    end_dt = (
+                        sim_dt
+                        if event_type == "mass_collection_visit"
+                        else (end_dt_raw or sim_dt)
+                    )
+                    if end_dt < start_dt:
+                        end_dt = start_dt
+                else:
+                    start_dt = start_dt_raw or sim_dt
+                    end_dt = end_dt_raw or start_dt
+
                 if start_dt is None or end_dt is None:
                     continue
                 self.events.append(
@@ -1232,7 +1274,10 @@ class AmrTimelineWidget(QWidget):
         # Long simulations can span several days.  The lane remains horizontally
         # scrollable, while the AMR name column is redrawn at the visible left
         # edge so the lane identity is always readable.
-        self.seconds_per_pixel = 4.0
+        self.default_seconds_per_pixel = 4.0
+        self.seconds_per_pixel = self.default_seconds_per_pixel
+        self.min_seconds_per_pixel = 0.25
+        self.max_seconds_per_pixel = 3600.0
         self.min_lane_width = 1400
         self.label_column_width = 142
         self.min_tick_spacing_px = 120
@@ -1240,6 +1285,34 @@ class AmrTimelineWidget(QWidget):
 
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self._update_virtual_size()
+
+    def set_zoom_seconds_per_pixel(self, seconds_per_pixel: float):
+        try:
+            value = float(seconds_per_pixel)
+        except Exception:
+            value = self.default_seconds_per_pixel
+        self.seconds_per_pixel = max(
+            self.min_seconds_per_pixel,
+            min(self.max_seconds_per_pixel, value),
+        )
+        self._update_virtual_size()
+        self.update()
+
+    def zoom_by_factor(self, factor: float, anchor_time: Optional[datetime] = None):
+        try:
+            factor = float(factor)
+        except Exception:
+            factor = 1.0
+        if factor <= 0:
+            factor = 1.0
+        self.set_zoom_seconds_per_pixel(self.seconds_per_pixel * factor)
+        parent = self.parent()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parent()
+        if anchor_time is not None and parent is not None:
+            x = self._time_to_x(anchor_time)
+            bar = parent.horizontalScrollBar()
+            bar.setValue(max(0, int(x - (parent.viewport().width() / 2))))
 
     def set_data(self, timeline_data, start_time, end_time, current_time):
         self.timeline_data = timeline_data or []
@@ -1750,22 +1823,6 @@ class SimulationVisualizer(QMainWindow):
         self.follow_enabled_check.toggled.connect(self.refresh_dynamic_scene)
         side_layout.addWidget(self.follow_enabled_check)
 
-        controls = QHBoxLayout()
-        for text, fn in [
-            ("|<", self.jump_start),
-            ("First Move", self.jump_first_travel),
-            ("-10s", lambda: self.step_seconds(-10)),
-            ("Play", self.toggle_play),
-            ("+10s", lambda: self.step_seconds(10)),
-            (">|", self.jump_end),
-        ]:
-            btn = QPushButton(text)
-            btn.clicked.connect(fn)
-            controls.addWidget(btn)
-            if text == "Play":
-                self.play_btn = btn
-        side_layout.addLayout(controls)
-
         self.time_label = QLabel("No simulation loaded")
         self.time_label.setWordWrap(True)
         side_layout.addWidget(self.time_label)
@@ -1796,6 +1853,76 @@ class SimulationVisualizer(QMainWindow):
         self.event_box.setReadOnly(True)
         side_layout.addWidget(self.event_box, 1)
 
+        self.timeline_panel = QWidget()
+        timeline_panel_layout = QVBoxLayout(self.timeline_panel)
+        timeline_panel_layout.setContentsMargins(0, 0, 0, 0)
+        timeline_panel_layout.setSpacing(4)
+
+        timeline_controls = QHBoxLayout()
+        timeline_controls.setContentsMargins(6, 4, 6, 0)
+        self.timeline_zoom_combo = QComboBox()
+        self.timeline_zoom_combo.addItems(
+            [
+                "Fit",
+                "15 min",
+                "30 min",
+                "1 hour",
+                "3 hours",
+                "6 hours",
+                "12 hours",
+                "1 day",
+            ]
+        )
+        self.timeline_zoom_combo.setCurrentText("6 hours")
+        self.timeline_zoom_combo.currentTextChanged.connect(
+            self.on_timeline_zoom_changed
+        )
+
+        timeline_title = QLabel("Timeline")
+        timeline_title.setMinimumWidth(72)
+        timeline_controls.addWidget(timeline_title)
+
+        for text, fn in [
+            ("<< Day", lambda: self.skip_timeline_days(-1)),
+            ("< 6h", lambda: self.skip_timeline_hours(-6)),
+            ("Today", self.jump_timeline_to_current_day_start),
+            ("6h >", lambda: self.skip_timeline_hours(6)),
+            ("Day >>", lambda: self.skip_timeline_days(1)),
+        ]:
+            btn = QPushButton(text)
+            btn.clicked.connect(fn)
+            timeline_controls.addWidget(btn)
+
+        timeline_controls.addSpacing(12)
+
+        for text, fn in [
+            ("|<", self.jump_start),
+            ("First Move", self.jump_first_travel),
+            ("-10s", lambda: self.step_seconds(-10)),
+            ("Play", self.toggle_play),
+            ("+10s", lambda: self.step_seconds(10)),
+            (">|", self.jump_end),
+        ]:
+            btn = QPushButton(text)
+            btn.clicked.connect(fn)
+            timeline_controls.addWidget(btn)
+            if text == "Play":
+                self.play_btn = btn
+
+        timeline_controls.addSpacing(12)
+
+        for text, fn in [
+            ("Zoom -", lambda: self.zoom_timeline(1.35)),
+            ("Zoom +", lambda: self.zoom_timeline(1 / 1.35)),
+        ]:
+            btn = QPushButton(text)
+            btn.clicked.connect(fn)
+            timeline_controls.addWidget(btn)
+
+        timeline_controls.addStretch(1)
+        timeline_controls.addWidget(QLabel("Zoom"))
+        timeline_controls.addWidget(self.timeline_zoom_combo)
+
         self.timeline_widget = AmrTimelineWidget(self)
 
         self.timeline_scroll = QScrollArea()
@@ -1810,9 +1937,12 @@ class SimulationVisualizer(QMainWindow):
             self.timeline_widget.update
         )
 
+        timeline_panel_layout.addLayout(timeline_controls)
+        timeline_panel_layout.addWidget(self.timeline_scroll, 1)
+
         self.main_splitter = QSplitter(Qt.Vertical)
         self.main_splitter.addWidget(self.view)
-        self.main_splitter.addWidget(self.timeline_scroll)
+        self.main_splitter.addWidget(self.timeline_panel)
         self.main_splitter.setStretchFactor(0, 5)
         self.main_splitter.setStretchFactor(1, 1)
         self.main_splitter.setSizes([760, 220])
@@ -2430,6 +2560,186 @@ class SimulationVisualizer(QMainWindow):
                 pass
         return float(default)
 
+    def _parse_hhmm_to_minutes(self, value, default=None):
+        text = str(value or "").strip()
+        if not text:
+            return default
+        try:
+            parts = text.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+            if hour == 24 and minute == 0:
+                return 24 * 60
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return (hour * 60) + minute
+        except Exception:
+            return default
+        return default
+
+    def _day_key_for_datetime(self, value: datetime) -> str:
+        return ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][value.weekday()]
+
+    def _department_by_id_or_name(
+        self, department_id: str = "", department_name: str = ""
+    ) -> Optional[dict]:
+        department_id = str(department_id or "").strip()
+        department_name = str(department_name or "").strip()
+        for department in self.layout_model.data.get("departments", []) or []:
+            if not isinstance(department, dict):
+                continue
+            candidate_id = (
+                str(department.get("id", "") or "").strip()
+                or str(department.get("name", "") or "").strip()
+            )
+            candidate_name = str(department.get("name", "") or "").strip()
+            if department_id and department_id in {candidate_id, candidate_name}:
+                return department
+            if department_name and department_name in {candidate_id, candidate_name}:
+                return department
+        return None
+
+    def _department_operating_start_minutes(self, department: dict) -> int:
+        explicit = self._parse_hhmm_to_minutes(
+            department.get("operating_start_time"), None
+        )
+        return int(explicit if explicit is not None else 0)
+
+    def _department_operating_end_minutes(self, department: dict) -> int:
+        explicit = self._parse_hhmm_to_minutes(
+            department.get("operating_end_time"), None
+        )
+        if explicit is not None:
+            return int(explicit)
+        start = self._department_operating_start_minutes(department)
+        try:
+            hours = float(department.get("hours_operated_per_day", 24.0) or 24.0)
+        except Exception:
+            hours = 24.0
+        if hours >= 24.0:
+            return start + (24 * 60)
+        return start + int(round(max(0.0, hours) * 60.0))
+
+    def _department_operating_periods_for_date(
+        self, department: Optional[dict], day: datetime
+    ) -> List[Tuple[datetime, datetime]]:
+        if not department:
+            day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+            return [(day_start, day_start + timedelta(days=1))]
+
+        if not bool(department.get("enabled", True)):
+            return []
+
+        active_days = department.get("days_active", []) or []
+        if active_days:
+            allowed = {
+                str(x or "").strip().lower()
+                for x in active_days
+                if str(x or "").strip()
+            }
+            if self._day_key_for_datetime(day) not in allowed:
+                return []
+
+        start_min = self._department_operating_start_minutes(department)
+        end_min = self._department_operating_end_minutes(department)
+        if end_min <= start_min:
+            end_min += 24 * 60
+
+        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_dt = day_start + timedelta(minutes=start_min)
+        end_dt = day_start + timedelta(minutes=end_min)
+        if end_dt <= start_dt:
+            return []
+        return [(start_dt, end_dt)]
+
+    def _department_active_seconds_between(
+        self, department: Optional[dict], start_dt: datetime, end_dt: datetime
+    ) -> float:
+        if end_dt <= start_dt:
+            return 0.0
+        if not department:
+            return max(0.0, (end_dt - start_dt).total_seconds())
+
+        total = 0.0
+        cursor_day = (start_dt - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        final_day = end_dt.replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) + timedelta(days=1)
+        while cursor_day <= final_day:
+            for period_start, period_end in self._department_operating_periods_for_date(
+                department, cursor_day
+            ):
+                overlap_start = max(start_dt, period_start)
+                overlap_end = min(end_dt, period_end)
+                if overlap_end > overlap_start:
+                    total += (overlap_end - overlap_start).total_seconds()
+            cursor_day += timedelta(days=1)
+        return total
+
+    def _normalise_live_waste_contributors(self, value) -> List[dict]:
+        if isinstance(value, list):
+            return [x for x in value if isinstance(x, dict)]
+        text = str(value or "").strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return [x for x in parsed if isinstance(x, dict)]
+        except Exception:
+            pass
+        try:
+            parsed = ast.literal_eval(text)
+            if isinstance(parsed, list):
+                return [x for x in parsed if isinstance(x, dict)]
+        except Exception:
+            pass
+        return []
+
+    def _live_waste_increment_m3(
+        self,
+        row: dict,
+        start_time: datetime,
+        at_time: datetime,
+        fallback_daily_rate: float,
+    ) -> float:
+        contributors = self._normalise_live_waste_contributors(
+            row.get("live_waste_contributors", [])
+        )
+        if contributors:
+            total = 0.0
+            for contributor in contributors:
+                rate = self._row_float(
+                    contributor,
+                    "daily_rate_m3_per_day",
+                    "live_waste_volume_m3_per_day",
+                    "daily_waste_volume_m3",
+                    default=0.0,
+                )
+                if rate <= 0.0:
+                    continue
+                department = (
+                    self._department_by_id_or_name(
+                        contributor.get("department_id", ""),
+                        contributor.get("department_name", ""),
+                    )
+                    or contributor
+                )
+                active_seconds = self._department_active_seconds_between(
+                    department, start_time, at_time
+                )
+                total += max(0.0, rate) * (active_seconds / 86400.0)
+            return max(0.0, total)
+
+        department = self._department_by_id_or_name(
+            row.get("department_id", ""), row.get("department_name", "")
+        )
+        active_seconds = self._department_active_seconds_between(
+            department, start_time, at_time
+        )
+        return max(0.0, fallback_daily_rate) * (active_seconds / 86400.0)
+
     def _waste_stream_daily_volume_m3(self, stream_cfg: dict) -> float:
         """Return the configured waste accumulation rate in m³/day."""
         if not isinstance(stream_cfg, dict):
@@ -2540,15 +2850,27 @@ class SimulationVisualizer(QMainWindow):
             default=0.0,
         )
 
-        elapsed_days = max(0.0, (at_time - start_time).total_seconds() / 86400.0)
-        volume = base_volume + (daily_rate * elapsed_days)
-        visual_cap = threshold_m3 if threshold_m3 > 0.0 else capacity
-        if visual_cap > 0.0:
-            volume = min(visual_cap, volume)
+        # Match the simulator waste generator: waste only accumulates during
+        # the department operating windows.  Shared bins can have multiple
+        # contributing departments, each with its own operating hours.
+        volume = base_volume + self._live_waste_increment_m3(
+            row, start_time, at_time, daily_rate
+        )
+        # The threshold is a collection trigger, not a physical limit.
+        # Keep the live fill increasing beyond the collection threshold and
+        # only cap at the actual container capacity when a capacity is known.
+        if capacity > 0.0:
+            volume = min(capacity, volume)
         row["waste_volume_m3"] = max(0.0, volume)
         row["container_capacity_m3"] = capacity
         if threshold_m3 > 0.0:
             row["container_threshold_m3"] = threshold_m3
+            if capacity > 0.0:
+                row["threshold_display"] = (
+                    f"Trigger {threshold_m3:.3f} m³ ({(threshold_m3 / capacity) * 100.0:.0f}%)"
+                )
+            else:
+                row["threshold_display"] = f"Trigger {threshold_m3:.3f} m³"
         if daily_rate > 0.0:
             row["fill_rate_display"] = f"{daily_rate:.3f} m³/day"
         return row
@@ -2616,6 +2938,9 @@ class SimulationVisualizer(QMainWindow):
             tooltip_lines.append(
                 f"Waste volume filled: {row.get('waste_volume_display')} ({row.get('fill_percent_display', '-')})"
             )
+        threshold_display = str(row.get("threshold_display", "") or "").strip()
+        if threshold_display:
+            tooltip_lines.append(threshold_display)
         for label, key in [
             ("Fill rate", "fill_rate_display"),
             ("Waste stream", "waste_stream"),
@@ -3942,6 +4267,19 @@ class SimulationVisualizer(QMainWindow):
                     default=0.0,
                 )
                 daily_rate_m3 = self._waste_stream_daily_volume_m3(stream_cfg)
+                contributor = {
+                    "department_id": dept_id,
+                    "department_name": dept_name,
+                    "daily_rate_m3_per_day": daily_rate_m3,
+                    "operating_start_time": str(
+                        department.get("operating_start_time", "") or ""
+                    ),
+                    "operating_end_time": str(
+                        department.get("operating_end_time", "") or ""
+                    ),
+                    "days_active": list(department.get("days_active", []) or []),
+                    "enabled": bool(department.get("enabled", True)),
+                }
 
                 existing = container_rows.get(container_key)
                 if existing is None:
@@ -3967,6 +4305,7 @@ class SimulationVisualizer(QMainWindow):
                         "department_id": dept_id,
                         "department_name": dept_name,
                         "departments_served": dept_name,
+                        "live_waste_contributors": [contributor],
                     }
                 else:
                     # Shared containers accumulate the generated volume from all
@@ -3994,10 +4333,122 @@ class SimulationVisualizer(QMainWindow):
                     if dept_name not in names:
                         names.append(dept_name)
                     existing["departments_served"] = ", ".join(names)
+                    contributors = existing.setdefault("live_waste_contributors", [])
+                    if isinstance(contributors, list):
+                        contributors.append(contributor)
 
         return [
             self._enrich_payload_row_details(row) for row in container_rows.values()
         ]
+
+    def _parse_mass_collection_instance_list(self, details: str, key: str) -> List[str]:
+        details = str(details or "")
+        marker = f"{key}="
+        if marker not in details:
+            return []
+        tail = details.split(marker, 1)[1].strip()
+        # The simulator writes values like collected=['id1', 'id2']; stop at the
+        # matching list close before the next semicolon/text block.
+        start = tail.find("[")
+        end = tail.find("]", start + 1)
+        if start < 0 or end < 0:
+            return []
+        try:
+            parsed = ast.literal_eval(tail[start : end + 1])
+        except Exception:
+            return []
+        if not isinstance(parsed, list):
+            return []
+        return [str(x).strip() for x in parsed if str(x).strip()]
+
+    def _apply_mass_collection_inventory_event(
+        self,
+        rows: List[dict],
+        csv_row: dict,
+        event_time: datetime,
+        location_name: str,
+    ) -> None:
+        if not rows:
+            return
+        if not self._event_location_matches(
+            csv_row, location_name, "pickup"
+        ) and not self._event_location_matches(csv_row, location_name, "dropoff"):
+            return
+
+        payload = str(
+            csv_row.get("payload", "") or csv_row.get("container_type", "") or ""
+        ).strip()
+        details = str(csv_row.get("details", "") or "")
+        collected_ids = self._parse_mass_collection_instance_list(details, "collected")
+        replacement_ids = self._parse_mass_collection_instance_list(
+            details, "replacements"
+        )
+        fallback_replacement = str(csv_row.get("payload_instance_id", "") or "").strip()
+        if fallback_replacement and fallback_replacement not in replacement_ids:
+            replacement_ids.append(fallback_replacement)
+
+        timestamp = event_time.strftime("%Y-%m-%d %H:%M:%S")
+
+        # Remove the used/full bins that the third-party rotation has taken away.
+        removed = 0
+        for instance_id in collected_ids:
+            target = self._find_inventory_row_by_payload_instance(rows, instance_id)
+            if target is None and payload:
+                for candidate in rows:
+                    if str(
+                        candidate.get("payload", "") or ""
+                    ).strip() == payload and str(
+                        candidate.get("status", "") or ""
+                    ).lower() not in {
+                        "empty",
+                        "available empty",
+                    }:
+                        target = candidate
+                        break
+            if target is None:
+                continue
+            target.update(
+                {
+                    "payload": "-",
+                    "payload_instance_id": "-",
+                    "task_id": "-",
+                    "amr_id": "-",
+                    "status": "Empty",
+                    "timestamp": timestamp,
+                    "fill_start_time": timestamp,
+                    "source": "Mass collection",
+                    "waste_volume_m3": 0.0,
+                    "fill_start_volume_m3": 0.0,
+                }
+            )
+            target.update(self._enrich_payload_row_details(target))
+            removed += 1
+
+        # Place the empty equivalents delivered by the third party into empty
+        # inventory spaces.  For stores without explicit spaces the visualiser
+        # keeps a single fallback row, so showing the latest empty replacement is
+        # still more accurate than leaving the store as permanently empty.
+        for instance_id in replacement_ids:
+            target = self._first_empty_inventory_space_row(rows)
+            if target is None and rows:
+                target = rows[0]
+            if target is None:
+                continue
+            target.update(
+                {
+                    "payload": payload or target.get("payload", "-"),
+                    "payload_instance_id": instance_id,
+                    "task_id": str(csv_row.get("task_id", "") or "-").strip() or "-",
+                    "amr_id": "-",
+                    "status": "Available empty",
+                    "timestamp": timestamp,
+                    "fill_start_time": timestamp,
+                    "source": "Mass collection",
+                    "waste_volume_m3": 0.0,
+                    "fill_start_volume_m3": 0.0,
+                }
+            )
+            target.update(self._enrich_payload_row_details(target))
 
     def _inventory_payload_rows_for_location(self, location_name: str) -> List[dict]:
         location = self._location_by_name(location_name)
@@ -4073,6 +4524,9 @@ class SimulationVisualizer(QMainWindow):
                             "live_waste_volume_m3_per_day": seeded.get(
                                 "live_waste_volume_m3_per_day", 0.0
                             ),
+                            "live_waste_contributors": seeded.get(
+                                "live_waste_contributors", []
+                            ),
                             "container_capacity_m3": seeded.get(
                                 "container_capacity_m3", 0.0
                             ),
@@ -4102,6 +4556,15 @@ class SimulationVisualizer(QMainWindow):
                 break
 
             row = event.row
+            if (
+                str(row.get("event_type", "") or "").strip().lower()
+                == "mass_collection_visit"
+            ):
+                self._apply_mass_collection_inventory_event(
+                    rows, row, event.start_time, location_name
+                )
+                continue
+
             physical_event_kind = self._inventory_physical_payload_event_kind(row)
             is_dropoff = physical_event_kind == "dropoff"
             is_pickup = physical_event_kind == "pickup"
@@ -4516,6 +4979,112 @@ class SimulationVisualizer(QMainWindow):
             )
             self.event_box.append(line)
 
+    def _scroll_timeline_to_time(self, value: Optional[datetime]):
+        if value is None or not hasattr(self, "timeline_widget"):
+            return
+        self.refresh_timeline()
+        x = self.timeline_widget._time_to_x(value)
+        bar = self.timeline_scroll.horizontalScrollBar()
+        target = int(x - (self.timeline_scroll.viewport().width() / 2))
+        bar.setValue(max(0, min(bar.maximum(), target)))
+        self.timeline_widget.update()
+
+    def _clamp_to_sim_range(self, value: datetime) -> datetime:
+        if self.sim_log.start_time and value < self.sim_log.start_time:
+            return self.sim_log.start_time
+        if self.sim_log.end_time and value > self.sim_log.end_time:
+            return self.sim_log.end_time
+        return value
+
+    def skip_timeline_days(self, days: int):
+        if not self.current_time:
+            return
+        self.current_time = self._clamp_to_sim_range(
+            self.current_time + timedelta(days=int(days))
+        )
+        self.update_time_display()
+        self.refresh_dynamic_scene()
+        self._scroll_timeline_to_time(self.current_time)
+        self.view.viewport().update()
+
+    def skip_timeline_hours(self, hours: int):
+        if not self.current_time:
+            return
+        self.current_time = self._clamp_to_sim_range(
+            self.current_time + timedelta(hours=int(hours))
+        )
+        self.update_time_display()
+        self.refresh_dynamic_scene()
+        self._scroll_timeline_to_time(self.current_time)
+        self.view.viewport().update()
+
+    def jump_timeline_to_current_day_start(self):
+        if not self.current_time:
+            return
+        day_start = datetime(
+            self.current_time.year,
+            self.current_time.month,
+            self.current_time.day,
+            tzinfo=self.current_time.tzinfo,
+        )
+        self.current_time = self._clamp_to_sim_range(day_start)
+        self.update_time_display()
+        self.refresh_dynamic_scene()
+        self._scroll_timeline_to_time(self.current_time)
+        self.view.viewport().update()
+
+    def zoom_timeline(self, factor: float):
+        if not hasattr(self, "timeline_widget"):
+            return
+        anchor = self.current_time or self.sim_log.start_time
+        self.timeline_widget.zoom_by_factor(factor, anchor)
+
+    def on_timeline_zoom_changed(self, text: str):
+        if not hasattr(self, "timeline_widget"):
+            return
+        text = str(text or "").strip().lower()
+        seconds = None
+        if text == "fit":
+            total_seconds = 0.0
+            if self.sim_log.start_time and self.sim_log.end_time:
+                total_seconds = max(
+                    1.0,
+                    (self.sim_log.end_time - self.sim_log.start_time).total_seconds(),
+                )
+            visible_width = max(
+                300,
+                self.timeline_scroll.viewport().width()
+                - self.timeline_widget.left_pad
+                - self.timeline_widget.right_pad,
+            )
+            seconds = (
+                total_seconds / visible_width
+                if total_seconds > 0
+                else self.timeline_widget.default_seconds_per_pixel
+            )
+        else:
+            mapping = {
+                "15 min": 15 * 60,
+                "30 min": 30 * 60,
+                "1 hour": 60 * 60,
+                "3 hours": 3 * 60 * 60,
+                "6 hours": 6 * 60 * 60,
+                "12 hours": 12 * 60 * 60,
+                "1 day": 24 * 60 * 60,
+            }
+            window_seconds = mapping.get(text)
+            if window_seconds:
+                visible_width = max(
+                    300,
+                    self.timeline_scroll.viewport().width()
+                    - self.timeline_widget.left_pad
+                    - self.timeline_widget.right_pad,
+                )
+                seconds = window_seconds / visible_width
+        if seconds is not None:
+            self.timeline_widget.set_zoom_seconds_per_pixel(seconds)
+            self._scroll_timeline_to_time(self.current_time or self.sim_log.start_time)
+
     def update_time_display(self):
         if not self.current_time:
             self.time_label.setText("No simulation loaded")
@@ -4658,6 +5227,7 @@ class SimulationVisualizer(QMainWindow):
 
         self.update_loaded_files()
         self._sync_timeline_from_layout_and_csv()
+        self.on_timeline_zoom_changed(self.timeline_zoom_combo.currentText())
 
         # Build initial scene contents immediately
         self.refresh_static_scene()
@@ -4709,6 +5279,7 @@ class SimulationVisualizer(QMainWindow):
             return
         self.update_loaded_files()
         self._sync_timeline_from_layout_and_csv()
+        self.on_timeline_zoom_changed(self.timeline_zoom_combo.currentText())
         self.refresh_all()
         self.set_status(
             f"Loaded simulation CSV {Path(path).name} with {len(self.sim_log.events)} events"
@@ -4766,17 +5337,21 @@ class SimulationVisualizer(QMainWindow):
         layout_end = self.layout_model.task_end_time
         csv_start = self.sim_log.start_time
         csv_end = self.sim_log.end_time
+        sim_start = self.layout_model.simulation_start_time
+        sim_end = self.layout_model.simulation_end_time
 
-        # The JSON task list is only a planned schedule.  The simulation CSV is
-        # the executed timeline and can legitimately contain generated tasks that
-        # start before the first manual JSON task.  Use the earliest available
-        # start and latest available end so loading the JSON cannot clip the
-        # timeline and hide the first CSV task.
+        # The visual timeline should represent the configured simulation window,
+        # not just the first/last CSV event or static task.  Generated tasks and
+        # idle periods are then shown in their correct position within the full
+        # sim horizon.  Fall back to CSV/layout times only when the JSON does not
+        # provide simulation start/end.
         start_candidates = [x for x in (csv_start, layout_start) if x is not None]
         end_candidates = [x for x in (csv_end, layout_end) if x is not None]
 
-        self.sim_log.start_time = min(start_candidates) if start_candidates else None
-        self.sim_log.end_time = (
+        self.sim_log.start_time = sim_start or (
+            min(start_candidates) if start_candidates else None
+        )
+        self.sim_log.end_time = sim_end or (
             max(end_candidates) if end_candidates else self.sim_log.start_time
         )
 
@@ -5233,6 +5808,12 @@ class SimulationVisualizer(QMainWindow):
                     starts.append(block["start"])
                 if block.get("end") is not None:
                     ends.append(block["end"])
+
+        # Honour the configured simulation window exactly when present.
+        if self.layout_model.simulation_start_time is not None:
+            starts = [self.layout_model.simulation_start_time]
+        if self.layout_model.simulation_end_time is not None:
+            ends = [self.layout_model.simulation_end_time]
 
         start_time = min(starts) if starts else None
         end_time = max(ends) if ends else start_time

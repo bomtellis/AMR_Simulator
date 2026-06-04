@@ -144,6 +144,16 @@ def _department_operating_end_minutes(dept: dict) -> int:
     return start + int(round(max(0.0, hours) * 60.0))
 
 
+def _department_operating_hours_per_day(dept: dict) -> float:
+    start = _department_operating_start_minutes(dept)
+    end = _department_operating_end_minutes(dept)
+    if end == start:
+        return 24.0
+    if end < start:
+        end += 24 * 60
+    return max(1.0, min((end - start) / 60.0, 24.0))
+
+
 def _department_operating_periods_for_date(
     dept: dict, day: datetime
 ) -> List[Tuple[datetime, datetime]]:
@@ -1228,7 +1238,8 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
     Existing fields are intentionally supported:
     - departments[].enabled
     - departments[].days_active
-    - departments[].hours_operated_per_day
+    - departments[].operating_start_time / operating_end_time
+    - departments[].hours_operated_per_day (derived compatibility field)
     - departments[].bed_count
     - departments[].patient_turnover
     - departments[].staff_count
@@ -1320,9 +1331,7 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
         bed_count = float(dept.get("bed_count", 0.0) or 0.0)
         patient_turnover = float(dept.get("patient_turnover", 0.0) or 0.0)
         staff_count = float(dept.get("staff_count", 0.0) or 0.0)
-        hours_operated = max(
-            float(dept.get("hours_operated_per_day", 24.0) or 24.0), 1.0
-        )
+        hours_operated = _department_operating_hours_per_day(dept)
 
         turnover_per_hour = patient_turnover / hours_operated
         return (alpha * bed_count) + (beta * turnover_per_hour) + (gamma * staff_count)

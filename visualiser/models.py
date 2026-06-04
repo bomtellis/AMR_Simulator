@@ -13,6 +13,52 @@ LOGISTICS_TASK_GENERATION_CATEGORIES = [
 ]
 
 
+def _parse_hhmm_to_minutes(value, default=None):
+    text = str(value or "").strip()
+    if not text:
+        return default
+    try:
+        parts = text.split(":")
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+        if hour == 24 and minute == 0:
+            return 24 * 60
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return (hour * 60) + minute
+    except Exception:
+        return default
+    return default
+
+
+def _minutes_to_hhmm(value):
+    value = int(value)
+    if value >= 24 * 60:
+        return "24:00"
+    value = value % (24 * 60)
+    return f"{value // 60:02d}:{value % 60:02d}"
+
+
+def calculated_operating_hours_per_day(dept: dict) -> float:
+    dept = dept or {}
+    start = _parse_hhmm_to_minutes(dept.get("operating_start_time"), 0)
+    end = _parse_hhmm_to_minutes(dept.get("operating_end_time"), None)
+    if end is None:
+        legacy_hours = max(
+            0.0, min(float(dept.get("hours_operated_per_day", 24.0) or 24.0), 24.0)
+        )
+        if legacy_hours >= 24.0:
+            end = start + (24 * 60)
+            dept["operating_end_time"] = "24:00"
+        else:
+            end = start + int(round(legacy_hours * 60.0))
+            dept["operating_end_time"] = _minutes_to_hhmm(end)
+    if end == start:
+        return 24.0
+    if end < start:
+        end += 24 * 60
+    return round(max(0.0, min((end - start) / 60.0, 24.0)), 4)
+
+
 def normalise_amr_payload_slots(amr: dict) -> list:
     """Return payload slot definitions, migrating legacy single-capacity AMRs."""
     if not isinstance(amr, dict):
@@ -254,6 +300,7 @@ DEFAULT_JSON = {
     },
     "payloads": [],
     "waste_streams": [],
+    "mass_collections": [],
     "departments": [],
     "amrs": [],
     "lifts": [],
@@ -278,6 +325,7 @@ class JsonStore:
         self.ensure_payload_defaults()
         self.ensure_amr_defaults()
         self.ensure_department_defaults()
+        self.ensure_mass_collection_defaults()
 
     def ensure_simulation_defaults(self) -> None:
         simulation = self.data.setdefault("simulation", {})
@@ -327,11 +375,84 @@ class JsonStore:
     def ensure_department_defaults(self) -> None:
         for dept in self.data.setdefault("departments", []):
             dept.setdefault("enabled", True)
-            dept.setdefault("hours_operated_per_day", 24.0)
             dept.setdefault("operating_start_time", "00:00")
-            dept.setdefault("operating_end_time", "")
+            if not str(dept.get("operating_end_time", "") or "").strip():
+                calculated_operating_hours_per_day(dept)
+            dept["hours_operated_per_day"] = calculated_operating_hours_per_day(dept)
             dept.setdefault("days_active", ["mon", "tue", "wed", "thu", "fri"])
             dept.setdefault("waste_streams", [])
+
+    def ensure_mass_collection_defaults(self) -> None:
+        clean = []
+        for index, item in enumerate(
+            self.data.setdefault("mass_collections", []), start=1
+        ):
+            if not isinstance(item, dict):
+                continue
+            location = str(
+                item.get("location", item.get("store_location", "")) or ""
+            ).strip()
+            if not location:
+                continue
+            payloads = item.get("payloads", item.get("payload_names", []))
+            if isinstance(payloads, str):
+                payloads = [x.strip() for x in payloads.split(",")]
+            if not isinstance(payloads, list):
+                payloads = []
+            times = item.get("scheduled_times", item.get("schedule_times", []))
+            if isinstance(times, str):
+                times = [x.strip() for x in times.split(",")]
+            if not isinstance(times, list):
+                times = []
+            days = item.get("days_active", item.get("active_days", []))
+            if isinstance(days, str):
+                days = [x.strip() for x in days.split(",")]
+            if not isinstance(days, list) or not days:
+                days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+            clean.append(
+                {
+                    "id": str(
+                        item.get("id", item.get("name", f"MASS-COLLECTION-{index}"))
+                        or f"MASS-COLLECTION-{index}"
+                    ).strip(),
+                    "enabled": bool(item.get("enabled", True)),
+                    "location": location,
+                    "payloads": [str(x).strip() for x in payloads if str(x).strip()],
+                    "days_active": [
+                        str(x).strip().lower()[:3] for x in days if str(x).strip()
+                    ],
+                    "scheduled_times": [
+                        str(x).strip() for x in times if str(x).strip()
+                    ],
+                    "capacity_trigger_fraction": float(
+                        item.get(
+                            "capacity_trigger_fraction",
+                            item.get("trigger_fraction", 0.0),
+                        )
+                        or 0.0
+                    ),
+                    "capacity_trigger_count": int(
+                        float(
+                            item.get(
+                                "capacity_trigger_count", item.get("trigger_count", 0)
+                            )
+                            or 0
+                        )
+                    ),
+                    "capacity_check_interval_minutes": float(
+                        item.get(
+                            "capacity_check_interval_minutes",
+                            item.get("check_interval_minutes", 15.0),
+                        )
+                        or 15.0
+                    ),
+                    "replace_with_empty_equivalents": bool(
+                        item.get("replace_with_empty_equivalents", True)
+                    ),
+                    "notes": str(item.get("notes", "") or ""),
+                }
+            )
+        self.data["mass_collections"] = clean
 
     def ensure_payload_defaults(self) -> None:
         for payload in self.data.setdefault("payloads", []):
@@ -429,6 +550,7 @@ class JsonStore:
         self.ensure_simulation_defaults()
         self.ensure_amr_defaults()
         self.ensure_department_defaults()
+        self.ensure_mass_collection_defaults()
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
 
@@ -859,7 +981,196 @@ class JsonStore:
                 for edge_pair in profile.get("allowed_edges", [])
             ]
 
-    def delete_point(self, name: str) -> None:
+
+    def _remove_location_name_from_value(self, value, location_name: str):
+        """Return (cleaned_value, removed_count) for location reference containers."""
+        location_name = str(location_name or "").strip()
+        if isinstance(value, list):
+            cleaned = []
+            removed = 0
+            for item in value:
+                if str(item).strip() == location_name:
+                    removed += 1
+                else:
+                    cleaned.append(item)
+            return cleaned, removed
+        if isinstance(value, tuple):
+            cleaned, removed = self._remove_location_name_from_value(list(value), location_name)
+            return cleaned, removed
+        if isinstance(value, str):
+            return ("", 1) if value.strip() == location_name else (value, 0)
+        return value, 0
+
+    def _entry_has_location_references(self, entry) -> bool:
+        if isinstance(entry, dict):
+            for key in (
+                "pickup_dropoff_locations",
+                "locations",
+                "pickup_locations",
+                "dropoff_locations",
+                "pickup_location",
+                "dropoff_location",
+                "location",
+            ):
+                value = entry.get(key)
+                if isinstance(value, list) and any(str(x).strip() for x in value):
+                    return True
+                if isinstance(value, str) and value.strip():
+                    return True
+            return False
+        if isinstance(entry, list):
+            return any(str(x).strip() for x in entry)
+        if isinstance(entry, str):
+            return bool(entry.strip())
+        return False
+
+    def remove_location_references(self, location_name: str) -> dict:
+        """Remove references to a deleted location from departments and generators.
+
+        This is intentionally conservative: it removes only references that are
+        clearly location names, while preserving the department/category records
+        themselves.
+        """
+        location_name = str(location_name or "").strip()
+        result = {
+            "location": location_name,
+            "department_references_removed": 0,
+            "task_generation_references_removed": 0,
+            "building_references_removed": 0,
+            "mass_collection_references_removed": 0,
+        }
+        if not location_name:
+            return result
+
+        # Department category location assignments, including the newer
+        # pickup_dropoff_locations key and the legacy locations key.
+        for dept in self.data.get("departments", []):
+            task_locations = dept.get("task_generation_locations", {})
+            if isinstance(task_locations, dict):
+                remove_categories = []
+                for category_key, entry in list(task_locations.items()):
+                    removed_here = 0
+                    if isinstance(entry, dict):
+                        for key in (
+                            "pickup_dropoff_locations",
+                            "locations",
+                            "pickup_locations",
+                            "dropoff_locations",
+                        ):
+                            if key in entry:
+                                entry[key], removed = self._remove_location_name_from_value(
+                                    entry.get(key), location_name
+                                )
+                                removed_here += removed
+                        for key in ("pickup_location", "dropoff_location", "location"):
+                            if key in entry:
+                                entry[key], removed = self._remove_location_name_from_value(
+                                    entry.get(key), location_name
+                                )
+                                removed_here += removed
+
+                        # Keep the two supported list keys synchronised when either exists.
+                        primary = entry.get("pickup_dropoff_locations")
+                        legacy = entry.get("locations")
+                        if isinstance(primary, list) or isinstance(legacy, list):
+                            merged = []
+                            seen = set()
+                            for value in (primary if isinstance(primary, list) else []):
+                                text = str(value).strip()
+                                if text and text not in seen:
+                                    merged.append(value)
+                                    seen.add(text)
+                            for value in (legacy if isinstance(legacy, list) else []):
+                                text = str(value).strip()
+                                if text and text not in seen:
+                                    merged.append(value)
+                                    seen.add(text)
+                            entry["pickup_dropoff_locations"] = list(merged)
+                            entry["locations"] = list(merged)
+
+                        if removed_here and not self._entry_has_location_references(entry):
+                            remove_categories.append(category_key)
+                    else:
+                        cleaned, removed_here = self._remove_location_name_from_value(entry, location_name)
+                        if removed_here:
+                            if self._entry_has_location_references(cleaned):
+                                task_locations[category_key] = cleaned
+                            else:
+                                remove_categories.append(category_key)
+
+                    result["department_references_removed"] += removed_here
+
+                for category_key in remove_categories:
+                    task_locations.pop(category_key, None)
+
+            # Legacy department-level waste routing fields.
+            if "waste_pickup_locations" in dept:
+                dept["waste_pickup_locations"], removed = self._remove_location_name_from_value(
+                    dept.get("waste_pickup_locations", []), location_name
+                )
+                result["department_references_removed"] += removed
+
+            waste_cfg = dept.get("waste", {})
+            if isinstance(waste_cfg, dict):
+                for key in ("pickup_location", "dropoff_location", "pickup_locations", "dropoff_locations"):
+                    if key in waste_cfg:
+                        waste_cfg[key], removed = self._remove_location_name_from_value(
+                            waste_cfg.get(key), location_name
+                        )
+                        result["department_references_removed"] += removed
+
+        # Top-level task-generation routing can also point at locations.
+        task_generation = self.data.get("task_generation", {})
+        categories = task_generation.get("categories", {}) if isinstance(task_generation, dict) else {}
+        if isinstance(categories, dict):
+            for category in categories.values():
+                if not isinstance(category, dict):
+                    continue
+                for key in ("pickup_location", "dropoff_location", "pickup_locations", "dropoff_locations"):
+                    if key in category:
+                        category[key], removed = self._remove_location_name_from_value(
+                            category.get(key), location_name
+                        )
+                        result["task_generation_references_removed"] += removed
+                overrides = category.get("departments", {})
+                if isinstance(overrides, dict):
+                    for override in overrides.values():
+                        if not isinstance(override, dict):
+                            continue
+                        for key in ("pickup_location", "dropoff_location", "pickup_locations", "dropoff_locations"):
+                            if key in override:
+                                override[key], removed = self._remove_location_name_from_value(
+                                    override.get(key), location_name
+                                )
+                                result["task_generation_references_removed"] += removed
+
+        # Charging locations and mass-collection definitions are also location references.
+        building = self.data.get("building", {})
+        if isinstance(building, dict):
+            if "charge_locations" in building:
+                building["charge_locations"], removed = self._remove_location_name_from_value(
+                    building.get("charge_locations", []), location_name
+                )
+                result["building_references_removed"] += removed
+            if str(building.get("charge_location", "")).strip() == location_name:
+                building["charge_location"] = ""
+                result["building_references_removed"] += 1
+
+        kept_mass_collections = []
+        for item in self.data.get("mass_collections", []):
+            if isinstance(item, dict) and str(item.get("location", "")).strip() == location_name:
+                result["mass_collection_references_removed"] += 1
+                continue
+            kept_mass_collections.append(item)
+        if result["mass_collection_references_removed"]:
+            self.data["mass_collections"] = kept_mass_collections
+
+        return result
+
+    def delete_point(self, name: str) -> dict:
+        name = str(name or "").strip()
+        cleanup = self.remove_location_references(name)
+
         self.data["locations"] = [
             x for x in self.data.get("locations", []) if x["name"] != name
         ]
@@ -876,7 +1187,7 @@ class JsonStore:
         self.data["departments"] = [
             x
             for x in self.data.get("departments", [])
-            if str(x.get("name", "")) != name
+            if str(x.get("name", "")).strip() != name
         ]
         for profile in self.data.get("route_profiles", {}).values():
             profile["allowed_nodes"] = [
@@ -885,6 +1196,7 @@ class JsonStore:
             profile["allowed_edges"] = [
                 pair for pair in profile.get("allowed_edges", []) if name not in pair
             ]
+        return cleanup
 
     def suggest_next_department_id(self) -> str:
         nums = []
@@ -897,9 +1209,10 @@ class JsonStore:
 
     def upsert_department(self, payload: dict) -> None:
         payload = dict(payload or {})
-        payload.setdefault("hours_operated_per_day", 24.0)
         payload.setdefault("operating_start_time", "00:00")
-        payload.setdefault("operating_end_time", "")
+        if not str(payload.get("operating_end_time", "") or "").strip():
+            calculated_operating_hours_per_day(payload)
+        payload["hours_operated_per_day"] = calculated_operating_hours_per_day(payload)
         payload.setdefault("days_active", ["mon", "tue", "wed", "thu", "fri"])
         items = self.data.setdefault("departments", [])
         dept_id = str(payload.get("id", "")).strip()

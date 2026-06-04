@@ -2820,6 +2820,8 @@ class AMREditorDialog(QDialog):
         self.setWindowTitle("AMR")
         self.result = None
         self.seed = seed or {}
+        self.original_department_id = str(self.seed.get("id", "") or "").strip()
+        self.original_department_name = str(self.seed.get("name", "") or "").strip()
         self.location_names = sorted(location_names)
         self.payload_slots = _normalise_amr_payload_slots(self.seed)
 
@@ -4253,7 +4255,14 @@ class MassCollectionEditorDialog(QDialog):
         ("sun", "Sun"),
     ]
 
-    def __init__(self, parent, location_names, payload_names, seed=None, default_id="MASS-COLLECTION-1"):
+    def __init__(
+        self,
+        parent,
+        location_names,
+        payload_names,
+        seed=None,
+        default_id="MASS-COLLECTION-1",
+    ):
         super().__init__(parent)
         self.setWindowTitle("Mass collection / bin rotation")
         self.resize(760, 620)
@@ -4298,15 +4307,23 @@ class MassCollectionEditorDialog(QDialog):
         self.interval_edit = QLineEdit(
             str(self.seed.get("capacity_check_interval_minutes", 15.0))
         )
-        self.replace_check = QCheckBox("Replace collected used/full bins with empty equivalents")
-        self.replace_check.setChecked(bool(self.seed.get("replace_with_empty_equivalents", True)))
+        self.replace_check = QCheckBox(
+            "Replace collected used/full bins with empty equivalents"
+        )
+        self.replace_check.setChecked(
+            bool(self.seed.get("replace_with_empty_equivalents", True))
+        )
         self.notes_edit = QPlainTextEdit(str(self.seed.get("notes", "")))
         self.notes_edit.setFixedHeight(80)
 
         days_widget = QWidget()
         days_layout = QHBoxLayout(days_widget)
         days_layout.setContentsMargins(0, 0, 0, 0)
-        active_days = set(self.seed.get("days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
+        active_days = set(
+            self.seed.get(
+                "days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+            )
+        )
         self.day_checks = {}
         for key, label in self.DAYS:
             chk = QCheckBox(label)
@@ -4389,7 +4406,9 @@ class MassCollectionEditorDialog(QDialog):
             location = self.location_combo.currentText().strip()
             if not location:
                 raise ValueError("Bin store location is required")
-            days = [key for key, _label in self.DAYS if self.day_checks[key].isChecked()]
+            days = [
+                key for key, _label in self.DAYS if self.day_checks[key].isChecked()
+            ]
             if not days:
                 raise ValueError("Select at least one active day")
             capacity_fraction = float(self.capacity_fraction_edit.text() or 0.0)
@@ -4431,9 +4450,17 @@ class MassCollectionListDialog(QDialog):
 
         layout = QVBoxLayout(self)
         self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels([
-            "ID", "Enabled", "Location", "Payloads", "Times", "Capacity trigger", "Interval min"
-        ])
+        self.table.setHorizontalHeaderLabels(
+            [
+                "ID",
+                "Enabled",
+                "Location",
+                "Payloads",
+                "Times",
+                "Capacity trigger",
+                "Interval min",
+            ]
+        )
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -4477,17 +4504,26 @@ class MassCollectionListDialog(QDialog):
                 item.get("location", ""),
                 ", ".join(item.get("payloads", [])) or "All",
                 ", ".join(item.get("scheduled_times", [])),
-                str(item.get("capacity_trigger_count", 0) or item.get("capacity_trigger_fraction", 0.0)),
+                str(
+                    item.get("capacity_trigger_count", 0)
+                    or item.get("capacity_trigger_fraction", 0.0)
+                ),
                 str(item.get("capacity_check_interval_minutes", 15.0)),
             ]
             for col, value in enumerate(values):
                 self.table.setItem(row, col, QTableWidgetItem(str(value)))
 
     def add_item(self):
-        dialog = MassCollectionEditorDialog(self, self.location_names, self.payload_names, default_id=self._next_id())
+        dialog = MassCollectionEditorDialog(
+            self, self.location_names, self.payload_names, default_id=self._next_id()
+        )
         if dialog.exec() == QDialog.Accepted and dialog.result:
-            if any(str(x.get("id", "")).strip() == dialog.result["id"] for x in self.items):
-                QMessageBox.critical(self, "Duplicate", "Mass collection ID already exists")
+            if any(
+                str(x.get("id", "")).strip() == dialog.result["id"] for x in self.items
+            ):
+                QMessageBox.critical(
+                    self, "Duplicate", "Mass collection ID already exists"
+                )
                 return
             self.items.append(dialog.result)
             self._refresh_table()
@@ -4496,12 +4532,16 @@ class MassCollectionListDialog(QDialog):
         row = self.table.currentRow()
         if row < 0:
             return
-        dialog = MassCollectionEditorDialog(self, self.location_names, self.payload_names, seed=self.items[row])
+        dialog = MassCollectionEditorDialog(
+            self, self.location_names, self.payload_names, seed=self.items[row]
+        )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             new_id = dialog.result["id"]
             for idx, item in enumerate(self.items):
                 if idx != row and str(item.get("id", "")).strip() == new_id:
-                    QMessageBox.critical(self, "Duplicate", "Mass collection ID already exists")
+                    QMessageBox.critical(
+                        self, "Duplicate", "Mass collection ID already exists"
+                    )
                     return
             self.items[row] = dialog.result
             self._refresh_table()
@@ -4517,6 +4557,7 @@ class MassCollectionListDialog(QDialog):
     def save_items(self):
         self.on_save(self.items)
         self.accept()
+
 
 class DepartmentWasteStreamSettingsDialog(QDialog):
     MODES = [
@@ -4896,16 +4937,20 @@ class DepartmentEditorDialog(QDialog):
         self.bed_count_edit = QLineEdit(str(self.seed.get("bed_count", 0)))
         self.turnover_edit = QLineEdit(str(self.seed.get("patient_turnover", 0.0)))
         self.staff_count_edit = QLineEdit(str(self.seed.get("staff_count", 0)))
-        self.hours_edit = QLineEdit(str(self.seed.get("hours_operated_per_day", 24)))
-        self.operating_start_edit = QLineEdit(
-            str(self.seed.get("operating_start_time", "00:00"))
+        operating_start_seed = str(
+            self.seed.get("operating_start_time", "00:00") or "00:00"
         )
-        self.operating_end_edit = QLineEdit(
-            str(self.seed.get("operating_end_time", ""))
-        )
-        self.operating_end_edit.setPlaceholderText(
-            "Blank = start time + hours operated/day"
-        )
+        operating_end_seed = str(self.seed.get("operating_end_time", "") or "").strip()
+        if not operating_end_seed:
+            operating_end_seed = self._derive_operating_end_from_legacy_hours(
+                operating_start_seed,
+                self.seed.get("hours_operated_per_day", 24),
+            )
+
+        self.operating_start_edit = QLineEdit(operating_start_seed)
+        self.operating_end_edit = QLineEdit(operating_end_seed)
+        self.operating_end_edit.setPlaceholderText("HH:MM, e.g. 17:00 or 24:00")
+        self.operating_hours_label = QLabel("24.00 h")
 
         days_widget = QWidget()
         days_layout = QHBoxLayout(days_widget)
@@ -4938,9 +4983,9 @@ class DepartmentEditorDialog(QDialog):
         form.addRow("Bed count", self.bed_count_edit)
         form.addRow("Patient turnover", self.turnover_edit)
         form.addRow("Staff count", self.staff_count_edit)
-        form.addRow("Hours operated/day", self.hours_edit)
         form.addRow("Operating start", self.operating_start_edit)
         form.addRow("Operating end", self.operating_end_edit)
+        form.addRow("Calculated operating hours", self.operating_hours_label)
         form.addRow("Days active", days_widget)
         form.addRow("Assigned waste streams", waste_row)
         waste_help = QLabel(
@@ -5001,13 +5046,81 @@ class DepartmentEditorDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        self.operating_start_edit.textChanged.connect(
+            self._refresh_operating_hours_label
+        )
+        self.operating_end_edit.textChanged.connect(self._refresh_operating_hours_label)
         self._refresh_all_category_location_summaries()
         self._refresh_waste_summary()
+        self._refresh_operating_hours_label()
+
+    def _parse_hhmm_minutes_for_operating_hours(
+        self, value, field_name, allow_blank=False
+    ):
+        text = str(value or "").strip()
+        if not text and allow_blank:
+            return None
+        try:
+            parts = text.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+            if hour == 24 and minute == 0:
+                return 24 * 60
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return (hour * 60) + minute
+        except Exception:
+            pass
+        raise ValueError(f"{field_name} must be HH:MM, for example 08:00")
+
+    def _derive_operating_end_from_legacy_hours(self, start_text, hours_value):
+        try:
+            start = self._parse_hhmm_minutes_for_operating_hours(
+                start_text, "Operating start", allow_blank=False
+            )
+            hours = max(0.0, min(float(hours_value or 24.0), 24.0))
+            if hours >= 24.0:
+                return "24:00"
+            end = (int(start or 0) + int(round(hours * 60.0))) % (24 * 60)
+            return f"{end // 60:02d}:{end % 60:02d}"
+        except Exception:
+            return "24:00"
+
+    def _calculate_operating_hours_per_day(self, start_text=None, end_text=None):
+        start = self._parse_hhmm_minutes_for_operating_hours(
+            self.operating_start_edit.text() if start_text is None else start_text,
+            "Operating start",
+            allow_blank=False,
+        )
+        end = self._parse_hhmm_minutes_for_operating_hours(
+            self.operating_end_edit.text() if end_text is None else end_text,
+            "Operating end",
+            allow_blank=False,
+        )
+        if end == start:
+            return 24.0
+        if end < start:
+            end += 24 * 60
+        return max(0.0, min((end - start) / 60.0, 24.0))
+
+    def _refresh_operating_hours_label(self):
+        try:
+            hours = self._calculate_operating_hours_per_day()
+            self.operating_hours_label.setText(f"{hours:.2f} h")
+        except Exception:
+            self.operating_hours_label.setText("Invalid start/end time")
+
+    def _editor_window_for_department_placement(self):
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "start_department_location_placement"):
+                return parent
+            parent = parent.parent() if hasattr(parent, "parent") else None
+        return None
 
     def _place_category_location(self, category_key):
-        parent = self.parent()
+        parent = self._editor_window_for_department_placement()
 
-        if parent is None or not hasattr(parent, "start_department_location_placement"):
+        if parent is None:
             QMessageBox.critical(
                 self,
                 "Placement unavailable",
@@ -5042,20 +5155,142 @@ class DepartmentEditorDialog(QDialog):
             self.activateWindow()
             return
 
-        selected = self.category_location_selections.setdefault(category_key, [])
-        if location_name not in selected:
-            selected.append(location_name)
-            selected.sort()
+        self._add_category_location_selection(category_key, location_name)
 
         if location_name not in self.location_names:
             self.location_names.append(location_name)
-            self.location_names.sort()
+            self.location_names = sorted(set(self.location_names))
+
+        # Keep a copy of the placed location in the dialog result path.  The
+        # main editor normally creates the location immediately when the scene
+        # is clicked, but this pending list makes the department save robust if
+        # the location is created by a deferred/dialog-driven path.
+        self.category_pending_locations[location_name] = dict(location_payload)
+
+        # Persist immediately into every backing model that might own this editor:
+        # 1) DepartmentListDialog.items when opened from Departments.
+        # 2) AMRGraphEditor.store.data when opened directly from the canvas.
+        # This prevents OK/reopen from rebuilding the dialog from stale data.
+        self._register_placed_category_location(category_key, location_payload)
 
         self._refresh_category_location_summary(category_key)
 
         self.show()
         self.raise_()
         self.activateWindow()
+
+    def _add_category_location_selection(self, category_key, location_name):
+        category_key = str(category_key or "").strip()
+        location_name = str(location_name or "").strip()
+        if not category_key or not location_name:
+            return
+        selected = self.category_location_selections.setdefault(category_key, [])
+        existing = {str(x).strip() for x in selected if str(x).strip()}
+        if location_name not in existing:
+            selected.append(location_name)
+        self.category_location_selections[category_key] = sorted(
+            {str(x).strip() for x in selected if str(x).strip()}
+        )
+
+    def _candidate_department_ids_for_placement(self):
+        candidates = []
+        for value in (
+            self.id_edit.text().strip(),
+            getattr(self, "original_department_id", ""),
+            self.seed.get("id", "") if isinstance(self.seed, dict) else "",
+        ):
+            text = str(value or "").strip()
+            if text and text not in candidates:
+                candidates.append(text)
+        return candidates
+
+    def _candidate_department_names_for_placement(self):
+        candidates = []
+        for value in (
+            self.name_edit.text().strip(),
+            getattr(self, "original_department_name", ""),
+            self.seed.get("name", "") if isinstance(self.seed, dict) else "",
+        ):
+            text = str(value or "").strip()
+            if text and text not in candidates:
+                candidates.append(text)
+        return candidates
+
+    @staticmethod
+    def _ensure_category_location_entry(dept, category_key, location_name):
+        if not isinstance(dept, dict):
+            return False
+        category_key = str(category_key or "").strip()
+        location_name = str(location_name or "").strip()
+        if not category_key or not location_name:
+            return False
+
+        category_locations = dept.setdefault("task_generation_locations", {})
+        if not isinstance(category_locations, dict):
+            category_locations = {}
+            dept["task_generation_locations"] = category_locations
+
+        entry = category_locations.setdefault(category_key, {})
+        if not isinstance(entry, dict):
+            entry = {"pickup_dropoff_locations": list(entry or [])}
+            category_locations[category_key] = entry
+
+        selected = entry.get("pickup_dropoff_locations", entry.get("locations", []))
+        if isinstance(selected, str):
+            selected = [selected]
+        elif not isinstance(selected, list):
+            selected = list(selected or [])
+
+        cleaned = []
+        seen = set()
+        for item in selected + [location_name]:
+            text = str(item or "").strip()
+            if text and text not in seen:
+                cleaned.append(text)
+                seen.add(text)
+
+        entry["pickup_dropoff_locations"] = cleaned
+        entry["locations"] = list(cleaned)
+        return True
+
+    def _register_placed_category_location(self, category_key, location_payload):
+        location_payload = dict(location_payload or {})
+        location_name = str(location_payload.get("name", "") or "").strip()
+        if not location_name:
+            return
+
+        dept_ids = self._candidate_department_ids_for_placement()
+        dept_names = self._candidate_department_names_for_placement()
+
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "register_placed_department_location"):
+                for dept_id in dept_ids:
+                    try:
+                        parent.register_placed_department_location(
+                            dept_id,
+                            category_key,
+                            location_payload,
+                        )
+                    except Exception:
+                        pass
+
+            store = getattr(parent, "store", None)
+            data = getattr(store, "data", None) if store is not None else None
+            if isinstance(data, dict):
+                for dept in data.get("departments", []) or []:
+                    current_id = str(dept.get("id", "") or "").strip()
+                    current_name = str(dept.get("name", "") or "").strip()
+                    if (current_id and current_id in dept_ids) or (
+                        current_name and current_name in dept_names
+                    ):
+                        self._ensure_category_location_entry(
+                            dept,
+                            category_key,
+                            location_name,
+                        )
+
+            parent = parent.parent() if hasattr(parent, "parent") else None
 
     def _next_category_location_name(self, category_key):
         dept_id = self.id_edit.text().strip()
@@ -5325,7 +5560,7 @@ class DepartmentEditorDialog(QDialog):
                 self.operating_start_edit.text(), "Operating start", allow_blank=False
             )
             operating_end_time = self._validate_hhmm_or_blank(
-                self.operating_end_edit.text(), "Operating end", allow_blank=True
+                self.operating_end_edit.text(), "Operating end", allow_blank=False
             )
 
             self.result = {
@@ -5336,7 +5571,13 @@ class DepartmentEditorDialog(QDialog):
                 "bed_count": int(float(self.bed_count_edit.text())),
                 "patient_turnover": float(self.turnover_edit.text()),
                 "staff_count": int(float(self.staff_count_edit.text())),
-                "hours_operated_per_day": float(self.hours_edit.text()),
+                # Kept in JSON as a derived compatibility field for older reporting/simulator code.
+                "hours_operated_per_day": round(
+                    self._calculate_operating_hours_per_day(
+                        operating_start_time, operating_end_time
+                    ),
+                    4,
+                ),
                 "operating_start_time": operating_start_time,
                 "operating_end_time": operating_end_time,
                 "days_active": days_active,
@@ -5966,7 +6207,9 @@ class DepartmentListDialog(QDialog):
             grouped.setdefault(floor, []).append((idx, item))
 
         for floor in sorted(grouped.keys()):
-            floor_item = QTreeWidgetItem([f"Floor {floor}", "", "", "", "", "", "", "", "", ""])
+            floor_item = QTreeWidgetItem(
+                [f"Floor {floor}", "", "", "", "", "", "", "", "", ""]
+            )
             floor_item.setFirstColumnSpanned(True)
             floor_item.setExpanded(True)
             self.table.addTopLevelItem(floor_item)
@@ -5984,12 +6227,16 @@ class DepartmentListDialog(QDialog):
                     for x in item.get("waste_streams", [])
                 )
 
-                operating_start = str(item.get("operating_start_time", "00:00") or "00:00")
+                operating_start = str(
+                    item.get("operating_start_time", "00:00") or "00:00"
+                )
                 operating_end = str(item.get("operating_end_time", "") or "")
                 if operating_end:
                     operating_text = f"{operating_start}-{operating_end}"
                 else:
-                    operating_text = f"{operating_start} + {item.get('hours_operated_per_day', 24)}h"
+                    operating_text = (
+                        f"{operating_start} + {item.get('hours_operated_per_day', 24)}h"
+                    )
                 days_text = ", ".join(item.get("days_active", []))
 
                 child = QTreeWidgetItem(
@@ -6288,6 +6535,166 @@ class DepartmentListDialog(QDialog):
             ),
         )
 
+    def _find_department_index_by_id(self, department_id):
+        department_id = str(department_id or "").strip()
+        if not department_id:
+            return None
+        for idx, item in enumerate(self.items):
+            current_id = str(item.get("id", "") or "").strip()
+            if current_id == department_id:
+                return idx
+        # Placement can happen after the user edits the ID in the open editor;
+        # in that case use the visible department name as a fallback where possible.
+        for idx, item in enumerate(self.items):
+            current_name = str(item.get("name", "") or "").strip()
+            if current_name and current_name == department_id:
+                return idx
+        return None
+
+    def register_placed_department_location(
+        self, department_id, category_key, location_payload
+    ):
+        """Immediately record a placed category location against the department list model.
+
+        The graphical placement callback occurs while DepartmentEditorDialog is hidden.
+        Updating self.items here means reopening the editor before pressing the list
+        Save button still shows the selected location.
+        """
+        department_id = str(department_id or "").strip()
+        category_key = str(category_key or "").strip()
+        location_name = str((location_payload or {}).get("name", "") or "").strip()
+        if not department_id or not category_key or not location_name:
+            return
+
+        idx = self._find_department_index_by_id(department_id)
+        if idx is None:
+            return
+
+        dept = self.items[idx]
+        category_locations = dept.setdefault("task_generation_locations", {})
+        entry = category_locations.setdefault(category_key, {})
+        if not isinstance(entry, dict):
+            entry = {"pickup_dropoff_locations": list(entry or [])}
+            category_locations[category_key] = entry
+
+        selected = entry.setdefault(
+            "pickup_dropoff_locations",
+            entry.get("locations", []),
+        )
+        if not isinstance(selected, list):
+            selected = [selected] if selected else []
+            entry["pickup_dropoff_locations"] = selected
+
+        existing = {str(x).strip() for x in selected if str(x).strip()}
+        if location_name not in existing:
+            selected.append(location_name)
+
+        # Keep legacy key in step for code that still reads locations.
+        entry["locations"] = list(entry.get("pickup_dropoff_locations", []))
+
+        if location_name not in self.location_names:
+            self.location_names.append(location_name)
+            self.location_names = sorted(set(self.location_names))
+
+        # Keep a pending create payload on the department item as a fallback.
+        pending = dept.setdefault("_create_locations", [])
+        if isinstance(pending, list):
+            if not any(
+                str(x.get("name", "") or "").strip() == location_name
+                for x in pending
+                if isinstance(x, dict)
+            ):
+                pending.append(dict(location_payload or {}))
+
+        self._refresh_table()
+
+    def _merge_existing_category_locations_into_result(self, result):
+        """Do not allow a stale editor result to erase direct placement registrations."""
+        result = dict(result or {})
+        idx = self._find_department_index_by_id(result.get("id", ""))
+        if idx is None:
+            return result
+
+        existing_locations = self.items[idx].get("task_generation_locations", {}) or {}
+        result_locations = result.setdefault("task_generation_locations", {})
+        if not isinstance(result_locations, dict):
+            result_locations = {}
+            result["task_generation_locations"] = result_locations
+
+        for category_key, existing_entry in existing_locations.items():
+            if isinstance(existing_entry, dict):
+                existing_raw = existing_entry.get(
+                    "pickup_dropoff_locations",
+                    existing_entry.get("locations", []),
+                )
+            else:
+                existing_raw = existing_entry
+            existing_names = [
+                str(x).strip() for x in (existing_raw or []) if str(x).strip()
+            ]
+            if not existing_names:
+                continue
+
+            target_entry = result_locations.setdefault(str(category_key), {})
+            if not isinstance(target_entry, dict):
+                target_entry = {"pickup_dropoff_locations": list(target_entry or [])}
+                result_locations[str(category_key)] = target_entry
+            target = target_entry.setdefault(
+                "pickup_dropoff_locations",
+                target_entry.get("locations", []),
+            )
+            if not isinstance(target, list):
+                target = [target] if target else []
+                target_entry["pickup_dropoff_locations"] = target
+            present = {str(x).strip() for x in target if str(x).strip()}
+            for name in existing_names:
+                if name not in present:
+                    target.append(name)
+                    present.add(name)
+            target_entry["locations"] = list(
+                target_entry.get("pickup_dropoff_locations", [])
+            )
+
+        return result
+
+    def _commit_department_editor_result(self, result):
+        result = self._merge_existing_category_locations_into_result(result)
+
+        parent = self.parent()
+        if parent is not None and hasattr(
+            parent, "create_department_generated_locations"
+        ):
+            parent.create_department_generated_locations(result)
+        else:
+            result.pop("_create_locations", None)
+
+        for category_entry in (
+            result.get("task_generation_locations", {}) or {}
+        ).values():
+            if isinstance(category_entry, dict):
+                raw_locations = category_entry.get(
+                    "pickup_dropoff_locations", category_entry.get("locations", [])
+                )
+            else:
+                raw_locations = category_entry
+
+            for location_name in raw_locations or []:
+                location_name = str(location_name or "").strip()
+                if location_name and location_name not in self.location_names:
+                    self.location_names.append(location_name)
+
+        self.location_names = sorted(set(self.location_names))
+        result.pop("_create_locations", None)
+        return result
+
+    def _clean_department_items_for_save(self):
+        cleaned = []
+        for item in self.items:
+            clean = dict(item)
+            clean.pop("_create_locations", None)
+            cleaned.append(clean)
+        return cleaned
+
     def add_item(self):
         dialog = DepartmentEditorDialog(
             self,
@@ -6314,7 +6721,7 @@ class DepartmentListDialog(QDialog):
                     )
                     return
 
-            self.items.append(dialog.result)
+            self.items.append(self._commit_department_editor_result(dialog.result))
             self._refresh_table()
 
     def edit_item(self):
@@ -6355,7 +6762,7 @@ class DepartmentListDialog(QDialog):
                     )
                     return
 
-            self.items[row] = dialog.result
+            self.items[row] = self._commit_department_editor_result(dialog.result)
             self._refresh_table()
 
     def delete_item(self):
@@ -6380,6 +6787,7 @@ class DepartmentListDialog(QDialog):
         self._refresh_table()
 
     def save_items(self):
+        self.items = self._clean_department_items_for_save()
         self.on_save(self.items)
         self.accept()
 

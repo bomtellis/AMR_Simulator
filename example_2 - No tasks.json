@@ -50,12 +50,6 @@
       "y": -7.997
     },
     {
-      "name": "UEC-DELIVERYHUB",
-      "floor": 0,
-      "x": 110,
-      "y": -22
-    },
-    {
       "name": "Linen Deliveries",
       "floor": 0,
       "x": 177.647,
@@ -1075,8 +1069,8 @@
     {
       "name": "D8-PHARMACY",
       "floor": 0,
-      "x": 157.46,
-      "y": -131.877,
+      "x": 157.581,
+      "y": -131.259,
       "bounding_box": [
         {
           "dx": -1.404,
@@ -3780,6 +3774,34 @@
           ]
         }
       ]
+    },
+    {
+      "name": "D14-WASTE",
+      "floor": 0,
+      "x": 81.0,
+      "y": -21.0,
+      "bounding_box": []
+    },
+    {
+      "name": "D12-STORES",
+      "floor": 0,
+      "x": 138.187,
+      "y": -47.056,
+      "bounding_box": []
+    },
+    {
+      "name": "D12-STORES_2",
+      "floor": 0,
+      "x": 109.643,
+      "y": -21.678,
+      "bounding_box": []
+    },
+    {
+      "name": "D12-PHARMACY",
+      "floor": 0,
+      "x": 110.25,
+      "y": -35.5,
+      "bounding_box": []
     }
   ],
   "corridors": {
@@ -3811,8 +3833,8 @@
       {
         "name": "C0-34",
         "floor": 0,
-        "x": 77.167,
-        "y": -30.539
+        "x": 77.301,
+        "y": -30.125
       },
       {
         "name": "C0-33",
@@ -3841,8 +3863,8 @@
       {
         "name": "C0-27",
         "floor": 0,
-        "x": 77.399,
-        "y": -75.233
+        "x": 77.534,
+        "y": -75.644
       },
       {
         "name": "C0-26",
@@ -4441,8 +4463,8 @@
       {
         "name": "C0-40",
         "floor": 0,
-        "x": 107,
-        "y": -22
+        "x": 106.959,
+        "y": -21.919
       },
       {
         "name": "C0-41",
@@ -4723,8 +4745,8 @@
       {
         "name": "C0-52",
         "floor": 0,
-        "x": 77.294,
-        "y": -57.819
+        "x": 77.27,
+        "y": -57.755
       },
       {
         "name": "C0-53",
@@ -4891,8 +4913,8 @@
       {
         "name": "C0-80",
         "floor": 0,
-        "x": 160.454,
-        "y": -135.869
+        "x": 160.154,
+        "y": -135.468
       },
       {
         "name": "C0-81",
@@ -6561,6 +6583,102 @@
         "floor": 0,
         "x": 49.108,
         "y": -55.31
+      },
+      {
+        "name": "C0-118",
+        "floor": 0,
+        "x": 81.338,
+        "y": -41.725
+      },
+      {
+        "name": "C0-119",
+        "floor": 0,
+        "x": 77.325,
+        "y": -41.83
+      },
+      {
+        "name": "C0-120",
+        "floor": 0,
+        "x": 77.325,
+        "y": -52.935
+      },
+      {
+        "name": "C0-121",
+        "floor": 0,
+        "x": 83.15,
+        "y": -52.899
+      },
+      {
+        "name": "C0-122",
+        "floor": 0,
+        "x": 107.199,
+        "y": -63.366
+      },
+      {
+        "name": "C0-123",
+        "floor": 0,
+        "x": 105.201,
+        "y": -75.766
+      },
+      {
+        "name": "C0-124",
+        "floor": 0,
+        "x": 142.656,
+        "y": -16.611
+      },
+      {
+        "name": "C0-125",
+        "floor": 0,
+        "x": 142.709,
+        "y": -25.58
+      },
+      {
+        "name": "C0-126",
+        "floor": 0,
+        "x": 142.868,
+        "y": -52.806
+      },
+      {
+        "name": "C0-127",
+        "floor": 0,
+        "x": 107.417,
+        "y": -52.7
+      },
+      {
+        "name": "C0-128",
+        "floor": 0,
+        "x": 107.045,
+        "y": -25.58
+      },
+      {
+        "name": "C0-129",
+        "floor": 0,
+        "x": 107.31,
+        "y": -30.038
+      },
+      {
+        "name": "C0-130",
+        "floor": 0,
+        "x": 142.791,
+        "y": -46.49
+      },
+      {
+        "name": "C0-131",
+        "floor": 0,
+        "x": 111.026,
+        "y": -38.963
+      },
+      {
+        "name": "C0-132",
+        "floor": 0,
+        "x": 120.455,
+        "y": -39.052
+      },
+      {
+        "name": "C0-133",
+        "floor": 0,
+        "x": 120.455,
+        "y": -52.716
       }
     ],
     "edges": [
@@ -7006,18 +7124,6 @@
       },
       {
         "from": "C0-41",
-        "to": "C0-40"
-      },
-      {
-        "from": "UEC-DELIVERYHUB",
-        "to": "UEC-DELIVERYHUB"
-      },
-      {
-        "from": "C0-40",
-        "to": "UEC-DELIVERYHUB"
-      },
-      {
-        "from": "UEC-DELIVERYHUB",
         "to": "C0-40"
       },
       {
@@ -7501,14 +7607,6 @@
         "to": "C0-26"
       },
       {
-        "from": "C0-52",
-        "to": "C0-33"
-      },
-      {
-        "from": "C0-33",
-        "to": "C0-52"
-      },
-      {
         "from": "C0-29",
         "to": "D1-STORES"
       },
@@ -7666,14 +7764,6 @@
       },
       {
         "from": "C0-63",
-        "to": "C0-62"
-      },
-      {
-        "from": "C0-62",
-        "to": "C0-34"
-      },
-      {
-        "from": "C0-34",
         "to": "C0-62"
       },
       {
@@ -12063,6 +12153,246 @@
       {
         "from": "D47-WASTE",
         "to": "C0-48"
+      },
+      {
+        "from": "C0-108",
+        "to": "D14-WASTE"
+      },
+      {
+        "from": "D14-WASTE",
+        "to": "C0-108"
+      },
+      {
+        "from": "C0-52",
+        "to": "C0-120"
+      },
+      {
+        "from": "C0-120",
+        "to": "C0-52"
+      },
+      {
+        "from": "C0-120",
+        "to": "C0-33"
+      },
+      {
+        "from": "C0-33",
+        "to": "C0-120"
+      },
+      {
+        "from": "C0-120",
+        "to": "C0-121"
+      },
+      {
+        "from": "C0-121",
+        "to": "C0-120"
+      },
+      {
+        "from": "C0-121",
+        "to": "D13-STORES"
+      },
+      {
+        "from": "D13-STORES",
+        "to": "C0-121"
+      },
+      {
+        "from": "C0-34",
+        "to": "C0-119"
+      },
+      {
+        "from": "C0-119",
+        "to": "C0-34"
+      },
+      {
+        "from": "C0-119",
+        "to": "C0-62"
+      },
+      {
+        "from": "C0-62",
+        "to": "C0-119"
+      },
+      {
+        "from": "C0-119",
+        "to": "C0-118"
+      },
+      {
+        "from": "C0-118",
+        "to": "C0-119"
+      },
+      {
+        "from": "C0-118",
+        "to": "D13-PHARMACY"
+      },
+      {
+        "from": "D13-PHARMACY",
+        "to": "C0-118"
+      },
+      {
+        "from": "C0-25",
+        "to": "C0-122"
+      },
+      {
+        "from": "C0-122",
+        "to": "C0-25"
+      },
+      {
+        "from": "C0-122",
+        "to": "C0-123"
+      },
+      {
+        "from": "C0-123",
+        "to": "C0-122"
+      },
+      {
+        "from": "C0-123",
+        "to": "C0-27"
+      },
+      {
+        "from": "C0-27",
+        "to": "C0-123"
+      },
+      {
+        "from": "C0-123",
+        "to": "C0-111"
+      },
+      {
+        "from": "C0-111",
+        "to": "C0-123"
+      },
+      {
+        "from": "C0-24",
+        "to": "C0-126"
+      },
+      {
+        "from": "C0-126",
+        "to": "C0-24"
+      },
+      {
+        "from": "C0-125",
+        "to": "C0-124"
+      },
+      {
+        "from": "C0-124",
+        "to": "C0-125"
+      },
+      {
+        "from": "C0-124",
+        "to": "C0-41"
+      },
+      {
+        "from": "C0-41",
+        "to": "C0-124"
+      },
+      {
+        "from": "C0-40",
+        "to": "C0-128"
+      },
+      {
+        "from": "C0-128",
+        "to": "C0-40"
+      },
+      {
+        "from": "C0-128",
+        "to": "C0-129"
+      },
+      {
+        "from": "C0-129",
+        "to": "C0-128"
+      },
+      {
+        "from": "C0-129",
+        "to": "C0-127"
+      },
+      {
+        "from": "C0-127",
+        "to": "C0-129"
+      },
+      {
+        "from": "C0-127",
+        "to": "C0-25"
+      },
+      {
+        "from": "C0-25",
+        "to": "C0-127"
+      },
+      {
+        "from": "C0-127",
+        "to": "C0-121"
+      },
+      {
+        "from": "C0-121",
+        "to": "C0-127"
+      },
+      {
+        "from": "C0-126",
+        "to": "C0-130"
+      },
+      {
+        "from": "C0-130",
+        "to": "C0-126"
+      },
+      {
+        "from": "C0-130",
+        "to": "C0-125"
+      },
+      {
+        "from": "C0-125",
+        "to": "C0-130"
+      },
+      {
+        "from": "C0-130",
+        "to": "D12-STORES"
+      },
+      {
+        "from": "D12-STORES",
+        "to": "C0-130"
+      },
+      {
+        "from": "C0-40",
+        "to": "D12-STORES_2"
+      },
+      {
+        "from": "D12-STORES_2",
+        "to": "C0-40"
+      },
+      {
+        "from": "C0-126",
+        "to": "C0-133"
+      },
+      {
+        "from": "C0-133",
+        "to": "C0-126"
+      },
+      {
+        "from": "C0-133",
+        "to": "C0-127"
+      },
+      {
+        "from": "C0-127",
+        "to": "C0-133"
+      },
+      {
+        "from": "C0-133",
+        "to": "C0-132"
+      },
+      {
+        "from": "C0-132",
+        "to": "C0-133"
+      },
+      {
+        "from": "C0-132",
+        "to": "C0-131"
+      },
+      {
+        "from": "C0-131",
+        "to": "C0-132"
+      },
+      {
+        "from": "C0-131",
+        "to": "D12-PHARMACY"
+      },
+      {
+        "from": "D12-PHARMACY",
+        "to": "C0-131"
       }
     ],
     "auto_connect": false
@@ -13352,6 +13682,8 @@
       "patient_turnover": 0.1,
       "staff_count": 12,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -13366,10 +13698,17 @@
         "catering": {
           "pickup_dropoff_locations": [
             "D1-CATERING"
+          ],
+          "locations": [
+            "D1-CATERING"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D1-LINEN",
+            "D1-LINEN_2"
+          ],
+          "locations": [
             "D1-LINEN",
             "D1-LINEN_2"
           ]
@@ -13377,18 +13716,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D1-PHARMACY"
+          ],
+          "locations": [
+            "D1-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D1-STORES"
+          ],
+          "locations": [
             "D1-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D1-WASTE"
+          ],
+          "locations": [
             "D1-WASTE"
           ]
         }
@@ -13401,11 +13750,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "_create_locations": [],
       "x": 37.0,
-      "y": -89.0,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -89.0
     },
     {
       "id": "D2",
@@ -13415,7 +13761,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 10.0,
+      "operating_start_time": "08:00",
+      "operating_end_time": "18:00",
       "days_active": [
         "mon",
         "tue",
@@ -13425,17 +13773,45 @@
         "sat",
         "sun"
       ],
-      "waste_pickup_locations": [],
       "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [
+            "D2-PHARMACY"
+          ],
+          "locations": [
+            "D2-PHARMACY"
+          ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D2-STORES"
+          ],
+          "locations": [
+            "D2-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D2-WASTE"
+          ],
+          "locations": [
+            "D2-WASTE"
+          ]
+        }
       },
-      "x": 36.835,
-      "y": -50.876,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -13444,44 +13820,20 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D2-PHARMACY"
-          ]
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D2-WASTE"
-          ]
-        },
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D2-STORES"
-          ]
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 37.0,
+      "y": -51.0
     },
     {
       "id": "D3",
       "name": "Urgent Care",
       "floor": 0,
       "enabled": true,
-      "bed_count": 0,
-      "patient_turnover": 0.0,
-      "staff_count": 0,
+      "bed_count": 32,
+      "patient_turnover": 5.0,
+      "staff_count": 12,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -13491,28 +13843,14 @@
         "sat",
         "sun"
       ],
-      "waste_pickup_locations": [],
       "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
-      },
-      "x": 36.375,
-      "y": -11.117,
-      "task_generation_location_suffixes": {
-        "catering": "-CATERING",
-        "linen": "-LINEN",
-        "pharmacy": "-PHARMACY",
-        "ssd": "-SSD",
-        "stores": "-STORES",
-        "waste": "-WASTE"
-      },
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [
+            "D3-CATERING",
+            "D3-CATERING_2"
+          ],
+          "locations": [
             "D3-CATERING",
             "D3-CATERING_2"
           ]
@@ -13521,29 +13859,51 @@
           "pickup_dropoff_locations": [
             "D3-LINEN",
             "D3-LINEN_2"
+          ],
+          "locations": [
+            "D3-LINEN",
+            "D3-LINEN_2"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D3-PHARMACY"
+          ],
+          "locations": [
+            "D3-PHARMACY"
           ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D3-STORES"
+          ],
+          "locations": [
             "D3-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D3-WASTE"
+          ],
+          "locations": [
+            "D3-WASTE"
           ]
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
         }
       },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "task_generation_location_suffixes": {
+        "catering": "-CATERING",
+        "linen": "-LINEN",
+        "pharmacy": "-PHARMACY",
+        "ssd": "-SSD",
+        "stores": "-STORES",
+        "waste": "-WASTE"
+      },
+      "x": 36.375,
+      "y": -11.117
     },
     {
       "id": "D4",
@@ -13553,7 +13913,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 10.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "17:00",
       "days_active": [
         "mon",
         "tue",
@@ -13561,7 +13923,6 @@
         "thu",
         "fri"
       ],
-      "waste_pickup_locations": [],
       "waste_streams": [
         {
           "name": "Clinical",
@@ -13576,15 +13937,40 @@
           "shared_container_group": "OPD_SET_1"
         }
       ],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [
+            "D4-PHARMACY"
+          ],
+          "locations": [
+            "D4-PHARMACY"
+          ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D4-WASTE"
+          ],
+          "locations": [
+            "D4-WASTE"
+          ]
+        }
       },
-      "x": 132.831,
-      "y": -155.963,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -13593,32 +13979,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D4-PHARMACY"
-          ]
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D4-WASTE"
-          ]
-        },
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 132.831,
+      "y": -155.963
     },
     {
       "id": "D5",
@@ -13628,7 +13990,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 10.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "17:00",
       "days_active": [
         "mon",
         "tue",
@@ -13636,17 +14000,58 @@
         "thu",
         "fri"
       ],
-      "waste_pickup_locations": [],
-      "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 6.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "OPD_SET_2"
+        }
+      ],
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [
+            "D5-PHARMACY"
+          ],
+          "locations": [
+            "D5-PHARMACY"
+          ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D5-STORES"
+          ],
+          "locations": [
+            "D5-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D5-WASTE"
+          ],
+          "locations": [
+            "D5-WASTE"
+          ]
+        }
       },
-      "x": 171.0,
-      "y": -158.0,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -13655,34 +14060,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D5-PHARMACY"
-          ]
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D5-STORES"
-          ]
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D5-WASTE"
-          ]
-        },
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 171.0,
+      "y": -158.0
     },
     {
       "id": "D6",
@@ -13692,7 +14071,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 8.0,
+      "operating_start_time": "08:00",
+      "operating_end_time": "16:00",
       "days_active": [
         "mon",
         "tue",
@@ -13700,17 +14081,41 @@
         "thu",
         "fri"
       ],
-      "waste_pickup_locations": [],
       "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D6-STORES"
+          ],
+          "locations": [
+            "D6-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D6-WASTE"
+          ],
+          "locations": [
+            "D6-WASTE"
+          ]
+        }
       },
-      "x": 194.0,
-      "y": -54.0,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -13719,32 +14124,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D6-STORES"
-          ]
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D6-WASTE"
-          ]
-        },
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 194.0,
+      "y": -54.0
     },
     {
       "id": "D7",
@@ -13754,7 +14135,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 10.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "17:00",
       "days_active": [
         "mon",
         "tue",
@@ -13762,17 +14145,45 @@
         "thu",
         "fri"
       ],
-      "waste_pickup_locations": [],
       "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [
+            "D7-PHARMACY"
+          ],
+          "locations": [
+            "D7-PHARMACY"
+          ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D7-STORES"
+          ],
+          "locations": [
+            "D7-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D7-WASTE"
+          ],
+          "locations": [
+            "D7-WASTE"
+          ]
+        }
       },
-      "x": 191.0,
-      "y": -85.0,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -13781,34 +14192,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D7-PHARMACY"
-          ]
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D7-STORES"
-          ]
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D7-WASTE"
-          ]
-        },
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 191.0,
+      "y": -85.0
     },
     {
       "id": "D8",
@@ -13819,6 +14204,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -13829,10 +14216,15 @@
       "waste_streams": [],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D8-LINEN",
+            "D8-LINEN_2"
+          ],
+          "locations": [
             "D8-LINEN",
             "D8-LINEN_2"
           ]
@@ -13840,18 +14232,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D8-PHARMACY"
+          ],
+          "locations": [
+            "D8-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D8-STORES"
+          ],
+          "locations": [
             "D8-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D8-WASTE"
+          ],
+          "locations": [
             "D8-WASTE"
           ]
         }
@@ -13864,10 +14266,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 189.0,
-      "y": -118.0,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 189.152,
+      "y": -117.522
     },
     {
       "id": "D9",
@@ -13877,7 +14277,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 14.0,
+      "operating_start_time": "06:00",
+      "operating_end_time": "20:00",
       "days_active": [
         "mon",
         "tue",
@@ -13885,17 +14287,37 @@
         "thu",
         "fri"
       ],
-      "waste_pickup_locations": [],
       "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "task_generation_locations": {
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D9-STORES"
+          ],
+          "locations": [
+            "D9-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D9-WASTE"
+          ],
+          "locations": [
+            "D9-WASTE"
+          ]
+        }
       },
-      "x": 143.0,
-      "y": -118.0,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -13904,32 +14326,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D9-STORES"
-          ]
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D9-WASTE"
-          ]
-        },
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 143,
+      "y": -118
     },
     {
       "id": "D10",
@@ -13940,6 +14338,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -13949,17 +14349,49 @@
         "sat",
         "sun"
       ],
-      "waste_pickup_locations": [],
       "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [
+            "D10-LINEN"
+          ],
+          "locations": [
+            "D10-LINEN"
+          ]
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [
+            "D10-PHARMACY"
+          ],
+          "locations": [
+            "D10-PHARMACY"
+          ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D10-STORES"
+          ],
+          "locations": [
+            "D10-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D14-WASTE"
+          ],
+          "locations": [
+            "D14-WASTE"
+          ]
+        }
       },
-      "x": 110.0,
-      "y": -67.0,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -13968,34 +14400,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "linen": {
-          "pickup_dropoff_locations": [
-            "D10-LINEN"
-          ]
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D10-PHARMACY"
-          ]
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D10-STORES"
-          ]
-        },
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 110,
+      "y": -67
     },
     {
       "id": "D11",
@@ -14006,6 +14412,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -14015,17 +14423,50 @@
         "sat",
         "sun"
       ],
-      "waste_pickup_locations": [],
-      "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 7.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "ED_DEPTS"
+        }
+      ],
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D14-WASTE"
+          ],
+          "locations": [
+            "D14-WASTE"
+          ]
+        }
       },
-      "x": 125.0,
-      "y": -8.0,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -14034,28 +14475,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 125.0,
+      "y": -8.0
     },
     {
       "id": "D12",
@@ -14066,6 +14487,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -14075,17 +14498,58 @@
         "sat",
         "sun"
       ],
-      "waste_pickup_locations": [],
-      "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 7.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "ED_DEPTS"
+        }
+      ],
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [
+            "D12-PHARMACY"
+          ],
+          "locations": [
+            "D12-PHARMACY"
+          ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D12-STORES"
+          ],
+          "locations": [
+            "D12-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D14-WASTE"
+          ],
+          "locations": [
+            "D14-WASTE"
+          ]
+        }
       },
-      "x": 125.0,
-      "y": -30.0,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -14094,28 +14558,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 124.954,
+      "y": -29.96
     },
     {
       "id": "D13",
@@ -14126,6 +14570,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -14135,17 +14581,58 @@
         "sat",
         "sun"
       ],
-      "waste_pickup_locations": [],
-      "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 7.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "ED_DEPTS"
+        }
+      ],
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [
+            "D13-PHARMACY"
+          ],
+          "locations": [
+            "D13-PHARMACY"
+          ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D13-STORES"
+          ],
+          "locations": [
+            "D13-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D14-WASTE"
+          ],
+          "locations": [
+            "D14-WASTE"
+          ]
+        }
       },
-      "x": 98.4,
-      "y": -40.51,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -14154,32 +14641,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D13-PHARMACY"
-          ]
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D13-STORES"
-          ]
-        },
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 99.0,
+      "y": -40.0
     },
     {
       "id": "D14",
@@ -14190,6 +14653,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -14199,17 +14664,50 @@
         "sat",
         "sun"
       ],
-      "waste_pickup_locations": [],
-      "waste_streams": [],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 7.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "ED_DEPTS"
+        }
+      ],
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D14-WASTE"
+          ],
+          "locations": [
+            "D14-WASTE"
+          ]
+        }
       },
-      "x": 92.426,
-      "y": -7.475,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -14218,28 +14716,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": []
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 92.0,
+      "y": -7.0
     },
     {
       "id": "D15",
@@ -14260,22 +14738,30 @@
       "waste_streams": [],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D15-WASTE"
+          ],
+          "locations": [
             "D15-WASTE"
           ]
         }
@@ -14292,7 +14778,7 @@
       "y": -46.83,
       "waste_pickup_locations": [],
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D16",
@@ -14302,7 +14788,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 12.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "19:00",
       "days_active": [
         "mon",
         "tue",
@@ -14320,33 +14808,50 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D16-LINEN"
+          ],
+          "locations": [
             "D16-LINEN"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D17-PHARMACY"
+          ],
+          "locations": [
+            "D17-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D19-STORES"
+          ],
+          "locations": [
             "D19-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D17-WASTE"
+          ],
+          "locations": [
             "D17-WASTE"
           ]
         }
@@ -14360,9 +14865,7 @@
         "waste": "-WASTE"
       },
       "x": 21.907,
-      "y": -88.484,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -88.484
     },
     {
       "id": "D17",
@@ -14372,7 +14875,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 12.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "19:00",
       "days_active": [
         "mon",
         "tue",
@@ -14390,33 +14895,50 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D17-LINEN"
+          ],
+          "locations": [
             "D17-LINEN"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D17-PHARMACY"
+          ],
+          "locations": [
+            "D17-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D19-STORES"
+          ],
+          "locations": [
             "D19-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D17-WASTE"
+          ],
+          "locations": [
             "D17-WASTE"
           ]
         }
@@ -14429,10 +14951,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 55.422,
-      "y": -89.937,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 56.0,
+      "y": -90.0
     },
     {
       "id": "D18",
@@ -14443,6 +14963,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -14460,33 +14982,50 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D18-LINEN"
+          ],
+          "locations": [
             "D18-LINEN"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D18-PHARMACY"
+          ],
+          "locations": [
+            "D18-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D19-STORES"
+          ],
+          "locations": [
             "D19-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D18-WASTE"
+          ],
+          "locations": [
             "D18-WASTE"
           ]
         }
@@ -14500,9 +15039,7 @@
         "waste": "-WASTE"
       },
       "x": 40.0,
-      "y": -51.0,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -51.0
     },
     {
       "id": "D19",
@@ -14535,26 +15072,38 @@
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D19-PHARMACY"
+          ],
+          "locations": [
+            "D19-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D19-STORES"
+          ],
+          "locations": [
             "D19-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D19-WASTE"
+          ],
+          "locations": [
             "D19-WASTE"
           ]
         }
@@ -14570,7 +15119,7 @@
       "x": 38.546,
       "y": -12.546,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D20",
@@ -14581,12 +15130,16 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
         "wed",
         "thu",
-        "fri"
+        "fri",
+        "sat",
+        "sun"
       ],
       "waste_streams": [
         {
@@ -14596,15 +15149,25 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D20-LINEN",
+            "D20-LINEN_2",
+            "D20-LINEN_3",
+            "D20-LINEN_4"
+          ],
+          "locations": [
             "D20-LINEN",
             "D20-LINEN_2",
             "D20-LINEN_3",
@@ -14614,10 +15177,17 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D20-PHARMACY"
+          ],
+          "locations": [
+            "D20-PHARMACY"
           ]
         },
         "ssd": {
           "pickup_dropoff_locations": [
+            "D20-SSD",
+            "D20-SSD_2"
+          ],
+          "locations": [
             "D20-SSD",
             "D20-SSD_2"
           ]
@@ -14625,10 +15195,17 @@
         "stores": {
           "pickup_dropoff_locations": [
             "D19-STORES"
+          ],
+          "locations": [
+            "D19-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D20-WASTE",
+            "D20-WASTE_2"
+          ],
+          "locations": [
             "D20-WASTE",
             "D20-WASTE_2"
           ]
@@ -14643,9 +15220,7 @@
         "waste": "-WASTE"
       },
       "x": 120.355,
-      "y": -35.998,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -35.998
     },
     {
       "id": "D21",
@@ -14656,6 +15231,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -14673,35 +15250,54 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [
             "D21-CATERING"
+          ],
+          "locations": [
+            "D21-CATERING"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D21-LINEN"
+          ],
+          "locations": [
             "D21-LINEN"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D21-PHARMACY"
+          ],
+          "locations": [
+            "D21-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D21-STORES"
+          ],
+          "locations": [
             "D21-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D21-WASTE"
+          ],
+          "locations": [
             "D21-WASTE"
           ]
         }
@@ -14715,9 +15311,7 @@
         "waste": "-WASTE"
       },
       "x": 190.292,
-      "y": -89.009,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -89.009
     },
     {
       "id": "D22",
@@ -14727,15 +15321,17 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 13.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "20:00",
       "days_active": [
         "mon",
         "tue",
         "wed",
         "thu",
-        "fri"
+        "fri",
+        "sat"
       ],
-      "waste_pickup_locations": [],
       "waste_streams": [
         {
           "name": "Clinical",
@@ -14744,18 +15340,50 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
-      "waste": {
-        "alpha": 0.0,
-        "beta": 0.0,
-        "gamma": 0.0,
-        "pickup_location": "",
-        "dropoff_location": ""
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [
+            "D22-PHARMACY"
+          ],
+          "locations": [
+            "D22-PHARMACY"
+          ]
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D22-STORES"
+          ],
+          "locations": [
+            "D22-STORES"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D22-WASTE"
+          ],
+          "locations": [
+            "D22-WASTE"
+          ]
+        }
       },
-      "x": 189.507,
-      "y": -137.038,
       "task_generation_location_suffixes": {
         "catering": "-CATERING",
         "linen": "-LINEN",
@@ -14764,34 +15392,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "task_generation_locations": {
-        "catering": {
-          "pickup_dropoff_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D22-PHARMACY"
-          ]
-        },
-        "ssd": {
-          "pickup_dropoff_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D22-STORES"
-          ]
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D22-WASTE"
-          ]
-        }
-      },
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 189.507,
+      "y": -137.038
     },
     {
       "id": "D23",
@@ -14801,13 +15403,17 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 12.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "19:00",
       "days_active": [
         "mon",
         "tue",
         "wed",
         "thu",
-        "fri"
+        "fri",
+        "sat",
+        "sun"
       ],
       "waste_streams": [
         {
@@ -14817,29 +15423,42 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D22-STORES"
+          ],
+          "locations": [
             "D22-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D27-WASTE"
+          ],
+          "locations": [
             "D27-WASTE"
           ]
         }
@@ -14853,9 +15472,7 @@
         "waste": "-WASTE"
       },
       "x": 132.612,
-      "y": -203.904,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -203.904
     },
     {
       "id": "D24",
@@ -14865,7 +15482,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 12.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "19:00",
       "days_active": [
         "mon",
         "tue",
@@ -14881,29 +15500,42 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D22-STORES"
+          ],
+          "locations": [
             "D22-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D27-WASTE"
+          ],
+          "locations": [
             "D27-WASTE"
           ]
         }
@@ -14917,9 +15549,7 @@
         "waste": "-WASTE"
       },
       "x": 145.62,
-      "y": -202.972,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -202.972
     },
     {
       "id": "D25",
@@ -14929,13 +15559,17 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 14.0,
+      "operating_start_time": "06:00",
+      "operating_end_time": "20:00",
       "days_active": [
         "mon",
         "tue",
         "wed",
         "thu",
-        "fri"
+        "fri",
+        "sat",
+        "sun"
       ],
       "waste_streams": [
         {
@@ -14945,31 +15579,46 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D25-PHARMACY"
+          ],
+          "locations": [
+            "D25-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D22-STORES"
+          ],
+          "locations": [
             "D22-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D26-WASTE"
+          ],
+          "locations": [
             "D26-WASTE"
           ]
         }
@@ -14982,10 +15631,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 178.283,
-      "y": -204.091,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 178.0,
+      "y": -204.0
     },
     {
       "id": "D26",
@@ -14995,7 +15642,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 12.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "19:00",
       "days_active": [
         "mon",
         "tue",
@@ -15011,33 +15660,50 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D26-LINEN"
+          ],
+          "locations": [
             "D26-LINEN"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D26-PHARMACY"
+          ],
+          "locations": [
+            "D26-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D22-STORES"
+          ],
+          "locations": [
             "D22-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D26-WASTE"
+          ],
+          "locations": [
             "D26-WASTE"
           ]
         }
@@ -15051,9 +15717,7 @@
         "waste": "-WASTE"
       },
       "x": 178.073,
-      "y": -174.786,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -174.786
     },
     {
       "id": "D27",
@@ -15063,7 +15727,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 12.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "19:00",
       "days_active": [
         "mon",
         "tue",
@@ -15079,31 +15745,46 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D27-PHARMACY"
+          ],
+          "locations": [
+            "D27-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D22-STORES"
+          ],
+          "locations": [
             "D22-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D27-WASTE"
+          ],
+          "locations": [
             "D27-WASTE"
           ]
         }
@@ -15116,10 +15797,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 141.784,
-      "y": -173.724,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 142.0,
+      "y": -174.0
     },
     {
       "id": "D28",
@@ -15129,7 +15808,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 16.0,
+      "operating_start_time": "05:00",
+      "operating_end_time": "21:00",
       "days_active": [
         "mon",
         "tue",
@@ -15144,24 +15825,37 @@
         "catering": {
           "pickup_dropoff_locations": [
             "D28-CATERING"
+          ],
+          "locations": [
+            "D28-CATERING"
           ]
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D28-STORES"
+          ],
+          "locations": [
             "D28-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D28-WASTE",
+            "D28-WASTE_2"
+          ],
+          "locations": [
             "D28-WASTE",
             "D28-WASTE_2"
           ]
@@ -15176,9 +15870,7 @@
         "waste": "-WASTE"
       },
       "x": 142.527,
-      "y": -117.34,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -117.34
     },
     {
       "id": "D29",
@@ -15214,10 +15906,18 @@
           "pickup_dropoff_locations": [
             "D29-CATERING",
             "D29-CATERING_2"
+          ],
+          "locations": [
+            "D29-CATERING",
+            "D29-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D29-LINEN",
+            "D29-LINEN_2"
+          ],
+          "locations": [
             "D29-LINEN",
             "D29-LINEN_2"
           ]
@@ -15225,18 +15925,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D29-PHARMACY"
+          ],
+          "locations": [
+            "D29-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D29-STORES"
+          ],
+          "locations": [
             "D29-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D29-WASTE"
+          ],
+          "locations": [
             "D29-WASTE"
           ]
         }
@@ -15252,7 +15962,7 @@
       "x": 39.472,
       "y": -89.019,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D30",
@@ -15288,10 +15998,18 @@
           "pickup_dropoff_locations": [
             "D30-CATERING",
             "D30-CATERING_2"
+          ],
+          "locations": [
+            "D30-CATERING",
+            "D30-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D30-LINEN",
+            "D30-LINEN_2"
+          ],
+          "locations": [
             "D30-LINEN",
             "D30-LINEN_2"
           ]
@@ -15299,18 +16017,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D30-PHARMACY"
+          ],
+          "locations": [
+            "D30-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D29-STORES"
+          ],
+          "locations": [
             "D29-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D29-WASTE"
+          ],
+          "locations": [
             "D29-WASTE"
           ]
         }
@@ -15326,7 +16054,7 @@
       "x": 90.821,
       "y": -33.985,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D31",
@@ -15362,10 +16090,18 @@
           "pickup_dropoff_locations": [
             "D31-CATERING",
             "D31-CATERING_2"
+          ],
+          "locations": [
+            "D31-CATERING",
+            "D31-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D31-LINEN",
+            "D31-LINEN_2"
+          ],
+          "locations": [
             "D31-LINEN",
             "D31-LINEN_2"
           ]
@@ -15373,18 +16109,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D31-PHARMACY"
+          ],
+          "locations": [
+            "D31-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D31-STORES"
+          ],
+          "locations": [
             "D31-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D31-WASTE"
+          ],
+          "locations": [
             "D31-WASTE"
           ]
         }
@@ -15400,7 +16146,7 @@
       "x": 138.66,
       "y": -36.765,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D32",
@@ -15436,10 +16182,18 @@
           "pickup_dropoff_locations": [
             "D32-CATERING",
             "D32-CATERING_2"
+          ],
+          "locations": [
+            "D32-CATERING",
+            "D32-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D32-LINEN",
+            "D32-LINEN_2"
+          ],
+          "locations": [
             "D32-LINEN",
             "D32-LINEN_2"
           ]
@@ -15447,18 +16201,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D32-PHARMACY"
+          ],
+          "locations": [
+            "D32-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D31-STORES"
+          ],
+          "locations": [
             "D31-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D31-WASTE"
+          ],
+          "locations": [
             "D31-WASTE"
           ]
         }
@@ -15474,7 +16238,7 @@
       "x": 186.955,
       "y": -88.929,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D33",
@@ -15510,10 +16274,18 @@
           "pickup_dropoff_locations": [
             "D33-CATERING",
             "D33-CATERING_2"
+          ],
+          "locations": [
+            "D33-CATERING",
+            "D33-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D33-LINEN",
+            "D33-LINEN_2"
+          ],
+          "locations": [
             "D33-LINEN",
             "D33-LINEN_2"
           ]
@@ -15521,18 +16293,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D33-PHARMACY"
+          ],
+          "locations": [
+            "D33-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D33-STORES"
+          ],
+          "locations": [
             "D33-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D33-WASTE"
+          ],
+          "locations": [
             "D33-WASTE"
           ]
         }
@@ -15548,7 +16330,7 @@
       "x": 188.242,
       "y": -137.482,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D34",
@@ -15584,10 +16366,18 @@
           "pickup_dropoff_locations": [
             "D34-CATERING",
             "D34-CATERING_2"
+          ],
+          "locations": [
+            "D34-CATERING",
+            "D34-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D34-LINEN",
+            "D34-LINEN_2"
+          ],
+          "locations": [
             "D34-LINEN",
             "D34-LINEN_2"
           ]
@@ -15595,18 +16385,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D34-PHARMACY"
+          ],
+          "locations": [
+            "D34-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D33-STORES"
+          ],
+          "locations": [
             "D33-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D33-WASTE"
+          ],
+          "locations": [
             "D33-WASTE"
           ]
         }
@@ -15622,7 +16422,7 @@
       "x": 138.52,
       "y": -182.79,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D35",
@@ -15658,27 +16458,43 @@
           "pickup_dropoff_locations": [
             "D35-CATERING",
             "D35-CATERING_2"
+          ],
+          "locations": [
+            "D35-CATERING",
+            "D35-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D35-LINEN",
             "D35-LINEN_2"
+          ],
+          "locations": [
+            "D35-LINEN",
+            "D35-LINEN_2"
           ]
         },
         "pharmacy": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D35-STORES"
+          ],
+          "locations": [
             "D35-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D35-WASTE"
+          ],
+          "locations": [
             "D35-WASTE"
           ]
         }
@@ -15694,7 +16510,7 @@
       "x": 39.791,
       "y": -88.914,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D36",
@@ -15730,10 +16546,18 @@
           "pickup_dropoff_locations": [
             "D36-CATERING",
             "D36-CATERING_2"
+          ],
+          "locations": [
+            "D36-CATERING",
+            "D36-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D36-LINEN",
+            "D36-LINEN_2"
+          ],
+          "locations": [
             "D36-LINEN",
             "D36-LINEN_2"
           ]
@@ -15741,16 +16565,22 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D36-PHARMACY"
+          ],
+          "locations": [
+            "D36-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "waste": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         }
       },
       "task_generation_location_suffixes": {
@@ -15764,7 +16594,7 @@
       "x": 91.0,
       "y": -32.0,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D37",
@@ -15800,10 +16630,18 @@
           "pickup_dropoff_locations": [
             "D37-CATERING",
             "D37-CATERING_2"
+          ],
+          "locations": [
+            "D37-CATERING",
+            "D37-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D37-LINEN",
+            "D37-LINEN_2"
+          ],
+          "locations": [
             "D37-LINEN",
             "D37-LINEN_2"
           ]
@@ -15811,18 +16649,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D37-PHARMACY"
+          ],
+          "locations": [
+            "D37-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D37-STORES"
+          ],
+          "locations": [
             "D37-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D37-WASTE"
+          ],
+          "locations": [
             "D37-WASTE"
           ]
         }
@@ -15838,7 +16686,7 @@
       "x": 137.871,
       "y": -32.326,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D38",
@@ -15873,10 +16721,17 @@
         "catering": {
           "pickup_dropoff_locations": [
             "D38-CATERING"
+          ],
+          "locations": [
+            "D38-CATERING"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D38-LINEN",
+            "D38-LINEN_2"
+          ],
+          "locations": [
             "D38-LINEN",
             "D38-LINEN_2"
           ]
@@ -15884,18 +16739,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D38-PHARMACY"
+          ],
+          "locations": [
+            "D38-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D37-STORES"
+          ],
+          "locations": [
             "D37-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D37-WASTE"
+          ],
+          "locations": [
             "D37-WASTE"
           ]
         }
@@ -15911,7 +16776,7 @@
       "x": 186.0,
       "y": -89.0,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D39",
@@ -15947,10 +16812,18 @@
           "pickup_dropoff_locations": [
             "D39-CATERING",
             "D39-CATERING_2"
+          ],
+          "locations": [
+            "D39-CATERING",
+            "D39-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D39-LINEN",
+            "D39-LINEN_2"
+          ],
+          "locations": [
             "D39-LINEN",
             "D39-LINEN_2"
           ]
@@ -15958,18 +16831,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D39-PHARMACY"
+          ],
+          "locations": [
+            "D39-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D39-STORES"
+          ],
+          "locations": [
             "D39-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D39-WASTE"
+          ],
+          "locations": [
             "D39-WASTE"
           ]
         }
@@ -15985,7 +16868,7 @@
       "x": 190.0,
       "y": -137.0,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D40",
@@ -16021,10 +16904,18 @@
           "pickup_dropoff_locations": [
             "D40-CATERING",
             "D40-CATERING_2"
+          ],
+          "locations": [
+            "D40-CATERING",
+            "D40-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D40-LINEN",
+            "D40-LINEN_2"
+          ],
+          "locations": [
             "D40-LINEN",
             "D40-LINEN_2"
           ]
@@ -16032,18 +16923,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D40-PHARMACY"
+          ],
+          "locations": [
+            "D40-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D39-STORES"
+          ],
+          "locations": [
             "D39-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D39-WASTE"
+          ],
+          "locations": [
             "D39-WASTE"
           ]
         }
@@ -16059,7 +16960,7 @@
       "x": 138.0,
       "y": -187.0,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D41",
@@ -16095,10 +16996,18 @@
           "pickup_dropoff_locations": [
             "D41-CATERING",
             "D41-CATERING_2"
+          ],
+          "locations": [
+            "D41-CATERING",
+            "D41-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D41-LINEN",
+            "D41-LINEN_2"
+          ],
+          "locations": [
             "D41-LINEN",
             "D41-LINEN_2"
           ]
@@ -16106,18 +17015,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D41-PHARMACY"
+          ],
+          "locations": [
+            "D41-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D41-STORES"
+          ],
+          "locations": [
             "D41-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D41-WASTE"
+          ],
+          "locations": [
             "D41-WASTE"
           ]
         }
@@ -16133,7 +17052,7 @@
       "x": 39.877,
       "y": -89.122,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D42",
@@ -16167,10 +17086,18 @@
           "pickup_dropoff_locations": [
             "D42-CATERING",
             "D42-CATERING_2"
+          ],
+          "locations": [
+            "D42-CATERING",
+            "D42-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D42-LINEN",
+            "D42-LINEN_2"
+          ],
+          "locations": [
             "D42-LINEN",
             "D42-LINEN_2"
           ]
@@ -16178,16 +17105,22 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D42-PHARMACY"
+          ],
+          "locations": [
+            "D42-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "waste": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         }
       },
       "task_generation_location_suffixes": {
@@ -16201,7 +17134,7 @@
       "x": 90.712,
       "y": -37.47,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D43",
@@ -16237,10 +17170,18 @@
           "pickup_dropoff_locations": [
             "D43-CATERING",
             "D43-CATERING_2"
+          ],
+          "locations": [
+            "D43-CATERING",
+            "D43-CATERING_2"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
+            "D43-LINEN",
+            "D43-LINEN_2"
+          ],
+          "locations": [
             "D43-LINEN",
             "D43-LINEN_2"
           ]
@@ -16248,18 +17189,28 @@
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D43-PHARMACY"
+          ],
+          "locations": [
+            "D43-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D43-STORES"
+          ],
+          "locations": [
             "D43-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D43-WASTE"
+          ],
+          "locations": [
             "D43-WASTE"
           ]
         }
@@ -16275,7 +17226,7 @@
       "x": 139,
       "y": -186,
       "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "operating_end_time": "24:00"
     },
     {
       "id": "D44",
@@ -16285,7 +17236,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 10.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "17:00",
       "days_active": [
         "mon",
         "tue",
@@ -16309,24 +17262,34 @@
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D44-PHARMACY"
+          ],
+          "locations": [
+            "D44-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D4-WASTE"
+          ],
+          "locations": [
             "D4-WASTE"
           ]
         }
@@ -16340,9 +17303,7 @@
         "waste": "-WASTE"
       },
       "x": 138.318,
-      "y": -203.925,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -203.925
     },
     {
       "id": "D45",
@@ -16352,7 +17313,9 @@
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
-      "hours_operated_per_day": 24.0,
+      "hours_operated_per_day": 10.0,
+      "operating_start_time": "07:00",
+      "operating_end_time": "17:00",
       "days_active": [
         "mon",
         "tue",
@@ -16360,29 +17323,54 @@
         "thu",
         "fri"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "generation_mode": "threshold",
+          "frequency_per_day": 6.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "OPD_SET_2"
+        }
+      ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D45-PHARMACY"
+          ],
+          "locations": [
+            "D45-PHARMACY"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D45-STORES"
+          ],
+          "locations": [
             "D45-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D5-WASTE"
+          ],
+          "locations": [
             "D5-WASTE"
           ]
         }
@@ -16396,9 +17384,7 @@
         "waste": "-WASTE"
       },
       "x": 177.0,
-      "y": -204.0,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -204.0
     },
     {
       "id": "D46",
@@ -16409,6 +17395,8 @@
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -16424,32 +17412,48 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D46-PHARMACY",
             "D46-PHARMACY_2"
+          ],
+          "locations": [
+            "D46-PHARMACY",
+            "D46-PHARMACY_2"
           ]
         },
         "ssd": {
-          "pickup_dropoff_locations": []
+          "pickup_dropoff_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
+            "D21-STORES"
+          ],
+          "locations": [
             "D21-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
+            "D46-WASTE"
+          ],
+          "locations": [
             "D46-WASTE"
           ]
         }
@@ -16463,9 +17467,7 @@
         "waste": "-WASTE"
       },
       "x": 169.654,
-      "y": -33.679,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "y": -33.679
     },
     {
       "id": "D47",
@@ -16486,6 +17488,70 @@
       "waste_streams": [],
       "task_generation_locations": {
         "catering": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "ssd": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [],
+          "locations": []
+        },
+        "waste": {
+          "pickup_dropoff_locations": [
+            "D47-WASTE"
+          ],
+          "locations": [
+            "D47-WASTE"
+          ]
+        }
+      },
+      "task_generation_location_suffixes": {
+        "catering": "-CATERING",
+        "linen": "-LINEN",
+        "pharmacy": "-PHARMACY",
+        "ssd": "-SSD",
+        "stores": "-STORES",
+        "waste": "-WASTE"
+      },
+      "x": 176.0,
+      "y": 15.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00"
+    },
+    {
+      "id": "D48",
+      "name": "Laundry",
+      "floor": 0,
+      "enabled": true,
+      "bed_count": 0,
+      "patient_turnover": 0.0,
+      "staff_count": 0,
+      "hours_operated_per_day": 8.0,
+      "operating_start_time": "06:00",
+      "operating_end_time": "14:00",
+      "days_active": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat",
+        "sun"
+      ],
+      "waste_streams": [],
+      "task_generation_locations": {
+        "catering": {
           "pickup_dropoff_locations": []
         },
         "linen": {
@@ -16501,9 +17567,7 @@
           "pickup_dropoff_locations": []
         },
         "waste": {
-          "pickup_dropoff_locations": [
-            "D47-WASTE"
-          ]
+          "pickup_dropoff_locations": []
         }
       },
       "task_generation_location_suffixes": {
@@ -16514,11 +17578,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "_create_locations": [],
-      "x": 176.0,
-      "y": 15.0,
-      "operating_start_time": "00:00",
-      "operating_end_time": ""
+      "x": 177.0,
+      "y": -24.0
     }
   ],
   "waste_streams": [

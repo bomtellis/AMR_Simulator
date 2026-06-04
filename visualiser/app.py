@@ -1466,9 +1466,25 @@ class AMRGraphEditor(QMainWindow):
                         QMessageBox.question(self, "Delete point", f"Delete {picked}?")
                         == QMessageBox.Yes
                     ):
-                        self.store.delete_point(picked)
+                        cleanup = self.store.delete_point(picked)
                         self.selected_point_name = None
-                        self.set_status(f"Deleted {picked}")
+                        removed_refs = 0
+                        if isinstance(cleanup, dict):
+                            removed_refs = sum(
+                                int(cleanup.get(key, 0) or 0)
+                                for key in (
+                                    "department_references_removed",
+                                    "task_generation_references_removed",
+                                    "building_references_removed",
+                                    "mass_collection_references_removed",
+                                )
+                            )
+                        suffix = (
+                            f" and removed {removed_refs} redundant reference(s)"
+                            if removed_refs
+                            else ""
+                        )
+                        self.set_status(f"Deleted {picked}{suffix}")
                 self.refresh_canvas()
             return
 
