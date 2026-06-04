@@ -254,6 +254,7 @@ DEFAULT_JSON = {
     },
     "payloads": [],
     "waste_streams": [],
+    "mass_collections": [],
     "departments": [],
     "amrs": [],
     "lifts": [],
@@ -277,6 +278,7 @@ class JsonStore:
         self.ensure_task_generation_defaults()
         self.ensure_payload_defaults()
         self.ensure_amr_defaults()
+        self.ensure_mass_collection_defaults()
 
     def ensure_simulation_defaults(self) -> None:
         simulation = self.data.setdefault("simulation", {})
@@ -322,6 +324,78 @@ class JsonStore:
             "seed_waste_stream_containers_at_start",
             default_simulation.get("seed_waste_stream_containers_at_start", False),
         )
+
+    def ensure_mass_collection_defaults(self) -> None:
+        clean = []
+        for index, item in enumerate(
+            self.data.setdefault("mass_collections", []), start=1
+        ):
+            if not isinstance(item, dict):
+                continue
+            location = str(
+                item.get("location", item.get("store_location", "")) or ""
+            ).strip()
+            if not location:
+                continue
+            payloads = item.get("payloads", item.get("payload_names", []))
+            if isinstance(payloads, str):
+                payloads = [x.strip() for x in payloads.split(",")]
+            if not isinstance(payloads, list):
+                payloads = []
+            times = item.get("scheduled_times", item.get("schedule_times", []))
+            if isinstance(times, str):
+                times = [x.strip() for x in times.split(",")]
+            if not isinstance(times, list):
+                times = []
+            days = item.get("days_active", item.get("active_days", []))
+            if isinstance(days, str):
+                days = [x.strip() for x in days.split(",")]
+            if not isinstance(days, list) or not days:
+                days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+            clean.append(
+                {
+                    "id": str(
+                        item.get("id", item.get("name", f"MASS-COLLECTION-{index}"))
+                        or f"MASS-COLLECTION-{index}"
+                    ).strip(),
+                    "enabled": bool(item.get("enabled", True)),
+                    "location": location,
+                    "payloads": [str(x).strip() for x in payloads if str(x).strip()],
+                    "days_active": [
+                        str(x).strip().lower()[:3] for x in days if str(x).strip()
+                    ],
+                    "scheduled_times": [
+                        str(x).strip() for x in times if str(x).strip()
+                    ],
+                    "capacity_trigger_fraction": float(
+                        item.get(
+                            "capacity_trigger_fraction",
+                            item.get("trigger_fraction", 0.0),
+                        )
+                        or 0.0
+                    ),
+                    "capacity_trigger_count": int(
+                        float(
+                            item.get(
+                                "capacity_trigger_count", item.get("trigger_count", 0)
+                            )
+                            or 0
+                        )
+                    ),
+                    "capacity_check_interval_minutes": float(
+                        item.get(
+                            "capacity_check_interval_minutes",
+                            item.get("check_interval_minutes", 15.0),
+                        )
+                        or 15.0
+                    ),
+                    "replace_with_empty_equivalents": bool(
+                        item.get("replace_with_empty_equivalents", True)
+                    ),
+                    "notes": str(item.get("notes", "") or ""),
+                }
+            )
+        self.data["mass_collections"] = clean
 
     def ensure_payload_defaults(self) -> None:
         for payload in self.data.setdefault("payloads", []):
@@ -418,6 +492,7 @@ class JsonStore:
     def save(self, path: str) -> None:
         self.ensure_simulation_defaults()
         self.ensure_amr_defaults()
+        self.ensure_mass_collection_defaults()
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.data, f, indent=2)
 

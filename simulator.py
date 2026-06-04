@@ -438,8 +438,322 @@ class Simulation:
         )
         self.synthetic_task_counter = 0
 
+        # Third-party/bin-store mass collections remove all used/full payloads
+        # from a store location and replace them with matching empty containers.
+        # This models a waste contractor rotating the exact number of bins used
+        # at a bin store, either on scheduled visits or when finite store spaces
+        # reach a configured capacity trigger.
+        self.mass_collection_configs = self._normalise_mass_collection_configs(
+            config.get("mass_collections", [])
+        )
+        self._mass_collection_last_capacity_visit = {}
+        self._schedule_mass_collection_events()
+
         if getattr(self.task_generation_manager, "generators", []):
             self.push_event(0.0, "generator_tick", {})
+
+
+    def _normalise_mass_collection_configs(self, raw_configs) -> List[dict]:
+        """Normalise third-party mass collection/empty-bin rotation settings.
+
+        Supported JSON shape:
+            "mass_collections": [
+              {
+                "id": "D47 bin rotation",
+                "enabled": true,
+                "location": "D47-WASTE",
+                "payloads": ["Clinical Waste Bin"],   # optional; blank = all payloads
+                "days_active": ["mon", "tue", "wed", "thu", "fri"],
+                "scheduled_times": ["06:00", "18:00"],
+                "capacity_trigger_fraction": 0.8,
+                "capacity_trigger_count": 0,
+                "capacity_check_interval_minutes": 15,
+                "replace_with_empty_equivalents": true
+              }
+            ]
+        """
+        if isinstance(raw_configs, dict):
+            raw_items = raw_configs.get("items", [])
+        else:
+            raw_items = raw_configs
+        if not isinstance(raw_items, list):
+            return []
+
+        configs: List[dict] = []
+        for index, raw in enumerate(raw_items, start=1):
+            if not isinstance(raw, dict):
+                continue
+            location = str(raw.get("location", raw.get("store_location", "")) or "").strip()
+            if not location:
+                continue
+            if location not in self.locations:
+                continue
+
+            payloads = raw.get("payloads", raw.get("payload_names", []))
+            if isinstance(payloads, str):
+                payloads = [x.strip() for x in payloads.split(",")]
+            payloads = [str(x).strip() for x in (payloads or []) if str(x).strip()]
+            payloads = [x for x in payloads if x in self.payloads and not is_empty_payload_name(x)]
+
+            days = raw.get("days_active", raw.get("active_days", []))
+            if isinstance(days, str):
+                days = [x.strip() for x in days.split(",")]
+            days = [str(x).strip().lower()[:3] for x in (days or []) if str(x).strip()]
+            if not days:
+                days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+
+            times = raw.get("scheduled_times", raw.get("schedule_times", []))
+            if isinstance(times, str):
+                times = [x.strip() for x in times.split(",")]
+            clean_times = []
+            for value in times or []:
+                text = str(value or "").strip()
+                try:
+                    parts = [int(x) for x in text.split(":")[:2]]
+                    if len(parts) == 2 and 0 <= parts[0] <= 23 and 0 <= parts[1] <= 59:
+                        clean_times.append(f"{parts[0]:02d}:{parts[1]:02d}")
+                except Exception:
+                    continue
+
+            try:
+                capacity_fraction = float(raw.get("capacity_trigger_fraction", raw.get("trigger_fraction", 0.0)) or 0.0)
+            except Exception:
+                capacity_fraction = 0.0
+            capacity_fraction = max(0.0, min(1.0, capacity_fraction))
+
+            try:
+                capacity_count = int(float(raw.get("capacity_trigger_count", raw.get("trigger_count", 0)) or 0))
+            except Exception:
+                capacity_count = 0
+
+            try:
+                interval_min = float(raw.get("capacity_check_interval_minutes", raw.get("check_interval_minutes", 15.0)) or 15.0)
+            except Exception:
+                interval_min = 15.0
+            interval_min = max(1.0, interval_min)
+
+            config_id = str(raw.get("id", raw.get("name", "")) or "").strip() or f"MASS-COLLECTION-{index}"
+            configs.append(
+                {
+                    "id": config_id,
+                    "enabled": bool(raw.get("enabled", True)),
+                    "location": location,
+                    "payloads": payloads,
+                    "days_active": sorted(set(days)),
+                    "scheduled_times": sorted(set(clean_times)),
+                    "capacity_trigger_fraction": capacity_fraction,
+                    "capacity_trigger_count": max(0, capacity_count),
+                    "capacity_check_interval_minutes": interval_min,
+                    "replace_with_empty_equivalents": bool(raw.get("replace_with_empty_equivalents", True)),
+                    "notes": str(raw.get("notes", "") or ""),
+                }
+            )
+        return configs
+
+    def _day_key_for_time(self, sim_time: float) -> str:
+        return ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][
+            self.clock.sim_seconds_to_datetime(sim_time).weekday()
+        ]
+
+    def _schedule_mass_collection_events(self) -> None:
+        if not self.mass_collection_configs:
+            return
+
+        day_count = int(math.ceil(max(self.task_generation_horizon_sec, 0.0) / 86400.0)) + 1
+        start_day = self.clock.start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        for cfg in self.mass_collection_configs:
+            if not cfg.get("enabled", True):
+                continue
+
+            for day_index in range(day_count + 1):
+                day_start = start_day + __import__("datetime").timedelta(days=day_index)
+                day_key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][day_start.weekday()]
+                if day_key not in set(cfg.get("days_active", [])):
+                    continue
+                for hhmm in cfg.get("scheduled_times", []):
+                    try:
+                        hour, minute = [int(x) for x in str(hhmm).split(":")[:2]]
+                        visit_dt = day_start.replace(hour=hour, minute=minute)
+                        sim_time = (visit_dt - self.clock.start_datetime).total_seconds()
+                    except Exception:
+                        continue
+                    if 0.0 <= sim_time <= self.task_generation_horizon_sec:
+                        self.push_event(sim_time, "mass_collection_visit", {"config_id": cfg["id"], "trigger": "scheduled"})
+
+            if float(cfg.get("capacity_trigger_fraction", 0.0) or 0.0) > 0.0 or int(cfg.get("capacity_trigger_count", 0) or 0) > 0:
+                self.push_event(0.0, "mass_collection_capacity_tick", {"config_id": cfg["id"]})
+
+    def _mass_collection_config_by_id(self, config_id: str) -> Optional[dict]:
+        config_id = str(config_id or "").strip()
+        for cfg in self.mass_collection_configs:
+            if str(cfg.get("id", "")).strip() == config_id:
+                return cfg
+        return None
+
+    def _mass_collection_payload_allowed(self, cfg: dict, payload_name: str) -> bool:
+        payloads = cfg.get("payloads", []) or []
+        return not payloads or payload_name in set(payloads)
+
+    def _mass_collection_candidate_records(self, cfg: dict) -> List[object]:
+        location = str(cfg.get("location", "") or "").strip()
+        records = []
+        for record in self.payload_instance_store.records_at(location):
+            payload_name = normalise_payload_name(getattr(record, "payload", ""))
+            if not payload_name or not self._mass_collection_payload_allowed(cfg, payload_name):
+                continue
+            metadata = getattr(record, "metadata", {}) or {}
+            state = str(metadata.get("container_state", "") or "").strip().lower()
+            # The rotation collects used/full bins.  Empty stock at the store is
+            # deliberately left available for AMR return trips.
+            if state in {"full", "used", "dirty", "awaiting_collection"}:
+                records.append(record)
+        return records
+
+    def _mass_collection_capacity_limit(self, cfg: dict) -> int:
+        explicit = int(cfg.get("capacity_trigger_count", 0) or 0)
+        if explicit > 0:
+            return explicit
+        fraction = float(cfg.get("capacity_trigger_fraction", 0.0) or 0.0)
+        if fraction <= 0.0:
+            return 0
+        spaces = self.inventory_spaces_by_location.get(str(cfg.get("location", "") or "").strip(), [])
+        if not spaces:
+            return 0
+        return max(1, int(math.ceil(len(spaces) * fraction)))
+
+    def _remove_payload_record_from_inventory(self, location_name: str, instance_id: str) -> None:
+        for space in self.inventory_spaces_by_location.get(location_name, []):
+            if str(space.get("payload_instance_id", "") or "").strip() != str(instance_id or "").strip():
+                continue
+            space["occupied"] = False
+            space["payload"] = ""
+            space["payload_instance_id"] = ""
+            space["task_id"] = ""
+            space["reserved_by_task"] = ""
+
+    def _store_mass_collection_empty_equivalent(self, cfg: dict, full_record) -> str:
+        location = str(cfg.get("location", "") or "").strip()
+        payload_name = normalise_payload_name(getattr(full_record, "payload", ""))
+        if not location or not payload_name:
+            return ""
+        new_instance_id = self.payload_instance_store.make_instance_id(
+            payload_name,
+            f"{cfg.get('id', 'mass-collection')}-empty-equivalent",
+        )
+        old_metadata = getattr(full_record, "metadata", {}) or {}
+        metadata = dict(old_metadata)
+        metadata.update(
+            {
+                "task_source": "third_party_mass_collection",
+                "mass_collection_id": str(cfg.get("id", "")),
+                "source_full_payload_instance_id": str(getattr(full_record, "instance_id", "") or ""),
+                "container_state": "empty",
+            }
+        )
+        self.payload_instance_store.store(
+            location,
+            payload_name,
+            new_instance_id,
+            source_task_id=str(cfg.get("id", "")),
+            metadata=metadata,
+        )
+
+        payload = self.payloads.get(payload_name)
+        if payload is not None and self._location_has_inventory_spaces(location):
+            space = self._find_free_inventory_space(location, payload)
+            if space is not None:
+                space["occupied"] = True
+                space["payload"] = payload_name
+                space["payload_instance_id"] = new_instance_id
+                space["task_id"] = str(cfg.get("id", ""))
+                space["reserved_by_task"] = ""
+        return new_instance_id
+
+    def _execute_mass_collection_visit(self, cfg: dict, now: float, trigger: str) -> None:
+        if not cfg or not cfg.get("enabled", True):
+            return
+        candidates = self._mass_collection_candidate_records(cfg)
+        if not candidates:
+            self.log_step(
+                event_time=now,
+                event_type="mass_collection_visit",
+                details=f"Mass collection {cfg.get('id', '')} found no used/full payloads at {cfg.get('location', '')}",
+                from_location=str(cfg.get("location", "")),
+                to_location=str(cfg.get("location", "")),
+                status="completed",
+                task_source="third_party_mass_collection",
+            )
+            return
+
+        collected_ids = []
+        replacement_ids = []
+        location = str(cfg.get("location", "") or "").strip()
+        for record in list(candidates):
+            instance_id = str(getattr(record, "instance_id", "") or "")
+            payload_name = normalise_payload_name(getattr(record, "payload", ""))
+            removed = self.payload_instance_store.pickup(location, payload_name=payload_name, instance_id=instance_id)
+            if removed is None:
+                continue
+            self._remove_payload_record_from_inventory(location, instance_id)
+            collected_ids.append(instance_id)
+            if cfg.get("replace_with_empty_equivalents", True):
+                replacement_id = self._store_mass_collection_empty_equivalent(cfg, removed)
+                if replacement_id:
+                    replacement_ids.append(replacement_id)
+
+        self._mass_collection_last_capacity_visit[str(cfg.get("id", ""))] = now
+        self.log_step(
+            event_time=now,
+            event_type="mass_collection_visit",
+            details=(
+                f"Mass collection {cfg.get('id', '')} collected {len(collected_ids)} used/full payload(s) "
+                f"from {location} and delivered {len(replacement_ids)} empty equivalent(s); trigger={trigger}; "
+                f"collected={collected_ids}; replacements={replacement_ids}"
+            ),
+            from_location=location,
+            to_location=location,
+            payload_name=";".join(sorted({normalise_payload_name(getattr(r, "payload", "")) for r in candidates})),
+            payload_instance_id=";".join(replacement_ids),
+            status="completed",
+            task_source="third_party_mass_collection",
+        )
+        # Newly delivered empty equivalents may unblock pending return tasks.
+        self._try_assign_tasks(now)
+
+    def _handle_mass_collection_capacity_tick(self, cfg: dict, now: float) -> None:
+        if not cfg or not cfg.get("enabled", True):
+            return
+        interval = max(60.0, float(cfg.get("capacity_check_interval_minutes", 15.0) or 15.0) * 60.0)
+        next_tick = now + interval
+        if next_tick <= self.task_generation_horizon_sec:
+            self.push_event(next_tick, "mass_collection_capacity_tick", {"config_id": cfg.get("id", "")})
+
+        if self._day_key_for_time(now) not in set(cfg.get("days_active", [])):
+            return
+        limit = self._mass_collection_capacity_limit(cfg)
+        if limit <= 0:
+            return
+        candidates = self._mass_collection_candidate_records(cfg)
+        if len(candidates) < limit:
+            return
+        last = float(self._mass_collection_last_capacity_visit.get(str(cfg.get("id", "")), -1e18))
+        if now - last < interval - 1e-9:
+            return
+        self._execute_mass_collection_visit(cfg, now, trigger="capacity")
+
+    def _location_has_mass_collection_rotation(self, location_name: str, payload_name: str = "") -> bool:
+        location_name = str(location_name or "").strip()
+        payload_name = normalise_payload_name(payload_name)
+        for cfg in self.mass_collection_configs:
+            if not cfg.get("enabled", True):
+                continue
+            if str(cfg.get("location", "") or "").strip() != location_name:
+                continue
+            if payload_name and not self._mass_collection_payload_allowed(cfg, payload_name):
+                continue
+            return True
+        return False
 
     def _task_generation_horizon_seconds(self, config: dict) -> float:
         sim_cfg = config.get("simulation", {}) or {}
@@ -1227,8 +1541,11 @@ class Simulation:
 
     def _task_requires_existing_payload_instance(self, task: Task) -> bool:
         # Outbound tasks can create a new physical object at their source.
-        # Return tasks must collect the exact instance that the outbound task left
-        # at the destination.
+        # Most return tasks collect an existing object, but waste-bin exchange
+        # returns are different: the full bin remains at the waste store and a
+        # newly issued empty bin is returned to the department/shared bin space.
+        if bool(getattr(task, "creates_new_payload_instance", False)):
+            return False
         return bool(getattr(task, "is_return_task", False)) or bool(
             getattr(task, "requires_existing_payload_instance", False)
         )
@@ -1241,13 +1558,22 @@ class Simulation:
         if not self._task_requires_existing_payload_instance(task):
             return True
         if instance_id:
-            return self.payload_instance_store.has_instance_at(
+            if not self.payload_instance_store.has_instance_at(
                 task.pickup, instance_id, payload_name
-            )
-        return any(
-            record.payload == payload_name
+            ):
+                return False
+            if bool(getattr(task, "is_return_task", False)) and str(getattr(task, "task_source", "") or "") == "task_generation_return":
+                record = getattr(self.payload_instance_store, "_records", {}).get(instance_id)
+                return record is None or self._record_is_available_empty_container(record)
+            return True
+        records = [
+            record
             for record in self.payload_instance_store.records_at(task.pickup)
-        )
+            if record.payload == payload_name
+        ]
+        if bool(getattr(task, "is_return_task", False)) and str(getattr(task, "task_source", "") or "") == "task_generation_return":
+            records = [record for record in records if self._record_is_available_empty_container(record)]
+        return bool(records)
 
     def _pickup_instance_pending_reason(self, task: Task) -> str:
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
@@ -1281,9 +1607,24 @@ class Simulation:
             and not instance_id
             and self._task_requires_existing_payload_instance(task)
         ):
-            record = self.payload_instance_store.pickup(
-                task.pickup, payload_name=payload_name
-            )
+            if bool(getattr(task, "is_return_task", False)) and str(getattr(task, "task_source", "") or "") == "task_generation_return":
+                candidate = next(
+                    (
+                        item
+                        for item in self.payload_instance_store.records_at(task.pickup)
+                        if item.payload == payload_name
+                        and self._record_is_available_empty_container(item)
+                    ),
+                    None,
+                )
+                if candidate is not None:
+                    record = self.payload_instance_store.pickup(
+                        task.pickup, payload_name=payload_name, instance_id=candidate.instance_id
+                    )
+            else:
+                record = self.payload_instance_store.pickup(
+                    task.pickup, payload_name=payload_name
+                )
             if record is None:
                 raise RuntimeError(self._pickup_instance_pending_reason(task))
             instance_id = record.instance_id
@@ -1295,6 +1636,31 @@ class Simulation:
         if instance_id:
             task.payload_instance_id = instance_id
             self._reserved_existing_payload_instance_ids.discard(instance_id)
+
+    def _payload_instance_container_state_for_task(self, task: Task) -> str:
+        """Return the physical state to store for a payload instance.
+
+        For waste-bin exchange tasks, the collected bin that arrives at the
+        waste store remains there as a full bin.  The return journey is a new
+        empty bin issued by the waste store, so later shared-bin collection tasks
+        must only bind to empty/available records rather than reusing a full bin
+        already left at the store.
+        """
+        is_waste_task = bool(str(getattr(task, "waste_stream", "") or "").strip()) or (
+            str(getattr(task, "task_source", "") or "").strip()
+            in {"department_waste", "task_generation_return"}
+        )
+        if not is_waste_task:
+            return ""
+        if bool(getattr(task, "is_return_task", False)):
+            return "empty"
+        return "full"
+
+    def _record_is_available_empty_container(self, record) -> bool:
+        metadata = getattr(record, "metadata", {}) or {}
+        state = str(metadata.get("container_state", "") or "").strip().lower()
+        # Older seeded records did not carry a state; treat them as empty/available.
+        return state in {"", "empty", "available"}
 
     def _store_payload_instance_for_task(self, task: Task) -> None:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
@@ -1315,14 +1681,13 @@ class Simulation:
             "container_group": getattr(task, "container_group", ""),
             "shared_container_group": getattr(task, "shared_container_group", ""),
             "container_type": getattr(task, "container_type", ""),
+            "container_state": self._payload_instance_container_state_for_task(task),
         }
 
-        existing_record = getattr(self.payload_instance_store, "_records", {}).get(
-            instance_id
-        )
+        existing_record = getattr(self.payload_instance_store, "_records", {}).get(instance_id)
         if existing_record is not None:
             previous_metadata = getattr(existing_record, "metadata", {}) or {}
-            for key in ("container_group", "shared_container_group", "waste_stream"):
+            for key in ("container_group", "shared_container_group", "waste_stream", "container_state"):
                 if not str(metadata.get(key, "") or "").strip():
                     metadata[key] = previous_metadata.get(key, "")
 
@@ -1556,9 +1921,7 @@ class Simulation:
             "tracked_items": getattr(task, "tracked_items", {}) or {},
         }
 
-    def _schedule_configured_return_task(
-        self, task: Task, finish_time: float, amr_id: str = ""
-    ) -> None:
+    def _schedule_configured_return_task(self, task: Task, finish_time: float, amr_id: str = "") -> None:
         if not bool(getattr(task, "return_enabled", False)):
             return
 
@@ -1592,21 +1955,34 @@ class Simulation:
             department_id=str(getattr(task, "department_id", "") or ""),
             waste_stream=str(getattr(task, "waste_stream", "") or ""),
             container_type=return_payload,
-            payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
+            payload_instance_id=(
+                ""
+                if self._location_has_mass_collection_rotation(task.dropoff, return_payload)
+                else self.payload_instance_store.make_instance_id(
+                    return_payload, f"{task.id}-empty-return"
+                )
+            ),
             is_return_task=True,
         )
         # Dynamic waste/shared-bin metadata must follow the return task so the
         # payload instance still knows which shared physical container group it
         # belongs to after it is returned to the department/shared waste room.
         return_task.container_group = str(getattr(task, "container_group", "") or "")
-        return_task.shared_container_group = str(
-            getattr(task, "shared_container_group", "") or ""
-        )
+        return_task.shared_container_group = str(getattr(task, "shared_container_group", "") or "")
         return_task.shared_container = bool(getattr(task, "shared_container", False))
-        return_task.initial_container_present = bool(
-            getattr(task, "initial_container_present", True)
-        )
-        return_task.requires_existing_payload_instance = True
+        return_task.initial_container_present = bool(getattr(task, "initial_container_present", True))
+        if self._location_has_mass_collection_rotation(return_task.pickup, return_payload):
+            # The waste-store/bin-store rotation is the source of empty bins.
+            # The AMR return must therefore wait for and collect a real empty
+            # equivalent from the store, rather than inventing one at pickup.
+            return_task.requires_existing_payload_instance = True
+            return_task.creates_new_payload_instance = False
+        else:
+            # Backwards-compatible behaviour for configs without a mass collection
+            # rotation: issue a new empty bin at the waste store immediately.
+            return_task.requires_existing_payload_instance = False
+            return_task.creates_new_payload_instance = True
+        return_task.exchanged_full_payload_instance_id = str(getattr(task, "payload_instance_id", "") or "")
         # A physical bin return is a continuation of the collection/swap cycle.
         # Keep it on the same AMR so the simulator does not model one AMR
         # collecting the full bin while another AMR independently delivers the
@@ -2248,6 +2624,7 @@ class Simulation:
                             "waste_stream": stream_name,
                             "container_group": group_key,
                             "container_type": payload_name,
+                            "container_state": "empty",
                         },
                     )
                     self.initial_waste_container_instances[
@@ -2314,6 +2691,8 @@ class Simulation:
         for record in self.payload_instance_store.records_at(task.pickup):
             if record.payload != payload_name:
                 continue
+            if not self._record_is_available_empty_container(record):
+                continue
             if record.instance_id in self._reserved_existing_payload_instance_ids:
                 continue
             task.payload_instance_id = record.instance_id
@@ -2334,16 +2713,12 @@ class Simulation:
         for record in list(records.values()):
             if getattr(record, "payload", "") != payload_name:
                 continue
-            if (
-                getattr(record, "instance_id", "")
-                in self._reserved_existing_payload_instance_ids
-            ):
+            if getattr(record, "instance_id", "") in self._reserved_existing_payload_instance_ids:
+                continue
+            if not self._record_is_available_empty_container(record):
                 continue
             metadata = getattr(record, "metadata", {}) or {}
-            if (
-                str(metadata.get("container_group", "") or "").strip()
-                != container_group
-            ):
+            if str(metadata.get("container_group", "") or "").strip() != container_group:
                 continue
             task.payload_instance_id = record.instance_id
             task.pickup = record.location
@@ -4681,14 +5056,8 @@ class Simulation:
             # The simulator may adjust the task pickup for shared physical
             # containers so that the task collects the actual seeded bin location
             # rather than the contributing department that triggered the threshold.
-            pickup_location_name = str(
-                getattr(task, "pickup", record.pickup_location)
-                or record.pickup_location
-            )
-            dropoff_location_name = str(
-                getattr(task, "dropoff", record.dropoff_location)
-                or record.dropoff_location
-            )
+            pickup_location_name = str(getattr(task, "pickup", record.pickup_location) or record.pickup_location)
+            dropoff_location_name = str(getattr(task, "dropoff", record.dropoff_location) or record.dropoff_location)
             pickup = self.locations.get(pickup_location_name)
             dropoff = self.locations.get(dropoff_location_name)
 
@@ -4886,9 +5255,7 @@ class Simulation:
                 }
             )
 
-            self._schedule_configured_return_task(
-                task, event.payload["finish_time"], event.payload.get("amr_id", "")
-            )
+            self._schedule_configured_return_task(task, event.payload["finish_time"], event.payload.get("amr_id", ""))
 
             target_time = event.payload.get("target_time", 0.0)
             actual_duration = event.payload["duration"]
@@ -5043,6 +5410,18 @@ class Simulation:
                 energy_kwh=0.0,
             )
             self._try_assign_tasks(event.time)
+
+        elif event.event_type == "mass_collection_visit":
+            cfg = self._mass_collection_config_by_id(event.payload.get("config_id", ""))
+            if cfg is not None:
+                self._execute_mass_collection_visit(
+                    cfg, event.time, str(event.payload.get("trigger", "scheduled") or "scheduled")
+                )
+
+        elif event.event_type == "mass_collection_capacity_tick":
+            cfg = self._mass_collection_config_by_id(event.payload.get("config_id", ""))
+            if cfg is not None:
+                self._handle_mass_collection_capacity_tick(cfg, event.time)
 
         elif event.event_type == "generator_tick":
             next_tick = event.time + max(60.0, self.task_generation_interval_sec)
@@ -5494,10 +5873,7 @@ class Simulation:
 
         for _, _, _, task in self.pending_tasks:
             locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
-            if (
-                locked_amr_id
-                and locked_amr_id != str(getattr(amr, "id", "") or "").strip()
-            ):
+            if locked_amr_id and locked_amr_id != str(getattr(amr, "id", "") or "").strip():
                 continue
             if task.pickup not in self.locations or task.dropoff not in self.locations:
                 continue

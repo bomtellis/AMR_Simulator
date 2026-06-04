@@ -4242,6 +4242,321 @@ class WasteStreamListDialog(QDialog):
         self.accept()
 
 
+class MassCollectionEditorDialog(QDialog):
+    DAYS = [
+        ("mon", "Mon"),
+        ("tue", "Tue"),
+        ("wed", "Wed"),
+        ("thu", "Thu"),
+        ("fri", "Fri"),
+        ("sat", "Sat"),
+        ("sun", "Sun"),
+    ]
+
+    def __init__(
+        self,
+        parent,
+        location_names,
+        payload_names,
+        seed=None,
+        default_id="MASS-COLLECTION-1",
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Mass collection / bin rotation")
+        self.resize(760, 620)
+        self.result = None
+        self.seed = dict(seed or {})
+        self.location_names = sorted(location_names)
+        self.payload_names = sorted(payload_names)
+        self.selected_payloads = list(self.seed.get("payloads", []))
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.id_edit = QLineEdit(str(self.seed.get("id", default_id)))
+        self.enabled_check = QCheckBox("Enabled")
+        self.enabled_check.setChecked(bool(self.seed.get("enabled", True)))
+
+        self.location_combo = QComboBox()
+        self.location_combo.addItems([""] + self.location_names)
+        self.location_combo.setCurrentText(str(self.seed.get("location", "")))
+
+        payload_row = QHBoxLayout()
+        self.payload_summary = QLabel()
+        self.payload_summary.setWordWrap(True)
+        payload_btn = QPushButton("Select...")
+        payload_btn.clicked.connect(self.pick_payloads)
+        clear_payload_btn = QPushButton("Clear")
+        clear_payload_btn.clicked.connect(self.clear_payloads)
+        payload_row.addWidget(self.payload_summary, 1)
+        payload_row.addWidget(payload_btn)
+        payload_row.addWidget(clear_payload_btn)
+
+        self.scheduled_times_edit = QLineEdit(
+            ", ".join(self.seed.get("scheduled_times", []))
+        )
+        self.capacity_fraction_edit = QLineEdit(
+            str(self.seed.get("capacity_trigger_fraction", 0.0))
+        )
+        self.capacity_count_edit = QLineEdit(
+            str(self.seed.get("capacity_trigger_count", 0))
+        )
+        self.interval_edit = QLineEdit(
+            str(self.seed.get("capacity_check_interval_minutes", 15.0))
+        )
+        self.replace_check = QCheckBox(
+            "Replace collected used/full bins with empty equivalents"
+        )
+        self.replace_check.setChecked(
+            bool(self.seed.get("replace_with_empty_equivalents", True))
+        )
+        self.notes_edit = QPlainTextEdit(str(self.seed.get("notes", "")))
+        self.notes_edit.setFixedHeight(80)
+
+        days_widget = QWidget()
+        days_layout = QHBoxLayout(days_widget)
+        days_layout.setContentsMargins(0, 0, 0, 0)
+        active_days = set(
+            self.seed.get(
+                "days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+            )
+        )
+        self.day_checks = {}
+        for key, label in self.DAYS:
+            chk = QCheckBox(label)
+            chk.setChecked(key in active_days)
+            self.day_checks[key] = chk
+            days_layout.addWidget(chk)
+        days_layout.addStretch(1)
+
+        form.addRow("ID", self.id_edit)
+        form.addRow("Enabled", self.enabled_check)
+        form.addRow("Bin store location", self.location_combo)
+        form.addRow("Payload types", payload_row)
+        form.addRow("Days active", days_widget)
+        form.addRow("Scheduled times HH:MM comma separated", self.scheduled_times_edit)
+        form.addRow("Capacity trigger fraction", self.capacity_fraction_edit)
+        form.addRow("Capacity trigger count", self.capacity_count_edit)
+        form.addRow("Capacity check interval minutes", self.interval_edit)
+        form.addRow("Exchange", self.replace_check)
+        form.addRow("Notes", self.notes_edit)
+
+        help_label = QLabel(
+            "At each visit the simulator removes all used/full matching payload instances from the store "
+            "and creates the same number of empty replacement instances. Capacity triggers use the number "
+            "of configured inventory spaces at the selected location, unless a trigger count is entered."
+        )
+        help_label.setWordWrap(True)
+        layout.addWidget(help_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.refresh_payload_summary()
+
+    def pick_payloads(self):
+        picker = MultiSelectPicker(
+            self,
+            "Select payloads to rotate",
+            self.payload_names,
+            selected=self.selected_payloads,
+            group_resolver=lambda _item: "Payloads",
+        )
+        if picker.exec() == QDialog.Accepted and picker.result is not None:
+            self.selected_payloads = sorted(picker.result)
+            self.refresh_payload_summary()
+
+    def clear_payloads(self):
+        self.selected_payloads = []
+        self.refresh_payload_summary()
+
+    def refresh_payload_summary(self):
+        if not self.selected_payloads:
+            self.payload_summary.setText("All payload types")
+        elif len(self.selected_payloads) <= 4:
+            self.payload_summary.setText(", ".join(self.selected_payloads))
+        else:
+            self.payload_summary.setText(f"{len(self.selected_payloads)} selected")
+
+    def _parse_times(self):
+        result = []
+        for raw in self.scheduled_times_edit.text().split(","):
+            text = raw.strip()
+            if not text:
+                continue
+            parts = text.split(":")
+            if len(parts) < 2:
+                raise ValueError("Scheduled times must use HH:MM format")
+            hour = int(parts[0])
+            minute = int(parts[1])
+            if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                raise ValueError("Scheduled times must be valid 24-hour HH:MM values")
+            result.append(f"{hour:02d}:{minute:02d}")
+        return sorted(set(result))
+
+    def accept(self):
+        try:
+            collection_id = self.id_edit.text().strip()
+            if not collection_id:
+                raise ValueError("ID is required")
+            location = self.location_combo.currentText().strip()
+            if not location:
+                raise ValueError("Bin store location is required")
+            days = [
+                key for key, _label in self.DAYS if self.day_checks[key].isChecked()
+            ]
+            if not days:
+                raise ValueError("Select at least one active day")
+            capacity_fraction = float(self.capacity_fraction_edit.text() or 0.0)
+            if capacity_fraction < 0.0 or capacity_fraction > 1.0:
+                raise ValueError("Capacity trigger fraction must be between 0 and 1")
+            capacity_count = int(float(self.capacity_count_edit.text() or 0))
+            if capacity_count < 0:
+                raise ValueError("Capacity trigger count cannot be negative")
+            interval = float(self.interval_edit.text() or 15.0)
+            if interval <= 0:
+                raise ValueError("Capacity check interval must be greater than 0")
+            self.result = {
+                "id": collection_id,
+                "enabled": self.enabled_check.isChecked(),
+                "location": location,
+                "payloads": list(self.selected_payloads),
+                "days_active": days,
+                "scheduled_times": self._parse_times(),
+                "capacity_trigger_fraction": capacity_fraction,
+                "capacity_trigger_count": capacity_count,
+                "capacity_check_interval_minutes": interval,
+                "replace_with_empty_equivalents": self.replace_check.isChecked(),
+                "notes": self.notes_edit.toPlainText().strip(),
+            }
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid mass collection", str(exc))
+
+
+class MassCollectionListDialog(QDialog):
+    def __init__(self, parent, location_names, payload_names, items, on_save):
+        super().__init__(parent)
+        self.setWindowTitle("Mass collections / bin rotations")
+        self.resize(980, 460)
+        self.location_names = list(location_names)
+        self.payload_names = list(payload_names)
+        self.items = [dict(x) for x in items]
+        self.on_save = on_save
+
+        layout = QVBoxLayout(self)
+        self.table = QTableWidget(0, 7)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "ID",
+                "Enabled",
+                "Location",
+                "Payloads",
+                "Times",
+                "Capacity trigger",
+                "Interval min",
+            ]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        layout.addWidget(self.table, 1)
+
+        row = QHBoxLayout()
+        layout.addLayout(row)
+        add_btn = QPushButton("Add")
+        edit_btn = QPushButton("Edit")
+        del_btn = QPushButton("Delete")
+        save_btn = QPushButton("Save")
+        row.addWidget(add_btn)
+        row.addWidget(edit_btn)
+        row.addWidget(del_btn)
+        row.addStretch(1)
+        row.addWidget(save_btn)
+        add_btn.clicked.connect(self.add_item)
+        edit_btn.clicked.connect(self.edit_item)
+        del_btn.clicked.connect(self.delete_item)
+        save_btn.clicked.connect(self.save_items)
+        self._refresh_table()
+
+    def _next_id(self):
+        existing = {str(x.get("id", "")) for x in self.items}
+        counter = 1
+        while True:
+            candidate = f"MASS-COLLECTION-{counter}"
+            if candidate not in existing:
+                return candidate
+            counter += 1
+
+    def _refresh_table(self):
+        self.table.setRowCount(0)
+        for item in self.items:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            values = [
+                item.get("id", ""),
+                "Yes" if item.get("enabled", True) else "No",
+                item.get("location", ""),
+                ", ".join(item.get("payloads", [])) or "All",
+                ", ".join(item.get("scheduled_times", [])),
+                str(
+                    item.get("capacity_trigger_count", 0)
+                    or item.get("capacity_trigger_fraction", 0.0)
+                ),
+                str(item.get("capacity_check_interval_minutes", 15.0)),
+            ]
+            for col, value in enumerate(values):
+                self.table.setItem(row, col, QTableWidgetItem(str(value)))
+
+    def add_item(self):
+        dialog = MassCollectionEditorDialog(
+            self, self.location_names, self.payload_names, default_id=self._next_id()
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            if any(
+                str(x.get("id", "")).strip() == dialog.result["id"] for x in self.items
+            ):
+                QMessageBox.critical(
+                    self, "Duplicate", "Mass collection ID already exists"
+                )
+                return
+            self.items.append(dialog.result)
+            self._refresh_table()
+
+    def edit_item(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        dialog = MassCollectionEditorDialog(
+            self, self.location_names, self.payload_names, seed=self.items[row]
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            new_id = dialog.result["id"]
+            for idx, item in enumerate(self.items):
+                if idx != row and str(item.get("id", "")).strip() == new_id:
+                    QMessageBox.critical(
+                        self, "Duplicate", "Mass collection ID already exists"
+                    )
+                    return
+            self.items[row] = dialog.result
+            self._refresh_table()
+            self.table.selectRow(row)
+
+    def delete_item(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        del self.items[row]
+        self._refresh_table()
+
+    def save_items(self):
+        self.on_save(self.items)
+        self.accept()
+
+
 class DepartmentWasteStreamSettingsDialog(QDialog):
     MODES = [
         "scheduled",

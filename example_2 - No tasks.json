@@ -2851,7 +2851,983 @@
       "floor": 0,
       "x": 176.0,
       "y": 12.0,
-      "bounding_box": []
+      "bounding_box": [
+        {
+          "dx": -20.0,
+          "dy": -1.0
+        },
+        {
+          "dx": -1.0,
+          "dy": -1.0
+        },
+        {
+          "dx": -1.0,
+          "dy": 11.0
+        },
+        {
+          "dx": -20.0,
+          "dy": 11.0
+        }
+      ],
+      "inventory_spaces": [
+        {
+          "name": "Clinical Waste Bin space 1",
+          "points": [
+            {
+              "dx": -19.6,
+              "dy": -0.6
+            },
+            {
+              "dx": -18.4,
+              "dy": -0.6
+            },
+            {
+              "dx": -18.4,
+              "dy": 0.2
+            },
+            {
+              "dx": -19.6,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -19.0,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 2",
+          "points": [
+            {
+              "dx": -18.3,
+              "dy": -0.6
+            },
+            {
+              "dx": -17.1,
+              "dy": -0.6
+            },
+            {
+              "dx": -17.1,
+              "dy": 0.2
+            },
+            {
+              "dx": -18.3,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -17.7,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 3",
+          "points": [
+            {
+              "dx": -17.0,
+              "dy": -0.6
+            },
+            {
+              "dx": -15.8,
+              "dy": -0.6
+            },
+            {
+              "dx": -15.8,
+              "dy": 0.2
+            },
+            {
+              "dx": -17.0,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -16.4,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 4",
+          "points": [
+            {
+              "dx": -15.7,
+              "dy": -0.6
+            },
+            {
+              "dx": -14.5,
+              "dy": -0.6
+            },
+            {
+              "dx": -14.5,
+              "dy": 0.2
+            },
+            {
+              "dx": -15.7,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -15.1,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 5",
+          "points": [
+            {
+              "dx": -14.4,
+              "dy": -0.6
+            },
+            {
+              "dx": -13.2,
+              "dy": -0.6
+            },
+            {
+              "dx": -13.2,
+              "dy": 0.2
+            },
+            {
+              "dx": -14.4,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -13.8,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 6",
+          "points": [
+            {
+              "dx": -13.1,
+              "dy": -0.6
+            },
+            {
+              "dx": -11.9,
+              "dy": -0.6
+            },
+            {
+              "dx": -11.9,
+              "dy": 0.2
+            },
+            {
+              "dx": -13.1,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -12.5,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 7",
+          "points": [
+            {
+              "dx": -11.8,
+              "dy": -0.6
+            },
+            {
+              "dx": -10.6,
+              "dy": -0.6
+            },
+            {
+              "dx": -10.6,
+              "dy": 0.2
+            },
+            {
+              "dx": -11.8,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -11.2,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 8",
+          "points": [
+            {
+              "dx": -10.5,
+              "dy": -0.6
+            },
+            {
+              "dx": -9.3,
+              "dy": -0.6
+            },
+            {
+              "dx": -9.3,
+              "dy": 0.2
+            },
+            {
+              "dx": -10.5,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -9.9,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 9",
+          "points": [
+            {
+              "dx": -9.2,
+              "dy": -0.6
+            },
+            {
+              "dx": -8.0,
+              "dy": -0.6
+            },
+            {
+              "dx": -8.0,
+              "dy": 0.2
+            },
+            {
+              "dx": -9.2,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -8.6,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 10",
+          "points": [
+            {
+              "dx": -7.9,
+              "dy": -0.6
+            },
+            {
+              "dx": -6.7,
+              "dy": -0.6
+            },
+            {
+              "dx": -6.7,
+              "dy": 0.2
+            },
+            {
+              "dx": -7.9,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -7.3,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 11",
+          "points": [
+            {
+              "dx": -6.6,
+              "dy": -0.6
+            },
+            {
+              "dx": -5.4,
+              "dy": -0.6
+            },
+            {
+              "dx": -5.4,
+              "dy": 0.2
+            },
+            {
+              "dx": -6.6,
+              "dy": 0.2
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -6.0,
+              "dy": -0.2
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 15",
+          "points": [
+            {
+              "dx": -19.6,
+              "dy": 0.3
+            },
+            {
+              "dx": -18.4,
+              "dy": 0.3
+            },
+            {
+              "dx": -18.4,
+              "dy": 1.1
+            },
+            {
+              "dx": -19.6,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -19.0,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 16",
+          "points": [
+            {
+              "dx": -18.3,
+              "dy": 0.3
+            },
+            {
+              "dx": -17.1,
+              "dy": 0.3
+            },
+            {
+              "dx": -17.1,
+              "dy": 1.1
+            },
+            {
+              "dx": -18.3,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -17.7,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 17",
+          "points": [
+            {
+              "dx": -17.0,
+              "dy": 0.3
+            },
+            {
+              "dx": -15.8,
+              "dy": 0.3
+            },
+            {
+              "dx": -15.8,
+              "dy": 1.1
+            },
+            {
+              "dx": -17.0,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -16.4,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 18",
+          "points": [
+            {
+              "dx": -15.7,
+              "dy": 0.3
+            },
+            {
+              "dx": -14.5,
+              "dy": 0.3
+            },
+            {
+              "dx": -14.5,
+              "dy": 1.1
+            },
+            {
+              "dx": -15.7,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -15.1,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 19",
+          "points": [
+            {
+              "dx": -14.4,
+              "dy": 0.3
+            },
+            {
+              "dx": -13.2,
+              "dy": 0.3
+            },
+            {
+              "dx": -13.2,
+              "dy": 1.1
+            },
+            {
+              "dx": -14.4,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -13.8,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 20",
+          "points": [
+            {
+              "dx": -13.1,
+              "dy": 0.3
+            },
+            {
+              "dx": -11.9,
+              "dy": 0.3
+            },
+            {
+              "dx": -11.9,
+              "dy": 1.1
+            },
+            {
+              "dx": -13.1,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -12.5,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 21",
+          "points": [
+            {
+              "dx": -11.8,
+              "dy": 0.3
+            },
+            {
+              "dx": -10.6,
+              "dy": 0.3
+            },
+            {
+              "dx": -10.6,
+              "dy": 1.1
+            },
+            {
+              "dx": -11.8,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -11.2,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 22",
+          "points": [
+            {
+              "dx": -10.5,
+              "dy": 0.3
+            },
+            {
+              "dx": -9.3,
+              "dy": 0.3
+            },
+            {
+              "dx": -9.3,
+              "dy": 1.1
+            },
+            {
+              "dx": -10.5,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -9.9,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 23",
+          "points": [
+            {
+              "dx": -9.2,
+              "dy": 0.3
+            },
+            {
+              "dx": -8.0,
+              "dy": 0.3
+            },
+            {
+              "dx": -8.0,
+              "dy": 1.1
+            },
+            {
+              "dx": -9.2,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -8.6,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 24",
+          "points": [
+            {
+              "dx": -7.9,
+              "dy": 0.3
+            },
+            {
+              "dx": -6.7,
+              "dy": 0.3
+            },
+            {
+              "dx": -6.7,
+              "dy": 1.1
+            },
+            {
+              "dx": -7.9,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -7.3,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 25",
+          "points": [
+            {
+              "dx": -6.6,
+              "dy": 0.3
+            },
+            {
+              "dx": -5.4,
+              "dy": 0.3
+            },
+            {
+              "dx": -5.4,
+              "dy": 1.1
+            },
+            {
+              "dx": -6.6,
+              "dy": 1.1
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -6.0,
+              "dy": 0.7
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 29",
+          "points": [
+            {
+              "dx": -19.6,
+              "dy": 1.2
+            },
+            {
+              "dx": -18.4,
+              "dy": 1.2
+            },
+            {
+              "dx": -18.4,
+              "dy": 2.0
+            },
+            {
+              "dx": -19.6,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -19.0,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 30",
+          "points": [
+            {
+              "dx": -18.3,
+              "dy": 1.2
+            },
+            {
+              "dx": -17.1,
+              "dy": 1.2
+            },
+            {
+              "dx": -17.1,
+              "dy": 2.0
+            },
+            {
+              "dx": -18.3,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -17.7,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 31",
+          "points": [
+            {
+              "dx": -17.0,
+              "dy": 1.2
+            },
+            {
+              "dx": -15.8,
+              "dy": 1.2
+            },
+            {
+              "dx": -15.8,
+              "dy": 2.0
+            },
+            {
+              "dx": -17.0,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -16.4,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 32",
+          "points": [
+            {
+              "dx": -15.7,
+              "dy": 1.2
+            },
+            {
+              "dx": -14.5,
+              "dy": 1.2
+            },
+            {
+              "dx": -14.5,
+              "dy": 2.0
+            },
+            {
+              "dx": -15.7,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -15.1,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 33",
+          "points": [
+            {
+              "dx": -14.4,
+              "dy": 1.2
+            },
+            {
+              "dx": -13.2,
+              "dy": 1.2
+            },
+            {
+              "dx": -13.2,
+              "dy": 2.0
+            },
+            {
+              "dx": -14.4,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -13.8,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 34",
+          "points": [
+            {
+              "dx": -13.1,
+              "dy": 1.2
+            },
+            {
+              "dx": -11.9,
+              "dy": 1.2
+            },
+            {
+              "dx": -11.9,
+              "dy": 2.0
+            },
+            {
+              "dx": -13.1,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -12.5,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 35",
+          "points": [
+            {
+              "dx": -11.8,
+              "dy": 1.2
+            },
+            {
+              "dx": -10.6,
+              "dy": 1.2
+            },
+            {
+              "dx": -10.6,
+              "dy": 2.0
+            },
+            {
+              "dx": -11.8,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -11.2,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 36",
+          "points": [
+            {
+              "dx": -10.5,
+              "dy": 1.2
+            },
+            {
+              "dx": -9.3,
+              "dy": 1.2
+            },
+            {
+              "dx": -9.3,
+              "dy": 2.0
+            },
+            {
+              "dx": -10.5,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -9.9,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 37",
+          "points": [
+            {
+              "dx": -9.2,
+              "dy": 1.2
+            },
+            {
+              "dx": -8.0,
+              "dy": 1.2
+            },
+            {
+              "dx": -8.0,
+              "dy": 2.0
+            },
+            {
+              "dx": -9.2,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -8.6,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 38",
+          "points": [
+            {
+              "dx": -7.9,
+              "dy": 1.2
+            },
+            {
+              "dx": -6.7,
+              "dy": 1.2
+            },
+            {
+              "dx": -6.7,
+              "dy": 2.0
+            },
+            {
+              "dx": -7.9,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -7.3,
+              "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Clinical Waste Bin space 39",
+          "points": [
+            {
+              "dx": -6.6,
+              "dy": 1.2
+            },
+            {
+              "dx": -5.4,
+              "dy": 1.2
+            },
+            {
+              "dx": -5.4,
+              "dy": 2.0
+            },
+            {
+              "dx": -6.6,
+              "dy": 2.0
+            }
+          ],
+          "payload_slots": [
+            {
+              "payload": "Clinical Waste Bin",
+              "rotation_deg": 0.0,
+              "dx": -6.0,
+              "dy": 1.6
+            }
+          ]
+        }
+      ]
     }
   ],
   "corridors": {
@@ -17293,5 +18269,27 @@
         "department_groups": []
       }
     }
-  }
+  },
+  "mass_collections": [
+    {
+      "id": "MASS-COLLECTION-1",
+      "enabled": true,
+      "location": "D47-WASTE",
+      "payloads": [
+        "Clinical Waste Bin"
+      ],
+      "days_active": [
+        "wed",
+        "sat"
+      ],
+      "scheduled_times": [
+        "19:00"
+      ],
+      "capacity_trigger_fraction": 0.8,
+      "capacity_trigger_count": 20,
+      "capacity_check_interval_minutes": 15.0,
+      "replace_with_empty_equivalents": true,
+      "notes": ""
+    }
+  ]
 }

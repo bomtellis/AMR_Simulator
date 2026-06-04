@@ -55,6 +55,7 @@ from dialogs import (
     DepartmentEditorDialog,
     WasteStreamEditorDialog,
     WasteStreamListDialog,
+    MassCollectionListDialog,
     DepartmentListDialog,
     AMRListDialog,
     AMREditorDialog,
@@ -416,6 +417,7 @@ class AMRGraphEditor(QMainWindow):
             ("Task Generation", self.manage_task_generation),
             ("Route Profiles", self.manage_route_profiles),
             ("Waste Streams", self.manage_waste_streams),
+            ("Mass Collections", self.manage_mass_collections),
             ("Departments", self.manage_departments),
         ]:
             btn = QPushButton(text)
@@ -2224,6 +2226,16 @@ class AMRGraphEditor(QMainWindow):
         except Exception:
             pass
         super().closeEvent(event)
+
+    def manage_mass_collections(self):
+        dialog = MassCollectionListDialog(
+            self,
+            [loc["name"] for loc in self.store.data.get("locations", [])],
+            [payload["name"] for payload in self.store.data.get("payloads", [])],
+            self.store.data.setdefault("mass_collections", []),
+            lambda items: self.store.data.__setitem__("mass_collections", items),
+        )
+        dialog.exec()
 
     def manage_waste_streams(self):
         payload_names = sorted(x["name"] for x in self.store.data.get("payloads", []))
