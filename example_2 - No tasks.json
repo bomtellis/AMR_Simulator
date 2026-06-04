@@ -1200,30 +1200,6 @@
       ]
     },
     {
-      "name": "D44-WASTE",
-      "floor": 0,
-      "x": 138.881,
-      "y": -195.141,
-      "bounding_box": [
-        {
-          "dx": -2.055,
-          "dy": 0.969
-        },
-        {
-          "dx": 2.36,
-          "dy": 0.99
-        },
-        {
-          "dx": 2.423,
-          "dy": -1.028
-        },
-        {
-          "dx": -1.992,
-          "dy": -0.986
-        }
-      ]
-    },
-    {
       "name": "D44-PHARMACY",
       "floor": 0,
       "x": 135.337,
@@ -1244,30 +1220,6 @@
         {
           "dx": -2.421,
           "dy": -1.153
-        }
-      ]
-    },
-    {
-      "name": "D45-WASTE",
-      "floor": 0,
-      "x": 177.844,
-      "y": -195.197,
-      "bounding_box": [
-        {
-          "dx": -2.025,
-          "dy": 1.027
-        },
-        {
-          "dx": 2.379,
-          "dy": 1.027
-        },
-        {
-          "dx": 2.354,
-          "dy": -0.897
-        },
-        {
-          "dx": -2.0,
-          "dy": -0.973
         }
       ]
     },
@@ -8213,14 +8165,6 @@
         "to": "C0-98"
       },
       {
-        "from": "C0-91",
-        "to": "D45-WASTE"
-      },
-      {
-        "from": "D45-WASTE",
-        "to": "C0-91"
-      },
-      {
         "from": "C0-94",
         "to": "C0-99"
       },
@@ -8258,14 +8202,6 @@
       },
       {
         "from": "C0-88",
-        "to": "C0-100"
-      },
-      {
-        "from": "C0-100",
-        "to": "D44-WASTE"
-      },
-      {
-        "from": "D44-WASTE",
         "to": "C0-100"
       },
       {
@@ -13467,7 +13403,9 @@
       },
       "_create_locations": [],
       "x": 37.0,
-      "y": -89.0
+      "y": -89.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D2",
@@ -13531,7 +13469,9 @@
             "D2-STORES"
           ]
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D3",
@@ -13601,7 +13541,9 @@
         "ssd": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D4",
@@ -13674,7 +13616,9 @@
         "stores": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D5",
@@ -13736,7 +13680,9 @@
         "ssd": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D6",
@@ -13796,7 +13742,9 @@
         "ssd": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D7",
@@ -13858,7 +13806,9 @@
         "ssd": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D8",
@@ -13915,7 +13865,9 @@
         "waste": "-WASTE"
       },
       "x": 189.0,
-      "y": -118.0
+      "y": -118.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D9",
@@ -13975,7 +13927,9 @@
         "ssd": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D10",
@@ -14039,7 +13993,9 @@
         "waste": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D11",
@@ -14097,7 +14053,9 @@
         "waste": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D12",
@@ -14155,7 +14113,9 @@
         "waste": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D13",
@@ -14217,7 +14177,9 @@
         "waste": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D14",
@@ -14275,7 +14237,9 @@
         "waste": {
           "pickup_dropoff_locations": []
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D15",
@@ -14326,7 +14290,9 @@
       },
       "x": 167.338,
       "y": -46.83,
-      "waste_pickup_locations": []
+      "waste_pickup_locations": [],
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D16",
@@ -14394,7 +14360,9 @@
         "waste": "-WASTE"
       },
       "x": 21.907,
-      "y": -88.484
+      "y": -88.484,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D17",
@@ -14462,7 +14430,9 @@
         "waste": "-WASTE"
       },
       "x": 55.422,
-      "y": -89.937
+      "y": -89.937,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D18",
@@ -14530,7 +14500,9 @@
         "waste": "-WASTE"
       },
       "x": 40.0,
-      "y": -51.0
+      "y": -51.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D19",
@@ -14596,7 +14568,9 @@
         "waste": "-WASTE"
       },
       "x": 38.546,
-      "y": -12.546
+      "y": -12.546,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D20",
@@ -14669,7 +14643,9 @@
         "waste": "-WASTE"
       },
       "x": 120.355,
-      "y": -35.998
+      "y": -35.998,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D21",
@@ -14739,7 +14715,9 @@
         "waste": "-WASTE"
       },
       "x": 190.292,
-      "y": -89.009
+      "y": -89.009,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D22",
@@ -14811,7 +14789,9 @@
             "D22-WASTE"
           ]
         }
-      }
+      },
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D23",
@@ -14873,7 +14853,9 @@
         "waste": "-WASTE"
       },
       "x": 132.612,
-      "y": -203.904
+      "y": -203.904,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D24",
@@ -14935,7 +14917,9 @@
         "waste": "-WASTE"
       },
       "x": 145.62,
-      "y": -202.972
+      "y": -202.972,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D25",
@@ -14999,7 +14983,9 @@
         "waste": "-WASTE"
       },
       "x": 178.283,
-      "y": -204.091
+      "y": -204.091,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D26",
@@ -15065,7 +15051,9 @@
         "waste": "-WASTE"
       },
       "x": 178.073,
-      "y": -174.786
+      "y": -174.786,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D27",
@@ -15129,7 +15117,9 @@
         "waste": "-WASTE"
       },
       "x": 141.784,
-      "y": -173.724
+      "y": -173.724,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D28",
@@ -15186,7 +15176,9 @@
         "waste": "-WASTE"
       },
       "x": 142.527,
-      "y": -117.34
+      "y": -117.34,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D29",
@@ -15258,7 +15250,9 @@
         "waste": "-WASTE"
       },
       "x": 39.472,
-      "y": -89.019
+      "y": -89.019,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D30",
@@ -15330,7 +15324,9 @@
         "waste": "-WASTE"
       },
       "x": 90.821,
-      "y": -33.985
+      "y": -33.985,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D31",
@@ -15402,7 +15398,9 @@
         "waste": "-WASTE"
       },
       "x": 138.66,
-      "y": -36.765
+      "y": -36.765,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D32",
@@ -15474,7 +15472,9 @@
         "waste": "-WASTE"
       },
       "x": 186.955,
-      "y": -88.929
+      "y": -88.929,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D33",
@@ -15546,7 +15546,9 @@
         "waste": "-WASTE"
       },
       "x": 188.242,
-      "y": -137.482
+      "y": -137.482,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D34",
@@ -15618,7 +15620,9 @@
         "waste": "-WASTE"
       },
       "x": 138.52,
-      "y": -182.79
+      "y": -182.79,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D35",
@@ -15688,7 +15692,9 @@
         "waste": "-WASTE"
       },
       "x": 39.791,
-      "y": -88.914
+      "y": -88.914,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D36",
@@ -15756,7 +15762,9 @@
         "waste": "-WASTE"
       },
       "x": 91.0,
-      "y": -32.0
+      "y": -32.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D37",
@@ -15828,7 +15836,9 @@
         "waste": "-WASTE"
       },
       "x": 137.871,
-      "y": -32.326
+      "y": -32.326,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D38",
@@ -15899,7 +15909,9 @@
         "waste": "-WASTE"
       },
       "x": 186.0,
-      "y": -89.0
+      "y": -89.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D39",
@@ -15971,7 +15983,9 @@
         "waste": "-WASTE"
       },
       "x": 190.0,
-      "y": -137.0
+      "y": -137.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D40",
@@ -16043,7 +16057,9 @@
         "waste": "-WASTE"
       },
       "x": 138.0,
-      "y": -187.0
+      "y": -187.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D41",
@@ -16115,7 +16131,9 @@
         "waste": "-WASTE"
       },
       "x": 39.877,
-      "y": -89.122
+      "y": -89.122,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D42",
@@ -16181,7 +16199,9 @@
         "waste": "-WASTE"
       },
       "x": 90.712,
-      "y": -37.47
+      "y": -37.47,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D43",
@@ -16253,7 +16273,9 @@
         "waste": "-WASTE"
       },
       "x": 139,
-      "y": -186
+      "y": -186,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D44",
@@ -16305,7 +16327,7 @@
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D44-WASTE"
+            "D4-WASTE"
           ]
         }
       },
@@ -16319,7 +16341,8 @@
       },
       "x": 138.318,
       "y": -203.925,
-      "waste_pickup_locations": []
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D45",
@@ -16360,7 +16383,7 @@
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D45-WASTE"
+            "D5-WASTE"
           ]
         }
       },
@@ -16372,9 +16395,10 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 177.288,
-      "y": -203.505,
-      "waste_pickup_locations": []
+      "x": 177.0,
+      "y": -204.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D46",
@@ -16439,7 +16463,9 @@
         "waste": "-WASTE"
       },
       "x": 169.654,
-      "y": -33.679
+      "y": -33.679,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     },
     {
       "id": "D47",
@@ -16490,7 +16516,9 @@
       },
       "_create_locations": [],
       "x": 176.0,
-      "y": 15.0
+      "y": 15.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": ""
     }
   ],
   "waste_streams": [

@@ -102,6 +102,138 @@ def _datetime_for_day_and_hhmm(day_start: datetime, hhmm: str) -> datetime:
     return datetime.combine(day_start.date(), dt_time(hour=hour, minute=minute))
 
 
+def _parse_hhmm_to_minutes(value, default: Optional[int] = None) -> Optional[int]:
+    text = _clean_text(value)
+    if not text:
+        return default
+    try:
+        parts = text.split(":")
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+        if hour == 24 and minute == 0:
+            return 24 * 60
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return (hour * 60) + minute
+    except Exception:
+        return default
+    return default
+
+
+def _minutes_to_time(value: int) -> dt_time:
+    value = max(0, min(int(value), 24 * 60))
+    if value >= 24 * 60:
+        return dt_time(hour=23, minute=59, second=59)
+    return dt_time(hour=value // 60, minute=value % 60)
+
+
+def _department_operating_start_minutes(dept: dict) -> int:
+    explicit = _parse_hhmm_to_minutes(dept.get("operating_start_time"), None)
+    if explicit is not None:
+        return explicit
+    return 0
+
+
+def _department_operating_end_minutes(dept: dict) -> int:
+    explicit = _parse_hhmm_to_minutes(dept.get("operating_end_time"), None)
+    if explicit is not None:
+        return explicit
+    start = _department_operating_start_minutes(dept)
+    hours = _as_float(dept.get("hours_operated_per_day", 24.0), 24.0)
+    if hours >= 24.0:
+        return start + (24 * 60)
+    return start + int(round(max(0.0, hours) * 60.0))
+
+
+def _department_operating_periods_for_date(
+    dept: dict, day: datetime
+) -> List[Tuple[datetime, datetime]]:
+    if not bool(dept.get("enabled", True)):
+        return []
+
+    active_days = dept.get("days_active", []) or []
+    if active_days:
+        allowed = {_clean_text(x).lower() for x in active_days if _clean_text(x)}
+        if _day_key_for_datetime(day) not in allowed:
+            return []
+
+    start_min = _department_operating_start_minutes(dept)
+    end_min = _department_operating_end_minutes(dept)
+    if end_min <= start_min:
+        end_min += 24 * 60
+
+    duration_min = max(0, end_min - start_min)
+    if duration_min <= 0:
+        return []
+
+    day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_dt = day_start + timedelta(minutes=start_min)
+    end_dt = day_start + timedelta(minutes=end_min)
+    return [(start_dt, end_dt)]
+
+
+def _department_is_open_at_datetime(dept: Optional[dict], value: datetime) -> bool:
+    if not dept:
+        return True
+    for offset in (-1, 0):
+        base_day = (value + timedelta(days=offset)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        for start_dt, end_dt in _department_operating_periods_for_date(dept, base_day):
+            if start_dt <= value < end_dt:
+                return True
+    return False
+
+
+def _department_active_seconds_between(
+    dept: Optional[dict], start_dt: datetime, end_dt: datetime
+) -> float:
+    if not dept:
+        return max(0.0, (end_dt - start_dt).total_seconds())
+    if end_dt <= start_dt:
+        return 0.0
+
+    total = 0.0
+    cursor_day = (start_dt - timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    final_day = end_dt.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
+        days=1
+    )
+    while cursor_day <= final_day:
+        for period_start, period_end in _department_operating_periods_for_date(
+            dept, cursor_day
+        ):
+            overlap_start = max(start_dt, period_start)
+            overlap_end = min(end_dt, period_end)
+            if overlap_end > overlap_start:
+                total += (overlap_end - overlap_start).total_seconds()
+        cursor_day += timedelta(days=1)
+    return total
+
+
+def _next_department_open_datetime(
+    dept: Optional[dict], value: datetime
+) -> Optional[datetime]:
+    if not dept:
+        return value
+    if _department_is_open_at_datetime(dept, value):
+        return value
+
+    cursor_day = (value - timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    for _ in range(16):
+        for start_dt, end_dt in _department_operating_periods_for_date(
+            dept, cursor_day
+        ):
+            if value < start_dt:
+                return start_dt
+            if start_dt <= value < end_dt:
+                return value
+        cursor_day += timedelta(days=1)
+    return None
+
+
 def _payload_tracked_items(payload: Optional[PayloadType]) -> Dict[str, dict]:
     if payload is None or not getattr(payload, "track_items", False):
         return {}
@@ -227,6 +359,43 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if self._day_key_for_sim_time(sim_time_sec) not in allowed:
                 return False
         return True
+
+    def _instance_department(self, instance: dict) -> Optional[dict]:
+        dept = instance.get("department")
+        return dept if isinstance(dept, dict) else None
+
+    def _instance_is_active(self, instance: dict, sim_time_sec: float) -> bool:
+        cfg = instance.get("cfg", {}) or {}
+        if not self._category_is_active(cfg, sim_time_sec):
+            return False
+        dept = self._instance_department(instance)
+        if dept is not None:
+            return _department_is_open_at_datetime(
+                dept, self.clock.sim_seconds_to_datetime(sim_time_sec)
+            )
+        return True
+
+    def _instance_active_elapsed_seconds(
+        self, instance: dict, start_sec: float, end_sec: float
+    ) -> float:
+        dept = self._instance_department(instance)
+        return _department_active_seconds_between(
+            dept,
+            self.clock.sim_seconds_to_datetime(start_sec),
+            self.clock.sim_seconds_to_datetime(end_sec),
+        )
+
+    def _adjust_release_to_department_open(
+        self, instance: dict, release_time: float
+    ) -> Optional[float]:
+        dept = self._instance_department(instance)
+        if dept is None:
+            return release_time
+        release_dt = self.clock.sim_seconds_to_datetime(release_time)
+        adjusted = _next_department_open_datetime(dept, release_dt)
+        if adjusted is None:
+            return None
+        return max(0.0, (adjusted - self.clock.start_datetime).total_seconds())
 
     def _day_key_for_sim_time(self, sim_time_sec: float) -> str:
         return _day_key_for_datetime(self.clock.sim_seconds_to_datetime(sim_time_sec))
@@ -450,6 +619,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                                     "category_key": "waste",
                                     "department_id": dept_id,
                                     "department_name": self._department_name(dept),
+                                    "department": dict(dept),
                                     "cfg": stream_cfg,
                                     "pickup_locations": pickup_locations,
                                     "dropoff_locations": dropoff_locations,
@@ -468,6 +638,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         "category_key": category_key_text,
                         "department_id": dept_id,
                         "department_name": self._department_name(dept),
+                        "department": dict(dept),
                         "cfg": cfg,
                         "pickup_locations": pickup_locations,
                         "dropoff_locations": dropoff_locations,
@@ -748,10 +919,15 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         for hhmm in _scheduled_times_from_cfg(cfg):
             release_dt = _datetime_for_day_and_hhmm(day_start, hhmm)
-            release_time = (release_dt - self.clock.start_datetime).total_seconds()
-            if release_time < 0 or release_time > now:
+            original_release_time = (
+                release_dt - self.clock.start_datetime
+            ).total_seconds()
+            release_time = self._adjust_release_to_department_open(
+                instance, original_release_time
+            )
+            if release_time is None or release_time < 0 or release_time > now:
                 continue
-            if not self._category_is_active(cfg, release_time):
+            if not self._instance_is_active(instance, release_time):
                 continue
 
             schedule_key = (
@@ -814,8 +990,13 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         payload_name = _clean_text(cfg.get("payload", ""))
         if payload_name not in self.payloads:
             return []
-        if not self._category_is_active(cfg, now):
-            # Still advance the clock to avoid back-generating when re-entering active time.
+        category_active = self._category_is_active(cfg, now)
+        department_open = self._instance_department(
+            instance
+        ) is None or _department_is_open_at_datetime(
+            self._instance_department(instance), self.clock.sim_seconds_to_datetime(now)
+        )
+        if not category_active:
             runtime = self.runtime.setdefault(
                 instance.get("volume_key", instance["key"]),
                 {
@@ -844,9 +1025,16 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         if now <= last_time:
             return []
 
-        elapsed_days = (now - last_time) / 86400.0
-        elapsed_hours = (now - last_time) / 3600.0
+        elapsed_seconds = self._instance_active_elapsed_seconds(
+            instance, last_time, now
+        )
+        elapsed_days = elapsed_seconds / 86400.0
+        elapsed_hours = elapsed_seconds / 3600.0
         records: List[GeneratedTaskRecord] = []
+
+        if elapsed_seconds <= 0.0 or not department_open:
+            contributors[contributor_key] = now
+            return records
 
         if mode in CONTINUOUS_MODES:
             runtime["volume"] += max(
@@ -923,7 +1111,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         items = _payload_tracked_items(payload)
         if not items:
             return []
-        if not self._category_is_active(cfg, now):
+        if not self._instance_is_active(instance, now):
             self.item_runtime.setdefault(
                 instance["key"], {"last_update_time": now, "quantities": {}}
             )["last_update_time"] = now
@@ -946,7 +1134,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         if now <= last_time:
             return []
 
-        elapsed_days = (now - last_time) / 86400.0
+        elapsed_days = (
+            self._instance_active_elapsed_seconds(instance, last_time, now) / 86400.0
+        )
         triggered: Dict[str, dict] = {}
         for name, item in items.items():
             consumption = max(0.0, item.get("consumption_per_day", 0.0)) * elapsed_days
@@ -1107,22 +1297,18 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
         return DAY_KEYS[dt.weekday()]
 
     def _department_is_active(self, dept: dict, sim_time_sec: float) -> bool:
-        if not bool(dept.get("enabled", True)):
-            return False
+        return _department_is_open_at_datetime(
+            dept, self.clock.sim_seconds_to_datetime(sim_time_sec)
+        )
 
-        active_days = dept.get("days_active", [])
-        if active_days:
-            active = {str(x).strip().lower() for x in active_days if str(x).strip()}
-            if self._day_key_for_sim_time(sim_time_sec) not in active:
-                return False
-
-        hours_operated = float(dept.get("hours_operated_per_day", 24.0) or 0.0)
-        if hours_operated <= 0:
-            return False
-
-        dt = self.clock.sim_seconds_to_datetime(sim_time_sec)
-        hour_decimal = dt.hour + (dt.minute / 60.0) + (dt.second / 3600.0)
-        return hour_decimal < hours_operated
+    def _department_active_elapsed_seconds(
+        self, dept: dict, start_sec: float, end_sec: float
+    ) -> float:
+        return _department_active_seconds_between(
+            dept,
+            self.clock.sim_seconds_to_datetime(start_sec),
+            self.clock.sim_seconds_to_datetime(end_sec),
+        )
 
     def _department_hourly_waste_rate_m3(self, dept: dict) -> float:
         waste_cfg = dict(dept.get("waste", {}) or {})
@@ -1228,7 +1414,10 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
                     continue
 
                 if self._department_is_active(dept, now):
-                    elapsed_hours = (now - last_time) / 3600.0
+                    elapsed_hours = (
+                        self._department_active_elapsed_seconds(dept, last_time, now)
+                        / 3600.0
+                    )
                     generated_m3 = max(
                         0.0, elapsed_hours * self._department_hourly_waste_rate_m3(dept)
                     )

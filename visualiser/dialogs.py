@@ -4253,14 +4253,7 @@ class MassCollectionEditorDialog(QDialog):
         ("sun", "Sun"),
     ]
 
-    def __init__(
-        self,
-        parent,
-        location_names,
-        payload_names,
-        seed=None,
-        default_id="MASS-COLLECTION-1",
-    ):
+    def __init__(self, parent, location_names, payload_names, seed=None, default_id="MASS-COLLECTION-1"):
         super().__init__(parent)
         self.setWindowTitle("Mass collection / bin rotation")
         self.resize(760, 620)
@@ -4305,23 +4298,15 @@ class MassCollectionEditorDialog(QDialog):
         self.interval_edit = QLineEdit(
             str(self.seed.get("capacity_check_interval_minutes", 15.0))
         )
-        self.replace_check = QCheckBox(
-            "Replace collected used/full bins with empty equivalents"
-        )
-        self.replace_check.setChecked(
-            bool(self.seed.get("replace_with_empty_equivalents", True))
-        )
+        self.replace_check = QCheckBox("Replace collected used/full bins with empty equivalents")
+        self.replace_check.setChecked(bool(self.seed.get("replace_with_empty_equivalents", True)))
         self.notes_edit = QPlainTextEdit(str(self.seed.get("notes", "")))
         self.notes_edit.setFixedHeight(80)
 
         days_widget = QWidget()
         days_layout = QHBoxLayout(days_widget)
         days_layout.setContentsMargins(0, 0, 0, 0)
-        active_days = set(
-            self.seed.get(
-                "days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-            )
-        )
+        active_days = set(self.seed.get("days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
         self.day_checks = {}
         for key, label in self.DAYS:
             chk = QCheckBox(label)
@@ -4404,9 +4389,7 @@ class MassCollectionEditorDialog(QDialog):
             location = self.location_combo.currentText().strip()
             if not location:
                 raise ValueError("Bin store location is required")
-            days = [
-                key for key, _label in self.DAYS if self.day_checks[key].isChecked()
-            ]
+            days = [key for key, _label in self.DAYS if self.day_checks[key].isChecked()]
             if not days:
                 raise ValueError("Select at least one active day")
             capacity_fraction = float(self.capacity_fraction_edit.text() or 0.0)
@@ -4448,17 +4431,9 @@ class MassCollectionListDialog(QDialog):
 
         layout = QVBoxLayout(self)
         self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(
-            [
-                "ID",
-                "Enabled",
-                "Location",
-                "Payloads",
-                "Times",
-                "Capacity trigger",
-                "Interval min",
-            ]
-        )
+        self.table.setHorizontalHeaderLabels([
+            "ID", "Enabled", "Location", "Payloads", "Times", "Capacity trigger", "Interval min"
+        ])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -4502,26 +4477,17 @@ class MassCollectionListDialog(QDialog):
                 item.get("location", ""),
                 ", ".join(item.get("payloads", [])) or "All",
                 ", ".join(item.get("scheduled_times", [])),
-                str(
-                    item.get("capacity_trigger_count", 0)
-                    or item.get("capacity_trigger_fraction", 0.0)
-                ),
+                str(item.get("capacity_trigger_count", 0) or item.get("capacity_trigger_fraction", 0.0)),
                 str(item.get("capacity_check_interval_minutes", 15.0)),
             ]
             for col, value in enumerate(values):
                 self.table.setItem(row, col, QTableWidgetItem(str(value)))
 
     def add_item(self):
-        dialog = MassCollectionEditorDialog(
-            self, self.location_names, self.payload_names, default_id=self._next_id()
-        )
+        dialog = MassCollectionEditorDialog(self, self.location_names, self.payload_names, default_id=self._next_id())
         if dialog.exec() == QDialog.Accepted and dialog.result:
-            if any(
-                str(x.get("id", "")).strip() == dialog.result["id"] for x in self.items
-            ):
-                QMessageBox.critical(
-                    self, "Duplicate", "Mass collection ID already exists"
-                )
+            if any(str(x.get("id", "")).strip() == dialog.result["id"] for x in self.items):
+                QMessageBox.critical(self, "Duplicate", "Mass collection ID already exists")
                 return
             self.items.append(dialog.result)
             self._refresh_table()
@@ -4530,16 +4496,12 @@ class MassCollectionListDialog(QDialog):
         row = self.table.currentRow()
         if row < 0:
             return
-        dialog = MassCollectionEditorDialog(
-            self, self.location_names, self.payload_names, seed=self.items[row]
-        )
+        dialog = MassCollectionEditorDialog(self, self.location_names, self.payload_names, seed=self.items[row])
         if dialog.exec() == QDialog.Accepted and dialog.result:
             new_id = dialog.result["id"]
             for idx, item in enumerate(self.items):
                 if idx != row and str(item.get("id", "")).strip() == new_id:
-                    QMessageBox.critical(
-                        self, "Duplicate", "Mass collection ID already exists"
-                    )
+                    QMessageBox.critical(self, "Duplicate", "Mass collection ID already exists")
                     return
             self.items[row] = dialog.result
             self._refresh_table()
@@ -4555,7 +4517,6 @@ class MassCollectionListDialog(QDialog):
     def save_items(self):
         self.on_save(self.items)
         self.accept()
-
 
 class DepartmentWasteStreamSettingsDialog(QDialog):
     MODES = [
@@ -4936,6 +4897,15 @@ class DepartmentEditorDialog(QDialog):
         self.turnover_edit = QLineEdit(str(self.seed.get("patient_turnover", 0.0)))
         self.staff_count_edit = QLineEdit(str(self.seed.get("staff_count", 0)))
         self.hours_edit = QLineEdit(str(self.seed.get("hours_operated_per_day", 24)))
+        self.operating_start_edit = QLineEdit(
+            str(self.seed.get("operating_start_time", "00:00"))
+        )
+        self.operating_end_edit = QLineEdit(
+            str(self.seed.get("operating_end_time", ""))
+        )
+        self.operating_end_edit.setPlaceholderText(
+            "Blank = start time + hours operated/day"
+        )
 
         days_widget = QWidget()
         days_layout = QHBoxLayout(days_widget)
@@ -4969,6 +4939,8 @@ class DepartmentEditorDialog(QDialog):
         form.addRow("Patient turnover", self.turnover_edit)
         form.addRow("Staff count", self.staff_count_edit)
         form.addRow("Hours operated/day", self.hours_edit)
+        form.addRow("Operating start", self.operating_start_edit)
+        form.addRow("Operating end", self.operating_end_edit)
         form.addRow("Days active", days_widget)
         form.addRow("Assigned waste streams", waste_row)
         waste_help = QLabel(
@@ -5300,6 +5272,22 @@ class DepartmentEditorDialog(QDialog):
             self.category_location_selections[category_key] = sorted(picker.result)
             self._refresh_category_location_summary(category_key)
 
+    def _validate_hhmm_or_blank(self, value, field_name, allow_blank=False):
+        text = str(value or "").strip()
+        if not text and allow_blank:
+            return ""
+        try:
+            parts = text.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+            if hour == 24 and minute == 0:
+                return "24:00"
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return f"{hour:02d}:{minute:02d}"
+        except Exception:
+            pass
+        raise ValueError(f"{field_name} must be HH:MM, for example 08:00")
+
     def accept(self):
         try:
             dept_id = self.id_edit.text().strip()
@@ -5333,6 +5321,13 @@ class DepartmentEditorDialog(QDialog):
 
             create_locations = list(self.category_pending_locations.values())
 
+            operating_start_time = self._validate_hhmm_or_blank(
+                self.operating_start_edit.text(), "Operating start", allow_blank=False
+            )
+            operating_end_time = self._validate_hhmm_or_blank(
+                self.operating_end_edit.text(), "Operating end", allow_blank=True
+            )
+
             self.result = {
                 "id": dept_id,
                 "name": name,
@@ -5342,6 +5337,8 @@ class DepartmentEditorDialog(QDialog):
                 "patient_turnover": float(self.turnover_edit.text()),
                 "staff_count": int(float(self.staff_count_edit.text())),
                 "hours_operated_per_day": float(self.hours_edit.text()),
+                "operating_start_time": operating_start_time,
+                "operating_end_time": operating_end_time,
                 "days_active": days_active,
                 "waste_streams": [dict(x) for x in self.selected_waste_streams],
                 "task_generation_locations": {
@@ -5904,7 +5901,7 @@ class DepartmentListDialog(QDialog):
         layout = QVBoxLayout(self)
 
         self.table = QTreeWidget()
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(10)
         self.table.setHeaderLabels(
             [
                 "ID",
@@ -5914,6 +5911,8 @@ class DepartmentListDialog(QDialog):
                 "Beds",
                 "Turnover",
                 "Staff",
+                "Operating hours",
+                "Days",
                 "Waste streams",
             ]
         )
@@ -5967,7 +5966,7 @@ class DepartmentListDialog(QDialog):
             grouped.setdefault(floor, []).append((idx, item))
 
         for floor in sorted(grouped.keys()):
-            floor_item = QTreeWidgetItem([f"Floor {floor}", "", "", "", "", "", "", ""])
+            floor_item = QTreeWidgetItem([f"Floor {floor}", "", "", "", "", "", "", "", "", ""])
             floor_item.setFirstColumnSpanned(True)
             floor_item.setExpanded(True)
             self.table.addTopLevelItem(floor_item)
@@ -5985,6 +5984,14 @@ class DepartmentListDialog(QDialog):
                     for x in item.get("waste_streams", [])
                 )
 
+                operating_start = str(item.get("operating_start_time", "00:00") or "00:00")
+                operating_end = str(item.get("operating_end_time", "") or "")
+                if operating_end:
+                    operating_text = f"{operating_start}-{operating_end}"
+                else:
+                    operating_text = f"{operating_start} + {item.get('hours_operated_per_day', 24)}h"
+                days_text = ", ".join(item.get("days_active", []))
+
                 child = QTreeWidgetItem(
                     [
                         str(item.get("id", "")),
@@ -5994,6 +6001,8 @@ class DepartmentListDialog(QDialog):
                         str(item.get("bed_count", 0)),
                         str(item.get("patient_turnover", 0.0)),
                         str(item.get("staff_count", 0)),
+                        operating_text,
+                        days_text,
                         waste_text,
                     ]
                 )
