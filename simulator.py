@@ -696,6 +696,10 @@ class Simulation:
             getattr(task, "manual_task_only", False)
         ):
             return False
+        # AMR-locked continuation tasks, such as waste-bin returns, must remain
+        # single-task routes so they can be assigned back to the same AMR.
+        if str(getattr(task, "locked_amr_id", "") or "").strip():
+            return False
         if task.release_time > self.current_time:
             return False
         if task.pickup not in self.locations or task.dropoff not in self.locations:
@@ -1299,16 +1303,35 @@ class Simulation:
             return
         if not instance_id:
             instance_id = self.payload_instance_store.ensure_task_instance_id(task)
+        # Preserve physical-container identity metadata every time the payload is
+        # stored.  Shared waste bins rely on container_group to let later tasks
+        # re-bind to the actual returned bin location.  Without this, the initial
+        # seed carries the group, but the record loses it after the first
+        # outbound/return cycle and later shared tasks remain pending.
+        metadata = {
+            "task_source": getattr(task, "task_source", ""),
+            "department_id": getattr(task, "department_id", ""),
+            "waste_stream": getattr(task, "waste_stream", ""),
+            "container_group": getattr(task, "container_group", ""),
+            "shared_container_group": getattr(task, "shared_container_group", ""),
+            "container_type": getattr(task, "container_type", ""),
+        }
+
+        existing_record = getattr(self.payload_instance_store, "_records", {}).get(
+            instance_id
+        )
+        if existing_record is not None:
+            previous_metadata = getattr(existing_record, "metadata", {}) or {}
+            for key in ("container_group", "shared_container_group", "waste_stream"):
+                if not str(metadata.get(key, "") or "").strip():
+                    metadata[key] = previous_metadata.get(key, "")
+
         self.payload_instance_store.store(
             task.dropoff,
             payload_name,
             instance_id,
             source_task_id=task.id,
-            metadata={
-                "task_source": getattr(task, "task_source", ""),
-                "department_id": getattr(task, "department_id", ""),
-                "container_type": getattr(task, "container_type", ""),
-            },
+            metadata=metadata,
         )
 
     def _init_inventory_spaces(self, location_dicts: List[dict]) -> None:
@@ -1533,7 +1556,9 @@ class Simulation:
             "tracked_items": getattr(task, "tracked_items", {}) or {},
         }
 
-    def _schedule_configured_return_task(self, task: Task, finish_time: float) -> None:
+    def _schedule_configured_return_task(
+        self, task: Task, finish_time: float, amr_id: str = ""
+    ) -> None:
         if not bool(getattr(task, "return_enabled", False)):
             return
 
@@ -1565,11 +1590,40 @@ class Simulation:
             ),
             task_source="task_generation_return",
             department_id=str(getattr(task, "department_id", "") or ""),
+            waste_stream=str(getattr(task, "waste_stream", "") or ""),
             container_type=return_payload,
             payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
             is_return_task=True,
         )
-        self.schedule_task_release(return_task)
+        # Dynamic waste/shared-bin metadata must follow the return task so the
+        # payload instance still knows which shared physical container group it
+        # belongs to after it is returned to the department/shared waste room.
+        return_task.container_group = str(getattr(task, "container_group", "") or "")
+        return_task.shared_container_group = str(
+            getattr(task, "shared_container_group", "") or ""
+        )
+        return_task.shared_container = bool(getattr(task, "shared_container", False))
+        return_task.initial_container_present = bool(
+            getattr(task, "initial_container_present", True)
+        )
+        return_task.requires_existing_payload_instance = True
+        # A physical bin return is a continuation of the collection/swap cycle.
+        # Keep it on the same AMR so the simulator does not model one AMR
+        # collecting the full bin while another AMR independently delivers the
+        # empty/returned bin.
+        return_task.locked_amr_id = str(amr_id or "").strip()
+        if return_task.locked_amr_id:
+            self._remove_pending_idle_return_tasks_for_amr(return_task.locked_amr_id)
+
+        # If the bin is ready to return immediately, put the physical-bin return
+        # straight into the pending queue.  Pushing a same-time task_release event
+        # leaves the pending queue briefly empty, which lets the idle-return
+        # scheduler insert an empty AMR-centre trip ahead of the real bin return.
+        if return_task.release_time <= max(self.current_time, finish_time) + 1e-9:
+            self._prepare_task_payload_instance(return_task)
+            self._queue_pending_task(return_task)
+        else:
+            self.schedule_task_release(return_task)
 
         pickup = self.locations.get(return_task.pickup)
         dropoff = self.locations.get(return_task.dropoff)
@@ -2280,10 +2334,16 @@ class Simulation:
         for record in list(records.values()):
             if getattr(record, "payload", "") != payload_name:
                 continue
-            if getattr(record, "instance_id", "") in self._reserved_existing_payload_instance_ids:
+            if (
+                getattr(record, "instance_id", "")
+                in self._reserved_existing_payload_instance_ids
+            ):
                 continue
             metadata = getattr(record, "metadata", {}) or {}
-            if str(metadata.get("container_group", "") or "").strip() != container_group:
+            if (
+                str(metadata.get("container_group", "") or "").strip()
+                != container_group
+            ):
                 continue
             task.payload_instance_id = record.instance_id
             task.pickup = record.location
@@ -3676,6 +3736,12 @@ class Simulation:
             results.append((job, estimate))
         return results
 
+    def _task_allowed_for_amr(self, task: Task, amr: AMR) -> bool:
+        locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
+        if locked_amr_id and str(getattr(amr, "id", "") or "").strip() != locked_amr_id:
+            return False
+        return True
+
     def _select_best_assignment(self) -> Optional[Tuple[AMR, Task, dict]]:
         if not self.pending_tasks:
             return None
@@ -3748,6 +3814,8 @@ class Simulation:
             task_prefers_multi_stop = self._task_prefers_multi_stop_amr(task)
             jobs = []
             for amr_order, amr in enumerate(self.amrs):
+                if not self._task_allowed_for_amr(task, amr):
+                    continue
                 if getattr(amr, "is_charging", False):
                     continue
                 if self._needs_post_task_recharge(amr):
@@ -3880,7 +3948,10 @@ class Simulation:
             return f"Payload '{payload_name}' does not exist"
 
         compatible_amrs = [
-            amr for amr in self.amrs if self._amr_can_carry_payload(amr, payload)
+            amr
+            for amr in self.amrs
+            if self._task_allowed_for_amr(task, amr)
+            and self._amr_can_carry_payload(amr, payload)
         ]
         if not compatible_amrs:
             return (
@@ -3967,6 +4038,37 @@ class Simulation:
         for item in rebuilt:
             heapq.heappush(self.pending_tasks, item)
 
+    def _refresh_pending_existing_payload_instances(self) -> None:
+        """Attach newly available physical payloads to pending existing-container tasks.
+
+        Shared waste-bin tasks can be generated while the single physical bin is
+        away at the waste destination or already reserved for its return journey.
+        At generation time there may be no record in the payload store, so the
+        task cannot be given a payload_instance_id or corrected pickup location.
+        Re-checking pending tasks immediately before assignment lets those tasks
+        bind to the returned shared bin once it is stored again, instead of
+        remaining pending forever at the contributing department's nominal pickup.
+        """
+        if not self.pending_tasks:
+            return
+
+        for _priority, _release, _counter, task in list(self.pending_tasks):
+            if not self._task_requires_existing_payload_instance(task):
+                continue
+
+            instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+            if instance_id and self._pickup_instance_available(task):
+                continue
+
+            # If a shared-container task was bound before the bin moved, clear the
+            # stale assignment and re-resolve it from the current payload store.
+            if instance_id and str(getattr(task, "container_group", "") or "").strip():
+                self._reserved_existing_payload_instance_ids.discard(instance_id)
+                task.payload_instance_id = ""
+
+            if not str(getattr(task, "payload_instance_id", "") or "").strip():
+                self._assign_available_existing_payload_instance(task)
+
     # Task Runner - steps thru sequentially until task end
 
     def _schedule_assignment_continue(self, now: float) -> None:
@@ -3980,6 +4082,8 @@ class Simulation:
     def _try_assign_tasks(self, now: float):
         self.current_time = max(self.current_time, now)
         self._assignment_continue_scheduled = False
+        self._refresh_pending_existing_payload_instances()
+        self._purge_idle_returns_blocked_by_locked_work()
         self._queue_idle_return_tasks(self.current_time)
         processed_this_tick = 0
 
@@ -4008,7 +4112,8 @@ class Simulation:
                 # Re-evaluate after charge events have been queued
                 continue
 
-            # Return trip to home location
+            # Return trip to home location, but never ahead of locked physical-bin returns.
+            self._purge_idle_returns_blocked_by_locked_work()
             self._queue_idle_return_tasks(self.current_time)
 
             choice = self._select_best_assignment()
@@ -4576,8 +4681,14 @@ class Simulation:
             # The simulator may adjust the task pickup for shared physical
             # containers so that the task collects the actual seeded bin location
             # rather than the contributing department that triggered the threshold.
-            pickup_location_name = str(getattr(task, "pickup", record.pickup_location) or record.pickup_location)
-            dropoff_location_name = str(getattr(task, "dropoff", record.dropoff_location) or record.dropoff_location)
+            pickup_location_name = str(
+                getattr(task, "pickup", record.pickup_location)
+                or record.pickup_location
+            )
+            dropoff_location_name = str(
+                getattr(task, "dropoff", record.dropoff_location)
+                or record.dropoff_location
+            )
             pickup = self.locations.get(pickup_location_name)
             dropoff = self.locations.get(dropoff_location_name)
 
@@ -4775,7 +4886,9 @@ class Simulation:
                 }
             )
 
-            self._schedule_configured_return_task(task, event.payload["finish_time"])
+            self._schedule_configured_return_task(
+                task, event.payload["finish_time"], event.payload.get("amr_id", "")
+            )
 
             target_time = event.payload.get("target_time", 0.0)
             actual_duration = event.payload["duration"]
@@ -4913,7 +5026,7 @@ class Simulation:
                     }
                 )
                 self._schedule_configured_return_task(
-                    task, event.payload["finish_time"]
+                    task, event.payload["finish_time"], event.payload.get("amr_id", "")
                 )
 
             self._try_assign_tasks(event.time)
@@ -5380,6 +5493,12 @@ class Simulation:
         feasible_release_times = []
 
         for _, _, _, task in self.pending_tasks:
+            locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
+            if (
+                locked_amr_id
+                and locked_amr_id != str(getattr(amr, "id", "") or "").strip()
+            ):
+                continue
             if task.pickup not in self.locations or task.dropoff not in self.locations:
                 continue
             payload = self._payload_for_task(task)
@@ -5403,6 +5522,62 @@ class Simulation:
             ):
                 return True
         return False
+
+    def _amr_has_locked_work_pending(self, amr: AMR) -> bool:
+        """Return True when this AMR already has a specific non-idle task reserved.
+
+        Bin-return tasks are locked to the AMR that collected the full bin.  The
+        idle-return scheduler must not insert an empty AMR-centre return ahead of
+        that locked physical-bin return, otherwise the visualiser shows the AMR
+        going home first and only then collecting the bin.
+        """
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        if not amr_id:
+            return False
+        for _, _, _, task in self.pending_tasks:
+            if getattr(task, "is_idle_return", False):
+                continue
+            locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
+            if locked_amr_id == amr_id:
+                return True
+        return False
+
+    def _remove_pending_idle_return_tasks_for_amr(self, amr_id: str) -> None:
+        """Drop queued empty home-return tasks when real locked work appears."""
+        amr_id = str(amr_id or "").strip()
+        if not amr_id or not self.pending_tasks:
+            return
+
+        rebuilt = []
+        removed = False
+        while self.pending_tasks:
+            item = heapq.heappop(self.pending_tasks)
+            task = item[3]
+            is_idle_for_amr = (
+                bool(getattr(task, "is_idle_return", False))
+                and str(getattr(task, "amr_id", "") or "").strip() == amr_id
+            )
+            if is_idle_for_amr:
+                removed = True
+                continue
+            rebuilt.append(item)
+
+        for item in rebuilt:
+            heapq.heappush(self.pending_tasks, item)
+
+        if removed:
+            self._assignment_continue_scheduled = False
+
+    def _purge_idle_returns_blocked_by_locked_work(self) -> None:
+        """Remove queued empty home returns for AMRs with pending locked work."""
+        locked_amr_ids = {
+            str(getattr(task, "locked_amr_id", "") or "").strip()
+            for _, _, _, task in self.pending_tasks
+            if not getattr(task, "is_idle_return", False)
+            and str(getattr(task, "locked_amr_id", "") or "").strip()
+        }
+        for amr_id in locked_amr_ids:
+            self._remove_pending_idle_return_tasks_for_amr(amr_id)
 
     def _create_idle_return_task(self, amr: AMR, now: float) -> Optional[Task]:
         if amr.location_name == self.amr_centre_name:
@@ -5441,6 +5616,8 @@ class Simulation:
             if self._needs_post_task_recharge(amr):
                 continue
             if self._amr_has_return_task_pending(amr):
+                continue
+            if self._amr_has_locked_work_pending(amr):
                 continue
 
             next_release = self._next_pending_task_release_for_amr(amr)
