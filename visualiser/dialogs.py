@@ -6130,7 +6130,9 @@ class TaskCategoryCommonLocationWizard(QDialog):
         self.setWindowTitle("Task category shared-location wizard")
         self.resize(920, 620)
         self.departments = [dict(x) for x in departments or []]
-        self.location_names = sorted({str(x).strip() for x in location_names if str(x).strip()})
+        self.location_names = sorted(
+            {str(x).strip() for x in location_names if str(x).strip()}
+        )
         self.task_generation_categories = list(task_generation_categories or [])
         self.preselected_indexes = set(preselected_indexes or [])
         self.current_floor = int(current_floor)
@@ -6169,7 +6171,9 @@ class TaskCategoryCommonLocationWizard(QDialog):
         form.addRow("Shared location(s)", location_row)
 
         options_row = QHBoxLayout()
-        self.replace_existing_check = QCheckBox("Replace existing assignments for this category")
+        self.replace_existing_check = QCheckBox(
+            "Replace existing assignments for this category"
+        )
         self.replace_existing_check.setChecked(True)
         self.only_enabled_check = QCheckBox("Only enabled departments")
         self.only_enabled_check.setChecked(True)
@@ -6263,7 +6267,9 @@ class TaskCategoryCommonLocationWizard(QDialog):
             group_resolver=self.group_resolver,
         )
         if picker.exec() == QDialog.Accepted and picker.result is not None:
-            self.selected_locations = sorted({str(x).strip() for x in picker.result if str(x).strip()})
+            self.selected_locations = sorted(
+                {str(x).strip() for x in picker.result if str(x).strip()}
+            )
             self.refresh_location_summary()
             self.refresh_summary()
 
@@ -6288,7 +6294,11 @@ class TaskCategoryCommonLocationWizard(QDialog):
         sorted_departments = sorted(
             enumerate(self.departments),
             key=lambda pair: (
-                int(pair[1].get("floor", 0)) if str(pair[1].get("floor", "")).strip().lstrip("-").isdigit() else 999999,
+                (
+                    int(pair[1].get("floor", 0))
+                    if str(pair[1].get("floor", "")).strip().lstrip("-").isdigit()
+                    else 999999
+                ),
                 str(pair[1].get("name", "") or pair[1].get("id", "")).strip().lower(),
             ),
         )
@@ -6297,7 +6307,9 @@ class TaskCategoryCommonLocationWizard(QDialog):
             dept_id = self._department_id(dept)
             if not dept_id:
                 continue
-            current_locations = self._category_locations_for_department(dept, category_key)
+            current_locations = self._category_locations_for_department(
+                dept, category_key
+            )
             item = QTreeWidgetItem(
                 [
                     "",
@@ -6348,7 +6360,8 @@ class TaskCategoryCommonLocationWizard(QDialog):
 
     def select_all_departments(self):
         self._set_department_checked_by_predicate(
-            lambda dept: (not self.only_enabled_check.isChecked()) or bool(dept.get("enabled", True))
+            lambda dept: (not self.only_enabled_check.isChecked())
+            or bool(dept.get("enabled", True))
         )
 
     def select_no_departments(self):
@@ -6357,7 +6370,10 @@ class TaskCategoryCommonLocationWizard(QDialog):
     def select_current_floor_departments(self):
         self._set_department_checked_by_predicate(
             lambda dept: (
-                ((not self.only_enabled_check.isChecked()) or bool(dept.get("enabled", True)))
+                (
+                    (not self.only_enabled_check.isChecked())
+                    or bool(dept.get("enabled", True))
+                )
                 and int(dept.get("floor", -999999)) == self.current_floor
             )
         )
@@ -6366,7 +6382,10 @@ class TaskCategoryCommonLocationWizard(QDialog):
         category_key = self._category_key()
         self._set_department_checked_by_predicate(
             lambda dept: (
-                ((not self.only_enabled_check.isChecked()) or bool(dept.get("enabled", True)))
+                (
+                    (not self.only_enabled_check.isChecked())
+                    or bool(dept.get("enabled", True))
+                )
                 and bool(self._category_locations_for_department(dept, category_key))
             )
         )
@@ -6412,7 +6431,6 @@ class TaskCategoryCommonLocationWizard(QDialog):
             QMessageBox.critical(self, "Invalid shared-location assignment", str(exc))
 
 
-
 class TaskCategorySharedBinGroupWizard(QDialog):
     """Assign waste-stream shared bin groups from departments that share category locations."""
 
@@ -6433,11 +6451,7 @@ class TaskCategorySharedBinGroupWizard(QDialog):
         self.current_floor = int(current_floor)
         self.task_generation_categories = list(task_generation_categories or [])
         self.waste_stream_names = sorted(
-            {
-                str(x).strip()
-                for x in (waste_stream_names or [])
-                if str(x).strip()
-            }
+            {str(x).strip() for x in (waste_stream_names or []) if str(x).strip()}
             | self._assigned_waste_stream_names()
         )
         self.selected_waste_streams = list(self.waste_stream_names)
@@ -6487,7 +6501,9 @@ class TaskCategorySharedBinGroupWizard(QDialog):
         self.only_enabled_check.setChecked(True)
         self.only_selected_check = QCheckBox("Only selected departments")
         self.only_selected_check.setChecked(bool(self.preselected_indexes))
-        self.overwrite_existing_check = QCheckBox("Overwrite existing shared bin groups")
+        self.overwrite_existing_check = QCheckBox(
+            "Overwrite existing shared bin groups"
+        )
         self.overwrite_existing_check.setChecked(True)
         self.minimum_group_size_edit = QLineEdit("2")
         self.minimum_group_size_edit.setFixedWidth(48)
@@ -6506,8 +6522,12 @@ class TaskCategorySharedBinGroupWizard(QDialog):
         select_none_btn = QPushButton("Select none")
         current_floor_btn = QPushButton("Select current floor groups")
         refresh_btn.clicked.connect(self.refresh_preview)
-        select_all_btn.clicked.connect(lambda: self._set_group_checks(lambda _group: True))
-        select_none_btn.clicked.connect(lambda: self._set_group_checks(lambda _group: False))
+        select_all_btn.clicked.connect(
+            lambda: self._set_group_checks(lambda _group: True)
+        )
+        select_none_btn.clicked.connect(
+            lambda: self._set_group_checks(lambda _group: False)
+        )
         current_floor_btn.clicked.connect(self.select_current_floor_groups)
         tool_row.addWidget(refresh_btn)
         tool_row.addWidget(select_all_btn)
@@ -6578,7 +6598,9 @@ class TaskCategorySharedBinGroupWizard(QDialog):
             result = dict(item)
             result["name"] = name
             result["shared_container_group"] = str(
-                result.get("shared_container_group", result.get("shared_container_id", ""))
+                result.get(
+                    "shared_container_group", result.get("shared_container_id", "")
+                )
                 or ""
             ).strip()
             result["shared_container"] = bool(
@@ -6672,7 +6694,9 @@ class TaskCategorySharedBinGroupWizard(QDialog):
         elif len(self.selected_waste_streams) <= 5:
             self.stream_summary.setText(", ".join(self.selected_waste_streams))
         else:
-            self.stream_summary.setText(f"{len(self.selected_waste_streams)} streams selected")
+            self.stream_summary.setText(
+                f"{len(self.selected_waste_streams)} streams selected"
+            )
 
     def _minimum_group_size(self):
         try:
@@ -6687,7 +6711,9 @@ class TaskCategorySharedBinGroupWizard(QDialog):
         for index, dept in enumerate(self.departments):
             if only_selected and index not in selected_filter:
                 continue
-            if self.only_enabled_check.isChecked() and not bool(dept.get("enabled", True)):
+            if self.only_enabled_check.isChecked() and not bool(
+                dept.get("enabled", True)
+            ):
                 continue
             if not self._department_id(dept):
                 continue
@@ -6699,12 +6725,16 @@ class TaskCategorySharedBinGroupWizard(QDialog):
         grouped = {}
         for index in self._candidate_department_indexes():
             dept = self.departments[index]
-            for location_name in self._category_locations_for_department(dept, category_key):
+            for location_name in self._category_locations_for_department(
+                dept, category_key
+            ):
                 grouped.setdefault(location_name, []).append(index)
 
         minimum_group_size = self._minimum_group_size()
         groups = []
-        for location_name, indexes in sorted(grouped.items(), key=lambda pair: pair[0].lower()):
+        for location_name, indexes in sorted(
+            grouped.items(), key=lambda pair: pair[0].lower()
+        ):
             unique_indexes = []
             seen = set()
             for idx in indexes:
@@ -6721,13 +6751,17 @@ class TaskCategorySharedBinGroupWizard(QDialog):
             overwrite = self.overwrite_existing_check.isChecked()
 
             for idx in unique_indexes:
-                streams_by_name = self._department_streams_by_name(self.departments[idx])
+                streams_by_name = self._department_streams_by_name(
+                    self.departments[idx]
+                )
                 for stream_name in selected_streams:
                     stream = streams_by_name.get(stream_name)
                     if not stream:
                         missing_stream_count += 1
                         continue
-                    existing_group = str(stream.get("shared_container_group", "")).strip()
+                    existing_group = str(
+                        stream.get("shared_container_group", "")
+                    ).strip()
                     if existing_group and not overwrite:
                         skipped_existing_count += 1
                     else:
@@ -6773,7 +6807,8 @@ class TaskCategorySharedBinGroupWizard(QDialog):
                     "",
                     group["location"],
                     group["group_id"],
-                    ", ".join(dept_names[:6]) + (f", +{len(dept_names) - 6}" if len(dept_names) > 6 else ""),
+                    ", ".join(dept_names[:6])
+                    + (f", +{len(dept_names) - 6}" if len(dept_names) > 6 else ""),
                     ", ".join(sorted(floors)),
                     str(group["stream_update_count"]),
                     str(group["skipped_existing_count"]),
@@ -7065,9 +7100,7 @@ class DepartmentListDialog(QDialog):
 
         category_key = str(dialog.result.get("category_key", "")).strip()
         shared_locations = [
-            str(x).strip()
-            for x in dialog.result.get("locations", [])
-            if str(x).strip()
+            str(x).strip() for x in dialog.result.get("locations", []) if str(x).strip()
         ]
         replace_existing = bool(dialog.result.get("replace_existing", True))
         assignments = dialog.result.get("assignments", {}) or {}
@@ -7100,7 +7133,9 @@ class DepartmentListDialog(QDialog):
             if replace_existing:
                 selected = []
             else:
-                existing = entry.get("pickup_dropoff_locations", entry.get("locations", []))
+                existing = entry.get(
+                    "pickup_dropoff_locations", entry.get("locations", [])
+                )
                 if isinstance(existing, str):
                     selected = [existing]
                 elif isinstance(existing, list):
