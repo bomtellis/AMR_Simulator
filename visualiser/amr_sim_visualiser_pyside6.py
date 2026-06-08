@@ -1868,6 +1868,41 @@ class LocationInventoryPayloadDialog(QDialog):
                 self.table.setItem(r, c, item)
 
 
+
+
+class TextOverlayProxy:
+    """Small compatibility wrapper for text labels drawn in the overlay layer.
+
+    Existing call sites used to receive QGraphicsSimpleTextItem and may set
+    tooltip/data/rotation.  The proxy stores those values in the lightweight
+    text record instead of creating a QGraphicsItem.
+    """
+
+    def __init__(self, record: dict):
+        self.record = record
+
+    def setData(self, key, value):
+        self.record.setdefault("data", {})[key] = value
+
+    def data(self, key):
+        return self.record.get("data", {}).get(key)
+
+    def setToolTip(self, value):
+        self.record["tooltip"] = str(value or "")
+
+    def toolTip(self):
+        return self.record.get("tooltip", "")
+
+    def setRotation(self, value):
+        try:
+            self.record["rotation"] = float(value or 0.0)
+        except Exception:
+            self.record["rotation"] = 0.0
+
+    def setVisible(self, value):
+        self.record["visible"] = bool(value)
+
+
 class SimulationVisualizer(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1963,6 +1998,12 @@ class SimulationVisualizer(QMainWindow):
 
         self.static_items = []
         self.dynamic_items = []
+        # Text is drawn as a separate viewport overlay layer instead of
+        # QGraphicsTextItems.  The map geometry is drawn by the OpenGL-backed
+        # scene pass; labels are composited afterwards for sharper text and
+        # to avoid adding thousands of text items to the scene index.
+        self.static_text_records = []
+        self.dynamic_text_records = []
         self.node_context_menu = QMenu(self)
 
         def add_btn(text, fn):
@@ -2556,6 +2597,8 @@ class SimulationVisualizer(QMainWindow):
 
     def refresh_static_scene(self):
         self.clear_items(self.static_items)
+        if hasattr(self, "static_text_records"):
+            self.static_text_records.clear()
         floor = self.current_floor()
 
         if self.show_dxf_check.isChecked():
@@ -2569,6 +2612,8 @@ class SimulationVisualizer(QMainWindow):
 
     def refresh_dynamic_scene(self):
         self.clear_items(self.dynamic_items)
+        if hasattr(self, "dynamic_text_records"):
+            self.dynamic_text_records.clear()
         self._inventory_rows_cache.clear()
         self.draw_room_payloads_qt(self.current_floor())
         self.draw_dynamic_state_qt(self.current_floor())
@@ -2609,29 +2654,94 @@ class SimulationVisualizer(QMainWindow):
         ignore_transform=False,
         pixel_size: Optional[float] = None,
     ):
-        item = QGraphicsSimpleTextItem(text)
-        item.setBrush(QBrush(QColor(color)))
+        """Queue text for the overlay label layer.
 
-        # Do not use ItemIgnoresTransformations here.  The label should be a
-        # fixed-size object in scene coordinates; zooming the camera should make
-        # it appear larger/smaller in the same way as AMRs, spaces and payloads.
-        # The legacy ignore_transform/pixel_size parameters are accepted for
-        # compatibility with existing call sites, but no longer drive zoom-based
-        # font sizing.
+        Geometry is rendered by the QGraphicsScene using an OpenGL-backed
+        viewport.  Text is deliberately not added to the scene as a
+        QGraphicsItem; it is painted afterwards in viewport coordinates.  The
+        stored height is in scene/world units, so zooming the camera still makes
+        labels appear larger when closer and smaller when zoomed out, without
+        the blur/spacing problems caused by transformed text items.
+        """
+        text = str(text or "")
+        record = {
+            "x": float(x),
+            "y": float(y),
+            "text": text,
+            "color": str(color or "white"),
+            "scene_height": self._fixed_scene_text_height(bool(dynamic)),
+            "dynamic": bool(dynamic),
+            "rotation": 0.0,
+            "visible": True,
+            "tooltip": "",
+            "data": {},
+        }
+        if dynamic:
+            self.dynamic_text_records.append(record)
+        else:
+            self.static_text_records.append(record)
+        return TextOverlayProxy(record)
+
+    def _draw_text_overlay_records(self, painter: QPainter, viewport_rect: QRect):
+        """Draw queued scene-space text as a separate viewport overlay layer."""
+        if not hasattr(self, "view"):
+            return
+
+        records = []
+        records.extend(getattr(self, "static_text_records", []) or [])
+        records.extend(getattr(self, "dynamic_text_records", []) or [])
+        if not records:
+            return
+
+        transform_scale = max(0.0001, float(self.view.transform().m11() or 1.0))
+        # Convert the fixed scene text height to viewport pixels.  This preserves
+        # the correct camera behaviour: zoom in -> text appears larger; zoom out
+        # -> text appears smaller.  A small lower clamp prevents zero-size fonts.
+        base_scene_height = self._fixed_scene_text_height(False)
+        base_px = max(3, min(220, int(round(base_scene_height * transform_scale))))
+
         font = QFont("Arial")
-        font.setPointSizeF(10.0)
+        font.setPixelSize(base_px)
         font.setStyleStrategy(QFont.PreferAntialias)
         font.setHintingPreference(QFont.PreferFullHinting)
-        item.setFont(font)
+        painter.save()
+        painter.setFont(font)
+        painter.setRenderHint(QPainter.TextAntialiasing, True)
 
-        bounds = item.boundingRect()
-        if bounds.height() > 0:
-            item.setScale(self._fixed_scene_text_height(dynamic) / bounds.height())
+        for record in records:
+            if not record.get("visible", True):
+                continue
+            text = str(record.get("text", "") or "")
+            if not text:
+                continue
+            scene_pos = QPointF(float(record.get("x", 0.0)), float(record.get("y", 0.0)))
+            view_pos = self.view.mapFromScene(scene_pos)
+            # Coarse viewport culling.  Text is allowed a margin so labels do not
+            # pop at the edge of the screen when partially visible.
+            if (
+                view_pos.x() < -250
+                or view_pos.y() < -80
+                or view_pos.x() > viewport_rect.width() + 250
+                or view_pos.y() > viewport_rect.height() + 80
+            ):
+                continue
 
-        item.setPos(x, y)
-        self.graphics_scene.addItem(item)
-        (self.dynamic_items if dynamic else self.static_items).append(item)
-        return item
+            scene_height = float(record.get("scene_height", base_scene_height) or base_scene_height)
+            px = max(3, min(220, int(round(scene_height * transform_scale))))
+            if font.pixelSize() != px:
+                font.setPixelSize(px)
+                painter.setFont(font)
+
+            painter.save()
+            painter.translate(view_pos)
+            rotation = float(record.get("rotation", 0.0) or 0.0)
+            if rotation:
+                painter.rotate(rotation)
+            painter.setPen(QColor(str(record.get("color", "white") or "white")))
+            painter.drawText(QPointF(0, 0), text)
+            painter.restore()
+
+        painter.restore()
 
     def draw_dxf_scene_qt(self):
         visible_rect = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
@@ -5892,6 +6002,8 @@ class SimulationVisualizer(QMainWindow):
         painter.restore()
 
     def draw_overlay_panels(self, painter, viewport_rect):
+        self._draw_text_overlay_records(painter, viewport_rect)
+
         legend_lines = [
             "Legend",
             "Green circle = location",
