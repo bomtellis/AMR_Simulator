@@ -44,9 +44,6 @@ class BaseTaskGenerator:
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         return []
 
-    def apply_task_completion(self, task: Task, finish_time: float) -> None:
-        return None
-
 
 def _clean_text(value) -> str:
     return str(value or "").strip()
@@ -330,7 +327,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         payloads: Dict[str, PayloadType],
         clock: SimulationClock,
         waste_streams: Optional[Dict[str, dict]] = None,
-        reserve_capacities: Optional[Dict[Tuple[str, str], float]] = None,
     ):
         self.task_generation = task_generation or {}
         self.departments = list(departments or [])
@@ -338,7 +334,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self.payloads = payloads or {}
         self.clock = clock
         self.waste_streams = waste_streams or {}
-        self.reserve_capacities = reserve_capacities or {}
         self.task_counter = 0
         self.return_counter = 0
         self.scheduled_emitted = set()
@@ -873,151 +868,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             _clean_text(cfg.get("task_source", "")) == "department_waste"
         )
 
-    def _is_replenishment_instance(self, instance: dict) -> bool:
-        cfg = instance.get("cfg", {}) or {}
-        flow = _clean_text(cfg.get("flow_direction", "collection")).lower()
-        return bool(cfg.get("reserve_management", False)) and flow == "replenishment" and not self._is_waste_instance(instance)
-
-    def _reserve_runtime_key(self, instance: dict, dropoff: str, payload_name: str) -> str:
-        return ":".join(
-            [
-                "reserve",
-                _clean_text(instance.get("category_key", "")),
-                _clean_text(instance.get("department_id", "")),
-                _clean_text(dropoff),
-                _clean_text(payload_name),
-            ]
-        )
-
-    def _reserve_capacity_for_location(self, location_name: str, payload_name: str) -> float:
-        location_name = _clean_text(location_name)
-        payload_name = _clean_text(payload_name)
-        if not location_name:
-            return 0.0
-        value = self.reserve_capacities.get((location_name, payload_name))
-        if value is None:
-            value = self.reserve_capacities.get((location_name, ""), 0.0)
-        return max(0.0, _as_float(value, 0.0))
-
-    def _reserve_max_volume_for_instance(self, instance: dict, dropoff: str, payload_name: str) -> float:
-        cfg = instance.get("cfg", {}) or {}
-        for key in ("reserve_max_volume_m3", "max_reserve_volume_m3", "reserve_capacity_m3"):
-            explicit = _as_float(cfg.get(key, 0.0), 0.0)
-            if explicit > 0.0:
-                return explicit
-        return self._reserve_capacity_for_location(dropoff, payload_name)
-
-    def _reserve_runtime_for_task(self, instance: dict, dropoff: str, payload_name: str) -> Optional[dict]:
-        max_volume = self._reserve_max_volume_for_instance(instance, dropoff, payload_name)
-        if max_volume <= 0.0:
-            return None
-        cfg = instance.get("cfg", {}) or {}
-        key = self._reserve_runtime_key(instance, dropoff, payload_name)
-        initial_fraction = max(0.0, min(_as_float(cfg.get("reserve_initial_fill_fraction", 1.0), 1.0), 1.0))
-        runtime = self.runtime.setdefault(
-            key,
-            {
-                "volume": max_volume * initial_fraction,
-                "max_volume": max_volume,
-                "last_update_time": 0.0,
-                "pending_replenishment_volume": 0.0,
-                "pending_task_ids": set(),
-                "sporadic_accumulator": 0.0,
-                "volume_event_accumulator": 0.0,
-            },
-        )
-        runtime["max_volume"] = max_volume
-        runtime.setdefault("pending_replenishment_volume", 0.0)
-        runtime.setdefault("pending_task_ids", set())
-        runtime.setdefault("sporadic_accumulator", 0.0)
-        runtime.setdefault("volume_event_accumulator", 0.0)
-        runtime["volume"] = max(0.0, min(_as_float(runtime.get("volume", max_volume), max_volume), max_volume))
-        return runtime
-
-    def _reserve_depletion_for_elapsed(self, instance: dict, runtime: dict, elapsed_days: float) -> float:
-        cfg = instance.get("cfg", {}) or {}
-        depletion = max(0.0, elapsed_days * _as_float(cfg.get("base_daily_volume_m3", 0.0), 0.0))
-        frequency = max(0.0, _as_float(cfg.get("frequency_per_day", 0.0), 0.0))
-        event_volume = max(0.0, _as_float(cfg.get("volume_per_event_m3", 0.0), 0.0))
-        if frequency > 0.0 and event_volume > 0.0:
-            runtime["volume_event_accumulator"] = _as_float(runtime.get("volume_event_accumulator", 0.0), 0.0) + (elapsed_days * frequency)
-            whole_events = int(runtime["volume_event_accumulator"])
-            if whole_events > 0:
-                depletion += whole_events * event_volume
-                runtime["volume_event_accumulator"] -= whole_events
-        return depletion
-
-    def _reserve_replenishment_records(self, instance: dict, now: float) -> List[GeneratedTaskRecord]:
-        cfg = instance.get("cfg", {}) or {}
-        payload_name = _clean_text(cfg.get("payload", ""))
-        if payload_name not in self.payloads:
-            return []
-        if not self._category_is_active(cfg, now):
-            return []
-        if not self._instance_is_active(instance, now):
-            return []
-
-        records: List[GeneratedTaskRecord] = []
-        for pickup, dropoff in self._pick_pairs(instance):
-            runtime = self._reserve_runtime_for_task(instance, dropoff, payload_name)
-            if runtime is None:
-                continue
-            last_time = _as_float(runtime.get("last_update_time", 0.0), 0.0)
-            if now > last_time:
-                elapsed_seconds = self._instance_active_elapsed_seconds(instance, last_time, now)
-                elapsed_days = max(0.0, elapsed_seconds / 86400.0)
-                depletion = self._reserve_depletion_for_elapsed(instance, runtime, elapsed_days)
-                if depletion > 0.0:
-                    runtime["volume"] = max(0.0, _as_float(runtime.get("volume", 0.0), 0.0) - depletion)
-                runtime["last_update_time"] = now
-
-            max_volume = _as_float(runtime.get("max_volume", 0.0), 0.0)
-            if max_volume <= 0.0:
-                continue
-            pending = _as_float(runtime.get("pending_replenishment_volume", 0.0), 0.0)
-            if pending > 1e-9:
-                continue
-            trigger_fraction = max(0.0, min(_as_float(cfg.get("reserve_trigger_fraction", 0.25), 0.25), 1.0))
-            target_fraction = max(trigger_fraction, min(_as_float(cfg.get("replenish_to_fraction", 1.0), 1.0), 1.0))
-            current = _as_float(runtime.get("volume", max_volume), max_volume)
-            trigger_volume = max_volume * trigger_fraction
-            target_volume = max_volume * target_fraction
-            if current > trigger_volume:
-                continue
-            replenish_volume = max(0.0, target_volume - current)
-            if replenish_volume <= 1e-9:
-                continue
-            release_time = self._adjust_release_to_department_open(instance, now)
-            if release_time is None:
-                continue
-            task = self._base_task(instance, pickup, dropoff, payload_name, release_time, "replenishment")
-            if task is None:
-                continue
-            task.reserve_replenishment = True
-            task.reserve_key = self._reserve_runtime_key(instance, dropoff, payload_name)
-            task.reserve_location = dropoff
-            task.reserve_max_volume_m3 = max_volume
-            task.reserve_before_m3 = current
-            task.reserve_trigger_volume_m3 = trigger_volume
-            task.reserve_replenish_volume_m3 = replenish_volume
-            task.reserve_after_target_m3 = target_volume
-            task.generated_volume_m3 = replenish_volume
-            task.waste_volume_m3 = 0.0
-            runtime["pending_replenishment_volume"] = pending + replenish_volume
-            runtime.setdefault("pending_task_ids", set()).add(task.id)
-            records.extend(
-                self._records_for_outbound(
-                    task,
-                    instance,
-                    (
-                        f"Generated replenishment for {instance['category_key']} reserve at {dropoff}: "
-                        f"{current:.3f}/{max_volume:.3f}m3 below trigger {trigger_volume:.3f}m3; "
-                        f"top-up {replenish_volume:.3f}m3"
-                    ),
-                )
-            )
-        return records
-
     def _runtime_for_volume_key(self, instance: dict) -> dict:
         return self.runtime.setdefault(
             instance.get("volume_key", instance["key"]),
@@ -1067,10 +917,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         cfg = instance["cfg"]
         mode = _clean_text(cfg.get("generation_mode", "scheduled")) or "scheduled"
         if mode not in SCHEDULED_MODES:
-            return []
-        if self._is_replenishment_instance(instance):
-            # Basic reserve replenishment is driven by depletion/threshold state,
-            # not by immediate scheduled collection visits.
             return []
 
         payload_name = _clean_text(cfg.get("payload", ""))
@@ -1148,8 +994,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     def _volume_records(self, instance: dict, now: float) -> List[GeneratedTaskRecord]:
         cfg = instance["cfg"]
         mode = _clean_text(cfg.get("generation_mode", "scheduled")) or "scheduled"
-        if self._is_replenishment_instance(instance):
-            return self._reserve_replenishment_records(instance, now)
         if mode not in (THRESHOLD_MODES | CONTINUOUS_MODES | SPORADIC_MODES):
             return []
 
@@ -1373,29 +1217,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             )
 
         return records
-
-    def apply_task_completion(self, task: Task, finish_time: float) -> None:
-        if not bool(getattr(task, "reserve_replenishment", False)):
-            return
-        reserve_key = _clean_text(getattr(task, "reserve_key", ""))
-        if not reserve_key:
-            return
-        runtime = self.runtime.get(reserve_key)
-        if not isinstance(runtime, dict):
-            return
-        amount = max(0.0, _as_float(getattr(task, "reserve_replenish_volume_m3", 0.0), 0.0))
-        max_volume = max(0.0, _as_float(runtime.get("max_volume", getattr(task, "reserve_max_volume_m3", 0.0)), 0.0))
-        runtime["volume"] = min(max_volume, max(0.0, _as_float(runtime.get("volume", 0.0), 0.0) + amount))
-        runtime["pending_replenishment_volume"] = max(
-            0.0,
-            _as_float(runtime.get("pending_replenishment_volume", 0.0), 0.0) - amount,
-        )
-        pending_ids = runtime.setdefault("pending_task_ids", set())
-        try:
-            pending_ids.discard(getattr(task, "id", ""))
-        except Exception:
-            pass
-        runtime["last_update_time"] = max(_as_float(runtime.get("last_update_time", 0.0), 0.0), finish_time)
 
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         generated: List[GeneratedTaskRecord] = []
@@ -1643,13 +1464,11 @@ class TaskGenerationManager:
         clock: SimulationClock,
         locations: Dict[str, Location],
         payloads: Dict[str, PayloadType],
-        reserve_capacities: Optional[Dict[Tuple[str, str], float]] = None,
     ):
         self.config = config or {}
         self.clock = clock
         self.locations = locations
         self.payloads = payloads
-        self.reserve_capacities = reserve_capacities or {}
         self.generators: List[BaseTaskGenerator] = []
         self._build_generators()
 
@@ -1705,7 +1524,6 @@ class TaskGenerationManager:
                     payloads=self.payloads,
                     clock=self.clock,
                     waste_streams=waste_streams,
-                    reserve_capacities=self.reserve_capacities,
                 )
             )
 
@@ -1750,13 +1568,6 @@ class TaskGenerationManager:
                     default_priority=priority,
                 )
             )
-
-    def apply_task_completion(self, task: Task, finish_time: float) -> None:
-        for generator in self.generators:
-            try:
-                generator.apply_task_completion(task, finish_time)
-            except Exception:
-                continue
 
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         generated: List[GeneratedTaskRecord] = []

@@ -74,18 +74,6 @@ class Task:
     tracked_items: Dict[str, dict] = field(default_factory=dict)
     generated_volume_m3: float = 0.0
 
-    # Basic reserve-volume replenishment metadata. Used by the non-item-tracking
-    # replenishment model where a department/category location starts full,
-    # depletes over time, and an AMR visit tops it back up.
-    reserve_replenishment: bool = False
-    reserve_key: str = ""
-    reserve_location: str = ""
-    reserve_max_volume_m3: float = 0.0
-    reserve_before_m3: float = 0.0
-    reserve_trigger_volume_m3: float = 0.0
-    reserve_replenish_volume_m3: float = 0.0
-    reserve_after_target_m3: float = 0.0
-
     # Optional delayed return/exchange task generated when this task completes.
     return_enabled: bool = False
     return_payload: str = ""

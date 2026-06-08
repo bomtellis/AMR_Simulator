@@ -1186,35 +1186,121 @@ def build_report(
                 "failed_delivery_attempts": "Failed",
                 "capacity_related_failures": "Capacity failures",
                 "utilisation_pct": "Util %",
+                "peak_payload_count": "Peak payload count",
+                "peak_area_used_m2": "Peak area used m²",
+                "peak_volume_m3": "Peak volume m³",
+                "peak_utilisation_pct": "Peak utilisation %",
                 "recommended_area_m2": "Recommended area m²",
                 "recommended_inventory_spaces": "Recommended spaces",
             }
         )
+        location_util_display_cols = [
+            c for c in [
+                "Department",
+                "Category",
+                "Location",
+                "Floor",
+                "Area m²",
+                "Spaces",
+                "Completed",
+                "Failed",
+                "Capacity failures",
+                "Peak payload count",
+                "Peak area used m²",
+                "Peak utilisation %",
+                "Recommended area m²",
+                "Recommended spaces",
+            ] if c in location_util_df.columns
+        ]
+        location_util_df = location_util_df[location_util_display_cols]
+        width_map = {
+            "Department": 25 * mm,
+            "Category": 18 * mm,
+            "Location": 35 * mm,
+            "Floor": 10 * mm,
+            "Area m²": 15 * mm,
+            "Spaces": 12 * mm,
+            "Completed": 14 * mm,
+            "Failed": 12 * mm,
+            "Capacity failures": 20 * mm,
+            "Peak payload count": 18 * mm,
+            "Peak area used m²": 20 * mm,
+            "Peak utilisation %": 18 * mm,
+            "Recommended area m²": 22 * mm,
+            "Recommended spaces": 22 * mm,
+        }
         story.append(
             table_from_df(
                 location_util_df,
-                [
-                    25 * mm,
-                    18 * mm,
-                    35 * mm,
-                    10 * mm,
-                    14 * mm,
-                    14 * mm,
-                    15 * mm,
-                    12 * mm,
-                    14 * mm,
-                    12 * mm,
-                    20 * mm,
-                    14 * mm,
-                    22 * mm,
-                    22 * mm,
-                ],
+                [width_map.get(c, 18 * mm) for c in location_util_df.columns],
                 styles,
-                right_align=[3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+                right_align=list(range(3, len(location_util_df.columns))),
             )
         )
 
     # --- END Location space utilisation ---
+
+    # --- START Peak location occupancy ---
+
+    story += [
+        PageBreak(),
+        Paragraph("Peak location occupancy", styles["Section"]),
+        Paragraph(
+            "Peak occupancy is taken from the simulator's final location storage recommendation rows. It records the maximum simultaneous payload footprint and volume seen at each location, including runs where inventory spaces were disabled but boundaries were retained.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    peak_location_df = results.get("location_peak_occupancy", pd.DataFrame()).copy()
+    if peak_location_df.empty:
+        story.append(
+            Paragraph(
+                "No peak location occupancy rows were identified in the simulation event log. Run the simulator with verbose CSV output from the updated simulator to include this section.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        peak_location_df = peak_location_df.rename(
+            columns={
+                "department": "Department",
+                "category": "Category",
+                "location": "Location",
+                "inventory_spaces_disabled": "Inventory disabled",
+                "configured_inventory_area_m2": "Configured inventory area m²",
+                "peak_payload_count": "Peak payloads",
+                "peak_area_used_m2": "Peak area used m²",
+                "peak_volume_m3": "Peak volume m³",
+                "recommended_area_m2": "Recommended area m²",
+                "recommended_volume_m3": "Recommended volume m³",
+            }
+        )
+        peak_location_df = peak_location_df[
+            [
+                c for c in [
+                    "Department",
+                    "Category",
+                    "Location",
+                    "Inventory disabled",
+                    "Configured inventory area m²",
+                    "Peak payloads",
+                    "Peak area used m²",
+                    "Peak volume m³",
+                    "Recommended area m²",
+                    "Recommended volume m³",
+                ] if c in peak_location_df.columns
+            ]
+        ]
+        story.append(
+            table_from_df(
+                peak_location_df,
+                [25 * mm, 18 * mm, 35 * mm, 20 * mm, 25 * mm, 18 * mm, 22 * mm, 22 * mm, 23 * mm, 23 * mm][: len(peak_location_df.columns)],
+                styles,
+                right_align=list(range(3, len(peak_location_df.columns))),
+            )
+        )
+
+    # --- END Peak location occupancy ---
 
     # --- START Failed delivery analysis ---
 
@@ -1305,7 +1391,7 @@ def build_report(
         PageBreak(),
         Paragraph("Location storage recommendations", styles["Section"]),
         Paragraph(
-            "Recommended area keeps the current location area as a baseline and adds failed payload footprints with a 30% handling allowance. Recommended spaces add capacity-related failed attempts to the current defined inventory-space count.",
+            "Recommended area is now based on the greater of capacity-failure demand and the simulator's recorded peak simultaneous payload storage demand. This allows storage recommendations to be reported even when inventory spaces were disabled during the run.",
             styles["BodyText"],
         ),
         Spacer(1, 8),
@@ -1328,6 +1414,7 @@ def build_report(
                 "category": "Category",
                 "location": "Location",
                 "current_area_m2": "Current area m²",
+                "peak_area_used_m2": "Peak area used m²",
                 "recommended_area_m2": "Recommended area m²",
                 "additional_area_m2": "Additional area m²",
                 "current_inventory_spaces": "Current spaces",
@@ -1336,23 +1423,41 @@ def build_report(
                 "reason": "Reason",
             }
         )
+        recommendation_display_cols = [
+            c for c in [
+                "Department",
+                "Category",
+                "Location",
+                "Current area m²",
+                "Peak area used m²",
+                "Recommended area m²",
+                "Additional area m²",
+                "Current spaces",
+                "Recommended spaces",
+                "Additional spaces",
+                "Reason",
+            ] if c in location_recommendations_df.columns
+        ]
+        location_recommendations_df = location_recommendations_df[recommendation_display_cols]
+        rec_width_map = {
+            "Department": 25 * mm,
+            "Category": 18 * mm,
+            "Location": 35 * mm,
+            "Current area m²": 20 * mm,
+            "Peak area used m²": 20 * mm,
+            "Recommended area m²": 23 * mm,
+            "Additional area m²": 20 * mm,
+            "Current spaces": 18 * mm,
+            "Recommended spaces": 23 * mm,
+            "Additional spaces": 18 * mm,
+            "Reason": 50 * mm,
+        }
         story.append(
             table_from_df(
                 location_recommendations_df,
-                [
-                    25 * mm,
-                    18 * mm,
-                    35 * mm,
-                    20 * mm,
-                    23 * mm,
-                    20 * mm,
-                    18 * mm,
-                    23 * mm,
-                    18 * mm,
-                    50 * mm,
-                ],
+                [rec_width_map.get(c, 18 * mm) for c in location_recommendations_df.columns],
                 styles,
-                right_align=[3, 4, 5, 6, 7, 8],
+                right_align=[i for i, c in enumerate(location_recommendations_df.columns) if c not in {"Department", "Category", "Location", "Reason"}],
             )
         )
 
