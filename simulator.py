@@ -6,7 +6,7 @@ import math
 import os
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -30,6 +30,108 @@ from amr_sim_time_utils import (
     parse_datetime,
     parse_release_time,
 )
+
+_MP_ROUTE_GRAPHS = {}
+_MP_ROUTE_REVERSE_GRAPHS = {}
+
+
+def _mp_init_route_graphs(graphs, reverse_graphs):
+    """Initialise per-process route graph state for static route precompute."""
+    global _MP_ROUTE_GRAPHS, _MP_ROUTE_REVERSE_GRAPHS
+    _MP_ROUTE_GRAPHS = graphs or {}
+    _MP_ROUTE_REVERSE_GRAPHS = reverse_graphs or {}
+
+
+def _mp_shortest_path_same_floor(job):
+    """Pure worker version of same-floor bidirectional Dijkstra.
+
+    The main simulator still commits all events sequentially.  This worker only
+    builds immutable route-cache entries for static location/lift endpoint pairs.
+    """
+    floor, start_name, end_name = job
+    graph = _MP_ROUTE_GRAPHS.get(floor, {})
+    reverse_graph = _MP_ROUTE_REVERSE_GRAPHS.get(floor, {})
+    cache_key = (floor, start_name, end_name, (), ())
+
+    if start_name not in graph or end_name not in graph:
+        return cache_key, None
+    if start_name == end_name:
+        return cache_key, {"distance_m": 0.0, "edges": []}
+
+    f_heap = [(0.0, start_name)]
+    b_heap = [(0.0, end_name)]
+    f_best = {start_name: 0.0}
+    b_best = {end_name: 0.0}
+    f_prev = {}
+    b_prev = {}
+    best_distance = math.inf
+    meeting_node = None
+
+    while f_heap and b_heap:
+        if f_heap[0][0] + b_heap[0][0] >= best_distance:
+            break
+
+        if f_heap[0][0] <= b_heap[0][0]:
+            dist, node = heapq.heappop(f_heap)
+            if dist > f_best.get(node, math.inf):
+                continue
+            if node in b_best:
+                candidate = dist + b_best[node]
+                if candidate < best_distance:
+                    best_distance = candidate
+                    meeting_node = node
+            for edge in graph.get(node, []):
+                nxt = edge["to"]
+                new_dist = dist + edge["distance_m"]
+                if new_dist < f_best.get(nxt, math.inf):
+                    f_best[nxt] = new_dist
+                    f_prev[nxt] = (node, edge["distance_m"])
+                    heapq.heappush(f_heap, (new_dist, nxt))
+                if nxt in b_best:
+                    candidate = new_dist + b_best[nxt]
+                    if candidate < best_distance:
+                        best_distance = candidate
+                        meeting_node = nxt
+        else:
+            dist, node = heapq.heappop(b_heap)
+            if dist > b_best.get(node, math.inf):
+                continue
+            if node in f_best:
+                candidate = dist + f_best[node]
+                if candidate < best_distance:
+                    best_distance = candidate
+                    meeting_node = node
+            for edge in reverse_graph.get(node, []):
+                nxt = edge["to"]
+                new_dist = dist + edge["distance_m"]
+                if new_dist < b_best.get(nxt, math.inf):
+                    b_best[nxt] = new_dist
+                    b_prev[nxt] = (node, edge["distance_m"])
+                    heapq.heappush(b_heap, (new_dist, nxt))
+                if nxt in f_best:
+                    candidate = new_dist + f_best[nxt]
+                    if candidate < best_distance:
+                        best_distance = candidate
+                        meeting_node = nxt
+
+    if meeting_node is None:
+        return cache_key, None
+
+    path_edges = []
+    node = meeting_node
+    while node != start_name:
+        parent, distance_m = f_prev[node]
+        path_edges.append({"from": parent, "to": node, "distance_m": distance_m})
+        node = parent
+    path_edges.reverse()
+
+    node = meeting_node
+    while node != end_name:
+        child, distance_m = b_prev[node]
+        path_edges.append({"from": node, "to": child, "distance_m": distance_m})
+        node = child
+
+    return cache_key, {"distance_m": best_distance, "edges": path_edges}
 
 
 class Simulation:
@@ -134,6 +236,31 @@ class Simulation:
                 )
             ),
         )
+        self.route_precompute_executor_mode = str(
+            sim_cfg.get(
+                "route_precompute_executor",
+                sim_cfg.get("route_precompute_mode", "process"),
+            )
+            or "process"
+        ).strip().lower()
+        if self.route_precompute_executor_mode not in {"process", "thread", "sequential", "off"}:
+            self.route_precompute_executor_mode = "process"
+        self.route_precompute_processes = max(
+            1,
+            int(
+                sim_cfg.get(
+                    "route_precompute_processes",
+                    sim_cfg.get("route_worker_processes", self.routing_worker_threads),
+                )
+                or 1
+            ),
+        )
+        self.route_precompute_parallel_min_pairs = max(
+            1, int(sim_cfg.get("route_precompute_parallel_min_pairs", 128) or 128)
+        )
+        self.route_precompute_last_executor = ""
+        self.route_precompute_last_error = ""
+
         self.parallel_routing_enabled = (
             bool(sim_cfg.get("parallel_routing", True))
             and self.routing_worker_threads > 1
@@ -292,6 +419,7 @@ class Simulation:
             clock=self.clock,
             locations=self.locations,
             payloads=self.payloads,
+            reserve_capacities=self._build_reserve_capacity_lookup(),
         )
         self.task_generation_interval_sec = float(
             (config.get("task_generation", {}) or {}).get("update_interval_sec", 900.0)
@@ -1258,7 +1386,10 @@ class Simulation:
                 task, self._pickup_instance_pending_reason(task)
             )
             return False
-        if self._location_has_inventory_spaces(task.dropoff):
+        if (
+            self._location_has_inventory_spaces(task.dropoff)
+            and not self._task_uses_reserve_volume(task)
+        ):
             if self._find_free_inventory_space(
                 task.dropoff, payload
             ) is None and not self._task_can_exchange_with_store_empty(task, payload):
@@ -1434,7 +1565,10 @@ class Simulation:
                         task, self._pickup_instance_pending_reason(task)
                     )
                     return None
-                if self._location_has_inventory_spaces(task.dropoff):
+                if (
+                    self._location_has_inventory_spaces(task.dropoff)
+                    and not self._task_uses_reserve_volume(task)
+                ):
                     if self._find_free_inventory_space(
                         task.dropoff, payload
                     ) is None and not self._task_can_exchange_with_store_empty(
@@ -1679,6 +1813,7 @@ class Simulation:
                         )
                         if (
                             self._location_has_inventory_spaces(target_location.name)
+                            and not self._task_uses_reserve_volume(task)
                             and reserved_space is None
                             and not self._task_can_exchange_with_store_empty(
                                 task, payload
@@ -2028,11 +2163,125 @@ class Simulation:
                             raw_space.get("reserved_by_task", "")
                         ).strip(),
                         "task_id": str(raw_space.get("task_id", "")).strip(),
+                        "capacity_volume_m3": float(
+                            raw_space.get("capacity_volume_m3", raw_space.get("volume_m3", 0.0))
+                            or 0.0
+                        ),
+                        "payload_slots": [
+                            dict(slot)
+                            for slot in (raw_space.get("payload_slots", []) or [])
+                            if isinstance(slot, dict)
+                        ],
                     }
                 )
 
             if clean_spaces:
                 self.inventory_spaces_by_location[location_name] = clean_spaces
+
+    def _payload_volume_m3(self, payload_name: str) -> float:
+        payload_name = normalise_payload_name(payload_name)
+        payload = self.payloads.get(payload_name)
+        if payload is None:
+            return 0.0
+        return max(0.0, float(payload.length_m)) * max(0.0, float(payload.width_m)) * max(0.0, float(payload.height_m))
+
+    def _inventory_space_capacity_volume_m3(self, space: dict, payload_name: str = "") -> float:
+        if not isinstance(space, dict):
+            return 0.0
+        explicit = 0.0
+        try:
+            explicit = float(space.get("capacity_volume_m3", 0.0) or 0.0)
+        except Exception:
+            explicit = 0.0
+        if explicit > 0.0:
+            return explicit
+
+        target_payload = normalise_payload_name(payload_name)
+        slot_total = 0.0
+        for slot in space.get("payload_slots", []) or []:
+            if not isinstance(slot, dict):
+                continue
+            slot_payload = normalise_payload_name(slot.get("payload", ""))
+            if target_payload and slot_payload and slot_payload != target_payload:
+                continue
+            slot_total += self._payload_volume_m3(slot_payload or target_payload)
+        if slot_total > 0.0:
+            return slot_total
+
+        # Only use physical space volume when a real height has been configured.
+        # The simulator uses a very large default height for fit checks, which
+        # must not become an enormous stock-volume capacity.
+        try:
+            height = max(0.0, float(space.get("height_m", 0.0) or 0.0))
+            if height <= 0.0 or height >= 1000.0:
+                return 0.0
+            return (
+                max(0.0, float(space.get("length_m", 0.0) or 0.0))
+                * max(0.0, float(space.get("width_m", 0.0) or 0.0))
+                * height
+            )
+        except Exception:
+            return 0.0
+
+    def _location_inventory_capacity_volume_m3(self, location_name: str, payload_name: str = "") -> float:
+        return round(
+            sum(
+                self._inventory_space_capacity_volume_m3(space, payload_name)
+                for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), [])
+            ),
+            6,
+        )
+
+    def _build_reserve_capacity_lookup(self) -> Dict[Tuple[str, str], float]:
+        lookup: Dict[Tuple[str, str], float] = {}
+        for location_name, spaces in self.inventory_spaces_by_location.items():
+            generic_total = self._location_inventory_capacity_volume_m3(location_name, "")
+            if generic_total > 0.0:
+                lookup[(location_name, "")] = generic_total
+            for payload_name in self.payloads:
+                if is_empty_payload_name(payload_name):
+                    continue
+                total = self._location_inventory_capacity_volume_m3(location_name, payload_name)
+                if total > 0.0:
+                    lookup[(location_name, payload_name)] = total
+        return lookup
+
+    def _apply_reserve_replenishment_completion(self, task: Task, finish_time: float) -> None:
+        if not bool(getattr(task, "reserve_replenishment", False)):
+            return
+        if getattr(self, "task_generation_manager", None):
+            try:
+                self.task_generation_manager.apply_task_completion(task, finish_time)
+            except Exception as exc:
+                print(f"Failed to apply reserve replenishment for {getattr(task, 'id', '')}: {exc}")
+        self.log_step(
+            event_time=finish_time,
+            event_type="reserve_replenished",
+            task_id=getattr(task, "id", ""),
+            details=(
+                f"Replenished reserve at {getattr(task, 'reserve_location', getattr(task, 'dropoff', ''))}: "
+                f"+{float(getattr(task, 'reserve_replenish_volume_m3', 0.0) or 0.0):.3f}m3 "
+                f"towards {float(getattr(task, 'reserve_after_target_m3', 0.0) or 0.0):.3f}m3 "
+                f"of max {float(getattr(task, 'reserve_max_volume_m3', 0.0) or 0.0):.3f}m3"
+            ),
+            from_location=getattr(task, "pickup", ""),
+            to_location=getattr(task, "dropoff", ""),
+            payload_name=getattr(task, "payload", ""),
+            payload_instance_id=getattr(task, "payload_instance_id", ""),
+            status="completed",
+            task_source=getattr(task, "task_source", ""),
+            department_id=getattr(task, "department_id", ""),
+            container_type=getattr(task, "container_type", ""),
+            reserve_replenishment=True,
+            reserve_location=getattr(task, "reserve_location", ""),
+            reserve_before_m3=float(getattr(task, "reserve_before_m3", 0.0) or 0.0),
+            reserve_replenish_volume_m3=float(getattr(task, "reserve_replenish_volume_m3", 0.0) or 0.0),
+            reserve_after_target_m3=float(getattr(task, "reserve_after_target_m3", 0.0) or 0.0),
+            reserve_max_volume_m3=float(getattr(task, "reserve_max_volume_m3", 0.0) or 0.0),
+        )
+
+    def _task_uses_reserve_volume(self, task: Optional[Task]) -> bool:
+        return bool(getattr(task, "reserve_replenishment", False))
 
     def _location_has_inventory_spaces(self, location_name: str) -> bool:
         # Inventory rules only apply where at least one valid inventory space has
@@ -2087,6 +2336,8 @@ class Simulation:
     def _reserve_inventory_space_for_task(
         self, task: Task, payload: PayloadType
     ) -> Optional[dict]:
+        if self._task_uses_reserve_volume(task):
+            return None
         if not self._location_has_inventory_spaces(task.dropoff):
             return None
 
@@ -2101,6 +2352,8 @@ class Simulation:
     def _occupy_inventory_space_for_completed_task(
         self, task: Task, payload: PayloadType
     ) -> None:
+        if self._task_uses_reserve_volume(task):
+            return
         if not self._location_has_inventory_spaces(task.dropoff):
             return
 
@@ -2141,6 +2394,8 @@ class Simulation:
     def _free_inventory_space_for_pickup(
         self, task: Task, payload: PayloadType
     ) -> None:
+        if self._task_uses_reserve_volume(task):
+            return
         if not self._location_has_inventory_spaces(task.pickup):
             return
 
@@ -2558,6 +2813,71 @@ class Simulation:
             if len(set(names)) > 1
         }
 
+    def _plain_route_graph_payload(self) -> Tuple[dict, dict]:
+        """Return pickle-safe copies of the floor route graphs.
+
+        The runtime graphs are defaultdicts with lambda factories, which are not
+        pickleable on Windows.  Static multiprocessing precompute only needs the
+        adjacency lists, so this converts them to plain dictionaries/lists.
+        """
+        graphs = {
+            int(floor): {str(node): list(edges) for node, edges in graph.items()}
+            for floor, graph in self.floor_graphs.items()
+        }
+        reverse_graphs = {
+            int(floor): {str(node): list(edges) for node, edges in graph.items()}
+            for floor, graph in self.floor_reverse_graphs.items()
+        }
+        return graphs, reverse_graphs
+
+    def _precompute_static_routes_sequential(self, jobs: List[Tuple[int, str, str]]) -> None:
+        self.route_precompute_last_executor = "sequential"
+        for floor, start_name, end_name in jobs:
+            self._shortest_path_same_floor(floor, start_name, end_name)
+
+    def _precompute_static_routes_threaded(self, jobs: List[Tuple[int, str, str]]) -> None:
+        if self.routing_executor is None or len(jobs) < self.route_precompute_parallel_min_pairs:
+            self._precompute_static_routes_sequential(jobs)
+            return
+        self.route_precompute_last_executor = "thread"
+
+        def run_job(job):
+            floor, start_name, end_name = job
+            self._shortest_path_same_floor(floor, start_name, end_name)
+
+        futures = [self.routing_executor.submit(run_job, job) for job in jobs]
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as exc:
+                self.route_precompute_last_error = str(exc)
+
+    def _precompute_static_routes_multiprocess(self, jobs: List[Tuple[int, str, str]]) -> bool:
+        if len(jobs) < self.route_precompute_parallel_min_pairs:
+            return False
+        workers = max(1, min(self.route_precompute_processes, len(jobs)))
+        if workers <= 1:
+            return False
+
+        graphs, reverse_graphs = self._plain_route_graph_payload()
+        try:
+            with ProcessPoolExecutor(
+                max_workers=workers,
+                initializer=_mp_init_route_graphs,
+                initargs=(graphs, reverse_graphs),
+            ) as executor:
+                futures = [executor.submit(_mp_shortest_path_same_floor, job) for job in jobs]
+                with self.route_cache_lock:
+                    for future in as_completed(futures):
+                        cache_key, result = future.result()
+                        self.route_cache[cache_key] = result
+            self.route_precompute_last_executor = f"process:{workers}"
+            self.route_precompute_last_error = ""
+            return True
+        except Exception as exc:
+            self.route_precompute_last_error = str(exc)
+            return False
+
     def _precompute_static_routes(self) -> None:
         if not self.route_precompute_enabled:
             return
@@ -2578,21 +2898,23 @@ class Simulation:
         ):
             return
 
-        def run_job(job):
-            floor, start_name, end_name = job
-            self._shortest_path_same_floor(floor, start_name, end_name)
-
-        if self.routing_executor is None or len(jobs) < 128:
-            for job in jobs:
-                run_job(job)
+        mode = self.route_precompute_executor_mode
+        if mode == "off":
+            return
+        if mode == "sequential":
+            self._precompute_static_routes_sequential(jobs)
+            return
+        if mode == "thread":
+            self._precompute_static_routes_threaded(jobs)
             return
 
-        futures = [self.routing_executor.submit(run_job, job) for job in jobs]
-        for future in as_completed(futures):
-            try:
-                future.result()
-            except Exception:
-                pass
+        # Default: use process-based route-cache precompute, then fall back to
+        # threaded/sequential calculation if multiprocessing is unavailable in
+        # the current launch context.  The simulation event loop remains
+        # single-threaded; only immutable route-cache entries are created here.
+        if self._precompute_static_routes_multiprocess(jobs):
+            return
+        self._precompute_static_routes_threaded(jobs)
 
     def _shortest_path_same_floor(
         self,
@@ -4045,7 +4367,7 @@ class Simulation:
                 )
                 return None
 
-            if self._location_has_inventory_spaces(task.dropoff):
+            if self._location_has_inventory_spaces(task.dropoff) and not self._task_uses_reserve_volume(task):
                 free_space = self._find_free_inventory_space(task.dropoff, payload)
                 if free_space is None and not self._task_can_exchange_with_store_empty(
                     task, payload
@@ -4360,6 +4682,7 @@ class Simulation:
                 reserved_space = self._reserve_inventory_space_for_task(task, payload)
                 if (
                     self._location_has_inventory_spaces(dropoff_loc.name)
+                    and not self._task_uses_reserve_volume(task)
                     and reserved_space is None
                     and not self._task_can_exchange_with_store_empty(task, payload)
                 ):
@@ -4529,6 +4852,7 @@ class Simulation:
             if (
                 payload_for_inventory is not None
                 and self._location_has_inventory_spaces(task.dropoff)
+                and not self._task_uses_reserve_volume(task)
             ):
                 payload = payload_for_inventory
                 if self._find_free_inventory_space(
@@ -4691,7 +5015,7 @@ class Simulation:
                 f"{payload.length_m}m x {payload.width_m}m x {payload.height_m}m)"
             )
 
-        if self._location_has_inventory_spaces(dropoff_name):
+        if self._location_has_inventory_spaces(dropoff_name) and not self._task_uses_reserve_volume(task):
             spaces = self.inventory_spaces_by_location.get(dropoff_name, [])
             compatible_space_count = sum(
                 1
@@ -5010,6 +5334,12 @@ class Simulation:
                 waste_volume_m3=getattr(task, "waste_volume_m3", 0.0),
                 container_type=getattr(task, "container_type", ""),
                 **self._task_tracking_log_kwargs(task),
+                reserve_replenishment=bool(getattr(task, "reserve_replenishment", False)),
+                reserve_location=str(getattr(task, "reserve_location", "") or ""),
+                reserve_before_m3=float(getattr(task, "reserve_before_m3", 0.0) or 0.0),
+                reserve_replenish_volume_m3=float(getattr(task, "reserve_replenish_volume_m3", 0.0) or 0.0),
+                reserve_after_target_m3=float(getattr(task, "reserve_after_target_m3", 0.0) or 0.0),
+                reserve_max_volume_m3=float(getattr(task, "reserve_max_volume_m3", 0.0) or 0.0),
             )
 
             segment_start_time = start_time
@@ -5536,7 +5866,11 @@ class Simulation:
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]
             payload_obj = self._payload_for_task(task)
-            if payload_obj is not None and not is_empty_payload_name(task.payload):
+            if (
+                payload_obj is not None
+                and not is_empty_payload_name(task.payload)
+                and not self._task_uses_reserve_volume(task)
+            ):
                 try:
                     self._pickup_payload_instance_for_task(task)
                 except RuntimeError as exc:
@@ -5546,6 +5880,7 @@ class Simulation:
                 self._consume_store_empty_for_exchange(task, payload_obj)
                 self._store_payload_instance_for_task(task)
                 self._occupy_inventory_space_for_completed_task(task, payload_obj)
+            self._apply_reserve_replenishment_completion(task, event.payload["finish_time"])
             self.log_step(
                 event_time=event.payload["finish_time"],
                 event_type="task_complete",
@@ -5623,6 +5958,12 @@ class Simulation:
                         getattr(task, "tracked_item_source_payload", "") or ""
                     ),
                     "tracked_items": getattr(task, "tracked_items", {}) or {},
+                    "reserve_replenishment": bool(getattr(task, "reserve_replenishment", False)),
+                    "reserve_location": str(getattr(task, "reserve_location", "") or ""),
+                    "reserve_before_m3": round(float(getattr(task, "reserve_before_m3", 0.0) or 0.0), 6),
+                    "reserve_replenish_volume_m3": round(float(getattr(task, "reserve_replenish_volume_m3", 0.0) or 0.0), 6),
+                    "reserve_after_target_m3": round(float(getattr(task, "reserve_after_target_m3", 0.0) or 0.0), 6),
+                    "reserve_max_volume_m3": round(float(getattr(task, "reserve_max_volume_m3", 0.0) or 0.0), 6),
                 }
             )
 
@@ -5653,7 +5994,11 @@ class Simulation:
             tasks: List[Task] = event.payload["tasks"]
             for task in tasks:
                 payload_obj = self._payload_for_task(task)
-                if payload_obj is not None and not is_empty_payload_name(task.payload):
+                if (
+                    payload_obj is not None
+                    and not is_empty_payload_name(task.payload)
+                    and not self._task_uses_reserve_volume(task)
+                ):
                     try:
                         self._pickup_payload_instance_for_task(task)
                     except RuntimeError as exc:
@@ -5664,6 +6009,7 @@ class Simulation:
                     self._free_inventory_space_for_pickup(task, payload_obj)
                     self._store_payload_instance_for_task(task)
                     self._occupy_inventory_space_for_completed_task(task, payload_obj)
+                self._apply_reserve_replenishment_completion(task, event.payload["finish_time"])
 
                 final_location_name = str(
                     event.payload.get("end_location") or task.dropoff or ""
@@ -5763,6 +6109,12 @@ class Simulation:
                             getattr(task, "tracked_item_source_payload", "") or ""
                         ),
                         "tracked_items": getattr(task, "tracked_items", {}) or {},
+                        "reserve_replenishment": bool(getattr(task, "reserve_replenishment", False)),
+                        "reserve_location": str(getattr(task, "reserve_location", "") or ""),
+                        "reserve_before_m3": round(float(getattr(task, "reserve_before_m3", 0.0) or 0.0), 6),
+                        "reserve_replenish_volume_m3": round(float(getattr(task, "reserve_replenish_volume_m3", 0.0) or 0.0), 6),
+                        "reserve_after_target_m3": round(float(getattr(task, "reserve_after_target_m3", 0.0) or 0.0), 6),
+                        "reserve_max_volume_m3": round(float(getattr(task, "reserve_max_volume_m3", 0.0) or 0.0), 6),
                     }
                 )
                 self._schedule_configured_return_task(
@@ -5962,6 +6314,12 @@ class Simulation:
         exchange_mode: str = "",
         tracked_item_source_payload: str = "",
         tracked_items: Optional[dict] = None,
+        reserve_replenishment: bool = False,
+        reserve_location: str = "",
+        reserve_before_m3: float = 0.0,
+        reserve_replenish_volume_m3: float = 0.0,
+        reserve_after_target_m3: float = 0.0,
+        reserve_max_volume_m3: float = 0.0,
     ):
         if not self.verbose:
             return
@@ -6020,6 +6378,12 @@ class Simulation:
                 "exchange_mode": exchange_mode,
                 "tracked_item_source_payload": tracked_item_source_payload,
                 "tracked_items": json.dumps(tracked_items or {}, ensure_ascii=False),
+                "reserve_replenishment": bool(reserve_replenishment),
+                "reserve_location": reserve_location,
+                "reserve_before_m3": round(float(reserve_before_m3 or 0.0), 6),
+                "reserve_replenish_volume_m3": round(float(reserve_replenish_volume_m3 or 0.0), 6),
+                "reserve_after_target_m3": round(float(reserve_after_target_m3 or 0.0), 6),
+                "reserve_max_volume_m3": round(float(reserve_max_volume_m3 or 0.0), 6),
             }
         )
 
@@ -6075,6 +6439,12 @@ class Simulation:
             "exchange_mode",
             "tracked_item_source_payload",
             "tracked_items",
+            "reserve_replenishment",
+            "reserve_location",
+            "reserve_before_m3",
+            "reserve_replenish_volume_m3",
+            "reserve_after_target_m3",
+            "reserve_max_volume_m3",
         ]
 
         with open(self.verbose_csv_path, "w", newline="", encoding="utf-8") as f:

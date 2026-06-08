@@ -4005,6 +4005,21 @@ class SimulationSettingsDialog(QDialog):
         self.route_precompute_max_pairs_edit = QLineEdit(
             str(simulation.get("route_precompute_max_pairs", 100000))
         )
+        self.route_precompute_executor_combo = QComboBox()
+        self.route_precompute_executor_combo.addItems(["process", "thread", "sequential", "off"])
+        current_executor = str(simulation.get("route_precompute_executor", "process") or "process").strip().lower()
+        if current_executor not in {"process", "thread", "sequential", "off"}:
+            current_executor = "process"
+        self.route_precompute_executor_combo.setCurrentText(current_executor)
+        self.route_precompute_processes_edit = QLineEdit(
+            str(simulation.get("route_precompute_processes", 8))
+        )
+        self.routing_worker_threads_edit = QLineEdit(
+            str(simulation.get("routing_worker_threads", 8))
+        )
+        self.route_precompute_parallel_min_pairs_edit = QLineEdit(
+            str(simulation.get("route_precompute_parallel_min_pairs", 128))
+        )
         self.max_multi_stop_candidate_tasks_edit = QLineEdit(
             str(simulation.get("max_multi_stop_candidate_tasks", 8))
         )
@@ -4030,6 +4045,10 @@ class SimulationSettingsDialog(QDialog):
         form.addRow("Generated release stagger sec", self.generated_stagger_edit)
         form.addRow("Static route precompute", self.precompute_routes_check)
         form.addRow("Route precompute max pairs", self.route_precompute_max_pairs_edit)
+        form.addRow("Route precompute executor", self.route_precompute_executor_combo)
+        form.addRow("Route precompute processes", self.route_precompute_processes_edit)
+        form.addRow("Route precompute min parallel pairs", self.route_precompute_parallel_min_pairs_edit)
+        form.addRow("Routing estimate worker threads", self.routing_worker_threads_edit)
         form.addRow(
             "Max multi-stop candidate tasks", self.max_multi_stop_candidate_tasks_edit
         )
@@ -4048,6 +4067,8 @@ class SimulationSettingsDialog(QDialog):
             "otherwise release at the same instant. Static route precompute fills "
             "the route cache before the run. Candidate and assignment limits reduce "
             "large release bursts from blocking the simulator UI/event loop. "
+            "Route precompute executor controls static route-cache generation only; "
+            "the simulation event loop remains deterministic and single-threaded. "
             "Waste containers present at start seeds a physical bin/container into "
             "department waste pickup locations before the first generated waste task."
         )
@@ -4067,6 +4088,10 @@ class SimulationSettingsDialog(QDialog):
         result.setdefault("generated_task_release_stagger_sec", 0.25)
         result.setdefault("precompute_static_routes", True)
         result.setdefault("route_precompute_max_pairs", 100000)
+        result.setdefault("route_precompute_executor", "process")
+        result.setdefault("route_precompute_processes", 8)
+        result.setdefault("route_precompute_parallel_min_pairs", 128)
+        result.setdefault("routing_worker_threads", 8)
         result.setdefault("max_multi_stop_candidate_tasks", 8)
         result.setdefault("max_single_candidate_tasks", 8)
         result.setdefault("max_assignments_per_tick", 25)
@@ -4143,6 +4168,21 @@ class SimulationSettingsDialog(QDialog):
                 "Route precompute max pairs",
                 minimum=0,
             )
+            route_precompute_processes = self._int_value(
+                self.route_precompute_processes_edit,
+                "Route precompute processes",
+                minimum=1,
+            )
+            route_precompute_parallel_min_pairs = self._int_value(
+                self.route_precompute_parallel_min_pairs_edit,
+                "Route precompute min parallel pairs",
+                minimum=1,
+            )
+            routing_worker_threads = self._int_value(
+                self.routing_worker_threads_edit,
+                "Routing estimate worker threads",
+                minimum=1,
+            )
             max_multi_stop_candidate_tasks = self._int_value(
                 self.max_multi_stop_candidate_tasks_edit,
                 "Max multi-stop candidate tasks",
@@ -4174,6 +4214,10 @@ class SimulationSettingsDialog(QDialog):
                     "generated_task_release_stagger_sec": generated_stagger,
                     "precompute_static_routes": self.precompute_routes_check.isChecked(),
                     "route_precompute_max_pairs": route_precompute_max_pairs,
+                    "route_precompute_executor": self.route_precompute_executor_combo.currentText().strip(),
+                    "route_precompute_processes": route_precompute_processes,
+                    "route_precompute_parallel_min_pairs": route_precompute_parallel_min_pairs,
+                    "routing_worker_threads": routing_worker_threads,
                     "max_multi_stop_candidate_tasks": max_multi_stop_candidate_tasks,
                     "max_single_candidate_tasks": max_single_candidate_tasks,
                     "max_assignments_per_tick": max_assignments_per_tick,

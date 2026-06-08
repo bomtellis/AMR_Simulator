@@ -307,6 +307,10 @@ DEFAULT_JSON = {
         "generated_task_release_stagger_sec": 0.25,
         "precompute_static_routes": True,
         "route_precompute_max_pairs": 100000,
+        "route_precompute_executor": "process",
+        "route_precompute_processes": 8,
+        "route_precompute_parallel_min_pairs": 128,
+        "routing_worker_threads": 8,
         "max_multi_stop_candidate_tasks": 8,
         "max_single_candidate_tasks": 8,
         "max_assignments_per_tick": 25,
@@ -376,6 +380,22 @@ class JsonStore:
         simulation.setdefault(
             "route_precompute_max_pairs",
             default_simulation.get("route_precompute_max_pairs", 100000),
+        )
+        simulation.setdefault(
+            "route_precompute_executor",
+            default_simulation.get("route_precompute_executor", "process"),
+        )
+        simulation.setdefault(
+            "route_precompute_processes",
+            default_simulation.get("route_precompute_processes", 8),
+        )
+        simulation.setdefault(
+            "route_precompute_parallel_min_pairs",
+            default_simulation.get("route_precompute_parallel_min_pairs", 128),
+        )
+        simulation.setdefault(
+            "routing_worker_threads",
+            default_simulation.get("routing_worker_threads", 8),
         )
         simulation.setdefault(
             "max_multi_stop_candidate_tasks",
