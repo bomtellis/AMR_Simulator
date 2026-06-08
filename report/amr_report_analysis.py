@@ -1051,21 +1051,27 @@ def build_location_space_analysis(
         .round(1)
     )
 
-    # Capacity recommendation: keep current space, then add failed payload footprints with 30% handling allowance.
+    # Capacity recommendation baseline.
+    #
+    # Do not convert every failed delivery attempt into another permanent
+    # inventory space.  A burst of repeated failures at a hub location can turn
+    # 19 trolley destinations into hundreds of "recommended" spaces.  Space
+    # count is corrected later from simulator peak simultaneous occupancy rows
+    # when those rows are available.  This fallback only protects older CSVs
+    # that do not contain peak-location metrics.
     util["recommended_area_m2"] = util.apply(
         lambda r: max(
             float(r["area_m2"]),
-            float(r["area_m2"]) + (float(r["failed_payload_area_m2"]) * 1.30),
-            float(r["max_failed_payload_area_m2"])
-            * max(int(r["inventory_spaces_current"]), 1)
-            * 1.30,
+            float(r["area_m2"]) + (float(r["max_failed_payload_area_m2"]) * 1.30),
         ),
         axis=1,
     ).round(2)
     util["recommended_inventory_spaces"] = util.apply(
         lambda r: max(
             int(r["inventory_spaces_current"]),
-            int(r["inventory_spaces_current"]) + int(r["capacity_related_failures"]),
+            int(r["inventory_spaces_current"]) + (
+                1 if int(r["capacity_related_failures"]) > 0 else 0
+            ),
             (
                 1
                 if int(r["failed_delivery_attempts"]) > 0
@@ -1235,12 +1241,14 @@ def build_location_peak_occupancy(
     ctx: Context,
     location_catalog: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    """Extract final peak storage demand rows written by the simulator.
+    """Extract one authoritative peak storage-demand row per location.
 
-    The simulator writes one location_space_recommendation row per location at
-    verbose CSV export time.  Older CSVs may only have task_complete rows with
-    current/recommended area values, so this function falls back to the maximum
-    observed values where final recommendation rows are not present.
+    The simulator writes ``location_space_recommendation`` rows at CSV export
+    time.  Those rows already contain the simulator's final per-location peak
+    state, so the report must not add or take the maximum across repeated rows.
+    If a CSV has duplicate recommendation rows for the same location, the latest
+    row by event time is used.  Older CSVs without final recommendation rows fall
+    back to the latest row carrying location-space metrics.
     """
     columns = [
         "department",
@@ -1261,67 +1269,114 @@ def build_location_peak_occupancy(
 
     loc_meta = pd.DataFrame(columns=["location", "department", "category"])
     if location_catalog is not None and not location_catalog.empty:
-        keep = [c for c in ["location", "department", "category"] if c in location_catalog.columns]
+        keep = [
+            c
+            for c in ["location", "department", "category"]
+            if c in location_catalog.columns
+        ]
         if "location" in keep:
             loc_meta = location_catalog[keep].drop_duplicates("location").copy()
 
-    def col(name: str) -> bool:
-        return name in df.columns
+    def _clean_location(value) -> str:
+        text = str(value or "").strip()
+        return "" if text.lower() in {"", "-", "nan", "none", "null"} else text
 
     event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
-    final_rows = df[event_text.str.fullmatch("location_space_recommendation", case=False, na=False)].copy()
+    final_rows = df[
+        event_text.str.fullmatch(
+            "location_space_recommendation", case=False, na=False
+        )
+    ].copy()
+
     if final_rows.empty:
-        # Fallback for CSVs created before the final recommendation rows were
-        # added. This uses maximum values observed on completion rows.
-        if "location_recommended_area_m2" not in df.columns and "location_payload_footprint_area_m2" not in df.columns:
+        metric_cols = {
+            "location_peak_payload_count",
+            "location_peak_footprint_area_m2",
+            "location_peak_volume_m3",
+            "location_recommended_area_m2",
+            "location_payload_footprint_area_m2",
+            "location_payload_volume_m3",
+        }
+        if not metric_cols.intersection(df.columns):
             return pd.DataFrame(columns=columns)
-        location_source = None
-        for candidate in ("to_location", "end_node", "from_location"):
-            if candidate in df.columns:
-                location_source = candidate
-                break
+        location_source = next(
+            (c for c in ("to_location", "end_node", "from_location") if c in df.columns),
+            None,
+        )
         if location_source is None:
             return pd.DataFrame(columns=columns)
-        final_rows = df[df.get(location_source).notna()].copy()
-        final_rows["_report_location"] = final_rows[location_source].astype(str)
+        final_rows = df[df[location_source].notna()].copy()
     else:
-        location_source = "to_location" if "to_location" in final_rows.columns else "end_node"
-        final_rows["_report_location"] = final_rows.get(location_source, pd.Series("", index=final_rows.index)).astype(str)
+        location_source = next(
+            (c for c in ("to_location", "end_node", "from_location") if c in final_rows.columns),
+            None,
+        )
+        if location_source is None:
+            return pd.DataFrame(columns=columns)
+
+    final_rows["_report_location"] = final_rows[location_source].map(_clean_location)
+    final_rows = final_rows[final_rows["_report_location"] != ""].copy()
+    if final_rows.empty:
+        return pd.DataFrame(columns=columns)
+
+    # Use the latest simulator state per location.  Do not aggregate repeated
+    # recommendation rows; aggregating keeps stale doubled counts alive.
+    final_rows = final_rows.sort_values(ctx.time_col, kind="stable")
+    latest_rows = final_rows.drop_duplicates("_report_location", keep="last")
+
+    def num(row: pd.Series, name: str) -> float:
+        if name not in row.index:
+            return 0.0
+        value = pd.to_numeric(pd.Series([row.get(name)]), errors="coerce").iloc[0]
+        return 0.0 if pd.isna(value) else float(value)
+
+    def bool_value(row: pd.Series, name: str) -> bool:
+        if name not in row.index:
+            return False
+        value = str(row.get(name, "")).strip().lower()
+        return value in {"true", "1", "yes", "y"}
 
     rows = []
-    for location, sub in final_rows.groupby("_report_location", dropna=False):
-        location = str(location or "").strip()
-        if not location or location == "-":
+    for _, row in latest_rows.iterrows():
+        location = _clean_location(row.get("_report_location", ""))
+        if not location:
             continue
-        def max_num(name: str) -> float:
-            if name not in sub.columns:
-                return 0.0
-            return float(pd.to_numeric(sub[name], errors="coerce").fillna(0.0).max())
-        def last_bool(name: str) -> bool:
-            if name not in sub.columns or sub[name].dropna().empty:
-                return False
-            value = str(sub[name].dropna().iloc[-1]).strip().lower()
-            return value in {"true", "1", "yes", "y"}
-        peak_area = max_num("location_peak_footprint_area_m2") or max_num("location_payload_footprint_area_m2")
-        peak_volume = max_num("location_peak_volume_m3") or max_num("location_payload_volume_m3")
-        recommended_area = max_num("location_recommended_area_m2") or peak_area
-        recommended_volume = max_num("location_recommended_volume_m3") or peak_volume
-        rows.append({
-            "location": location,
-            "inventory_spaces_disabled": last_bool("location_inventory_spaces_disabled"),
-            "configured_inventory_area_m2": round(max_num("location_configured_inventory_area_m2"), 2),
-            "peak_payload_count": int(max_num("location_peak_payload_count")),
-            "peak_area_used_m2": round(peak_area, 2),
-            "peak_volume_m3": round(peak_volume, 2),
-            "current_area_used_m2": round(max_num("location_payload_footprint_area_m2"), 2),
-            "current_volume_m3": round(max_num("location_payload_volume_m3"), 2),
-            "recommended_area_m2": round(recommended_area, 2),
-            "recommended_volume_m3": round(recommended_volume, 2),
-        })
+        peak_area = num(row, "location_peak_footprint_area_m2") or num(
+            row, "location_payload_footprint_area_m2"
+        )
+        peak_volume = num(row, "location_peak_volume_m3") or num(
+            row, "location_payload_volume_m3"
+        )
+        recommended_area = num(row, "location_recommended_area_m2") or peak_area
+        recommended_volume = num(row, "location_recommended_volume_m3") or peak_volume
+        rows.append(
+            {
+                "location": location,
+                "inventory_spaces_disabled": bool_value(
+                    row, "location_inventory_spaces_disabled"
+                ),
+                "configured_inventory_area_m2": round(
+                    num(row, "location_configured_inventory_area_m2"), 2
+                ),
+                "peak_payload_count": int(
+                    round(num(row, "location_peak_payload_count"))
+                ),
+                "peak_area_used_m2": round(peak_area, 2),
+                "peak_volume_m3": round(peak_volume, 2),
+                "current_area_used_m2": round(
+                    num(row, "location_payload_footprint_area_m2"), 2
+                ),
+                "current_volume_m3": round(
+                    num(row, "location_payload_volume_m3"), 2
+                ),
+                "recommended_area_m2": round(recommended_area, 2),
+                "recommended_volume_m3": round(recommended_volume, 2),
+            }
+        )
 
     if not rows:
         return pd.DataFrame(columns=columns)
-    peak = pd.DataFrame(rows)
+    peak = pd.DataFrame(rows).drop_duplicates("location", keep="last")
     if not loc_meta.empty:
         peak = peak.merge(loc_meta, on="location", how="left")
     else:
@@ -1361,6 +1416,24 @@ def apply_peak_occupancy_to_location_outputs(
                 util[c] = pd.to_numeric(util[c], errors="coerce").fillna(0)
         if "peak_recommended_area_m2" in util.columns:
             util["recommended_area_m2"] = util[["recommended_area_m2", "peak_recommended_area_m2"]].max(axis=1).round(2)
+        if "peak_payload_count" in util.columns:
+            peak_count = pd.to_numeric(util["peak_payload_count"], errors="coerce").fillna(0).astype(int)
+            current_spaces = pd.to_numeric(
+                util.get("inventory_spaces_current", pd.Series(0, index=util.index)),
+                errors="coerce",
+            ).fillna(0).astype(int)
+            existing_recommendation = pd.to_numeric(
+                util.get("recommended_inventory_spaces", pd.Series(0, index=util.index)),
+                errors="coerce",
+            ).fillna(0).astype(int)
+
+            # Peak simultaneous payload count is the authoritative space count.
+            # This prevents repeated failed delivery attempts at a hub from being
+            # interpreted as one permanent inventory space per failure.
+            peak_space_recommendation = peak_count.where(peak_count > 0, existing_recommendation)
+            util["recommended_inventory_spaces"] = pd.concat(
+                [current_spaces, peak_space_recommendation], axis=1
+            ).max(axis=1).astype(int)
         if "peak_area_used_m2" in util.columns:
             area = pd.to_numeric(util.get("area_m2", 0), errors="coerce").fillna(0)
             util["peak_utilisation_pct"] = (pd.to_numeric(util["peak_area_used_m2"], errors="coerce").fillna(0).div(area.where(area > 0)) * 100).fillna(0).round(1)
@@ -1374,9 +1447,26 @@ def apply_peak_occupancy_to_location_outputs(
         if "peak_recommended_area_m2" in rec.columns:
             rec["recommended_area_m2"] = rec[["recommended_area_m2", "peak_recommended_area_m2"]].max(axis=1).round(2)
             rec["additional_area_m2"] = (rec["recommended_area_m2"] - pd.to_numeric(rec["current_area_m2"], errors="coerce").fillna(0)).clip(lower=0).round(2)
+        if "peak_payload_count" in rec.columns:
+            peak_count = pd.to_numeric(rec["peak_payload_count"], errors="coerce").fillna(0).astype(int)
+            current_spaces = pd.to_numeric(
+                rec.get("current_inventory_spaces", pd.Series(0, index=rec.index)),
+                errors="coerce",
+            ).fillna(0).astype(int)
+            existing_recommendation = pd.to_numeric(
+                rec.get("recommended_inventory_spaces", pd.Series(0, index=rec.index)),
+                errors="coerce",
+            ).fillna(0).astype(int)
+            peak_space_recommendation = peak_count.where(peak_count > 0, existing_recommendation)
+            rec["recommended_inventory_spaces"] = pd.concat(
+                [current_spaces, peak_space_recommendation], axis=1
+            ).max(axis=1).astype(int)
+            rec["additional_inventory_spaces"] = (
+                rec["recommended_inventory_spaces"] - current_spaces
+            ).clip(lower=0).astype(int)
         if "peak_area_used_m2" in rec.columns:
             rec["reason"] = rec.apply(
-                lambda r: "Recommended from peak simultaneous payload storage demand recorded by the simulator."
+                lambda r: "Recommended from peak simultaneous payload storage demand recorded by the simulator; failed delivery attempts are not counted as one space each."
                 if float(r.get("peak_area_used_m2", 0) or 0) > 0
                 else r.get("reason", "-"),
                 axis=1,
@@ -1498,7 +1588,7 @@ def analyse(
     payload_dimensions: Optional[pd.DataFrame] = None,
 ) -> Dict[str, pd.DataFrame]:
     payload_weights = payload_weights or {}
-    raw = pd.read_csv(csv_path)
+    raw = pd.read_csv(csv_path, low_memory=False)
     df, ctx = parse_time_column(raw)
     df = df.sort_values(ctx.time_col).reset_index(drop=True)
     cols = ctx.cols

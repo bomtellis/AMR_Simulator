@@ -473,10 +473,15 @@ class Simulation:
         Saved inventory-space layouts can include occupied payload slots. The
         simulator's physical payload store is the source of truth for peak space
         recommendations, so mirror those initial slot contents into records once
-        payload definitions have been loaded. This still happens when inventory
-        checks are globally disabled because the saved spaces/boundaries are only
-        bypassed for capacity enforcement, not erased from the model.
+        payload definitions have been loaded. When inventory spaces are globally
+        disabled, the saved boundaries/spaces are retained in the config but are
+        ignored by the runtime; in that mode, do not seed physical payloads from
+        occupied inventory-space flags because they would become phantom stock and
+        inflate peak occupancy.
         """
+        if getattr(self, "disable_inventory_spaces", False):
+            return
+
         for location_name, spaces in self.inventory_spaces_by_location.items():
             for space in spaces:
                 if not bool(space.get("occupied", False)):
@@ -692,6 +697,27 @@ class Simulation:
     def _mass_collection_payload_allowed(self, cfg: dict, payload_name: str) -> bool:
         payloads = cfg.get("payloads", []) or []
         return not payloads or payload_name in set(payloads)
+
+    def _find_seeded_inventory_payload_record(self, location_name: str, payload_name: str):
+        """Return an existing initial inventory payload record suitable for seeding.
+
+        Occupied inventory spaces and the waste-container seeding option can both
+        describe the same physical bin at simulation start. Reusing the existing
+        inventory-derived record prevents one saved occupied slot and one seeded
+        waste container from being counted as two separate payloads in peak
+        location occupancy.
+        """
+        payload_name = normalise_payload_name(payload_name)
+        if not location_name or not payload_name:
+            return None
+        for record in self.payload_instance_store.records_at(location_name):
+            if getattr(record, "payload", "") != payload_name:
+                continue
+            metadata = getattr(record, "metadata", {}) or {}
+            source = str(metadata.get("task_source", "") or "").strip()
+            if source in {"initial_inventory_space", "initial_waste_container"}:
+                return record
+        return None
 
     def _mass_collection_candidate_records(self, cfg: dict) -> List[object]:
         location = str(cfg.get("location", "") or "").strip()
@@ -3056,6 +3082,39 @@ class Simulation:
                     if group_key in seeded_groups:
                         continue
                     seeded_groups.add(group_key)
+
+                    existing_record = self._find_seeded_inventory_payload_record(
+                        pickup_location, payload_name
+                    )
+                    if existing_record is not None:
+                        # The saved inventory layout already provided the physical
+                        # starting bin. Attach the waste metadata to that same
+                        # instance rather than creating a second record.
+                        instance_id = str(getattr(existing_record, "instance_id", "") or "")
+                        metadata = dict(getattr(existing_record, "metadata", {}) or {})
+                        metadata.update(
+                            {
+                                "task_source": "initial_waste_container",
+                                "department_id": dept_id,
+                                "waste_stream": stream_name,
+                                "container_group": group_key,
+                                "container_type": payload_name,
+                                "container_state": "empty",
+                            }
+                        )
+                        self.payload_instance_store.store(
+                            pickup_location,
+                            payload_name,
+                            instance_id,
+                            source_task_id="initial_waste_container",
+                            metadata=metadata,
+                        )
+                        self.initial_waste_container_instances[
+                            (group_key, pickup_location, payload_name)
+                        ] = instance_id
+                        self._recalculate_location_payload_space(pickup_location)
+                        continue
+
                     instance_id = self.payload_instance_store.make_instance_id(
                         payload_name, group_key
                     )
