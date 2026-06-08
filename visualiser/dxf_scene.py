@@ -6,7 +6,7 @@ import math
 from typing import Dict, List, Optional, Tuple
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainterPath, QPen, QBrush
+from PySide6.QtGui import QColor, QPainterPath, QPen, QBrush, QFont
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPathItem,
@@ -431,9 +431,11 @@ class DXFScene:
                 text = (entity.get("text") or "").strip()
                 if not text:
                     continue
-                if view_scale < 6:
-                    continue
 
+                # Keep DXF labels as fixed-size scene objects.  They should not
+                # ignore the view transform and should not change font pixel size
+                # as the camera zooms.  Zooming in/out now scales them naturally
+                # with the drawing geometry.
                 text_height = float(entity.get("height") or 0.0)
                 if text_height > 40.0:
                     continue
@@ -441,25 +443,21 @@ class DXFScene:
                 x, y = entity["insert"]
                 item = QGraphicsSimpleTextItem(text)
                 item.setBrush(QBrush(QColor("#C0C0C0")))
-                font = item.font()
 
-                if text_height < 1:
-                    font_size = 12
-                    if view_scale <= 8:
-                        font_size = 6
-                    elif view_scale >= 22:
-                        font_size = 12
-                    else:
-                        font_size = 6 * math.pow(2, (view_scale - 8) / 9)
-                else:
-                    font_size = 24
-
-                font.setPixelSize(int(font_size))
+                font = QFont("Arial")
+                font.setPointSizeF(10.0)
+                font.setStyleStrategy(QFont.PreferAntialias)
+                font.setHintingPreference(QFont.PreferFullHinting)
                 item.setFont(font)
-                item.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+
+                bounds = item.boundingRect()
+                if bounds.height() > 0:
+                    # Match the visualiser's fixed scene-unit text behaviour.
+                    item.setScale(0.45 / bounds.height())
+
                 item.setPos(x, -y)
                 item.setRotation(-float(entity.get("rotation", 0.0)))
-                item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
+                item.setCacheMode(QGraphicsItem.NoCache)
                 text_items.append(item)
 
         if not line_path.isEmpty():

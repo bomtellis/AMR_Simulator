@@ -22,6 +22,8 @@ from PySide6.QtGui import (
     QFont,
     QPainterPath,
     QMouseEvent,
+    QSurfaceFormat,
+    QFontDatabase,
 )
 from PySide6.QtCore import QPointF, QTimer, Qt, QRectF, QRect, QObject, Signal, QThread
 from PySide6.QtWidgets import (
@@ -66,6 +68,11 @@ from PySide6.QtWidgets import (
     QFrame,
     QLineEdit,
 )
+
+try:
+    from PySide6.QtOpenGLWidgets import QOpenGLWidget
+except Exception:  # pragma: no cover - OpenGL may be unavailable on some systems
+    QOpenGLWidget = None
 
 try:
     import ezdxf
@@ -498,13 +505,53 @@ class GraphicsView(QGraphicsView):
         self._overlay_provider = None
         self._context_menu_callback = None
 
-        self.setRenderHint(QPainter.Antialiasing, False)
+        self.setRenderHint(QPainter.Antialiasing, True)
         self.setRenderHint(QPainter.TextAntialiasing, True)
+        self.setRenderHint(QPainter.SmoothPixmapTransform, True)
         self.setDragMode(QGraphicsView.NoDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
         self.setBackgroundBrush(QBrush(QColor("#111111")))
+
+        self.opengl_enabled = False
+        self.opengl_error = ""
+        self.enable_opengl_viewport()
+
+    def enable_opengl_viewport(self) -> bool:
+        """Use an OpenGL-backed viewport when available.
+
+        The visualiser still uses QGraphicsScene/QGraphicsItem so behaviour,
+        picking and dialogs remain unchanged, but the final paint surface is
+        GPU-backed. Heavy parsing/calculation remains in worker processes; Qt
+        widgets and QGraphicsItems stay in the GUI process.
+        """
+        if QOpenGLWidget is None:
+            self.opengl_error = "PySide6.QtOpenGLWidgets is not available"
+            return False
+
+        try:
+            fmt = QSurfaceFormat()
+            fmt.setDepthBufferSize(24)
+            fmt.setStencilBufferSize(8)
+            fmt.setSamples(4)
+
+            viewport = QOpenGLWidget(self)
+            viewport.setFormat(fmt)
+            self.setViewport(viewport)
+
+            # With an OpenGL viewport partial viewport updates can leave stale
+            # regions on some drivers. Full updates are more stable and the GPU
+            # handles the compositing work.
+            self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+            self.opengl_enabled = True
+            self.opengl_error = ""
+            return True
+        except Exception as exc:  # pragma: no cover - driver/platform dependent
+            self.opengl_enabled = False
+            self.opengl_error = str(exc)
+            self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
+            return False
 
     def set_callbacks(self, zoom_callback=None, pan_callback=None):
         self._zoom_callback = zoom_callback
@@ -1626,7 +1673,7 @@ class AmrTimelineWidget(QWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor("#101010"))
 
-        font = QFont("", 9)
+        font = QFont("Segoe UI", 9)
         painter.setFont(font)
 
         if not self.timeline_data or not self.start_time or not self.end_time:
@@ -2025,6 +2072,17 @@ class SimulationVisualizer(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
         side_layout.addWidget(self.status_label)
+        if getattr(self.view, "opengl_enabled", False):
+            self.status_label.setText("Ready - OpenGL viewport enabled")
+        elif getattr(self.view, "opengl_error", ""):
+            self.status_label.setText(
+                f"Ready - raster viewport fallback ({self.view.opengl_error})"
+            )
+
+        # The old bottom-left event log was expensive to update on large CSVs
+        # and duplicates the task/timeline views.  Keep the attribute for
+        # backwards-compatible guards, but do not create or add the widget.
+        self.event_box = None
 
         self.timeline_panel = QWidget()
         timeline_panel_layout = QVBoxLayout(self.timeline_panel)
@@ -2529,20 +2587,17 @@ class SimulationVisualizer(QMainWindow):
         return item
 
     def get_text_pixel_size(self) -> int:
-        scale = self.view.transform().m11()
+        # Retained for older callers, but text is no longer sized from the
+        # current zoom level.  Labels are drawn at a fixed scene/map size, so
+        # they naturally appear larger when zooming in and smaller when
+        # zooming out.
+        return 9
 
-        # 12 px when zoomed in, taper down harder when zoomed out
-        if scale >= 2.0:
-            return 12
-        if scale >= 1.2:
-            return 11
-        if scale >= 0.8:
-            return 10
-        if scale >= 0.5:
-            return 8
-        if scale >= 0.35:
-            return 6
-        return 5
+    def _fixed_scene_text_height(self, dynamic: bool = False) -> float:
+        # Text height in scene/world units.  This is intentionally independent
+        # of the view transform.  QGraphicsView then scales the text naturally
+        # with the rest of the drawing.
+        return 0.38 if dynamic else 0.45
 
     def draw_text_item(
         self,
@@ -2557,16 +2612,21 @@ class SimulationVisualizer(QMainWindow):
         item = QGraphicsSimpleTextItem(text)
         item.setBrush(QBrush(QColor(color)))
 
-        if ignore_transform and pixel_size is None:
-            pixel_size = self.get_text_pixel_size()
+        # Do not use ItemIgnoresTransformations here.  The label should be a
+        # fixed-size object in scene coordinates; zooming the camera should make
+        # it appear larger/smaller in the same way as AMRs, spaces and payloads.
+        # The legacy ignore_transform/pixel_size parameters are accepted for
+        # compatibility with existing call sites, but no longer drive zoom-based
+        # font sizing.
+        font = QFont("Arial")
+        font.setPointSizeF(10.0)
+        font.setStyleStrategy(QFont.PreferAntialias)
+        font.setHintingPreference(QFont.PreferFullHinting)
+        item.setFont(font)
 
-        if pixel_size is not None:
-            font = item.font()
-            font.setPixelSize(max(1, int(pixel_size)))
-            item.setFont(font)
-
-        if ignore_transform:
-            item.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+        bounds = item.boundingRect()
+        if bounds.height() > 0:
+            item.setScale(self._fixed_scene_text_height(dynamic) / bounds.height())
 
         item.setPos(x, y)
         self.graphics_scene.addItem(item)
@@ -2716,8 +2776,9 @@ class SimulationVisualizer(QMainWindow):
                 label_item = self.draw_text_item(
                     x + 0.8, y - 0.8, name, color, ignore_transform=True
                 )
-                label_item.setData(0, "layout_node_label")
-                label_item.setData(1, name)
+                if label_item is not None:
+                    label_item.setData(0, "layout_node_label")
+                    label_item.setData(1, name)
 
     def _payload_lookup(self) -> Dict[str, dict]:
         lookup = {}
@@ -5301,6 +5362,11 @@ class SimulationVisualizer(QMainWindow):
         self.node_context_menu.popup(event.globalPosition().toPoint())
 
     def draw_dynamic_state_qt(self, floor: int):
+        if not self.current_time or not self.sim_log.events:
+            if self.event_box is not None:
+                self.event_box.clear()
+            return
+
         amr_states, recent_events = self._current_state()
         followed_amr = self.follow_combo.currentText().strip()
         visible_world = self._visible_world_rect(margin_m=6.0)
@@ -5356,6 +5422,22 @@ class SimulationVisualizer(QMainWindow):
                     dynamic=True,
                     ignore_transform=True,
                 )
+
+        if self.event_box is None:
+            return
+
+        self.event_box.clear()
+        for item in recent_events:
+            row = item["row"]
+            stamp = item["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+            line = (
+                f"{stamp} | "
+                f"{row.get('amr_id', '')} | "
+                f"{row.get('payload', '')} | "
+                f"{row.get('segment_type', '')} | "
+                f"{row.get('start_node', '')} -> {row.get('end_node', '')}"
+            )
+            self.event_box.append(line)
 
     def _scroll_timeline_to_time(self, value: Optional[datetime]):
         if value is None or not hasattr(self, "timeline_widget"):
@@ -6552,8 +6634,31 @@ class SimulationVisualizer(QMainWindow):
         self.view.viewport().update()
 
 
+def configure_application_font(app: QApplication) -> None:
+    """Force a modern Windows-safe UI font before widgets are created.
+
+    Some Windows/DirectWrite/OpenGL combinations fall back to the legacy
+    ``MS Sans Serif`` bitmap font and log:
+    ``CreateFontFaceFromHDC() failed``.  Using Segoe UI keeps Qt on a
+    TrueType/OpenType font path and avoids the noisy DirectWrite warning.
+    """
+    preferred_families = ["Arial", "Segoe UI", "Tahoma"]
+    available = set(QFontDatabase.families())
+    family = next((name for name in preferred_families if name in available), "Arial")
+    font = QFont(family, 9)
+    app.setFont(font)
+
+
 if __name__ == "__main__":
+    if QOpenGLWidget is not None:
+        default_format = QSurfaceFormat()
+        default_format.setDepthBufferSize(24)
+        default_format.setStencilBufferSize(8)
+        default_format.setSamples(4)
+        QSurfaceFormat.setDefaultFormat(default_format)
+
     app = QApplication(sys.argv)
+    configure_application_font(app)
     window = SimulationVisualizer()
     window.show()
     sys.exit(app.exec())
