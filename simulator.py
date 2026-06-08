@@ -70,6 +70,8 @@ class Simulation:
         )
 
         self.payload_instance_store = PayloadInstanceStore()
+        self.location_storage_peak: Dict[str, dict] = {}
+        self._location_recommendation_rows_written = False
 
         # Congestion setup
         building_cfg = config.get("building", {})
@@ -103,18 +105,6 @@ class Simulation:
                 sim_cfg.get("waste_stream_containers_present_at_start", False),
             )
         )
-        self.disable_inventory_spaces = bool(
-            sim_cfg.get(
-                "disable_inventory_spaces",
-                sim_cfg.get("inventory_spaces_disabled", False),
-            )
-        )
-        # Runtime space-demand tracking is independent of inventory constraints.
-        # It records the maximum simultaneous payload footprint/volume stored at
-        # each location so reporting can recommend storage space even when
-        # inventory capacity checks are disabled.
-        self.location_payload_space_usage: Dict[str, dict] = {}
-        self.location_payload_space_peaks: Dict[str, dict] = {}
         self._reserved_existing_payload_instance_ids = set()
         self.initial_waste_container_instances: Dict[Tuple[str, str, str], str] = {}
         self.route_precompute_enabled = bool(
@@ -285,8 +275,6 @@ class Simulation:
             )
             empty_payload.prefer_multi_stop_amr = False
             self.payloads[EMPTY_PAYLOAD_NAME] = empty_payload
-
-        self._seed_existing_inventory_payload_records()
 
         # Parse waste streams and departments
         self.waste_streams: Dict[str, dict] = {
@@ -466,51 +454,6 @@ class Simulation:
 
         if getattr(self.task_generation_manager, "generators", []):
             self.push_event(0.0, "generator_tick", {})
-
-    def _seed_existing_inventory_payload_records(self) -> None:
-        """Create runtime records for payloads already marked in inventory spaces.
-
-        Saved inventory-space layouts can include occupied payload slots. The
-        simulator's physical payload store is the source of truth for peak space
-        recommendations, so mirror those initial slot contents into records once
-        payload definitions have been loaded. When inventory spaces are globally
-        disabled, the saved boundaries/spaces are retained in the config but are
-        ignored by the runtime; in that mode, do not seed physical payloads from
-        occupied inventory-space flags because they would become phantom stock and
-        inflate peak occupancy.
-        """
-        if getattr(self, "disable_inventory_spaces", False):
-            return
-
-        for location_name, spaces in self.inventory_spaces_by_location.items():
-            for space in spaces:
-                if not bool(space.get("occupied", False)):
-                    continue
-                payload_name = normalise_payload_name(space.get("payload", ""))
-                if not payload_name or payload_name not in self.payloads:
-                    continue
-                instance_id = str(space.get("payload_instance_id", "") or "").strip()
-                if not instance_id:
-                    instance_id = self.payload_instance_store.make_instance_id(
-                        payload_name,
-                        f"{location_name}-{space.get('name', 'inventory')}-initial",
-                    )
-                    space["payload_instance_id"] = instance_id
-                if not self.payload_instance_store.has_instance_at(
-                    location_name, instance_id, payload_name
-                ):
-                    self.payload_instance_store.store(
-                        location_name,
-                        payload_name,
-                        instance_id,
-                        source_task_id=str(space.get("task_id", "") or "initial_inventory"),
-                        metadata={
-                            "task_source": "initial_inventory_space",
-                            "inventory_space": str(space.get("name", "") or ""),
-                            "container_type": payload_name,
-                        },
-                    )
-            self._recalculate_location_payload_space(location_name)
 
     def _normalise_mass_collection_configs(self, raw_configs) -> List[dict]:
         """Normalise third-party mass collection/empty-bin rotation settings.
@@ -698,27 +641,6 @@ class Simulation:
         payloads = cfg.get("payloads", []) or []
         return not payloads or payload_name in set(payloads)
 
-    def _find_seeded_inventory_payload_record(self, location_name: str, payload_name: str):
-        """Return an existing initial inventory payload record suitable for seeding.
-
-        Occupied inventory spaces and the waste-container seeding option can both
-        describe the same physical bin at simulation start. Reusing the existing
-        inventory-derived record prevents one saved occupied slot and one seeded
-        waste container from being counted as two separate payloads in peak
-        location occupancy.
-        """
-        payload_name = normalise_payload_name(payload_name)
-        if not location_name or not payload_name:
-            return None
-        for record in self.payload_instance_store.records_at(location_name):
-            if getattr(record, "payload", "") != payload_name:
-                continue
-            metadata = getattr(record, "metadata", {}) or {}
-            source = str(metadata.get("task_source", "") or "").strip()
-            if source in {"initial_inventory_space", "initial_waste_container"}:
-                return record
-        return None
-
     def _mass_collection_candidate_records(self, cfg: dict) -> List[object]:
         location = str(cfg.get("location", "") or "").strip()
         records = []
@@ -840,7 +762,6 @@ class Simulation:
                         "container_state": "empty",
                     },
                 )
-                self._recalculate_location_payload_space(location)
                 space["occupied"] = True
                 space["payload"] = payload_name
                 space["payload_instance_id"] = instance_id
@@ -944,7 +865,6 @@ class Simulation:
             source_task_id=str(cfg.get("id", "")),
             metadata=metadata,
         )
-        self._recalculate_location_payload_space(location)
 
         payload = self.payloads.get(payload_name)
         if payload is not None and self._location_has_inventory_spaces(location):
@@ -997,7 +917,6 @@ class Simulation:
                 if replacement_id:
                     replacement_ids.append(replacement_id)
 
-        self._recalculate_location_payload_space(location)
         self._mass_collection_last_capacity_visit[str(cfg.get("id", ""))] = now
         self.log_step(
             event_time=now,
@@ -1981,7 +1900,11 @@ class Simulation:
         if instance_id:
             task.payload_instance_id = instance_id
             self._reserved_existing_payload_instance_ids.discard(instance_id)
-        self._recalculate_location_payload_space(task.pickup)
+
+        # A pickup physically removes stock from the pickup location.  Keep the
+        # current occupancy state in sync for subsequent peak/recommendation
+        # calculations and for any immediately-following stowage checks.
+        self._record_location_storage_peak(getattr(task, "pickup", ""))
 
     def _payload_instance_container_state_for_task(self, task: Task) -> str:
         """Return the physical state to store for a payload instance.
@@ -2051,7 +1974,136 @@ class Simulation:
             source_task_id=task.id,
             metadata=metadata,
         )
-        self._recalculate_location_payload_space(task.dropoff)
+
+    def _record_location_storage_peak(self, location_name: str) -> None:
+        """Store the highest simultaneous physical payload occupancy per location.
+
+        This reads from PayloadInstanceStore, so the peak is based on the current
+        physical payloads at the location rather than the number of generated or
+        completed tasks. It should be called immediately after payloads are
+        stored, picked up, removed, or replaced.
+        """
+        location_name = str(location_name or "").strip()
+        if not location_name:
+            return
+
+        records = self.payload_instance_store.records_at(location_name)
+        payload_count = 0
+        area_m2 = 0.0
+        volume_m3 = 0.0
+
+        for record in records:
+            payload_name = normalise_payload_name(getattr(record, "payload", ""))
+            if not payload_name:
+                continue
+            payload = self.payloads.get(payload_name)
+            if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
+                continue
+            payload_count += 1
+            footprint = max(0.0, float(getattr(payload, "length_m", 0.0) or 0.0)) * max(
+                0.0, float(getattr(payload, "width_m", 0.0) or 0.0)
+            )
+            area_m2 += footprint
+            volume_m3 += footprint * max(
+                0.0, float(getattr(payload, "height_m", 0.0) or 0.0)
+            )
+
+        item = self.location_storage_peak.setdefault(
+            location_name,
+            {
+                "peak_payload_count": 0,
+                "peak_area_m2": 0.0,
+                "peak_volume_m3": 0.0,
+                "current_payload_count": 0,
+                "current_area_m2": 0.0,
+                "current_volume_m3": 0.0,
+            },
+        )
+        item["current_payload_count"] = payload_count
+        item["current_area_m2"] = area_m2
+        item["current_volume_m3"] = volume_m3
+        if payload_count > int(item.get("peak_payload_count", 0) or 0):
+            item["peak_payload_count"] = payload_count
+        if area_m2 > float(item.get("peak_area_m2", 0.0) or 0.0):
+            item["peak_area_m2"] = area_m2
+        if volume_m3 > float(item.get("peak_volume_m3", 0.0) or 0.0):
+            item["peak_volume_m3"] = volume_m3
+
+    def _configured_inventory_area_for_location(self, location_name: str) -> float:
+        total = 0.0
+        for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []) or []:
+            points = space.get("points", []) or []
+            if len(points) >= 3:
+                try:
+                    coords = [
+                        (float(p.get("dx", p.get("x", 0.0)) or 0.0), float(p.get("dy", p.get("y", 0.0)) or 0.0))
+                        for p in points
+                        if isinstance(p, dict)
+                    ]
+                    if len(coords) >= 3:
+                        shoelace = 0.0
+                        for i, (x1, y1) in enumerate(coords):
+                            x2, y2 = coords[(i + 1) % len(coords)]
+                            shoelace += (x1 * y2) - (x2 * y1)
+                        total += abs(shoelace) / 2.0
+                        continue
+                except Exception:
+                    pass
+            try:
+                total += max(0.0, float(space.get("length_m", 0.0) or 0.0)) * max(
+                    0.0, float(space.get("width_m", 0.0) or 0.0)
+                )
+            except Exception:
+                pass
+        return total
+
+    def _append_location_space_recommendation_rows(self) -> None:
+        """Write one final peak-occupancy row per location into the verbose CSV.
+
+        These rows are intended for the report. They are not printed to console.
+        """
+        if self._location_recommendation_rows_written or not self.verbose:
+            return
+        self._location_recommendation_rows_written = True
+
+        for location_name in sorted(set(self.locations.keys()) | set(self.location_storage_peak.keys())):
+            self._record_location_storage_peak(location_name)
+            item = self.location_storage_peak.get(location_name, {}) or {}
+            peak_count = int(item.get("peak_payload_count", 0) or 0)
+            peak_area = float(item.get("peak_area_m2", 0.0) or 0.0)
+            peak_volume = float(item.get("peak_volume_m3", 0.0) or 0.0)
+            configured_area = self._configured_inventory_area_for_location(location_name)
+            if peak_count <= 0 and peak_area <= 0.0 and configured_area <= 0.0:
+                continue
+
+            event_time = float(getattr(self, "current_time", 0.0) or 0.0)
+            self.verbose_rows.append(
+                {
+                    "sim_time_sec": round(event_time, 3),
+                    "sim_datetime": self.clock.format_sim_time(event_time),
+                    "event_type": "location_space_recommendation",
+                    "task_id": "",
+                    "amr_id": "",
+                    "payload": "",
+                    "payload_instance_id": "",
+                    "from_location": location_name,
+                    "to_location": location_name,
+                    "status": "summary",
+                    "details": (
+                        f"Peak stored payloads={peak_count}; peak area={peak_area:.3f} m2; "
+                        f"peak volume={peak_volume:.3f} m3"
+                    ),
+                    "location_inventory_spaces_disabled": bool(getattr(self, "disable_inventory_spaces", False)),
+                    "location_configured_inventory_area_m2": configured_area,
+                    "location_peak_payload_count": peak_count,
+                    "location_peak_footprint_area_m2": peak_area,
+                    "location_peak_volume_m3": peak_volume,
+                    "location_payload_footprint_area_m2": float(item.get("current_area_m2", 0.0) or 0.0),
+                    "location_payload_volume_m3": float(item.get("current_volume_m3", 0.0) or 0.0),
+                    "location_recommended_area_m2": peak_area * 1.30,
+                    "location_recommended_volume_m3": peak_volume * 1.30,
+                }
+            )
 
     def _init_inventory_spaces(self, location_dicts: List[dict]) -> None:
         self.inventory_spaces_by_location = {}
@@ -2121,11 +2173,7 @@ class Simulation:
 
     def _location_has_inventory_spaces(self, location_name: str) -> bool:
         # Inventory rules only apply where at least one valid inventory space has
-        # been configured. No configured spaces means unlimited capacity. The
-        # global simulation flag deliberately disables these runtime capacity
-        # checks while preserving the saved boundaries/spaces in the JSON/editor.
-        if getattr(self, "disable_inventory_spaces", False):
-            return False
+        # been configured. No configured spaces means unlimited capacity.
         return bool(self.inventory_spaces_by_location.get(location_name, []))
 
     def _inventory_space_can_fit_payload(
@@ -2160,18 +2208,35 @@ class Simulation:
         if not spaces:
             return ""
 
-        compatible_count = sum(
+        compatible_spaces = [
+            space for space in spaces if self._inventory_space_can_fit_payload(space, payload)
+        ]
+        compatible_count = len(compatible_spaces)
+        occupied_count = sum(1 for space in compatible_spaces if bool(space.get("occupied", False)))
+        reserved_count = sum(
             1
-            for space in spaces
-            if self._inventory_space_can_fit_payload(space, payload)
+            for space in compatible_spaces
+            if str(space.get("reserved_by_task", "") or "").strip()
         )
+        free_count = sum(
+            1
+            for space in compatible_spaces
+            if not bool(space.get("occupied", False))
+            and not str(space.get("reserved_by_task", "") or "").strip()
+        )
+
         if compatible_count <= 0:
             return (
                 f"No compatible inventory space at {location_name} for payload "
-                f"{payload.name} ({payload.length_m}m x {payload.width_m}m x {payload.height_m}m)"
+                f"{payload.name} ({payload.length_m}m x {payload.width_m}m x {payload.height_m}m); "
+                f"configured_spaces={len(spaces)}"
             )
 
-        return f"All compatible inventory spaces are full at {location_name}"
+        return (
+            f"All compatible inventory spaces are full at {location_name}; cannot stow payload "
+            f"{payload.name}; compatible_spaces={compatible_count}; occupied={occupied_count}; "
+            f"reserved={reserved_count}; free={free_count}"
+        )
 
     def _reserve_inventory_space_for_task(
         self, task: Task, payload: PayloadType
@@ -2189,9 +2254,10 @@ class Simulation:
 
     def _occupy_inventory_space_for_completed_task(
         self, task: Task, payload: PayloadType
-    ) -> None:
+    ) -> bool:
         if not self._location_has_inventory_spaces(task.dropoff):
-            return
+            self._record_location_storage_peak(task.dropoff)
+            return True
 
         target_name = str(getattr(task, "assigned_inventory_space", "")).strip()
         spaces = self.inventory_spaces_by_location.get(task.dropoff, [])
@@ -2216,7 +2282,20 @@ class Simulation:
             target_space = self._find_free_inventory_space(task.dropoff, payload)
 
         if target_space is None:
-            return
+            self._set_task_pending_reason(
+                task, self._inventory_pending_reason(task.dropoff, payload)
+            )
+            self._record_location_storage_peak(task.dropoff)
+            return False
+
+        if bool(target_space.get("occupied", False)) and str(
+            target_space.get("reserved_by_task", "") or ""
+        ).strip() != task.id:
+            self._set_task_pending_reason(
+                task, self._inventory_pending_reason(task.dropoff, payload)
+            )
+            self._record_location_storage_peak(task.dropoff)
+            return False
 
         target_space["occupied"] = True
         target_space["payload"] = payload.name
@@ -2226,6 +2305,8 @@ class Simulation:
         target_space["task_id"] = task.id
         target_space["reserved_by_task"] = ""
         task.assigned_inventory_space = str(target_space.get("name", ""))
+        self._record_location_storage_peak(task.dropoff)
+        return True
 
     def _free_inventory_space_for_pickup(
         self, task: Task, payload: PayloadType
@@ -2255,94 +2336,8 @@ class Simulation:
             space["payload_instance_id"] = ""
             space["task_id"] = ""
             space["reserved_by_task"] = ""
+            self._record_location_storage_peak(task.pickup)
             return
-
-    def _payload_space_metrics(self, payload: Optional[PayloadType]) -> Tuple[float, float]:
-        if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
-            return 0.0, 0.0
-        length = max(0.0, float(getattr(payload, "length_m", 0.0) or 0.0))
-        width = max(0.0, float(getattr(payload, "width_m", 0.0) or 0.0))
-        height = max(0.0, float(getattr(payload, "height_m", 0.0) or 0.0))
-        area = length * width
-        volume = area * height
-        return area, volume
-
-    def _location_inventory_configured_area(self, location_name: str) -> float:
-        total = 0.0
-        for space in self.inventory_spaces_by_location.get(location_name, []):
-            total += max(0.0, float(space.get("length_m", 0.0) or 0.0)) * max(
-                0.0, float(space.get("width_m", 0.0) or 0.0)
-            )
-        return total
-
-    def _recalculate_location_payload_space(self, location_name: str) -> dict:
-        location_name = str(location_name or "").strip()
-        payload_counts: Dict[str, int] = defaultdict(int)
-        footprint_area_m2 = 0.0
-        volume_m3 = 0.0
-        payload_count = 0
-
-        for record in self.payload_instance_store.records_at(location_name):
-            payload_name = normalise_payload_name(getattr(record, "payload", ""))
-            payload = self.payloads.get(payload_name)
-            if payload is None:
-                continue
-            area, volume = self._payload_space_metrics(payload)
-            footprint_area_m2 += area
-            volume_m3 += volume
-            payload_count += 1
-            payload_counts[payload_name] += 1
-
-        current = {
-            "location": location_name,
-            "payload_count": int(payload_count),
-            "footprint_area_m2": round(footprint_area_m2, 6),
-            "volume_m3": round(volume_m3, 6),
-            "payload_counts": dict(sorted(payload_counts.items())),
-        }
-        self.location_payload_space_usage[location_name] = current
-
-        previous = self.location_payload_space_peaks.get(location_name, {})
-        previous_area = float(previous.get("max_footprint_area_m2", 0.0) or 0.0)
-        previous_volume = float(previous.get("max_volume_m3", 0.0) or 0.0)
-        previous_count = int(previous.get("max_payload_count", 0) or 0)
-
-        peak_area = max(previous_area, footprint_area_m2)
-        peak_volume = max(previous_volume, volume_m3)
-        peak_count = max(previous_count, payload_count)
-        configured_area = self._location_inventory_configured_area(location_name)
-
-        recommendation = {
-            "location": location_name,
-            "inventory_spaces_disabled": bool(
-                getattr(self, "disable_inventory_spaces", False)
-            ),
-            "configured_inventory_space_area_m2": round(configured_area, 6),
-            "max_payload_count": int(peak_count),
-            "max_footprint_area_m2": round(peak_area, 6),
-            "max_volume_m3": round(peak_volume, 6),
-            "recommended_area_m2": round(peak_area, 6),
-            "recommended_volume_m3": round(peak_volume, 6),
-            "current_payload_count": int(payload_count),
-            "current_footprint_area_m2": round(footprint_area_m2, 6),
-            "current_volume_m3": round(volume_m3, 6),
-            "payload_counts_at_peak_or_current": dict(sorted(payload_counts.items())),
-        }
-        self.location_payload_space_peaks[location_name] = recommendation
-        return recommendation
-
-    def _refresh_all_location_payload_space_metrics(self) -> None:
-        names = set(self.locations.keys())
-        names.update(self.location_payload_space_usage.keys())
-        for location_name in sorted(names):
-            self._recalculate_location_payload_space(location_name)
-
-    def recommended_space_per_location(self) -> List[dict]:
-        self._refresh_all_location_payload_space_metrics()
-        return [
-            self.location_payload_space_peaks[name]
-            for name in sorted(self.location_payload_space_peaks)
-        ]
 
     def _set_task_pending_reason(self, task: Optional[Task], reason: str) -> None:
         if task is None:
@@ -2403,16 +2398,34 @@ class Simulation:
             waste_stream=str(getattr(task, "waste_stream", "") or ""),
             container_type=return_payload,
             payload_instance_id=(
-                str(
-                    getattr(task, "exchange_empty_payload_instance_id", "") or ""
-                ).strip()
-                or (
-                    ""
-                    if self._location_has_inventory_mass_collection_rotation(
+                # For normal returns, carry the same physical object that was
+                # just delivered to the department.  Creating a fresh instance
+                # here means the later return pickup cannot remove the delivered
+                # trolley/bin from the department store, so occupancy accumulates
+                # by number of scheduled visits instead of simultaneous payloads.
+                str(getattr(task, "payload_instance_id", "") or "").strip()
+                if (
+                    not str(getattr(task, "waste_stream", "") or "").strip()
+                    and not self._location_has_inventory_mass_collection_rotation(
                         task.dropoff, return_payload
                     )
-                    else self.payload_instance_store.make_instance_id(
-                        return_payload, f"{task.id}-empty-return"
+                    and (
+                        normalise_payload_name(getattr(task, "payload", "")) == return_payload
+                        or bool(getattr(task, "reusable_return_pool_enabled", False))
+                    )
+                )
+                else (
+                    str(
+                        getattr(task, "exchange_empty_payload_instance_id", "") or ""
+                    ).strip()
+                    or (
+                        ""
+                        if self._location_has_inventory_mass_collection_rotation(
+                            task.dropoff, return_payload
+                        )
+                        else self.payload_instance_store.make_instance_id(
+                            return_payload, f"{task.id}-empty-return"
+                        )
                     )
                 )
             ),
@@ -2432,6 +2445,12 @@ class Simulation:
         staged_empty_id = str(
             getattr(task, "exchange_empty_payload_instance_id", "") or ""
         ).strip()
+        same_physical_return_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+        same_physical_return = bool(
+            same_physical_return_id
+            and str(getattr(return_task, "payload_instance_id", "") or "").strip() == same_physical_return_id
+            and normalise_payload_name(getattr(task, "payload", "")) == return_payload
+        )
         if staged_empty_id:
             # The outbound full-bin arrival has already exchanged with a real empty
             # bin at the store.  The return leg carries that staged empty instance.
@@ -2448,10 +2467,17 @@ class Simulation:
             return_task.requires_existing_payload_instance = True
             return_task.creates_new_payload_instance = False
         else:
-            # No finite store spaces: model the store as having unlimited empty
-            # equivalents, while mass collection still removes the full bins only.
-            return_task.requires_existing_payload_instance = False
-            return_task.creates_new_payload_instance = True
+            if same_physical_return:
+                # Normal trolley return: collect the physical object already stored
+                # at the department/location.  This is what keeps occupancy as a
+                # simultaneous count instead of a cumulative delivery count.
+                return_task.requires_existing_payload_instance = True
+                return_task.creates_new_payload_instance = False
+            else:
+                # No finite store spaces: model the store as having unlimited empty
+                # equivalents, while mass collection still removes the full bins only.
+                return_task.requires_existing_payload_instance = False
+                return_task.creates_new_payload_instance = True
         return_task.exchanged_full_payload_instance_id = str(
             getattr(task, "payload_instance_id", "") or ""
         )
@@ -3082,39 +3108,6 @@ class Simulation:
                     if group_key in seeded_groups:
                         continue
                     seeded_groups.add(group_key)
-
-                    existing_record = self._find_seeded_inventory_payload_record(
-                        pickup_location, payload_name
-                    )
-                    if existing_record is not None:
-                        # The saved inventory layout already provided the physical
-                        # starting bin. Attach the waste metadata to that same
-                        # instance rather than creating a second record.
-                        instance_id = str(getattr(existing_record, "instance_id", "") or "")
-                        metadata = dict(getattr(existing_record, "metadata", {}) or {})
-                        metadata.update(
-                            {
-                                "task_source": "initial_waste_container",
-                                "department_id": dept_id,
-                                "waste_stream": stream_name,
-                                "container_group": group_key,
-                                "container_type": payload_name,
-                                "container_state": "empty",
-                            }
-                        )
-                        self.payload_instance_store.store(
-                            pickup_location,
-                            payload_name,
-                            instance_id,
-                            source_task_id="initial_waste_container",
-                            metadata=metadata,
-                        )
-                        self.initial_waste_container_instances[
-                            (group_key, pickup_location, payload_name)
-                        ] = instance_id
-                        self._recalculate_location_payload_space(pickup_location)
-                        continue
-
                     instance_id = self.payload_instance_store.make_instance_id(
                         payload_name, group_key
                     )
@@ -3141,7 +3134,6 @@ class Simulation:
                         instance_id,
                         "initial_waste_container",
                     )
-                    self._recalculate_location_payload_space(pickup_location)
 
     def _mark_generated_waste_task_requires_existing_container(
         self, task: Task
@@ -5754,9 +5746,21 @@ class Simulation:
                     return
                 self._free_inventory_space_for_pickup(task, payload_obj)
                 self._consume_store_empty_for_exchange(task, payload_obj)
+                # Verify/claim a stowage space before writing a stored physical
+                # payload record.  If the location is full, fail the task with a
+                # precise reason rather than silently adding stock and inflating
+                # peak occupancy.
+                if self._location_has_inventory_spaces(task.dropoff):
+                    claimed_space = self._reserve_inventory_space_for_task(task, payload_obj)
+                    if claimed_space is None and not str(getattr(task, "assigned_inventory_space", "") or "").strip():
+                        reason = self._inventory_pending_reason(task.dropoff, payload_obj)
+                        self._fail_task(task, reason, now=event.payload["finish_time"])
+                        return
                 self._store_payload_instance_for_task(task)
-                self._occupy_inventory_space_for_completed_task(task, payload_obj)
-            dropoff_space_recommendation = self._recalculate_location_payload_space(task.dropoff)
+                if not self._occupy_inventory_space_for_completed_task(task, payload_obj):
+                    reason = str(getattr(task, "pending_reason", "") or self._inventory_pending_reason(task.dropoff, payload_obj))
+                    self._fail_task(task, reason, now=event.payload["finish_time"])
+                    return
             self.log_step(
                 event_time=event.payload["finish_time"],
                 event_type="task_complete",
@@ -5778,10 +5782,6 @@ class Simulation:
                 waste_stream=getattr(task, "waste_stream", ""),
                 waste_volume_m3=getattr(task, "waste_volume_m3", 0.0),
                 container_type=getattr(task, "container_type", ""),
-                location_payload_footprint_area_m2=dropoff_space_recommendation.get("current_footprint_area_m2", 0.0),
-                location_payload_volume_m3=dropoff_space_recommendation.get("current_volume_m3", 0.0),
-                location_recommended_area_m2=dropoff_space_recommendation.get("recommended_area_m2", 0.0),
-                location_recommended_volume_m3=dropoff_space_recommendation.get("recommended_volume_m3", 0.0),
             )
 
             self.completed_task_records.append(
@@ -5838,10 +5838,6 @@ class Simulation:
                         getattr(task, "tracked_item_source_payload", "") or ""
                     ),
                     "tracked_items": getattr(task, "tracked_items", {}) or {},
-                    "location_recommended_area_m2": dropoff_space_recommendation.get("recommended_area_m2", 0.0),
-                    "location_recommended_volume_m3": dropoff_space_recommendation.get("recommended_volume_m3", 0.0),
-                    "location_current_payload_area_m2": dropoff_space_recommendation.get("current_footprint_area_m2", 0.0),
-                    "location_current_payload_volume_m3": dropoff_space_recommendation.get("current_volume_m3", 0.0),
                 }
             )
 
@@ -5881,10 +5877,23 @@ class Simulation:
                         )
                         continue
                     self._free_inventory_space_for_pickup(task, payload_obj)
+                    if self._location_has_inventory_spaces(task.dropoff):
+                        claimed_space = self._reserve_inventory_space_for_task(task, payload_obj)
+                        if claimed_space is None and not str(getattr(task, "assigned_inventory_space", "") or "").strip():
+                            self._fail_task(
+                                task,
+                                self._inventory_pending_reason(task.dropoff, payload_obj),
+                                now=event.payload["finish_time"],
+                            )
+                            continue
                     self._store_payload_instance_for_task(task)
-                    self._occupy_inventory_space_for_completed_task(task, payload_obj)
-
-                task_space_recommendation = self._recalculate_location_payload_space(task.dropoff)
+                    if not self._occupy_inventory_space_for_completed_task(task, payload_obj):
+                        self._fail_task(
+                            task,
+                            str(getattr(task, "pending_reason", "") or self._inventory_pending_reason(task.dropoff, payload_obj)),
+                            now=event.payload["finish_time"],
+                        )
+                        continue
 
                 final_location_name = str(
                     event.payload.get("end_location") or task.dropoff or ""
@@ -5924,10 +5933,6 @@ class Simulation:
                     waste_stream=getattr(task, "waste_stream", ""),
                     waste_volume_m3=getattr(task, "waste_volume_m3", 0.0),
                     container_type=getattr(task, "container_type", ""),
-                    location_payload_footprint_area_m2=task_space_recommendation.get("current_footprint_area_m2", 0.0),
-                    location_payload_volume_m3=task_space_recommendation.get("current_volume_m3", 0.0),
-                    location_recommended_area_m2=task_space_recommendation.get("recommended_area_m2", 0.0),
-                    location_recommended_volume_m3=task_space_recommendation.get("recommended_volume_m3", 0.0),
                 )
 
                 self.completed_task_records.append(
@@ -5988,10 +5993,6 @@ class Simulation:
                             getattr(task, "tracked_item_source_payload", "") or ""
                         ),
                         "tracked_items": getattr(task, "tracked_items", {}) or {},
-                        "location_recommended_area_m2": task_space_recommendation.get("recommended_area_m2", 0.0),
-                        "location_recommended_volume_m3": task_space_recommendation.get("recommended_volume_m3", 0.0),
-                        "location_current_payload_area_m2": task_space_recommendation.get("current_footprint_area_m2", 0.0),
-                        "location_current_payload_volume_m3": task_space_recommendation.get("current_volume_m3", 0.0),
                     }
                 )
                 self._schedule_configured_return_task(
@@ -6191,15 +6192,6 @@ class Simulation:
         exchange_mode: str = "",
         tracked_item_source_payload: str = "",
         tracked_items: Optional[dict] = None,
-        location_payload_footprint_area_m2: float = 0.0,
-        location_payload_volume_m3: float = 0.0,
-        location_recommended_area_m2: float = 0.0,
-        location_recommended_volume_m3: float = 0.0,
-        location_peak_payload_count: int = 0,
-        location_peak_footprint_area_m2: float = 0.0,
-        location_peak_volume_m3: float = 0.0,
-        location_configured_inventory_area_m2: float = 0.0,
-        location_inventory_spaces_disabled: bool = False,
     ):
         if not self.verbose:
             return
@@ -6258,76 +6250,14 @@ class Simulation:
                 "exchange_mode": exchange_mode,
                 "tracked_item_source_payload": tracked_item_source_payload,
                 "tracked_items": json.dumps(tracked_items or {}, ensure_ascii=False),
-                "location_payload_footprint_area_m2": round(float(location_payload_footprint_area_m2 or 0.0), 6),
-                "location_payload_volume_m3": round(float(location_payload_volume_m3 or 0.0), 6),
-                "location_recommended_area_m2": round(float(location_recommended_area_m2 or 0.0), 6),
-                "location_recommended_volume_m3": round(float(location_recommended_volume_m3 or 0.0), 6),
-                "location_peak_payload_count": int(location_peak_payload_count or 0),
-                "location_peak_footprint_area_m2": round(float(location_peak_footprint_area_m2 or 0.0), 6),
-                "location_peak_volume_m3": round(float(location_peak_volume_m3 or 0.0), 6),
-                "location_configured_inventory_area_m2": round(float(location_configured_inventory_area_m2 or 0.0), 6),
-                "location_inventory_spaces_disabled": bool(location_inventory_spaces_disabled),
             }
         )
-
-    def _log_location_space_recommendation_rows(self) -> None:
-        """Write final per-location storage recommendations to the verbose log.
-
-        These rows are intended for the reporting pipeline. They deliberately do
-        not print to the console, so the simulator run output stays focused on
-        progress and summary status only.
-        """
-        if not self.verbose:
-            return
-        # Avoid duplicate rows if write_verbose_csv is called more than once.
-        self.verbose_rows = [
-            row for row in self.verbose_rows
-            if row.get("event_type") != "location_space_recommendation"
-        ]
-        for rec in self.recommended_space_per_location():
-            location_name = str(rec.get("location", "") or "").strip()
-            if not location_name:
-                continue
-            loc = self.locations.get(location_name)
-            self.log_step(
-                event_time=self.current_time,
-                event_type="location_space_recommendation",
-                task_id="",
-                amr_id="",
-                details="Final location storage recommendation for report output",
-                from_location=location_name,
-                to_location=location_name,
-                payload_name="",
-                duration_sec=0.0,
-                wait_time_sec=0.0,
-                distance_m=0.0,
-                start_time=self.current_time,
-                end_time=self.current_time,
-                start_node=location_name,
-                end_node=location_name,
-                start_x=getattr(loc, "x", None),
-                start_y=getattr(loc, "y", None),
-                start_floor=getattr(loc, "floor", None),
-                end_x=getattr(loc, "x", None),
-                end_y=getattr(loc, "y", None),
-                end_floor=getattr(loc, "floor", None),
-                status="recommendation",
-                location_payload_footprint_area_m2=rec.get("current_footprint_area_m2", 0.0),
-                location_payload_volume_m3=rec.get("current_volume_m3", 0.0),
-                location_recommended_area_m2=rec.get("recommended_area_m2", 0.0),
-                location_recommended_volume_m3=rec.get("recommended_volume_m3", 0.0),
-                location_peak_payload_count=rec.get("max_payload_count", 0),
-                location_peak_footprint_area_m2=rec.get("max_footprint_area_m2", 0.0),
-                location_peak_volume_m3=rec.get("max_volume_m3", 0.0),
-                location_configured_inventory_area_m2=rec.get("configured_inventory_space_area_m2", 0.0),
-                location_inventory_spaces_disabled=rec.get("inventory_spaces_disabled", False),
-            )
 
     def write_verbose_csv(self):
         if not self.verbose_csv_path:
             return
 
-        self._log_location_space_recommendation_rows()
+        self._append_location_space_recommendation_rows()
 
         fieldnames = [
             "amr_id",
@@ -6377,15 +6307,15 @@ class Simulation:
             "exchange_mode",
             "tracked_item_source_payload",
             "tracked_items",
+            "location_inventory_spaces_disabled",
+            "location_configured_inventory_area_m2",
+            "location_peak_payload_count",
+            "location_peak_footprint_area_m2",
+            "location_peak_volume_m3",
             "location_payload_footprint_area_m2",
             "location_payload_volume_m3",
             "location_recommended_area_m2",
             "location_recommended_volume_m3",
-            "location_peak_payload_count",
-            "location_peak_footprint_area_m2",
-            "location_peak_volume_m3",
-            "location_configured_inventory_area_m2",
-            "location_inventory_spaces_disabled",
         ]
 
         with open(self.verbose_csv_path, "w", newline="", encoding="utf-8") as f:
@@ -6471,7 +6401,6 @@ class Simulation:
             "completed_tasks": len(self.completed_task_records),
             "pending_tasks": len(self.pending_tasks),
             "failed_tasks": self.failed_tasks,
-            "inventory_spaces_disabled": bool(getattr(self, "disable_inventory_spaces", False)),
             "lifts": [
                 {
                     "lift_id": lift.id,
@@ -6520,7 +6449,6 @@ class Simulation:
             "completed_tasks": len(self.completed_task_records),
             "pending_tasks": len(self.pending_tasks),
             "failed_tasks": self.failed_tasks,
-            "inventory_spaces_disabled": bool(getattr(self, "disable_inventory_spaces", False)),
         }
 
     def print_summary(self):

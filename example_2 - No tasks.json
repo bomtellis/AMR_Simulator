@@ -17704,6 +17704,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "reusable_return_pool_enabled": false,
+        "reusable_return_pool_multiplier": 2.0,
+        "reusable_return_pool_max": 0,
         "route_profile": "",
         "days_active": [
           "mon",
@@ -17745,6 +17748,9 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -17763,12 +17769,6 @@
           "D1": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17784,6 +17784,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -17809,12 +17812,6 @@
           "D21": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17830,6 +17827,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -17855,12 +17855,6 @@
           "D28": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17876,6 +17870,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -17901,12 +17898,6 @@
           "D29": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17922,6 +17913,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -17947,12 +17941,6 @@
           "D3": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17968,6 +17956,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -17993,12 +17984,6 @@
           "D30": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18014,6 +17999,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18039,12 +18027,6 @@
           "D31": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18060,6 +18042,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18085,12 +18070,6 @@
           "D32": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18106,6 +18085,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18131,12 +18113,6 @@
           "D33": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18152,6 +18128,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18177,12 +18156,6 @@
           "D34": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18198,6 +18171,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18223,12 +18199,6 @@
           "D35": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18244,6 +18214,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18269,12 +18242,6 @@
           "D36": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18290,6 +18257,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18315,12 +18285,6 @@
           "D37": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18336,6 +18300,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18361,12 +18328,6 @@
           "D38": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18382,6 +18343,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18407,12 +18371,6 @@
           "D39": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18428,6 +18386,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18453,12 +18414,6 @@
           "D40": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18474,6 +18429,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18499,12 +18457,6 @@
           "D41": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18520,6 +18472,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18545,12 +18500,6 @@
           "D42": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18566,6 +18515,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18591,12 +18543,6 @@
           "D43": {
             "enabled": true,
             "generation_mode": "scheduled",
-            "flow_direction": "collection",
-            "reserve_management": false,
-            "reserve_max_source": "inventory_spaces",
-            "reserve_trigger_fraction": 0.25,
-            "replenish_to_fraction": 1.0,
-            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18612,6 +18558,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "mon",
@@ -18662,12 +18611,6 @@
             "payload": {
               "enabled": true,
               "generation_mode": "scheduled",
-              "flow_direction": "collection",
-              "reserve_management": false,
-              "reserve_max_source": "inventory_spaces",
-              "reserve_trigger_fraction": 0.25,
-              "replenish_to_fraction": 1.0,
-              "reserve_initial_fill_fraction": 1.0,
               "priority": 40,
               "pickup_location": "D28-CATERING",
               "pickup_locations": [
@@ -18683,6 +18626,9 @@
               "return_enabled": true,
               "return_payload": "Burlodge Trolley",
               "return_delay_minutes": 45.0,
+              "reusable_return_pool_enabled": true,
+              "reusable_return_pool_multiplier": 2.0,
+              "reusable_return_pool_max": 0,
               "route_profile": "",
               "days_active": [
                 "mon",
@@ -18721,6 +18667,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": false,
         "return_payload": "",
+        "reusable_return_pool_enabled": false,
+        "reusable_return_pool_multiplier": 2.0,
+        "reusable_return_pool_max": 0,
         "route_profile": "",
         "days_active": [
           "mon",
@@ -18987,6 +18936,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "reusable_return_pool_enabled": false,
+        "reusable_return_pool_multiplier": 2.0,
+        "reusable_return_pool_max": 0,
         "route_profile": "",
         "days_active": [
           "mon",
@@ -19055,6 +19007,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "reusable_return_pool_enabled": false,
+        "reusable_return_pool_multiplier": 2.0,
+        "reusable_return_pool_max": 0,
         "route_profile": "",
         "days_active": [
           "mon",
@@ -19556,6 +19511,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": false,
         "return_payload": "",
+        "reusable_return_pool_enabled": false,
+        "reusable_return_pool_multiplier": 2.0,
+        "reusable_return_pool_max": 0,
         "route_profile": "",
         "days_active": [
           "mon",
@@ -19594,6 +19552,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "reusable_return_pool_enabled": false,
+        "reusable_return_pool_multiplier": 2.0,
+        "reusable_return_pool_max": 0,
         "route_profile": "",
         "days_active": [
           "mon",

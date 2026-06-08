@@ -330,6 +330,28 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             str(self.base_category.get("return_delay_minutes", 0))
         )
 
+        self.reusable_return_pool_check = QCheckBox(
+            "Reuse returned payloads as a capped source pool"
+        )
+        self.reusable_return_pool_check.setToolTip(
+            "Use for simple non-item-tracked flows such as catering trolleys. "
+            "Returned payloads replenish the pickup/source pool instead of "
+            "accumulating as unlimited new physical stock."
+        )
+        self.reusable_return_pool_check.setChecked(
+            bool(self.base_category.get("reusable_return_pool_enabled", False))
+        )
+        self.reusable_return_pool_multiplier_edit = QLineEdit(
+            str(self.base_category.get("reusable_return_pool_multiplier", 2.0))
+        )
+        self.reusable_return_pool_max_edit = QLineEdit(
+            str(self.base_category.get("reusable_return_pool_max", 0))
+        )
+        self.reusable_return_pool_max_edit.setToolTip(
+            "Optional hard cap for the source pool. Use 0 for automatic: "
+            "selected departments × multiplier."
+        )
+
         days_widget = QWidget()
         days_layout = QHBoxLayout(days_widget)
         days_layout.setContentsMargins(0, 0, 0, 0)
@@ -382,6 +404,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow("Reusable return pool", self.reusable_return_pool_check)
+        form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
+        form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
         form.addRow("Days active", days_widget)
         form.addRow("Scheduled times", schedule_row)
         form.addRow("Frequency per day", self.frequency_edit)
@@ -809,6 +834,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "return_enabled": self.return_enabled_check.isChecked(),
                 "return_payload": self.return_payload_combo.currentText().strip(),
                 "return_delay_minutes": float(self.return_delay_edit.text() or 0),
+                "reusable_return_pool_enabled": self.reusable_return_pool_check.isChecked(),
+                "reusable_return_pool_multiplier": float(self.reusable_return_pool_multiplier_edit.text() or 2.0),
+                "reusable_return_pool_max": int(float(self.reusable_return_pool_max_edit.text() or 0)),
                 "route_profile": self.route_profile_combo.currentText().strip(),
                 "days_active": days_active,
                 "scheduled_times": list(self.scheduled_times),
@@ -1085,6 +1113,21 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.return_delay_edit = QLineEdit()
 
+        self.reusable_return_pool_check = QCheckBox(
+            "Reuse returned payloads as a capped source pool"
+        )
+        self.reusable_return_pool_check.setToolTip(
+            "Use for simple non-item-tracked flows such as catering trolleys. "
+            "Returned payloads replenish the pickup/source pool instead of "
+            "accumulating as unlimited new physical stock."
+        )
+        self.reusable_return_pool_multiplier_edit = QLineEdit()
+        self.reusable_return_pool_max_edit = QLineEdit()
+        self.reusable_return_pool_max_edit.setToolTip(
+            "Optional hard cap for the source pool. Use 0 for automatic: "
+            "selected departments × multiplier."
+        )
+
         days_widget = QWidget()
         days_layout = QHBoxLayout(days_widget)
         days_layout.setContentsMargins(0, 0, 0, 0)
@@ -1135,6 +1178,9 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow("Reusable return pool", self.reusable_return_pool_check)
+        form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
+        form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
         form.addRow("Days active", days_widget)
 
         form.addRow("Scheduled times", schedule_row)
@@ -2112,6 +2158,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(False)
         self.return_payload_combo.setCurrentText("")
         self.return_delay_edit.setText("0")
+        self.reusable_return_pool_check.setChecked(False)
+        self.reusable_return_pool_multiplier_edit.setText("2.0")
+        self.reusable_return_pool_max_edit.setText("0")
 
         if hasattr(self, "tracked_item_exchange_check"):
             self.tracked_item_exchange_check.setChecked(False)
@@ -2185,6 +2234,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
         self.return_payload_combo.setCurrentText(str(item.get("return_payload", "")))
         self.return_delay_edit.setText(str(item.get("return_delay_minutes", 0)))
+        self.reusable_return_pool_check.setChecked(bool(item.get("reusable_return_pool_enabled", False)))
+        self.reusable_return_pool_multiplier_edit.setText(str(item.get("reusable_return_pool_multiplier", 2.0)))
+        self.reusable_return_pool_max_edit.setText(str(item.get("reusable_return_pool_max", 0)))
         days = set(item.get("days_active", []))
         for day_key, _label in self.DAYS:
             self.day_checks[day_key].setChecked(day_key in days)
@@ -2262,7 +2314,12 @@ class TaskGenerationSettingsDialog(QDialog):
         self.pick_dropoffs_btn.setEnabled(using_dept_as_pickup)
         self.clear_dropoffs_btn.setEnabled(using_dept_as_pickup)
 
-        self.return_payload_combo.setEnabled(self.return_enabled_check.isChecked())
+        return_enabled = self.return_enabled_check.isChecked()
+        self.return_payload_combo.setEnabled(return_enabled)
+        if hasattr(self, "reusable_return_pool_check"):
+            self.reusable_return_pool_check.setEnabled(return_enabled)
+            self.reusable_return_pool_multiplier_edit.setEnabled(return_enabled)
+            self.reusable_return_pool_max_edit.setEnabled(return_enabled)
 
     def _store_current_category(self):
         if not self.current_key:
@@ -2316,6 +2373,9 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_enabled": self.return_enabled_check.isChecked(),
             "return_payload": self.return_payload_combo.currentText().strip(),
             "return_delay_minutes": float(self.return_delay_edit.text() or 0),
+            "reusable_return_pool_enabled": self.reusable_return_pool_check.isChecked(),
+            "reusable_return_pool_multiplier": float(self.reusable_return_pool_multiplier_edit.text() or 2.0),
+            "reusable_return_pool_max": int(float(self.reusable_return_pool_max_edit.text() or 0)),
             "route_profile": self.route_profile_combo.currentText().strip(),
             "days_active": days_active,
             "scheduled_times": list(self.scheduled_times),
@@ -3909,10 +3969,20 @@ class SimulationSettingsDialog(QDialog):
         )
 
         self.disable_inventory_spaces_check = QCheckBox(
-            "Disable inventory space capacity checks but keep location boundaries"
+            "Disable inventory spaces during simulation"
+        )
+        self.disable_inventory_spaces_check.setToolTip(
+            "Ignore finite inventory slot capacity during simulation. "
+            "Location boundaries and saved inventory spaces remain in the JSON "
+            "and are still used for report storage recommendations."
         )
         self.disable_inventory_spaces_check.setChecked(
-            bool(simulation.get("disable_inventory_spaces", False))
+            bool(
+                simulation.get(
+                    "disable_inventory_spaces",
+                    simulation.get("inventory_spaces_disabled", False),
+                )
+            )
         )
 
         form.addRow("Start datetime", self.start_datetime_edit)
@@ -3943,10 +4013,7 @@ class SimulationSettingsDialog(QDialog):
             "the route cache before the run. Candidate and assignment limits reduce "
             "large release bursts from blocking the simulator UI/event loop. "
             "Waste containers present at start seeds a physical bin/container into "
-            "department waste pickup locations before the first generated waste task. "
-            "Disable inventory spaces keeps saved boundaries and spaces in the model, "
-            "but the simulator treats storage as unconstrained and records peak payload "
-            "space demand for recommended space per location."
+            "department waste pickup locations before the first generated waste task. ""Disable inventory spaces bypasses slot occupancy checks while keeping ""boundaries/spaces for reporting."
         )
         help_label.setWordWrap(True)
         layout.addWidget(help_label)

@@ -1,5 +1,6 @@
 import ast
 import csv
+from bisect import bisect_right
 import json
 import math
 import os
@@ -63,6 +64,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QListWidget,
     QFrame,
+    QLineEdit,
 )
 
 try:
@@ -182,6 +184,7 @@ class LayoutModel:
 class SimulationLog:
     def __init__(self):
         self.events: List[VisualEvent] = []
+        self._event_start_times: List[datetime] = []
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
 
@@ -254,48 +257,76 @@ class SimulationLog:
                 return event.start_time
         return self.start_time
 
-    def load(self, path: str):
-        self.events = []
-        with open(path, "r", encoding="utf-8-sig", newline="") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                event_type = str(row.get("event_type", "") or "").strip().lower()
-                sim_dt = self._parse_datetime(row.get("sim_datetime", ""))
-                start_dt_raw = self._parse_datetime(row.get("start_time", ""))
-                end_dt_raw = self._parse_datetime(row.get("end_time", ""))
+    @staticmethod
+    def _row_to_visual_event(row: dict) -> Optional[VisualEvent]:
+        event_type = str(row.get("event_type", "") or "").strip().lower()
+        sim_dt = SimulationLog._parse_datetime(row.get("sim_datetime", ""))
+        start_dt_raw = SimulationLog._parse_datetime(row.get("start_time", ""))
+        end_dt_raw = SimulationLog._parse_datetime(row.get("end_time", ""))
 
-                # Some zero-duration bookkeeping rows, especially third-party
-                # mass collection visits, are logged with the simulation start in
-                # start_time/end_time and the real event time in sim_datetime.
-                # Use sim_datetime for those rows so inventory changes and the
-                # event list occur at the correct point on the visual timeline.
-                prefer_sim_datetime = (
-                    event_type == "mass_collection_visit"
-                    or event_type.endswith("_generated")
-                    or event_type in {"task_assigned", "multi_stop_task_assigned"}
-                )
+        # Some zero-duration bookkeeping rows, especially third-party mass
+        # collection visits, are logged with the simulation start in
+        # start_time/end_time and the real event time in sim_datetime.
+        prefer_sim_datetime = (
+            event_type == "mass_collection_visit"
+            or event_type.endswith("_generated")
+            or event_type in {"task_assigned", "multi_stop_task_assigned"}
+        )
 
-                if prefer_sim_datetime and sim_dt is not None:
-                    start_dt = sim_dt
-                    end_dt = (
-                        sim_dt
-                        if event_type == "mass_collection_visit"
-                        else (end_dt_raw or sim_dt)
-                    )
-                    if end_dt < start_dt:
-                        end_dt = start_dt
-                else:
-                    start_dt = start_dt_raw or sim_dt
-                    end_dt = end_dt_raw or start_dt
+        if prefer_sim_datetime and sim_dt is not None:
+            start_dt = sim_dt
+            end_dt = sim_dt if event_type == "mass_collection_visit" else (end_dt_raw or sim_dt)
+            if end_dt < start_dt:
+                end_dt = start_dt
+        else:
+            start_dt = start_dt_raw or sim_dt
+            end_dt = end_dt_raw or start_dt
 
-                if start_dt is None or end_dt is None:
-                    continue
-                self.events.append(
-                    VisualEvent(start_time=start_dt, end_time=end_dt, row=row)
-                )
+        if start_dt is None or end_dt is None:
+            return None
+        return VisualEvent(start_time=start_dt, end_time=end_dt, row=row)
+
+    def _rebuild_event_index(self):
         self.events.sort(key=lambda e: e.start_time)
+        self._event_start_times = [e.start_time for e in self.events]
         self.start_time = self.events[0].start_time if self.events else None
         self.end_time = max((e.end_time for e in self.events), default=None)
+
+    def events_until(self, current_time: datetime) -> List[VisualEvent]:
+        if not self.events or current_time is None:
+            return []
+        idx = bisect_right(self._event_start_times, current_time)
+        return self.events[:idx]
+
+    def load(self, path: str):
+        self.events = []
+        self._event_start_times = []
+        with open(path, "r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+
+        # Parse timestamp-heavy CSV rows in worker processes for large logs.
+        # Qt objects are not touched here; only plain dicts and datetimes are returned.
+        if len(rows) >= 5000:
+            workers = min(max(1, (os.cpu_count() or 2) - 1), 8)
+            try:
+                with ProcessPoolExecutor(max_workers=workers) as pool:
+                    parsed = pool.map(_parse_visual_event_row_process, rows, chunksize=1000)
+                    self.events = [event for event in parsed if event is not None]
+            except Exception:
+                self.events = [
+                    event
+                    for event in (self._row_to_visual_event(row) for row in rows)
+                    if event is not None
+                ]
+        else:
+            self.events = [
+                event
+                for event in (self._row_to_visual_event(row) for row in rows)
+                if event is not None
+            ]
+
+        self._rebuild_event_index()
 
     def fraction_to_time(self, fraction: float) -> Optional[datetime]:
         if not self.start_time or not self.end_time:
@@ -322,10 +353,7 @@ class SimulationLog:
         current_task_start_by_amr: Dict[str, datetime] = {}
         last_task_id_by_amr: Dict[str, str] = {}
 
-        for event in self.events:
-            if event.start_time > current_time:
-                break
-
+        for event in self.events_until(current_time):
             row = event.row
             amr_id = (row.get("amr_id") or "").strip()
 
@@ -586,6 +614,12 @@ def _load_dxf_floor_process(job):
             "bounds": None,
             "error": str(exc),
         }
+
+
+
+def _parse_visual_event_row_process(row):
+    """Process-safe CSV row parser used by SimulationLog.load for large logs."""
+    return SimulationLog._row_to_visual_event(row)
 
 
 class DxfLoadWorker(QObject):
@@ -896,6 +930,145 @@ class TaskJumpDialog(QDialog):
             return datetime.strptime(text.strip(), "%Y-%m-%d %H:%M:%S")
         except Exception:
             return datetime.min
+
+
+
+class TasksByLocationDepartmentDialog(QDialog):
+    """Browse full tasks grouped by department or configured location."""
+
+    columns = [
+        ("task_id", "Task", 210),
+        ("payload", "Payload", 170),
+        ("start_time_display", "Start time", 170),
+        ("end_time_display", "End time", 170),
+        ("start_location", "Start location", 180),
+        ("finish_location", "Finish location", 180),
+        ("department", "Department", 170),
+        ("duration", "Duration", 100),
+        ("status", "Status", 110),
+        ("source", "Source", 100),
+    ]
+
+    def __init__(self, parent, rows: List[dict]):
+        super().__init__(parent)
+        self.setWindowTitle("Tasks by location / department")
+        self.resize(1420, 720)
+        self.rows = list(rows or [])
+        self.selected_time = None
+        self.selected_task_id = ""
+        self.selected_location = ""
+
+        layout = QVBoxLayout(self)
+
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Group by"))
+        self.group_combo = QComboBox()
+        self.group_combo.addItems(["Department", "Location"])
+        self.group_combo.currentTextChanged.connect(self.refresh_tree)
+        controls.addWidget(self.group_combo)
+
+        controls.addWidget(QLabel("Filter"))
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText("Task, payload, department, start or finish location")
+        self.filter_edit.textChanged.connect(self.refresh_tree)
+        controls.addWidget(self.filter_edit, 1)
+        layout.addLayout(controls)
+
+        self.summary_label = QLabel("")
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(len(self.columns))
+        self.tree.setHeaderLabels([heading for _key, heading, _width in self.columns])
+        self.tree.setRootIsDecorated(True)
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.tree.itemDoubleClicked.connect(self._on_item_double_clicked)
+        header = self.tree.header()
+        for idx, (_key, _heading, width) in enumerate(self.columns):
+            header.setSectionResizeMode(idx, QHeaderView.Interactive)
+            self.tree.setColumnWidth(idx, width)
+        layout.addWidget(self.tree, 1)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.reject)
+        buttons.addWidget(close_btn)
+        layout.addLayout(buttons)
+
+        self.refresh_tree()
+
+    def _row_text(self, row: dict) -> str:
+        keys = [
+            "task_id", "payload", "start_location", "finish_location",
+            "department", "department_id", "status", "source",
+            "start_time_display", "end_time_display",
+        ]
+        return " ".join(str(row.get(k, "") or "") for k in keys).lower()
+
+    def _group_keys_for_row(self, row: dict, group_mode: str) -> List[str]:
+        if group_mode == "location":
+            groups = []
+            for key in ("start_location", "finish_location"):
+                location = str(row.get(key, "") or "").strip()
+                if location and location != "-" and location not in groups:
+                    groups.append(location)
+            return groups or ["Unknown location"]
+        dept = str(row.get("department", "") or row.get("department_id", "") or "").strip()
+        return [dept or "Unassigned department"]
+
+    def refresh_tree(self):
+        self.tree.clear()
+        group_mode = self.group_combo.currentText().strip().lower()
+        filter_text = self.filter_edit.text().strip().lower()
+
+        grouped: Dict[str, List[dict]] = {}
+        for row in self.rows:
+            if filter_text and filter_text not in self._row_text(row):
+                continue
+            for group in self._group_keys_for_row(row, group_mode):
+                grouped.setdefault(group, []).append(row)
+
+        unique_task_count = len({str(r.get("task_id", "")) for rows in grouped.values() for r in rows})
+        self.summary_label.setText(
+            f"Groups: {len(grouped)} | Full tasks: {unique_task_count} | Double-click a row to jump to its start time."
+        )
+
+        for group in sorted(grouped.keys(), key=lambda x: x.lower()):
+            rows = sorted(
+                grouped[group],
+                key=lambda r: (
+                    str(r.get("start_sort_time", "") or r.get("start_time_display", "")),
+                    str(r.get("task_id", "")),
+                ),
+            )
+            group_item = QTreeWidgetItem([group] + [""] * (len(self.columns) - 1))
+            group_item.setFirstColumnSpanned(True)
+            group_item.setExpanded(True)
+            self.tree.addTopLevelItem(group_item)
+
+            for row in rows:
+                values = [str(row.get(key, "") or "-") for key, _heading, _width in self.columns]
+                item = QTreeWidgetItem(values)
+                item.setData(0, Qt.UserRole, row.get("start_time"))
+                item.setData(1, Qt.UserRole, row.get("task_id", ""))
+                item.setData(2, Qt.UserRole, row.get("finish_location") or row.get("start_location") or "")
+                details = str(row.get("details", "") or "")
+                if details:
+                    for col in range(len(self.columns)):
+                        item.setToolTip(col, details)
+                group_item.addChild(item)
+
+    def _on_item_double_clicked(self, item, _column):
+        start_time = item.data(0, Qt.UserRole)
+        if start_time is None:
+            return
+        self.selected_time = start_time
+        self.selected_task_id = str(item.data(1, Qt.UserRole) or "")
+        self.selected_location = str(item.data(2, Qt.UserRole) or "")
+        self.accept()
 
 
 class LiftShaftWidget(QWidget):
@@ -1665,6 +1838,9 @@ class SimulationVisualizer(QMainWindow):
         self.dxf_loading_failures: Dict[int, str] = {}
         self._dxf_text_bucket: Optional[int] = None
         self.sim_log = SimulationLog()
+        self._state_cache_key = None
+        self._state_cache_value = None
+        self._inventory_rows_cache: Dict[Tuple[str, Optional[datetime]], List[dict]] = {}
 
         self.current_json_path: Optional[str] = None
         self.current_dxf_path: Optional[str] = None
@@ -1753,6 +1929,7 @@ class SimulationVisualizer(QMainWindow):
         add_btn("Reload Current Floor DXF", self.reload_current_floor_dxf)
         add_btn("Open Simulation CSV", self.open_csv)
         add_btn("Jump to Task", self.open_task_jump_dialog)
+        add_btn("Tasks by Location / Department", self.open_tasks_by_location_department_dialog)
         add_btn("Lift Monitor", self.open_lift_monitor_dialog)
         add_btn("AMR Payload Monitor", self.open_amr_payload_monitor_dialog)
         add_btn("Fit View", self.fit_view)
@@ -1848,10 +2025,6 @@ class SimulationVisualizer(QMainWindow):
         self.status_label = QLabel("Ready")
         self.status_label.setWordWrap(True)
         side_layout.addWidget(self.status_label)
-
-        self.event_box = QTextEdit()
-        self.event_box.setReadOnly(True)
-        side_layout.addWidget(self.event_box, 1)
 
         self.timeline_panel = QWidget()
         timeline_panel_layout = QVBoxLayout(self.timeline_panel)
@@ -2240,6 +2413,79 @@ class SimulationVisualizer(QMainWindow):
     def world_to_scene(self, x, y):
         return float(x), -float(y)
 
+    def _visible_world_rect(self, margin_m: float = 2.0) -> Tuple[float, float, float, float]:
+        """Return current viewport bounds as world x/y min/max with margin."""
+        try:
+            rect = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
+            x_min = float(rect.left()) - margin_m
+            x_max = float(rect.right()) + margin_m
+            # Scene y is inverted relative to world y.
+            y_min = -float(rect.bottom()) - margin_m
+            y_max = -float(rect.top()) + margin_m
+            if x_min > x_max:
+                x_min, x_max = x_max, x_min
+            if y_min > y_max:
+                y_min, y_max = y_max, y_min
+            return x_min, y_min, x_max, y_max
+        except Exception:
+            return -1e12, -1e12, 1e12, 1e12
+
+    @staticmethod
+    def _point_in_world_rect(x: float, y: float, rect: Tuple[float, float, float, float]) -> bool:
+        x_min, y_min, x_max, y_max = rect
+        return x_min <= float(x) <= x_max and y_min <= float(y) <= y_max
+
+    @staticmethod
+    def _segment_intersects_world_rect(a: dict, b: dict, rect: Tuple[float, float, float, float]) -> bool:
+        x_min, y_min, x_max, y_max = rect
+        ax = float(a.get("x", 0.0) or 0.0)
+        ay = float(a.get("y", 0.0) or 0.0)
+        bx = float(b.get("x", 0.0) or 0.0)
+        by = float(b.get("y", 0.0) or 0.0)
+        return not (max(ax, bx) < x_min or min(ax, bx) > x_max or max(ay, by) < y_min or min(ay, by) > y_max)
+
+    def _location_intersects_visible_world(self, location: dict, rect: Tuple[float, float, float, float]) -> bool:
+        try:
+            lx = float(location.get("x", 0.0) or 0.0)
+            ly = float(location.get("y", 0.0) or 0.0)
+        except Exception:
+            return False
+        if self._point_in_world_rect(lx, ly, rect):
+            return True
+
+        for point in location.get("bounding_box", []) or []:
+            if not isinstance(point, dict):
+                continue
+            try:
+                x = lx + float(point.get("dx", point.get("x", 0.0)) or 0.0)
+                y = ly + float(point.get("dy", point.get("y", 0.0)) or 0.0)
+                if self._point_in_world_rect(x, y, rect):
+                    return True
+            except Exception:
+                pass
+
+        for space in location.get("inventory_spaces", []) or []:
+            for x, y in self._space_points_world(location, space):
+                if self._point_in_world_rect(x, y, rect):
+                    return True
+        return False
+
+    def _current_state(self):
+        if not self.current_time or not self.sim_log.events:
+            return {}, []
+        key = self.current_time
+        if self._state_cache_key == key and self._state_cache_value is not None:
+            return self._state_cache_value
+        value = self.sim_log.state_at(self.current_time, self.layout_model)
+        self._state_cache_key = key
+        self._state_cache_value = value
+        return value
+
+    def _invalidate_runtime_caches(self):
+        self._state_cache_key = None
+        self._state_cache_value = None
+        self._inventory_rows_cache.clear()
+
     def clear_items(self, items):
         for item in items:
             self.graphics_scene.removeItem(item)
@@ -2265,6 +2511,7 @@ class SimulationVisualizer(QMainWindow):
 
     def refresh_dynamic_scene(self):
         self.clear_items(self.dynamic_items)
+        self._inventory_rows_cache.clear()
         self.draw_room_payloads_qt(self.current_floor())
         self.draw_dynamic_state_qt(self.current_floor())
         self.update_follow_view()
@@ -2414,16 +2661,26 @@ class SimulationVisualizer(QMainWindow):
                 item.setRotation(-float(entity.get("rotation", 0.0)))
 
     def draw_layout_qt(self, floor: int):
+        visible_world = self._visible_world_rect(margin_m=8.0)
+
         for edge in self.layout_model.edges_for_floor(floor):
             a = self.layout_model.points.get(edge["from"])
             b = self.layout_model.points.get(edge["to"])
             if not a or not b:
+                continue
+            if not self._segment_intersects_world_rect(a, b, visible_world):
                 continue
             ax, ay = self.world_to_scene(a["x"], a["y"])
             bx, by = self.world_to_scene(b["x"], b["y"])
             self.draw_line_item(ax, ay, bx, by, "#5f8dd3", 0.0)
 
         for name, point in self.layout_model.points_for_floor(floor).items():
+            if not self._point_in_world_rect(
+                float(point.get("x", 0.0) or 0.0),
+                float(point.get("y", 0.0) or 0.0),
+                visible_world,
+            ):
+                continue
             x, y = self.world_to_scene(point["x"], point["y"])
             kind = point.get("kind")
             if kind == "location":
@@ -3048,6 +3305,78 @@ class SimulationVisualizer(QMainWindow):
             if part.strip() and part.strip() != "-"
         ]
 
+    def _draw_inventory_space_status_at_world(
+        self,
+        location: dict,
+        space: dict,
+        row: Optional[dict] = None,
+    ):
+        """Draw the inventory-space boundary with its live occupancy state.
+
+        The slot payload name is only a planned payload type/footprint.  The
+        status shown here is derived from the current visualiser inventory row,
+        which starts empty unless a seeded payload or CSV drop-off has actually
+        placed something in the space.
+        """
+        points_world = self._space_points_world(location, space)
+        if not points_world:
+            return
+
+        row = dict(row or {})
+        payload_text = str(row.get("payload", "-") or "-").strip()
+        occupied = bool(payload_text and payload_text != "-")
+        status = str(row.get("status", "Occupied" if occupied else "Empty") or "").strip()
+        status_lower = status.lower()
+
+        points = [QPointF(*self.world_to_scene(x, y)) for x, y in points_world]
+        item = QGraphicsPolygonItem(QPolygonF(points))
+
+        if occupied:
+            if "seed" in status_lower:
+                fill = QColor(142, 68, 173, 45)
+                outline = QColor("#c9a7ff")
+            else:
+                fill = QColor(46, 204, 113, 35)
+                outline = QColor("#76f0a6")
+        else:
+            fill = QColor(120, 120, 120, 22)
+            outline = QColor("#777777")
+
+        item.setBrush(QBrush(fill))
+        item.setPen(QPen(outline, 0.0))
+        item.setData(0, "inventory_space_status")
+        item.setData(1, str(space.get("name", "") or ""))
+
+        tooltip_lines = [
+            f"Inventory space: {str(space.get('name', '') or '-')}" ,
+            f"Status: {status or ('Occupied' if occupied else 'Empty')}",
+            f"Payload: {payload_text if occupied else 'Empty'}",
+        ]
+        source = str(row.get("source", "") or "").strip()
+        if source:
+            tooltip_lines.append(f"Source: {source}")
+        item.setToolTip("\n".join(tooltip_lines))
+        self.graphics_scene.addItem(item)
+        self.dynamic_items.append(item)
+
+        if self.show_labels_check.isChecked():
+            cx, cy = self._space_centroid_world(location, space)
+            sx, sy = self.world_to_scene(cx, cy)
+            label = payload_text if occupied else "Empty"
+            name = str(space.get("name", "") or "").strip()
+            if name:
+                label = f"{name}: {label}"
+            label_item = self.draw_text_item(
+                sx + 0.1,
+                sy + 0.1,
+                label,
+                "#d7ffe7" if occupied else "#bdbdbd",
+                dynamic=True,
+                ignore_transform=True,
+                pixel_size=max(6, self.get_text_pixel_size() - 2),
+            )
+            label_item.setToolTip("\n".join(tooltip_lines))
+
     def _draw_payload_box_at_world(
         self,
         x: float,
@@ -3144,11 +3473,16 @@ class SimulationVisualizer(QMainWindow):
             if not self.show_room_payloads_check.isChecked():
                 return
 
+        visible_world = self._visible_world_rect(margin_m=4.0)
+
         for location in self.layout_model.data.get("locations", []) or []:
             try:
                 if int(location.get("floor", -999999)) != int(floor):
                     continue
             except Exception:
+                continue
+
+            if not self._location_intersects_visible_world(location, visible_world):
                 continue
 
             location_name = str(location.get("name", "") or "").strip()
@@ -3184,8 +3518,13 @@ class SimulationVisualizer(QMainWindow):
                 )
                 row = rows_by_space.get(space_name, {})
                 row_payloads = self._payloads_from_display_value(row.get("payload", ""))
-                row_status = str(row.get("status", "Stored") or "Stored")
+                row_status = str(row.get("status", "Empty") or "Empty")
                 row_source = str(row.get("source", "") or "")
+
+                # Always draw the inventory-space boundary and live occupancy
+                # status.  Empty configured slots should remain visibly empty
+                # until seeded or physically occupied by a CSV drop-off.
+                self._draw_inventory_space_status_at_world(location, space, row)
 
                 slots = [
                     slot
@@ -3408,7 +3747,7 @@ class SimulationVisualizer(QMainWindow):
                 active_travel = None
                 active_occupant = None
 
-                for event in self.sim_log.events:
+                for event in self.sim_log.events_until(current_time):
                     row = event.row
 
                     row_lift_id = (row.get("lift_id") or "").strip()
@@ -3679,16 +4018,11 @@ class SimulationVisualizer(QMainWindow):
         if not self.current_time or not self.sim_log.events:
             return []
 
-        amr_states, _recent = self.sim_log.state_at(
-            self.current_time, self.layout_model
-        )
+        amr_states, _recent = self._current_state()
         onboard: Dict[str, Dict[str, dict]] = {}
         last_seen: Dict[str, datetime] = {}
 
-        for event in self.sim_log.events:
-            if event.start_time > self.current_time:
-                break
-
+        for event in self.sim_log.events_until(self.current_time):
             row = event.row
             amr_id = str(row.get("amr_id", "") or "").strip()
             if not amr_id:
@@ -4003,6 +4337,53 @@ class SimulationVisualizer(QMainWindow):
                 return location
         return None
 
+    def _bool_from_config_value(self, value, default: bool = False) -> bool:
+        if value is None:
+            return bool(default)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "y", "on", "enabled"}:
+            return True
+        if text in {"0", "false", "no", "n", "off", "disabled"}:
+            return False
+        return bool(default)
+
+    def _simulation_seed_location_payloads_enabled(self) -> bool:
+        simulation = self.layout_model.data.get("simulation", {}) or {}
+        return self._bool_from_config_value(
+            simulation.get("seed_location_payloads_at_start", False),
+            False,
+        )
+
+    def _space_seed_payloads_enabled(self, space: dict) -> bool:
+        if not isinstance(space, dict):
+            return False
+        for key in (
+            "seed_payload_at_start",
+            "seed_location_payload_at_start",
+            "seed_payloads_at_start",
+            "seed_inventory_payloads_at_start",
+            "initial_payload_present",
+        ):
+            if key in space:
+                return self._bool_from_config_value(space.get(key), False)
+        return self._simulation_seed_location_payloads_enabled()
+
+    def _slot_seed_payload_enabled(self, slot: dict, space: dict) -> bool:
+        if isinstance(slot, dict):
+            for key in (
+                "seed_payload_at_start",
+                "seed_location_payload_at_start",
+                "seed_payloads_at_start",
+                "initial_payload_present",
+            ):
+                if key in slot:
+                    return self._bool_from_config_value(slot.get(key), False)
+        return self._space_seed_payloads_enabled(space)
+
     def _payload_value_from_space(self, space: dict):
         for key in (
             "current_payload",
@@ -4019,15 +4400,16 @@ class SimulationVisualizer(QMainWindow):
                     return ", ".join(str(x) for x in value if str(x).strip()) or "-"
                 return str(value)
 
-        # Inventory spaces are usually defined with payload_slots rather than a
-        # top-level current payload.  Treat those configured slots as initially
-        # stored payloads so seeded/starting containers are visible before the
-        # first CSV event has moved them.
+        # payload_slots define where payloads can sit.  They are not current
+        # occupancy unless location-payload seeding is explicitly enabled for
+        # the space/slot or globally by simulation.seed_location_payloads_at_start.
         slots = space.get("payload_slots", []) or []
         if isinstance(slots, list):
             payloads = []
             for slot in slots:
                 if not isinstance(slot, dict):
+                    continue
+                if not self._slot_seed_payload_enabled(slot, space):
                     continue
                 payload = str(slot.get("payload", "") or "").strip()
                 if payload:
@@ -4551,10 +4933,7 @@ class SimulationVisualizer(QMainWindow):
         if not self.current_time or not self.sim_log.events:
             return [self._enrich_payload_row_details(row) for row in rows]
 
-        for event in self.sim_log.events:
-            if event.start_time > self.current_time:
-                break
-
+        for event in self.sim_log.events_until(self.current_time):
             row = event.row
             if (
                 str(row.get("event_type", "") or "").strip().lower()
@@ -4725,20 +5104,33 @@ class SimulationVisualizer(QMainWindow):
         if not location:
             return []
 
+        # Use the same live occupancy reconstruction as the payload dialog, so
+        # pickup/drop-off CSV events and seeded waste containers are reflected
+        # in the inventory-space status table.
+        payload_rows = self._inventory_payload_rows_for_location(location_name)
+        payload_by_space = {
+            str(row.get("space", "") or "").strip(): row
+            for row in payload_rows
+        }
+
         rows = []
         for idx, space in enumerate(
             location.get("inventory_spaces", []) or [], start=1
         ):
+            space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+            live_row = payload_by_space.get(space_name, {})
+            payload = str(live_row.get("payload", "-") or "-").strip()
+            occupied = bool(payload and payload != "-")
             points = list(space.get("points", []) or [])
             rows.append(
                 {
-                    "name": str(space.get("name", "")).strip() or f"Inventory {idx}",
+                    "name": space_name,
                     "length_m": space.get("length_m", space.get("length", "")),
                     "width_m": space.get("width_m", space.get("width", "")),
                     "height_m": space.get("height_m", space.get("height", "")),
-                    "occupied": "Yes" if bool(space.get("occupied", False)) else "No",
-                    "payload": self._payload_value_from_space(space),
-                    "task_id": space.get("task_id", "-"),
+                    "occupied": "Yes" if occupied else "No",
+                    "payload": payload if occupied else "Empty",
+                    "task_id": live_row.get("task_id", space.get("task_id", "-")),
                     "reserved_by_task": space.get("reserved_by_task", "-"),
                     "points": len(points),
                 }
@@ -4755,12 +5147,12 @@ class SimulationVisualizer(QMainWindow):
             )
             return
 
-        rows = self._inventory_payload_rows_for_location(location_name)
+        rows = self._inventory_space_rows_for_location(location_name)
         if not rows:
             QMessageBox.information(
                 self,
                 f"Inventory status - {location_name}",
-                f"Location: {location_name}\n\nNo location information was found.",
+                f"Location: {location_name}\n\nNo inventory spaces are defined for this location.",
             )
             return
 
@@ -4909,24 +5301,23 @@ class SimulationVisualizer(QMainWindow):
         self.node_context_menu.popup(event.globalPosition().toPoint())
 
     def draw_dynamic_state_qt(self, floor: int):
-        if not self.current_time or not self.sim_log.events:
-            self.event_box.clear()
-            return
-
-        amr_states, recent_events = self.sim_log.state_at(
-            self.current_time, self.layout_model
-        )
+        amr_states, recent_events = self._current_state()
         followed_amr = self.follow_combo.currentText().strip()
+        visible_world = self._visible_world_rect(margin_m=6.0)
 
         for amr_id, state in amr_states.items():
             if state.get("floor") != floor:
                 continue
             if state.get("x") is None or state.get("y") is None:
                 continue
-
             is_followed = (
                 self.follow_enabled_check.isChecked() and followed_amr == amr_id
             )
+            if not is_followed and not self._point_in_world_rect(
+                float(state["x"]), float(state["y"]), visible_world
+            ):
+                continue
+
             x, y = self.world_to_scene(state["x"], state["y"])
 
             if self.show_amr_box_check.isChecked():
@@ -4965,19 +5356,6 @@ class SimulationVisualizer(QMainWindow):
                     dynamic=True,
                     ignore_transform=True,
                 )
-
-        self.event_box.clear()
-        for item in recent_events:
-            row = item["row"]
-            stamp = item["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
-            line = (
-                f"{stamp} | "
-                f"{row.get('amr_id', '')} | "
-                f"{row.get('payload', '')} | "
-                f"{row.get('segment_type', '')} | "
-                f"{row.get('start_node', '')} -> {row.get('end_node', '')}"
-            )
-            self.event_box.append(line)
 
     def _scroll_timeline_to_time(self, value: Optional[datetime]):
         if value is None or not hasattr(self, "timeline_widget"):
@@ -5218,6 +5596,7 @@ class SimulationVisualizer(QMainWindow):
 
         self.layout_model.load(path)
         self.current_json_path = path
+        self._invalidate_runtime_caches()
 
         floors = self.layout_model.floors()
         if floors:
@@ -5271,6 +5650,7 @@ class SimulationVisualizer(QMainWindow):
             return
         self.sim_log.load(path)
         self.current_csv_path = path
+        self._invalidate_runtime_caches()
         self.update_follow_amr_options()
         if not self.sim_log.events:
             QMessageBox.critical(
@@ -5475,7 +5855,7 @@ class SimulationVisualizer(QMainWindow):
         if not followed_amr:
             return
 
-        amr_states, _ = self.sim_log.state_at(self.current_time, self.layout_model)
+        amr_states, _ = self._current_state()
         state = amr_states.get(followed_amr)
         if not state:
             return
@@ -5536,6 +5916,338 @@ class SimulationVisualizer(QMainWindow):
             total += seconds
 
         return total
+
+
+    def _configured_location_names(self) -> set:
+        return {
+            str(location.get("name", "") or "").strip()
+            for location in self.layout_model.data.get("locations", []) or []
+            if isinstance(location, dict) and str(location.get("name", "") or "").strip()
+        }
+
+    def _department_name_lookup(self) -> Dict[str, str]:
+        """Return aliases for department id/name -> configured department name.
+
+        The task browser should show the human-readable department name.  Some
+        CSV rows only carry department_id, so keep id aliases but always resolve
+        them to the configured name where possible.
+        """
+        lookup: Dict[str, str] = {}
+        for department in self.layout_model.data.get("departments", []) or []:
+            if not isinstance(department, dict):
+                continue
+            dept_id = str(department.get("id", "") or "").strip()
+            dept_name = str(department.get("name", "") or "").strip()
+            display_name = dept_name or dept_id
+            if not display_name:
+                continue
+            if dept_id:
+                lookup[dept_id] = display_name
+            if dept_name:
+                lookup[dept_name] = display_name
+        return lookup
+
+    def _department_display_name(self, value: str, department_names: Optional[Dict[str, str]] = None) -> str:
+        value = str(value or "").strip()
+        if not value:
+            return ""
+        if department_names is None:
+            department_names = self._department_name_lookup()
+        return department_names.get(value, value)
+
+    def _location_department_lookup(self) -> Dict[str, str]:
+        lookup: Dict[str, str] = {}
+        valid_locations = self._configured_location_names()
+        department_names = self._department_name_lookup()
+
+        # First use the explicit location fields, resolving IDs to configured
+        # names.  Do not invent departments from corridor node names.
+        for location in self.layout_model.data.get("locations", []) or []:
+            if not isinstance(location, dict):
+                continue
+            name = str(location.get("name", "") or "").strip()
+            if not name or name not in valid_locations:
+                continue
+            raw_dept_name = str(location.get("department_name", "") or "").strip()
+            raw_dept = (
+                raw_dept_name
+                or str(location.get("department", "") or "").strip()
+                or str(location.get("department_id", "") or "").strip()
+            )
+            dept = self._department_display_name(raw_dept, department_names)
+            if dept:
+                lookup[name] = dept
+
+        # Then fill missing locations from department assignments.  Use the
+        # department name, never the ID, for display/grouping.
+        for department in self.layout_model.data.get("departments", []) or []:
+            if not isinstance(department, dict):
+                continue
+            dept_id = str(department.get("id", "") or "").strip()
+            dept_name = str(department.get("name", "") or "").strip()
+            display_name = dept_name or dept_id
+            if not display_name:
+                continue
+
+            for key in ("locations", "location_names", "department_locations"):
+                raw = department.get(key, []) or []
+                if isinstance(raw, str):
+                    raw = [raw]
+                if isinstance(raw, list):
+                    for loc in raw:
+                        loc_name = str(loc or "").strip()
+                        if loc_name in valid_locations:
+                            lookup.setdefault(loc_name, display_name)
+
+            tg_locations = department.get("task_generation_locations", {}) or {}
+            if isinstance(tg_locations, dict):
+                for entry in tg_locations.values():
+                    values = []
+                    if isinstance(entry, dict):
+                        values.extend(entry.get("pickup_dropoff_locations", []) or [])
+                        values.extend(entry.get("locations", []) or [])
+                    elif isinstance(entry, list):
+                        values.extend(entry)
+                    for loc in values:
+                        loc_name = str(loc or "").strip()
+                        if loc_name in valid_locations:
+                            lookup.setdefault(loc_name, display_name)
+        return lookup
+
+    def _valid_task_location_from_row(self, row: dict, keys: Tuple[str, ...], valid_locations: set) -> str:
+        for key in keys:
+            value = str(row.get(key, "") or "").strip()
+            if value in valid_locations:
+                return value
+        return ""
+
+    def _infer_department_for_task_row(self, row: dict, location_departments: Dict[str, str]) -> str:
+        department_names = self._department_name_lookup()
+
+        # Prefer a proper display name if the CSV provides one.  If only an ID is
+        # present, resolve it through the JSON department list.
+        explicit_name = str(row.get("department", "") or row.get("department_name", "") or "").strip()
+        if explicit_name:
+            return self._department_display_name(explicit_name, department_names)
+
+        explicit_id = str(row.get("department_id", "") or "").strip()
+        if explicit_id:
+            resolved = self._department_display_name(explicit_id, department_names)
+            if resolved and resolved != explicit_id:
+                return resolved
+
+        # Infer from real configured location assignments only.  Do not parse a
+        # D1 prefix from arbitrary node names because that made corridor/lift
+        # nodes appear as departments.
+        for key in (
+            "dropoff",
+            "to_location",
+            "finish_location",
+            "end_location",
+            "pickup",
+            "from_location",
+            "start_location",
+        ):
+            loc = str(row.get(key, "") or "").strip()
+            if loc in location_departments:
+                return location_departments[loc]
+
+        return "Unassigned department"
+
+    def _task_datetime_display(self, dt: Optional[datetime], fallback: str = "") -> str:
+        if dt is not None:
+            return dt.strftime("%Y-%m-%d %H:%M:%S")
+        return str(fallback or "-").strip() or "-"
+
+    def _full_task_row_duration(self, start_dt: Optional[datetime], end_dt: Optional[datetime]) -> str:
+        if start_dt is None or end_dt is None or end_dt < start_dt:
+            return "-"
+        return SimulationLog._format_runtime((end_dt - start_dt).total_seconds())
+
+    def _csv_full_task_rows(self, location_departments: Dict[str, str]) -> List[dict]:
+        valid_locations = self._configured_location_names()
+        tasks: Dict[str, dict] = {}
+
+        for event in self.sim_log.events or []:
+            row = event.row
+            task_id = str(row.get("task_id", "") or "").strip()
+            if not task_id:
+                continue
+            if not str(row.get("amr_id", "") or "").strip():
+                # Generated/planning rows can describe future tasks but are not a
+                # full executed task journey.
+                continue
+
+            event_type = str(row.get("event_type", "") or "").strip().lower()
+            segment_type = str(row.get("segment_type", "") or "").strip().lower()
+            status = str(row.get("status", "") or "").strip().lower()
+            text = " ".join([event_type, segment_type, status])
+
+            start_loc = self._valid_task_location_from_row(
+                row,
+                ("pickup", "from_location", "start_location"),
+                valid_locations,
+            )
+            finish_loc = self._valid_task_location_from_row(
+                row,
+                ("dropoff", "to_location", "finish_location", "end_location"),
+                valid_locations,
+            )
+
+            task = tasks.setdefault(
+                task_id,
+                {
+                    "task_id": task_id,
+                    "payload": "-",
+                    "start_time": event.start_time,
+                    "end_time": event.end_time,
+                    "start_location": "",
+                    "finish_location": "",
+                    "department": "",
+                    "department_id": "",
+                    "status": "in progress",
+                    "source": "CSV",
+                    "details": "",
+                },
+            )
+
+            if event.start_time < task["start_time"]:
+                task["start_time"] = event.start_time
+            if event.end_time and event.end_time > task["end_time"]:
+                task["end_time"] = event.end_time
+
+            payload = str(row.get("payload", "") or row.get("container_type", "") or "").strip()
+            if payload and task.get("payload") in {"", "-"}:
+                task["payload"] = payload
+
+            if not task.get("start_location"):
+                if "pickup" in text or "pick_up" in text or "load" in text:
+                    task["start_location"] = start_loc
+                elif start_loc:
+                    task["start_location"] = start_loc
+            if finish_loc:
+                if any(token in text for token in ("dropoff", "drop_off", "deliver", "unload", "complete")):
+                    task["finish_location"] = finish_loc
+                elif not task.get("finish_location"):
+                    task["finish_location"] = finish_loc
+
+            dept_id = str(row.get("department_id", "") or "").strip()
+            dept_name = str(row.get("department_name", "") or "").strip()
+            if dept_id and not task.get("department_id"):
+                task["department_id"] = dept_id
+            if dept_name and not task.get("department"):
+                task["department"] = dept_name
+
+            if event_type in {"task_complete", "task_completed", "task complete", "task completed"} or "complete" in text:
+                task["status"] = "completed"
+            elif "failed" in text:
+                task["status"] = "failed"
+
+            detail = str(row.get("details", "") or "").strip()
+            if detail:
+                task["details"] = detail
+
+        rows = []
+        for task in tasks.values():
+            if not task.get("start_location") and not task.get("finish_location"):
+                continue
+            if not task.get("department"):
+                task["department"] = self._infer_department_for_task_row(task, location_departments)
+            start_dt = task.get("start_time")
+            end_dt = task.get("end_time")
+            task["start_time_display"] = self._task_datetime_display(start_dt)
+            task["end_time_display"] = self._task_datetime_display(end_dt)
+            task["start_sort_time"] = start_dt.isoformat() if start_dt else ""
+            task["duration"] = self._full_task_row_duration(start_dt, end_dt)
+            task["start_location"] = task.get("start_location") or "-"
+            task["finish_location"] = task.get("finish_location") or "-"
+            rows.append(task)
+        return rows
+
+    def _json_full_task_rows(self, location_departments: Dict[str, str]) -> List[dict]:
+        valid_locations = self._configured_location_names()
+        rows: List[dict] = []
+        for task in self.layout_model.data.get("tasks", []) or []:
+            if not isinstance(task, dict):
+                continue
+            task_id = str(task.get("id", "") or "").strip() or "-"
+            pickup = str(task.get("pickup", "") or "").strip()
+            dropoff = str(task.get("dropoff", "") or "").strip()
+            if pickup not in valid_locations and dropoff not in valid_locations:
+                continue
+            payload = str(task.get("payload", "") or "").strip() or "-"
+            release_text = str(task.get("release_datetime", "") or "").strip()
+            release_dt = LayoutModel._parse_datetime(release_text)
+            row = {
+                "task_id": task_id,
+                "payload": payload,
+                "start_time": release_dt,
+                "end_time": None,
+                "start_time_display": self._task_datetime_display(release_dt, release_text),
+                "end_time_display": "-",
+                "start_sort_time": release_dt.isoformat() if release_dt else release_text,
+                "start_location": pickup if pickup in valid_locations else "-",
+                "finish_location": dropoff if dropoff in valid_locations else "-",
+                "department": self._infer_department_for_task_row(task, location_departments),
+                "department_id": str(task.get("department_id", "") or "").strip(),
+                "duration": "-",
+                "source": "JSON",
+                "status": "planned",
+                "details": json.dumps(task, default=str),
+            }
+            rows.append(row)
+        return rows
+
+    def build_tasks_by_location_department_rows(self) -> List[dict]:
+        location_departments = self._location_department_lookup()
+        rows = self._csv_full_task_rows(location_departments)
+        if not rows:
+            rows = self._json_full_task_rows(location_departments)
+        rows.sort(key=lambda r: (str(r.get("start_sort_time", "")), str(r.get("task_id", ""))))
+        return rows
+
+    def open_tasks_by_location_department_dialog(self):
+        if not self.layout_model.data and not self.sim_log.events:
+            QMessageBox.information(
+                self,
+                "No data loaded",
+                "Load a layout JSON or simulation CSV first.",
+            )
+            return
+
+        rows = self.build_tasks_by_location_department_rows()
+        if not rows:
+            QMessageBox.information(
+                self,
+                "No tasks found",
+                "No full task records were found for configured locations/departments.",
+            )
+            return
+
+        dialog = TasksByLocationDepartmentDialog(self, rows)
+        if dialog.exec() != QDialog.Accepted:
+            return
+
+        if dialog.selected_time is not None:
+            self.current_time = dialog.selected_time
+            self.update_time_display()
+            self.refresh_dynamic_scene()
+            self._scroll_timeline_to_time(self.current_time)
+
+        selected_location = str(getattr(dialog, "selected_location", "") or "").strip()
+        if selected_location and selected_location in self.layout_model.points:
+            point = self.layout_model.points[selected_location]
+            try:
+                self.set_floor(int(point.get("floor", self.current_floor())))
+                sx, sy = self.world_to_scene(point.get("x", 0.0), point.get("y", 0.0))
+                self.view.centerOn(sx, sy)
+            except Exception:
+                pass
+
+        selected_task_id = str(getattr(dialog, "selected_task_id", "") or "").strip()
+        if selected_task_id:
+            self.set_status(f"Jumped to task {selected_task_id}")
+        self.view.viewport().update()
 
     def build_task_jump_index(self) -> Dict[str, List[dict]]:
         grouped: Dict[str, List[dict]] = {}
