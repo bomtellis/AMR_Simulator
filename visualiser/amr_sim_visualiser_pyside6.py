@@ -1941,7 +1941,7 @@ class SimulationVisualizer(QMainWindow):
 
         self.pan_redraw_timer = QTimer(self)
         self.pan_redraw_timer.setSingleShot(True)
-        self.pan_redraw_timer.timeout.connect(self.refresh_static_scene)
+        self.pan_redraw_timer.timeout.connect(self._refresh_after_view_cull_change)
 
         self._build_ui()
         self.refresh_all()
@@ -1950,6 +1950,26 @@ class SimulationVisualizer(QMainWindow):
     #     self.zoom_redraw_timer.start(20)
     #     self.refresh_static_scene()
     #     self.refresh_dynamic_scene()
+
+    def _refresh_after_view_cull_change(self):
+        """Rebuild culled map layers after the camera moves.
+
+        Static geometry, room payloads and AMRs are culled against the visible
+        world rectangle.  If a pan only repaints the existing scene, newly
+        visible objects never get inserted and objects at the edge can flicker.
+        Rebuild both static and dynamic layers after a short debounce so culling
+        follows the current camera position.
+        """
+        self.refresh_static_scene()
+        self.refresh_dynamic_scene()
+        self.view.viewport().update()
+
+    def on_pan(self):
+        # Debounce while dragging so we do not rebuild the scene for every
+        # mouse-move event, but still refresh quickly enough for culling to feel
+        # attached to the camera.
+        self.pan_redraw_timer.start(35)
+        self.view.viewport().update()
 
     def on_zoom(self):
         new_bucket = self._current_dxf_text_bucket()
@@ -1960,6 +1980,7 @@ class SimulationVisualizer(QMainWindow):
                 self.rebuild_dxf_floor_items(floor)
                 if self.show_dxf_check.isChecked():
                     self.show_dxf_floor(floor)
+        self.zoom_redraw_timer.start(20)
         self.refresh_dynamic_scene()
         self.view.viewport().update()
 
@@ -1991,7 +2012,7 @@ class SimulationVisualizer(QMainWindow):
         self.view.setScene(self.graphics_scene)
         self.view.set_callbacks(
             zoom_callback=self.on_zoom,
-            pan_callback=lambda: self.view.viewport().update(),
+            pan_callback=self.on_pan,
         )
         self.view.set_context_menu_callback(self.on_view_right_click)
         self.view.set_overlay_provider(self.draw_overlay_panels)
@@ -2513,14 +2534,27 @@ class SimulationVisualizer(QMainWindow):
         return float(x), -float(y)
 
     def _visible_world_rect(self, margin_m: float = 2.0) -> Tuple[float, float, float, float]:
-        """Return current viewport bounds as world x/y min/max with margin."""
+        """Return current viewport bounds as world x/y min/max with a safe margin.
+
+        Culling is based on the actual transformed viewport corners, not a stale
+        scene rect.  The margin is expanded by a screen-space allowance so fast
+        pans do not expose blank edges before the debounced rebuild completes.
+        """
         try:
-            rect = self.view.mapToScene(self.view.viewport().rect()).boundingRect()
-            x_min = float(rect.left()) - margin_m
-            x_max = float(rect.right()) + margin_m
+            viewport_rect = self.view.viewport().rect()
+            polygon = self.view.mapToScene(viewport_rect)
+            rect = polygon.boundingRect()
+
+            scale = abs(float(self.view.transform().m11() or 1.0))
+            # Keep at least 20 m of hysteresis, or roughly 160 screen pixels in
+            # world units.  This prevents edge popping while moving the camera.
+            safe_margin = max(float(margin_m or 0.0), 20.0, 160.0 / max(scale, 0.001))
+
+            x_min = float(rect.left()) - safe_margin
+            x_max = float(rect.right()) + safe_margin
             # Scene y is inverted relative to world y.
-            y_min = -float(rect.bottom()) - margin_m
-            y_max = -float(rect.top()) + margin_m
+            y_min = -float(rect.bottom()) - safe_margin
+            y_max = -float(rect.top()) + safe_margin
             if x_min > x_max:
                 x_min, x_max = x_max, x_min
             if y_min > y_max:
@@ -2528,6 +2562,22 @@ class SimulationVisualizer(QMainWindow):
             return x_min, y_min, x_max, y_max
         except Exception:
             return -1e12, -1e12, 1e12, 1e12
+
+    @staticmethod
+    def _world_bbox_intersects_rect(
+        bbox: Tuple[float, float, float, float],
+        rect: Tuple[float, float, float, float],
+    ) -> bool:
+        try:
+            ax0, ay0, ax1, ay1 = [float(v) for v in bbox]
+            bx0, by0, bx1, by1 = [float(v) for v in rect]
+            if ax0 > ax1:
+                ax0, ax1 = ax1, ax0
+            if ay0 > ay1:
+                ay0, ay1 = ay1, ay0
+            return not (ax1 < bx0 or ax0 > bx1 or ay1 < by0 or ay0 > by1)
+        except Exception:
+            return True
 
     @staticmethod
     def _point_in_world_rect(x: float, y: float, rect: Tuple[float, float, float, float]) -> bool:
@@ -2552,22 +2602,32 @@ class SimulationVisualizer(QMainWindow):
         if self._point_in_world_rect(lx, ly, rect):
             return True
 
+        bbox_points = [(lx, ly)]
         for point in location.get("bounding_box", []) or []:
             if not isinstance(point, dict):
                 continue
             try:
-                x = lx + float(point.get("dx", point.get("x", 0.0)) or 0.0)
-                y = ly + float(point.get("dy", point.get("y", 0.0)) or 0.0)
-                if self._point_in_world_rect(x, y, rect):
-                    return True
+                bbox_points.append(
+                    (
+                        lx + float(point.get("dx", point.get("x", 0.0)) or 0.0),
+                        ly + float(point.get("dy", point.get("y", 0.0)) or 0.0),
+                    )
+                )
             except Exception:
                 pass
 
         for space in location.get("inventory_spaces", []) or []:
-            for x, y in self._space_points_world(location, space):
-                if self._point_in_world_rect(x, y, rect):
-                    return True
-        return False
+            bbox_points.extend(self._space_points_world(location, space))
+
+        if not bbox_points:
+            return False
+
+        xs = [p[0] for p in bbox_points]
+        ys = [p[1] for p in bbox_points]
+        return self._world_bbox_intersects_rect(
+            (min(xs), min(ys), max(xs), max(ys)),
+            rect,
+        )
 
     def _current_state(self):
         if not self.current_time or not self.sim_log.events:
