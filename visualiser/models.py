@@ -119,6 +119,14 @@ def default_task_generation_category(label: str) -> dict:
         "enabled": False,
         "display_name": label,
         "generation_mode": "scheduled",
+        # collection = volume increases at the department/location until collected.
+        # replenishment = reserve volume starts full, reduces with usage, and AMR visits top it back up.
+        "flow_direction": "collection",
+        "reserve_management": False,
+        "reserve_max_source": "inventory_spaces",
+        "reserve_initial_fill_fraction": 1.0,
+        "reserve_trigger_fraction": 0.25,
+        "replenish_to_fraction": 1.0,
         "priority": 100,
         "pickup_location": "",
         "dropoff_location": "",
@@ -186,7 +194,9 @@ def default_task_generation_config() -> dict:
     )
     categories["stores"].update(
         {
-            "generation_mode": "scheduled",
+            "generation_mode": "threshold",
+            "flow_direction": "replenishment",
+            "reserve_management": True,
             "priority": 70,
             "schedule_times": ["09:30", "14:30"],
         }
@@ -251,6 +261,22 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
             clean.insert(0, legacy_dropoff)
         category["dropoff_locations"] = clean
         category["dropoff_location"] = clean[0] if clean else legacy_dropoff
+
+        flow = str(category.get("flow_direction", "collection") or "collection").strip().lower()
+        if flow not in {"collection", "replenishment"}:
+            flow = "collection"
+        category["flow_direction"] = flow
+        category["reserve_management"] = bool(category.get("reserve_management", flow == "replenishment"))
+        category["reserve_max_source"] = str(category.get("reserve_max_source", "inventory_spaces") or "inventory_spaces")
+        for key, default in (
+            ("reserve_initial_fill_fraction", 1.0),
+            ("reserve_trigger_fraction", 0.25),
+            ("replenish_to_fraction", 1.0),
+        ):
+            try:
+                category[key] = max(0.0, min(float(category.get(key, default) or default), 1.0))
+            except Exception:
+                category[key] = default
 
     # Keep the legacy department_waste mirror in step for older configs/tools.
     # It is not a separate editor workflow; Waste stream volume settings live on
@@ -457,6 +483,16 @@ class JsonStore:
     def ensure_payload_defaults(self) -> None:
         for payload in self.data.setdefault("payloads", []):
             payload.setdefault("track_items", False)
+            if not payload.get("volume_m3"):
+                try:
+                    payload["volume_m3"] = round(
+                        max(0.0, float(payload.get("length_m", 0.0) or 0.0))
+                        * max(0.0, float(payload.get("width_m", 0.0) or 0.0))
+                        * max(0.0, float(payload.get("height_m", 0.0) or 0.0)),
+                        6,
+                    )
+                except Exception:
+                    payload["volume_m3"] = 0.0
 
             items = payload.get("items", {})
 
@@ -859,6 +895,9 @@ class JsonStore:
                         "name": name,
                         "points": points,
                         "payload_slots": payload_slots,
+                        "capacity_volume_m3": round(
+                            float(space.get("capacity_volume_m3", 0.0) or 0.0), 6
+                        ),
                     }
                 )
 
@@ -890,6 +929,90 @@ class JsonStore:
                 )
 
         return result
+
+    def payload_volume_m3(self, payload_name: str) -> float:
+        payload_name = str(payload_name or "").strip()
+        if not payload_name:
+            return 0.0
+        for payload in self.data.get("payloads", []):
+            if str(payload.get("name", "")).strip() != payload_name:
+                continue
+            try:
+                explicit = float(payload.get("volume_m3", 0.0) or 0.0)
+            except Exception:
+                explicit = 0.0
+            if explicit > 0.0:
+                return explicit
+            try:
+                return round(
+                    max(0.0, float(payload.get("length_m", 0.0) or 0.0))
+                    * max(0.0, float(payload.get("width_m", 0.0) or 0.0))
+                    * max(0.0, float(payload.get("height_m", 0.0) or 0.0)),
+                    6,
+                )
+            except Exception:
+                return 0.0
+        return 0.0
+
+    def inventory_space_capacity_m3(self, location_name: str, space: dict, payload_name: str = "") -> float:
+        """Capacity for basic reserve-volume simulations.
+
+        Prefer an explicit space capacity, otherwise sum the volume of matching
+        payload slots.  This lets the non-item-tracking replenishment model use
+        the same inventory-space layouts already drawn for each category location.
+        """
+        if not isinstance(space, dict):
+            return 0.0
+        try:
+            explicit = float(space.get("capacity_volume_m3", 0.0) or 0.0)
+        except Exception:
+            explicit = 0.0
+        if explicit > 0.0:
+            return explicit
+
+        target_payload = str(payload_name or "").strip()
+        total = 0.0
+        for slot in space.get("payload_slots", []) or []:
+            if not isinstance(slot, dict):
+                continue
+            slot_payload = str(slot.get("payload", "")).strip()
+            if target_payload and slot_payload and slot_payload != target_payload:
+                continue
+            total += self.payload_volume_m3(slot_payload or target_payload)
+        return round(total, 6)
+
+    def location_inventory_capacity_m3(self, location_name: str, payload_name: str = "") -> float:
+        total = 0.0
+        for space in self.get_location_inventory_spaces(location_name):
+            total += self.inventory_space_capacity_m3(location_name, space, payload_name)
+        return round(total, 6)
+
+    def department_category_locations(self, department_id: str, category_key: str) -> list:
+        department_id = str(department_id or "").strip()
+        category_key = str(category_key or "").strip()
+        if not department_id or not category_key:
+            return []
+        placed = {str(x.get("name", "")).strip() for x in self.data.get("locations", [])}
+        for dept in self.data.get("departments", []):
+            current_id = str(dept.get("id", "")).strip() or str(dept.get("name", "")).strip()
+            if current_id != department_id:
+                continue
+            entries = dept.get("task_generation_locations", {}) or {}
+            if not isinstance(entries, dict):
+                return []
+            entry = entries.get(category_key, {})
+            if isinstance(entry, dict):
+                raw = entry.get("pickup_dropoff_locations", entry.get("locations", []))
+            else:
+                raw = entry
+            return [str(x).strip() for x in (raw or []) if str(x).strip() in placed]
+        return []
+
+    def department_category_inventory_capacity_m3(self, department_id: str, category_key: str, payload_name: str = "") -> float:
+        total = 0.0
+        for location_name in self.department_category_locations(department_id, category_key):
+            total += self.location_inventory_capacity_m3(location_name, payload_name)
+        return round(total, 6)
 
     def is_department_point(self, name: str) -> bool:
         for dept in self.data.get("departments", []):

@@ -3,7 +3,7 @@
     "start_datetime": "2026-01-01T05:00:00",
     "tick_rate": 1000.0,
     "end_datetime": "2026-01-07T06:00:00",
-    "generated_task_release_stagger_sec": 1.0,
+    "generated_task_release_stagger_sec": 5.0,
     "precompute_static_routes": false,
     "route_precompute_max_pairs": 100000,
     "max_multi_stop_candidate_tasks": 8,
@@ -80,62 +80,64 @@
       ],
       "inventory_spaces": [
         {
-          "name": "food_trolley space 1",
+          "name": "Burlodge Trolley space 1",
           "points": [
             {
-              "dx": -1.124,
+              "dx": -1.232,
               "dy": -0.371
             },
             {
-              "dx": 0.076,
+              "dx": -0.032,
               "dy": -0.371
             },
             {
-              "dx": 0.076,
+              "dx": -0.032,
               "dy": 0.429
             },
             {
-              "dx": -1.124,
+              "dx": -1.232,
               "dy": 0.429
             }
           ],
           "payload_slots": [
             {
-              "payload": "food_trolley",
+              "payload": "Burlodge Trolley",
               "rotation_deg": 0.0,
-              "dx": -0.524,
+              "dx": -0.632,
               "dy": 0.029
             }
-          ]
+          ],
+          "capacity_volume_m3": 0.0
         },
         {
-          "name": "food_trolley space 2",
+          "name": "Burlodge Trolley space 2",
           "points": [
             {
-              "dx": 0.303,
-              "dy": -0.57
+              "dx": 1.157,
+              "dy": -0.571
             },
             {
-              "dx": 1.103,
-              "dy": -0.57
+              "dx": 1.157,
+              "dy": 0.629
             },
             {
-              "dx": 1.103,
-              "dy": 0.63
+              "dx": 0.357,
+              "dy": 0.629
             },
             {
-              "dx": 0.303,
-              "dy": 0.63
+              "dx": 0.357,
+              "dy": -0.571
             }
           ],
           "payload_slots": [
             {
-              "payload": "food_trolley",
+              "payload": "Burlodge Trolley",
               "rotation_deg": 90.0,
-              "dx": 0.703,
-              "dy": 0.03
+              "dx": 0.757,
+              "dy": 0.029
             }
-          ]
+          ],
+          "capacity_volume_m3": 0.0
         }
       ]
     },
@@ -12406,7 +12408,8 @@
       "height_m": 1.5,
       "track_items": false,
       "prefer_multi_stop_amr": false,
-      "items": {}
+      "items": {},
+      "volume_m3": 1.44
     },
     {
       "name": "cutlery_trolley",
@@ -12415,7 +12418,8 @@
       "width_m": 1,
       "height_m": 1.5,
       "track_items": false,
-      "items": {}
+      "items": {},
+      "volume_m3": 1.5
     },
     {
       "name": "Clinical Waste Bin",
@@ -12424,7 +12428,8 @@
       "width_m": 0.8,
       "height_m": 1.6,
       "track_items": false,
-      "items": {}
+      "items": {},
+      "volume_m3": 1.536
     },
     {
       "name": "Domestic Waste Bin",
@@ -12433,7 +12438,8 @@
       "width_m": 0.8,
       "height_m": 1.4,
       "track_items": false,
-      "items": {}
+      "items": {},
+      "volume_m3": 0.896
     },
     {
       "name": "Linen Collection Bin",
@@ -12442,7 +12448,8 @@
       "width_m": 0.8,
       "height_m": 1.6,
       "track_items": false,
-      "items": {}
+      "items": {},
+      "volume_m3": 1.792
     },
     {
       "name": "Linen Trolley",
@@ -12450,7 +12457,9 @@
       "length_m": 1.2,
       "width_m": 0.75,
       "height_m": 1.6,
-      "track_items": true,
+      "volume_m3": 1.44,
+      "track_items": false,
+      "prefer_multi_stop_amr": false,
       "items": {
         "Bed sheet": {
           "max": 100.0,
@@ -12469,7 +12478,8 @@
       "width_m": 0.8,
       "height_m": 1.545,
       "track_items": false,
-      "items": {}
+      "items": {},
+      "volume_m3": 1.0506
     },
     {
       "name": "Pharmacy Box",
@@ -12479,7 +12489,8 @@
       "height_m": 0.3,
       "track_items": false,
       "prefer_multi_stop_amr": true,
-      "items": {}
+      "items": {},
+      "volume_m3": 0.018
     }
   ],
   "amrs": [
@@ -17683,6 +17694,12 @@
         "enabled": false,
         "display_name": "Catering",
         "generation_mode": "scheduled",
+        "flow_direction": "collection",
+        "reserve_management": false,
+        "reserve_max_source": "inventory_spaces",
+        "reserve_initial_fill_fraction": 1.0,
+        "reserve_trigger_fraction": 0.25,
+        "replenish_to_fraction": 1.0,
         "priority": 40,
         "pickup_location": "",
         "dropoff_location": "",
@@ -17716,6 +17733,12 @@
           "D8": {
             "enabled": false,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "department_location_role": "dropoff",
             "pickup_location": "",
@@ -17743,8 +17766,14 @@
             "notes": ""
           },
           "D1": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17783,8 +17812,14 @@
             "department_location_role": "dropoff"
           },
           "D21": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17823,8 +17858,14 @@
             "department_location_role": "dropoff"
           },
           "D28": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17863,8 +17904,14 @@
             "department_location_role": "dropoff"
           },
           "D29": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17903,8 +17950,14 @@
             "department_location_role": "dropoff"
           },
           "D3": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17943,8 +17996,14 @@
             "department_location_role": "dropoff"
           },
           "D30": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -17983,8 +18042,14 @@
             "department_location_role": "dropoff"
           },
           "D31": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18023,8 +18088,14 @@
             "department_location_role": "dropoff"
           },
           "D32": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18063,8 +18134,14 @@
             "department_location_role": "dropoff"
           },
           "D33": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18103,8 +18180,14 @@
             "department_location_role": "dropoff"
           },
           "D34": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18143,8 +18226,14 @@
             "department_location_role": "dropoff"
           },
           "D35": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18183,8 +18272,14 @@
             "department_location_role": "dropoff"
           },
           "D36": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18223,8 +18318,14 @@
             "department_location_role": "dropoff"
           },
           "D37": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18263,8 +18364,14 @@
             "department_location_role": "dropoff"
           },
           "D38": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18303,8 +18410,14 @@
             "department_location_role": "dropoff"
           },
           "D39": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18343,8 +18456,14 @@
             "department_location_role": "dropoff"
           },
           "D40": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18383,8 +18502,14 @@
             "department_location_role": "dropoff"
           },
           "D41": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18423,8 +18548,14 @@
             "department_location_role": "dropoff"
           },
           "D42": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18463,8 +18594,14 @@
             "department_location_role": "dropoff"
           },
           "D43": {
-            "enabled": false,
+            "enabled": true,
             "generation_mode": "scheduled",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 40,
             "pickup_location": "D28-CATERING",
             "pickup_locations": [
@@ -18528,8 +18665,14 @@
               "D43"
             ],
             "payload": {
-              "enabled": false,
+              "enabled": true,
               "generation_mode": "scheduled",
+              "flow_direction": "collection",
+              "reserve_management": false,
+              "reserve_max_source": "inventory_spaces",
+              "reserve_trigger_fraction": 0.25,
+              "replenish_to_fraction": 1.0,
+              "reserve_initial_fill_fraction": 1.0,
               "priority": 40,
               "pickup_location": "D28-CATERING",
               "pickup_locations": [
@@ -18574,6 +18717,12 @@
         "enabled": false,
         "display_name": "Pharmacy",
         "generation_mode": "scheduled_sporadic",
+        "flow_direction": "collection",
+        "reserve_management": false,
+        "reserve_max_source": "inventory_spaces",
+        "reserve_initial_fill_fraction": 1.0,
+        "reserve_trigger_fraction": 0.25,
+        "replenish_to_fraction": 1.0,
         "priority": 30,
         "pickup_location": "",
         "dropoff_location": "",
@@ -18605,7 +18754,14 @@
           "D8": {
             "enabled": false,
             "generation_mode": "scheduled_sporadic",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 30,
+            "department_location_role": "dropoff",
             "pickup_location": "",
             "dropoff_location": "",
             "dropoff_locations": [],
@@ -18827,6 +18983,12 @@
         "enabled": false,
         "display_name": "Linen",
         "generation_mode": "threshold",
+        "flow_direction": "collection",
+        "reserve_management": false,
+        "reserve_max_source": "inventory_spaces",
+        "reserve_initial_fill_fraction": 1.0,
+        "reserve_trigger_fraction": 0.25,
+        "replenish_to_fraction": 1.0,
         "priority": 55,
         "pickup_location": "",
         "dropoff_location": "",
@@ -18857,6 +19019,12 @@
         "enabled": true,
         "display_name": "Waste",
         "generation_mode": "threshold",
+        "flow_direction": "collection",
+        "reserve_management": false,
+        "reserve_max_source": "inventory_spaces",
+        "reserve_initial_fill_fraction": 1.0,
+        "reserve_trigger_fraction": 0.25,
+        "replenish_to_fraction": 1.0,
         "priority": 60,
         "pickup_location": "",
         "dropoff_location": "",
@@ -18886,6 +19054,12 @@
           "D8": {
             "enabled": true,
             "generation_mode": "threshold",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 60,
             "department_location_role": "pickup",
             "pickup_location": "D8-WASTE",
@@ -19346,6 +19520,12 @@
         "enabled": false,
         "display_name": "Stores",
         "generation_mode": "scheduled",
+        "flow_direction": "replenishment",
+        "reserve_management": true,
+        "reserve_max_source": "inventory_spaces",
+        "reserve_initial_fill_fraction": 1.0,
+        "reserve_trigger_fraction": 0.25,
+        "replenish_to_fraction": 1.0,
         "priority": 70,
         "pickup_location": "",
         "dropoff_location": "",
@@ -19378,6 +19558,12 @@
         "enabled": false,
         "display_name": "SSD",
         "generation_mode": "scheduled_threshold",
+        "flow_direction": "collection",
+        "reserve_management": false,
+        "reserve_max_source": "inventory_spaces",
+        "reserve_initial_fill_fraction": 1.0,
+        "reserve_trigger_fraction": 0.25,
+        "replenish_to_fraction": 1.0,
         "priority": 35,
         "pickup_location": "",
         "dropoff_location": "",
@@ -19411,7 +19597,14 @@
           "D8": {
             "enabled": false,
             "generation_mode": "scheduled_threshold",
+            "flow_direction": "collection",
+            "reserve_management": false,
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
+            "reserve_initial_fill_fraction": 1.0,
             "priority": 35,
+            "department_location_role": "dropoff",
             "pickup_location": "",
             "dropoff_location": "",
             "dropoff_locations": [],

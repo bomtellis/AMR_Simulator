@@ -253,6 +253,32 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             str(self.base_category.get("generation_mode", "scheduled"))
         )
 
+        self.flow_direction_combo = QComboBox()
+        self.flow_direction_combo.addItems(["collection", "replenishment"])
+        self.flow_direction_combo.setCurrentText(
+            str(self.base_category.get("flow_direction", "collection"))
+        )
+        self.reserve_management_check = QCheckBox(
+            "Use basic reserve-volume management from inventory spaces"
+        )
+        self.reserve_management_check.setChecked(
+            bool(
+                self.base_category.get(
+                    "reserve_management",
+                    str(self.base_category.get("flow_direction", "collection")) == "replenishment",
+                )
+            )
+        )
+        self.reserve_trigger_fraction_edit = QLineEdit(
+            str(self.base_category.get("reserve_trigger_fraction", 0.25))
+        )
+        self.replenish_to_fraction_edit = QLineEdit(
+            str(self.base_category.get("replenish_to_fraction", 1.0))
+        )
+        self.reserve_initial_fill_fraction_edit = QLineEdit(
+            str(self.base_category.get("reserve_initial_fill_fraction", 1.0))
+        )
+
         self.priority_edit = QLineEdit(str(self.base_category.get("priority", 100)))
 
         legacy_pickup = str(self.base_category.get("pickup_location", "")).strip()
@@ -372,6 +398,11 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
 
         form.addRow("Enabled", self.enabled_check)
         form.addRow("Generation mode", self.mode_combo)
+        form.addRow("Logistics flow", self.flow_direction_combo)
+        form.addRow("Reserve volume mode", self.reserve_management_check)
+        form.addRow("Replenish trigger fraction", self.reserve_trigger_fraction_edit)
+        form.addRow("Replenish to fraction", self.replenish_to_fraction_edit)
+        form.addRow("Initial fill fraction", self.reserve_initial_fill_fraction_edit)
         form.addRow("Priority", self.priority_edit)
         form.addRow("Pickup / source locations", pickup_row)
         form.addRow("Drop-off destinations", dropoff_row)
@@ -448,6 +479,11 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 self.volume_per_event_edit,
                 self.threshold_volume_edit,
                 self.base_daily_volume_edit,
+                self.flow_direction_combo,
+                self.reserve_management_check,
+                self.reserve_trigger_fraction_edit,
+                self.replenish_to_fraction_edit,
+                self.reserve_initial_fill_fraction_edit,
             ):
                 widget.setEnabled(False)
             self.waste_stream_notice_label.setVisible(True)
@@ -794,6 +830,12 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             payload = {
                 "enabled": self.enabled_check.isChecked(),
                 "generation_mode": self.mode_combo.currentText().strip(),
+                "flow_direction": self.flow_direction_combo.currentText().strip(),
+                "reserve_management": self.reserve_management_check.isChecked(),
+                "reserve_max_source": "inventory_spaces",
+                "reserve_trigger_fraction": max(0.0, min(float(self.reserve_trigger_fraction_edit.text() or 0.25), 1.0)),
+                "replenish_to_fraction": max(0.0, min(float(self.replenish_to_fraction_edit.text() or 1.0), 1.0)),
+                "reserve_initial_fill_fraction": max(0.0, min(float(self.reserve_initial_fill_fraction_edit.text() or 1.0), 1.0)),
                 "priority": int(float(self.priority_edit.text() or 100)),
                 "pickup_location": (
                     self.selected_pickup_locations[0]
@@ -831,6 +873,8 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 payload["volume_per_event_m3"] = 0.0
                 payload["threshold_volume_m3"] = 0.0
                 payload["base_daily_volume_m3"] = 0.0
+                payload["flow_direction"] = "collection"
+                payload["reserve_management"] = False
 
             self.result = {}
 
@@ -1027,6 +1071,14 @@ class TaskGenerationSettingsDialog(QDialog):
         self.display_name_edit = QLineEdit()
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(self.MODES)
+        self.flow_direction_combo = QComboBox()
+        self.flow_direction_combo.addItems(["collection", "replenishment"])
+        self.reserve_management_check = QCheckBox(
+            "Use basic reserve-volume management from inventory spaces"
+        )
+        self.reserve_trigger_fraction_edit = QLineEdit()
+        self.replenish_to_fraction_edit = QLineEdit()
+        self.reserve_initial_fill_fraction_edit = QLineEdit()
         self.priority_edit = QLineEdit()
 
         self.role_pickup_radio = QCheckBox("Use department locations as pickup/source")
@@ -1124,6 +1176,11 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Category enabled", self.enabled_check)
         form.addRow("Display name", self.display_name_edit)
         form.addRow("Generation mode", self.mode_combo)
+        form.addRow("Logistics flow", self.flow_direction_combo)
+        form.addRow("Reserve volume mode", self.reserve_management_check)
+        form.addRow("Replenish trigger fraction", self.reserve_trigger_fraction_edit)
+        form.addRow("Replenish to fraction", self.replenish_to_fraction_edit)
+        form.addRow("Initial fill fraction", self.reserve_initial_fill_fraction_edit)
         form.addRow("Priority", self.priority_edit)
         form.addRow("Department location role", role_row)
         form.addRow("Pickup / source location", self.pickup_combo)
@@ -1170,6 +1227,8 @@ class TaskGenerationSettingsDialog(QDialog):
         layout.addWidget(buttons)
 
         self.mode_combo.currentTextChanged.connect(self._update_mode_field_state)
+        self.flow_direction_combo.currentTextChanged.connect(self._update_mode_field_state)
+        self.reserve_management_check.toggled.connect(self._update_mode_field_state)
         self.return_enabled_check.toggled.connect(self._update_mode_field_state)
 
         self.category_list.currentItemChanged.connect(self._on_category_changed)
@@ -1258,6 +1317,12 @@ class TaskGenerationSettingsDialog(QDialog):
             return True
 
         if self.payload_combo.currentText().strip():
+            return True
+
+        if self.flow_direction_combo.currentText().strip() == "replenishment":
+            return True
+
+        if self.reserve_management_check.isChecked():
             return True
 
         if self.return_enabled_check.isChecked():
@@ -1961,8 +2026,14 @@ class TaskGenerationSettingsDialog(QDialog):
             "enabled": key == "waste",
             "display_name": label,
             "generation_mode": (
-                "threshold" if key in {"waste", "linen"} else "scheduled"
+                "threshold" if key in {"waste", "linen", "stores"} else "scheduled"
             ),
+            "flow_direction": "replenishment" if key == "stores" else "collection",
+            "reserve_management": key == "stores",
+            "reserve_max_source": "inventory_spaces",
+            "reserve_initial_fill_fraction": 1.0,
+            "reserve_trigger_fraction": 0.25,
+            "replenish_to_fraction": 1.0,
             "uses_department_waste_streams": key == "waste",
             "priority": {
                 "catering": 40,
@@ -2103,6 +2174,11 @@ class TaskGenerationSettingsDialog(QDialog):
         self.display_name_edit.setText("")
         self.display_name_edit.setEnabled(False)
         self.mode_combo.setCurrentText("scheduled")
+        self.flow_direction_combo.setCurrentText("collection")
+        self.reserve_management_check.setChecked(False)
+        self.reserve_trigger_fraction_edit.setText("0.25")
+        self.replenish_to_fraction_edit.setText("1.0")
+        self.reserve_initial_fill_fraction_edit.setText("1.0")
         self.priority_edit.setText("100")
         self.pickup_combo.setCurrentText("")
         self.selected_dropoffs = []
@@ -2167,6 +2243,13 @@ class TaskGenerationSettingsDialog(QDialog):
         self.display_name_edit.setEnabled(False)
 
         self.mode_combo.setCurrentText(str(item.get("generation_mode", "scheduled")))
+        self.flow_direction_combo.setCurrentText(str(item.get("flow_direction", "collection")))
+        self.reserve_management_check.setChecked(
+            bool(item.get("reserve_management", str(item.get("flow_direction", "collection")) == "replenishment"))
+        )
+        self.reserve_trigger_fraction_edit.setText(str(item.get("reserve_trigger_fraction", 0.25)))
+        self.replenish_to_fraction_edit.setText(str(item.get("replenish_to_fraction", 1.0)))
+        self.reserve_initial_fill_fraction_edit.setText(str(item.get("reserve_initial_fill_fraction", 1.0)))
         self.priority_edit.setText(str(item.get("priority", 100)))
         role = str(item.get("department_location_role", "dropoff") or "dropoff").strip()
         self._set_department_location_role(
@@ -2240,7 +2323,15 @@ class TaskGenerationSettingsDialog(QDialog):
         # collection/destination and return-task behaviour.
         self.waste_stream_notice_label.setVisible(is_waste)
 
+        is_replenishment = self.flow_direction_combo.currentText().strip() == "replenishment"
+        reserve_enabled = (not is_waste) and self.reserve_management_check.isChecked()
+
         self.mode_combo.setEnabled(not is_waste)
+        self.flow_direction_combo.setEnabled(not is_waste)
+        self.reserve_management_check.setEnabled((not is_waste) and is_replenishment)
+        self.reserve_trigger_fraction_edit.setEnabled(reserve_enabled and is_replenishment)
+        self.replenish_to_fraction_edit.setEnabled(reserve_enabled and is_replenishment)
+        self.reserve_initial_fill_fraction_edit.setEnabled(reserve_enabled and is_replenishment)
         self.payload_combo.setEnabled(not is_waste)
         self.tracked_item_exchange_check.setEnabled(not is_waste)
         self.exchange_mode_combo.setEnabled(not is_waste)
@@ -2305,6 +2396,12 @@ class TaskGenerationSettingsDialog(QDialog):
             "enabled": self.enabled_check.isChecked(),
             "display_name": display_name,
             "generation_mode": self.mode_combo.currentText().strip(),
+            "flow_direction": self.flow_direction_combo.currentText().strip(),
+            "reserve_management": self.reserve_management_check.isChecked(),
+            "reserve_max_source": "inventory_spaces",
+            "reserve_trigger_fraction": max(0.0, min(float(self.reserve_trigger_fraction_edit.text() or 0.25), 1.0)),
+            "replenish_to_fraction": max(0.0, min(float(self.replenish_to_fraction_edit.text() or 1.0), 1.0)),
+            "reserve_initial_fill_fraction": max(0.0, min(float(self.reserve_initial_fill_fraction_edit.text() or 1.0), 1.0)),
             "priority": int(float(self.priority_edit.text() or 100)),
             "department_location_role": self._current_department_location_role(),
             "pickup_location": self.pickup_combo.currentText().strip(),
@@ -2340,6 +2437,8 @@ class TaskGenerationSettingsDialog(QDialog):
             payload["volume_per_event_m3"] = 0.0
             payload["threshold_volume_m3"] = 0.0
             payload["base_daily_volume_m3"] = 0.0
+            payload["flow_direction"] = "collection"
+            payload["reserve_management"] = False
 
         category = self.config.setdefault("categories", {}).setdefault(category_key, {})
         overrides = category.setdefault("departments", {})
@@ -2365,6 +2464,8 @@ class TaskGenerationSettingsDialog(QDialog):
                     payload.get("dropoff_location"),
                     payload.get("dropoff_locations"),
                     payload.get("payload"),
+                    payload.get("flow_direction") == "replenishment",
+                    payload.get("reserve_management"),
                     payload.get("return_enabled"),
                     payload.get("return_payload"),
                     payload.get("route_profile"),
@@ -3244,6 +3345,17 @@ class PayloadEditorDialog(QDialog):
         self.length_edit = QLineEdit(str(self.seed.get("length_m", 0.0)))
         self.width_edit = QLineEdit(str(self.seed.get("width_m", 0.0)))
         self.height_edit = QLineEdit(str(self.seed.get("height_m", 0.0)))
+        default_volume = self.seed.get("volume_m3", "")
+        if default_volume in {"", None}:
+            try:
+                default_volume = (
+                    float(self.seed.get("length_m", 0.0) or 0.0)
+                    * float(self.seed.get("width_m", 0.0) or 0.0)
+                    * float(self.seed.get("height_m", 0.0) or 0.0)
+                )
+            except Exception:
+                default_volume = 0.0
+        self.volume_edit = QLineEdit(str(default_volume))
 
         self.track_items_check = QCheckBox("Track items held within this payload")
         self.track_items_check.setChecked(bool(self.seed.get("track_items", False)))
@@ -3260,6 +3372,7 @@ class PayloadEditorDialog(QDialog):
         form.addRow("Length m", self.length_edit)
         form.addRow("Width m", self.width_edit)
         form.addRow("Height m", self.height_edit)
+        form.addRow("Volume m³", self.volume_edit)
         form.addRow("Track items", self.track_items_check)
         form.addRow("Prefer multi-stop AMR", self.prefer_multi_stop_amr_check)
 
@@ -3429,6 +3542,7 @@ class PayloadEditorDialog(QDialog):
                 "length_m": float(self.length_edit.text() or 0.0),
                 "width_m": float(self.width_edit.text() or 0.0),
                 "height_m": float(self.height_edit.text() or 0.0),
+                "volume_m3": float(self.volume_edit.text() or 0.0),
                 "track_items": self.track_items_check.isChecked(),
                 "prefer_multi_stop_amr": self.prefer_multi_stop_amr_check.isChecked(),
                 "items": items_payload,
@@ -3446,6 +3560,7 @@ class PayloadListDialog(QDialog):
         ("length_m", "Length m", 90),
         ("width_m", "Width m", 90),
         ("height_m", "Height m", 90),
+        ("volume_m3", "Volume m³", 90),
         ("track_items", "Track items", 90),
         ("prefer_multi_stop_amr", "Prefer multi-stop", 120),
         ("items", "Items", 260),
@@ -3529,6 +3644,7 @@ class PayloadListDialog(QDialog):
                 str(item.get("length_m", "")),
                 str(item.get("width_m", "")),
                 str(item.get("height_m", "")),
+                str(item.get("volume_m3", "")),
                 "Yes" if item.get("track_items", False) else "No",
                 "Yes" if item.get("prefer_multi_stop_amr", False) else "No",
                 self._items_summary(item),
