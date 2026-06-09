@@ -136,6 +136,21 @@ class Simulation:
                 )
             ),
         )
+        # Routing/assignment estimates are numerous and often repeated while the
+        # same AMR/task state is being considered.  Cache non-reserving estimates
+        # and only use the routing thread pool when there is enough work to offset
+        # Future/as_completed overhead.
+        self.route_estimate_cache: Dict[tuple, Optional[dict]] = {}
+        self.route_estimate_cache_version = 0
+        self.route_estimate_time_bucket_sec = max(
+            1.0, float(sim_cfg.get("route_estimate_time_bucket_sec", 30.0) or 30.0)
+        )
+        self.route_estimate_cache_max_entries = max(
+            0, int(sim_cfg.get("route_estimate_cache_max_entries", 25000) or 0)
+        )
+        self.parallel_routing_min_jobs = max(
+            2, int(sim_cfg.get("parallel_routing_min_jobs", 64) or 64)
+        )
         self.parallel_routing_enabled = (
             bool(sim_cfg.get("parallel_routing", True))
             and self.routing_worker_threads > 1
@@ -4628,6 +4643,58 @@ class Simulation:
             print(f"_estimate_task_for_amr failed for {task.id} on {amr.id}: {exc}")
             return None
 
+    def _route_estimate_time_bucket(self, value: float) -> int:
+        bucket = max(1.0, float(getattr(self, "route_estimate_time_bucket_sec", 30.0) or 30.0))
+        return int(float(value or 0.0) // bucket)
+
+    def _route_estimate_cache_key(self, amr: AMR, task: Task) -> tuple:
+        payload = self._payload_for_task(task)
+        payload_name = getattr(payload, "name", str(getattr(task, "payload", "") or ""))
+        rules = self._resolve_task_route_rules(task) or {}
+        rules_key = json.dumps(rules, sort_keys=True, default=str) if rules else ""
+        return (
+            int(getattr(self, "route_estimate_cache_version", 0)),
+            self._route_estimate_time_bucket(max(self.current_time, getattr(amr, "available_time", 0.0), getattr(task, "release_time", 0.0))),
+            str(getattr(amr, "id", "")),
+            str(getattr(amr, "location_name", "")),
+            self._route_estimate_time_bucket(getattr(amr, "available_time", 0.0)),
+            round(float(getattr(amr, "battery_soc_percent", 0.0) or 0.0), 2),
+            str(getattr(task, "id", "")),
+            str(getattr(task, "pickup", "")),
+            str(getattr(task, "dropoff", "")),
+            str(payload_name),
+            self._route_estimate_time_bucket(getattr(task, "release_time", 0.0)),
+            bool(getattr(task, "is_return_task", False)),
+            bool(getattr(task, "is_idle_return", False)),
+            str(getattr(task, "payload_instance_id", "") or ""),
+            rules_key,
+        )
+
+    def _get_cached_task_estimate(self, amr: AMR, task: Task) -> Optional[dict]:
+        return self.route_estimate_cache.get(self._route_estimate_cache_key(amr, task))
+
+    def _set_cached_task_estimate(self, amr: AMR, task: Task, estimate: Optional[dict]) -> None:
+        max_entries = int(getattr(self, "route_estimate_cache_max_entries", 0) or 0)
+        if max_entries <= 0:
+            return
+        if len(self.route_estimate_cache) >= max_entries:
+            self.route_estimate_cache.clear()
+        self.route_estimate_cache[self._route_estimate_cache_key(amr, task)] = estimate
+
+    def _invalidate_route_estimate_cache(self) -> None:
+        self.route_estimate_cache_version += 1
+        self.route_estimate_cache.clear()
+
+    def _estimate_task_for_amr_cached(self, amr: AMR, task: Task, reserve: bool = False):
+        if reserve:
+            return self._estimate_task_for_amr(amr, task, reserve=True)
+        key = self._route_estimate_cache_key(amr, task)
+        if key in self.route_estimate_cache:
+            return self.route_estimate_cache[key]
+        estimate = self._estimate_task_for_amr(amr, task, reserve=False)
+        self._set_cached_task_estimate(amr, task, estimate)
+        return estimate
+
     def _estimate_candidate_jobs(
         self, jobs: List[dict]
     ) -> List[Tuple[dict, Optional[dict]]]:
@@ -4640,13 +4707,16 @@ class Simulation:
         if not jobs:
             return []
 
-        if self.routing_executor is None or len(jobs) == 1:
+        if (
+            self.routing_executor is None
+            or len(jobs) < int(getattr(self, "parallel_routing_min_jobs", 64) or 64)
+        ):
             results = []
             for job in jobs:
                 try:
                     results.append((job, job["fn"](*job.get("args", ()))))
                 except Exception as exc:
-                    print(f"Parallel estimate job failed: {exc}")
+                    print(f"Route estimate job failed: {exc}")
                     results.append((job, None))
             return results
 
@@ -4761,7 +4831,7 @@ class Simulation:
                         "task_prefers_multi_stop": task_prefers_multi_stop,
                         "is_preferred_multi_stop_amr": task_prefers_multi_stop
                         and self._is_multi_stop_amr(amr),
-                        "fn": self._estimate_task_for_amr,
+                        "fn": self._estimate_task_for_amr_cached,
                         "args": (amr, task, False),
                     }
                 )
@@ -5138,6 +5208,8 @@ class Simulation:
 
                 self._log_multi_stop_segments(amr, tasks, committed, start_time)
 
+                self._invalidate_route_estimate_cache()
+
                 self.push_event(
                     finish_time,
                     "multi_stop_complete",
@@ -5368,6 +5440,8 @@ class Simulation:
                     carrying_payload = True
                 elif segment_type == "dropoff":
                     carrying_payload = False
+
+            self._invalidate_route_estimate_cache()
 
             self.push_event(
                 finish_time,

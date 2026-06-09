@@ -1,4 +1,5 @@
 import ast
+import copy
 import csv
 from bisect import bisect_right
 import json
@@ -192,6 +193,12 @@ class SimulationLog:
     def __init__(self):
         self.events: List[VisualEvent] = []
         self._event_start_times: List[datetime] = []
+        self._events_by_location: Dict[str, List[VisualEvent]] = {}
+        self._location_event_start_times: Dict[str, List[datetime]] = {}
+        self._state_checkpoints: List[tuple] = []
+        self._state_checkpoint_stride = 1000
+        self._state_cache_key = None
+        self._state_cache_value = None
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
 
@@ -302,12 +309,251 @@ class SimulationLog:
         self._event_start_times = [e.start_time for e in self.events]
         self.start_time = self.events[0].start_time if self.events else None
         self.end_time = max((e.end_time for e in self.events), default=None)
+        self._rebuild_location_event_index()
+        self._rebuild_state_checkpoints()
+        self._state_cache_key = None
+        self._state_cache_value = None
+
+    def event_index_at(self, current_time: datetime) -> int:
+        if not self.events or current_time is None:
+            return 0
+        return bisect_right(self._event_start_times, current_time)
+
+    def iter_events_until(self, current_time: datetime):
+        idx = self.event_index_at(current_time)
+        return iter(self.events[:idx])
 
     def events_until(self, current_time: datetime) -> List[VisualEvent]:
+        # Kept for older call sites, but new hot paths avoid repeatedly slicing
+        # the full event history by using event_index_at()/location indexes.
         if not self.events or current_time is None:
             return []
-        idx = bisect_right(self._event_start_times, current_time)
+        idx = self.event_index_at(current_time)
         return self.events[:idx]
+
+    def _event_location_keys(self, row: dict) -> set:
+        keys = set()
+        for key in (
+            "to_location",
+            "dropoff",
+            "end_node",
+            "destination",
+            "location",
+            "from_location",
+            "pickup",
+            "start_node",
+            "origin",
+        ):
+            value = str(row.get(key, "") or "").strip()
+            if value:
+                keys.add(value)
+        return keys
+
+    def _rebuild_location_event_index(self):
+        self._events_by_location = {}
+        self._location_event_start_times = {}
+        for event in self.events:
+            for location_name in self._event_location_keys(event.row):
+                self._events_by_location.setdefault(location_name, []).append(event)
+        for location_name, events in self._events_by_location.items():
+            events.sort(key=lambda e: e.start_time)
+            self._location_event_start_times[location_name] = [
+                e.start_time for e in events
+            ]
+
+    def events_for_location_until(
+        self, location_name: str, current_time: datetime
+    ) -> List[VisualEvent]:
+        location_name = str(location_name or "").strip()
+        if not location_name or current_time is None:
+            return []
+        events = self._events_by_location.get(location_name, [])
+        starts = self._location_event_start_times.get(location_name, [])
+        idx = bisect_right(starts, current_time)
+        return events[:idx]
+
+    def _new_state_accumulators(self):
+        return {}, [], {}, {}
+
+    def _copy_state_accumulators(self, payload):
+        amr_states, recent_events, current_task_start_by_amr, last_task_id_by_amr = (
+            payload
+        )
+        return (
+            copy.deepcopy(amr_states),
+            list(recent_events),
+            dict(current_task_start_by_amr),
+            dict(last_task_id_by_amr),
+        )
+
+    def _apply_state_event(
+        self,
+        event: VisualEvent,
+        current_time: datetime,
+        amr_states: Dict[str, dict],
+        recent_events: List[dict],
+        current_task_start_by_amr: Dict[str, datetime],
+        last_task_id_by_amr: Dict[str, str],
+    ) -> None:
+        row = event.row
+        amr_id = (row.get("amr_id") or "").strip()
+        if not amr_id:
+            recent_events.append(
+                {"timestamp": min(current_time, event.end_time), "row": row}
+            )
+            return
+
+        task_id = (row.get("task_id") or "").strip()
+        payload = (row.get("payload") or "").strip()
+        event_type = (row.get("event_type") or "").strip()
+        segment_type = (row.get("segment_type") or "").strip()
+        status = (row.get("status") or "").strip()
+        start_node = (row.get("start_node") or "").strip()
+        end_node = (row.get("end_node") or "").strip()
+        from_location = (row.get("from_location") or "").strip()
+        to_location = (row.get("to_location") or "").strip()
+        start_dt = event.start_time
+        end_dt = (
+            event.end_time if event.end_time >= event.start_time else event.start_time
+        )
+
+        if task_id:
+            previous_task_id = last_task_id_by_amr.get(amr_id)
+            if previous_task_id != task_id:
+                current_task_start_by_amr[amr_id] = start_dt
+                last_task_id_by_amr[amr_id] = task_id
+        else:
+            current_task_start_by_amr.pop(amr_id, None)
+            last_task_id_by_amr.pop(amr_id, None)
+
+        state = amr_states.get(amr_id, {"amr_id": amr_id})
+        state.update(
+            {
+                "task_id": task_id,
+                "payload": payload,
+                "event_type": event_type,
+                "segment_type": segment_type,
+                "status": status,
+                "timestamp": min(current_time, end_dt),
+                "start_time": start_dt,
+                "end_time": end_dt,
+                "start_node": start_node,
+                "end_node": end_node,
+                "from_location": from_location,
+                "to_location": to_location,
+                "raw": row,
+                "_assignment_start": current_task_start_by_amr.get(amr_id, start_dt),
+            }
+        )
+        self._refresh_state_position(state, current_time)
+        amr_states[amr_id] = state
+        recent_events.append({"timestamp": min(current_time, end_dt), "row": row})
+
+    def _refresh_state_position(self, state: dict, current_time: datetime) -> None:
+        row = state.get("raw", {}) or {}
+        start_x = self._float_or_none(row.get("start_x"))
+        start_y = self._float_or_none(row.get("start_y"))
+        start_floor = self._int_or_none(row.get("start_floor"))
+        end_x = self._float_or_none(row.get("end_x"))
+        end_y = self._float_or_none(row.get("end_y"))
+        end_floor = self._int_or_none(row.get("end_floor"))
+        start_node = (row.get("start_node") or "").strip()
+        end_node = (row.get("end_node") or "").strip()
+        start_dt = state.get("start_time")
+        end_dt = state.get("end_time")
+        if start_dt is None or end_dt is None:
+            return
+        if start_dt <= current_time <= end_dt:
+            total = max((end_dt - start_dt).total_seconds(), 0.001)
+            elapsed = max((current_time - start_dt).total_seconds(), 0.0)
+            frac = max(0.0, min(1.0, elapsed / total))
+            if (
+                start_x is not None
+                and start_y is not None
+                and end_x is not None
+                and end_y is not None
+            ):
+                state["x"] = start_x + ((end_x - start_x) * frac)
+                state["y"] = start_y + ((end_y - start_y) * frac)
+            else:
+                state["x"] = end_x if end_x is not None else start_x
+                state["y"] = end_y if end_y is not None else start_y
+            if start_floor is not None and end_floor is not None:
+                state["floor"] = start_floor if frac < 1.0 else end_floor
+            elif end_floor is not None:
+                state["floor"] = end_floor
+            elif start_floor is not None:
+                state["floor"] = start_floor
+            state["path"] = (start_node, end_node) if start_node and end_node else None
+        else:
+            state["x"] = end_x if end_x is not None else start_x
+            state["y"] = end_y if end_y is not None else start_y
+            state["floor"] = end_floor if end_floor is not None else start_floor
+            state["path"] = None
+        task_id = state.get("task_id")
+        assignment_start = state.get("_assignment_start") or start_dt
+        state["task_runtime_sec"] = (
+            max((current_time - assignment_start).total_seconds(), 0.0)
+            if task_id
+            else 0.0
+        )
+        state["timestamp"] = min(current_time, end_dt)
+
+    def _rebuild_state_checkpoints(self):
+        self._state_checkpoints = []
+        if not self.events:
+            return
+        amr_states, recent_events, current_task_start_by_amr, last_task_id_by_amr = (
+            self._new_state_accumulators()
+        )
+        self._state_checkpoints.append(
+            (
+                0,
+                self._copy_state_accumulators(
+                    (
+                        amr_states,
+                        recent_events[-12:],
+                        current_task_start_by_amr,
+                        last_task_id_by_amr,
+                    )
+                ),
+            )
+        )
+        for idx, event in enumerate(self.events, start=1):
+            self._apply_state_event(
+                event,
+                (
+                    event.end_time
+                    if event.end_time >= event.start_time
+                    else event.start_time
+                ),
+                amr_states,
+                recent_events,
+                current_task_start_by_amr,
+                last_task_id_by_amr,
+            )
+            if idx % self._state_checkpoint_stride == 0:
+                self._state_checkpoints.append(
+                    (
+                        idx,
+                        self._copy_state_accumulators(
+                            (
+                                amr_states,
+                                recent_events[-12:],
+                                current_task_start_by_amr,
+                                last_task_id_by_amr,
+                            )
+                        ),
+                    )
+                )
+
+    def _checkpoint_for_index(self, idx: int):
+        if not self._state_checkpoints:
+            return 0, self._new_state_accumulators()
+        checkpoint_indexes = [item[0] for item in self._state_checkpoints]
+        pos = max(0, bisect_right(checkpoint_indexes, idx) - 1)
+        checkpoint_idx, payload = self._state_checkpoints[pos]
+        return checkpoint_idx, self._copy_state_accumulators(payload)
 
     def load(self, path: str):
         self.events = []
@@ -361,145 +607,36 @@ class SimulationLog:
         )
 
     def state_at(self, current_time: datetime, layout: LayoutModel):
-        amr_states: Dict[str, dict] = {}
-        recent_events: List[dict] = []
-        current_task_start_by_amr: Dict[str, datetime] = {}
-        last_task_id_by_amr: Dict[str, str] = {}
+        if not self.events or current_time is None:
+            return {}, []
 
-        for event in self.events_until(current_time):
-            row = event.row
-            amr_id = (row.get("amr_id") or "").strip()
+        idx = self.event_index_at(current_time)
+        cache_key = (idx, current_time)
+        if self._state_cache_key == cache_key and self._state_cache_value is not None:
+            return copy.deepcopy(self._state_cache_value)
 
-            # Rows such as task_generated / return_task_generated are planning
-            # events.  They can carry task coordinates and payload data but do
-            # not represent a physical AMR.  Older visualiser logic defaulted
-            # these rows to an AMR called "AMR", which made a ghost vehicle
-            # appear at the generated task destination.
-            if not amr_id:
-                recent_events.append(
-                    {"timestamp": min(current_time, event.end_time), "row": row}
-                )
-                continue
+        checkpoint_idx, payload = self._checkpoint_for_index(idx)
+        amr_states, recent_events, current_task_start_by_amr, last_task_id_by_amr = (
+            payload
+        )
 
-            task_id = (row.get("task_id") or "").strip()
-            payload = (row.get("payload") or "").strip()
-            event_type = (row.get("event_type") or "").strip()
-            segment_type = (row.get("segment_type") or "").strip()
-            status = (row.get("status") or "").strip()
-
-            start_x = self._float_or_none(row.get("start_x"))
-            start_y = self._float_or_none(row.get("start_y"))
-            start_floor = self._int_or_none(row.get("start_floor"))
-            end_x = self._float_or_none(row.get("end_x"))
-            end_y = self._float_or_none(row.get("end_y"))
-            end_floor = self._int_or_none(row.get("end_floor"))
-
-            start_node = (row.get("start_node") or "").strip()
-            end_node = (row.get("end_node") or "").strip()
-            from_location = (row.get("from_location") or "").strip()
-            to_location = (row.get("to_location") or "").strip()
-
-            start_dt = event.start_time
-            end_dt = (
-                event.end_time
-                if event.end_time >= event.start_time
-                else event.start_time
+        for event in self.events[checkpoint_idx:idx]:
+            self._apply_state_event(
+                event,
+                current_time,
+                amr_states,
+                recent_events,
+                current_task_start_by_amr,
+                last_task_id_by_amr,
             )
 
-            if task_id:
-                previous_task_id = last_task_id_by_amr.get(amr_id)
-                if previous_task_id != task_id:
-                    current_task_start_by_amr[amr_id] = start_dt
-                    last_task_id_by_amr[amr_id] = task_id
-            else:
-                current_task_start_by_amr.pop(amr_id, None)
-                last_task_id_by_amr.pop(amr_id, None)
+        for state in amr_states.values():
+            self._refresh_state_position(state, current_time)
 
-            state = amr_states.get(
-                amr_id,
-                {
-                    "amr_id": amr_id,
-                    "task_id": task_id,
-                    "payload": payload,
-                    "event_type": event_type,
-                    "segment_type": segment_type,
-                    "status": status,
-                    "timestamp": start_dt,
-                    "start_time": start_dt,
-                    "end_time": end_dt,
-                    "start_node": start_node,
-                    "end_node": end_node,
-                    "from_location": from_location,
-                    "to_location": to_location,
-                    "floor": None,
-                    "x": None,
-                    "y": None,
-                    "path": None,
-                    "task_runtime_sec": 0.0,
-                    "raw": row,
-                },
-            )
-
-            state.update(
-                {
-                    "task_id": task_id,
-                    "payload": payload,
-                    "event_type": event_type,
-                    "segment_type": segment_type,
-                    "status": status,
-                    "timestamp": min(current_time, end_dt),
-                    "start_time": start_dt,
-                    "end_time": end_dt,
-                    "start_node": start_node,
-                    "end_node": end_node,
-                    "from_location": from_location,
-                    "to_location": to_location,
-                    "raw": row,
-                }
-            )
-
-            if start_dt <= current_time <= end_dt:
-                total = max((end_dt - start_dt).total_seconds(), 0.001)
-                elapsed = max((current_time - start_dt).total_seconds(), 0.0)
-                frac = max(0.0, min(1.0, elapsed / total))
-
-                if (
-                    start_x is not None
-                    and start_y is not None
-                    and end_x is not None
-                    and end_y is not None
-                ):
-                    state["x"] = start_x + ((end_x - start_x) * frac)
-                    state["y"] = start_y + ((end_y - start_y) * frac)
-
-                if start_floor is not None and end_floor is not None:
-                    state["floor"] = start_floor if frac < 1.0 else end_floor
-                elif end_floor is not None:
-                    state["floor"] = end_floor
-                elif start_floor is not None:
-                    state["floor"] = start_floor
-
-                state["path"] = (
-                    (start_node, end_node) if start_node and end_node else None
-                )
-            else:
-                state["x"] = end_x if end_x is not None else start_x
-                state["y"] = end_y if end_y is not None else start_y
-                state["floor"] = end_floor if end_floor is not None else start_floor
-                state["path"] = None
-
-            if task_id:
-                assignment_start = current_task_start_by_amr.get(amr_id, start_dt)
-                state["task_runtime_sec"] = max(
-                    (current_time - assignment_start).total_seconds(), 0.0
-                )
-            else:
-                state["task_runtime_sec"] = 0.0
-
-            amr_states[amr_id] = state
-            recent_events.append({"timestamp": min(current_time, end_dt), "row": row})
-
-        return amr_states, recent_events[-12:]
+        result = (amr_states, recent_events[-12:])
+        self._state_cache_key = cache_key
+        self._state_cache_value = copy.deepcopy(result)
+        return result
 
 
 class GraphicsView(QGraphicsView):
@@ -4384,7 +4521,7 @@ class SimulationVisualizer(QMainWindow):
         onboard: Dict[str, Dict[str, dict]] = {}
         last_seen: Dict[str, datetime] = {}
 
-        for event in self.sim_log.events_until(self.current_time):
+        for event in self.sim_log.iter_events_until(self.current_time):
             row = event.row
             amr_id = str(row.get("amr_id", "") or "").strip()
             if not amr_id:
@@ -5308,7 +5445,9 @@ class SimulationVisualizer(QMainWindow):
         if not self.current_time or not self.sim_log.events:
             return [self._enrich_payload_row_details(row) for row in rows]
 
-        for event in self.sim_log.events_until(self.current_time):
+        for event in self.sim_log.events_for_location_until(
+            location_name, self.current_time
+        ):
             row = event.row
             if (
                 str(row.get("event_type", "") or "").strip().lower()
@@ -5886,7 +6025,12 @@ class SimulationVisualizer(QMainWindow):
         self.time_label.setText(
             f"Current: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}\nStart: {start}\nEnd: {end}"
         )
-        self.refresh_timeline()
+        # Do not rebuild the full AMR timeline on every playback tick.  The
+        # blocks only change when the CSV/layout changes; during playback only
+        # the playhead needs repainting.
+        if hasattr(self, "timeline_widget"):
+            self.timeline_widget.current_time = self.current_time
+            self.timeline_widget.update()
         self.update_lift_monitor_dialog()
         self.update_amr_payload_monitor_dialog()
 
