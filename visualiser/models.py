@@ -1346,6 +1346,125 @@ class JsonStore:
                 if not any(name in pair for name in names_to_delete)
             ]
 
+
+    def _graph_access_validation_errors(self) -> List[str]:
+        """Validate that every configured location is connected to the route graph.
+
+        This is an editor-side structural check only.  It does not apply AMR
+        payload dimensions, route profiles, lift capacity, battery state or
+        congestion.  It confirms that each location can reach the wider graph
+        using same-floor corridor edges and lift floor links.
+        """
+        errors: List[str] = []
+        locations = [x for x in self.data.get("locations", []) if str(x.get("name", "")).strip()]
+        if not locations:
+            return errors
+
+        points = self.all_points()
+        adjacency: Dict[str, set] = {name: set() for name in points.keys()}
+
+        def _point_floor(name: str):
+            item = points.get(name)
+            if not item:
+                return None
+            try:
+                return int(item.get("floor", 0))
+            except Exception:
+                return None
+
+        for edge in self.data.get("corridors", {}).get("edges", []):
+            a = str(edge.get("from", "")).strip()
+            b = str(edge.get("to", "")).strip()
+            if a not in points or b not in points:
+                continue
+            fa = _point_floor(a)
+            fb = _point_floor(b)
+            if fa is None or fb is None:
+                continue
+            if fa != fb:
+                # Cross-floor movement should be via lift floor nodes, not raw
+                # corridor edges between floors.  The existing validation already
+                # reports unknown endpoints; this check ignores invalid graph
+                # edges rather than making them appear connected.
+                continue
+            adjacency.setdefault(a, set()).add(b)
+            if bool(edge.get("bidirectional", True)):
+                adjacency.setdefault(b, set()).add(a)
+
+        for lift in self.data.get("lifts", []):
+            lift_id = str(lift.get("id", "")).strip()
+            lift_node_names = []
+            for floor_key in (lift.get("floor_locations", {}) or {}).keys():
+                node_name = f"{lift_id}-F{floor_key}"
+                if node_name in points:
+                    lift_node_names.append(node_name)
+            # Lift travel makes each floor node for the same lift mutually
+            # reachable.  Same-floor corridor edges still need to connect
+            # locations/corridors to those lift nodes.
+            for i, a in enumerate(lift_node_names):
+                for b in lift_node_names[i + 1:]:
+                    adjacency.setdefault(a, set()).add(b)
+                    adjacency.setdefault(b, set()).add(a)
+
+        def _walk(start: str) -> set:
+            seen = set()
+            stack = [start]
+            while stack:
+                node = stack.pop()
+                if node in seen:
+                    continue
+                seen.add(node)
+                stack.extend(sorted(adjacency.get(node, set()) - seen))
+            return seen
+
+        graph_node_names = {
+            name
+            for name, item in points.items()
+            if item.get("kind") in {"corridor_node", "lift_node"}
+        }
+        location_names = {str(x.get("name", "")).strip() for x in locations}
+        routable_targets = graph_node_names | location_names
+
+        component_cache: Dict[str, set] = {}
+        for location in locations:
+            location_name = str(location.get("name", "")).strip()
+            if location_name not in points:
+                errors.append(f"Location {location_name} is not present in the editor point map")
+                continue
+            if location_name not in component_cache:
+                component_cache[location_name] = _walk(location_name)
+            reachable = component_cache[location_name]
+            reachable_others = (reachable & routable_targets) - {location_name}
+            if not reachable_others:
+                floor = location.get("floor", "?")
+                errors.append(
+                    f"Location {location_name} on floor {floor} is not connected to the route graph; add an edge from it to a corridor node or lift node"
+                )
+                continue
+            # If there are corridor or lift nodes in the model, require the
+            # location to connect to that route infrastructure, not just another
+            # isolated location-to-location island.
+            if graph_node_names and not (reachable & graph_node_names):
+                floor = location.get("floor", "?")
+                errors.append(
+                    f"Location {location_name} on floor {floor} can only reach other locations, not the corridor/lift graph; connect it to a corridor node or lift node"
+                )
+
+        if len(locations) > 1:
+            first = str(locations[0].get("name", "")).strip()
+            all_reachable = component_cache.get(first) or _walk(first)
+            unreachable_locations = sorted(location_names - (all_reachable & location_names))
+            if unreachable_locations:
+                sample = ", ".join(unreachable_locations[:12])
+                if len(unreachable_locations) > 12:
+                    sample += f", +{len(unreachable_locations) - 12} more"
+                errors.append(
+                    "Location graph is split into separate islands; not all locations can route to each other. "
+                    f"Unreachable from {first}: {sample}"
+                )
+
+        return errors
+
     def validate(self) -> List[str]:
         errors = []
         names = self.names_in_use()
@@ -1537,6 +1656,8 @@ class JsonStore:
             if floor in seen_floors:
                 errors.append(f"Duplicate DXF mapping for floor {floor}")
             seen_floors.add(floor)
+
+        errors.extend(self._graph_access_validation_errors())
 
         return errors
 

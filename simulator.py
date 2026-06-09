@@ -2046,12 +2046,18 @@ class Simulation:
 
     def _configured_inventory_area_for_location(self, location_name: str) -> float:
         total = 0.0
-        for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []) or []:
+        for space in (
+            self.inventory_spaces_by_location.get(str(location_name or "").strip(), [])
+            or []
+        ):
             points = space.get("points", []) or []
             if len(points) >= 3:
                 try:
                     coords = [
-                        (float(p.get("dx", p.get("x", 0.0)) or 0.0), float(p.get("dy", p.get("y", 0.0)) or 0.0))
+                        (
+                            float(p.get("dx", p.get("x", 0.0)) or 0.0),
+                            float(p.get("dy", p.get("y", 0.0)) or 0.0),
+                        )
                         for p in points
                         if isinstance(p, dict)
                     ]
@@ -2081,13 +2087,17 @@ class Simulation:
             return
         self._location_recommendation_rows_written = True
 
-        for location_name in sorted(set(self.locations.keys()) | set(self.location_storage_peak.keys())):
+        for location_name in sorted(
+            set(self.locations.keys()) | set(self.location_storage_peak.keys())
+        ):
             self._record_location_storage_peak(location_name)
             item = self.location_storage_peak.get(location_name, {}) or {}
             peak_count = int(item.get("peak_payload_count", 0) or 0)
             peak_area = float(item.get("peak_area_m2", 0.0) or 0.0)
             peak_volume = float(item.get("peak_volume_m3", 0.0) or 0.0)
-            configured_area = self._configured_inventory_area_for_location(location_name)
+            configured_area = self._configured_inventory_area_for_location(
+                location_name
+            )
             if peak_count <= 0 and peak_area <= 0.0 and configured_area <= 0.0:
                 continue
 
@@ -2108,13 +2118,19 @@ class Simulation:
                         f"Peak stored payloads={peak_count}; peak area={peak_area:.3f} m2; "
                         f"peak volume={peak_volume:.3f} m3"
                     ),
-                    "location_inventory_spaces_disabled": bool(getattr(self, "disable_inventory_spaces", False)),
+                    "location_inventory_spaces_disabled": bool(
+                        getattr(self, "disable_inventory_spaces", False)
+                    ),
                     "location_configured_inventory_area_m2": configured_area,
                     "location_peak_payload_count": peak_count,
                     "location_peak_footprint_area_m2": peak_area,
                     "location_peak_volume_m3": peak_volume,
-                    "location_payload_footprint_area_m2": float(item.get("current_area_m2", 0.0) or 0.0),
-                    "location_payload_volume_m3": float(item.get("current_volume_m3", 0.0) or 0.0),
+                    "location_payload_footprint_area_m2": float(
+                        item.get("current_area_m2", 0.0) or 0.0
+                    ),
+                    "location_payload_volume_m3": float(
+                        item.get("current_volume_m3", 0.0) or 0.0
+                    ),
                     "location_recommended_area_m2": peak_area * 1.30,
                     "location_recommended_volume_m3": peak_volume * 1.30,
                 }
@@ -2224,10 +2240,14 @@ class Simulation:
             return ""
 
         compatible_spaces = [
-            space for space in spaces if self._inventory_space_can_fit_payload(space, payload)
+            space
+            for space in spaces
+            if self._inventory_space_can_fit_payload(space, payload)
         ]
         compatible_count = len(compatible_spaces)
-        occupied_count = sum(1 for space in compatible_spaces if bool(space.get("occupied", False)))
+        occupied_count = sum(
+            1 for space in compatible_spaces if bool(space.get("occupied", False))
+        )
         reserved_count = sum(
             1
             for space in compatible_spaces
@@ -2303,9 +2323,10 @@ class Simulation:
             self._record_location_storage_peak(task.dropoff)
             return False
 
-        if bool(target_space.get("occupied", False)) and str(
-            target_space.get("reserved_by_task", "") or ""
-        ).strip() != task.id:
+        if (
+            bool(target_space.get("occupied", False))
+            and str(target_space.get("reserved_by_task", "") or "").strip() != task.id
+        ):
             self._set_task_pending_reason(
                 task, self._inventory_pending_reason(task.dropoff, payload)
             )
@@ -2425,7 +2446,8 @@ class Simulation:
                         task.dropoff, return_payload
                     )
                     and (
-                        normalise_payload_name(getattr(task, "payload", "")) == return_payload
+                        normalise_payload_name(getattr(task, "payload", ""))
+                        == return_payload
                         or bool(getattr(task, "reusable_return_pool_enabled", False))
                     )
                 )
@@ -2460,10 +2482,13 @@ class Simulation:
         staged_empty_id = str(
             getattr(task, "exchange_empty_payload_instance_id", "") or ""
         ).strip()
-        same_physical_return_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+        same_physical_return_id = str(
+            getattr(task, "payload_instance_id", "") or ""
+        ).strip()
         same_physical_return = bool(
             same_physical_return_id
-            and str(getattr(return_task, "payload_instance_id", "") or "").strip() == same_physical_return_id
+            and str(getattr(return_task, "payload_instance_id", "") or "").strip()
+            == same_physical_return_id
             and normalise_payload_name(getattr(task, "payload", "")) == return_payload
         )
         if staged_empty_id:
@@ -4644,7 +4669,9 @@ class Simulation:
             return None
 
     def _route_estimate_time_bucket(self, value: float) -> int:
-        bucket = max(1.0, float(getattr(self, "route_estimate_time_bucket_sec", 30.0) or 30.0))
+        bucket = max(
+            1.0, float(getattr(self, "route_estimate_time_bucket_sec", 30.0) or 30.0)
+        )
         return int(float(value or 0.0) // bucket)
 
     def _route_estimate_cache_key(self, amr: AMR, task: Task) -> tuple:
@@ -4654,7 +4681,13 @@ class Simulation:
         rules_key = json.dumps(rules, sort_keys=True, default=str) if rules else ""
         return (
             int(getattr(self, "route_estimate_cache_version", 0)),
-            self._route_estimate_time_bucket(max(self.current_time, getattr(amr, "available_time", 0.0), getattr(task, "release_time", 0.0))),
+            self._route_estimate_time_bucket(
+                max(
+                    self.current_time,
+                    getattr(amr, "available_time", 0.0),
+                    getattr(task, "release_time", 0.0),
+                )
+            ),
             str(getattr(amr, "id", "")),
             str(getattr(amr, "location_name", "")),
             self._route_estimate_time_bucket(getattr(amr, "available_time", 0.0)),
@@ -4673,7 +4706,9 @@ class Simulation:
     def _get_cached_task_estimate(self, amr: AMR, task: Task) -> Optional[dict]:
         return self.route_estimate_cache.get(self._route_estimate_cache_key(amr, task))
 
-    def _set_cached_task_estimate(self, amr: AMR, task: Task, estimate: Optional[dict]) -> None:
+    def _set_cached_task_estimate(
+        self, amr: AMR, task: Task, estimate: Optional[dict]
+    ) -> None:
         max_entries = int(getattr(self, "route_estimate_cache_max_entries", 0) or 0)
         if max_entries <= 0:
             return
@@ -4685,7 +4720,9 @@ class Simulation:
         self.route_estimate_cache_version += 1
         self.route_estimate_cache.clear()
 
-    def _estimate_task_for_amr_cached(self, amr: AMR, task: Task, reserve: bool = False):
+    def _estimate_task_for_amr_cached(
+        self, amr: AMR, task: Task, reserve: bool = False
+    ):
         if reserve:
             return self._estimate_task_for_amr(amr, task, reserve=True)
         key = self._route_estimate_cache_key(amr, task)
@@ -4707,9 +4744,8 @@ class Simulation:
         if not jobs:
             return []
 
-        if (
-            self.routing_executor is None
-            or len(jobs) < int(getattr(self, "parallel_routing_min_jobs", 64) or 64)
+        if self.routing_executor is None or len(jobs) < int(
+            getattr(self, "parallel_routing_min_jobs", 64) or 64
         ):
             results = []
             for job in jobs:
@@ -5825,14 +5861,28 @@ class Simulation:
                 # precise reason rather than silently adding stock and inflating
                 # peak occupancy.
                 if self._location_has_inventory_spaces(task.dropoff):
-                    claimed_space = self._reserve_inventory_space_for_task(task, payload_obj)
-                    if claimed_space is None and not str(getattr(task, "assigned_inventory_space", "") or "").strip():
-                        reason = self._inventory_pending_reason(task.dropoff, payload_obj)
+                    claimed_space = self._reserve_inventory_space_for_task(
+                        task, payload_obj
+                    )
+                    if (
+                        claimed_space is None
+                        and not str(
+                            getattr(task, "assigned_inventory_space", "") or ""
+                        ).strip()
+                    ):
+                        reason = self._inventory_pending_reason(
+                            task.dropoff, payload_obj
+                        )
                         self._fail_task(task, reason, now=event.payload["finish_time"])
                         return
                 self._store_payload_instance_for_task(task)
-                if not self._occupy_inventory_space_for_completed_task(task, payload_obj):
-                    reason = str(getattr(task, "pending_reason", "") or self._inventory_pending_reason(task.dropoff, payload_obj))
+                if not self._occupy_inventory_space_for_completed_task(
+                    task, payload_obj
+                ):
+                    reason = str(
+                        getattr(task, "pending_reason", "")
+                        or self._inventory_pending_reason(task.dropoff, payload_obj)
+                    )
                     self._fail_task(task, reason, now=event.payload["finish_time"])
                     return
             self.log_step(
@@ -5952,19 +6002,35 @@ class Simulation:
                         continue
                     self._free_inventory_space_for_pickup(task, payload_obj)
                     if self._location_has_inventory_spaces(task.dropoff):
-                        claimed_space = self._reserve_inventory_space_for_task(task, payload_obj)
-                        if claimed_space is None and not str(getattr(task, "assigned_inventory_space", "") or "").strip():
+                        claimed_space = self._reserve_inventory_space_for_task(
+                            task, payload_obj
+                        )
+                        if (
+                            claimed_space is None
+                            and not str(
+                                getattr(task, "assigned_inventory_space", "") or ""
+                            ).strip()
+                        ):
                             self._fail_task(
                                 task,
-                                self._inventory_pending_reason(task.dropoff, payload_obj),
+                                self._inventory_pending_reason(
+                                    task.dropoff, payload_obj
+                                ),
                                 now=event.payload["finish_time"],
                             )
                             continue
                     self._store_payload_instance_for_task(task)
-                    if not self._occupy_inventory_space_for_completed_task(task, payload_obj):
+                    if not self._occupy_inventory_space_for_completed_task(
+                        task, payload_obj
+                    ):
                         self._fail_task(
                             task,
-                            str(getattr(task, "pending_reason", "") or self._inventory_pending_reason(task.dropoff, payload_obj)),
+                            str(
+                                getattr(task, "pending_reason", "")
+                                or self._inventory_pending_reason(
+                                    task.dropoff, payload_obj
+                                )
+                            ),
                             now=event.payload["finish_time"],
                         )
                         continue
@@ -6396,6 +6462,67 @@ class Simulation:
             writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(self.verbose_rows)
+
+    def write_failed_tasks_csv(self, path: Optional[str] = None) -> str:
+        """Write failed task diagnostics to CSV on every simulator run.
+
+        The file is created even when there are no failures so downstream
+        visualisation/reporting tools can rely on its presence and headers.
+        """
+        output_path = str(path or "failed_tasks.csv")
+        fieldnames = [
+            "sim_time_sec",
+            "sim_datetime",
+            "task_id",
+            "reason",
+            "pickup",
+            "dropoff",
+            "payload",
+            "payload_instance_id",
+            "task_source",
+            "department_id",
+            "waste_stream",
+            "container_type",
+            "pickup_exists",
+            "pickup_floor",
+            "pickup_x",
+            "pickup_y",
+            "pickup_inventory_spaces_total",
+            "pickup_inventory_spaces_occupied",
+            "pickup_inventory_spaces_reserved",
+            "pickup_inventory_spaces_free",
+            "pickup_stored_payload_count",
+            "pickup_stored_matching_payload_count",
+            "pickup_stored_payloads",
+            "dropoff_exists",
+            "dropoff_floor",
+            "dropoff_x",
+            "dropoff_y",
+            "dropoff_inventory_spaces_total",
+            "dropoff_inventory_spaces_occupied",
+            "dropoff_inventory_spaces_reserved",
+            "dropoff_inventory_spaces_free",
+            "dropoff_compatible_spaces_total",
+            "dropoff_compatible_spaces_occupied",
+            "dropoff_compatible_spaces_reserved",
+            "dropoff_compatible_spaces_free",
+            "dropoff_stored_payload_count",
+            "dropoff_stored_matching_payload_count",
+            "dropoff_stored_payloads",
+            "pickup_status_json",
+            "dropoff_status_json",
+        ]
+
+        output = Path(output_path)
+        if output.parent and str(output.parent) not in {"", "."}:
+            output.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(self.failed_tasks)
+
+        return str(output)
 
     def _estimate_total_sim_time(self) -> float:
         times = [0.0]
@@ -7003,6 +7130,107 @@ def load_json(path: str) -> dict:
         return json.load(f)
 
 
+def _find_input_task_csv_path(config: dict) -> Optional[str]:
+    """Return the configured input task CSV path, when one is present.
+
+    The simulator can be driven from JSON-only task generation or from a JSON
+    configuration that references a task CSV.  When a task CSV is present, the
+    default failed-task export should follow that filename, for example:
+    dynamic_tasks.csv -> dynamic_tasks_failed_tasks.csv.
+    """
+    if not isinstance(config, dict):
+        return None
+
+    direct_keys = (
+        "task_csv",
+        "tasks_csv",
+        "task_csv_path",
+        "tasks_csv_path",
+        "dynamic_tasks_csv",
+        "dynamic_tasks_csv_path",
+        "input_task_csv",
+        "input_tasks_csv",
+        "task_file",
+        "tasks_file",
+        "task_file_path",
+        "tasks_file_path",
+    )
+
+    def clean_csv(value) -> Optional[str]:
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if text and text.lower().endswith(".csv"):
+            return text
+        return None
+
+    for key in direct_keys:
+        found = clean_csv(config.get(key))
+        if found:
+            return found
+
+    for section_name in ("simulation", "task_generation", "inputs", "input", "files"):
+        section = config.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        for key in direct_keys:
+            found = clean_csv(section.get(key))
+            if found:
+                return found
+
+    # Last-resort guarded recursive search.  Only accept CSV values where the
+    # key clearly refers to tasks so unrelated CSV exports are not selected.
+    def walk(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                key_text = str(key).lower()
+                if isinstance(child, str):
+                    found = clean_csv(child)
+                    if found and "task" in key_text:
+                        return found
+                result = walk(child)
+                if result:
+                    return result
+        elif isinstance(value, list):
+            for child in value:
+                result = walk(child)
+                if result:
+                    return result
+        return None
+
+    return walk(config)
+
+
+def default_failed_tasks_csv_path(
+    config: dict,
+    config_path: Optional[str] = None,
+    explicit_path: Optional[str] = None,
+) -> str:
+    """Resolve the failed-task CSV path for a simulator run.
+
+    Explicit paths are honoured.  Otherwise, when the input configuration
+    references a task CSV, the failed-task export follows that CSV's filename:
+    <input_stem>_failed_tasks<input_suffix>.  If no task CSV is configured, the
+    export falls back to failed_tasks.csv beside the config file when possible.
+    """
+    if explicit_path:
+        return str(explicit_path)
+
+    task_csv = _find_input_task_csv_path(config)
+    if task_csv:
+        task_path = Path(task_csv)
+        if not task_path.is_absolute() and config_path:
+            task_path = Path(config_path).resolve().parent / task_path
+        return str(
+            task_path.with_name(f"{task_path.stem}_failed_tasks{task_path.suffix}")
+        )
+
+    if config_path:
+        return str(Path(config_path).resolve().parent / "failed_tasks.csv")
+
+    return "failed_tasks.csv"
+
+
 def write_example_config(path: Path):
     path.write_text(json.dumps(EXAMPLE_CONFIG, indent=2), encoding="utf-8")
     print(f"Example config written to {path}")
@@ -7017,6 +7245,16 @@ def main():
     parser.add_argument("--write-example", type=str)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--verbose-csv", type=str, default="simulation_steps.csv")
+    parser.add_argument(
+        "--failed-tasks-csv",
+        type=str,
+        default=None,
+        help=(
+            "Optional failed task diagnostics CSV path. If omitted, the file is "
+            "written by default using the input task CSV filename pattern, e.g. "
+            "dynamic_tasks.csv -> dynamic_tasks_failed_tasks.csv."
+        ),
+    )
     args = parser.parse_args()
 
     if args.write_example:
@@ -7028,9 +7266,8 @@ def main():
             "Please provide --config path, or use --write-example example.json first."
         )
 
-    sim = Simulation(
-        load_json(args.config), verbose=args.verbose, verbose_csv_path=args.verbose_csv
-    )
+    config = load_json(args.config)
+    sim = Simulation(config, verbose=args.verbose, verbose_csv_path=args.verbose_csv)
 
     input_thread = None
     if args.interactive:
@@ -7044,6 +7281,11 @@ def main():
 
     # print(json.dumps(sim.summary(), indent=2))
     sim.write_verbose_csv()
+    failed_tasks_csv_path = default_failed_tasks_csv_path(
+        config, config_path=args.config, explicit_path=args.failed_tasks_csv
+    )
+    failed_tasks_csv_path = sim.write_failed_tasks_csv(failed_tasks_csv_path)
+    print(f"Failed tasks CSV written to {failed_tasks_csv_path}")
     if args.verbose:
         print(f"Verbose CSV written to {args.verbose_csv}")
 

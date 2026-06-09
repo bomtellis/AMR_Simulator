@@ -39,4 +39,12 @@ def parse_args():
             "Heatmaps will still be included using the simulation path extents."
         ),
     )
+    parser.add_argument(
+        "--failed-tasks-csv",
+        help=(
+            "Optional path for a separate failed-task CSV extracted from the "
+            "simulation event log. Use this with verbose simulator output."
+        ),
+        default=None,
+    )
     return parser.parse_args()

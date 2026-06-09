@@ -1240,15 +1240,17 @@ def build_location_peak_occupancy(
     df: pd.DataFrame,
     ctx: Context,
     location_catalog: Optional[pd.DataFrame] = None,
+    payload_dimensions: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    """Extract one authoritative peak storage-demand row per location.
+    """Calculate peak location occupancy from payload enter/exit events.
 
-    The simulator writes ``location_space_recommendation`` rows at CSV export
-    time.  Those rows already contain the simulator's final per-location peak
-    state, so the report must not add or take the maximum across repeated rows.
-    If a CSV has duplicate recommendation rows for the same location, the latest
-    row by event time is used.  Older CSVs without final recommendation rows fall
-    back to the latest row carrying location-space metrics.
+    The simulator is now responsible only for logging physical movements using
+    ``location_payload_enter`` and ``location_payload_exit`` rows.  The report
+    reconstructs the live set of payload instances at each location over time and
+    takes the maximum simultaneous count, area and volume.
+
+    Older CSVs that only contain ``location_space_recommendation`` rows are still
+    supported as a fallback.
     """
     columns = [
         "department",
@@ -1267,118 +1269,197 @@ def build_location_peak_occupancy(
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
 
-    loc_meta = pd.DataFrame(columns=["location", "department", "category"])
+    loc_meta = pd.DataFrame(columns=["location", "department", "category", "inventory_area_m2"])
     if location_catalog is not None and not location_catalog.empty:
         keep = [
             c
-            for c in ["location", "department", "category"]
+            for c in ["location", "department", "category", "inventory_area_m2"]
             if c in location_catalog.columns
         ]
         if "location" in keep:
             loc_meta = location_catalog[keep].drop_duplicates("location").copy()
 
+    payload_lookup: Dict[str, Tuple[float, float]] = {}
+    if payload_dimensions is not None and not payload_dimensions.empty:
+        for _, row in payload_dimensions.iterrows():
+            payload_name = str(row.get("payload", "") or "").strip()
+            if not payload_name:
+                continue
+            length = _to_float(row.get("payload_length_m"), 0.0)
+            width = _to_float(row.get("payload_width_m"), 0.0)
+            height = _to_float(row.get("payload_height_m"), 0.0)
+            area = _to_float(row.get("payload_area_m2"), length * width)
+            if area <= 0.0:
+                area = max(0.0, length) * max(0.0, width)
+            payload_lookup[payload_name] = (area, area * max(0.0, height))
+
     def _clean_location(value) -> str:
         text = str(value or "").strip()
         return "" if text.lower() in {"", "-", "nan", "none", "null"} else text
 
+    def _clean_payload(value) -> str:
+        text = str(value or "").strip()
+        return "" if text.lower() in {"", "-", "nan", "none", "null", "empty", "__empty_payload__"} else text
+
+    def _instance_key(row: pd.Series, location: str, payload: str, counter: int) -> str:
+        instance = str(row.get("payload_instance_id", "") or "").strip()
+        if instance and instance.lower() not in {"nan", "none", "null", "-"}:
+            return instance
+        task_id = str(row.get("task_id", "") or "").strip()
+        if task_id and task_id.lower() not in {"nan", "none", "null", "-"}:
+            return f"task:{task_id}:{payload}"
+        return f"synthetic:{location}:{payload}:{counter}"
+
+    def _configured_area(location: str) -> float:
+        if loc_meta.empty or "inventory_area_m2" not in loc_meta.columns:
+            return 0.0
+        match = loc_meta[loc_meta["location"] == location]
+        if match.empty:
+            return 0.0
+        return round(_to_float(match.iloc[0].get("inventory_area_m2"), 0.0), 2)
+
     event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
-    final_rows = df[
-        event_text.str.fullmatch(
-            "location_space_recommendation", case=False, na=False
-        )
+    movement_rows = df[
+        event_text.str.fullmatch(r"location_payload_(enter|exit)", case=False, na=False)
     ].copy()
 
-    if final_rows.empty:
-        metric_cols = {
-            "location_peak_payload_count",
-            "location_peak_footprint_area_m2",
-            "location_peak_volume_m3",
-            "location_recommended_area_m2",
-            "location_payload_footprint_area_m2",
-            "location_payload_volume_m3",
-        }
-        if not metric_cols.intersection(df.columns):
+    if movement_rows.empty:
+        # Backwards compatibility for reports run against older simulator CSVs.
+        final_rows = df[
+            event_text.str.fullmatch("location_space_recommendation", case=False, na=False)
+        ].copy()
+        if final_rows.empty:
             return pd.DataFrame(columns=columns)
-        location_source = next(
-            (c for c in ("to_location", "end_node", "from_location") if c in df.columns),
-            None,
-        )
-        if location_source is None:
-            return pd.DataFrame(columns=columns)
-        final_rows = df[df[location_source].notna()].copy()
-    else:
         location_source = next(
             (c for c in ("to_location", "end_node", "from_location") if c in final_rows.columns),
             None,
         )
         if location_source is None:
             return pd.DataFrame(columns=columns)
+        final_rows["_report_location"] = final_rows[location_source].map(_clean_location)
+        final_rows = final_rows[final_rows["_report_location"] != ""].sort_values(ctx.time_col, kind="stable")
+        latest_rows = final_rows.drop_duplicates("_report_location", keep="last")
 
-    final_rows["_report_location"] = final_rows[location_source].map(_clean_location)
-    final_rows = final_rows[final_rows["_report_location"] != ""].copy()
-    if final_rows.empty:
-        return pd.DataFrame(columns=columns)
+        def num(row: pd.Series, name: str) -> float:
+            if name not in row.index:
+                return 0.0
+            value = pd.to_numeric(pd.Series([row.get(name)]), errors="coerce").iloc[0]
+            return 0.0 if pd.isna(value) else float(value)
 
-    # Use the latest simulator state per location.  Do not aggregate repeated
-    # recommendation rows; aggregating keeps stale doubled counts alive.
-    final_rows = final_rows.sort_values(ctx.time_col, kind="stable")
-    latest_rows = final_rows.drop_duplicates("_report_location", keep="last")
-
-    def num(row: pd.Series, name: str) -> float:
-        if name not in row.index:
-            return 0.0
-        value = pd.to_numeric(pd.Series([row.get(name)]), errors="coerce").iloc[0]
-        return 0.0 if pd.isna(value) else float(value)
-
-    def bool_value(row: pd.Series, name: str) -> bool:
-        if name not in row.index:
-            return False
-        value = str(row.get(name, "")).strip().lower()
-        return value in {"true", "1", "yes", "y"}
-
-    rows = []
-    for _, row in latest_rows.iterrows():
-        location = _clean_location(row.get("_report_location", ""))
-        if not location:
-            continue
-        peak_area = num(row, "location_peak_footprint_area_m2") or num(
-            row, "location_payload_footprint_area_m2"
+        rows = []
+        for _, row in latest_rows.iterrows():
+            location = _clean_location(row.get("_report_location", ""))
+            peak_area = num(row, "location_peak_footprint_area_m2") or num(row, "location_payload_footprint_area_m2")
+            peak_volume = num(row, "location_peak_volume_m3") or num(row, "location_payload_volume_m3")
+            rows.append(
+                {
+                    "location": location,
+                    "inventory_spaces_disabled": str(row.get("location_inventory_spaces_disabled", "")).strip().lower() in {"true", "1", "yes", "y"},
+                    "configured_inventory_area_m2": round(num(row, "location_configured_inventory_area_m2") or _configured_area(location), 2),
+                    "peak_payload_count": int(round(num(row, "location_peak_payload_count"))),
+                    "peak_area_used_m2": round(peak_area, 2),
+                    "peak_volume_m3": round(peak_volume, 2),
+                    "current_area_used_m2": round(num(row, "location_payload_footprint_area_m2"), 2),
+                    "current_volume_m3": round(num(row, "location_payload_volume_m3"), 2),
+                    "recommended_area_m2": round((num(row, "location_recommended_area_m2") or peak_area * 1.30), 2),
+                    "recommended_volume_m3": round((num(row, "location_recommended_volume_m3") or peak_volume * 1.30), 2),
+                }
+            )
+    else:
+        location_source = next(
+            (c for c in ("to_location", "end_node", "from_location") if c in movement_rows.columns),
+            None,
         )
-        peak_volume = num(row, "location_peak_volume_m3") or num(
-            row, "location_payload_volume_m3"
-        )
-        recommended_area = num(row, "location_recommended_area_m2") or peak_area
-        recommended_volume = num(row, "location_recommended_volume_m3") or peak_volume
-        rows.append(
-            {
-                "location": location,
-                "inventory_spaces_disabled": bool_value(
-                    row, "location_inventory_spaces_disabled"
-                ),
-                "configured_inventory_area_m2": round(
-                    num(row, "location_configured_inventory_area_m2"), 2
-                ),
-                "peak_payload_count": int(
-                    round(num(row, "location_peak_payload_count"))
-                ),
-                "peak_area_used_m2": round(peak_area, 2),
-                "peak_volume_m3": round(peak_volume, 2),
-                "current_area_used_m2": round(
-                    num(row, "location_payload_footprint_area_m2"), 2
-                ),
-                "current_volume_m3": round(
-                    num(row, "location_payload_volume_m3"), 2
-                ),
-                "recommended_area_m2": round(recommended_area, 2),
-                "recommended_volume_m3": round(recommended_volume, 2),
-            }
-        )
+        if location_source is None:
+            return pd.DataFrame(columns=columns)
+        movement_rows["_report_location"] = movement_rows[location_source].map(_clean_location)
+        movement_rows["_report_payload"] = movement_rows.get("payload", pd.Series("", index=movement_rows.index)).map(_clean_payload)
+        movement_rows = movement_rows[
+            (movement_rows["_report_location"] != "") & (movement_rows["_report_payload"] != "")
+        ].sort_values(ctx.time_col, kind="stable")
+
+        states: Dict[str, Dict[str, Tuple[str, float, float]]] = {}
+        peaks: Dict[str, dict] = {}
+        synthetic_counter = 0
+
+        def snapshot(location: str) -> None:
+            live = states.get(location, {})
+            count = len(live)
+            area = sum(v[1] for v in live.values())
+            volume = sum(v[2] for v in live.values())
+            item = peaks.setdefault(
+                location,
+                {
+                    "peak_payload_count": 0,
+                    "peak_area_used_m2": 0.0,
+                    "peak_volume_m3": 0.0,
+                    "current_area_used_m2": 0.0,
+                    "current_volume_m3": 0.0,
+                },
+            )
+            item["current_area_used_m2"] = area
+            item["current_volume_m3"] = volume
+            if count > int(item.get("peak_payload_count", 0)):
+                item["peak_payload_count"] = count
+            if area > float(item.get("peak_area_used_m2", 0.0)):
+                item["peak_area_used_m2"] = area
+            if volume > float(item.get("peak_volume_m3", 0.0)):
+                item["peak_volume_m3"] = volume
+
+        for _, row in movement_rows.iterrows():
+            location = row["_report_location"]
+            payload_name = row["_report_payload"]
+            area, volume = payload_lookup.get(payload_name, (0.0, 0.0))
+            synthetic_counter += 1
+            key = _instance_key(row, location, payload_name, synthetic_counter)
+            event = str(row.get("_event_text", "") or "").lower()
+            live = states.setdefault(location, {})
+            if event.endswith("enter"):
+                live[key] = (payload_name, area, volume)
+            elif event.endswith("exit"):
+                # Prefer exact instance removal, but fall back to the first matching
+                # payload at that location so legacy rows without instance IDs still
+                # form a useful occupancy timeline.
+                if key in live:
+                    live.pop(key, None)
+                else:
+                    match = next((k for k, v in live.items() if v[0] == payload_name), None)
+                    if match is not None:
+                        live.pop(match, None)
+            snapshot(location)
+
+        for location in list(states):
+            snapshot(location)
+
+        rows = []
+        for location, item in peaks.items():
+            peak_count = int(item.get("peak_payload_count", 0) or 0)
+            peak_area = float(item.get("peak_area_used_m2", 0.0) or 0.0)
+            peak_volume = float(item.get("peak_volume_m3", 0.0) or 0.0)
+            configured_area = _configured_area(location)
+            if peak_count <= 0 and peak_area <= 0.0 and configured_area <= 0.0:
+                continue
+            rows.append(
+                {
+                    "location": location,
+                    "inventory_spaces_disabled": False,
+                    "configured_inventory_area_m2": configured_area,
+                    "peak_payload_count": peak_count,
+                    "peak_area_used_m2": round(peak_area, 2),
+                    "peak_volume_m3": round(peak_volume, 2),
+                    "current_area_used_m2": round(float(item.get("current_area_used_m2", 0.0) or 0.0), 2),
+                    "current_volume_m3": round(float(item.get("current_volume_m3", 0.0) or 0.0), 2),
+                    "recommended_area_m2": round(peak_area * 1.30, 2),
+                    "recommended_volume_m3": round(peak_volume * 1.30, 2),
+                }
+            )
 
     if not rows:
         return pd.DataFrame(columns=columns)
     peak = pd.DataFrame(rows).drop_duplicates("location", keep="last")
     if not loc_meta.empty:
-        peak = peak.merge(loc_meta, on="location", how="left")
+        merge_cols = [c for c in ["location", "department", "category"] if c in loc_meta.columns]
+        peak = peak.merge(loc_meta[merge_cols].drop_duplicates("location"), on="location", how="left")
     else:
         peak["department"] = "-"
         peak["category"] = "-"
@@ -2226,7 +2307,7 @@ def analyse(
     )
 
     location_peak_occupancy = build_location_peak_occupancy(
-        df, ctx, location_catalog
+        df, ctx, location_catalog, payload_dimensions
     )
     (
         location_space_utilisation,

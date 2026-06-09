@@ -1246,7 +1246,7 @@ def build_report(
         PageBreak(),
         Paragraph("Peak location occupancy", styles["Section"]),
         Paragraph(
-            "Peak occupancy is taken from the simulator's final location storage recommendation rows. It records the maximum simultaneous payload footprint and volume seen at each location, including runs where inventory spaces were disabled but boundaries were retained.",
+            "Peak occupancy is calculated in the report from simulator location_payload_enter and location_payload_exit rows. It records the maximum simultaneous payload count, footprint and volume seen at each location during operating conditions.",
             styles["BodyText"],
         ),
         Spacer(1, 8),
@@ -1256,7 +1256,7 @@ def build_report(
     if peak_location_df.empty:
         story.append(
             Paragraph(
-                "No peak location occupancy rows were identified in the simulation event log. Run the simulator with verbose CSV output from the updated simulator to include this section.",
+                "No payload location movement rows were identified in the simulation event log. Run the simulator with verbose CSV output from the updated simulator to include this section.",
                 styles["BodyText"],
             )
         )
@@ -1391,7 +1391,7 @@ def build_report(
         PageBreak(),
         Paragraph("Location storage recommendations", styles["Section"]),
         Paragraph(
-            "Recommended area is now based on the greater of capacity-failure demand and the simulator's recorded peak simultaneous payload storage demand. This allows storage recommendations to be reported even when inventory spaces were disabled during the run.",
+            "Recommended area is based on the greater of capacity-failure demand and the report-calculated peak simultaneous payload storage demand from payload enter/exit events.",
             styles["BodyText"],
         ),
         Spacer(1, 8),

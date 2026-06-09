@@ -1,4 +1,7 @@
 from pathlib import Path
+import json
+
+import pandas as pd
 
 from amr_report_analysis import (
     analyse,
@@ -10,6 +13,95 @@ from amr_report_analysis import (
 )
 from amr_report_pdf_report import build_report
 from amr_report_cli import parse_args
+
+
+def export_failed_tasks_csv(source_csv: Path, output_csv: Path) -> None:
+    df = pd.read_csv(source_csv, low_memory=False)
+    event_col = "event_type" if "event_type" in df.columns else ""
+    if not event_col:
+        failed = pd.DataFrame()
+    else:
+        failed = df[df[event_col].astype(str).str.fullmatch("task_failed", case=False, na=False)].copy()
+
+    rows = []
+    for _, row in failed.iterrows():
+        context = {}
+        raw_context = str(row.get("failure_context", "") or "").strip()
+        if raw_context:
+            try:
+                parsed = json.loads(raw_context)
+                if isinstance(parsed, dict):
+                    context = parsed
+            except Exception:
+                context = {}
+        if context:
+            rows.append(context)
+            continue
+        rows.append(
+            {
+                "sim_time_sec": row.get("sim_time_sec", ""),
+                "sim_datetime": row.get("sim_datetime", ""),
+                "task_id": row.get("task_id", ""),
+                "reason": row.get("pending_reason", row.get("details", "")),
+                "pickup": row.get("from_location", ""),
+                "dropoff": row.get("to_location", ""),
+                "payload": row.get("payload", ""),
+                "payload_instance_id": row.get("payload_instance_id", ""),
+                "task_source": row.get("task_source", ""),
+                "department_id": row.get("department_id", ""),
+                "waste_stream": row.get("waste_stream", ""),
+                "container_type": row.get("container_type", ""),
+            }
+        )
+
+    out_df = pd.DataFrame(rows)
+    if out_df.empty:
+        out_df = pd.DataFrame(
+            columns=[
+                "sim_time_sec",
+                "sim_datetime",
+                "task_id",
+                "reason",
+                "pickup",
+                "dropoff",
+                "payload",
+                "payload_instance_id",
+                "task_source",
+                "department_id",
+                "waste_stream",
+                "container_type",
+                "pickup_exists",
+                "pickup_floor",
+                "pickup_x",
+                "pickup_y",
+                "pickup_inventory_spaces_total",
+                "pickup_inventory_spaces_occupied",
+                "pickup_inventory_spaces_reserved",
+                "pickup_inventory_spaces_free",
+                "pickup_stored_payload_count",
+                "pickup_stored_matching_payload_count",
+                "pickup_stored_payloads",
+                "dropoff_exists",
+                "dropoff_floor",
+                "dropoff_x",
+                "dropoff_y",
+                "dropoff_inventory_spaces_total",
+                "dropoff_inventory_spaces_occupied",
+                "dropoff_inventory_spaces_reserved",
+                "dropoff_inventory_spaces_free",
+                "dropoff_compatible_spaces_total",
+                "dropoff_compatible_spaces_occupied",
+                "dropoff_compatible_spaces_reserved",
+                "dropoff_compatible_spaces_free",
+                "dropoff_stored_payload_count",
+                "dropoff_stored_matching_payload_count",
+                "dropoff_stored_payloads",
+                "pickup_status_json",
+                "dropoff_status_json",
+            ]
+        )
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    out_df.to_csv(output_csv, index=False)
 
 
 def print_progress(current: int, total: int, message: str = "") -> None:
@@ -68,6 +160,10 @@ def main() -> None:
         location_catalog,
         payload_dimensions,
     )
+
+    if args.failed_tasks_csv:
+        export_failed_tasks_csv(csv_path, Path(args.failed_tasks_csv))
+        print_progress(30, 100, f"Failed-task CSV written to {args.failed_tasks_csv}")
 
     print_progress(35, 100, "Building PDF report")
 
