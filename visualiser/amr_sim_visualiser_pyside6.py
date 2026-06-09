@@ -282,7 +282,11 @@ class SimulationLog:
 
         if prefer_sim_datetime and sim_dt is not None:
             start_dt = sim_dt
-            end_dt = sim_dt if event_type == "mass_collection_visit" else (end_dt_raw or sim_dt)
+            end_dt = (
+                sim_dt
+                if event_type == "mass_collection_visit"
+                else (end_dt_raw or sim_dt)
+            )
             if end_dt < start_dt:
                 end_dt = start_dt
         else:
@@ -318,7 +322,9 @@ class SimulationLog:
             workers = min(max(1, (os.cpu_count() or 2) - 1), 8)
             try:
                 with ProcessPoolExecutor(max_workers=workers) as pool:
-                    parsed = pool.map(_parse_visual_event_row_process, rows, chunksize=1000)
+                    parsed = pool.map(
+                        _parse_visual_event_row_process, rows, chunksize=1000
+                    )
                     self.events = [event for event in parsed if event is not None]
             except Exception:
                 self.events = [
@@ -663,7 +669,6 @@ def _load_dxf_floor_process(job):
         }
 
 
-
 def _parse_visual_event_row_process(row):
     """Process-safe CSV row parser used by SimulationLog.load for large logs."""
     return SimulationLog._row_to_visual_event(row)
@@ -979,7 +984,6 @@ class TaskJumpDialog(QDialog):
             return datetime.min
 
 
-
 class TasksByLocationDepartmentDialog(QDialog):
     """Browse full tasks grouped by department or configured location."""
 
@@ -1016,7 +1020,9 @@ class TasksByLocationDepartmentDialog(QDialog):
 
         controls.addWidget(QLabel("Filter"))
         self.filter_edit = QLineEdit()
-        self.filter_edit.setPlaceholderText("Task, payload, department, start or finish location")
+        self.filter_edit.setPlaceholderText(
+            "Task, payload, department, start or finish location"
+        )
         self.filter_edit.textChanged.connect(self.refresh_tree)
         controls.addWidget(self.filter_edit, 1)
         layout.addLayout(controls)
@@ -1049,9 +1055,16 @@ class TasksByLocationDepartmentDialog(QDialog):
 
     def _row_text(self, row: dict) -> str:
         keys = [
-            "task_id", "payload", "start_location", "finish_location",
-            "department", "department_id", "status", "source",
-            "start_time_display", "end_time_display",
+            "task_id",
+            "payload",
+            "start_location",
+            "finish_location",
+            "department",
+            "department_id",
+            "status",
+            "source",
+            "start_time_display",
+            "end_time_display",
         ]
         return " ".join(str(row.get(k, "") or "") for k in keys).lower()
 
@@ -1063,7 +1076,9 @@ class TasksByLocationDepartmentDialog(QDialog):
                 if location and location != "-" and location not in groups:
                     groups.append(location)
             return groups or ["Unknown location"]
-        dept = str(row.get("department", "") or row.get("department_id", "") or "").strip()
+        dept = str(
+            row.get("department", "") or row.get("department_id", "") or ""
+        ).strip()
         return [dept or "Unassigned department"]
 
     def refresh_tree(self):
@@ -1078,7 +1093,9 @@ class TasksByLocationDepartmentDialog(QDialog):
             for group in self._group_keys_for_row(row, group_mode):
                 grouped.setdefault(group, []).append(row)
 
-        unique_task_count = len({str(r.get("task_id", "")) for rows in grouped.values() for r in rows})
+        unique_task_count = len(
+            {str(r.get("task_id", "")) for rows in grouped.values() for r in rows}
+        )
         self.summary_label.setText(
             f"Groups: {len(grouped)} | Full tasks: {unique_task_count} | Double-click a row to jump to its start time."
         )
@@ -1087,7 +1104,9 @@ class TasksByLocationDepartmentDialog(QDialog):
             rows = sorted(
                 grouped[group],
                 key=lambda r: (
-                    str(r.get("start_sort_time", "") or r.get("start_time_display", "")),
+                    str(
+                        r.get("start_sort_time", "") or r.get("start_time_display", "")
+                    ),
                     str(r.get("task_id", "")),
                 ),
             )
@@ -1097,11 +1116,18 @@ class TasksByLocationDepartmentDialog(QDialog):
             self.tree.addTopLevelItem(group_item)
 
             for row in rows:
-                values = [str(row.get(key, "") or "-") for key, _heading, _width in self.columns]
+                values = [
+                    str(row.get(key, "") or "-")
+                    for key, _heading, _width in self.columns
+                ]
                 item = QTreeWidgetItem(values)
                 item.setData(0, Qt.UserRole, row.get("start_time"))
                 item.setData(1, Qt.UserRole, row.get("task_id", ""))
-                item.setData(2, Qt.UserRole, row.get("finish_location") or row.get("start_location") or "")
+                item.setData(
+                    2,
+                    Qt.UserRole,
+                    row.get("finish_location") or row.get("start_location") or "",
+                )
                 details = str(row.get("details", "") or "")
                 if details:
                     for col in range(len(self.columns)):
@@ -1868,8 +1894,6 @@ class LocationInventoryPayloadDialog(QDialog):
                 self.table.setItem(r, c, item)
 
 
-
-
 class TextOverlayProxy:
     """Small compatibility wrapper for text labels drawn in the overlay layer.
 
@@ -1922,7 +1946,9 @@ class SimulationVisualizer(QMainWindow):
         self.sim_log = SimulationLog()
         self._state_cache_key = None
         self._state_cache_value = None
-        self._inventory_rows_cache: Dict[Tuple[str, Optional[datetime]], List[dict]] = {}
+        self._inventory_rows_cache: Dict[Tuple[str, Optional[datetime]], List[dict]] = (
+            {}
+        )
 
         self.current_json_path: Optional[str] = None
         self.current_dxf_path: Optional[str] = None
@@ -2038,7 +2064,10 @@ class SimulationVisualizer(QMainWindow):
         add_btn("Reload Current Floor DXF", self.reload_current_floor_dxf)
         add_btn("Open Simulation CSV", self.open_csv)
         add_btn("Jump to Task", self.open_task_jump_dialog)
-        add_btn("Tasks by Location / Department", self.open_tasks_by_location_department_dialog)
+        add_btn(
+            "Tasks by Location / Department",
+            self.open_tasks_by_location_department_dialog,
+        )
         add_btn("Lift Monitor", self.open_lift_monitor_dialog)
         add_btn("AMR Payload Monitor", self.open_amr_payload_monitor_dialog)
         add_btn("Fit View", self.fit_view)
@@ -2533,7 +2562,9 @@ class SimulationVisualizer(QMainWindow):
     def world_to_scene(self, x, y):
         return float(x), -float(y)
 
-    def _visible_world_rect(self, margin_m: float = 2.0) -> Tuple[float, float, float, float]:
+    def _visible_world_rect(
+        self, margin_m: float = 2.0
+    ) -> Tuple[float, float, float, float]:
         """Return current viewport bounds as world x/y min/max with a safe margin.
 
         Culling is based on the actual transformed viewport corners, not a stale
@@ -2580,20 +2611,31 @@ class SimulationVisualizer(QMainWindow):
             return True
 
     @staticmethod
-    def _point_in_world_rect(x: float, y: float, rect: Tuple[float, float, float, float]) -> bool:
+    def _point_in_world_rect(
+        x: float, y: float, rect: Tuple[float, float, float, float]
+    ) -> bool:
         x_min, y_min, x_max, y_max = rect
         return x_min <= float(x) <= x_max and y_min <= float(y) <= y_max
 
     @staticmethod
-    def _segment_intersects_world_rect(a: dict, b: dict, rect: Tuple[float, float, float, float]) -> bool:
+    def _segment_intersects_world_rect(
+        a: dict, b: dict, rect: Tuple[float, float, float, float]
+    ) -> bool:
         x_min, y_min, x_max, y_max = rect
         ax = float(a.get("x", 0.0) or 0.0)
         ay = float(a.get("y", 0.0) or 0.0)
         bx = float(b.get("x", 0.0) or 0.0)
         by = float(b.get("y", 0.0) or 0.0)
-        return not (max(ax, bx) < x_min or min(ax, bx) > x_max or max(ay, by) < y_min or min(ay, by) > y_max)
+        return not (
+            max(ax, bx) < x_min
+            or min(ax, bx) > x_max
+            or max(ay, by) < y_min
+            or min(ay, by) > y_max
+        )
 
-    def _location_intersects_visible_world(self, location: dict, rect: Tuple[float, float, float, float]) -> bool:
+    def _location_intersects_visible_world(
+        self, location: dict, rect: Tuple[float, float, float, float]
+    ) -> bool:
         try:
             lx = float(location.get("x", 0.0) or 0.0)
             ly = float(location.get("y", 0.0) or 0.0)
@@ -2774,7 +2816,9 @@ class SimulationVisualizer(QMainWindow):
             text = str(record.get("text", "") or "")
             if not text:
                 continue
-            scene_pos = QPointF(float(record.get("x", 0.0)), float(record.get("y", 0.0)))
+            scene_pos = QPointF(
+                float(record.get("x", 0.0)), float(record.get("y", 0.0))
+            )
             view_pos = self.view.mapFromScene(scene_pos)
             # Coarse viewport culling.  Text is allowed a margin so labels do not
             # pop at the edge of the screen when partially visible.
@@ -2786,7 +2830,9 @@ class SimulationVisualizer(QMainWindow):
             ):
                 continue
 
-            scene_height = float(record.get("scene_height", base_scene_height) or base_scene_height)
+            scene_height = float(
+                record.get("scene_height", base_scene_height) or base_scene_height
+            )
             px = max(3, min(220, int(round(scene_height * transform_scale))))
             if font.pixelSize() != px:
                 font.setPixelSize(px)
@@ -3444,17 +3490,70 @@ class SimulationVisualizer(QMainWindow):
         row["tooltip"] = "\n".join(tooltip_lines)
         return row
 
+    def _waste_stream_name_for_payload_or_container(
+        self, payload_name: str = "", container_type: str = ""
+    ) -> str:
+        """Infer the waste stream when a CSV row only gives the replacement payload.
+
+        Return/drop-off rows for replacement containers do not always repeat the
+        waste_stream column.  Seeded containers rely on the stream definition for
+        the collection threshold, so infer the stream from the configured payload
+        or container type before the row is enriched/drawn.
+        """
+        payload_name = str(payload_name or "").strip()
+        container_type = str(container_type or "").strip()
+        candidates = {x for x in (payload_name, container_type) if x}
+        if not candidates:
+            return ""
+
+        for stream in self.layout_model.data.get("waste_streams", []) or []:
+            if not isinstance(stream, dict):
+                continue
+            stream_name = str(stream.get("name", "") or "").strip()
+            stream_payload = str(stream.get("payload", "") or "").strip()
+            stream_container = str(stream.get("container_type", "") or "").strip()
+            if stream_name and (
+                stream_payload in candidates or stream_container in candidates
+            ):
+                return stream_name
+
+        for department in self.layout_model.data.get("departments", []) or []:
+            if not isinstance(department, dict):
+                continue
+            for stream_cfg in department.get("waste_streams", []) or []:
+                if not isinstance(stream_cfg, dict):
+                    continue
+                stream_name = str(stream_cfg.get("name", "") or "").strip()
+                stream_payload = str(stream_cfg.get("payload", "") or "").strip()
+                stream_container = str(
+                    stream_cfg.get("container_type", "") or ""
+                ).strip()
+                if stream_name and (
+                    stream_payload in candidates or stream_container in candidates
+                ):
+                    return stream_name
+
+        return ""
+
     def _csv_waste_row_payload_details(
         self, row: dict, reset_fill: bool = False
     ) -> dict:
         collected_volume = self._row_float(row, "waste_volume_m3", default=0.0)
+        payload_name = str(row.get("payload", "") or "").strip()
+        container_type = str(row.get("container_type", "") or "").strip()
+        waste_stream = str(row.get("waste_stream", "") or "").strip()
+        if not waste_stream:
+            waste_stream = self._waste_stream_name_for_payload_or_container(
+                payload_name, container_type
+            )
+
         result = {
             "payload_instance_id": str(
                 row.get("payload_instance_id", "") or ""
             ).strip(),
-            "waste_stream": str(row.get("waste_stream", "") or "").strip(),
+            "waste_stream": waste_stream,
             "collected_waste_volume_m3": collected_volume,
-            "container_type": str(row.get("container_type", "") or "").strip(),
+            "container_type": container_type,
         }
         if reset_fill:
             result["waste_volume_m3"] = 0.0
@@ -3467,6 +3566,36 @@ class SimulationVisualizer(QMainWindow):
                 result["waste_stream"]
             )
         return result
+
+    def _best_empty_inventory_row_for_replacement(
+        self, rows: List[dict], csv_row: dict
+    ):
+        """Prefer the empty slot that still carries the seeded waste metadata."""
+        csv_details = self._csv_waste_row_payload_details(csv_row, reset_fill=True)
+        stream_name = str(csv_details.get("waste_stream", "") or "").strip()
+        container_group = str(csv_details.get("container_group", "") or "").strip()
+
+        for row in rows:
+            if str(row.get("payload", "-")).strip() not in {"", "-"}:
+                continue
+            if (
+                stream_name
+                and str(row.get("waste_stream", "") or "").strip() == stream_name
+            ):
+                return row
+            if (
+                container_group
+                and str(row.get("container_group", "") or "").strip() == container_group
+            ):
+                return row
+
+        for row in rows:
+            if str(row.get("payload", "-")).strip() not in {"", "-"}:
+                continue
+            if row.get("container_threshold_m3") or row.get("container_capacity_m3"):
+                return row
+
+        return self._first_empty_inventory_space_row(rows)
 
     def _space_points_world(
         self, location: dict, space: dict
@@ -3556,7 +3685,9 @@ class SimulationVisualizer(QMainWindow):
         row = dict(row or {})
         payload_text = str(row.get("payload", "-") or "-").strip()
         occupied = bool(payload_text and payload_text != "-")
-        status = str(row.get("status", "Occupied" if occupied else "Empty") or "").strip()
+        status = str(
+            row.get("status", "Occupied" if occupied else "Empty") or ""
+        ).strip()
         status_lower = status.lower()
 
         points = [QPointF(*self.world_to_scene(x, y)) for x, y in points_world]
@@ -3579,7 +3710,7 @@ class SimulationVisualizer(QMainWindow):
         item.setData(1, str(space.get("name", "") or ""))
 
         tooltip_lines = [
-            f"Inventory space: {str(space.get('name', '') or '-')}" ,
+            f"Inventory space: {str(space.get('name', '') or '-')}",
             f"Status: {status or ('Occupied' if occupied else 'Empty')}",
             f"Payload: {payload_text if occupied else 'Empty'}",
         ]
@@ -5042,11 +5173,25 @@ class SimulationVisualizer(QMainWindow):
         # keeps a single fallback row, so showing the latest empty replacement is
         # still more accurate than leaving the store as permanently empty.
         for instance_id in replacement_ids:
-            target = self._first_empty_inventory_space_row(rows)
+            target = self._best_empty_inventory_row_for_replacement(rows, csv_row)
             if target is None and rows:
                 target = rows[0]
             if target is None:
                 continue
+
+            csv_details = self._csv_waste_row_payload_details(csv_row, reset_fill=True)
+            for preserve_key in (
+                "waste_stream",
+                "container_capacity_m3",
+                "container_threshold_m3",
+                "container_group",
+                "live_waste_volume_m3_per_day",
+                "departments_served",
+                "live_waste_contributors",
+            ):
+                if not csv_details.get(preserve_key) and target.get(preserve_key):
+                    csv_details[preserve_key] = target.get(preserve_key)
+
             target.update(
                 {
                     "payload": payload or target.get("payload", "-"),
@@ -5057,8 +5202,7 @@ class SimulationVisualizer(QMainWindow):
                     "timestamp": timestamp,
                     "fill_start_time": timestamp,
                     "source": "Mass collection",
-                    "waste_volume_m3": 0.0,
-                    "fill_start_volume_m3": 0.0,
+                    **csv_details,
                 }
             )
             target.update(self._enrich_payload_row_details(target))
@@ -5247,7 +5391,7 @@ class SimulationVisualizer(QMainWindow):
                     or self._find_inventory_space_row(
                         rows, self._inventory_space_name_from_event(row, "dropoff")
                     )
-                    or self._first_empty_inventory_space_row(rows)
+                    or self._best_empty_inventory_row_for_replacement(rows, row)
                 )
                 if target is None:
                     continue
@@ -5264,6 +5408,7 @@ class SimulationVisualizer(QMainWindow):
                     "container_group",
                     "live_waste_volume_m3_per_day",
                     "departments_served",
+                    "live_waste_contributors",
                 ):
                     if not csv_details.get(preserve_key) and target.get(preserve_key):
                         csv_details[preserve_key] = target.get(preserve_key)
@@ -5340,8 +5485,7 @@ class SimulationVisualizer(QMainWindow):
         # in the inventory-space status table.
         payload_rows = self._inventory_payload_rows_for_location(location_name)
         payload_by_space = {
-            str(row.get("space", "") or "").strip(): row
-            for row in payload_rows
+            str(row.get("space", "") or "").strip(): row for row in payload_rows
         }
 
         rows = []
@@ -6171,12 +6315,12 @@ class SimulationVisualizer(QMainWindow):
 
         return total
 
-
     def _configured_location_names(self) -> set:
         return {
             str(location.get("name", "") or "").strip()
             for location in self.layout_model.data.get("locations", []) or []
-            if isinstance(location, dict) and str(location.get("name", "") or "").strip()
+            if isinstance(location, dict)
+            and str(location.get("name", "") or "").strip()
         }
 
     def _department_name_lookup(self) -> Dict[str, str]:
@@ -6201,7 +6345,9 @@ class SimulationVisualizer(QMainWindow):
                 lookup[dept_name] = display_name
         return lookup
 
-    def _department_display_name(self, value: str, department_names: Optional[Dict[str, str]] = None) -> str:
+    def _department_display_name(
+        self, value: str, department_names: Optional[Dict[str, str]] = None
+    ) -> str:
         value = str(value or "").strip()
         if not value:
             return ""
@@ -6268,19 +6414,25 @@ class SimulationVisualizer(QMainWindow):
                             lookup.setdefault(loc_name, display_name)
         return lookup
 
-    def _valid_task_location_from_row(self, row: dict, keys: Tuple[str, ...], valid_locations: set) -> str:
+    def _valid_task_location_from_row(
+        self, row: dict, keys: Tuple[str, ...], valid_locations: set
+    ) -> str:
         for key in keys:
             value = str(row.get(key, "") or "").strip()
             if value in valid_locations:
                 return value
         return ""
 
-    def _infer_department_for_task_row(self, row: dict, location_departments: Dict[str, str]) -> str:
+    def _infer_department_for_task_row(
+        self, row: dict, location_departments: Dict[str, str]
+    ) -> str:
         department_names = self._department_name_lookup()
 
         # Prefer a proper display name if the CSV provides one.  If only an ID is
         # present, resolve it through the JSON department list.
-        explicit_name = str(row.get("department", "") or row.get("department_name", "") or "").strip()
+        explicit_name = str(
+            row.get("department", "") or row.get("department_name", "") or ""
+        ).strip()
         if explicit_name:
             return self._department_display_name(explicit_name, department_names)
 
@@ -6313,7 +6465,9 @@ class SimulationVisualizer(QMainWindow):
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         return str(fallback or "-").strip() or "-"
 
-    def _full_task_row_duration(self, start_dt: Optional[datetime], end_dt: Optional[datetime]) -> str:
+    def _full_task_row_duration(
+        self, start_dt: Optional[datetime], end_dt: Optional[datetime]
+    ) -> str:
         if start_dt is None or end_dt is None or end_dt < start_dt:
             return "-"
         return SimulationLog._format_runtime((end_dt - start_dt).total_seconds())
@@ -6370,7 +6524,9 @@ class SimulationVisualizer(QMainWindow):
             if event.end_time and event.end_time > task["end_time"]:
                 task["end_time"] = event.end_time
 
-            payload = str(row.get("payload", "") or row.get("container_type", "") or "").strip()
+            payload = str(
+                row.get("payload", "") or row.get("container_type", "") or ""
+            ).strip()
             if payload and task.get("payload") in {"", "-"}:
                 task["payload"] = payload
 
@@ -6380,7 +6536,16 @@ class SimulationVisualizer(QMainWindow):
                 elif start_loc:
                     task["start_location"] = start_loc
             if finish_loc:
-                if any(token in text for token in ("dropoff", "drop_off", "deliver", "unload", "complete")):
+                if any(
+                    token in text
+                    for token in (
+                        "dropoff",
+                        "drop_off",
+                        "deliver",
+                        "unload",
+                        "complete",
+                    )
+                ):
                     task["finish_location"] = finish_loc
                 elif not task.get("finish_location"):
                     task["finish_location"] = finish_loc
@@ -6392,7 +6557,16 @@ class SimulationVisualizer(QMainWindow):
             if dept_name and not task.get("department"):
                 task["department"] = dept_name
 
-            if event_type in {"task_complete", "task_completed", "task complete", "task completed"} or "complete" in text:
+            if (
+                event_type
+                in {
+                    "task_complete",
+                    "task_completed",
+                    "task complete",
+                    "task completed",
+                }
+                or "complete" in text
+            ):
                 task["status"] = "completed"
             elif "failed" in text:
                 task["status"] = "failed"
@@ -6406,7 +6580,9 @@ class SimulationVisualizer(QMainWindow):
             if not task.get("start_location") and not task.get("finish_location"):
                 continue
             if not task.get("department"):
-                task["department"] = self._infer_department_for_task_row(task, location_departments)
+                task["department"] = self._infer_department_for_task_row(
+                    task, location_departments
+                )
             start_dt = task.get("start_time")
             end_dt = task.get("end_time")
             task["start_time_display"] = self._task_datetime_display(start_dt)
@@ -6437,12 +6613,18 @@ class SimulationVisualizer(QMainWindow):
                 "payload": payload,
                 "start_time": release_dt,
                 "end_time": None,
-                "start_time_display": self._task_datetime_display(release_dt, release_text),
+                "start_time_display": self._task_datetime_display(
+                    release_dt, release_text
+                ),
                 "end_time_display": "-",
-                "start_sort_time": release_dt.isoformat() if release_dt else release_text,
+                "start_sort_time": (
+                    release_dt.isoformat() if release_dt else release_text
+                ),
                 "start_location": pickup if pickup in valid_locations else "-",
                 "finish_location": dropoff if dropoff in valid_locations else "-",
-                "department": self._infer_department_for_task_row(task, location_departments),
+                "department": self._infer_department_for_task_row(
+                    task, location_departments
+                ),
                 "department_id": str(task.get("department_id", "") or "").strip(),
                 "duration": "-",
                 "source": "JSON",
@@ -6457,7 +6639,9 @@ class SimulationVisualizer(QMainWindow):
         rows = self._csv_full_task_rows(location_departments)
         if not rows:
             rows = self._json_full_task_rows(location_departments)
-        rows.sort(key=lambda r: (str(r.get("start_sort_time", "")), str(r.get("task_id", ""))))
+        rows.sort(
+            key=lambda r: (str(r.get("start_sort_time", "")), str(r.get("task_id", "")))
+        )
         return rows
 
     def open_tasks_by_location_department_dialog(self):
