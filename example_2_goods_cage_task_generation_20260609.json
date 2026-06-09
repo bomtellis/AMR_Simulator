@@ -11,7 +11,7 @@
     "max_assignments_per_tick": 5,
     "assignment_continue_delay_sec": 0.001,
     "seed_waste_stream_containers_at_start": true,
-    "disable_inventory_spaces": true
+    "disable_inventory_spaces": false
   },
   "building": {
     "load_unload_time_sec": 20.0,

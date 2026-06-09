@@ -280,10 +280,66 @@ def _completed_transport_movement_rows(df: pd.DataFrame) -> pd.DataFrame:
     return rows
 
 
+def build_payload_population_summary(df: pd.DataFrame) -> pd.DataFrame:
+    """Return simulator-owned runtime payload population by payload type.
+
+    ``payload_population_summary`` rows are emitted by the simulator from the
+    payload instance registry. ``payload_runtime_population`` is the peak
+    simultaneous number of physical instances contained in the runtime, which is
+    the asset count used for sizing. It is deliberately separate from task count
+    and movement count.
+    """
+    columns = [
+        "payload",
+        "total_runtime_payloads",
+        "known_payload_instances",
+        "payload_weight_kg",
+    ]
+    if df is None or df.empty or "_event_text" not in df.columns:
+        return pd.DataFrame(columns=columns)
+
+    rows = df[df["_event_text"].astype(str).str.fullmatch("payload_population_summary", case=False, na=False)].copy()
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+
+    if "payload" not in rows.columns:
+        return pd.DataFrame(columns=columns)
+    rows["_report_payload"] = rows["payload"].map(primary_payload_name)
+    rows = rows[rows["_report_payload"] != ""].copy()
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+
+    def _num_col(frame: pd.DataFrame, name: str, default: float = 0.0) -> pd.Series:
+        if name not in frame.columns:
+            return pd.Series(default, index=frame.index, dtype=float)
+        return pd.to_numeric(frame[name], errors="coerce").fillna(default)
+
+    rows["_runtime_population"] = _num_col(rows, "payload_runtime_population")
+    rows["_known_instances"] = _num_col(rows, "payload_known_instances")
+    rows["_weight"] = _num_col(rows, "payload_weight_kg")
+
+    out = (
+        rows.groupby("_report_payload", dropna=False)
+        .agg(
+            total_runtime_payloads=("_runtime_population", "max"),
+            known_payload_instances=("_known_instances", "max"),
+            payload_weight_kg=("_weight", "max"),
+        )
+        .reset_index()
+        .rename(columns={"_report_payload": "payload"})
+        .sort_values("payload")
+    )
+    out["total_runtime_payloads"] = out["total_runtime_payloads"].round().astype(int)
+    out["known_payload_instances"] = out["known_payload_instances"].round().astype(int)
+    out["payload_weight_kg"] = out["payload_weight_kg"].round(1)
+    return out[columns].reset_index(drop=True)
+
+
 def build_payload_schedule(
     tasks: pd.DataFrame,
     payload_weights: Dict[str, float],
     movement_df: Optional[pd.DataFrame] = None,
+    population_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Build the payload schedule from unique physical payload instances.
 
@@ -292,7 +348,14 @@ def build_payload_schedule(
     item count.  If older CSVs do not contain movement rows, fall back to the
     previous completed-task count so legacy reports still build.
     """
-    columns = ["payload", "unique_payloads_moved", "tasks", "payload_weight_kg"]
+    columns = [
+        "payload",
+        "total_runtime_payloads",
+        "unique_payloads_moved",
+        "tasks",
+        "known_payload_instances",
+        "payload_weight_kg",
+    ]
 
     rows: List[dict] = []
     if movement_df is not None and not movement_df.empty:
@@ -332,9 +395,33 @@ def build_payload_schedule(
             .fillna(0.0)
             .round(1)
         )
-        return payload_schedule[columns].reset_index(drop=True)
+        if population_df is not None and not population_df.empty:
+            payload_schedule = payload_schedule.merge(
+                population_df[["payload", "total_runtime_payloads", "known_payload_instances"]],
+                on="payload",
+                how="outer",
+            )
+        payload_schedule["total_runtime_payloads"] = pd.to_numeric(
+            payload_schedule.get("total_runtime_payloads", payload_schedule.get("unique_payloads_moved")),
+            errors="coerce",
+        ).fillna(pd.to_numeric(payload_schedule.get("unique_payloads_moved"), errors="coerce").fillna(0)).round().astype(int)
+        payload_schedule["known_payload_instances"] = pd.to_numeric(
+            payload_schedule.get("known_payload_instances", payload_schedule.get("total_runtime_payloads")),
+            errors="coerce",
+        ).fillna(payload_schedule["total_runtime_payloads"]).round().astype(int)
+        payload_schedule["unique_payloads_moved"] = pd.to_numeric(
+            payload_schedule.get("unique_payloads_moved"), errors="coerce"
+        ).fillna(0).round().astype(int)
+        payload_schedule["tasks"] = pd.to_numeric(payload_schedule.get("tasks"), errors="coerce").fillna(0).round().astype(int)
+        payload_schedule["payload_weight_kg"] = pd.to_numeric(payload_schedule.get("payload_weight_kg"), errors="coerce").fillna(0.0).round(1)
+        return payload_schedule[columns].sort_values("payload").reset_index(drop=True)
 
     if tasks is None or tasks.empty:
+        if population_df is not None and not population_df.empty:
+            out = population_df.copy()
+            out["unique_payloads_moved"] = 0
+            out["tasks"] = 0
+            return out[columns].sort_values("payload").reset_index(drop=True)
         return pd.DataFrame(columns=columns)
 
     source = tasks.copy()
@@ -354,6 +441,11 @@ def build_payload_schedule(
             )
 
     if not fallback_rows:
+        if population_df is not None and not population_df.empty:
+            out = population_df.copy()
+            out["unique_payloads_moved"] = 0
+            out["tasks"] = 0
+            return out[columns].sort_values("payload").reset_index(drop=True)
         return pd.DataFrame(columns=columns)
 
     payload_events = pd.DataFrame(fallback_rows).drop_duplicates(["task_id", "payload"])
@@ -372,7 +464,24 @@ def build_payload_schedule(
         .fillna(0.0)
         .round(1)
     )
-    return payload_schedule[columns].reset_index(drop=True)
+    if population_df is not None and not population_df.empty:
+        payload_schedule = payload_schedule.merge(
+            population_df[["payload", "total_runtime_payloads", "known_payload_instances"]],
+            on="payload",
+            how="outer",
+        )
+    payload_schedule["total_runtime_payloads"] = pd.to_numeric(
+        payload_schedule.get("total_runtime_payloads", payload_schedule.get("unique_payloads_moved")),
+        errors="coerce",
+    ).fillna(pd.to_numeric(payload_schedule.get("unique_payloads_moved"), errors="coerce").fillna(0)).round().astype(int)
+    payload_schedule["known_payload_instances"] = pd.to_numeric(
+        payload_schedule.get("known_payload_instances", payload_schedule.get("total_runtime_payloads")),
+        errors="coerce",
+    ).fillna(payload_schedule["total_runtime_payloads"]).round().astype(int)
+    payload_schedule["unique_payloads_moved"] = pd.to_numeric(payload_schedule.get("unique_payloads_moved"), errors="coerce").fillna(0).round().astype(int)
+    payload_schedule["tasks"] = pd.to_numeric(payload_schedule.get("tasks"), errors="coerce").fillna(0).round().astype(int)
+    payload_schedule["payload_weight_kg"] = pd.to_numeric(payload_schedule.get("payload_weight_kg"), errors="coerce").fillna(0.0).round(1)
+    return payload_schedule[columns].sort_values("payload").reset_index(drop=True)
 
 
 
@@ -2402,7 +2511,7 @@ def analyse(
             },
             {
                 "item": "Payload schedule",
-                "detail": "Counts unique physical payload_instance_id values from location_payload_enter rows. This reports transported items, not the number of tasks raised for that payload type.",
+                "detail": "Uses simulator payload_population_summary rows for total runtime payloads, and keeps unique transported instances and task count as separate diagnostics.",
             },
             {
                 "item": "Peak location occupancy",
@@ -2412,7 +2521,10 @@ def analyse(
     )
 
     completed_payload_movements = _completed_transport_movement_rows(df)
-    payload_schedule = build_payload_schedule(tasks, payload_weights, completed_payload_movements)
+    payload_population = build_payload_population_summary(df)
+    payload_schedule = build_payload_schedule(
+        tasks, payload_weights, completed_payload_movements, payload_population
+    )
 
     (
         location_space_utilisation,
@@ -2489,10 +2601,10 @@ def analyse(
                 errors="coerce",
             ).fillna(0.0).sum()
         )
-        if not payload_schedule.empty and "unique_payloads_moved" in payload_schedule.columns:
+        if not payload_schedule.empty and "total_runtime_payloads" in payload_schedule.columns:
             peak_payload_count = int(
                 pd.to_numeric(
-                    payload_schedule.get("unique_payloads_moved", pd.Series(dtype=float)),
+                    payload_schedule.get("total_runtime_payloads", pd.Series(dtype=float)),
                     errors="coerce",
                 ).fillna(0).sum()
             )
@@ -2509,7 +2621,7 @@ def analyse(
                 pd.DataFrame(
                     [
                         {
-                            "metric": "Unique transported payloads",
+                            "metric": "Total runtime payload population",
                             "value": f"{peak_payload_count}",
                         },
                         {

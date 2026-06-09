@@ -50,6 +50,11 @@ class PayloadInstanceStore:
     def __init__(self):
         self._records: Dict[str, PayloadInstanceRecord] = {}
         self._by_location: Dict[str, List[str]] = {}
+        # Registry of every physical payload instance that has existed during
+        # the simulation.  _records only contains currently stored instances,
+        # so reports need this registry to distinguish asset population from
+        # task count or movement count.
+        self._known_instances: Dict[str, PayloadInstanceRecord] = {}
         self._counter = 0
 
     def make_instance_id(self, payload_name: str, task_id: str = "") -> str:
@@ -57,6 +62,38 @@ class PayloadInstanceStore:
         base = safe_token(payload_name)
         task = safe_token(task_id) if task_id else f"{self._counter:06d}"
         return f"{base}-{task}-{self._counter:06d}"
+
+    def register_instance(
+        self,
+        payload_name: str,
+        instance_id: str,
+        source_task_id: str = "",
+        location_name: str = "",
+        metadata: Optional[dict] = None,
+    ) -> None:
+        payload_name = normalise_payload_name(payload_name)
+        instance_id = clean_text(instance_id)
+        if not payload_name or not instance_id:
+            return
+        existing = self._known_instances.get(instance_id)
+        if existing is None:
+            self._known_instances[instance_id] = PayloadInstanceRecord(
+                instance_id=instance_id,
+                payload=payload_name,
+                location=clean_text(location_name),
+                source_task_id=clean_text(source_task_id),
+                status="known",
+                metadata=dict(metadata or {}),
+            )
+            return
+        if not existing.payload:
+            existing.payload = payload_name
+        if location_name:
+            existing.location = clean_text(location_name)
+        if source_task_id:
+            existing.source_task_id = clean_text(source_task_id)
+        if metadata:
+            existing.metadata.update(dict(metadata))
 
     def ensure_task_instance_id(self, task) -> str:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
@@ -67,6 +104,7 @@ class PayloadInstanceStore:
         if not instance_id:
             instance_id = self.make_instance_id(payload_name, getattr(task, "id", ""))
             setattr(task, "payload_instance_id", instance_id)
+        self.register_instance(payload_name, instance_id, getattr(task, "id", ""))
         return instance_id
 
     def store(
@@ -87,6 +125,13 @@ class PayloadInstanceStore:
         if previous:
             self._remove_from_location(previous.location, instance_id)
 
+        self.register_instance(
+            payload_name,
+            instance_id,
+            source_task_id=source_task_id,
+            location_name=location_name,
+            metadata=metadata,
+        )
         self._records[instance_id] = PayloadInstanceRecord(
             instance_id=instance_id,
             payload=payload_name,
@@ -152,3 +197,8 @@ class PayloadInstanceStore:
             for i in self._by_location.get(clean_text(location_name), [])
             if i in self._records
         ]
+
+
+    def known_records(self) -> List[PayloadInstanceRecord]:
+        """Return every physical payload instance observed during runtime."""
+        return list(self._known_instances.values())

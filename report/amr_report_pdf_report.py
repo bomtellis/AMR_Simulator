@@ -1135,21 +1135,23 @@ def build_report(
         payload_df = payload_df.rename(
             columns={
                 "payload": "Payload",
+                "total_runtime_payloads": "Runtime payloads",
                 "unique_payloads_moved": "Unique transported",
                 "tasks": "Tasks using payload",
+                "known_payload_instances": "Known instances",
                 "payload_weight_kg": "Payload kg",
             }
         )
         display_cols = [
             c
-            for c in ["Payload", "Unique transported", "Tasks using payload", "Payload kg"]
+            for c in ["Payload", "Runtime payloads", "Unique transported", "Tasks using payload", "Known instances", "Payload kg"]
             if c in payload_df.columns
         ]
         payload_df = payload_df[display_cols]
         story.append(
             table_from_df(
                 payload_df,
-                [48 * mm, 30 * mm, 30 * mm, 28 * mm][: len(payload_df.columns)],
+                [42 * mm, 25 * mm, 27 * mm, 27 * mm, 25 * mm, 22 * mm][: len(payload_df.columns)],
                 styles,
                 right_align=list(range(1, len(payload_df.columns))),
             )

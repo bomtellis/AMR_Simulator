@@ -130,7 +130,9 @@ class Simulation:
 
         self.payload_instance_store = PayloadInstanceStore()
         self.location_storage_peak: Dict[str, dict] = {}
+        self.payload_population_peak: Dict[str, int] = {}
         self._location_recommendation_rows_written = False
+        self._payload_population_rows_written = False
 
         # Congestion setup
         building_cfg = config.get("building", {})
@@ -872,6 +874,10 @@ class Simulation:
                 space["payload_instance_id"] = instance_id
                 space["task_id"] = str(cfg.get("id", ""))
                 space["reserved_by_task"] = ""
+                self._log_payload_location_event(
+                    "location_payload_enter", location, payload_name, instance_id
+                )
+                self._record_payload_population_snapshot()
 
     def _task_is_full_bin_dropoff_to_inventory_rotation(
         self, task: Task, payload: Optional[PayloadType] = None
@@ -980,6 +986,10 @@ class Simulation:
                 space["payload_instance_id"] = new_instance_id
                 space["task_id"] = str(cfg.get("id", ""))
                 space["reserved_by_task"] = ""
+        self._log_payload_location_event(
+            "location_payload_enter", location, payload_name, new_instance_id
+        )
+        self._record_payload_population_snapshot()
         return new_instance_id
 
     def _execute_mass_collection_visit(
@@ -1012,6 +1022,10 @@ class Simulation:
             if removed is None:
                 continue
             self._remove_payload_record_from_inventory(location, instance_id)
+            self._log_payload_location_event(
+                "location_payload_exit", location, payload_name, instance_id
+            )
+            self._record_payload_population_snapshot()
             collected_ids.append(instance_id)
             if cfg.get(
                 "replace_with_empty_equivalents", True
@@ -2009,7 +2023,15 @@ class Simulation:
         # A pickup physically removes stock from the pickup location.  Keep the
         # current occupancy state in sync for subsequent peak/recommendation
         # calculations and for any immediately-following stowage checks.
+        self._log_payload_location_event(
+            "location_payload_exit",
+            getattr(task, "pickup", ""),
+            payload_name,
+            instance_id,
+            task=task,
+        )
         self._record_location_storage_peak(getattr(task, "pickup", ""))
+        self._record_payload_population_snapshot()
 
     def _payload_instance_container_state_for_task(self, task: Task) -> str:
         """Return the physical state to store for a payload instance.
@@ -2078,6 +2100,87 @@ class Simulation:
             instance_id,
             source_task_id=task.id,
             metadata=metadata,
+        )
+        self._log_payload_location_event(
+            "location_payload_enter",
+            task.dropoff,
+            payload_name,
+            instance_id,
+            task=task,
+        )
+        self._record_payload_population_snapshot()
+
+    def _record_payload_population_snapshot(self) -> None:
+        """Track peak simultaneous physical payload population by payload type.
+
+        This is an asset-population metric. It is not the number of tasks and
+        not the number of movements. It counts the current live payload instance
+        records in the runtime store and stores the highest count observed for
+        each payload type.
+        """
+        counts: Dict[str, int] = defaultdict(int)
+        for record in getattr(self.payload_instance_store, "_records", {}).values():
+            payload_name = normalise_payload_name(getattr(record, "payload", ""))
+            if not payload_name or is_empty_payload_name(payload_name):
+                continue
+            counts[payload_name] += 1
+
+        for payload_name, count in counts.items():
+            self.payload_population_peak[payload_name] = max(
+                int(self.payload_population_peak.get(payload_name, 0) or 0),
+                int(count),
+            )
+
+        # Ensure payloads that have disappeared by the end of the run are still
+        # present in the output if they existed earlier.
+        for record in getattr(self.payload_instance_store, "_known_instances", {}).values():
+            payload_name = normalise_payload_name(getattr(record, "payload", ""))
+            if payload_name and not is_empty_payload_name(payload_name):
+                self.payload_population_peak.setdefault(payload_name, 0)
+
+    def _log_payload_location_event(
+        self,
+        event_type: str,
+        location_name: str,
+        payload_name: str,
+        instance_id: str,
+        task: Optional[Task] = None,
+        event_time: Optional[float] = None,
+    ) -> None:
+        if not self.verbose:
+            return
+        payload_name = normalise_payload_name(payload_name)
+        instance_id = str(instance_id or "").strip()
+        location_name = str(location_name or "").strip()
+        if not payload_name or not instance_id or not location_name:
+            return
+        event_time = self.current_time if event_time is None else float(event_time)
+        loc = self.locations.get(location_name)
+        self.log_step(
+            event_time=event_time,
+            event_type=event_type,
+            task_id=str(getattr(task, "id", "") or ""),
+            details=f"Payload {instance_id} ({payload_name}) {event_type.replace('location_payload_', '')} {location_name}",
+            from_location=location_name,
+            to_location=location_name,
+            payload_name=payload_name,
+            payload_instance_id=instance_id,
+            start_time=event_time,
+            end_time=event_time,
+            start_node=location_name,
+            end_node=location_name,
+            start_x=getattr(loc, "x", None),
+            start_y=getattr(loc, "y", None),
+            start_floor=getattr(loc, "floor", None),
+            end_x=getattr(loc, "x", None),
+            end_y=getattr(loc, "y", None),
+            end_floor=getattr(loc, "floor", None),
+            status="payload_location",
+            task_source=str(getattr(task, "task_source", "") or ""),
+            department_id=str(getattr(task, "department_id", "") or ""),
+            waste_stream=str(getattr(task, "waste_stream", "") or ""),
+            waste_volume_m3=float(getattr(task, "waste_volume_m3", 0.0) or 0.0),
+            container_type=str(getattr(task, "container_type", payload_name) or payload_name),
         )
 
     def _record_location_storage_peak(self, location_name: str) -> None:
@@ -2167,6 +2270,53 @@ class Simulation:
             except Exception:
                 pass
         return total
+
+    def _append_payload_population_summary_rows(self) -> None:
+        """Write one runtime payload-population row per payload type.
+
+        total_runtime_payloads is the peak simultaneous number of physical
+        instances of that payload that existed in the runtime store. It is the
+        number to use for asset/population sizing, not task count.
+        """
+        if self._payload_population_rows_written or not self.verbose:
+            return
+        self._payload_population_rows_written = True
+        self._record_payload_population_snapshot()
+
+        known_by_payload: Dict[str, set] = defaultdict(set)
+        for record in getattr(self.payload_instance_store, "_known_instances", {}).values():
+            payload_name = normalise_payload_name(getattr(record, "payload", ""))
+            instance_id = str(getattr(record, "instance_id", "") or "").strip()
+            if payload_name and instance_id and not is_empty_payload_name(payload_name):
+                known_by_payload[payload_name].add(instance_id)
+
+        event_time = float(getattr(self, "current_time", 0.0) or 0.0)
+        for payload_name in sorted(set(known_by_payload) | set(self.payload_population_peak)):
+            peak_count = int(self.payload_population_peak.get(payload_name, 0) or 0)
+            known_count = len(known_by_payload.get(payload_name, set()))
+            payload = self.payloads.get(payload_name)
+            weight = float(getattr(payload, "weight_kg", 0.0) or 0.0) if payload else 0.0
+            self.verbose_rows.append(
+                {
+                    "sim_time_sec": round(event_time, 3),
+                    "sim_datetime": self.clock.format_sim_time(event_time),
+                    "event_type": "payload_population_summary",
+                    "task_id": "",
+                    "amr_id": "",
+                    "payload": payload_name,
+                    "payload_instance_id": "",
+                    "from_location": "",
+                    "to_location": "",
+                    "status": "summary",
+                    "details": (
+                        f"Runtime payload population for {payload_name}: peak={peak_count}; "
+                        f"known_instances={known_count}"
+                    ),
+                    "payload_runtime_population": peak_count,
+                    "payload_known_instances": known_count,
+                    "payload_weight_kg": weight,
+                }
+            )
 
     def _append_location_space_recommendation_rows(self) -> None:
         """Write one final peak-occupancy row per location into the verbose CSV.
@@ -3269,6 +3419,10 @@ class Simulation:
                         instance_id,
                         "initial_waste_container",
                     )
+                    self._log_payload_location_event(
+                        "location_payload_enter", pickup_location, payload_name, instance_id
+                    )
+                    self._record_payload_population_snapshot()
 
     def _mark_generated_waste_task_requires_existing_container(
         self, task: Task
@@ -6492,6 +6646,7 @@ class Simulation:
         if not self.verbose_csv_path:
             return
 
+        self._append_payload_population_summary_rows()
         self._append_location_space_recommendation_rows()
 
         fieldnames = [
@@ -6516,6 +6671,9 @@ class Simulation:
             "event_type",
             "payload",
             "payload_instance_id",
+            "payload_runtime_population",
+            "payload_known_instances",
+            "payload_weight_kg",
             "payload_slot",
             "onboard_payloads",
             "onboard_slots",
