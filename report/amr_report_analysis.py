@@ -234,25 +234,118 @@ def primary_payload_name(value) -> str:
     return names[0] if names else "-"
 
 
-def build_payload_schedule(tasks: pd.DataFrame, payload_weights: Dict[str, float]) -> pd.DataFrame:
-    """Build a de-duplicated physical payload schedule.
+def _clean_payload_instance_id(value) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    text = str(value).strip()
+    return "" if text.lower() in {"", "-", "nan", "none", "null"} else text
 
-    The task table is the safe source because each completed delivery appears
-    once there.  The raw segment log repeats payload state on every corridor,
-    lift and wait row so it must not be used directly for payload counting.
+
+def _payload_instance_column(df: pd.DataFrame) -> Optional[str]:
+    for col in (
+        "payload_instance_id",
+        "payload_instance",
+        "payload_id",
+        "load_instance_id",
+        "container_instance_id",
+    ):
+        if col in df.columns:
+            return col
+    return None
+
+
+def _completed_transport_movement_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Return one row per physical payload arrival where available.
+
+    The simulator writes event-level ``location_payload_enter`` rows when a
+    payload physically enters a location.  These rows carry ``payload_instance_id``
+    and are the preferred source for unique transported-item counts.  Segment or
+    task rows can repeat the same payload many times and must not be used for
+    this metric.
     """
+    if df is None or df.empty or "_event_text" not in df.columns:
+        return pd.DataFrame()
+    event_text = df["_event_text"].astype(str)
+    rows = df[event_text.str.fullmatch("location_payload_enter", case=False, na=False)].copy()
+    if rows.empty:
+        return rows
+    if "payload" in rows.columns:
+        rows["_report_payload"] = rows["payload"].map(primary_payload_name)
+        rows = rows[rows["_report_payload"] != "-"]
+    return rows
+
+
+def build_payload_schedule(
+    tasks: pd.DataFrame,
+    payload_weights: Dict[str, float],
+    movement_df: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """Build the payload schedule from unique physical payload instances.
+
+    Prefer simulator movement rows because they identify the physical item using
+    ``payload_instance_id``.  This avoids reporting task count as transported
+    item count.  If older CSVs do not contain movement rows, fall back to the
+    previous completed-task count so legacy reports still build.
+    """
+    columns = ["payload", "unique_payloads_moved", "tasks", "payload_weight_kg"]
+
+    rows: List[dict] = []
+    if movement_df is not None and not movement_df.empty:
+        instance_col = _payload_instance_column(movement_df)
+        for idx, row in movement_df.iterrows():
+            payload_names = split_payload_names(row.get("payload"))
+            if not payload_names and row.get("_report_payload") not in (None, "-"):
+                payload_names = split_payload_names(row.get("_report_payload"))
+            for payload_name in payload_names:
+                instance_id = _clean_payload_instance_id(row.get(instance_col)) if instance_col else ""
+                if not instance_id:
+                    task_id = safe_text(row.get("task_id"))
+                    instance_id = f"legacy:{task_id}:{payload_name}:{idx}"
+                rows.append(
+                    {
+                        "payload_instance_id": instance_id,
+                        "payload": payload_name,
+                        "task_id": safe_text(row.get("task_id")),
+                        "payload_weight_kg": float(payload_weights.get(str(payload_name), 0.0)),
+                    }
+                )
+
+    if rows:
+        payload_events = pd.DataFrame(rows).drop_duplicates(["payload_instance_id", "payload"])
+        payload_schedule = (
+            payload_events.groupby("payload", dropna=False)
+            .agg(
+                unique_payloads_moved=("payload_instance_id", "nunique"),
+                tasks=("task_id", lambda s: s.replace("-", pd.NA).dropna().nunique()),
+                payload_weight_kg=("payload_weight_kg", "first"),
+            )
+            .reset_index()
+            .sort_values(["payload"])
+        )
+        payload_schedule["payload_weight_kg"] = (
+            pd.to_numeric(payload_schedule["payload_weight_kg"], errors="coerce")
+            .fillna(0.0)
+            .round(1)
+        )
+        return payload_schedule[columns].reset_index(drop=True)
+
     if tasks is None or tasks.empty:
-        return pd.DataFrame(columns=["payload", "tasks", "payload_weight_kg"])
+        return pd.DataFrame(columns=columns)
 
     source = tasks.copy()
     if "outcome" in source.columns and (source["outcome"] == "completed").any():
         source = source[source["outcome"] == "completed"].copy()
 
-    rows: List[dict] = []
+    fallback_rows: List[dict] = []
     for _, row in source.iterrows():
         task_id = safe_text(row.get("task_id"))
         for payload_name in split_payload_names(row.get("payload")):
-            rows.append(
+            fallback_rows.append(
                 {
                     "task_id": task_id,
                     "payload": payload_name,
@@ -260,13 +353,14 @@ def build_payload_schedule(tasks: pd.DataFrame, payload_weights: Dict[str, float
                 }
             )
 
-    if not rows:
-        return pd.DataFrame(columns=["payload", "tasks", "payload_weight_kg"])
+    if not fallback_rows:
+        return pd.DataFrame(columns=columns)
 
-    payload_events = pd.DataFrame(rows).drop_duplicates(["task_id", "payload"])
+    payload_events = pd.DataFrame(fallback_rows).drop_duplicates(["task_id", "payload"])
     payload_schedule = (
         payload_events.groupby("payload", dropna=False)
         .agg(
+            unique_payloads_moved=("task_id", "count"),
             tasks=("task_id", "count"),
             payload_weight_kg=("payload_weight_kg", "first"),
         )
@@ -278,7 +372,7 @@ def build_payload_schedule(tasks: pd.DataFrame, payload_weights: Dict[str, float
         .fillna(0.0)
         .round(1)
     )
-    return payload_schedule.reset_index(drop=True)
+    return payload_schedule[columns].reset_index(drop=True)
 
 
 
@@ -1380,6 +1474,7 @@ def build_location_peak_occupancy(
 
         states: Dict[str, Dict[str, Tuple[str, float, float]]] = {}
         peaks: Dict[str, dict] = {}
+        instance_locations: Dict[str, str] = {}
         synthetic_counter = 0
 
         def snapshot(location: str) -> None:
@@ -1415,17 +1510,33 @@ def build_location_peak_occupancy(
             event = str(row.get("_event_text", "") or "").lower()
             live = states.setdefault(location, {})
             if event.endswith("enter"):
+                # A physical payload instance can only occupy one location at a
+                # time.  Some logs record the arrival more reliably than the
+                # departure, so clear the same instance from any previous
+                # location before adding it here.
+                previous_location = instance_locations.get(key)
+                if previous_location and previous_location != location:
+                    previous_live = states.get(previous_location, {})
+                    if key in previous_live:
+                        previous_live.pop(key, None)
+                        snapshot(previous_location)
                 live[key] = (payload_name, area, volume)
+                instance_locations[key] = location
             elif event.endswith("exit"):
                 # Prefer exact instance removal, but fall back to the first matching
                 # payload at that location so legacy rows without instance IDs still
                 # form a useful occupancy timeline.
+                removed_key = ""
                 if key in live:
                     live.pop(key, None)
+                    removed_key = key
                 else:
                     match = next((k for k, v in live.items() if v[0] == payload_name), None)
                     if match is not None:
                         live.pop(match, None)
+                        removed_key = match
+                if removed_key:
+                    instance_locations.pop(removed_key, None)
             snapshot(location)
 
         for location in list(states):
@@ -2289,10 +2400,19 @@ def analyse(
                 "item": "Idle percentage",
                 "detail": "Calculated against the full simulation duration for each AMR and each lift.",
             },
+            {
+                "item": "Payload schedule",
+                "detail": "Counts unique physical payload_instance_id values from location_payload_enter rows. This reports transported items, not the number of tasks raised for that payload type.",
+            },
+            {
+                "item": "Peak location occupancy",
+                "detail": "Reconstructs live payload instances per location from enter/exit rows. The same payload_instance_id is only allowed to occupy one location at a time before peak counts are calculated.",
+            },
         ]
     )
 
-    payload_schedule = build_payload_schedule(tasks, payload_weights)
+    completed_payload_movements = _completed_transport_movement_rows(df)
+    payload_schedule = build_payload_schedule(tasks, payload_weights, completed_payload_movements)
 
     (
         location_space_utilisation,
@@ -2369,19 +2489,27 @@ def analyse(
                 errors="coerce",
             ).fillna(0.0).sum()
         )
-        peak_payload_count = int(
-            pd.to_numeric(
-                location_peak_occupancy.get("peak_payload_count", pd.Series(dtype=float)),
-                errors="coerce",
-            ).fillna(0).sum()
-        )
+        if not payload_schedule.empty and "unique_payloads_moved" in payload_schedule.columns:
+            peak_payload_count = int(
+                pd.to_numeric(
+                    payload_schedule.get("unique_payloads_moved", pd.Series(dtype=float)),
+                    errors="coerce",
+                ).fillna(0).sum()
+            )
+        else:
+            peak_payload_count = int(
+                pd.to_numeric(
+                    location_peak_occupancy.get("peak_payload_count", pd.Series(dtype=float)),
+                    errors="coerce",
+                ).fillna(0).max()
+            )
         summary = pd.concat(
             [
                 summary,
                 pd.DataFrame(
                     [
                         {
-                            "metric": "Peak stored payloads across locations",
+                            "metric": "Unique transported payloads",
                             "value": f"{peak_payload_count}",
                         },
                         {

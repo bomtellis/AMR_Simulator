@@ -1135,16 +1135,23 @@ def build_report(
         payload_df = payload_df.rename(
             columns={
                 "payload": "Payload",
-                "tasks": "No. transported",
+                "unique_payloads_moved": "Unique transported",
+                "tasks": "Tasks using payload",
                 "payload_weight_kg": "Payload kg",
             }
         )
+        display_cols = [
+            c
+            for c in ["Payload", "Unique transported", "Tasks using payload", "Payload kg"]
+            if c in payload_df.columns
+        ]
+        payload_df = payload_df[display_cols]
         story.append(
             table_from_df(
                 payload_df,
-                [48 * mm, 30 * mm, 28 * mm],
+                [48 * mm, 30 * mm, 30 * mm, 28 * mm][: len(payload_df.columns)],
                 styles,
-                right_align=[2, 3],
+                right_align=list(range(1, len(payload_df.columns))),
             )
         )
 
@@ -1246,7 +1253,7 @@ def build_report(
         PageBreak(),
         Paragraph("Peak location occupancy", styles["Section"]),
         Paragraph(
-            "Peak occupancy is calculated in the report from simulator location_payload_enter and location_payload_exit rows. It records the maximum simultaneous payload count, footprint and volume seen at each location during operating conditions.",
+            "Peak occupancy is calculated in the report from simulator location_payload_enter and location_payload_exit rows. It records the maximum simultaneous unique payload instances, footprint and volume seen at each location during operating conditions.",
             styles["BodyText"],
         ),
         Spacer(1, 8),
@@ -1268,7 +1275,7 @@ def build_report(
                 "location": "Location",
                 "inventory_spaces_disabled": "Inventory disabled",
                 "configured_inventory_area_m2": "Configured inventory area m²",
-                "peak_payload_count": "Peak payloads",
+                "peak_payload_count": "Peak unique payloads",
                 "peak_area_used_m2": "Peak area used m²",
                 "peak_volume_m3": "Peak volume m³",
                 "recommended_area_m2": "Recommended area m²",
@@ -1283,7 +1290,7 @@ def build_report(
                     "Location",
                     "Inventory disabled",
                     "Configured inventory area m²",
-                    "Peak payloads",
+                    "Peak unique payloads",
                     "Peak area used m²",
                     "Peak volume m³",
                     "Recommended area m²",

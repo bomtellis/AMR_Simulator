@@ -32,6 +32,65 @@ from amr_sim_time_utils import (
 )
 
 
+def _bool_from_config(value, default: bool = False) -> bool:
+    """Return a predictable bool for JSON/config values.
+
+    Handles real booleans plus common string/int forms produced by editor
+    checkboxes and hand-edited JSON files.
+    """
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on", "enabled", "enable"}:
+        return True
+    if text in {"0", "false", "no", "n", "off", "disabled", "disable"}:
+        return False
+    return bool(default)
+
+
+def _nested_get_bool(config: dict, keys, default: bool = False) -> bool:
+    for key_path in keys:
+        current = config
+        found = True
+        for key in key_path:
+            if not isinstance(current, dict) or key not in current:
+                found = False
+                break
+            current = current.get(key)
+        if found:
+            return _bool_from_config(current, default)
+    return bool(default)
+
+
+def _config_contains_enabled_bool_key(config, key_names) -> bool:
+    """Recursively find any enabled boolean flag by key name.
+
+    Editor/task CSV imports have used several flattened key names over time.
+    This catches the flag whether it is stored globally in the JSON, under a
+    nested section, or carried through from an imported CSV task row.
+    """
+    wanted = {str(k).strip().lower() for k in key_names}
+
+    def walk(value) -> bool:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if str(key).strip().lower() in wanted and _bool_from_config(child, False):
+                    return True
+                if isinstance(child, (dict, list)) and walk(child):
+                    return True
+        elif isinstance(value, list):
+            for child in value:
+                if isinstance(child, (dict, list)) and walk(child):
+                    return True
+        return False
+
+    return walk(config)
+
+
 class Simulation:
     def __init__(
         self,
@@ -215,6 +274,35 @@ class Simulation:
             loc["name"]: int(loc.get("max_concurrency", 999999))
             for loc in config["locations"]
         }
+
+        # Global inventory-space bypass.  This is used for capacity studies where
+        # payloads should still be tracked physically, but finite drawn inventory
+        # slots must not block, reserve, occupy, or fail tasks.  Several legacy
+        # key names are accepted because older editor exports used different labels.
+        inventory_bypass_keys = [
+            "ignore_inventory_spaces",
+            "ignore_inventory_space",
+            "disable_inventory_spaces",
+            "disable_inventory_space",
+            "inventory_spaces_disabled",
+            "inventory_space_disabled",
+            "ignore_location_inventory_spaces",
+            "ignore_location_inventory_space",
+            "disable_location_inventory_spaces",
+            "disable_location_inventory_space",
+            "disable_inventory_space_checks",
+            "ignore_inventory_space_checks",
+        ]
+        self.disable_inventory_spaces = _nested_get_bool(
+            config,
+            [
+                ("simulation", key) for key in inventory_bypass_keys
+            ]
+            + [("building", key) for key in inventory_bypass_keys]
+            + [("task_generation", key) for key in inventory_bypass_keys]
+            + [(key,) for key in inventory_bypass_keys],
+            default=False,
+        ) or _config_contains_enabled_bool_key(config, inventory_bypass_keys)
 
         # Inventory spaces are finite storage slots inside locations.
         # A drop-off only needs a free compatible slot when the location explicitly
@@ -674,6 +762,8 @@ class Simulation:
         return records
 
     def _mass_collection_capacity_limit(self, cfg: dict) -> int:
+        if bool(getattr(self, "disable_inventory_spaces", False)):
+            return 0
         explicit = int(cfg.get("capacity_trigger_count", 0) or 0)
         if explicit > 0:
             return explicit
@@ -2204,7 +2294,12 @@ class Simulation:
 
     def _location_has_inventory_spaces(self, location_name: str) -> bool:
         # Inventory rules only apply where at least one valid inventory space has
-        # been configured. No configured spaces means unlimited capacity.
+        # been configured and the global ignore/disable flag is not active.
+        # When disabled, payload instances are still stored at locations so the
+        # report can calculate true operating occupancy from enter/exit events,
+        # but finite slot capacity no longer blocks or fails tasks.
+        if bool(getattr(self, "disable_inventory_spaces", False)):
+            return False
         return bool(self.inventory_spaces_by_location.get(location_name, []))
 
     def _inventory_space_can_fit_payload(
