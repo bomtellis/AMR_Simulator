@@ -6,6 +6,7 @@ import json
 import math
 import os
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -195,6 +196,8 @@ class SimulationLog:
         self._event_start_times: List[datetime] = []
         self._events_by_location: Dict[str, List[VisualEvent]] = {}
         self._location_event_start_times: Dict[str, List[datetime]] = {}
+        self._events_by_lift: Dict[str, List[VisualEvent]] = {}
+        self._lift_event_start_times: Dict[str, List[datetime]] = {}
         self._state_checkpoints: List[tuple] = []
         self._state_checkpoint_stride = 1000
         self._state_cache_key = None
@@ -310,6 +313,7 @@ class SimulationLog:
         self.start_time = self.events[0].start_time if self.events else None
         self.end_time = max((e.end_time for e in self.events), default=None)
         self._rebuild_location_event_index()
+        self._rebuild_lift_event_index()
         self._rebuild_state_checkpoints()
         self._state_cache_key = None
         self._state_cache_value = None
@@ -369,6 +373,50 @@ class SimulationLog:
             return []
         events = self._events_by_location.get(location_name, [])
         starts = self._location_event_start_times.get(location_name, [])
+        idx = bisect_right(starts, current_time)
+        return events[:idx]
+
+    def _event_lift_keys(self, row: dict) -> set:
+        """Return lift ids referenced by a CSV row for fast lift monitor rebuilds."""
+        keys = set()
+        lift_id = str(row.get("lift_id", "") or "").strip()
+        if lift_id:
+            keys.add(lift_id)
+
+        for field in (
+            "start_node",
+            "end_node",
+            "from_location",
+            "to_location",
+            "location",
+        ):
+            value = str(row.get(field, "") or "").strip()
+            if not value:
+                continue
+            lower = value.lower()
+            marker = lower.rfind("-f")
+            if marker > 0:
+                keys.add(value[:marker])
+        return keys
+
+    def _rebuild_lift_event_index(self):
+        self._events_by_lift = {}
+        self._lift_event_start_times = {}
+        for event in self.events:
+            for lift_id in self._event_lift_keys(event.row):
+                self._events_by_lift.setdefault(lift_id, []).append(event)
+        for lift_id, events in self._events_by_lift.items():
+            events.sort(key=lambda e: e.start_time)
+            self._lift_event_start_times[lift_id] = [e.start_time for e in events]
+
+    def events_for_lift_until(
+        self, lift_id: str, current_time: datetime
+    ) -> List[VisualEvent]:
+        lift_id = str(lift_id or "").strip()
+        if not lift_id or current_time is None:
+            return []
+        events = self._events_by_lift.get(lift_id, [])
+        starts = self._lift_event_start_times.get(lift_id, [])
         idx = bisect_right(starts, current_time)
         return events[:idx]
 
@@ -2086,6 +2134,10 @@ class SimulationVisualizer(QMainWindow):
         self._inventory_rows_cache: Dict[Tuple[str, Optional[datetime]], List[dict]] = (
             {}
         )
+        self._lift_monitor_state_cache_key = None
+        self._lift_monitor_state_cache_value = None
+        self._last_lift_monitor_update_wall_time = 0.0
+        self._lift_monitor_update_interval_sec = 0.25
 
         self.current_json_path: Optional[str] = None
         self.current_dxf_path: Optional[str] = None
@@ -2823,6 +2875,8 @@ class SimulationVisualizer(QMainWindow):
         self._state_cache_key = None
         self._state_cache_value = None
         self._inventory_rows_cache.clear()
+        self._lift_monitor_state_cache_key = None
+        self._lift_monitor_state_cache_value = None
 
     def clear_items(self, items):
         for item in items:
@@ -2903,12 +2957,22 @@ class SimulationVisualizer(QMainWindow):
         the blur/spacing problems caused by transformed text items.
         """
         text = str(text or "")
+        scene_height = self._fixed_scene_text_height(bool(dynamic))
+        if pixel_size is not None:
+            # Older callers pass a relative pixel size.  Convert it into a
+            # smaller scene-height hint so payload-space labels can be made
+            # deliberately smaller without reverting to fixed screen text.
+            try:
+                scene_height *= max(0.35, min(1.25, float(pixel_size) / 9.0))
+            except Exception:
+                pass
         record = {
+            "kind": "point_text",
             "x": float(x),
             "y": float(y),
             "text": text,
             "color": str(color or "white"),
-            "scene_height": self._fixed_scene_text_height(bool(dynamic)),
+            "scene_height": scene_height,
             "dynamic": bool(dynamic),
             "rotation": 0.0,
             "visible": True,
@@ -2920,6 +2984,198 @@ class SimulationVisualizer(QMainWindow):
         else:
             self.static_text_records.append(record)
         return TextOverlayProxy(record)
+
+    def draw_fitted_text_box_item(
+        self,
+        x,
+        y,
+        width_scene: float,
+        height_scene: float,
+        text,
+        color="white",
+        dynamic=True,
+        rotation_deg: float = 0.0,
+        max_lines: int = 4,
+        min_pixel_size: int = 3,
+        max_pixel_size: Optional[int] = None,
+        scene_height: Optional[float] = None,
+    ):
+        """Queue a label that is forced to fit inside a scene-space box.
+
+        This is used for payload boxes.  The font size is stored in scene/world
+        units, exactly like normal overlay labels, so camera zoom naturally makes
+        the text larger when zooming in and smaller when zooming out.  The draw
+        pass only shrinks below that scene height when needed to keep the text
+        inside the payload footprint.
+        """
+        if scene_height is None:
+            # Smaller than normal room labels because payload boxes are compact.
+            scene_height = self._fixed_scene_text_height(bool(dynamic)) * 0.42
+        record = {
+            "kind": "box_text",
+            "x": float(x),
+            "y": float(y),
+            "box_width_scene": max(0.01, float(width_scene or 0.01)),
+            "box_height_scene": max(0.01, float(height_scene or 0.01)),
+            "text": str(text or ""),
+            "color": str(color or "white"),
+            "dynamic": bool(dynamic),
+            "rotation": float(rotation_deg or 0.0),
+            "visible": True,
+            "tooltip": "",
+            "data": {},
+            "max_lines": max(1, int(max_lines or 1)),
+            "min_pixel_size": max(1, int(min_pixel_size or 1)),
+            "max_pixel_size": max_pixel_size if max_pixel_size is not None else None,
+            "scene_height": max(0.02, float(scene_height or 0.02)),
+        }
+        if dynamic:
+            self.dynamic_text_records.append(record)
+        else:
+            self.static_text_records.append(record)
+        return TextOverlayProxy(record)
+
+    def _wrap_text_to_width(
+        self, painter: QPainter, text: str, max_width: float, max_lines: int
+    ) -> List[str]:
+        """Wrap label text to a pixel width using the current painter font."""
+        text = str(text or "")
+        max_width = max(1.0, float(max_width or 1.0))
+        max_lines = max(1, int(max_lines or 1))
+        metrics = painter.fontMetrics()
+        lines = []
+
+        for raw_line in text.splitlines() or [text]:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            words = raw_line.split()
+            if not words:
+                continue
+            line = words[0]
+            for word in words[1:]:
+                candidate = f"{line} {word}"
+                if metrics.horizontalAdvance(candidate) <= max_width:
+                    line = candidate
+                else:
+                    lines.append(line)
+                    line = word
+                    if len(lines) >= max_lines:
+                        break
+            if len(lines) >= max_lines:
+                break
+            lines.append(line)
+            if len(lines) >= max_lines:
+                break
+
+        if not lines:
+            return []
+
+        # Elide the last line if even the wrapped text is still too long or if
+        # earlier content was truncated due to max_lines.
+        if len(lines) >= max_lines:
+            lines[-1] = metrics.elidedText(lines[-1], Qt.ElideRight, int(max_width))
+        else:
+            lines = [
+                metrics.elidedText(line, Qt.ElideRight, int(max_width))
+                for line in lines
+            ]
+        return lines[:max_lines]
+
+    def _draw_fitted_box_text_record(
+        self,
+        painter: QPainter,
+        record: dict,
+        transform_scale: float,
+        viewport_rect: QRect,
+    ):
+        text = str(record.get("text", "") or "").strip()
+        if not text:
+            return
+
+        scene_pos = QPointF(float(record.get("x", 0.0)), float(record.get("y", 0.0)))
+        view_pos = self.view.mapFromScene(scene_pos)
+        if (
+            view_pos.x() < -250
+            or view_pos.y() < -120
+            or view_pos.x() > viewport_rect.width() + 250
+            or view_pos.y() > viewport_rect.height() + 120
+        ):
+            return
+
+        box_w = max(
+            1.0, float(record.get("box_width_scene", 0.01) or 0.01) * transform_scale
+        )
+        box_h = max(
+            1.0, float(record.get("box_height_scene", 0.01) or 0.01) * transform_scale
+        )
+        pad = max(1.0, min(box_w, box_h) * 0.08)
+        usable_w = max(1.0, box_w - (pad * 2.0))
+        usable_h = max(1.0, box_h - (pad * 2.0))
+        max_lines = max(1, int(record.get("max_lines", 4) or 4))
+        min_px = max(1, int(record.get("min_pixel_size", 3) or 3))
+
+        scene_height = float(record.get("scene_height", 0.16) or 0.16)
+        natural_px = max(min_px, int(round(scene_height * transform_scale)))
+        max_px_value = record.get("max_pixel_size", None)
+        if max_px_value is not None:
+            try:
+                natural_px = min(natural_px, max(min_px, int(max_px_value)))
+            except Exception:
+                pass
+
+        # Start from the same camera-scaled size as normal labels.  Only shrink
+        # when the current zoom/font would overflow the payload box.
+        candidate_px = max(min_px, natural_px)
+        best_lines = []
+        best_px = min_px
+
+        font = QFont("Arial")
+        font.setStyleStrategy(QFont.PreferAntialias)
+        font.setHintingPreference(QFont.PreferFullHinting)
+        for px in range(candidate_px, min_px - 1, -1):
+            font.setPixelSize(px)
+            painter.setFont(font)
+            lines = self._wrap_text_to_width(painter, text, usable_w, max_lines)
+            metrics = painter.fontMetrics()
+            line_height = max(1, metrics.lineSpacing())
+            widest = max((metrics.horizontalAdvance(line) for line in lines), default=0)
+            total_h = line_height * len(lines)
+            if lines and widest <= usable_w and total_h <= usable_h:
+                best_lines = lines
+                best_px = px
+                break
+            if lines:
+                best_lines = lines
+                best_px = px
+
+        if not best_lines:
+            return
+
+        font.setPixelSize(best_px)
+        painter.setFont(font)
+        metrics = painter.fontMetrics()
+        line_height = max(1, metrics.lineSpacing())
+        total_h = line_height * len(best_lines)
+
+        painter.save()
+        painter.translate(view_pos)
+        # Payload/world rotation appears mirrored in the scene because world_to_scene
+        # flips Y.  Negate it so text follows the visible payload footprint.
+        rotation = -float(record.get("rotation", 0.0) or 0.0)
+        if rotation:
+            painter.rotate(rotation)
+        painter.setPen(QColor(str(record.get("color", "white") or "white")))
+
+        y0 = -total_h / 2.0 + metrics.ascent()
+        for line_no, line in enumerate(best_lines):
+            y = y0 + (line_no * line_height)
+            painter.drawText(
+                QRectF(-usable_w / 2.0, y - metrics.ascent(), usable_w, line_height),
+                Qt.AlignCenter,
+                line,
+            )
+        painter.restore()
 
     def _draw_text_overlay_records(self, painter: QPainter, viewport_rect: QRect):
         """Draw queued scene-space text as a separate viewport overlay layer."""
@@ -2953,6 +3209,13 @@ class SimulationVisualizer(QMainWindow):
             text = str(record.get("text", "") or "")
             if not text:
                 continue
+
+            if record.get("kind") == "box_text":
+                self._draw_fitted_box_text_record(
+                    painter, record, transform_scale, viewport_rect
+                )
+                continue
+
             scene_pos = QPointF(
                 float(record.get("x", 0.0)), float(record.get("y", 0.0))
             )
@@ -3858,21 +4121,34 @@ class SimulationVisualizer(QMainWindow):
         self.graphics_scene.addItem(item)
         self.dynamic_items.append(item)
 
-        if self.show_labels_check.isChecked():
+        if self.show_labels_check.isChecked() and not occupied:
             cx, cy = self._space_centroid_world(location, space)
-            sx, sy = self.world_to_scene(cx, cy)
-            label = payload_text if occupied else "Empty"
+            # Only empty spaces show their inventory-space name.  Occupied
+            # spaces, including seeded waste containers, suppress this label so
+            # the payload box text is the only text inside the occupied space.
+            label = "Empty"
             name = str(space.get("name", "") or "").strip()
             if name:
                 label = f"{name}: {label}"
-            label_item = self.draw_text_item(
-                sx + 0.1,
-                sy + 0.1,
+
+            xs = [point[0] for point in points_world]
+            ys = [point[1] for point in points_world]
+            box_w = max(0.2, max(xs) - min(xs)) if xs else 0.8
+            box_h = max(0.2, max(ys) - min(ys)) if ys else 0.5
+            sx, sy = self.world_to_scene(cx, cy)
+            label_item = self.draw_fitted_text_box_item(
+                sx,
+                sy,
+                box_w * 0.94,
+                box_h * 0.84,
                 label,
-                "#d7ffe7" if occupied else "#bdbdbd",
+                "#bdbdbd",
                 dynamic=True,
-                ignore_transform=True,
-                pixel_size=max(6, self.get_text_pixel_size() - 2),
+                rotation_deg=0.0,
+                max_lines=2,
+                min_pixel_size=3,
+                max_pixel_size=None,
+                scene_height=0.10,
             )
             label_item.setToolTip("\n".join(tooltip_lines))
 
@@ -3924,24 +4200,41 @@ class SimulationVisualizer(QMainWindow):
             item.setToolTip(str(tooltip))
 
         if self.show_labels_check.isChecked():
-            sx, sy = self.world_to_scene(x, y)
-            label = payload_name
-            if "seed" in status_lower:
-                label = f"Seeded {payload_name}"
+            label_lines = []
+            label_lines.append(
+                f"Seeded {payload_name}" if "seed" in status_lower else payload_name
+            )
+
             volume_label = str(details.get("waste_volume_display", "") or "").strip()
             fill_label = str(details.get("fill_percent_display", "") or "").strip()
             if volume_label and volume_label != "-":
-                label = f"{label} | {volume_label}"
                 if fill_label and fill_label != "-":
-                    label = f"{label} ({fill_label})"
-            label_item = self.draw_text_item(
-                sx + 0.15,
-                sy - 0.35,
-                label,
+                    label_lines.append(f"{fill_label} | {volume_label}")
+                else:
+                    label_lines.append(volume_label)
+
+            threshold_label = str(details.get("threshold_display", "") or "").strip()
+            if threshold_label:
+                # Keep the in-box threshold line compact; the full text remains
+                # available in the tooltip.
+                threshold_label = threshold_label.replace("Trigger ", "Trig ")
+                label_lines.append(threshold_label)
+
+            label_text = "\n".join(line for line in label_lines if line)
+            sx, sy = self.world_to_scene(x, y)
+            label_item = self.draw_fitted_text_box_item(
+                sx,
+                sy,
+                max(0.05, length * 0.96),
+                max(0.05, width * 0.88),
+                label_text,
                 "#e8d5ff" if "seed" in status_lower else "#d7ffe7",
                 dynamic=True,
-                ignore_transform=True,
-                pixel_size=max(6, self.get_text_pixel_size() - 1),
+                rotation_deg=rotation_deg,
+                max_lines=4,
+                min_pixel_size=3,
+                max_pixel_size=None,
+                scene_height=0.105,
             )
             if tooltip:
                 label_item.setToolTip(str(tooltip))
@@ -4224,8 +4517,24 @@ class SimulationVisualizer(QMainWindow):
         self.draw_line_item(sx0, sy0, sx1, sy1, "#858585", 0.0, dynamic=True)
 
     def build_lift_monitor_state(self) -> List[dict]:
-        lifts = []
         current_time = self.current_time
+        lift_ids_key = tuple(
+            str(lift.get("id", "Lift"))
+            for lift in self.layout_model.data.get("lifts", [])
+        )
+        event_idx = (
+            self.sim_log.event_index_at(current_time)
+            if current_time and self.sim_log.events
+            else 0
+        )
+        cache_key = (current_time, event_idx, lift_ids_key)
+        if (
+            self._lift_monitor_state_cache_key == cache_key
+            and self._lift_monitor_state_cache_value is not None
+        ):
+            return copy.deepcopy(self._lift_monitor_state_cache_value)
+
+        lifts = []
 
         for lift in self.layout_model.data.get("lifts", []):
             served_floors = sorted(int(x) for x in lift.get("served_floors", []))
@@ -4246,7 +4555,9 @@ class SimulationVisualizer(QMainWindow):
                 active_travel = None
                 active_occupant = None
 
-                for event in self.sim_log.events_until(current_time):
+                for event in self.sim_log.events_for_lift_until(
+                    state["lift_id"], current_time
+                ):
                     row = event.row
 
                     row_lift_id = (row.get("lift_id") or "").strip()
@@ -4348,11 +4659,36 @@ class SimulationVisualizer(QMainWindow):
 
             lifts.append(state)
 
+        self._lift_monitor_state_cache_key = cache_key
+        self._lift_monitor_state_cache_value = copy.deepcopy(lifts)
         return lifts
 
-    def update_lift_monitor_dialog(self):
+    def _clear_lift_monitor_dialog_reference(self, *_args):
+        self.lift_monitor_dialog = None
+
+    def _clear_amr_payload_monitor_dialog_reference(self, *_args):
+        self.amr_payload_monitor_dialog = None
+
+    def update_lift_monitor_dialog(self, force: bool = False):
         if self.lift_monitor_dialog is None:
             return
+        if not self.lift_monitor_dialog.isVisible():
+            return
+
+        # The lift monitor used to rebuild from the whole event history every
+        # dynamic scene refresh.  During playback that creates visible lag.
+        # Limit monitor redraws to a small fixed UI rate; the main map remains
+        # responsive and the lift panel is still effectively live.
+        now = time.monotonic()
+        if (
+            not force
+            and self.is_playing
+            and (now - self._last_lift_monitor_update_wall_time)
+            < self._lift_monitor_update_interval_sec
+        ):
+            return
+        self._last_lift_monitor_update_wall_time = now
+
         lift_states = self.build_lift_monitor_state()
         self.lift_monitor_dialog.update_states(lift_states)
         if hasattr(self, "lift_dialog") and self.lift_dialog.isVisible():
@@ -4373,6 +4709,10 @@ class SimulationVisualizer(QMainWindow):
             return
 
         self.lift_monitor_dialog = LiftMonitorDialog(self)
+        self.lift_monitor_dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.lift_monitor_dialog.destroyed.connect(
+            self._clear_lift_monitor_dialog_reference
+        )
         self.lift_monitor_dialog.set_lifts(lift_states)
         self.lift_monitor_dialog.show()
 
@@ -4675,6 +5015,10 @@ class SimulationVisualizer(QMainWindow):
             return
 
         self.amr_payload_monitor_dialog = AmrPayloadMonitorDialog(self)
+        self.amr_payload_monitor_dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.amr_payload_monitor_dialog.destroyed.connect(
+            self._clear_amr_payload_monitor_dialog_reference
+        )
         self.amr_payload_monitor_dialog.update_states(
             self.build_amr_payload_monitor_rows(),
             self.current_time,
@@ -5389,56 +5733,111 @@ class SimulationVisualizer(QMainWindow):
 
         seeded_rows = self._seeded_waste_container_rows_for_location(location_name)
         if seeded_rows:
-            # If there are explicit inventory spaces already containing the same
-            # payload, annotate those rows as seeded rather than adding visual
-            # duplicates.  Otherwise add a virtual seeded-container row.
+            # Seeded containers should occupy a real inventory space when the
+            # location has a matching payload slot.  Previously a seeded bin was
+            # appended as a virtual row whenever the matching space was empty,
+            # so the space still looked empty and showed its space-name label.
+            # Build a small index of configured slot payloads by space so seeded
+            # rows can be placed into the intended physical box.
+            slot_payloads_by_space: Dict[str, set] = {}
+            for idx, space in enumerate(spaces, start=1):
+                if not isinstance(space, dict):
+                    continue
+                space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+                slot_payloads = set()
+                for slot in space.get("payload_slots", []) or []:
+                    if not isinstance(slot, dict):
+                        continue
+                    slot_payload = str(slot.get("payload", "") or "").strip()
+                    if slot_payload:
+                        slot_payloads.add(slot_payload)
+                slot_payloads_by_space[space_name] = slot_payloads
+
+            def apply_seeded_to_row(target: dict, seeded: dict) -> None:
+                target.update(
+                    {
+                        "payload": str(
+                            seeded.get("payload", "") or target.get("payload", "-")
+                        ).strip()
+                        or "-",
+                        "status": "Seeded",
+                        "timestamp": "Simulation start",
+                        "fill_start_time": seeded.get(
+                            "fill_start_time", "Simulation start"
+                        ),
+                        "source": "Seeded waste container",
+                        "waste_stream": seeded.get("waste_stream", ""),
+                        "waste_volume_m3": seeded.get("waste_volume_m3", 0.0),
+                        "fill_start_volume_m3": seeded.get(
+                            "fill_start_volume_m3",
+                            seeded.get("waste_volume_m3", 0.0),
+                        ),
+                        "live_waste_volume_m3_per_day": seeded.get(
+                            "live_waste_volume_m3_per_day", 0.0
+                        ),
+                        "live_waste_contributors": seeded.get(
+                            "live_waste_contributors", []
+                        ),
+                        "container_capacity_m3": seeded.get(
+                            "container_capacity_m3", 0.0
+                        ),
+                        "container_threshold_m3": seeded.get(
+                            "container_threshold_m3", 0.0
+                        ),
+                        "container_group": seeded.get("container_group", ""),
+                        "departments_served": seeded.get(
+                            "departments_served",
+                            target.get("departments_served", ""),
+                        ),
+                        "payload_instance_id": seeded.get(
+                            "payload_instance_id",
+                            target.get("payload_instance_id", ""),
+                        ),
+                    }
+                )
+                target.update(self._enrich_payload_row_details(target))
+
             for seeded in seeded_rows:
                 existing = None
                 seeded_payload = str(seeded.get("payload", "") or "").strip()
+
+                # 1) Reuse a row that already contains this payload.
                 for candidate in rows:
                     candidate_payload = str(candidate.get("payload", "") or "").strip()
                     if seeded_payload and candidate_payload == seeded_payload:
                         existing = candidate
                         break
+
+                # 2) Otherwise occupy the first empty physical space whose slot
+                # is configured for this payload type.
+                if existing is None and seeded_payload:
+                    for candidate in rows:
+                        candidate_payload = str(
+                            candidate.get("payload", "-") or "-"
+                        ).strip()
+                        if candidate_payload not in {"", "-"}:
+                            continue
+                        space_name = str(candidate.get("space", "") or "").strip()
+                        if seeded_payload in slot_payloads_by_space.get(
+                            space_name, set()
+                        ):
+                            existing = candidate
+                            break
+
+                # 3) If the location has spaces but no explicit payload match,
+                # still use an empty physical row before falling back to a
+                # virtual marker.  This keeps seeded containers inside spaces.
+                if existing is None and spaces:
+                    for candidate in rows:
+                        candidate_payload = str(
+                            candidate.get("payload", "-") or "-"
+                        ).strip()
+                        if candidate_payload in {"", "-"}:
+                            existing = candidate
+                            break
+
                 if existing is not None:
-                    existing.update(
-                        {
-                            "status": "Seeded",
-                            "timestamp": "Simulation start",
-                            "fill_start_time": seeded.get(
-                                "fill_start_time", "Simulation start"
-                            ),
-                            "source": "Seeded waste container",
-                            "waste_stream": seeded.get("waste_stream", ""),
-                            "waste_volume_m3": seeded.get("waste_volume_m3", 0.0),
-                            "fill_start_volume_m3": seeded.get(
-                                "fill_start_volume_m3",
-                                seeded.get("waste_volume_m3", 0.0),
-                            ),
-                            "live_waste_volume_m3_per_day": seeded.get(
-                                "live_waste_volume_m3_per_day", 0.0
-                            ),
-                            "live_waste_contributors": seeded.get(
-                                "live_waste_contributors", []
-                            ),
-                            "container_capacity_m3": seeded.get(
-                                "container_capacity_m3", 0.0
-                            ),
-                            "container_threshold_m3": seeded.get(
-                                "container_threshold_m3", 0.0
-                            ),
-                            "container_group": seeded.get("container_group", ""),
-                            "departments_served": seeded.get(
-                                "departments_served",
-                                existing.get("departments_served", ""),
-                            ),
-                            "payload_instance_id": seeded.get(
-                                "payload_instance_id",
-                                existing.get("payload_instance_id", ""),
-                            ),
-                        }
-                    )
-                    existing.update(self._enrich_payload_row_details(existing))
+                    apply_seeded_to_row(existing, seeded)
                 else:
                     rows.append(seeded)
 
