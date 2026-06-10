@@ -6581,6 +6581,10 @@ class Simulation:
         exchange_mode: str = "",
         tracked_item_source_payload: str = "",
         tracked_items: Optional[dict] = None,
+        payload_multiple: int = 1,
+        timeframe_start: str = "",
+        timeframe_end: str = "",
+        timeframe_payload_index: int = 0,
     ):
         if not self.verbose:
             return
@@ -6639,6 +6643,10 @@ class Simulation:
                 "exchange_mode": exchange_mode,
                 "tracked_item_source_payload": tracked_item_source_payload,
                 "tracked_items": json.dumps(tracked_items or {}, ensure_ascii=False),
+                "payload_multiple": int(payload_multiple or 1),
+                "timeframe_start": timeframe_start,
+                "timeframe_end": timeframe_end,
+                "timeframe_payload_index": int(timeframe_payload_index or 0),
             }
         )
 

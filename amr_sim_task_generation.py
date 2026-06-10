@@ -17,6 +17,7 @@ SCHEDULED_MODES = {"scheduled", "scheduled_threshold", "scheduled_sporadic"}
 THRESHOLD_MODES = {"threshold", "hybrid", "scheduled_threshold"}
 CONTINUOUS_MODES = {"continuous", "hybrid", "threshold", "scheduled_threshold"}
 SPORADIC_MODES = {"sporadic", "hybrid", "scheduled_sporadic"}
+TIMEFRAME_MODES = {"timeframe"}
 
 
 @dataclass
@@ -100,6 +101,16 @@ def _day_key_for_datetime(value: datetime) -> str:
 def _datetime_for_day_and_hhmm(day_start: datetime, hhmm: str) -> datetime:
     hour, minute = [int(x) for x in hhmm.split(":")[:2]]
     return datetime.combine(day_start.date(), dt_time(hour=hour, minute=minute))
+
+
+def _normalise_hhmm(value, default: str) -> str:
+    minutes = _parse_hhmm_to_minutes(value, None)
+    if minutes is None:
+        minutes = _parse_hhmm_to_minutes(default, 0) or 0
+    minutes = max(0, min(int(minutes), 24 * 60))
+    if minutes >= 24 * 60:
+        return "24:00"
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
 def _parse_hhmm_to_minutes(value, default: Optional[int] = None) -> Optional[int]:
@@ -711,7 +722,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             payload=payload_name,
             release_time=release_time,
             target_time=_as_float(cfg.get("target_time", 0.0), 0.0),
-            quantity=1,
+            quantity=max(1, _as_int(cfg.get("payload_multiple", cfg.get("quantity", 1)), 1)) if label_suffix == "timeframe" else 1,
             priority=_as_int(cfg.get("priority", 100), 100),
             created_during_runtime=True,
             labels=labels,
@@ -909,6 +920,80 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     task.generated_volume_m3 = threshold_volume
                     task.waste_volume_m3 = threshold_volume
                 records.extend(self._records_for_outbound(task, instance, details))
+        return records
+
+    def _timeframe_records(
+        self, instance: dict, now: float
+    ) -> List[GeneratedTaskRecord]:
+        cfg = instance["cfg"]
+        mode = _clean_text(cfg.get("generation_mode", "scheduled")) or "scheduled"
+        if mode not in TIMEFRAME_MODES:
+            return []
+
+        payload_name = _clean_text(cfg.get("payload", ""))
+        if payload_name not in self.payloads:
+            return []
+
+        current_dt = self.clock.sim_seconds_to_datetime(now)
+        day_start = current_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        window_start_text = _normalise_hhmm(cfg.get("timeframe_start", "09:00"), "09:00")
+        window_end_text = _normalise_hhmm(cfg.get("timeframe_end", "17:00"), "17:00")
+        start_minutes = _parse_hhmm_to_minutes(window_start_text, 9 * 60) or (9 * 60)
+        end_minutes = _parse_hhmm_to_minutes(window_end_text, 17 * 60) or (17 * 60)
+        if end_minutes <= start_minutes:
+            end_minutes += 24 * 60
+
+        release_dt = day_start + timedelta(minutes=start_minutes)
+        end_dt = day_start + timedelta(minutes=end_minutes)
+        original_release_time = (release_dt - self.clock.start_datetime).total_seconds()
+        release_time = self._adjust_release_to_department_open(instance, original_release_time)
+        if release_time is None or release_time < 0 or release_time > now:
+            return []
+        if not self._instance_is_active(instance, release_time):
+            return []
+
+        schedule_key = (
+            instance.get("schedule_key", instance["key"]),
+            release_dt.date().isoformat(),
+            "timeframe",
+            window_start_text,
+            window_end_text,
+        )
+        if schedule_key in self.scheduled_emitted:
+            return []
+        self.scheduled_emitted.add(schedule_key)
+
+        window_seconds = max(0.0, (end_dt - release_dt).total_seconds())
+        multiple = max(1, _as_int(cfg.get("payload_multiple", cfg.get("quantity", 1)), 1))
+        records: List[GeneratedTaskRecord] = []
+        for pickup, dropoff in self._pick_pairs(instance):
+            for index in range(multiple):
+                task = self._base_task(
+                    instance=instance,
+                    pickup=pickup,
+                    dropoff=dropoff,
+                    payload_name=payload_name,
+                    release_time=release_time,
+                    label_suffix="timeframe",
+                )
+                if task is None:
+                    continue
+                task.quantity = multiple
+                task.timeframe_start = window_start_text
+                task.timeframe_end = window_end_text
+                task.timeframe_payload_index = index + 1
+                if window_seconds > 0 and _as_float(cfg.get("target_time", 0.0), 0.0) <= 0.0:
+                    task.target_time = window_seconds
+                records.extend(
+                    self._records_for_outbound(
+                        task,
+                        instance,
+                        (
+                            f"Generated timeframe {instance['category_key']} task "
+                            f"{index + 1}/{multiple} between {window_start_text} and {window_end_text}"
+                        ),
+                    )
+                )
         return records
 
     def _schedule_records(
@@ -1225,6 +1310,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         for instance in self.instances:
             generated.extend(self._schedule_records(instance, now))
+            generated.extend(self._timeframe_records(instance, now))
             generated.extend(self._volume_records(instance, now))
             generated.extend(self._tracked_item_records(instance, now))
 
