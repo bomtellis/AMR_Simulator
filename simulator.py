@@ -2944,6 +2944,12 @@ class Simulation:
             space["amr_id"] = ""
             if not str(space.get("payload", "") or "").strip():
                 space["occupied"] = False
+        elif bool(space.get("occupied", False)) and not occupied_by:
+            # AMR bays should not be blocked by a bare occupied flag.  If there
+            # is no payload and no AMR id, this is stale state from a prior
+            # stow/return and must not prevent a compatible AMR using the bay.
+            if not str(space.get("payload", "") or "").strip():
+                space["occupied"] = False
 
         reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
         if reserved_by and reserved_by != amr_id:
@@ -3266,13 +3272,56 @@ class Simulation:
         fits_rotated = payload.length_m <= width_m and payload.width_m <= length_m
         return (fits_normal or fits_rotated) and payload.height_m <= height_m
 
+    def _active_task_ids(self) -> set:
+        """Return task ids that can still legitimately hold inventory reservations."""
+        active = set()
+        for _priority, _release, _counter, task in getattr(self, "pending_tasks", []) or []:
+            task_id = str(getattr(task, "id", "") or "").strip()
+            if task_id:
+                active.add(task_id)
+        for event in getattr(self, "events", []) or []:
+            payload = getattr(event, "payload", {}) or {}
+            task = payload.get("task") if isinstance(payload, dict) else None
+            if task is not None:
+                task_id = str(getattr(task, "id", "") or "").strip()
+                if task_id:
+                    active.add(task_id)
+            task_id = str(payload.get("task_id", "") or "").strip() if isinstance(payload, dict) else ""
+            if task_id:
+                active.add(task_id)
+        return active
+
+    def _clear_stale_payload_inventory_reservations(self) -> None:
+        """Remove payload-space reservations that no live task can still use."""
+        active = self._active_task_ids()
+        for spaces in self.inventory_spaces_by_location.values():
+            for space in spaces or []:
+                reserved_by = str(space.get("reserved_by_task", "") or "").strip()
+                if not reserved_by:
+                    continue
+                if reserved_by in active and reserved_by not in getattr(self, "failed_task_ids", set()):
+                    continue
+                space["reserved_by_task"] = ""
+
+    def _clear_inventory_space_reservation_for_task(self, task: Task) -> None:
+        task_id = str(getattr(task, "id", "") or "").strip()
+        if not task_id:
+            return
+        for spaces in self.inventory_spaces_by_location.values():
+            for space in spaces or []:
+                if str(space.get("reserved_by_task", "") or "").strip() == task_id:
+                    space["reserved_by_task"] = ""
+
     def _find_free_inventory_space(
-        self, location_name: str, payload: PayloadType
+        self, location_name: str, payload: PayloadType, task: Optional[Task] = None
     ) -> Optional[dict]:
+        task_id = str(getattr(task, "id", "") or "").strip() if task is not None else ""
+        self._clear_stale_payload_inventory_reservations()
         for space in self.inventory_spaces_by_location.get(location_name, []):
             if bool(space.get("occupied", False)):
                 continue
-            if str(space.get("reserved_by_task", "")).strip():
+            reserved_by = str(space.get("reserved_by_task", "") or "").strip()
+            if reserved_by and reserved_by != task_id:
                 continue
             if not self._inventory_space_can_fit_payload(space, payload):
                 continue
@@ -3282,6 +3331,7 @@ class Simulation:
     def _inventory_pending_reason(
         self, location_name: str, payload: PayloadType
     ) -> str:
+        self._clear_stale_payload_inventory_reservations()
         spaces = self.inventory_spaces_by_location.get(location_name, [])
         if not spaces:
             return ""
@@ -3328,11 +3378,33 @@ class Simulation:
         if not self._location_has_payload_inventory_spaces(task.dropoff):
             return None
 
-        space = self._find_free_inventory_space(task.dropoff, payload)
+        task_id = str(getattr(task, "id", "") or "").strip()
+        assigned_name = str(getattr(task, "assigned_inventory_space", "") or "").strip()
+        self._clear_stale_payload_inventory_reservations()
+
+        # Reuse this task's existing reservation/assignment instead of reserving
+        # a second bay at completion time.  The previous behaviour could make a
+        # store look full with reserved=2 even though those reservations belonged
+        # to the same already-planned task flow.
+        for space in self.inventory_spaces_by_location.get(task.dropoff, []):
+            space_name = str(space.get("name", "") or "").strip()
+            reserved_by = str(space.get("reserved_by_task", "") or "").strip()
+            if assigned_name and space_name != assigned_name:
+                continue
+            if assigned_name or (task_id and reserved_by == task_id):
+                if bool(space.get("occupied", False)) and reserved_by != task_id:
+                    return None
+                if not self._inventory_space_can_fit_payload(space, payload):
+                    return None
+                space["reserved_by_task"] = task_id
+                task.assigned_inventory_space = space_name
+                return space
+
+        space = self._find_free_inventory_space(task.dropoff, payload, task=task)
         if space is None:
             return None
 
-        space["reserved_by_task"] = task.id
+        space["reserved_by_task"] = task_id
         task.assigned_inventory_space = str(space.get("name", ""))
         return space
 
@@ -3366,7 +3438,7 @@ class Simulation:
             )
 
         if target_space is None:
-            target_space = self._find_free_inventory_space(task.dropoff, payload)
+            target_space = self._find_free_inventory_space(task.dropoff, payload, task=task)
 
         if target_space is None:
             self._set_task_pending_reason(
@@ -3628,6 +3700,7 @@ class Simulation:
         reason = str(reason or "Task failed").strip()
         self._set_task_pending_reason(task, reason)
         self._remove_pending_task(task)
+        self._clear_inventory_space_reservation_for_task(task)
 
         task_id = str(getattr(task, "id", "")).strip()
         if task_id in self.failed_task_ids:
@@ -7334,7 +7407,9 @@ class Simulation:
 
         elif event.event_type == "charge_cycle_start":
             amr = next(a for a in self.amrs if a.id == event.payload["amr_id"])
-            self._occupy_amr_inventory_space(amr, amr.location_name)
+            # Do not occupy the destination charging bay before the travel
+            # segments have played.  Reserving happens when the charge plan is
+            # created; occupancy should only start once the AMR reaches the bay.
             segment_start_time = event.time
 
             for segment in event.payload["travel_segments"]:
@@ -7355,6 +7430,12 @@ class Simulation:
 
                 from_coords = self.graph_nodes.get(from_node)
                 to_coords = self.graph_nodes.get(to_node)
+                segment_start_x = segment.get("from_x", getattr(from_coords, "x", None))
+                segment_start_y = segment.get("from_y", getattr(from_coords, "y", None))
+                segment_start_floor = segment.get("from_floor", getattr(from_coords, "floor", None))
+                segment_end_x = segment.get("to_x", getattr(to_coords, "x", None))
+                segment_end_y = segment.get("to_y", getattr(to_coords, "y", None))
+                segment_end_floor = segment.get("to_floor", getattr(to_coords, "floor", None))
                 duration = segment.get("duration", 0.0)
                 segment_end_time = segment_start_time + duration
 
@@ -7373,12 +7454,12 @@ class Simulation:
                     start_node=from_node,
                     end_node=to_node,
                     lift_id=lift_id,
-                    start_x=getattr(from_coords, "x", None),
-                    start_y=getattr(from_coords, "y", None),
-                    start_floor=getattr(from_coords, "floor", None),
-                    end_x=getattr(to_coords, "x", None),
-                    end_y=getattr(to_coords, "y", None),
-                    end_floor=getattr(to_coords, "floor", None),
+                    start_x=segment_start_x,
+                    start_y=segment_start_y,
+                    start_floor=segment_start_floor,
+                    end_x=segment_end_x,
+                    end_y=segment_end_y,
+                    end_floor=segment_end_floor,
                     status="completed",
                     energy_kwh=segment.get("energy_kwh", 0.0),
                     amr_rotation_start_deg=segment.get("amr_rotation_start_deg", None),
@@ -7387,6 +7468,7 @@ class Simulation:
                 )
                 segment_start_time = segment_end_time
 
+            self._occupy_amr_inventory_space(amr, amr.location_name)
             charge_display_loc = self._amr_display_location(amr, amr.location_name)
             self.log_step(
                 event_time=event.payload["charge_start"],
@@ -7530,13 +7612,49 @@ class Simulation:
                     battery_soc_before = battery_soc_after
                 if is_charging is None:
                     is_charging = bool(getattr(current_amr, "is_charging", False))
-                if not amr_inventory_space:
+
+                # Only carry the AMR bay name on stationary/stowed rows.  Movement
+                # rows with an inherited bay name are treated by the visualiser as
+                # parked and therefore disappear from graph travel.
+                moving_row = False
+                try:
+                    if (
+                        start_x is not None
+                        and start_y is not None
+                        and end_x is not None
+                        and end_y is not None
+                    ):
+                        moving_row = (
+                            abs(float(end_x) - float(start_x)) > 1e-9
+                            or abs(float(end_y) - float(start_y)) > 1e-9
+                        )
+                except Exception:
+                    moving_row = False
+                if not amr_inventory_space and not moving_row:
                     amr_inventory_space = str(getattr(current_amr, "inventory_space_name", "") or "")
-                if amr_rotation_deg is None:
+
+                # For movement rows, derive the heading from the actual row
+                # coordinates unless a segment explicitly supplied a steering
+                # start/end rotation.  The previous default copied the parked
+                # bay rotation onto every corridor row, so AMRs stopped rotating
+                # along the path.
+                coordinate_heading = None
+                if moving_row:
+                    try:
+                        coordinate_heading = math.degrees(
+                            math.atan2(float(end_y) - float(start_y), float(end_x) - float(start_x))
+                        )
+                    except Exception:
+                        coordinate_heading = None
+
+                if amr_rotation_deg is None and coordinate_heading is not None:
+                    amr_rotation_deg = coordinate_heading
+                elif amr_rotation_deg is None:
                     try:
                         amr_rotation_deg = float(getattr(current_amr, "rotation_deg", 0.0) or 0.0)
                     except Exception:
                         amr_rotation_deg = 0.0
+
                 if amr_rotation_start_deg is None:
                     amr_rotation_start_deg = amr_rotation_deg
                 if amr_rotation_end_deg is None:
