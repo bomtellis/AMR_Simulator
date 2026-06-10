@@ -8002,6 +8002,98 @@ class ZoomableInventoryView(QGraphicsView):
         super().mouseReleaseEvent(event)
 
 
+
+class ArrayInventorySpacesDialog(QDialog):
+    def __init__(self, parent, payload_names, amr_names, default_kind="payload", default_name=""):
+        super().__init__(parent)
+        self.setWindowTitle("Create inventory space array")
+        self.resize(520, 320)
+        self.result = None
+        self.payload_names = list(payload_names or [])
+        self.amr_names = list(amr_names or [])
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+
+        self.kind_combo = QComboBox()
+        self.kind_combo.addItems(["Payload", "AMR"])
+        self.name_combo = QComboBox()
+
+        self.count_edit = QLineEdit("4")
+        self.columns_edit = QLineEdit("4")
+        self.spacing_x_edit = QLineEdit("0.100")
+        self.spacing_y_edit = QLineEdit("0.100")
+        self.rotation_edit = QLineEdit("0.0")
+
+        self.alignment_combo = QComboBox()
+        self.alignment_combo.addItems(["Horizontal", "Vertical", "Grid"])
+
+        form.addRow("Type", self.kind_combo)
+        form.addRow("Payload / AMR", self.name_combo)
+        form.addRow("Quantity", self.count_edit)
+        form.addRow("Alignment", self.alignment_combo)
+        form.addRow("Grid columns", self.columns_edit)
+        form.addRow("Horizontal spacing (m)", self.spacing_x_edit)
+        form.addRow("Vertical spacing (m)", self.spacing_y_edit)
+        form.addRow("Rotation °", self.rotation_edit)
+
+        hint = QLabel(
+            "Spacing is the clear gap between adjacent AMR/payload footprints. "
+            "Grid uses the column count, then wraps to the next row."
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.kind_combo.currentTextChanged.connect(self._refresh_names)
+        if str(default_kind).strip().lower() == "amr":
+            self.kind_combo.setCurrentText("AMR")
+        else:
+            self.kind_combo.setCurrentText("Payload")
+        self._refresh_names()
+        if default_name:
+            self.name_combo.setCurrentText(str(default_name))
+
+    def _refresh_names(self):
+        current = self.name_combo.currentText().strip() if hasattr(self, "name_combo") else ""
+        self.name_combo.clear()
+        names = self.amr_names if self.kind_combo.currentText() == "AMR" else self.payload_names
+        self.name_combo.addItems(names)
+        if current:
+            self.name_combo.setCurrentText(current)
+
+    def accept(self):
+        try:
+            kind = "amr" if self.kind_combo.currentText() == "AMR" else "payload"
+            name = self.name_combo.currentText().strip()
+            if not name:
+                raise ValueError("Select a payload or AMR type.")
+            count = max(1, int(float(self.count_edit.text() or 1)))
+            columns = max(1, int(float(self.columns_edit.text() or count)))
+            spacing_x = max(0.0, float(self.spacing_x_edit.text() or 0.0))
+            spacing_y = max(0.0, float(self.spacing_y_edit.text() or 0.0))
+            rotation = float(self.rotation_edit.text() or 0.0)
+            alignment = self.alignment_combo.currentText().strip().lower()
+            self.result = {
+                "kind": kind,
+                "name": name,
+                "count": count,
+                "columns": columns,
+                "spacing_x": spacing_x,
+                "spacing_y": spacing_y,
+                "rotation_deg": rotation,
+                "alignment": alignment,
+            }
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid array settings", str(exc))
+
+
 class InventorySpacesDialog(QDialog):
     def __init__(self, parent, location_name):
         super().__init__(parent)
@@ -8150,9 +8242,13 @@ class InventorySpacesDialog(QDialog):
         add_amr_space_btn = QPushButton("Add AMR space")
         add_amr_space_btn.setToolTip("Create an inventory space sized to the selected AMR so this location can store / park AMRs.")
         add_amr_space_btn.clicked.connect(self.add_amr_space)
+        array_spaces_btn = QPushButton("Array...")
+        array_spaces_btn.setToolTip("Create multiple payload or AMR spaces with a chosen spacing and alignment.")
+        array_spaces_btn.clicked.connect(self.create_space_array)
         amr_tools.addWidget(QLabel("AMR"))
         amr_tools.addWidget(self.amr_space_combo, 1)
         amr_tools.addWidget(add_amr_space_btn)
+        amr_tools.addWidget(array_spaces_btn)
         right.addLayout(amr_tools)
 
         self.scene = QGraphicsScene(self)
@@ -8603,6 +8699,144 @@ class InventorySpacesDialog(QDialog):
             f"Created AMR storage space '{name}' sized to {amr_type} "
             f"({length:.3f} m × {width:.3f} m)."
         )
+
+    def _space_template_for_kind(self, kind, name, cx, cy, rotation_deg=0.0, name_override=""):
+        kind = str(kind or "payload").strip().lower()
+        if kind == "amr":
+            length, width = self._amr_dimensions(name)
+            slot = {
+                "slot_type": "amr",
+                "amr_type": name,
+                "dx": 0.0,
+                "dy": 0.0,
+                "rotation_deg": self._normalise_degrees(rotation_deg),
+            }
+            base_name = f"{name} AMR"
+            extra = {"space_type": "amr", "stores_amr": True}
+        else:
+            length, width = self._payload_dimensions(name)
+            slot = {
+                "payload": name,
+                "dx": 0.0,
+                "dy": 0.0,
+                "rotation_deg": self._normalise_degrees(rotation_deg),
+            }
+            base_name = name
+            extra = {}
+
+        if length <= 0 or width <= 0:
+            raise ValueError(f"{name} length and width must be greater than zero.")
+
+        lx = float(self.location.get("x", 0.0))
+        ly = float(self.location.get("y", 0.0))
+        slot["dx"] = round(float(cx) - lx, 3)
+        slot["dy"] = round(float(cy) - ly, 3)
+        temp_slot = dict(slot)
+        points_abs = self._slot_polygon_points(temp_slot)
+        if len(points_abs) < 3:
+            min_x = float(cx) - (length / 2.0)
+            min_y = float(cy) - (width / 2.0)
+            max_x = float(cx) + (length / 2.0)
+            max_y = float(cy) + (width / 2.0)
+            points_abs = [
+                {"x": min_x, "y": min_y},
+                {"x": max_x, "y": min_y},
+                {"x": max_x, "y": max_y},
+                {"x": min_x, "y": max_y},
+            ]
+
+        space = {
+            "name": name_override or self._next_payload_space_name(base_name),
+            "points": [
+                {"dx": round(float(p["x"]) - lx, 3), "dy": round(float(p["y"]) - ly, 3)}
+                for p in points_abs
+            ],
+            "payload_slots": [slot],
+        }
+        space.update(extra)
+        return space, length, width
+
+    def create_space_array(self):
+        default_kind = "amr" if self.amr_space_combo.currentText().strip() else "payload"
+        default_name = self.amr_space_combo.currentText().strip() or self.payload_combo.currentText().strip()
+        dialog = ArrayInventorySpacesDialog(
+            self,
+            self._payload_names(),
+            self._amr_type_names(),
+            default_kind=default_kind,
+            default_name=default_name,
+        )
+        if dialog.exec() != QDialog.Accepted or not dialog.result:
+            return
+
+        cfg = dialog.result
+        kind = cfg["kind"]
+        item_name = cfg["name"]
+        if kind == "amr":
+            length, width = self._amr_dimensions(item_name)
+        else:
+            length, width = self._payload_dimensions(item_name)
+        if length <= 0 or width <= 0:
+            QMessageBox.critical(self, "Create array", f"{item_name} length and width must be greater than zero.")
+            return
+
+        count = int(cfg.get("count", 1) or 1)
+        spacing_x = float(cfg.get("spacing_x", 0.0) or 0.0)
+        spacing_y = float(cfg.get("spacing_y", 0.0) or 0.0)
+        alignment = str(cfg.get("alignment", "horizontal") or "horizontal").lower()
+        columns = int(cfg.get("columns", count) or count)
+        rotation = self._normalise_degrees(cfg.get("rotation_deg", 0.0))
+
+        start_cx, start_cy = self._next_payload_space_centre(length, width)
+        created_indexes = []
+        errors = []
+        existing_count = len(self.spaces)
+
+        for i in range(count):
+            if alignment == "vertical":
+                col = 0
+                row = i
+            elif alignment == "grid":
+                col = i % max(1, columns)
+                row = i // max(1, columns)
+            else:
+                col = i
+                row = 0
+
+            cx = start_cx + (col * (length + spacing_x))
+            cy = start_cy + (row * (width + spacing_y))
+            try:
+                display_index = existing_count + i + 1
+                base_label = f"{item_name} AMR" if kind == "amr" else item_name
+                name = f"{base_label} space {display_index}"
+                space, _length, _width = self._space_template_for_kind(
+                    kind,
+                    item_name,
+                    cx,
+                    cy,
+                    rotation_deg=rotation,
+                    name_override=name,
+                )
+                self.spaces.append(space)
+                created_indexes.append(len(self.spaces) - 1)
+            except Exception as exc:
+                errors.append(str(exc))
+
+        if created_indexes:
+            self.selected_space_index = created_indexes[0]
+            self.selected_space_indices = set(created_indexes)
+            self.name_edit.setText(self.spaces[self.selected_space_index].get("name", ""))
+            self.selected_payload_index = 0
+            self.lock_size_check.setChecked(True)
+            self.refresh_list()
+            self._set_space_selection(created_indexes, current_index=self.selected_space_index)
+            self.select_space(self.selected_space_index)
+            self.refresh_scene()
+
+        message = f"Created {len(created_indexes)} {item_name} space(s)."
+        if errors:
+            message += f" {len(errors)} item(s) could not be created."
+        self.status_label.setText(message)
 
     def _next_payload_space_name(self, payload_name):
         base = str(payload_name).strip() or "Payload"
@@ -9084,8 +9318,7 @@ class InventorySpacesDialog(QDialog):
         self.refresh_scene()
 
     def _rotation_handle_world(self, slot):
-        payload_name = str(slot.get("payload", "")).strip()
-        length, width = self._payload_dimensions(payload_name)
+        length, width = self._slot_dimensions(slot)
         if length <= 0 or width <= 0:
             return None
         cx, cy = self._slot_center_absolute(slot)
@@ -9326,13 +9559,12 @@ class InventorySpacesDialog(QDialog):
         if row < 0 or row >= len(self.spaces):
             return
 
-        self.copied_space = {
-            "name": self.spaces[row].get("name", "Inventory space"),
-            "points": [dict(p) for p in self.spaces[row].get("points", [])],
-            "payload_slots": [
-                dict(slot) for slot in self.spaces[row].get("payload_slots", [])
-            ],
-        }
+        self.copied_space = dict(self.spaces[row])
+        self.copied_space["name"] = self.spaces[row].get("name", "Inventory space")
+        self.copied_space["points"] = [dict(p) for p in self.spaces[row].get("points", [])]
+        self.copied_space["payload_slots"] = [
+            dict(slot) for slot in self.spaces[row].get("payload_slots", [])
+        ]
 
         self.status_label.setText(f"Copied {self.copied_space['name']}")
 
@@ -9340,13 +9572,12 @@ class InventorySpacesDialog(QDialog):
         if not self.copied_space:
             return
 
-        pasted = {
-            "name": f"{self.copied_space.get('name', 'Inventory space')} copy",
-            "points": [dict(p) for p in self.copied_space.get("points", [])],
-            "payload_slots": [
-                dict(slot) for slot in self.copied_space.get("payload_slots", [])
-            ],
-        }
+        pasted = dict(self.copied_space)
+        pasted["name"] = f"{self.copied_space.get('name', 'Inventory space')} copy"
+        pasted["points"] = [dict(p) for p in self.copied_space.get("points", [])]
+        pasted["payload_slots"] = [
+            dict(slot) for slot in self.copied_space.get("payload_slots", [])
+        ]
 
         # Small offset so pasted space is visible and selectable separately
         for p in pasted["points"]:
