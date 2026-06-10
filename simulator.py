@@ -1381,7 +1381,7 @@ class Simulation:
                 task, self._pickup_instance_pending_reason(task)
             )
             return False
-        if self._location_has_inventory_spaces(task.dropoff):
+        if self._location_has_payload_inventory_spaces(task.dropoff):
             if self._find_free_inventory_space(
                 task.dropoff, payload
             ) is None and not self._task_can_exchange_with_store_empty(task, payload):
@@ -1557,7 +1557,7 @@ class Simulation:
                         task, self._pickup_instance_pending_reason(task)
                     )
                     return None
-                if self._location_has_inventory_spaces(task.dropoff):
+                if self._location_has_payload_inventory_spaces(task.dropoff):
                     if self._find_free_inventory_space(
                         task.dropoff, payload
                     ) is None and not self._task_can_exchange_with_store_empty(
@@ -1801,7 +1801,7 @@ class Simulation:
                             task, payload
                         )
                         if (
-                            self._location_has_inventory_spaces(target_location.name)
+                            self._location_has_payload_inventory_spaces(target_location.name)
                             and reserved_space is None
                             and not self._task_can_exchange_with_store_empty(
                                 task, payload
@@ -2502,9 +2502,17 @@ class Simulation:
         amr_length = float(getattr(amr, "length_m", 0.0) or 0.0)
         amr_width = float(getattr(amr, "width_m", 0.0) or 0.0)
         amr_height = float(getattr(amr, "height_m", 0.0) or 0.0)
-        fits_normal = amr_length <= length_m and amr_width <= width_m
-        fits_rotated = amr_length <= width_m and amr_width <= length_m
-        return (fits_normal or fits_rotated) and amr_height <= height_m
+        # AMR spaces are derived from rounded editor/DXF coordinates, so use a
+        # small tolerance to avoid rejecting a bay because 1.2 m has round-tripped
+        # as 1.19999999999999 m.
+        tolerance_m = 1e-3
+
+        def _fits(required: float, available: float) -> bool:
+            return float(required) <= (float(available) + tolerance_m)
+
+        fits_normal = _fits(amr_length, length_m) and _fits(amr_width, width_m)
+        fits_rotated = _fits(amr_length, width_m) and _fits(amr_width, length_m)
+        return (fits_normal or fits_rotated) and _fits(amr_height, height_m)
 
     def _find_free_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
         for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
@@ -2626,9 +2634,47 @@ class Simulation:
             return False
         return bool(self.inventory_spaces_by_location.get(location_name, []))
 
+    def _space_is_amr_only(self, space: dict) -> bool:
+        """Return True for inventory spaces reserved for AMR parking/charging.
+
+        AMR bays live in the same inventory_spaces structure as payload slots,
+        but they must not be counted as compatible payload stowage.  Empty AMR
+        home-return tasks use the synthetic __empty__ payload and previously
+        matched every AMR bay because its dimensions are zero, which caused all
+        AMR bays to be reserved by payload-task logic.
+        """
+        if not isinstance(space, dict):
+            return False
+        if bool(space.get("stores_amr", False)):
+            return True
+        if str(space.get("space_type", "") or "").strip().lower() == "amr":
+            return True
+        if str(space.get("amr_type", "") or "").strip():
+            return True
+        for slot in space.get("payload_slots", []) or []:
+            if not isinstance(slot, dict):
+                continue
+            if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
+                return True
+            if str(slot.get("amr_type", "") or "").strip():
+                return True
+        return False
+
+    def _location_has_payload_inventory_spaces(self, location_name: str) -> bool:
+        if not self._location_has_inventory_spaces(location_name):
+            return False
+        return any(
+            not self._space_is_amr_only(space)
+            for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), [])
+        )
+
     def _inventory_space_can_fit_payload(
         self, space: dict, payload: PayloadType
     ) -> bool:
+        if self._space_is_amr_only(space):
+            return False
+        if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
+            return False
         length_m = float(space.get("length_m", 0.0) or 0.0)
         width_m = float(space.get("width_m", 0.0) or 0.0)
         height_m = float(space.get("height_m", 999999.0) or 999999.0)
@@ -2695,7 +2741,9 @@ class Simulation:
     def _reserve_inventory_space_for_task(
         self, task: Task, payload: PayloadType
     ) -> Optional[dict]:
-        if not self._location_has_inventory_spaces(task.dropoff):
+        if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
+            return None
+        if not self._location_has_payload_inventory_spaces(task.dropoff):
             return None
 
         space = self._find_free_inventory_space(task.dropoff, payload)
@@ -2709,7 +2757,10 @@ class Simulation:
     def _occupy_inventory_space_for_completed_task(
         self, task: Task, payload: PayloadType
     ) -> bool:
-        if not self._location_has_inventory_spaces(task.dropoff):
+        if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
+            self._record_location_storage_peak(task.dropoff)
+            return True
+        if not self._location_has_payload_inventory_spaces(task.dropoff):
             self._record_location_storage_peak(task.dropoff)
             return True
 
@@ -2766,7 +2817,9 @@ class Simulation:
     def _free_inventory_space_for_pickup(
         self, task: Task, payload: PayloadType
     ) -> None:
-        if not self._location_has_inventory_spaces(task.pickup):
+        if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
+            return
+        if not self._location_has_payload_inventory_spaces(task.pickup):
             return
 
         spaces = self.inventory_spaces_by_location.get(task.pickup, [])
@@ -4712,7 +4765,7 @@ class Simulation:
                 )
                 return None
 
-            if self._location_has_inventory_spaces(task.dropoff):
+            if self._location_has_payload_inventory_spaces(task.dropoff):
                 free_space = self._find_free_inventory_space(task.dropoff, payload)
                 if free_space is None and not self._task_can_exchange_with_store_empty(
                     task, payload
@@ -5026,7 +5079,7 @@ class Simulation:
                 )
                 reserved_space = self._reserve_inventory_space_for_task(task, payload)
                 if (
-                    self._location_has_inventory_spaces(dropoff_loc.name)
+                    self._location_has_payload_inventory_spaces(dropoff_loc.name)
                     and reserved_space is None
                     and not self._task_can_exchange_with_store_empty(task, payload)
                 ):
@@ -5261,7 +5314,7 @@ class Simulation:
             payload_for_inventory = self._payload_for_task(task)
             if (
                 payload_for_inventory is not None
-                and self._location_has_inventory_spaces(task.dropoff)
+                and self._location_has_payload_inventory_spaces(task.dropoff)
             ):
                 payload = payload_for_inventory
                 if self._find_free_inventory_space(
@@ -5424,7 +5477,7 @@ class Simulation:
                 f"{payload.length_m}m x {payload.width_m}m x {payload.height_m}m)"
             )
 
-        if self._location_has_inventory_spaces(dropoff_name):
+        if self._location_has_payload_inventory_spaces(dropoff_name):
             spaces = self.inventory_spaces_by_location.get(dropoff_name, [])
             compatible_space_count = sum(
                 1
@@ -6287,7 +6340,7 @@ class Simulation:
                 # payload record.  If the location is full, fail the task with a
                 # precise reason rather than silently adding stock and inflating
                 # peak occupancy.
-                if self._location_has_inventory_spaces(task.dropoff):
+                if self._location_has_payload_inventory_spaces(task.dropoff):
                     claimed_space = self._reserve_inventory_space_for_task(
                         task, payload_obj
                     )
@@ -6442,7 +6495,7 @@ class Simulation:
                         )
                         continue
                     self._free_inventory_space_for_pickup(task, payload_obj)
-                    if self._location_has_inventory_spaces(task.dropoff):
+                    if self._location_has_payload_inventory_spaces(task.dropoff):
                         claimed_space = self._reserve_inventory_space_for_task(
                             task, payload_obj
                         )

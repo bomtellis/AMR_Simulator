@@ -26,6 +26,7 @@
     "edge_slowdown_per_amr": 0.15,
     "min_congestion_speed_factor": 0.45,
     "charge_locations": [
+      "AMR-Accommodation",
       "AMR-CENTRE"
     ]
   },
@@ -7038,6 +7039,130 @@
               "dy": 5.501
             }
           ]
+        },
+        {
+          "name": "AMR-A AMR space 8",
+          "points": [
+            {
+              "dx": -2.38,
+              "dy": -3.672
+            },
+            {
+              "dx": -1.78,
+              "dy": -3.672
+            },
+            {
+              "dx": -1.78,
+              "dy": -3.072
+            },
+            {
+              "dx": -2.38,
+              "dy": -3.072
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-A",
+              "dx": -2.08,
+              "dy": -3.372
+            }
+          ]
+        },
+        {
+          "name": "AMR-A AMR space 9",
+          "points": [
+            {
+              "dx": -2.38,
+              "dy": -2.972
+            },
+            {
+              "dx": -1.78,
+              "dy": -2.972
+            },
+            {
+              "dx": -1.78,
+              "dy": -2.372
+            },
+            {
+              "dx": -2.38,
+              "dy": -2.372
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-A",
+              "dx": -2.08,
+              "dy": -2.672
+            }
+          ],
+          "space_type": "amr",
+          "stores_amr": true
+        },
+        {
+          "name": "AMR-A AMR space 10",
+          "points": [
+            {
+              "dx": -2.38,
+              "dy": -2.272
+            },
+            {
+              "dx": -1.78,
+              "dy": -2.272
+            },
+            {
+              "dx": -1.78,
+              "dy": -1.672
+            },
+            {
+              "dx": -2.38,
+              "dy": -1.672
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-A",
+              "dx": -2.08,
+              "dy": -1.972
+            }
+          ],
+          "space_type": "amr",
+          "stores_amr": true
+        },
+        {
+          "name": "AMR-A AMR space 11",
+          "points": [
+            {
+              "dx": -2.38,
+              "dy": -1.572
+            },
+            {
+              "dx": -1.78,
+              "dy": -1.572
+            },
+            {
+              "dx": -1.78,
+              "dy": -0.972
+            },
+            {
+              "dx": -2.38,
+              "dy": -0.972
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-A",
+              "dx": -2.08,
+              "dy": -1.272
+            }
+          ]
         }
       ]
     }
@@ -9483,8 +9608,8 @@
       {
         "name": "C1-50",
         "floor": 1,
-        "x": 142.17,
-        "y": -136.961
+        "x": 142.126,
+        "y": -137.03
       },
       {
         "name": "C1-51",
@@ -10180,10 +10305,6 @@
       },
       {
         "from": "Lift-6-F1",
-        "to": "C1-28"
-      },
-      {
-        "from": "C1-27",
         "to": "C1-28"
       },
       {
@@ -15897,6 +16018,30 @@
       {
         "from": "AMR-Accommodation",
         "to": "C0-140"
+      },
+      {
+        "from": "C1-83",
+        "to": "D20-LINEN_4"
+      },
+      {
+        "from": "D20-LINEN_4",
+        "to": "C1-83"
+      },
+      {
+        "from": "C1-28",
+        "to": "C1-50"
+      },
+      {
+        "from": "C1-50",
+        "to": "C1-28"
+      },
+      {
+        "from": "C1-50",
+        "to": "C1-27"
+      },
+      {
+        "from": "C1-27",
+        "to": "C1-50"
       }
     ],
     "auto_connect": false

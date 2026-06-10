@@ -1521,9 +1521,19 @@ class JsonStore:
         amr_length = float(amr_type.get("length_m", 0.8) or 0.8)
         amr_width = float(amr_type.get("width_m", 0.6) or 0.6)
         amr_height = float(amr_type.get("height_m", 1.2) or 1.2)
-        fits_normal = amr_length <= length_m and amr_width <= width_m
-        fits_rotated = amr_length <= width_m and amr_width <= length_m
-        return (fits_normal or fits_rotated) and amr_height <= height_m
+        # Inventory spaces are often stored as rounded DXF/editor coordinates,
+        # so a nominal 1.2 m × 0.6 m AMR bay can become
+        # 1.2000000000000028 m × 0.5999999999999943 m after JSON round-trips.
+        # Use a small tolerance so validation counts the intended bay instead of
+        # falsely rejecting it as fractionally too small.
+        tolerance_m = 1e-3
+
+        def _fits(required: float, available: float) -> bool:
+            return float(required) <= (float(available) + tolerance_m)
+
+        fits_normal = _fits(amr_length, length_m) and _fits(amr_width, width_m)
+        fits_rotated = _fits(amr_length, width_m) and _fits(amr_width, length_m)
+        return (fits_normal or fits_rotated) and _fits(amr_height, height_m)
 
     def _amr_charge_space_validation_errors(self) -> List[str]:
         errors = []
@@ -1552,14 +1562,35 @@ class JsonStore:
             except Exception:
                 required = 1
             compatible = 0
+            compatible_by_location = {}
+            configured_slots_by_location = {}
             for location in charge_location_dicts:
+                location_name = str(location.get("name", "") or "").strip()
                 for space in location.get("inventory_spaces", []) or []:
+                    slot_mentions_amr = False
+                    for slot in space.get("payload_slots", []) or []:
+                        if not isinstance(slot, dict):
+                            continue
+                        if (
+                            str(slot.get("slot_type", "") or "").strip().lower() == "amr"
+                            or str(slot.get("amr_type", "") or "").strip()
+                        ):
+                            slot_mentions_amr = True
+                            break
+                    if bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr" or slot_mentions_amr:
+                        configured_slots_by_location[location_name] = configured_slots_by_location.get(location_name, 0) + 1
                     if self._inventory_space_accepts_amr_type(location, space, amr_type):
                         compatible += 1
+                        compatible_by_location[location_name] = compatible_by_location.get(location_name, 0) + 1
             if compatible < required:
+                detail_parts = [
+                    f"{name}: {compatible_by_location.get(name, 0)} compatible / {configured_slots_by_location.get(name, 0)} AMR slot(s)"
+                    for name in charge_locations
+                ]
+                detail = "; ".join(detail_parts) if detail_parts else "no configured charging locations"
                 errors.append(
                     f"AMR type {amr_id} requires {required} compatible charging inventory space(s), "
-                    f"but only {compatible} found at configured charging location(s)."
+                    f"but only {compatible} found at configured charging location(s). {detail}."
                 )
         return errors
 
