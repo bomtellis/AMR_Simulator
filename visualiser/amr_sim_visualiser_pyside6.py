@@ -490,6 +490,8 @@ class SimulationLog:
                 "from_location": from_location,
                 "to_location": to_location,
                 "raw": row,
+                "amr_inventory_space": (row.get("amr_inventory_space") or "").strip(),
+                "amr_rotation_deg": self._float_or_none(row.get("amr_rotation_deg")),
                 "_assignment_start": current_task_start_by_amr.get(amr_id, start_dt),
             }
         )
@@ -2158,6 +2160,26 @@ class SimulationVisualizer(QMainWindow):
 
         self._build_ui()
         self.refresh_all()
+
+    @staticmethod
+    def _float_or_none(value):
+        try:
+            text = str(value).strip()
+            if value is None or text == "" or text.lower() in {"nan", "none"}:
+                return None
+            return float(text)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _int_or_none(value):
+        try:
+            text = str(value).strip()
+            if value is None or text == "" or text.lower() in {"nan", "none"}:
+                return None
+            return int(float(text))
+        except Exception:
+            return None
 
     # def on_zoom(self):
     #     self.zoom_redraw_timer.start(20)
@@ -4075,6 +4097,206 @@ class SimulationVisualizer(QMainWindow):
                 pass
         return self._space_centroid_world(location, space)
 
+    def _slot_is_amr_slot(self, slot: dict) -> bool:
+        return isinstance(slot, dict) and (
+            str(slot.get("slot_type", "") or "").strip().lower() == "amr"
+            or bool(str(slot.get("amr_type", "") or "").strip())
+        )
+
+    def _space_is_amr_space(self, space: dict) -> bool:
+        if not isinstance(space, dict):
+            return False
+        if bool(space.get("stores_amr", False)):
+            return True
+        if str(space.get("space_type", "") or "").strip().lower() == "amr":
+            return True
+        if str(space.get("amr_type", "") or "").strip():
+            return True
+        return any(self._slot_is_amr_slot(slot) for slot in space.get("payload_slots", []) or [])
+
+    def _amr_slot_rotation_deg(self, space: dict, fallback: float = 0.0) -> float:
+        for slot in space.get("payload_slots", []) or []:
+            if not self._slot_is_amr_slot(slot):
+                continue
+            try:
+                return float(slot.get("rotation_deg", fallback) or fallback)
+            except Exception:
+                return float(fallback or 0.0)
+        try:
+            return float(space.get("rotation_deg", fallback) or fallback)
+        except Exception:
+            return float(fallback or 0.0)
+
+    def _amr_type_for_amr_id(self, amr_id: str) -> str:
+        amr_id = str(amr_id or "").strip()
+        for amr_def in self.layout_model.data.get("amrs", []) or []:
+            base = str(amr_def.get("id", "") or "").strip()
+            if base and (amr_id == base or amr_id.startswith(base + "-")):
+                return base
+        parts = amr_id.rsplit("-", 1)
+        return parts[0] if len(parts) == 2 and parts[1].isdigit() else amr_id
+
+    def _amr_slot_type_for_space(self, space: dict) -> str:
+        for slot in space.get("payload_slots", []) or []:
+            if self._slot_is_amr_slot(slot):
+                return str(slot.get("amr_type", "") or space.get("amr_type", "") or "").strip()
+        return str(space.get("amr_type", "") or "").strip()
+
+    def _space_is_compatible_with_amr_id(self, space: dict, amr_id: str) -> bool:
+        amr_type = self._amr_type_for_amr_id(amr_id)
+        slot_type = self._amr_slot_type_for_space(space)
+        return self._space_is_amr_space(space) and (not slot_type or slot_type == amr_type)
+
+    def _configured_amr_home_space_map(self) -> Dict[str, dict]:
+        """Deterministically map AMR IDs to compatible AMR spaces for display fallback.
+
+        New simulator logs include amr_inventory_space/amr_rotation_deg.  Older logs
+        do not, so the visualiser uses the same layout data to infer each parked
+        AMR bay instead of showing every bay as empty.
+        """
+        result: Dict[str, dict] = {}
+        charge_locations = self.layout_model.data.get("building", {}).get("charge_locations", []) or []
+        if isinstance(charge_locations, str):
+            charge_locations = [charge_locations]
+        if not charge_locations:
+            fallback = str(self.layout_model.data.get("building", {}).get("amr_centre", "") or "").strip()
+            if fallback:
+                charge_locations = [fallback]
+
+        locations_by_name = {str(loc.get("name", "") or "").strip(): loc for loc in self.layout_model.data.get("locations", []) or []}
+
+        spaces_by_type: Dict[str, List[dict]] = {}
+        for loc_name in charge_locations:
+            loc = locations_by_name.get(str(loc_name or "").strip())
+            if not loc:
+                continue
+            for idx, space in enumerate(loc.get("inventory_spaces", []) or []):
+                if not isinstance(space, dict) or not self._space_is_amr_space(space):
+                    continue
+                amr_type = self._amr_slot_type_for_space(space)
+                if not amr_type:
+                    continue
+                cx, cy = self._space_centroid_world(loc, space)
+                rotation = self._amr_slot_rotation_deg(space, 0.0)
+                spaces_by_type.setdefault(amr_type, []).append({
+                    "location": str(loc_name),
+                    "space": str(space.get("name", "") or f"AMR space {idx + 1}"),
+                    "x": cx,
+                    "y": cy,
+                    "rotation_deg": rotation,
+                })
+
+        for amr_type, spaces in spaces_by_type.items():
+            spaces.sort(key=lambda s: (str(s.get("location", "")), str(s.get("space", ""))))
+
+        for amr_def in self.layout_model.data.get("amrs", []) or []:
+            amr_type = str(amr_def.get("id", "") or "").strip()
+            if not amr_type:
+                continue
+            try:
+                qty = int(float(amr_def.get("quantity", 1) or 1))
+            except Exception:
+                qty = 1
+            compatible = spaces_by_type.get(amr_type, [])
+            for idx in range(1, max(0, qty) + 1):
+                if idx <= len(compatible):
+                    result[f"{amr_type}-{idx}"] = compatible[idx - 1]
+        return result
+
+    def _amr_space_location_for_space_name(self, space_name: str, amr_id: str = "") -> str:
+        """Return the charge location containing a named compatible AMR bay."""
+        space_name = str(space_name or "").strip()
+        if not space_name:
+            return ""
+        # Prefer the deterministic home map for this exact AMR.  This handles
+        # initial rows that contain only amr_inventory_space/amr_rotation_deg.
+        home = self._configured_amr_home_space_map().get(str(amr_id or "").strip())
+        if home and str(home.get("space", "") or "").strip() == space_name:
+            return str(home.get("location", "") or "").strip()
+
+        charge_locations = self.layout_model.data.get("building", {}).get("charge_locations", []) or []
+        if isinstance(charge_locations, str):
+            charge_locations = [charge_locations]
+        if not charge_locations:
+            fallback = str(self.layout_model.data.get("building", {}).get("amr_centre", "") or "").strip()
+            if fallback:
+                charge_locations = [fallback]
+        locations_by_name = {str(loc.get("name", "") or "").strip(): loc for loc in self.layout_model.data.get("locations", []) or []}
+        for loc_name in charge_locations:
+            loc = locations_by_name.get(str(loc_name or "").strip())
+            if not loc:
+                continue
+            for space in loc.get("inventory_spaces", []) or []:
+                if not isinstance(space, dict) or not self._space_is_amr_space(space):
+                    continue
+                if str(space.get("name", "") or "").strip() == space_name and self._space_is_compatible_with_amr_id(space, amr_id):
+                    return str(loc_name or "").strip()
+        return ""
+
+    def _state_is_stationary_at_location(self, state: dict, location_name: str) -> bool:
+        raw = state.get("raw", {}) or {}
+        if state.get("start_node") and state.get("end_node") and state.get("path"):
+            return False
+        candidates = {
+            str(state.get("to_location", "") or "").strip(),
+            str(state.get("from_location", "") or "").strip(),
+            str(raw.get("to_location", "") or "").strip(),
+            str(raw.get("from_location", "") or "").strip(),
+            str(raw.get("amr_location_after", "") or "").strip(),
+            str(raw.get("end_node", "") or "").strip(),
+        }
+        status = str(state.get("status", "") or raw.get("status", "") or "").lower()
+        event_type = str(state.get("event_type", "") or raw.get("event_type", "") or "").lower()
+        return location_name in candidates or "charge" in status or "idle" in status or "return" in event_type
+
+    def _current_amr_space_occupancy_by_location(self) -> Dict[str, Dict[str, dict]]:
+        occupancy: Dict[str, Dict[str, dict]] = {}
+        home_map = self._configured_amr_home_space_map()
+        try:
+            amr_states, _recent = self._current_state()
+        except Exception:
+            return occupancy
+        for amr_id, state in (amr_states or {}).items():
+            raw = state.get("raw", {}) or {}
+            amr_id = str(amr_id or state.get("amr_id", "") or raw.get("amr_id", "") or "").strip()
+            if not amr_id:
+                continue
+
+            space_name = str(state.get("amr_inventory_space") or raw.get("amr_inventory_space") or "").strip()
+            rotation = self._float_or_none(state.get("amr_rotation_deg"))
+            if rotation is None:
+                rotation = self._float_or_none(raw.get("amr_rotation_deg"))
+            location_name = (
+                str(raw.get("to_location", "") or "").strip()
+                or str(raw.get("amr_location_after", "") or "").strip()
+                or str(raw.get("end_node", "") or "").strip()
+                or str(state.get("to_location", "") or "").strip()
+            )
+            if space_name and not location_name:
+                location_name = self._amr_space_location_for_space_name(space_name, amr_id)
+
+            if not space_name:
+                home = home_map.get(amr_id)
+                if home and self._state_is_stationary_at_location(state, str(home.get("location", ""))):
+                    location_name = str(home.get("location", "") or "").strip()
+                    space_name = str(home.get("space", "") or "").strip()
+                    rotation = self._float_or_none(home.get("rotation_deg"))
+                    # Move the drawn AMR footprint to the bay centre for old logs
+                    # that only recorded the parent charge-location node.
+                    state["x"] = float(home.get("x", state.get("x", 0.0)) or 0.0)
+                    state["y"] = float(home.get("y", state.get("y", 0.0)) or 0.0)
+                    state["amr_inventory_space"] = space_name
+                    state["amr_rotation_deg"] = rotation
+
+            if not space_name or not location_name:
+                continue
+            occupancy.setdefault(location_name, {})[space_name] = {
+                "amr_id": amr_id,
+                "state": state,
+                "rotation_deg": rotation,
+            }
+        return occupancy
+
     def _payloads_from_display_value(self, value) -> List[str]:
         text = str(value or "").strip()
         if not text or text == "-":
@@ -4090,6 +4312,7 @@ class SimulationVisualizer(QMainWindow):
         location: dict,
         space: dict,
         row: Optional[dict] = None,
+        suppress_empty_label: bool = False,
     ):
         """Draw the inventory-space boundary with its live occupancy state.
 
@@ -4141,7 +4364,7 @@ class SimulationVisualizer(QMainWindow):
         self.graphics_scene.addItem(item)
         self.dynamic_items.append(item)
 
-        if self.show_labels_check.isChecked() and not occupied:
+        if self.show_labels_check.isChecked() and not occupied and not suppress_empty_label:
             cx, cy = self._space_centroid_world(location, space)
             # Only empty spaces show their inventory-space name.  Occupied
             # spaces, including seeded waste containers, suppress this label so
@@ -4182,7 +4405,10 @@ class SimulationVisualizer(QMainWindow):
         source: str = "",
         row_details: Optional[dict] = None,
     ):
-        length, width = self._payload_dimensions_for_name(payload_name)
+        if str(payload_name or "").startswith("AMR: "):
+            length, width = self._amr_dimensions_for_name(str(payload_name).split(":", 1)[1].strip())
+        else:
+            length, width = self._payload_dimensions_for_name(payload_name)
         heading = math.radians(float(rotation_deg or 0.0))
         hl = length / 2.0
         hw = width / 2.0
@@ -4224,9 +4450,16 @@ class SimulationVisualizer(QMainWindow):
 
         if self.show_labels_check.isChecked():
             label_lines = []
-            label_lines.append(
-                f"Seeded {payload_name}" if "seed" in status_lower else payload_name
-            )
+            if str(payload_name or "").startswith("AMR: "):
+                amr_label = str(payload_name).split(":", 1)[1].strip()
+                label_lines.append(amr_label)
+                status_label = str(status or "").strip()
+                if status_label:
+                    label_lines.append(status_label)
+            else:
+                label_lines.append(
+                    f"Seeded {payload_name}" if "seed" in status_lower else payload_name
+                )
 
             volume_label = str(details.get("waste_volume_display", "") or "").strip()
             fill_label = str(details.get("fill_percent_display", "") or "").strip()
@@ -4289,6 +4522,7 @@ class SimulationVisualizer(QMainWindow):
                 return
 
         visible_world = self._visible_world_rect(margin_m=4.0)
+        amr_occupancy_by_location = self._current_amr_space_occupancy_by_location()
 
         for location in self.layout_model.data.get("locations", []) or []:
             try:
@@ -4308,6 +4542,7 @@ class SimulationVisualizer(QMainWindow):
             rows_by_space = {
                 str(row.get("space", "") or "").strip(): row for row in rows
             }
+            amr_occupancy_for_location = amr_occupancy_by_location.get(location_name, {})
             used_seeded_rows = set()
             seeded_row_indexes_by_payload: Dict[str, List[int]] = {}
             for row_index, seeded_row in enumerate(rows):
@@ -4332,6 +4567,17 @@ class SimulationVisualizer(QMainWindow):
                     or f"Inventory {space_index}"
                 )
                 row = rows_by_space.get(space_name, {})
+                amr_occupancy = amr_occupancy_for_location.get(space_name) if self._space_is_amr_space(space) else None
+                if amr_occupancy:
+                    occupied_amr_id = str(amr_occupancy.get("amr_id", "") or "").strip()
+                    row = {
+                        **(row or {}),
+                        "space": space_name,
+                        "payload": f"AMR: {occupied_amr_id}",
+                        "amr_id": occupied_amr_id,
+                        "status": "AMR parked",
+                        "source": "Runtime AMR bay occupancy",
+                    }
                 row_payloads = self._payloads_from_display_value(row.get("payload", ""))
                 row_status = str(row.get("status", "Empty") or "Empty")
                 row_source = str(row.get("source", "") or "")
@@ -4339,7 +4585,12 @@ class SimulationVisualizer(QMainWindow):
                 # Always draw the inventory-space boundary and live occupancy
                 # status.  Empty configured slots should remain visibly empty
                 # until seeded or physically occupied by a CSV drop-off.
-                self._draw_inventory_space_status_at_world(location, space, row)
+                self._draw_inventory_space_status_at_world(
+                    location,
+                    space,
+                    row,
+                    suppress_empty_label=bool(amr_occupancy),
+                )
 
                 slots = [
                     slot
@@ -4362,8 +4613,11 @@ class SimulationVisualizer(QMainWindow):
                     continue
 
                 for slot_index, slot in enumerate(slots):
-                    if str(slot.get("slot_type", "") or "").strip().lower() == "amr" or str(slot.get("amr_type", "") or "").strip():
-                        configured_payload = f"AMR: {str(space.get('amr_id', '') or slot.get('amr_type', 'AMR')).strip()}"
+                    if self._slot_is_amr_slot(slot):
+                        if amr_occupancy:
+                            configured_payload = f"AMR: {str(amr_occupancy.get('amr_id', '') or '').strip()}"
+                        else:
+                            configured_payload = ""
                     else:
                         configured_payload = str(slot.get("payload", "") or "").strip()
                     payload_to_draw = configured_payload
@@ -4508,13 +4762,9 @@ class SimulationVisualizer(QMainWindow):
         length, width = self._amr_dimensions_for_name(amr_id)
         return max(0.05, float(length)), max(0.05, float(width))
 
-    def _draw_amr_box_colored_qt(self, state: dict, fill="#4da3ff"):
-        x = float(state["x"])
-        y = float(state["y"])
-        length, width = self._amr_dimensions_for_state(state)
-
+    def _amr_heading_radians_for_state(self, state: dict) -> float:
         heading = 0.0
-        if state.get("start_node") and state.get("end_node"):
+        if state.get("start_node") and state.get("end_node") and state.get("path"):
             if (
                 state["start_node"] in self.layout_model.points
                 and state["end_node"] in self.layout_model.points
@@ -4524,6 +4774,35 @@ class SimulationVisualizer(QMainWindow):
                 heading = math.atan2(
                     float(b["y"]) - float(a["y"]), float(b["x"]) - float(a["x"])
                 )
+        else:
+            raw = state.get("raw", {}) or {}
+            rotation = state.get("amr_rotation_deg")
+            if rotation is None:
+                rotation = self._float_or_none(raw.get("amr_rotation_deg"))
+            if rotation is not None:
+                heading = math.radians(float(rotation or 0.0))
+        return heading
+
+    def _state_is_stowed_in_amr_space(self, state: dict) -> bool:
+        """True when the AMR is stationary in an AMR bay, so room-payload drawing owns the footprint/text."""
+        raw = state.get("raw", {}) or {}
+        if state.get("start_node") and state.get("end_node") and state.get("path"):
+            return False
+        space_name = str(state.get("amr_inventory_space") or raw.get("amr_inventory_space") or "").strip()
+        if space_name:
+            return True
+        amr_id = str(state.get("amr_id", "") or raw.get("amr_id", "") or "").strip()
+        home = self._configured_amr_home_space_map().get(amr_id)
+        if home and self._state_is_stationary_at_location(state, str(home.get("location", "") or "")):
+            return True
+        return False
+
+    def _draw_amr_box_colored_qt(self, state: dict, fill="#4da3ff"):
+        x = float(state["x"])
+        y = float(state["y"])
+        length, width = self._amr_dimensions_for_state(state)
+
+        heading = self._amr_heading_radians_for_state(state)
 
         hl = length / 2.0
         hw = width / 2.0
@@ -6279,6 +6558,10 @@ class SimulationVisualizer(QMainWindow):
         visible_world = self._visible_world_rect(margin_m=6.0)
 
         for amr_id, state in amr_states.items():
+            if self._state_is_stowed_in_amr_space(state):
+                # AMR bays are drawn by draw_room_payloads_qt so the bay text and
+                # dynamic AMR label do not overlap at initial load or after return.
+                continue
             if state.get("floor") != floor:
                 continue
             if state.get("x") is None or state.get("y") is None:
@@ -6305,42 +6588,35 @@ class SimulationVisualizer(QMainWindow):
                 self.graphics_scene.addItem(item)
                 self.dynamic_items.append(item)
 
-            onboard_label = self._format_onboard_payloads_for_label(
-                state.get("raw", {})
-            )
-            payload = onboard_label or (state.get("payload") or "")
-            label = amr_id if not payload else f"{amr_id} | {payload}"
-            self.draw_text_item(
-                x, y - 1.2, label, "#cfe5ff", dynamic=True, ignore_transform=True
-            )
-
             action = (
                 state.get("event_type")
                 or state.get("segment_type")
                 or state.get("status")
                 or ""
             )
+            label_lines = [amr_id]
             if action:
-                self.draw_text_item(
-                    x + 1.0,
-                    y + 0.6,
-                    action,
-                    "#cfe5ff",
-                    dynamic=True,
-                    ignore_transform=True,
-                )
-
+                label_lines.append(str(action))
             if getattr(self, "show_amr_charge_state_check", None) is not None and self.show_amr_charge_state_check.isChecked():
                 charge_label = self._amr_charge_state_label(state)
                 if charge_label:
-                    self.draw_text_item(
-                        x + 1.0,
-                        y + 1.15,
-                        charge_label,
-                        "#d8ffd8",
-                        dynamic=True,
-                        ignore_transform=True,
-                    )
+                    label_lines.append(charge_label)
+            length, width = self._amr_dimensions_for_state(state)
+            heading_deg = math.degrees(self._amr_heading_radians_for_state(state))
+            self.draw_fitted_text_box_item(
+                x,
+                y,
+                max(0.05, length * 0.92),
+                max(0.05, width * 0.86),
+                "\n".join(line for line in label_lines if line),
+                "#ffffff",
+                dynamic=True,
+                rotation_deg=heading_deg,
+                max_lines=3,
+                min_pixel_size=3,
+                max_pixel_size=None,
+                scene_height=0.12,
+            )
 
         if self.event_box is None:
             return
