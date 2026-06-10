@@ -492,6 +492,8 @@ class SimulationLog:
                 "raw": row,
                 "amr_inventory_space": (row.get("amr_inventory_space") or "").strip(),
                 "amr_rotation_deg": self._float_or_none(row.get("amr_rotation_deg")),
+                "amr_rotation_start_deg": self._float_or_none(row.get("amr_rotation_start_deg")),
+                "amr_rotation_end_deg": self._float_or_none(row.get("amr_rotation_end_deg")),
                 "_assignment_start": current_task_start_by_amr.get(amr_id, start_dt),
             }
         )
@@ -517,6 +519,7 @@ class SimulationLog:
             total = max((end_dt - start_dt).total_seconds(), 0.001)
             elapsed = max((current_time - start_dt).total_seconds(), 0.0)
             frac = max(0.0, min(1.0, elapsed / total))
+            state["segment_fraction"] = frac
             if (
                 start_x is not None
                 and start_y is not None
@@ -540,6 +543,7 @@ class SimulationLog:
             state["y"] = end_y if end_y is not None else start_y
             state["floor"] = end_floor if end_floor is not None else start_floor
             state["path"] = None
+            state["segment_fraction"] = 1.0
         task_id = state.get("task_id")
         assignment_start = state.get("_assignment_start") or start_dt
         state["task_runtime_sec"] = (
@@ -4762,8 +4766,46 @@ class SimulationVisualizer(QMainWindow):
         length, width = self._amr_dimensions_for_name(amr_id)
         return max(0.05, float(length)), max(0.05, float(width))
 
+    def _normalise_angle_deg(self, value: float) -> float:
+        return (float(value) + 180.0) % 360.0 - 180.0
+
+    def _angle_lerp_deg(self, start_deg: float, end_deg: float, frac: float) -> float:
+        frac = max(0.0, min(1.0, float(frac)))
+        delta = self._normalise_angle_deg(float(end_deg) - float(start_deg))
+        return float(start_deg) + (delta * frac)
+
     def _amr_heading_radians_for_state(self, state: dict) -> float:
-        heading = 0.0
+        raw = state.get("raw", {}) or {}
+        start_rot = state.get("amr_rotation_start_deg")
+        end_rot = state.get("amr_rotation_end_deg")
+        if start_rot is None:
+            start_rot = self._float_or_none(raw.get("amr_rotation_start_deg"))
+        if end_rot is None:
+            end_rot = self._float_or_none(raw.get("amr_rotation_end_deg"))
+        if start_rot is not None and end_rot is not None:
+            return math.radians(self._angle_lerp_deg(float(start_rot), float(end_rot), float(state.get("segment_fraction", 1.0) or 0.0)))
+
+        rotation = state.get("amr_rotation_deg")
+        if rotation is None:
+            rotation = self._float_or_none(raw.get("amr_rotation_deg"))
+        if rotation is not None:
+            return math.radians(float(rotation or 0.0))
+
+        # Prefer the actual row segment coordinates over named graph nodes.
+        # Some rows carry start_node/end_node for the wider route context while
+        # start_x/start_y/end_x/end_y describe the specific animated leg.  Using
+        # the node pair in those cases makes the AMR footprint appear 90 degrees
+        # out on vertical/side approach legs.
+        sx = self._float_or_none(raw.get("start_x"))
+        sy = self._float_or_none(raw.get("start_y"))
+        ex = self._float_or_none(raw.get("end_x"))
+        ey = self._float_or_none(raw.get("end_y"))
+        if sx is not None and sy is not None and ex is not None and ey is not None:
+            dx = float(ex) - float(sx)
+            dy = float(ey) - float(sy)
+            if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+                return math.atan2(dy, dx)
+
         if state.get("start_node") and state.get("end_node") and state.get("path"):
             if (
                 state["start_node"] in self.layout_model.points
@@ -4771,17 +4813,10 @@ class SimulationVisualizer(QMainWindow):
             ):
                 a = self.layout_model.points[state["start_node"]]
                 b = self.layout_model.points[state["end_node"]]
-                heading = math.atan2(
+                return math.atan2(
                     float(b["y"]) - float(a["y"]), float(b["x"]) - float(a["x"])
                 )
-        else:
-            raw = state.get("raw", {}) or {}
-            rotation = state.get("amr_rotation_deg")
-            if rotation is None:
-                rotation = self._float_or_none(raw.get("amr_rotation_deg"))
-            if rotation is not None:
-                heading = math.radians(float(rotation or 0.0))
-        return heading
+        return 0.0
 
     def _state_is_stowed_in_amr_space(self, state: dict) -> bool:
         """True when the AMR is stationary in an AMR bay, so room-payload drawing owns the footprint/text."""

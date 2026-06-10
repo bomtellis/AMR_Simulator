@@ -2665,45 +2665,171 @@ class Simulation:
         order.reverse()
         return [candidates[i] for i in order]
 
+    def _normalise_angle_deg(self, value: float) -> float:
+        return (float(value) + 180.0) % 360.0 - 180.0
+
+    def _angle_lerp_deg(self, start_deg: float, end_deg: float, frac: float) -> float:
+        frac = max(0.0, min(1.0, float(frac)))
+        delta = self._normalise_angle_deg(float(end_deg) - float(start_deg))
+        return float(start_deg) + (delta * frac)
+
+    def _amr_vehicle_turning_radius_m(self, amr: AMR) -> float:
+        """Approximate a reversible AMR steering radius from its footprint."""
+        length = float(getattr(amr, "length_m", 1.0) or 1.0)
+        width = float(getattr(amr, "width_m", 0.6) or 0.6)
+        # Minimum usable turning circle grows with diagonal size.  AMRs can steer
+        # from either end, so this is deliberately conservative but not car-like.
+        return max(0.35, math.hypot(length, width) * 0.55)
+
+    def _heading_deg_between(self, a: Tuple[float, float], b: Tuple[float, float]) -> float:
+        return math.degrees(math.atan2(float(b[1]) - float(a[1]), float(b[0]) - float(a[0])))
+
+    def _choose_reversible_body_heading_deg(self, movement_heading_deg: float, preferred_heading_deg: float) -> float:
+        """Choose forwards or backwards body heading closest to the preferred heading."""
+        forward = float(movement_heading_deg)
+        reverse = float(movement_heading_deg) + 180.0
+        df = abs(self._normalise_angle_deg(forward - preferred_heading_deg))
+        dr = abs(self._normalise_angle_deg(reverse - preferred_heading_deg))
+        return reverse if dr < df else forward
+
+    def _insert_vehicle_alignment_waypoint(
+        self,
+        waypoints: List[Tuple[float, float]],
+        target_heading_deg: float,
+        radius: float,
+        obstacles: List[Tuple[float, float, float, float]],
+    ) -> List[Tuple[float, float]]:
+        """Add a straight final approach along the target slot axis when possible."""
+        if len(waypoints) < 2:
+            return waypoints
+        end = waypoints[-1]
+        previous = waypoints[-2]
+        heading = math.radians(float(target_heading_deg))
+        axis = (math.cos(heading), math.sin(heading))
+        approach_dist = max(0.45, min(radius * 1.25, 2.5))
+        candidates = [
+            (end[0] - axis[0] * approach_dist, end[1] - axis[1] * approach_dist),
+            (end[0] + axis[0] * approach_dist, end[1] + axis[1] * approach_dist),
+        ]
+        best = None
+        best_score = math.inf
+        for candidate in candidates:
+            if any(self._point_inside_bbox(candidate, obstacle) for obstacle in obstacles):
+                continue
+            if not self._clear_local_segment(candidate, end, obstacles):
+                continue
+            if not self._clear_local_segment(previous, candidate, obstacles):
+                continue
+            # Prefer the approach point that causes the least detour from the
+            # existing route while still aligning with the bay/payload slot.
+            score = math.hypot(previous[0] - candidate[0], previous[1] - candidate[1])
+            if score < best_score:
+                best = candidate
+                best_score = score
+        if best is None:
+            return waypoints
+        if math.hypot(best[0] - previous[0], best[1] - previous[1]) <= 1e-6:
+            return waypoints
+        return waypoints[:-1] + [best, end]
+
+    def _smooth_vehicle_waypoints(
+        self,
+        waypoints: List[Tuple[float, float]],
+        start_heading_deg: float,
+        target_heading_deg: float,
+        radius: float,
+    ) -> List[Tuple[float, float]]:
+        """Densify corners so the visualiser shows steering rather than teleport turns."""
+        if len(waypoints) <= 2:
+            return waypoints
+        result: List[Tuple[float, float]] = [waypoints[0]]
+        corner_cut = max(0.15, min(radius * 0.45, 0.8))
+        for idx in range(1, len(waypoints) - 1):
+            prev_pt = waypoints[idx - 1]
+            cur_pt = waypoints[idx]
+            next_pt = waypoints[idx + 1]
+            d1 = math.hypot(cur_pt[0] - prev_pt[0], cur_pt[1] - prev_pt[1])
+            d2 = math.hypot(next_pt[0] - cur_pt[0], next_pt[1] - cur_pt[1])
+            if d1 <= 1e-6 or d2 <= 1e-6:
+                continue
+            cut = min(corner_cut, d1 * 0.45, d2 * 0.45)
+            in_pt = (cur_pt[0] - ((cur_pt[0] - prev_pt[0]) / d1) * cut, cur_pt[1] - ((cur_pt[1] - prev_pt[1]) / d1) * cut)
+            out_pt = (cur_pt[0] + ((next_pt[0] - cur_pt[0]) / d2) * cut, cur_pt[1] + ((next_pt[1] - cur_pt[1]) / d2) * cut)
+            result.append(in_pt)
+            # One midpoint gives a visible curved steer without creating a huge log.
+            result.append(((in_pt[0] + out_pt[0]) / 2.0, (in_pt[1] + out_pt[1]) / 2.0))
+            result.append(out_pt)
+        result.append(waypoints[-1])
+        filtered: List[Tuple[float, float]] = []
+        for pt in result:
+            if not filtered or math.hypot(pt[0] - filtered[-1][0], pt[1] - filtered[-1][1]) > 1e-4:
+                filtered.append(pt)
+        return filtered
+
     def _local_manoeuvre_segments_to_inventory_space(self, amr: AMR, location_name: str, target_space: dict, start_time_value: float, purpose: str = "inventory") -> Tuple[List[dict], float, float]:
-        """Build visual/logged off-graph manoeuvre segments to a target space."""
+        """Build visual/logged off-graph reversible vehicle manoeuvre segments to a target space."""
         parent = self.locations.get(str(location_name or "").strip())
         target = self._inventory_space_centre_location(location_name, target_space)
         if parent is None or target is None:
             return [], 0.0, 0.0
+
         start = (float(parent.x), float(parent.y))
         end = (float(target.x), float(target.y))
+        target_heading_deg = self._inventory_space_rotation_deg(target_space)
+        radius = self._amr_vehicle_turning_radius_m(amr)
         obstacles = self._local_obstacle_bboxes(location_name, str(target_space.get("name", "") or ""))
+
         waypoints = self._local_manoeuvre_waypoints(start, end, obstacles)
+        waypoints = self._insert_vehicle_alignment_waypoint(waypoints, target_heading_deg, radius, obstacles)
+        initial_heading_deg = float(getattr(amr, "rotation_deg", target_heading_deg) or target_heading_deg)
+        waypoints = self._smooth_vehicle_waypoints(waypoints, initial_heading_deg, target_heading_deg, radius)
+
         segments: List[dict] = []
         total_duration = 0.0
         total_distance = 0.0
+        previous_body_heading = initial_heading_deg
+        speed = max(float(getattr(amr, "speed_m_per_sec", 1.0) or 1.0), 1e-9)
         for idx in range(len(waypoints) - 1):
             a = waypoints[idx]
             b = waypoints[idx + 1]
             dist = math.hypot(a[0] - b[0], a[1] - b[1])
             if dist <= 1e-9:
                 continue
-            duration = dist / max(float(getattr(amr, "speed_m_per_sec", 1.0) or 1.0), 1e-9)
+
+            movement_heading = self._heading_deg_between(a, b)
+            is_final_segment = idx == len(waypoints) - 2
+            desired_end_heading = target_heading_deg if is_final_segment else self._choose_reversible_body_heading_deg(movement_heading, target_heading_deg)
+            # Limit abrupt visual heading changes based on footprint-derived radius.
+            # Travel time includes a small steering/alignment allowance so tight
+            # local manoeuvres are visibly slower than corridor travel.
+            turn_delta = abs(self._normalise_angle_deg(desired_end_heading - previous_body_heading))
+            turn_allowance = (turn_delta / 90.0) * (radius / max(speed, 1e-9))
+            duration = (dist / speed) + max(0.0, turn_allowance)
+
             segments.append({
                 "type": "local_manoeuvre",
                 "purpose": purpose,
                 "from": f"{location_name}::local::{idx}",
                 "to": f"{location_name}::local::{idx + 1}",
-                "from_x": a[0],
-                "from_y": a[1],
+                "from_x": round(a[0], 4),
+                "from_y": round(a[1], 4),
                 "from_floor": parent.floor,
-                "to_x": b[0],
-                "to_y": b[1],
+                "to_x": round(b[0], 4),
+                "to_y": round(b[1], 4),
                 "to_floor": parent.floor,
                 "duration": duration,
                 "distance_m": dist,
                 "inventory_space": str(target_space.get("name", "") or ""),
-                "amr_rotation_deg": self._inventory_space_rotation_deg(target_space),
+                "amr_rotation_start_deg": round(float(previous_body_heading), 3),
+                "amr_rotation_end_deg": round(float(desired_end_heading), 3),
+                "amr_rotation_deg": round(float(desired_end_heading), 3),
+                "amr_turning_radius_m": round(float(radius), 3),
                 "local_path_index": idx,
             })
+            previous_body_heading = desired_end_heading
             total_duration += duration
             total_distance += dist
+
         return segments, total_duration, total_distance
 
     def _inventory_space_accepts_amr(self, space: dict, amr: AMR) -> bool:
@@ -2784,14 +2910,51 @@ class Simulation:
     def _space_name(self, space: dict) -> str:
         return str((space or {}).get("name", "") or "").strip()
 
-    def _space_is_available_for_amr(self, space: dict, amr: AMR) -> bool:
+    def _amr_by_id(self, amr_id: str) -> Optional[AMR]:
+        amr_id = str(amr_id or "").strip()
+        if not amr_id:
+            return None
+        for other in getattr(self, "amrs", []) or []:
+            if str(getattr(other, "id", "") or "").strip() == amr_id:
+                return other
+        return None
+
+    def _space_is_available_for_amr(self, space: dict, amr: AMR, location_name: str = "") -> bool:
+        """Return True if an AMR bay can be claimed by this AMR.
+
+        Space occupancy can become stale when an AMR leaves a charging bay, is
+        reallocated to another bay, or an older CSV/config is replayed.  Do not
+        allow stale ``amr_id`` / ``reserved_by_amr`` markers to make all bays at a
+        charging location appear unavailable.  A bay is blocked only when the
+        other AMR still records that exact bay as its current or target bay at
+        the same location.
+        """
         amr_id = str(getattr(amr, "id", "") or "").strip()
+        space_name = self._space_name(space)
+        loc_name = str(location_name or "").strip()
+
         occupied_by = str(space.get("amr_id", "") or "").strip()
-        reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
         if occupied_by and occupied_by != amr_id:
-            return False
+            other = self._amr_by_id(occupied_by)
+            other_loc = str(getattr(other, "location_name", "") or "").strip() if other else ""
+            other_space = str(getattr(other, "inventory_space_name", "") or "").strip() if other else ""
+            if other is not None and other_space == space_name and (not loc_name or other_loc == loc_name):
+                return False
+            # Stale occupancy marker.  Clear it so subsequent AMRs can use the bay.
+            space["amr_id"] = ""
+            if not str(space.get("payload", "") or "").strip():
+                space["occupied"] = False
+
+        reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
         if reserved_by and reserved_by != amr_id:
-            return False
+            other = self._amr_by_id(reserved_by)
+            other_loc = str(getattr(other, "target_charge_location", "") or getattr(other, "location_name", "") or "").strip() if other else ""
+            other_target = str(getattr(other, "target_inventory_space_name", "") or "").strip() if other else ""
+            if other is not None and other_target == space_name and (not loc_name or other_loc == loc_name):
+                return False
+            # Stale reservation marker.
+            space["reserved_by_amr"] = ""
+
         return True
 
     def _space_is_other_amr_home(self, location_name: str, space: dict, amr: AMR) -> bool:
@@ -2819,41 +2982,41 @@ class Simulation:
                 continue
             if not self._inventory_space_accepts_amr(space, amr):
                 return None
-            if not self._space_is_available_for_amr(space, amr):
+            if not self._space_is_available_for_amr(space, amr, location_name):
                 return None
             return space
         return None
 
     def _find_free_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
+        """Return the nearest compatible AMR bay at a location.
+
+        AMR bays are a shared charging/stowage resource.  The previous home-bay
+        preference could make a location appear full when every compatible bay
+        was assigned as somebody else's home, even though a bay was physically
+        free.  For return/stow movements we only reject bays occupied or
+        reserved by another AMR, then choose the nearest free compatible bay.
+        """
         location_name = str(location_name or "").strip()
+        source_loc = self.locations.get(str(getattr(amr, "location_name", "") or "").strip())
 
-        # First choice is always this AMR's own home bay.  This prevents another
-        # returning AMR from taking a temporarily-empty home bay while the owner
-        # is out on a task.
-        home_loc = str(getattr(amr, "home_charge_location", "") or "").strip()
-        home_space = str(getattr(amr, "home_inventory_space_name", "") or "").strip()
-        if home_loc == location_name and home_space:
-            space = self._find_named_amr_inventory_space(location_name, home_space, amr)
-            if space is not None:
-                return space
-
-        # Second choice is an unassigned/spare compatible bay.
-        fallback_other_home = None
-        for space in self.inventory_spaces_by_location.get(location_name, []):
+        candidates = []
+        for index, space in enumerate(self.inventory_spaces_by_location.get(location_name, [])):
             if not self._inventory_space_accepts_amr(space, amr):
                 continue
-            if not self._space_is_available_for_amr(space, amr):
+            if not self._space_is_available_for_amr(space, amr, location_name):
                 continue
-            if self._space_is_other_amr_home(location_name, space, amr):
-                if fallback_other_home is None:
-                    fallback_other_home = space
-                continue
-            return space
+            centre = self._inventory_space_centre_location(location_name, space)
+            if source_loc is not None and centre is not None:
+                dist = math.hypot(float(centre.x) - float(source_loc.x), float(centre.y) - float(source_loc.y))
+            else:
+                dist = float(index)
+            candidates.append((dist, index, space))
 
-        # Last resort: allow another home bay only if there is genuinely no
-        # other compatible option.  This keeps old files usable but avoids the
-        # normal case where AMRs steal each other's spaces.
-        return fallback_other_home
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda item: (item[0], item[1]))
+        return candidates[0][2]
 
     def _reserved_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
         """Return the AMR bay already reserved for this AMR at a location."""
@@ -2873,9 +3036,9 @@ class Simulation:
                 return space
             if amr_id and occupied_by == amr_id:
                 return space
-            if target_name and space_name == target_name and self._space_is_available_for_amr(space, amr):
+            if target_name and space_name == target_name and self._space_is_available_for_amr(space, amr, location_name):
                 return space
-            if home_name and space_name == home_name and self._space_is_available_for_amr(space, amr):
+            if home_name and space_name == home_name and self._space_is_available_for_amr(space, amr, location_name):
                 return space
         return None
 
@@ -6428,6 +6591,9 @@ class Simulation:
                     end_floor=segment_end_floor,
                     status="completed",
                     energy_kwh=segment.get("energy_kwh", 0.0),
+                    amr_rotation_start_deg=segment.get("amr_rotation_start_deg", None),
+                    amr_rotation_end_deg=segment.get("amr_rotation_end_deg", None),
+                    amr_rotation_deg=segment.get("amr_rotation_deg", None),
                 )
 
                 segment_start_time = segment_end_time
@@ -7215,6 +7381,9 @@ class Simulation:
                     end_floor=getattr(to_coords, "floor", None),
                     status="completed",
                     energy_kwh=segment.get("energy_kwh", 0.0),
+                    amr_rotation_start_deg=segment.get("amr_rotation_start_deg", None),
+                    amr_rotation_end_deg=segment.get("amr_rotation_end_deg", None),
+                    amr_rotation_deg=segment.get("amr_rotation_deg", None),
                 )
                 segment_start_time = segment_end_time
 
@@ -7343,6 +7512,8 @@ class Simulation:
         is_charging: Optional[bool] = None,
         amr_inventory_space: str = "",
         amr_rotation_deg: Optional[float] = None,
+        amr_rotation_start_deg: Optional[float] = None,
+        amr_rotation_end_deg: Optional[float] = None,
     ):
         if not self.verbose:
             return
@@ -7366,6 +7537,10 @@ class Simulation:
                         amr_rotation_deg = float(getattr(current_amr, "rotation_deg", 0.0) or 0.0)
                     except Exception:
                         amr_rotation_deg = 0.0
+                if amr_rotation_start_deg is None:
+                    amr_rotation_start_deg = amr_rotation_deg
+                if amr_rotation_end_deg is None:
+                    amr_rotation_end_deg = amr_rotation_deg
 
         self.verbose_rows.append(
             {
@@ -7406,6 +7581,8 @@ class Simulation:
                 "is_charging": bool(is_charging) if is_charging is not None else False,
                 "amr_inventory_space": amr_inventory_space,
                 "amr_rotation_deg": (round(float(amr_rotation_deg), 3) if amr_rotation_deg is not None else ""),
+                "amr_rotation_start_deg": (round(float(amr_rotation_start_deg), 3) if amr_rotation_start_deg is not None else ""),
+                "amr_rotation_end_deg": (round(float(amr_rotation_end_deg), 3) if amr_rotation_end_deg is not None else ""),
                 "task_source": task_source,
                 "department_id": department_id,
                 "waste_stream": waste_stream,
@@ -7480,6 +7657,8 @@ class Simulation:
             "is_charging",
             "amr_inventory_space",
             "amr_rotation_deg",
+            "amr_rotation_start_deg",
+            "amr_rotation_end_deg",
             "task_duration_sec",
             "details",
             "task_source",
