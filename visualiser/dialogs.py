@@ -1,3 +1,4 @@
+import csv
 import json
 import math
 from typing import Any, List, Optional
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
@@ -7034,6 +7036,7 @@ class DepartmentListDialog(QDialog):
         category_wizard_btn = QPushButton("Task category wizard...")
         shared_bin_groups_btn = QPushButton("Auto shared bin groups...")
         bulk_waste_btn = QPushButton("Manage waste streams...")
+        export_csv_btn = QPushButton("Export CSV...")
 
         row.addWidget(add_btn)
         row.addWidget(edit_btn)
@@ -7042,6 +7045,7 @@ class DepartmentListDialog(QDialog):
         row.addWidget(category_wizard_btn)
         row.addWidget(shared_bin_groups_btn)
         row.addWidget(bulk_waste_btn)
+        row.addWidget(export_csv_btn)
         row.addStretch(1)
         row.addWidget(save_btn)
 
@@ -7054,9 +7058,130 @@ class DepartmentListDialog(QDialog):
         bulk_waste_btn.clicked.connect(
             self.manage_waste_streams_for_selected_departments
         )
+        export_csv_btn.clicked.connect(self.export_departments_csv)
         save_btn.clicked.connect(self.save_items)
 
         self._refresh_table()
+
+    def _category_locations_for_export(self, dept, category_key):
+        category_locations = dept.get("task_generation_locations", {}) or {}
+        if not isinstance(category_locations, dict):
+            return []
+
+        entry = category_locations.get(category_key, {})
+        if isinstance(entry, dict):
+            raw_locations = entry.get(
+                "pickup_dropoff_locations", entry.get("locations", [])
+            )
+        else:
+            raw_locations = entry
+
+        if isinstance(raw_locations, str):
+            raw_locations = [raw_locations]
+
+        return [
+            str(x).strip() for x in (raw_locations or []) if str(x).strip()
+        ]
+
+    def export_departments_csv(self):
+        if not self.items:
+            QMessageBox.information(
+                self,
+                "Export departments",
+                "No departments are available to export.",
+            )
+            return
+
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export departments to CSV",
+            "departments.csv",
+            "CSV files (*.csv);;All files (*.*)",
+        )
+
+        if not path:
+            return
+
+        if not path.lower().endswith(".csv"):
+            path += ".csv"
+
+        category_columns = []
+        seen_category_keys = set()
+
+        for category_key, category_label, _default_suffix in self.task_generation_categories:
+            key = str(category_key).strip()
+            if not key or key in seen_category_keys:
+                continue
+            seen_category_keys.add(key)
+            label = str(category_label).strip() or key.title()
+            category_columns.append((key, label))
+
+        # Include any category assignments that exist on departments but are no
+        # longer present in the active task_generation_categories list.
+        for dept in self.items:
+            category_locations = dept.get("task_generation_locations", {}) or {}
+            if not isinstance(category_locations, dict):
+                continue
+            for key in category_locations.keys():
+                key = str(key).strip()
+                if not key or key in seen_category_keys:
+                    continue
+                seen_category_keys.add(key)
+                category_columns.append((key, key.title()))
+
+        headers = ["Floor", "Department name"] + [
+            f"{label} location" for _key, label in category_columns
+        ]
+
+        try:
+            rows = sorted(
+                self.items,
+                key=lambda dept: (
+                    (
+                        int(dept.get("floor", 0))
+                        if str(dept.get("floor", "")).strip().lstrip("-").isdigit()
+                        else 999999
+                    ),
+                    str(dept.get("name", "")).strip().lower()
+                    or str(dept.get("id", "")).strip().lower(),
+                ),
+            )
+
+            with open(path, "w", newline="", encoding="utf-8-sig") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(headers)
+
+                for dept in rows:
+                    department_name = str(dept.get("name", "")).strip()
+                    if not department_name:
+                        department_name = str(dept.get("id", "")).strip()
+
+                    row = [str(dept.get("floor", "")).strip(), department_name]
+
+                    for category_key, _category_label in category_columns:
+                        row.append(
+                            ", ".join(
+                                self._category_locations_for_export(
+                                    dept, category_key
+                                )
+                            )
+                        )
+
+                    writer.writerow(row)
+
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Export departments",
+                f"Could not export departments CSV:\n{exc}",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Export departments",
+            f"Exported {len(self.items)} department(s) to:\n{path}",
+        )
 
     def _refresh_table(self):
         self.table.clear()
