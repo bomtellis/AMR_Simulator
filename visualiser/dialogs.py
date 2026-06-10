@@ -8051,6 +8051,8 @@ class ArrayInventorySpacesDialog(QDialog):
         layout.addWidget(buttons)
 
         self.kind_combo.currentTextChanged.connect(self._refresh_names)
+        self.alignment_combo.currentTextChanged.connect(self._update_alignment_fields)
+        self._update_alignment_fields()
         if str(default_kind).strip().lower() == "amr":
             self.kind_combo.setCurrentText("AMR")
         else:
@@ -8067,6 +8069,14 @@ class ArrayInventorySpacesDialog(QDialog):
         if current:
             self.name_combo.setCurrentText(current)
 
+    def _update_alignment_fields(self):
+        is_grid = self.alignment_combo.currentText().strip().lower() == "grid"
+        self.columns_edit.setEnabled(is_grid)
+        self.columns_edit.setToolTip(
+            "Only used for Grid alignment." if is_grid else
+            "Ignored for Horizontal and Vertical alignment."
+        )
+
     def accept(self):
         try:
             kind = "amr" if self.kind_combo.currentText() == "AMR" else "payload"
@@ -8074,11 +8084,11 @@ class ArrayInventorySpacesDialog(QDialog):
             if not name:
                 raise ValueError("Select a payload or AMR type.")
             count = max(1, int(float(self.count_edit.text() or 1)))
-            columns = max(1, int(float(self.columns_edit.text() or count)))
+            alignment = self.alignment_combo.currentText().strip().lower()
+            columns = max(1, int(float(self.columns_edit.text() or count))) if alignment == "grid" else count
             spacing_x = max(0.0, float(self.spacing_x_edit.text() or 0.0))
             spacing_y = max(0.0, float(self.spacing_y_edit.text() or 0.0))
             rotation = float(self.rotation_edit.text() or 0.0)
-            alignment = self.alignment_combo.currentText().strip().lower()
             self.result = {
                 "kind": kind,
                 "name": name,
@@ -8342,8 +8352,12 @@ class InventorySpacesDialog(QDialog):
         return True
 
     def _move_space_group(self, starts, dx, dy):
-        if not self._space_group_fits_location_box(starts, dx, dy):
-            return False
+        # Deliberately allow movement even when the footprint is outside the
+        # location boundary.  Earlier versions rejected any candidate whose
+        # corners were not inside the boundary, which meant an accidentally
+        # placed payload/AMR space could not be dragged back into the valid area.
+        # Boundary checking is now advisory/visual only; the user can recover an
+        # out-of-bound space by dragging it back inside.
         for index, slot_start in starts.items():
             slot = self._space_payload_slot(index)
             if not slot:
@@ -8788,6 +8802,21 @@ class InventorySpacesDialog(QDialog):
         rotation = self._normalise_degrees(cfg.get("rotation_deg", 0.0))
 
         start_cx, start_cy = self._next_payload_space_centre(length, width)
+
+        # Array distribution follows the scene axes deliberately.
+        # The copied AMR/payload spaces keep the requested rotation, but
+        # Horizontal means positive scene X and Vertical means positive scene Y.
+        # Spacing is measured between the visible axis-aligned extents of the
+        # rotated footprint, so rotated items do not visually overlap while the
+        # array direction still ignores rotation.
+        angle = math.radians(rotation)
+        c = abs(math.cos(angle))
+        s = abs(math.sin(angle))
+        footprint_scene_width = (float(length) * c) + (float(width) * s)
+        footprint_scene_height = (float(length) * s) + (float(width) * c)
+        step_x = footprint_scene_width + spacing_x
+        step_y = footprint_scene_height + spacing_y
+
         created_indexes = []
         errors = []
         existing_count = len(self.spaces)
@@ -8803,8 +8832,8 @@ class InventorySpacesDialog(QDialog):
                 col = i
                 row = 0
 
-            cx = start_cx + (col * (length + spacing_x))
-            cy = start_cy + (row * (width + spacing_y))
+            cx = start_cx + (col * step_x)
+            cy = start_cy + (row * step_y)
             try:
                 display_index = existing_count + i + 1
                 base_label = f"{item_name} AMR" if kind == "amr" else item_name
@@ -9791,9 +9820,16 @@ class InventorySpacesDialog(QDialog):
                     ellipse.setZValue(18)
 
         base_rect = self._location_box_scene_rect()
+        items_rect = self.scene.itemsBoundingRect()
 
-        if base_rect is None:
-            base_rect = self.scene.itemsBoundingRect()
+        if base_rect is None or base_rect.isNull():
+            base_rect = items_rect
+        elif not items_rect.isNull():
+            # Keep out-of-bound payload/AMR spaces inside the scrollable scene.
+            # Without this, the view's scene rect stayed locked to the location
+            # boundary and spaces outside it could be impossible to pan to, pick,
+            # and drag back.
+            base_rect = base_rect.united(items_rect)
 
         if not base_rect.isNull():
             padded = base_rect.adjusted(-2, -2, 2, 2)

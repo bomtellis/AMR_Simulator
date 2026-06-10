@@ -26,9 +26,8 @@
     "edge_slowdown_per_amr": 0.15,
     "min_congestion_speed_factor": 0.45,
     "charge_locations": [
-      "AMR-CENTRE",
-      "RD",
-      "RD2"
+      "AMR-Accommodation",
+      "AMR-CENTRE"
     ]
   },
   "locations": [
@@ -85,7 +84,458 @@
           "dy": -1.719
         }
       ],
-      "inventory_spaces": []
+      "inventory_spaces": [
+        {
+          "name": "AMR-B AMR space 1",
+          "points": [
+            {
+              "dx": -2.491,
+              "dy": 2.888
+            },
+            {
+              "dx": -2.491,
+              "dy": 4.088
+            },
+            {
+              "dx": -3.091,
+              "dy": 4.088
+            },
+            {
+              "dx": -3.091,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -2.791,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 2",
+          "points": [
+            {
+              "dx": -1.691,
+              "dy": 2.888
+            },
+            {
+              "dx": -1.691,
+              "dy": 4.088
+            },
+            {
+              "dx": -2.291,
+              "dy": 4.088
+            },
+            {
+              "dx": -2.291,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -1.991,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 3",
+          "points": [
+            {
+              "dx": -0.891,
+              "dy": 2.888
+            },
+            {
+              "dx": -0.891,
+              "dy": 4.088
+            },
+            {
+              "dx": -1.491,
+              "dy": 4.088
+            },
+            {
+              "dx": -1.491,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -1.191,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 4",
+          "points": [
+            {
+              "dx": -0.091,
+              "dy": 2.888
+            },
+            {
+              "dx": -0.091,
+              "dy": 4.088
+            },
+            {
+              "dx": -0.691,
+              "dy": 4.088
+            },
+            {
+              "dx": -0.691,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -0.391,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 5",
+          "points": [
+            {
+              "dx": 0.709,
+              "dy": 2.888
+            },
+            {
+              "dx": 0.709,
+              "dy": 4.088
+            },
+            {
+              "dx": 0.109,
+              "dy": 4.088
+            },
+            {
+              "dx": 0.109,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": 0.409,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 6",
+          "points": [
+            {
+              "dx": 1.509,
+              "dy": 2.888
+            },
+            {
+              "dx": 1.509,
+              "dy": 4.088
+            },
+            {
+              "dx": 0.909,
+              "dy": 4.088
+            },
+            {
+              "dx": 0.909,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": 1.209,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 7",
+          "points": [
+            {
+              "dx": 2.309,
+              "dy": 2.888
+            },
+            {
+              "dx": 2.309,
+              "dy": 4.088
+            },
+            {
+              "dx": 1.709,
+              "dy": 4.088
+            },
+            {
+              "dx": 1.709,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": 2.009,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 8",
+          "points": [
+            {
+              "dx": 3.109,
+              "dy": 2.888
+            },
+            {
+              "dx": 3.109,
+              "dy": 4.088
+            },
+            {
+              "dx": 2.509,
+              "dy": 4.088
+            },
+            {
+              "dx": 2.509,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": 2.809,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 9",
+          "points": [
+            {
+              "dx": 3.909,
+              "dy": 2.888
+            },
+            {
+              "dx": 3.909,
+              "dy": 4.088
+            },
+            {
+              "dx": 3.309,
+              "dy": 4.088
+            },
+            {
+              "dx": 3.309,
+              "dy": 2.888
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": 3.609,
+              "dy": 3.488
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 10",
+          "points": [
+            {
+              "dx": -4.257,
+              "dy": -1.424
+            },
+            {
+              "dx": -3.057,
+              "dy": -1.424
+            },
+            {
+              "dx": -3.057,
+              "dy": -0.824
+            },
+            {
+              "dx": -4.257,
+              "dy": -0.824
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -3.657,
+              "dy": -1.124
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 11",
+          "points": [
+            {
+              "dx": -4.257,
+              "dy": -0.624
+            },
+            {
+              "dx": -3.057,
+              "dy": -0.624
+            },
+            {
+              "dx": -3.057,
+              "dy": -0.024
+            },
+            {
+              "dx": -4.257,
+              "dy": -0.024
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -3.657,
+              "dy": -0.324
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 12",
+          "points": [
+            {
+              "dx": -4.257,
+              "dy": 0.176
+            },
+            {
+              "dx": -3.057,
+              "dy": 0.176
+            },
+            {
+              "dx": -3.057,
+              "dy": 0.776
+            },
+            {
+              "dx": -4.257,
+              "dy": 0.776
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -3.657,
+              "dy": 0.476
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 13",
+          "points": [
+            {
+              "dx": -4.257,
+              "dy": 0.976
+            },
+            {
+              "dx": -3.057,
+              "dy": 0.976
+            },
+            {
+              "dx": -3.057,
+              "dy": 1.576
+            },
+            {
+              "dx": -4.257,
+              "dy": 1.576
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -3.657,
+              "dy": 1.276
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 14",
+          "points": [
+            {
+              "dx": 3.499,
+              "dy": -1.295
+            },
+            {
+              "dx": 4.699,
+              "dy": -1.295
+            },
+            {
+              "dx": 4.699,
+              "dy": -0.695
+            },
+            {
+              "dx": 3.499,
+              "dy": -0.695
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": 4.099,
+              "dy": -0.995
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 15",
+          "points": [
+            {
+              "dx": 3.499,
+              "dy": -0.495
+            },
+            {
+              "dx": 4.699,
+              "dy": -0.495
+            },
+            {
+              "dx": 4.699,
+              "dy": 0.105
+            },
+            {
+              "dx": 3.499,
+              "dy": 0.105
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": 4.099,
+              "dy": -0.195
+            }
+          ]
+        }
+      ]
     },
     {
       "name": "RD",
@@ -6333,6 +6783,264 @@
           "dy": -2.289
         }
       ]
+    },
+    {
+      "name": "AMR-Accommodation",
+      "floor": 0,
+      "x": 160,
+      "y": -17,
+      "bounding_box": [
+        {
+          "dx": -2.57,
+          "dy": -4.024
+        },
+        {
+          "dx": 3.0,
+          "dy": -4.0
+        },
+        {
+          "dx": 3.0,
+          "dy": 6.0
+        },
+        {
+          "dx": -2.603,
+          "dy": 6.026
+        },
+        {
+          "dx": -2.629,
+          "dy": 2.524
+        },
+        {
+          "dx": -1.195,
+          "dy": 2.546
+        },
+        {
+          "dx": -1.189,
+          "dy": 1.474
+        },
+        {
+          "dx": -2.586,
+          "dy": 1.507
+        }
+      ],
+      "inventory_spaces": [
+        {
+          "name": "AMR-B AMR space 5",
+          "points": [
+            {
+              "dx": -2.427,
+              "dy": -0.715
+            },
+            {
+              "dx": -1.227,
+              "dy": -0.715
+            },
+            {
+              "dx": -1.227,
+              "dy": -0.115
+            },
+            {
+              "dx": -2.427,
+              "dy": -0.115
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -1.827,
+              "dy": -0.415
+            }
+          ]
+        },
+        {
+          "name": "AMR-B AMR space 6",
+          "points": [
+            {
+              "dx": -2.427,
+              "dy": -0.015
+            },
+            {
+              "dx": -1.227,
+              "dy": -0.015
+            },
+            {
+              "dx": -1.227,
+              "dy": 0.585
+            },
+            {
+              "dx": -2.427,
+              "dy": 0.585
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -1.827,
+              "dy": 0.285
+            }
+          ],
+          "space_type": "amr",
+          "stores_amr": true
+        },
+        {
+          "name": "AMR-B AMR space 7",
+          "points": [
+            {
+              "dx": -2.427,
+              "dy": 0.685
+            },
+            {
+              "dx": -1.227,
+              "dy": 0.685
+            },
+            {
+              "dx": -1.227,
+              "dy": 1.285
+            },
+            {
+              "dx": -2.427,
+              "dy": 1.285
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-B",
+              "dx": -1.827,
+              "dy": 0.985
+            }
+          ]
+        },
+        {
+          "name": "AMR-C AMR space 4",
+          "points": [
+            {
+              "dx": -2.416,
+              "dy": 2.801
+            },
+            {
+              "dx": -1.216,
+              "dy": 2.801
+            },
+            {
+              "dx": -1.216,
+              "dy": 3.401
+            },
+            {
+              "dx": -2.416,
+              "dy": 3.401
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-C",
+              "dx": -1.816,
+              "dy": 3.101
+            }
+          ]
+        },
+        {
+          "name": "AMR-C AMR space 5",
+          "points": [
+            {
+              "dx": -2.416,
+              "dy": 3.601
+            },
+            {
+              "dx": -1.216,
+              "dy": 3.601
+            },
+            {
+              "dx": -1.216,
+              "dy": 4.201
+            },
+            {
+              "dx": -2.416,
+              "dy": 4.201
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-C",
+              "dx": -1.816,
+              "dy": 3.901
+            }
+          ],
+          "space_type": "amr",
+          "stores_amr": true
+        },
+        {
+          "name": "AMR-C AMR space 6",
+          "points": [
+            {
+              "dx": -2.416,
+              "dy": 4.401
+            },
+            {
+              "dx": -1.216,
+              "dy": 4.401
+            },
+            {
+              "dx": -1.216,
+              "dy": 5.001
+            },
+            {
+              "dx": -2.416,
+              "dy": 5.001
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-C",
+              "dx": -1.816,
+              "dy": 4.701
+            }
+          ],
+          "space_type": "amr",
+          "stores_amr": true
+        },
+        {
+          "name": "AMR-C AMR space 7",
+          "points": [
+            {
+              "dx": -2.416,
+              "dy": 5.201
+            },
+            {
+              "dx": -1.216,
+              "dy": 5.201
+            },
+            {
+              "dx": -1.216,
+              "dy": 5.801
+            },
+            {
+              "dx": -2.416,
+              "dy": 5.801
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "slot_type": "amr",
+              "amr_type": "AMR-C",
+              "dx": -1.816,
+              "dy": 5.501
+            }
+          ]
+        }
+      ]
     }
   ],
   "corridors": {
@@ -9282,13 +9990,27 @@
         "floor": 1,
         "x": 142.402,
         "y": -191.771
+      },
+      {
+        "name": "C0-140",
+        "floor": 0,
+        "x": 160,
+        "y": -19
+      },
+      {
+        "name": "C0-141",
+        "floor": 0,
+        "x": 165,
+        "y": -19
+      },
+      {
+        "name": "C0-142",
+        "floor": 0,
+        "x": 173,
+        "y": -19
       }
     ],
     "edges": [
-      {
-        "from": "C0-1",
-        "to": "C0-2"
-      },
       {
         "from": "C0-3",
         "to": "C0-4"
@@ -9392,10 +10114,6 @@
       {
         "from": "C0-38",
         "to": "C0-39"
-      },
-      {
-        "from": "C0-2",
-        "to": "RD2"
       },
       {
         "from": "C1-3",
@@ -9944,14 +10662,6 @@
       {
         "from": "C0-47",
         "to": "C0-48"
-      },
-      {
-        "from": "C0-2",
-        "to": "C0-49"
-      },
-      {
-        "from": "C0-49",
-        "to": "C0-2"
       },
       {
         "from": "C0-49",
@@ -15132,6 +15842,62 @@
       {
         "from": "D23-PHARMACY",
         "to": "C1-107"
+      },
+      {
+        "from": "C0-1",
+        "to": "C0-141"
+      },
+      {
+        "from": "C0-141",
+        "to": "C0-1"
+      },
+      {
+        "from": "C0-141",
+        "to": "C0-142"
+      },
+      {
+        "from": "C0-142",
+        "to": "C0-141"
+      },
+      {
+        "from": "C0-49",
+        "to": "C0-142"
+      },
+      {
+        "from": "C0-142",
+        "to": "C0-49"
+      },
+      {
+        "from": "C0-142",
+        "to": "C0-2"
+      },
+      {
+        "from": "C0-2",
+        "to": "C0-142"
+      },
+      {
+        "from": "C0-2",
+        "to": "RD2"
+      },
+      {
+        "from": "RD2",
+        "to": "C0-2"
+      },
+      {
+        "from": "C0-141",
+        "to": "C0-140"
+      },
+      {
+        "from": "C0-140",
+        "to": "C0-141"
+      },
+      {
+        "from": "C0-140",
+        "to": "AMR-Accommodation"
+      },
+      {
+        "from": "AMR-Accommodation",
+        "to": "C0-140"
       }
     ],
     "auto_connect": false
