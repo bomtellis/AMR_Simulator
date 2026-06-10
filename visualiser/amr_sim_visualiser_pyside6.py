@@ -2468,6 +2468,9 @@ class SimulationVisualizer(QMainWindow):
         return None
 
     def _payload_value_from_space(self, space):
+        amr_id = str(space.get("amr_id", "") or "").strip()
+        if amr_id:
+            return f"AMR: {amr_id}"
         for key in (
             "current_payload",
             "payload",
@@ -3424,10 +3427,33 @@ class SimulationVisualizer(QMainWindow):
             width = 0.65
         return max(0.15, length), max(0.15, width)
 
+    def _amr_dimensions_for_name(self, amr_name: str) -> Tuple[float, float]:
+        amr_name = str(amr_name or "").strip()
+        base_name = amr_name.rsplit("-", 1)[0] if "-" in amr_name else amr_name
+        for amr in self.layout_model.data.get("amrs", []) or []:
+            if not isinstance(amr, dict):
+                continue
+            amr_id = str(amr.get("id", "") or "").strip()
+            if amr_id not in {amr_name, base_name}:
+                continue
+            try:
+                length = float(amr.get("length_m", 0.8) or 0.8)
+            except Exception:
+                length = 0.8
+            try:
+                width = float(amr.get("width_m", 0.6) or 0.6)
+            except Exception:
+                width = 0.6
+            return max(0.15, length), max(0.15, width)
+        return 0.8, 0.6
+
     def _payload_full_details_for_name(self, payload_name: str) -> dict:
         payload_name = str(payload_name or "").strip()
         payload = self._payload_lookup().get(payload_name, {}) or {}
-        length, width = self._payload_dimensions_for_name(payload_name)
+        if str(payload_name or "").startswith("AMR: "):
+            length, width = self._amr_dimensions_for_name(str(payload_name).split(":", 1)[1].strip())
+        else:
+            length, width = self._payload_dimensions_for_name(payload_name)
 
         def num(*keys, default=0.0):
             for key in keys:
@@ -4176,7 +4202,10 @@ class SimulationVisualizer(QMainWindow):
 
         item = QGraphicsPolygonItem(QPolygonF(points))
         status_lower = str(status or "").lower()
-        if "seed" in status_lower:
+        if str(payload_name or "").startswith("AMR: "):
+            fill = QColor(52, 152, 219, 145)
+            outline = QColor("#d6ecff")
+        elif "seed" in status_lower:
             fill = QColor(142, 68, 173, 160)
             outline = QColor("#e8d5ff")
         elif "empty" in status_lower:
@@ -4339,7 +4368,10 @@ class SimulationVisualizer(QMainWindow):
                     continue
 
                 for slot_index, slot in enumerate(slots):
-                    configured_payload = str(slot.get("payload", "") or "").strip()
+                    if str(slot.get("slot_type", "") or "").strip().lower() == "amr" or str(slot.get("amr_type", "") or "").strip():
+                        configured_payload = f"AMR: {str(space.get('amr_id', '') or slot.get('amr_type', 'AMR')).strip()}"
+                    else:
+                        configured_payload = str(slot.get("payload", "") or "").strip()
                     payload_to_draw = configured_payload
                     details_row = row
                     draw_status = row_status
@@ -6033,6 +6065,9 @@ class SimulationVisualizer(QMainWindow):
             space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
             live_row = payload_by_space.get(space_name, {})
             payload = str(live_row.get("payload", "-") or "-").strip()
+            amr_id = str(space.get("amr_id", "") or "").strip()
+            if amr_id and (not payload or payload == "-"):
+                payload = f"AMR: {amr_id}"
             occupied = bool(payload and payload != "-")
             points = list(space.get("points", []) or [])
             rows.append(

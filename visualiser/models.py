@@ -134,9 +134,6 @@ def default_task_generation_category(label: str) -> dict:
         "route_profile": "",
         "days_active": ["mon", "tue", "wed", "thu", "fri"],
         "schedule_times": [],
-        "timeframe_start": "09:00",
-        "timeframe_end": "17:00",
-        "payload_multiple": 1,
         "frequency_per_day": 0.0,
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
@@ -847,15 +844,23 @@ class JsonStore:
             for slot in space.get("payload_slots", []):
                 if not isinstance(slot, dict):
                     continue
-                payload_name = str(slot.get("payload", "")).strip()
-                if not payload_name:
-                    continue
+                slot_type = str(slot.get("slot_type", "") or "").strip().lower()
                 clean_slot = {
-                    "payload": payload_name,
                     "rotation_deg": round(
                         float(slot.get("rotation_deg", 0.0) or 0.0), 3
                     ),
                 }
+                if slot_type == "amr" or str(slot.get("amr_type", "") or "").strip():
+                    amr_type = str(slot.get("amr_type", slot.get("amr", "")) or "").strip()
+                    if not amr_type:
+                        continue
+                    clean_slot["slot_type"] = "amr"
+                    clean_slot["amr_type"] = amr_type
+                else:
+                    payload_name = str(slot.get("payload", "")).strip()
+                    if not payload_name:
+                        continue
+                    clean_slot["payload"] = payload_name
                 if "dx" in slot and "dy" in slot:
                     clean_slot["dx"] = round(float(slot.get("dx", 0.0)), 3)
                     clean_slot["dy"] = round(float(slot.get("dy", 0.0)), 3)
@@ -865,13 +870,18 @@ class JsonStore:
                 payload_slots.append(clean_slot)
 
             if len(points) >= 3:
-                clean_spaces.append(
-                    {
-                        "name": name,
-                        "points": points,
-                        "payload_slots": payload_slots,
-                    }
-                )
+                clean_space = {
+                    "name": name,
+                    "points": points,
+                    "payload_slots": payload_slots,
+                }
+                if bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr":
+                    clean_space["space_type"] = "amr"
+                    clean_space["stores_amr"] = True
+                for runtime_key in ("amr_id", "occupied", "reserved_by_amr", "timestamp"):
+                    if runtime_key in space:
+                        clean_space[runtime_key] = space.get(runtime_key)
+                clean_spaces.append(clean_space)
 
         location["inventory_spaces"] = clean_spaces
 

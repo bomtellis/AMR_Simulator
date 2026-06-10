@@ -1,4 +1,3 @@
-import csv
 import json
 import math
 from typing import Any, List, Optional
@@ -13,7 +12,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFileDialog,
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
@@ -164,7 +162,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
-        "timeframe",
     ]
 
     def __init__(
@@ -203,9 +200,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.selected_pickup_locations = []
         self.selected_dropoffs = list(self.base_category.get("dropoff_locations", []))
         self.scheduled_times = list(self.base_category.get("scheduled_times", []))
-        self.timeframe_start_edit = QLineEdit(str(self.base_category.get("timeframe_start", "09:00")))
-        self.timeframe_end_edit = QLineEdit(str(self.base_category.get("timeframe_end", "17:00")))
-        self.payload_multiple_edit = QLineEdit(str(self.base_category.get("payload_multiple", 1)))
 
         # In the bulk/multiple department configuration dialog, only departments
         # with an existing assigned location for the selected category are valid.
@@ -415,9 +409,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
         form.addRow("Days active", days_widget)
         form.addRow("Scheduled times", schedule_row)
-        form.addRow("Timeframe start", self.timeframe_start_edit)
-        form.addRow("Timeframe end", self.timeframe_end_edit)
-        form.addRow("Payload multiple", self.payload_multiple_edit)
         form.addRow("Frequency per day", self.frequency_edit)
         form.addRow("Volume per event m³", self.volume_per_event_edit)
         form.addRow("Threshold volume m³", self.threshold_volume_edit)
@@ -482,9 +473,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 self.volume_per_event_edit,
                 self.threshold_volume_edit,
                 self.base_daily_volume_edit,
-                self.timeframe_start_edit,
-                self.timeframe_end_edit,
-                self.payload_multiple_edit,
             ):
                 widget.setEnabled(False)
             self.waste_stream_notice_label.setVisible(True)
@@ -852,9 +840,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "route_profile": self.route_profile_combo.currentText().strip(),
                 "days_active": days_active,
                 "scheduled_times": list(self.scheduled_times),
-                "timeframe_start": self.timeframe_start_edit.text().strip() or "09:00",
-                "timeframe_end": self.timeframe_end_edit.text().strip() or "17:00",
-                "payload_multiple": max(1, int(float(self.payload_multiple_edit.text() or 1))),
                 "frequency_per_day": float(self.frequency_edit.text() or 0.0),
                 "volume_per_event_m3": float(self.volume_per_event_edit.text() or 0.0),
                 "threshold_volume_m3": float(self.threshold_volume_edit.text() or 0.0),
@@ -870,7 +855,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 payload["tracked_item_exchange"] = False
                 payload["exchange_mode"] = "top_up_only"
                 payload["scheduled_times"] = []
-                payload["payload_multiple"] = 1
                 payload["frequency_per_day"] = 0.0
                 payload["volume_per_event_m3"] = 0.0
                 payload["threshold_volume_m3"] = 0.0
@@ -975,7 +959,6 @@ class TaskGenerationSettingsDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
-        "timeframe",
     ]
 
     def __init__(
@@ -1050,16 +1033,6 @@ class TaskGenerationSettingsDialog(QDialog):
         clear_group_btn = QPushButton("Clear configured group...")
         clear_group_btn.clicked.connect(self.clear_configured_department_group)
         department_col.addWidget(clear_group_btn)
-
-        clear_category_locations_btn = QPushButton("Clear category locations...")
-        clear_category_locations_btn.setToolTip(
-            "Clear all department pickup / drop-off location assignments "
-            "for the currently selected task-generation category."
-        )
-        clear_category_locations_btn.clicked.connect(
-            self.clear_current_category_locations
-        )
-        department_col.addWidget(clear_category_locations_btn)
 
         category_buttons = QHBoxLayout()
         left.addLayout(category_buttons)
@@ -1167,13 +1140,6 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.scheduled_times = []
 
-        self.timeframe_start_edit = QLineEdit()
-        self.timeframe_start_edit.setPlaceholderText("HH:MM, e.g. 09:00")
-        self.timeframe_end_edit = QLineEdit()
-        self.timeframe_end_edit.setPlaceholderText("HH:MM, e.g. 17:00")
-        self.payload_multiple_edit = QLineEdit()
-        self.payload_multiple_edit.setPlaceholderText("Number of payloads to deliver in the window")
-
         schedule_row = QHBoxLayout()
         self.schedule_summary = QLabel("No times selected")
         self.schedule_summary.setWordWrap(True)
@@ -1218,9 +1184,6 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Days active", days_widget)
 
         form.addRow("Scheduled times", schedule_row)
-        form.addRow("Timeframe start", self.timeframe_start_edit)
-        form.addRow("Timeframe end", self.timeframe_end_edit)
-        form.addRow("Payload multiple", self.payload_multiple_edit)
 
         form.addRow("Frequency per day", self.frequency_edit)
         form.addRow("Volume per event m³", self.volume_per_event_edit)
@@ -1355,9 +1318,6 @@ class TaskGenerationSettingsDialog(QDialog):
         if self.scheduled_times:
             return True
 
-        if self.mode_combo.currentText().strip() == "timeframe":
-            return True
-
         numeric_fields = [
             self.frequency_edit,
             self.volume_per_event_edit,
@@ -1479,157 +1439,6 @@ class TaskGenerationSettingsDialog(QDialog):
             self,
             "Clear configured group",
             f"Cleared {len(dept_ids)} department override(s).",
-        )
-
-    def _category_location_count_for_key(self, category_key):
-        category_key = str(category_key or "").strip()
-        departments_with_locations = 0
-        location_reference_count = 0
-
-        for dept in self.departments:
-            category_locations = dept.get("task_generation_locations", {}) or {}
-            if not isinstance(category_locations, dict):
-                continue
-
-            entry = category_locations.get(category_key)
-            if not entry:
-                continue
-
-            if isinstance(entry, dict):
-                raw_locations = entry.get(
-                    "pickup_dropoff_locations", entry.get("locations", [])
-                )
-            else:
-                raw_locations = entry
-
-            if isinstance(raw_locations, str):
-                locations = [raw_locations] if raw_locations.strip() else []
-            elif isinstance(raw_locations, list):
-                locations = [str(x).strip() for x in raw_locations if str(x).strip()]
-            else:
-                locations = [str(x).strip() for x in (raw_locations or []) if str(x).strip()]
-
-            if locations:
-                departments_with_locations += 1
-                location_reference_count += len(locations)
-
-        return departments_with_locations, location_reference_count
-
-    def _clear_category_locations_from_department_list(self, departments, category_key):
-        category_key = str(category_key or "").strip()
-        cleared_departments = 0
-        cleared_location_refs = 0
-
-        for dept in departments or []:
-            if not isinstance(dept, dict):
-                continue
-
-            category_locations = dept.get("task_generation_locations", {}) or {}
-            if not isinstance(category_locations, dict) or category_key not in category_locations:
-                continue
-
-            entry = category_locations.get(category_key)
-            if isinstance(entry, dict):
-                raw_locations = entry.get(
-                    "pickup_dropoff_locations", entry.get("locations", [])
-                )
-            else:
-                raw_locations = entry
-
-            if isinstance(raw_locations, str):
-                locations = [raw_locations] if raw_locations.strip() else []
-            elif isinstance(raw_locations, list):
-                locations = [str(x).strip() for x in raw_locations if str(x).strip()]
-            else:
-                locations = [str(x).strip() for x in (raw_locations or []) if str(x).strip()]
-
-            if locations:
-                cleared_departments += 1
-                cleared_location_refs += len(locations)
-
-            category_locations.pop(category_key, None)
-
-            if not category_locations:
-                dept.pop("task_generation_locations", None)
-
-        return cleared_departments, cleared_location_refs
-
-    def _sync_cleared_category_locations_to_parent_store(self, category_key):
-        parent = self.parent()
-        while parent is not None:
-            store = getattr(parent, "store", None)
-            data = getattr(store, "data", None) if store is not None else None
-            if isinstance(data, dict) and isinstance(data.get("departments"), list):
-                self._clear_category_locations_from_department_list(
-                    data.get("departments", []),
-                    category_key,
-                )
-                return
-            parent = parent.parent() if hasattr(parent, "parent") else None
-
-    def clear_current_category_locations(self):
-        if not self.current_key:
-            QMessageBox.information(
-                self,
-                "Clear category locations",
-                "Select a category first.",
-            )
-            return
-
-        category_key = str(self.current_key).strip()
-        category_label = (
-            self.category_list.currentItem().text()
-            if self.category_list.currentItem()
-            else category_key
-        )
-
-        department_count, reference_count = self._category_location_count_for_key(
-            category_key
-        )
-
-        if reference_count <= 0:
-            QMessageBox.information(
-                self,
-                "Clear category locations",
-                f"No configured locations were found for {category_label}.",
-            )
-            return
-
-        if (
-            QMessageBox.question(
-                self,
-                "Clear category locations",
-                (
-                    f"Clear all configured pickup / drop-off locations for {category_label}?\n\n"
-                    f"This will remove {reference_count} location reference(s) "
-                    f"from {department_count} department(s).\n\n"
-                    "This does not delete the location objects from the map and does not "
-                    "clear the task-generation routing/settings for the category."
-                ),
-            )
-            != QMessageBox.Yes
-        ):
-            return
-
-        cleared_departments, cleared_refs = self._clear_category_locations_from_department_list(
-            self.departments,
-            category_key,
-        )
-        self._sync_cleared_category_locations_to_parent_store(category_key)
-
-        self._loading = True
-        self._refresh_department_list(select_dept_id=self.current_department_id)
-        if self.current_key:
-            self._load_category(self.current_key)
-        self._loading = False
-
-        QMessageBox.information(
-            self,
-            "Clear category locations",
-            (
-                f"Cleared {cleared_refs} location reference(s) "
-                f"from {cleared_departments} department(s) for {category_label}."
-            ),
         )
 
     def _bulk_group_signature(self, payload):
@@ -2223,9 +2032,6 @@ class TaskGenerationSettingsDialog(QDialog):
                 "stores": ["09:30", "14:30"],
                 "ssd": ["08:00", "12:00", "17:00"],
             }.get(key, []),
-            "timeframe_start": "09:00",
-            "timeframe_end": "17:00",
-            "payload_multiple": 1,
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
@@ -2367,9 +2173,6 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.scheduled_times = []
         self._refresh_schedule_summary()
-        self.timeframe_start_edit.setText("09:00")
-        self.timeframe_end_edit.setText("17:00")
-        self.payload_multiple_edit.setText("1")
 
         self.frequency_edit.setText("0.0")
         self.volume_per_event_edit.setText("0.0")
@@ -2446,9 +2249,6 @@ class TaskGenerationSettingsDialog(QDialog):
             ]
 
         self._refresh_schedule_summary()
-        self.timeframe_start_edit.setText(str(item.get("timeframe_start", "09:00")))
-        self.timeframe_end_edit.setText(str(item.get("timeframe_end", "17:00")))
-        self.payload_multiple_edit.setText(str(item.get("payload_multiple", 1)))
         self.frequency_edit.setText(str(item.get("frequency_per_day", 0.0)))
         self.volume_per_event_edit.setText(str(item.get("volume_per_event_m3", 0.0)))
         self.threshold_volume_edit.setText(str(item.get("threshold_volume_m3", 0.0)))
@@ -2487,8 +2287,6 @@ class TaskGenerationSettingsDialog(QDialog):
             "scheduled_sporadic",
         }
 
-        uses_timeframe = mode == "timeframe"
-
         # Waste stream generation values are now edited on the Department
         # waste-stream assignments.  The Waste category only controls routing,
         # collection/destination and return-task behaviour.
@@ -2502,9 +2300,6 @@ class TaskGenerationSettingsDialog(QDialog):
         self.schedule_summary.setEnabled((not is_waste) and uses_schedule)
         self.schedule_button.setEnabled((not is_waste) and uses_schedule)
         self.clear_schedule_button.setEnabled((not is_waste) and uses_schedule)
-        self.timeframe_start_edit.setEnabled((not is_waste) and uses_timeframe)
-        self.timeframe_end_edit.setEnabled((not is_waste) and uses_timeframe)
-        self.payload_multiple_edit.setEnabled((not is_waste) and uses_timeframe)
 
         self.threshold_volume_edit.setEnabled((not is_waste) and uses_threshold)
         self.base_daily_volume_edit.setEnabled(
@@ -2584,9 +2379,6 @@ class TaskGenerationSettingsDialog(QDialog):
             "route_profile": self.route_profile_combo.currentText().strip(),
             "days_active": days_active,
             "scheduled_times": list(self.scheduled_times),
-            "timeframe_start": self.timeframe_start_edit.text().strip() or "09:00",
-            "timeframe_end": self.timeframe_end_edit.text().strip() or "17:00",
-            "payload_multiple": max(1, int(float(self.payload_multiple_edit.text() or 1))),
             "frequency_per_day": float(self.frequency_edit.text() or 0.0),
             "volume_per_event_m3": float(self.volume_per_event_edit.text() or 0.0),
             "threshold_volume_m3": float(self.threshold_volume_edit.text() or 0.0),
@@ -2604,7 +2396,6 @@ class TaskGenerationSettingsDialog(QDialog):
             payload["tracked_item_exchange"] = False
             payload["exchange_mode"] = "top_up_only"
             payload["scheduled_times"] = []
-            payload["payload_multiple"] = 1
             payload["frequency_per_day"] = 0.0
             payload["volume_per_event_m3"] = 0.0
             payload["threshold_volume_m3"] = 0.0
@@ -2638,8 +2429,6 @@ class TaskGenerationSettingsDialog(QDialog):
                     payload.get("return_payload"),
                     payload.get("route_profile"),
                     payload.get("scheduled_times"),
-                    payload.get("generation_mode") == "timeframe",
-                    int(float(payload.get("payload_multiple", 1) or 1)) > 1,
                     float(payload.get("frequency_per_day", 0.0) or 0.0) != 0.0,
                     float(payload.get("volume_per_event_m3", 0.0) or 0.0) != 0.0,
                     float(payload.get("threshold_volume_m3", 0.0) or 0.0) != 0.0,
@@ -7245,7 +7034,6 @@ class DepartmentListDialog(QDialog):
         category_wizard_btn = QPushButton("Task category wizard...")
         shared_bin_groups_btn = QPushButton("Auto shared bin groups...")
         bulk_waste_btn = QPushButton("Manage waste streams...")
-        export_csv_btn = QPushButton("Export CSV...")
 
         row.addWidget(add_btn)
         row.addWidget(edit_btn)
@@ -7254,7 +7042,6 @@ class DepartmentListDialog(QDialog):
         row.addWidget(category_wizard_btn)
         row.addWidget(shared_bin_groups_btn)
         row.addWidget(bulk_waste_btn)
-        row.addWidget(export_csv_btn)
         row.addStretch(1)
         row.addWidget(save_btn)
 
@@ -7267,130 +7054,9 @@ class DepartmentListDialog(QDialog):
         bulk_waste_btn.clicked.connect(
             self.manage_waste_streams_for_selected_departments
         )
-        export_csv_btn.clicked.connect(self.export_departments_csv)
         save_btn.clicked.connect(self.save_items)
 
         self._refresh_table()
-
-    def _category_locations_for_export(self, dept, category_key):
-        category_locations = dept.get("task_generation_locations", {}) or {}
-        if not isinstance(category_locations, dict):
-            return []
-
-        entry = category_locations.get(category_key, {})
-        if isinstance(entry, dict):
-            raw_locations = entry.get(
-                "pickup_dropoff_locations", entry.get("locations", [])
-            )
-        else:
-            raw_locations = entry
-
-        if isinstance(raw_locations, str):
-            raw_locations = [raw_locations]
-
-        return [
-            str(x).strip() for x in (raw_locations or []) if str(x).strip()
-        ]
-
-    def export_departments_csv(self):
-        if not self.items:
-            QMessageBox.information(
-                self,
-                "Export departments",
-                "No departments are available to export.",
-            )
-            return
-
-        path, _selected_filter = QFileDialog.getSaveFileName(
-            self,
-            "Export departments to CSV",
-            "departments.csv",
-            "CSV files (*.csv);;All files (*.*)",
-        )
-
-        if not path:
-            return
-
-        if not path.lower().endswith(".csv"):
-            path += ".csv"
-
-        category_columns = []
-        seen_category_keys = set()
-
-        for category_key, category_label, _default_suffix in self.task_generation_categories:
-            key = str(category_key).strip()
-            if not key or key in seen_category_keys:
-                continue
-            seen_category_keys.add(key)
-            label = str(category_label).strip() or key.title()
-            category_columns.append((key, label))
-
-        # Include any category assignments that exist on departments but are no
-        # longer present in the active task_generation_categories list.
-        for dept in self.items:
-            category_locations = dept.get("task_generation_locations", {}) or {}
-            if not isinstance(category_locations, dict):
-                continue
-            for key in category_locations.keys():
-                key = str(key).strip()
-                if not key or key in seen_category_keys:
-                    continue
-                seen_category_keys.add(key)
-                category_columns.append((key, key.title()))
-
-        headers = ["Floor", "Department name"] + [
-            f"{label} location" for _key, label in category_columns
-        ]
-
-        try:
-            rows = sorted(
-                self.items,
-                key=lambda dept: (
-                    (
-                        int(dept.get("floor", 0))
-                        if str(dept.get("floor", "")).strip().lstrip("-").isdigit()
-                        else 999999
-                    ),
-                    str(dept.get("name", "")).strip().lower()
-                    or str(dept.get("id", "")).strip().lower(),
-                ),
-            )
-
-            with open(path, "w", newline="", encoding="utf-8-sig") as handle:
-                writer = csv.writer(handle)
-                writer.writerow(headers)
-
-                for dept in rows:
-                    department_name = str(dept.get("name", "")).strip()
-                    if not department_name:
-                        department_name = str(dept.get("id", "")).strip()
-
-                    row = [str(dept.get("floor", "")).strip(), department_name]
-
-                    for category_key, _category_label in category_columns:
-                        row.append(
-                            ", ".join(
-                                self._category_locations_for_export(
-                                    dept, category_key
-                                )
-                            )
-                        )
-
-                    writer.writerow(row)
-
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "Export departments",
-                f"Could not export departments CSV:\n{exc}",
-            )
-            return
-
-        QMessageBox.information(
-            self,
-            "Export departments",
-            f"Exported {len(self.items)} department(s) to:\n{path}",
-        )
 
     def _refresh_table(self):
         self.table.clear()
@@ -8478,6 +8144,17 @@ class InventorySpacesDialog(QDialog):
         payload_tools.addWidget(auto_align_btn)
         right.addLayout(payload_tools)
 
+        amr_tools = QHBoxLayout()
+        self.amr_space_combo = QComboBox()
+        self.amr_space_combo.addItems([""] + self._amr_type_names())
+        add_amr_space_btn = QPushButton("Add AMR space")
+        add_amr_space_btn.setToolTip("Create an inventory space sized to the selected AMR so this location can store / park AMRs.")
+        add_amr_space_btn.clicked.connect(self.add_amr_space)
+        amr_tools.addWidget(QLabel("AMR"))
+        amr_tools.addWidget(self.amr_space_combo, 1)
+        amr_tools.addWidget(add_amr_space_btn)
+        right.addLayout(amr_tools)
+
         self.scene = QGraphicsScene(self)
         self.view = ZoomableInventoryView(self.scene)
         self.view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -8492,7 +8169,7 @@ class InventorySpacesDialog(QDialog):
         right.addWidget(self.view, 1)
 
         self.status_label = QLabel(
-            "Inventory spaces are payload footprints only. Use Add payload to create a fixed-size space, drag to position it, or drag the rotate handle / enter an angle for free rotation."
+            "Inventory spaces are fixed footprints. Use Add payload or Add AMR space, then drag to position it or use the rotate handle / angle field."
         )
         right.addWidget(self.status_label)
 
@@ -8604,6 +8281,38 @@ class InventorySpacesDialog(QDialog):
         width = float(payload.get("width_m", 0.0) or 0.0)
         return max(0.0, length), max(0.0, width)
 
+    def _amr_type_names(self):
+        return sorted(
+            str(amr.get("id", "")).strip()
+            for amr in self.store.data.get("amrs", [])
+            if str(amr.get("id", "")).strip()
+        )
+
+    def _amr_type_by_name(self, name):
+        name = str(name or "").strip()
+        for amr in self.store.data.get("amrs", []):
+            if str(amr.get("id", "")).strip() == name:
+                return amr
+        return None
+
+    def _amr_dimensions(self, name):
+        amr = self._amr_type_by_name(name)
+        if not amr:
+            return 0.0, 0.0
+        length = float(amr.get("length_m", 0.0) or 0.0)
+        width = float(amr.get("width_m", 0.0) or 0.0)
+        return max(0.0, length), max(0.0, width)
+
+    def _slot_label(self, slot):
+        if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
+            return str(slot.get("amr_type", "") or slot.get("amr", "") or "AMR").strip()
+        return str(slot.get("payload", "") or "").strip()
+
+    def _slot_dimensions(self, slot):
+        if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
+            return self._amr_dimensions(str(slot.get("amr_type", "") or slot.get("amr", "")))
+        return self._payload_dimensions(str(slot.get("payload", "") or ""))
+
     def _current_space_slots(self):
         if self.selected_space_index is None:
             return []
@@ -8636,8 +8345,7 @@ class InventorySpacesDialog(QDialog):
         slot.pop("y", None)
 
     def _payload_slot_rect_points(self, slot, padding=0.0):
-        payload_name = str(slot.get("payload", "")).strip()
-        length, width = self._payload_dimensions(payload_name)
+        length, width = self._slot_dimensions(slot)
         if length <= 0 or width <= 0:
             return []
         cx, cy = self._slot_center_absolute(slot)
@@ -8709,8 +8417,7 @@ class InventorySpacesDialog(QDialog):
         return True
 
     def _slot_polygon_points(self, slot):
-        payload_name = str(slot.get("payload", "")).strip()
-        length, width = self._payload_dimensions(payload_name)
+        length, width = self._slot_dimensions(slot)
         if length <= 0 or width <= 0:
             return []
         cx, cy = self._slot_center_absolute(slot)
@@ -8834,6 +8541,69 @@ class InventorySpacesDialog(QDialog):
             f"({length:.3f} m × {width:.3f} m)."
         )
 
+    def add_amr_space(self):
+        amr_type = self.amr_space_combo.currentText().strip()
+        if not amr_type:
+            QMessageBox.information(self, "AMR space", "Select an AMR type first.")
+            return
+
+        length, width = self._amr_dimensions(amr_type)
+        if length <= 0 or width <= 0:
+            QMessageBox.critical(
+                self,
+                "AMR space",
+                "AMR length and width must be greater than zero.",
+            )
+            return
+
+        cx, cy = self._next_payload_space_centre(length, width)
+        min_x = cx - (length / 2.0)
+        min_y = cy - (width / 2.0)
+        max_x = cx + (length / 2.0)
+        max_y = cy + (width / 2.0)
+        points_abs = [
+            {"x": round(min_x, 3), "y": round(min_y, 3)},
+            {"x": round(max_x, 3), "y": round(min_y, 3)},
+            {"x": round(max_x, 3), "y": round(max_y, 3)},
+            {"x": round(min_x, 3), "y": round(max_y, 3)},
+        ]
+        lx = float(self.location.get("x", 0.0))
+        ly = float(self.location.get("y", 0.0))
+        name = self._next_payload_space_name(f"{amr_type} AMR")
+        space = {
+            "name": name,
+            "space_type": "amr",
+            "stores_amr": True,
+            "points": [
+                {"dx": round(float(p["x"]) - lx, 3), "dy": round(float(p["y"]) - ly, 3)}
+                for p in points_abs
+            ],
+            "payload_slots": [
+                {
+                    "slot_type": "amr",
+                    "amr_type": amr_type,
+                    "dx": round(cx - lx, 3),
+                    "dy": round(cy - ly, 3),
+                    "rotation_deg": 0.0,
+                }
+            ],
+        }
+
+        self.spaces.append(space)
+        self.selected_space_index = len(self.spaces) - 1
+        self.name_edit.setText(name)
+        self._sync_current_space_from_payload()
+        self.selected_payload_index = 0
+        self.selected_space_indices = {self.selected_space_index}
+        self.lock_size_check.setChecked(True)
+        self.refresh_list()
+        self.space_list.setCurrentRow(self.selected_space_index)
+        self.refresh_scene()
+        self.status_label.setText(
+            f"Created AMR storage space '{name}' sized to {amr_type} "
+            f"({length:.3f} m × {width:.3f} m)."
+        )
+
     def _next_payload_space_name(self, payload_name):
         base = str(payload_name).strip() or "Payload"
         existing = {str(space.get("name", "")).strip() for space in self.spaces}
@@ -8936,13 +8706,13 @@ class InventorySpacesDialog(QDialog):
                 continue
 
             slot = slots[0]
-            payload_name = str(slot.get("payload", "")).strip()
-            length, width = self._payload_dimensions(payload_name)
+            item_name = self._slot_label(slot)
+            length, width = self._slot_dimensions(slot)
             if length <= 0 or width <= 0:
                 skipped += 1
                 continue
 
-            payload_spaces.append((index, slot, payload_name, length, width))
+            payload_spaces.append((index, slot, item_name, length, width))
 
         if not payload_spaces:
             QMessageBox.information(
@@ -9137,7 +8907,11 @@ class InventorySpacesDialog(QDialog):
         if slots:
             self.current_points = self._slot_polygon_points(slots[0])
             self.selected_payload_index = 0
-            self.payload_combo.setCurrentText(str(slots[0].get("payload", "")))
+            if str(slots[0].get("slot_type", "") or "").strip().lower() == "amr":
+                if hasattr(self, "amr_space_combo"):
+                    self.amr_space_combo.setCurrentText(str(slots[0].get("amr_type", "")))
+            else:
+                self.payload_combo.setCurrentText(str(slots[0].get("payload", "")))
             self._refresh_rotation_field()
         else:
             self.current_points = self.store.inventory_space_points_absolute(
@@ -9742,7 +9516,7 @@ class InventorySpacesDialog(QDialog):
             # No freehand handles: inventory spaces are fixed payload footprints.
 
         for slot_index, slot in enumerate(self._current_space_slots()):
-            payload_name = str(slot.get("payload", "")).strip()
+            item_name = self._slot_label(slot)
             poly_points = self._slot_polygon_points(slot)
             if len(poly_points) < 3:
                 continue
@@ -9754,7 +9528,7 @@ class InventorySpacesDialog(QDialog):
             item.setZValue(15)
             self.scene.addItem(item)
             cx, cy = self._slot_center_absolute(slot)
-            label = QGraphicsSimpleTextItem(payload_name)
+            label = QGraphicsSimpleTextItem(item_name)
             label.setBrush(QBrush(QColor("#e3f2ff")))
             label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
             label.setPos(self.world_to_scene(cx, cy))

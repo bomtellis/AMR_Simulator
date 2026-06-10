@@ -515,6 +515,8 @@ class Simulation:
                 amr.manual_task_compatible = len(payload_slots) == 1
                 self.amrs.append(amr)
 
+        self._seed_initial_amr_inventory_spaces()
+
         # Parse tasks from configuration
 
         initial_tasks = []
@@ -2421,6 +2423,16 @@ class Simulation:
                 name = str(raw_space.get("name", "")).strip() or f"Space {index}"
                 occupied = bool(raw_space.get("occupied", False))
 
+                slot_type = str(raw_space.get("space_type", "") or "").strip().lower()
+                stores_amr = bool(raw_space.get("stores_amr", False)) or slot_type == "amr"
+                amr_type = str(raw_space.get("amr_type", "") or "").strip()
+                for slot in raw_space.get("payload_slots", []) or []:
+                    if not isinstance(slot, dict):
+                        continue
+                    if str(slot.get("slot_type", "") or "").strip().lower() == "amr" or str(slot.get("amr_type", "") or "").strip():
+                        stores_amr = True
+                        amr_type = amr_type or str(slot.get("amr_type", "") or "").strip()
+
                 clean_spaces.append(
                     {
                         "name": name,
@@ -2436,11 +2448,116 @@ class Simulation:
                             raw_space.get("reserved_by_task", "")
                         ).strip(),
                         "task_id": str(raw_space.get("task_id", "")).strip(),
+                        "space_type": "amr" if stores_amr else str(raw_space.get("space_type", "") or "").strip(),
+                        "stores_amr": stores_amr,
+                        "amr_type": amr_type,
+                        "amr_id": str(raw_space.get("amr_id", "") or "").strip(),
+                        "reserved_by_amr": str(raw_space.get("reserved_by_amr", "") or "").strip(),
                     }
                 )
 
             if clean_spaces:
                 self.inventory_spaces_by_location[location_name] = clean_spaces
+
+    def _inventory_space_centre_location(self, parent_location_name: str, space: dict) -> Optional[Location]:
+        parent = self.locations.get(str(parent_location_name or "").strip())
+        if parent is None:
+            return None
+        points = list(space.get("points", []) or [])
+        xs = []
+        ys = []
+        for point in points:
+            try:
+                if "dx" in point and "dy" in point:
+                    xs.append(float(parent.x) + float(point.get("dx", 0.0)))
+                    ys.append(float(parent.y) + float(point.get("dy", 0.0)))
+                else:
+                    xs.append(float(point.get("x", parent.x)))
+                    ys.append(float(point.get("y", parent.y)))
+            except Exception:
+                continue
+        if xs and ys:
+            x = (min(xs) + max(xs)) / 2.0
+            y = (min(ys) + max(ys)) / 2.0
+        else:
+            x = float(parent.x)
+            y = float(parent.y)
+        return Location(
+            name=str(parent_location_name or ""),
+            floor=int(parent.floor),
+            x=round(float(x), 3),
+            y=round(float(y), 3),
+        )
+
+    def _inventory_space_accepts_amr(self, space: dict, amr: AMR) -> bool:
+        if not (bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr"):
+            return False
+        amr_type = str(space.get("amr_type", "") or "").strip()
+        base_id = str(getattr(amr, "id", "") or "").rsplit("-", 1)[0]
+        if amr_type and amr_type not in {str(getattr(amr, "id", "") or ""), base_id}:
+            return False
+        length_m = float(space.get("length_m", 0.0) or 0.0)
+        width_m = float(space.get("width_m", 0.0) or 0.0)
+        height_m = float(space.get("height_m", 999999.0) or 999999.0)
+        amr_length = float(getattr(amr, "length_m", 0.0) or 0.0)
+        amr_width = float(getattr(amr, "width_m", 0.0) or 0.0)
+        amr_height = float(getattr(amr, "height_m", 0.0) or 0.0)
+        fits_normal = amr_length <= length_m and amr_width <= width_m
+        fits_rotated = amr_length <= width_m and amr_width <= length_m
+        return (fits_normal or fits_rotated) and amr_height <= height_m
+
+    def _find_free_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
+        for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
+            if not self._inventory_space_accepts_amr(space, amr):
+                continue
+            if str(space.get("amr_id", "") or "").strip():
+                continue
+            if str(space.get("reserved_by_amr", "") or "").strip():
+                continue
+            return space
+        return None
+
+    def _free_amr_inventory_space(self, amr: AMR) -> None:
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        if not amr_id:
+            return
+        for spaces in self.inventory_spaces_by_location.values():
+            for space in spaces:
+                if str(space.get("amr_id", "") or "").strip() == amr_id:
+                    space["amr_id"] = ""
+                    if not str(space.get("payload", "") or "").strip():
+                        space["occupied"] = False
+                if str(space.get("reserved_by_amr", "") or "").strip() == amr_id:
+                    space["reserved_by_amr"] = ""
+
+    def _occupy_amr_inventory_space(self, amr: AMR, location_name: str) -> Optional[dict]:
+        self._free_amr_inventory_space(amr)
+        space = self._find_free_amr_inventory_space(location_name, amr)
+        if space is None:
+            setattr(amr, "inventory_space_name", "")
+            return None
+        space["amr_id"] = str(getattr(amr, "id", "") or "").strip()
+        space["occupied"] = True
+        space["reserved_by_amr"] = ""
+        setattr(amr, "inventory_space_name", str(space.get("name", "") or ""))
+        return space
+
+    def _amr_display_location(self, amr: AMR, location_name: str) -> Optional[Location]:
+        location_name = str(location_name or "").strip()
+        space_name = str(getattr(amr, "inventory_space_name", "") or "").strip()
+        if space_name:
+            for space in self.inventory_spaces_by_location.get(location_name, []):
+                if str(space.get("name", "") or "").strip() == space_name and str(space.get("amr_id", "") or "").strip() == str(getattr(amr, "id", "") or "").strip():
+                    loc = self._inventory_space_centre_location(location_name, space)
+                    if loc is not None:
+                        return loc
+        return self.locations.get(location_name)
+
+    def _seed_initial_amr_inventory_spaces(self) -> None:
+        for amr in getattr(self, "amrs", []):
+            location_name = str(getattr(amr, "location_name", "") or "").strip()
+            if location_name:
+                self._occupy_amr_inventory_space(amr, location_name)
 
     def _location_has_inventory_spaces(self, location_name: str) -> bool:
         # Inventory rules only apply where at least one valid inventory space has
@@ -4425,6 +4542,7 @@ class Simulation:
             return True
 
         current_loc = self.locations[amr.location_name]
+        self._free_amr_inventory_space(amr)
         plan = self._plan_return_to_charge(amr, current_loc, now, reserve=True)
         if plan is None:
             self.failed_tasks.append(
@@ -4468,6 +4586,7 @@ class Simulation:
 
     def _schedule_recharge_for_amr(self, amr: AMR, now: float):
         current_loc = self.locations[amr.location_name]
+        self._free_amr_inventory_space(amr)
         charge_plan = self._plan_return_to_charge(
             amr,
             current_loc,
@@ -5455,6 +5574,7 @@ class Simulation:
                 start_time = committed["task_start_time"]
                 finish_time = committed["finish_time"]
                 previous_location = amr.location_name
+                self._free_amr_inventory_space(amr)
                 amr.total_busy_time += committed["duration"]
                 amr.available_time = finish_time
                 amr.location_name = committed["end_location"]
@@ -5542,6 +5662,7 @@ class Simulation:
             start_time = committed["task_start_time"]
             finish_time = committed["finish_time"]
             previous_location = amr.location_name
+            self._free_amr_inventory_space(amr)
             amr.total_busy_time += committed["duration"]
             amr.available_time = finish_time
             amr.location_name = committed["end_location"]
@@ -6134,6 +6255,12 @@ class Simulation:
                     )
                     self._fail_task(task, reason, now=event.payload["finish_time"])
                     return
+            completed_amr = next((a for a in self.amrs if a.id == event.payload.get("amr_id")), None)
+            completed_amr_loc = self.locations.get(task.dropoff)
+            if completed_amr is not None:
+                self._occupy_amr_inventory_space(completed_amr, task.dropoff)
+                completed_amr_loc = self._amr_display_location(completed_amr, task.dropoff) or completed_amr_loc
+
             self.log_step(
                 event_time=event.payload["finish_time"],
                 event_type="task_complete",
@@ -6149,6 +6276,14 @@ class Simulation:
                 distance_m=0.0,
                 start_time=event.payload["finish_time"],
                 end_time=event.payload["finish_time"],
+                start_node=task.dropoff,
+                end_node=task.dropoff,
+                start_x=getattr(completed_amr_loc, "x", None),
+                start_y=getattr(completed_amr_loc, "y", None),
+                start_floor=getattr(completed_amr_loc, "floor", None),
+                end_x=getattr(completed_amr_loc, "x", None),
+                end_y=getattr(completed_amr_loc, "y", None),
+                end_floor=getattr(completed_amr_loc, "floor", None),
                 status="finish",
                 task_source=getattr(task, "task_source", ""),
                 department_id=getattr(task, "department_id", ""),
@@ -6287,7 +6422,12 @@ class Simulation:
                 final_location_name = str(
                     event.payload.get("end_location") or task.dropoff or ""
                 )
-                final_location = self.locations.get(final_location_name)
+                final_amr = next((a for a in self.amrs if a.id == event.payload.get("amr_id")), None)
+                if final_amr is not None:
+                    self._occupy_amr_inventory_space(final_amr, final_location_name)
+                    final_location = self._amr_display_location(final_amr, final_location_name)
+                else:
+                    final_location = self.locations.get(final_location_name)
 
                 self.log_step(
                     event_time=event.payload["finish_time"],
@@ -6425,6 +6565,7 @@ class Simulation:
 
         elif event.event_type == "charge_cycle_start":
             amr = next(a for a in self.amrs if a.id == event.payload["amr_id"])
+            self._occupy_amr_inventory_space(amr, amr.location_name)
             segment_start_time = event.time
 
             for segment in event.payload["travel_segments"]:
@@ -6474,6 +6615,7 @@ class Simulation:
                 )
                 segment_start_time = segment_end_time
 
+            charge_display_loc = self._amr_display_location(amr, amr.location_name)
             self.log_step(
                 event_time=event.payload["charge_start"],
                 event_type="segment_charge",
@@ -6486,6 +6628,12 @@ class Simulation:
                 end_time=event.payload["charge_finish"],
                 start_node=self.charge_location_name,
                 end_node=self.charge_location_name,
+                start_x=getattr(charge_display_loc, "x", None),
+                start_y=getattr(charge_display_loc, "y", None),
+                start_floor=getattr(charge_display_loc, "floor", None),
+                end_x=getattr(charge_display_loc, "x", None),
+                end_y=getattr(charge_display_loc, "y", None),
+                end_floor=getattr(charge_display_loc, "floor", None),
                 status="charging",
                 energy_kwh=0.0,
             )
@@ -6581,10 +6729,6 @@ class Simulation:
         exchange_mode: str = "",
         tracked_item_source_payload: str = "",
         tracked_items: Optional[dict] = None,
-        payload_multiple: int = 1,
-        timeframe_start: str = "",
-        timeframe_end: str = "",
-        timeframe_payload_index: int = 0,
     ):
         if not self.verbose:
             return
@@ -6643,10 +6787,6 @@ class Simulation:
                 "exchange_mode": exchange_mode,
                 "tracked_item_source_payload": tracked_item_source_payload,
                 "tracked_items": json.dumps(tracked_items or {}, ensure_ascii=False),
-                "payload_multiple": int(payload_multiple or 1),
-                "timeframe_start": timeframe_start,
-                "timeframe_end": timeframe_end,
-                "timeframe_payload_index": int(timeframe_payload_index or 0),
             }
         )
 
