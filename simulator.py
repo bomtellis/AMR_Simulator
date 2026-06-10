@@ -2547,32 +2547,121 @@ class Simulation:
         fits_rotated = _fits(amr_length, width_m) and _fits(amr_width, length_m)
         return (fits_normal or fits_rotated) and _fits(amr_height, height_m)
 
-    def _find_free_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
+    def _location_has_any_amr_inventory_spaces(self, location_name: str) -> bool:
+        """Return True if the location contains any AMR bay, regardless of type."""
         for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
+            if not isinstance(space, dict):
+                continue
+            if bool(space.get("stores_amr", False)):
+                return True
+            if str(space.get("space_type", "") or "").strip().lower() == "amr":
+                return True
+            if str(space.get("amr_type", "") or "").strip():
+                return True
+            for slot in space.get("payload_slots", []) or []:
+                if not isinstance(slot, dict):
+                    continue
+                if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
+                    return True
+                if str(slot.get("amr_type", "") or "").strip():
+                    return True
+        return False
+
+    def _space_name(self, space: dict) -> str:
+        return str((space or {}).get("name", "") or "").strip()
+
+    def _space_is_available_for_amr(self, space: dict, amr: AMR) -> bool:
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        occupied_by = str(space.get("amr_id", "") or "").strip()
+        reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
+        if occupied_by and occupied_by != amr_id:
+            return False
+        if reserved_by and reserved_by != amr_id:
+            return False
+        return True
+
+    def _space_is_other_amr_home(self, location_name: str, space: dict, amr: AMR) -> bool:
+        """Avoid stealing another AMR's assigned home bay while it is out working."""
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        loc = str(location_name or "").strip()
+        name = self._space_name(space)
+        if not loc or not name:
+            return False
+        for other in getattr(self, "amrs", []) or []:
+            if str(getattr(other, "id", "") or "").strip() == amr_id:
+                continue
+            if str(getattr(other, "home_charge_location", "") or "").strip() != loc:
+                continue
+            if str(getattr(other, "home_inventory_space_name", "") or "").strip() == name:
+                return True
+        return False
+
+    def _find_named_amr_inventory_space(self, location_name: str, space_name: str, amr: AMR) -> Optional[dict]:
+        space_name = str(space_name or "").strip()
+        if not space_name:
+            return None
+        for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
+            if self._space_name(space) != space_name:
+                continue
             if not self._inventory_space_accepts_amr(space, amr):
-                continue
-            if str(space.get("amr_id", "") or "").strip():
-                continue
-            if str(space.get("reserved_by_amr", "") or "").strip():
-                continue
+                return None
+            if not self._space_is_available_for_amr(space, amr):
+                return None
             return space
         return None
 
-    def _reserved_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
-        """Return the AMR bay already reserved for this AMR at a location."""
-        amr_id = str(getattr(amr, "id", "") or "").strip()
-        target_name = str(getattr(amr, "target_inventory_space_name", "") or "").strip()
-        for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
+    def _find_free_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
+        location_name = str(location_name or "").strip()
+
+        # First choice is always this AMR's own home bay.  This prevents another
+        # returning AMR from taking a temporarily-empty home bay while the owner
+        # is out on a task.
+        home_loc = str(getattr(amr, "home_charge_location", "") or "").strip()
+        home_space = str(getattr(amr, "home_inventory_space_name", "") or "").strip()
+        if home_loc == location_name and home_space:
+            space = self._find_named_amr_inventory_space(location_name, home_space, amr)
+            if space is not None:
+                return space
+
+        # Second choice is an unassigned/spare compatible bay.
+        fallback_other_home = None
+        for space in self.inventory_spaces_by_location.get(location_name, []):
             if not self._inventory_space_accepts_amr(space, amr):
                 continue
-            space_name = str(space.get("name", "") or "").strip()
+            if not self._space_is_available_for_amr(space, amr):
+                continue
+            if self._space_is_other_amr_home(location_name, space, amr):
+                if fallback_other_home is None:
+                    fallback_other_home = space
+                continue
+            return space
+
+        # Last resort: allow another home bay only if there is genuinely no
+        # other compatible option.  This keeps old files usable but avoids the
+        # normal case where AMRs steal each other's spaces.
+        return fallback_other_home
+
+    def _reserved_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
+        """Return the AMR bay already reserved for this AMR at a location."""
+        location_name = str(location_name or "").strip()
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        target_name = str(getattr(amr, "target_inventory_space_name", "") or "").strip()
+        home_name = ""
+        if str(getattr(amr, "home_charge_location", "") or "").strip() == location_name:
+            home_name = str(getattr(amr, "home_inventory_space_name", "") or "").strip()
+        for space in self.inventory_spaces_by_location.get(location_name, []):
+            if not self._inventory_space_accepts_amr(space, amr):
+                continue
+            space_name = self._space_name(space)
             reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
             occupied_by = str(space.get("amr_id", "") or "").strip()
             if amr_id and reserved_by == amr_id:
                 return space
             if amr_id and occupied_by == amr_id:
                 return space
-            if target_name and space_name == target_name and not occupied_by and not reserved_by:
+            if target_name and space_name == target_name and self._space_is_available_for_amr(space, amr):
+                return space
+            if home_name and space_name == home_name and self._space_is_available_for_amr(space, amr):
                 return space
         return None
 
@@ -2703,6 +2792,13 @@ class Simulation:
             if location_name:
                 amr.location_name = location_name
                 occupied_space = self._occupy_amr_inventory_space(amr, location_name)
+                if occupied_space is not None:
+                    setattr(amr, "home_charge_location", location_name)
+                    setattr(amr, "home_inventory_space_name", str(occupied_space.get("name", "") or ""))
+                    setattr(amr, "target_charge_location", location_name)
+                else:
+                    setattr(amr, "home_charge_location", location_name)
+                    setattr(amr, "home_inventory_space_name", "")
                 display_loc = self._amr_display_location(amr, location_name) or self.locations.get(location_name)
                 self.log_step(
                     event_time=0.0,
@@ -4522,13 +4618,18 @@ class Simulation:
             else PayloadType("empty", 0.0)
         )
         for charge_loc in candidates:
-            # If this charging location has AMR bays configured, only consider it
-            # when a compatible bay is currently free or already reserved for this AMR.
+            # Charging locations that define AMR bays must have a compatible bay
+            # for this AMR type.  Previously a location with AMR-B bays but no
+            # AMR-C bay was still treated as a valid AMR-C charger, which left
+            # AMR-C units stranded on the location node.
+            location_has_amr_bays = self._location_has_any_amr_inventory_spaces(charge_loc.name)
             amr_spaces = [
                 space
                 for space in self.inventory_spaces_by_location.get(charge_loc.name, [])
                 if self._inventory_space_accepts_amr(space, amr)
             ]
+            if location_has_amr_bays and not amr_spaces:
+                continue
             if amr_spaces and (
                 self._reserved_amr_inventory_space(charge_loc.name, amr) is None
                 and self._find_free_amr_inventory_space(charge_loc.name, amr) is None
@@ -7485,11 +7586,14 @@ class Simulation:
         if not charge_location or charge_location not in self.locations:
             return None
 
+        charge_location_has_amr_bays = self._location_has_any_amr_inventory_spaces(charge_location)
         charge_amr_spaces = [
             space
             for space in self.inventory_spaces_by_location.get(charge_location, [])
             if self._inventory_space_accepts_amr(space, amr)
         ]
+        if charge_location_has_amr_bays and not charge_amr_spaces:
+            return None
         if charge_amr_spaces and (
             self._reserved_amr_inventory_space(charge_location, amr) is None
             and self._find_free_amr_inventory_space(charge_location, amr) is None

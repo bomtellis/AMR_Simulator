@@ -2,7 +2,7 @@
   "simulation": {
     "start_datetime": "2026-01-01T05:00:00",
     "tick_rate": 1000.0,
-    "end_datetime": "2026-01-02T18:00:00",
+    "end_datetime": "2026-01-01T18:00:00",
     "generated_task_release_stagger_sec": 10.0,
     "precompute_static_routes": false,
     "route_precompute_max_pairs": 100000,

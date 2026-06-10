@@ -2308,21 +2308,9 @@ class SimulationVisualizer(QMainWindow):
         self.live_waste_fill_check.toggled.connect(self.refresh_dynamic_scene)
         side_layout.addWidget(self.live_waste_fill_check)
 
-        side_layout.addWidget(QLabel("AMR width (m)"))
-        self.amr_width_spin = QDoubleSpinBox()
-        self.amr_width_spin.setRange(0.1, 5.0)
-        self.amr_width_spin.setSingleStep(0.1)
-        self.amr_width_spin.setValue(0.8)
-        self.amr_width_spin.valueChanged.connect(self.refresh_dynamic_scene)
-        side_layout.addWidget(self.amr_width_spin)
-
-        side_layout.addWidget(QLabel("AMR length (m)"))
-        self.amr_length_spin = QDoubleSpinBox()
-        self.amr_length_spin.setRange(0.1, 5.0)
-        self.amr_length_spin.setSingleStep(0.1)
-        self.amr_length_spin.setValue(1.2)
-        self.amr_length_spin.valueChanged.connect(self.refresh_dynamic_scene)
-        side_layout.addWidget(self.amr_length_spin)
+        amr_size_note = QLabel("AMR size is taken from each AMR definition")
+        amr_size_note.setWordWrap(True)
+        side_layout.addWidget(amr_size_note)
 
         side_layout.addWidget(QLabel("Follow AMR"))
         self.follow_combo = QComboBox()
@@ -4514,11 +4502,16 @@ class SimulationVisualizer(QMainWindow):
                     pixel_size=max(6, self.get_text_pixel_size() - 1),
                 )
 
+    def _amr_dimensions_for_state(self, state: dict) -> Tuple[float, float]:
+        raw = state.get("raw", {}) or {}
+        amr_id = str(state.get("amr_id", "") or raw.get("amr_id", "") or "").strip()
+        length, width = self._amr_dimensions_for_name(amr_id)
+        return max(0.05, float(length)), max(0.05, float(width))
+
     def _draw_amr_box_colored_qt(self, state: dict, fill="#4da3ff"):
         x = float(state["x"])
         y = float(state["y"])
-        width = max(0.05, float(self.amr_width_spin.value()))
-        length = max(0.05, float(self.amr_length_spin.value()))
+        length, width = self._amr_dimensions_for_state(state)
 
         heading = 0.0
         if state.get("start_node") and state.get("end_node"):
