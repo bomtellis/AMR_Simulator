@@ -3086,39 +3086,50 @@ class Simulation:
         setattr(amr, "rotation_deg", 0.0)
 
     def _occupy_amr_inventory_space(self, amr: AMR, location_name: str) -> Optional[dict]:
-        target_space_name = str(getattr(amr, "target_inventory_space_name", "") or "").strip()
-        target_space = None
+        """Claim a compatible AMR bay at arrival time.
 
-        # Prefer the bay reserved when the return/charge journey was assigned.
-        # This prevents other idle AMRs from taking the bay while this AMR is travelling.
+        Return/charge planning may reserve a bay while the AMR is still travelling,
+        but the live bay state can change before arrival.  Do not fail simply
+        because the originally planned bay is no longer usable.  When the AMR
+        arrives, release its old bay/reservation, then claim the originally
+        targeted bay only if it is still compatible and available; otherwise
+        reselect any compatible free AMR bay at that charging location.
+        """
+        location_name = str(location_name or "").strip()
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        target_space_name = str(getattr(amr, "target_inventory_space_name", "") or "").strip()
+
+        # Capture the planned bay name first.  _free_amr_inventory_space() clears
+        # this AMR's current occupancy and reservation markers, so we re-resolve
+        # the bay from the current live space state afterwards.
+        self._free_amr_inventory_space(amr)
+
+        target_space = None
         if target_space_name:
-            for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
-                if str(space.get("name", "") or "").strip() != target_space_name:
-                    continue
-                if self._inventory_space_accepts_amr(space, amr):
-                    target_space = space
-                    break
+            target_space = self._find_named_amr_inventory_space(
+                location_name, target_space_name, amr
+            )
 
         if target_space is None:
             target_space = self._reserved_amr_inventory_space(location_name, amr)
+
         if target_space is None:
             target_space = self._find_free_amr_inventory_space(location_name, amr)
 
-        self._free_amr_inventory_space(amr)
-
         if target_space is None:
             setattr(amr, "target_inventory_space_name", "")
             return None
 
+        # Final guard: if the selected bay became occupied/reserved by another
+        # AMR between selection and claim, try once more to reselect a free bay
+        # instead of blocking the arriving AMR at the location node.
         occupied_by = str(target_space.get("amr_id", "") or "").strip()
         reserved_by = str(target_space.get("reserved_by_amr", "") or "").strip()
-        amr_id = str(getattr(amr, "id", "") or "").strip()
-        if occupied_by and occupied_by != amr_id:
-            setattr(amr, "target_inventory_space_name", "")
-            return None
-        if reserved_by and reserved_by != amr_id:
-            setattr(amr, "target_inventory_space_name", "")
-            return None
+        if (occupied_by and occupied_by != amr_id) or (reserved_by and reserved_by != amr_id):
+            target_space = self._find_free_amr_inventory_space(location_name, amr)
+            if target_space is None:
+                setattr(amr, "target_inventory_space_name", "")
+                return None
 
         target_space["amr_id"] = amr_id
         target_space["occupied"] = True
@@ -5146,7 +5157,12 @@ class Simulation:
         )
         if charge_loc is None:
             return None
-        self.charge_location_name = charge_loc.name
+        # Keep the selected charger on the returned plan rather than mutating
+        # the legacy global charge_location_name.  Multiple AMRs can plan/charge
+        # concurrently at different configured charging locations; a single
+        # mutable global makes later events appear to use AMR-CENTRE or whichever
+        # charger was selected most recently.
+        setattr(amr, "target_charge_location", charge_loc.name)
 
         reserved_charge_space = None
         if reserve:
@@ -5176,6 +5192,7 @@ class Simulation:
                 "distance_m": distance_m,
                 "finish_time": finish_time,
                 "end_location": charge_loc.name,
+                "charge_location": charge_loc.name,
                 "amr_inventory_space": str((reserved_charge_space or {}).get("name", "") or ""),
             }
 
@@ -5265,6 +5282,8 @@ class Simulation:
             ),
             "finish_time": plan["final_finish"],
             "end_location": charge_loc.name,
+            "charge_location": charge_loc.name,
+            "amr_inventory_space": str((reserved_charge_space or {}).get("name", "") or ""),
         }
 
     def _plan_charge_cycle_if_needed(
@@ -5367,6 +5386,8 @@ class Simulation:
                 "charge_start": charge_start,
                 "charge_finish": charge_finish,
                 "charge_duration": charge_duration,
+                "charge_location": plan.get("charge_location", plan.get("end_location", amr.location_name)),
+                "amr_inventory_space": plan.get("amr_inventory_space", ""),
             },
         )
 
@@ -5376,6 +5397,8 @@ class Simulation:
             {
                 "amr_id": amr.id,
                 "charge_duration": charge_duration,
+                "charge_location": plan.get("charge_location", plan.get("end_location", amr.location_name)),
+                "amr_inventory_space": plan.get("amr_inventory_space", ""),
             },
         )
         return True
@@ -7407,6 +7430,12 @@ class Simulation:
 
         elif event.event_type == "charge_cycle_start":
             amr = next(a for a in self.amrs if a.id == event.payload["amr_id"])
+            charge_location_name = str(
+                event.payload.get("charge_location")
+                or getattr(amr, "target_charge_location", "")
+                or getattr(amr, "location_name", "")
+                or getattr(self, "charge_location_name", "")
+            ).strip()
             # Do not occupy the destination charging bay before the travel
             # segments have played.  Reserving happens when the charge plan is
             # created; occupancy should only start once the AMR reaches the bay.
@@ -7468,20 +7497,22 @@ class Simulation:
                 )
                 segment_start_time = segment_end_time
 
+            if charge_location_name:
+                amr.location_name = charge_location_name
             self._occupy_amr_inventory_space(amr, amr.location_name)
             charge_display_loc = self._amr_display_location(amr, amr.location_name)
             self.log_step(
                 event_time=event.payload["charge_start"],
                 event_type="segment_charge",
                 amr_id=amr.id,
-                from_location=self.charge_location_name,
-                to_location=self.charge_location_name,
+                from_location=charge_location_name,
+                to_location=charge_location_name,
                 duration_sec=event.payload["charge_duration"],
                 segment_type="charge",
                 start_time=event.payload["charge_start"],
                 end_time=event.payload["charge_finish"],
-                start_node=self.charge_location_name,
-                end_node=self.charge_location_name,
+                start_node=charge_location_name,
+                end_node=charge_location_name,
                 start_x=getattr(charge_display_loc, "x", None),
                 start_y=getattr(charge_display_loc, "y", None),
                 start_floor=getattr(charge_display_loc, "floor", None),
@@ -7497,6 +7528,12 @@ class Simulation:
 
         elif event.event_type == "charge_cycle_complete":
             amr = next(a for a in self.amrs if a.id == event.payload["amr_id"])
+            charge_location_name = str(
+                event.payload.get("charge_location")
+                or getattr(amr, "location_name", "")
+                or getattr(amr, "target_charge_location", "")
+                or getattr(self, "charge_location_name", "")
+            ).strip()
             amr.total_charge_time += event.payload["charge_duration"]
             amr.charge_to_full()
             amr.is_charging = False
@@ -7506,8 +7543,8 @@ class Simulation:
                 event_type="charge_cycle_complete",
                 amr_id=amr.id,
                 details=f"{amr.id} fully charged",
-                from_location=self.charge_location_name,
-                to_location=self.charge_location_name,
+                from_location=charge_location_name,
+                to_location=charge_location_name,
                 status="finish",
                 energy_kwh=0.0,
                 battery_soc_before=100.0,
@@ -8117,17 +8154,71 @@ class Simulation:
         for amr_id in locked_amr_ids:
             self._remove_pending_idle_return_tasks_for_amr(amr_id)
 
+    def _charge_location_has_available_bay_for_amr(self, location_name: str, amr: AMR) -> bool:
+        """Return True when a configured charge location can actually stow this AMR.
+
+        Locations without explicit AMR bays remain valid legacy charge points.
+        Locations with AMR bays must have either a reservation for this AMR or
+        a compatible free bay.
+        """
+        location_name = str(location_name or "").strip()
+        if not location_name or location_name not in self.locations:
+            return False
+        location_has_amr_bays = self._location_has_any_amr_inventory_spaces(location_name)
+        compatible_spaces = [
+            space
+            for space in self.inventory_spaces_by_location.get(location_name, [])
+            if self._inventory_space_accepts_amr(space, amr)
+        ]
+        if location_has_amr_bays and not compatible_spaces:
+            return False
+        if compatible_spaces and (
+            self._reserved_amr_inventory_space(location_name, amr) is None
+            and self._find_free_amr_inventory_space(location_name, amr) is None
+        ):
+            return False
+        return True
+
+    def _amr_is_stowed_at_configured_charge_space(self, amr: AMR) -> bool:
+        location_name = str(getattr(amr, "location_name", "") or "").strip()
+        if location_name not in {str(x).strip() for x in (getattr(self, "charge_location_names", []) or []) if str(x).strip()}:
+            return False
+        # If there are no AMR bays at the location, legacy location-level
+        # charging means being at the location is enough.
+        if not self._location_has_any_amr_inventory_spaces(location_name):
+            return True
+        space_name = str(getattr(amr, "inventory_space_name", "") or "").strip()
+        if not space_name:
+            return False
+        for space in self.inventory_spaces_by_location.get(location_name, []):
+            if self._space_name(space) != space_name:
+                continue
+            if str(space.get("amr_id", "") or "").strip() == str(getattr(amr, "id", "") or "").strip():
+                return True
+        return False
+
     def _charge_location_for_idle_return(self, amr: AMR, now: float) -> str:
-        """Select the best configured charging location for an idle AMR return."""
+        """Select the best configured charging location for an idle AMR return.
+
+        This must consider every configured charging location, not only the
+        legacy AMR-CENTRE/first charger.  If all compatible bays are occupied,
+        return blank so the idle return waits instead of creating an impossible
+        task to the fixed fallback.
+        """
         current_loc = self.locations.get(str(getattr(amr, "location_name", "") or ""))
         if current_loc is not None:
             selected = self._select_charge_location_for_amr(amr, current_loc, now)
             if selected is not None:
                 return selected.name
+
         for location_name in list(getattr(self, "charge_location_names", []) or []):
-            if str(location_name or "").strip() in self.locations:
+            if self._charge_location_has_available_bay_for_amr(location_name, amr):
                 return str(location_name or "").strip()
-        return str(getattr(self, "charge_location_name", "") or "").strip()
+
+        legacy = str(getattr(self, "charge_location_name", "") or "").strip()
+        if legacy and self._charge_location_has_available_bay_for_amr(legacy, amr):
+            return legacy
+        return ""
 
     def _amr_is_at_configured_charge_location(self, amr: AMR) -> bool:
         return str(getattr(amr, "location_name", "") or "").strip() in {
@@ -8156,8 +8247,15 @@ class Simulation:
         # If the AMR is already at a configured charger, just ensure it occupies
         # a compatible AMR bay.  Do not create a synthetic movement back to the
         # legacy amr_centre/start location.
-        if self._amr_is_at_configured_charge_location(amr):
-            self._occupy_amr_inventory_space(amr, amr.location_name)
+        if self._amr_is_stowed_at_configured_charge_space(amr):
+            return None
+        if self._amr_is_at_configured_charge_location(amr) and charge_location == str(getattr(amr, "location_name", "") or "").strip():
+            # The AMR is at a configured charging location but not occupying its
+            # bay.  Try to stow it there.  If no bay is available, do not queue a
+            # zero-length return that will keep blocking assignment; let the next
+            # idle-return pass try another configured charge location.
+            if self._occupy_amr_inventory_space(amr, amr.location_name) is not None:
+                return None
             return None
 
         self.synthetic_task_counter += 1
