@@ -515,7 +515,7 @@ class Simulation:
                 amr.manual_task_compatible = len(payload_slots) == 1
                 self.amrs.append(amr)
 
-        self._seed_initial_amr_inventory_spaces()
+        self._assign_initial_amrs_to_charge_inventory_spaces()
 
         # Parse tasks from configuration
 
@@ -2553,11 +2553,68 @@ class Simulation:
                         return loc
         return self.locations.get(location_name)
 
-    def _seed_initial_amr_inventory_spaces(self) -> None:
+    def _find_free_amr_charge_space(self, amr: AMR) -> Tuple[str, Optional[dict]]:
+        """Return a compatible free AMR inventory space at a configured charge location."""
+        for location_name in list(getattr(self, "charge_location_names", []) or []):
+            location_name = str(location_name or "").strip()
+            if not location_name:
+                continue
+            space = self._find_free_amr_inventory_space(location_name, amr)
+            if space is not None:
+                return location_name, space
+        return "", None
+
+    def _assign_initial_amrs_to_charge_inventory_spaces(self) -> None:
+        """Place AMRs at charging locations at simulation start.
+
+        Legacy JSON can still contain start_location on AMR definitions, but the
+        runtime now treats charging locations as the initial home positions.  If
+        a compatible AMR inventory space exists at any configured charging
+        location it is occupied; otherwise the AMR starts at the first charging
+        location point so older layouts still run while validation reports the
+        missing spaces.
+        """
+        fallback_charge_location = (
+            str((getattr(self, "charge_location_names", []) or [""])[0] or "").strip()
+            or str(getattr(self, "charge_location_name", "") or "").strip()
+        )
+        if not fallback_charge_location and self.locations:
+            fallback_charge_location = next(iter(self.locations.keys()))
+
         for amr in getattr(self, "amrs", []):
-            location_name = str(getattr(amr, "location_name", "") or "").strip()
+            location_name, _space = self._find_free_amr_charge_space(amr)
+            if not location_name:
+                location_name = fallback_charge_location
             if location_name:
-                self._occupy_amr_inventory_space(amr, location_name)
+                amr.location_name = location_name
+                occupied_space = self._occupy_amr_inventory_space(amr, location_name)
+                display_loc = self._amr_display_location(amr, location_name) or self.locations.get(location_name)
+                self.log_step(
+                    event_time=0.0,
+                    event_type="initial_amr_charging_location",
+                    amr_id=amr.id,
+                    from_location=location_name,
+                    to_location=location_name,
+                    details=(
+                        f"{amr.id} initially placed at charging location {location_name}"
+                        + (f" / {occupied_space.get('name', '')}" if occupied_space else "")
+                    ),
+                    segment_type="initial_charge_location",
+                    start_time=0.0,
+                    end_time=0.0,
+                    start_node=location_name,
+                    end_node=location_name,
+                    start_x=getattr(display_loc, "x", None),
+                    start_y=getattr(display_loc, "y", None),
+                    start_floor=getattr(display_loc, "floor", None),
+                    end_x=getattr(display_loc, "x", None),
+                    end_y=getattr(display_loc, "y", None),
+                    end_floor=getattr(display_loc, "floor", None),
+                    status="charging_location",
+                    battery_soc_before=amr.battery_soc_percent,
+                    battery_soc_after=amr.battery_soc_percent,
+                    is_charging=bool(getattr(amr, "is_charging", False)),
+                )
 
     def _location_has_inventory_spaces(self, location_name: str) -> bool:
         # Inventory rules only apply where at least one valid inventory space has
@@ -6636,6 +6693,9 @@ class Simulation:
                 end_floor=getattr(charge_display_loc, "floor", None),
                 status="charging",
                 energy_kwh=0.0,
+                battery_soc_before=amr.battery_soc_percent,
+                battery_soc_after=100.0,
+                is_charging=True,
             )
 
         elif event.event_type == "charge_cycle_complete":
@@ -6653,6 +6713,9 @@ class Simulation:
                 to_location=self.charge_location_name,
                 status="finish",
                 energy_kwh=0.0,
+                battery_soc_before=100.0,
+                battery_soc_after=amr.battery_soc_percent,
+                is_charging=False,
             )
 
             self._try_assign_tasks(event.time)
@@ -6729,9 +6792,25 @@ class Simulation:
         exchange_mode: str = "",
         tracked_item_source_payload: str = "",
         tracked_items: Optional[dict] = None,
+        battery_soc_before: Optional[float] = None,
+        battery_soc_after: Optional[float] = None,
+        is_charging: Optional[bool] = None,
     ):
         if not self.verbose:
             return
+
+        if amr_id:
+            try:
+                current_amr = next((a for a in self.amrs if a.id == amr_id), None)
+            except Exception:
+                current_amr = None
+            if current_amr is not None:
+                if battery_soc_after is None:
+                    battery_soc_after = float(getattr(current_amr, "battery_soc_percent", 0.0) or 0.0)
+                if battery_soc_before is None:
+                    battery_soc_before = battery_soc_after
+                if is_charging is None:
+                    is_charging = bool(getattr(current_amr, "is_charging", False))
 
         self.verbose_rows.append(
             {
@@ -6767,6 +6846,9 @@ class Simulation:
                 "end_floor": end_floor,
                 "status": status,
                 "energy_kwh": energy_kwh,
+                "battery_soc_before": (round(float(battery_soc_before), 2) if battery_soc_before is not None else ""),
+                "battery_soc_after": (round(float(battery_soc_after), 2) if battery_soc_after is not None else ""),
+                "is_charging": bool(is_charging) if is_charging is not None else False,
                 "task_source": task_source,
                 "department_id": department_id,
                 "waste_stream": waste_stream,
@@ -6836,6 +6918,9 @@ class Simulation:
             "wait_time_sec",
             "distance_m",
             "energy_kwh",
+            "battery_soc_before",
+            "battery_soc_after",
+            "is_charging",
             "task_duration_sec",
             "details",
             "task_source",

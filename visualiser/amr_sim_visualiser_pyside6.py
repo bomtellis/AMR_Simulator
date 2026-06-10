@@ -2285,6 +2285,14 @@ class SimulationVisualizer(QMainWindow):
         self.show_amr_box_check.toggled.connect(self.refresh_dynamic_scene)
         side_layout.addWidget(self.show_amr_box_check)
 
+        self.show_amr_charge_state_check = QCheckBox("Show AMR charge state")
+        self.show_amr_charge_state_check.setChecked(False)
+        self.show_amr_charge_state_check.setToolTip(
+            "Draw AMR battery percentage/charging state labels. Leave off for faster playback on large logs."
+        )
+        self.show_amr_charge_state_check.toggled.connect(self.refresh_dynamic_scene)
+        side_layout.addWidget(self.show_amr_charge_state_check)
+
         self.show_seeded_waste_containers_check = QCheckBox(
             "Show seeded waste containers"
         )
@@ -6248,6 +6256,27 @@ class SimulationVisualizer(QMainWindow):
 
         self.node_context_menu.popup(event.globalPosition().toPoint())
 
+    def _amr_charge_state_label(self, state: dict) -> str:
+        row = state.get("raw", {}) or {}
+        value = row.get("battery_soc_after", row.get("battery_soc_percent", ""))
+        if value in (None, ""):
+            value = row.get("battery_soc_before", "")
+        try:
+            soc_text = f"{float(value):.0f}%"
+        except Exception:
+            soc_text = ""
+        charging = str(row.get("is_charging", "") or "").strip().lower() in {"true", "1", "yes", "charging"}
+        event_text = str(row.get("event_type", state.get("event_type", "")) or "").lower()
+        segment_text = str(row.get("segment_type", state.get("segment_type", "")) or "").lower()
+        status_text = str(row.get("status", state.get("status", "")) or "").lower()
+        if "charge" in event_text or "charge" in segment_text or "charging" in status_text:
+            charging = True
+        if soc_text and charging:
+            return f"Charge {soc_text}"
+        if soc_text:
+            return f"Battery {soc_text}"
+        return "Charging" if charging else ""
+
     def draw_dynamic_state_qt(self, floor: int):
         if not self.current_time or not self.sim_log.events:
             if self.event_box is not None:
@@ -6309,6 +6338,18 @@ class SimulationVisualizer(QMainWindow):
                     dynamic=True,
                     ignore_transform=True,
                 )
+
+            if getattr(self, "show_amr_charge_state_check", None) is not None and self.show_amr_charge_state_check.isChecked():
+                charge_label = self._amr_charge_state_label(state)
+                if charge_label:
+                    self.draw_text_item(
+                        x + 1.0,
+                        y + 1.15,
+                        charge_label,
+                        "#d8ffd8",
+                        dynamic=True,
+                        ignore_transform=True,
+                    )
 
         if self.event_box is None:
             return

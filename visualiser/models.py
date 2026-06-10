@@ -1478,6 +1478,91 @@ class JsonStore:
 
         return errors
 
+
+    def _space_points_dimensions_for_location(self, location: dict, space: dict) -> Tuple[float, float]:
+        lx = float(location.get("x", 0.0) or 0.0)
+        ly = float(location.get("y", 0.0) or 0.0)
+        xs = []
+        ys = []
+        for point in space.get("points", []) or []:
+            try:
+                if "dx" in point and "dy" in point:
+                    xs.append(lx + float(point.get("dx", 0.0) or 0.0))
+                    ys.append(ly + float(point.get("dy", 0.0) or 0.0))
+                else:
+                    xs.append(float(point.get("x", lx) or lx))
+                    ys.append(float(point.get("y", ly) or ly))
+            except Exception:
+                continue
+        if not xs or not ys:
+            return 0.0, 0.0
+        return abs(max(xs) - min(xs)), abs(max(ys) - min(ys))
+
+    def _inventory_space_accepts_amr_type(self, location: dict, space: dict, amr_type: dict) -> bool:
+        if not isinstance(space, dict):
+            return False
+        stores_amr = bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr"
+        slot_amr_type = str(space.get("amr_type", "") or "").strip()
+        for slot in space.get("payload_slots", []) or []:
+            if not isinstance(slot, dict):
+                continue
+            if str(slot.get("slot_type", "") or "").strip().lower() == "amr" or str(slot.get("amr_type", "") or "").strip():
+                stores_amr = True
+                slot_amr_type = slot_amr_type or str(slot.get("amr_type", "") or "").strip()
+        if not stores_amr:
+            return False
+        amr_id = str(amr_type.get("id", "") or "").strip()
+        if slot_amr_type and slot_amr_type != amr_id:
+            return False
+        point_length, point_width = self._space_points_dimensions_for_location(location, space)
+        length_m = float(space.get("length_m", space.get("length", point_length)) or point_length or 0.0)
+        width_m = float(space.get("width_m", space.get("width", point_width)) or point_width or 0.0)
+        height_m = float(space.get("height_m", space.get("height", 999999.0)) or 999999.0)
+        amr_length = float(amr_type.get("length_m", 0.8) or 0.8)
+        amr_width = float(amr_type.get("width_m", 0.6) or 0.6)
+        amr_height = float(amr_type.get("height_m", 1.2) or 1.2)
+        fits_normal = amr_length <= length_m and amr_width <= width_m
+        fits_rotated = amr_length <= width_m and amr_width <= length_m
+        return (fits_normal or fits_rotated) and amr_height <= height_m
+
+    def _amr_charge_space_validation_errors(self) -> List[str]:
+        errors = []
+        locations = self.data.get("locations", []) or []
+        locations_by_name = {str(loc.get("name", "") or "").strip(): loc for loc in locations}
+        building = self.data.get("building", {}) or {}
+        charge_locations = building.get("charge_locations")
+        if isinstance(charge_locations, str):
+            charge_locations = [x.strip() for x in charge_locations.split(",")]
+        if not isinstance(charge_locations, list) or not charge_locations:
+            legacy = str(building.get("charge_location", "") or "").strip()
+            charge_locations = [legacy] if legacy else []
+        charge_locations = [str(x).strip() for x in charge_locations if str(x).strip()]
+        if not charge_locations:
+            return errors
+
+        for loc_name in charge_locations:
+            if loc_name not in locations_by_name and loc_name not in self.names_in_use():
+                errors.append(f"Charging location not found: {loc_name}")
+
+        charge_location_dicts = [locations_by_name[name] for name in charge_locations if name in locations_by_name]
+        for amr_type in self.data.get("amrs", []) or []:
+            amr_id = str(amr_type.get("id", "") or "").strip() or "AMR"
+            try:
+                required = max(0, int(float(amr_type.get("quantity", 1) or 1)))
+            except Exception:
+                required = 1
+            compatible = 0
+            for location in charge_location_dicts:
+                for space in location.get("inventory_spaces", []) or []:
+                    if self._inventory_space_accepts_amr_type(location, space, amr_type):
+                        compatible += 1
+            if compatible < required:
+                errors.append(
+                    f"AMR type {amr_id} requires {required} compatible charging inventory space(s), "
+                    f"but only {compatible} found at configured charging location(s)."
+                )
+        return errors
+
     def validate(self) -> List[str]:
         errors = []
         names = self.names_in_use()
@@ -1670,6 +1755,7 @@ class JsonStore:
                 errors.append(f"Duplicate DXF mapping for floor {floor}")
             seen_floors.add(floor)
 
+        errors.extend(self._amr_charge_space_validation_errors())
         errors.extend(self._graph_access_validation_errors())
 
         return errors

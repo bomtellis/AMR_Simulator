@@ -26,7 +26,6 @@
     "edge_slowdown_per_amr": 0.15,
     "min_congestion_speed_factor": 0.45,
     "charge_locations": [
-      "AMR-Accommodation",
       "AMR-CENTRE"
     ]
   },
@@ -24660,24 +24659,5 @@
       "replace_with_empty_equivalents": true,
       "notes": ""
     }
-  ],
-  "metadata": {
-    "stores_goods_cage_generation_added": {
-      "source_file": "example_2 - No tasks.json",
-      "created_by": "ChatGPT",
-      "description": "Added stores Goods Cage scheduled task generation for all enabled departments with a configured stores location.",
-      "weekday_cage_totals": {
-        "mon": 18,
-        "tue": 30,
-        "wed": 20,
-        "thu": 24,
-        "fri": 27
-      },
-      "departments_covered": 39,
-      "total_cages_per_week": 119,
-      "return_delay_minutes": 120,
-      "pickup_location": "RD",
-      "simulation_end_extended_to": "2026-01-07T18:00:00"
-    }
-  }
+  ]
 }
