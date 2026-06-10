@@ -2913,12 +2913,6 @@ class AMREditorDialog(QDialog):
             bool(self.seed.get("multi_stop_enabled", len(self.payload_slots) > 1))
         )
 
-        self.start_location_combo = QComboBox()
-        self.start_location_combo.addItems([""] + self.location_names)
-        self.start_location_combo.setCurrentText(
-            str(self.seed.get("start_location", ""))
-        )
-
         form.addRow("AMR ID", self.id_edit)
         form.addRow("Quantity", self.quantity_edit)
         form.addRow("AMR length m", self.amr_length_edit)
@@ -2930,7 +2924,6 @@ class AMREditorDialog(QDialog):
         form.addRow("Battery charge rate kW", self.charge_rate_edit)
         form.addRow("Recharge threshold %", self.recharge_threshold_edit)
         form.addRow("Battery SOC %", self.battery_soc_edit)
-        form.addRow("Start location", self.start_location_combo)
         form.addRow("Multi-stop", self.multi_stop_check)
 
         layout.addWidget(QLabel("Payload slots"))
@@ -3139,7 +3132,6 @@ class AMREditorDialog(QDialog):
                     self.recharge_threshold_edit.text()
                 ),
                 "battery_soc_percent": float(self.battery_soc_edit.text()),
-                "start_location": self.start_location_combo.currentText().strip(),
             }
             super().accept()
         except Exception as exc:
@@ -3671,7 +3663,6 @@ class AMRListDialog(QDialog):
         ("battery_charge_rate_kw", "Charge kW", 100),
         ("recharge_threshold_percent", "Recharge %", 100),
         ("battery_soc_percent", "SOC %", 80),
-        ("start_location", "Start location", 160),
     ]
 
     def __init__(self, parent, items, location_names, on_save):

@@ -1721,15 +1721,8 @@ class JsonStore:
                 )
 
         for amr in self.data.get("amrs", []):
-            if (
-                amr.get("start_location")
-                and amr["start_location"] not in names
-                and amr["start_location"] not in location_names
-            ):
-                errors.append(
-                    f"AMR {amr.get('id')} has unknown start location: {amr.get('start_location')}"
-                )
-
+            # AMRs are placed at configured charging locations at runtime.
+            # Legacy start_location values are ignored and no longer validated.
             slots = normalise_amr_payload_slots(amr)
             if not slots:
                 errors.append(

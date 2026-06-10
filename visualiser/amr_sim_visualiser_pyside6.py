@@ -1177,7 +1177,6 @@ class TasksByLocationDepartmentDialog(QDialog):
         ("payload", "Payload", 170),
         ("start_time_display", "Start time", 170),
         ("end_time_display", "End time", 170),
-        ("start_location", "Start location", 180),
         ("finish_location", "Finish location", 180),
         ("department", "Department", 170),
         ("duration", "Duration", 100),
@@ -1242,7 +1241,6 @@ class TasksByLocationDepartmentDialog(QDialog):
         keys = [
             "task_id",
             "payload",
-            "start_location",
             "finish_location",
             "department",
             "department_id",
@@ -7071,7 +7069,6 @@ class SimulationVisualizer(QMainWindow):
             "end_location",
             "pickup",
             "from_location",
-            "start_location",
         ):
             loc = str(row.get(key, "") or "").strip()
             if loc in location_departments:

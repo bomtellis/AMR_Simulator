@@ -502,9 +502,10 @@ class Simulation:
                     battery_soc_percent=float(
                         amr_type.get("battery_soc_percent", 100.0)
                     ),
-                    location_name=amr_type.get(
-                        "start_location", config["locations"][0]["name"]
-                    ),
+                    # AMRs no longer start from per-type start_location.
+                    # They are allocated to compatible spaces at configured charging locations
+                    # by _assign_initial_amrs_to_charge_inventory_spaces() below.
+                    location_name=(self.charge_location_names[0] if self.charge_location_names else config["locations"][0]["name"]),
                     is_charging=False,
                 )
                 amr.payload_slots = payload_slots
@@ -2436,6 +2437,8 @@ class Simulation:
                 clean_spaces.append(
                     {
                         "name": name,
+                        "points": points,
+                        "payload_slots": list(raw_space.get("payload_slots", []) or []),
                         "length_m": length_m,
                         "width_m": width_m,
                         "height_m": height_m,
@@ -2490,21 +2493,51 @@ class Simulation:
         )
 
     def _inventory_space_accepts_amr(self, space: dict, amr: AMR) -> bool:
-        if not (bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr"):
+        """Return True when an inventory space can store this AMR.
+
+        AMR bays may be marked either on the inventory-space parent
+        (stores_amr/space_type/amr_type) or on a payload_slots[] entry created by
+        the editor.  The simulator must honour both shapes so charging-location
+        allocation matches editor validation.
+        """
+        if not isinstance(space, dict):
             return False
-        amr_type = str(space.get("amr_type", "") or "").strip()
+
+        amr_type_values = []
+        parent_marks_amr = (
+            bool(space.get("stores_amr", False))
+            or str(space.get("space_type", "") or "").strip().lower() == "amr"
+            or bool(str(space.get("amr_type", "") or "").strip())
+        )
+        if str(space.get("amr_type", "") or "").strip():
+            amr_type_values.append(str(space.get("amr_type", "") or "").strip())
+
+        slot_marks_amr = False
+        for slot in space.get("payload_slots", []) or []:
+            if not isinstance(slot, dict):
+                continue
+            slot_type = str(slot.get("slot_type", "") or "").strip().lower()
+            slot_amr_type = str(slot.get("amr_type", "") or "").strip()
+            if slot_type == "amr" or slot_amr_type:
+                slot_marks_amr = True
+                if slot_amr_type:
+                    amr_type_values.append(slot_amr_type)
+
+        if not (parent_marks_amr or slot_marks_amr):
+            return False
+
         base_id = str(getattr(amr, "id", "") or "").rsplit("-", 1)[0]
-        if amr_type and amr_type not in {str(getattr(amr, "id", "") or ""), base_id}:
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        clean_amr_types = {x for x in amr_type_values if x}
+        if clean_amr_types and base_id not in clean_amr_types and amr_id not in clean_amr_types:
             return False
+
         length_m = float(space.get("length_m", 0.0) or 0.0)
         width_m = float(space.get("width_m", 0.0) or 0.0)
         height_m = float(space.get("height_m", 999999.0) or 999999.0)
         amr_length = float(getattr(amr, "length_m", 0.0) or 0.0)
         amr_width = float(getattr(amr, "width_m", 0.0) or 0.0)
         amr_height = float(getattr(amr, "height_m", 0.0) or 0.0)
-        # AMR spaces are derived from rounded editor/DXF coordinates, so use a
-        # small tolerance to avoid rejecting a bay because 1.2 m has round-tripped
-        # as 1.19999999999999 m.
         tolerance_m = 1e-3
 
         def _fits(required: float, available: float) -> bool:
@@ -2525,6 +2558,46 @@ class Simulation:
             return space
         return None
 
+    def _reserved_amr_inventory_space(self, location_name: str, amr: AMR) -> Optional[dict]:
+        """Return the AMR bay already reserved for this AMR at a location."""
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        target_name = str(getattr(amr, "target_inventory_space_name", "") or "").strip()
+        for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
+            if not self._inventory_space_accepts_amr(space, amr):
+                continue
+            space_name = str(space.get("name", "") or "").strip()
+            reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
+            occupied_by = str(space.get("amr_id", "") or "").strip()
+            if amr_id and reserved_by == amr_id:
+                return space
+            if amr_id and occupied_by == amr_id:
+                return space
+            if target_name and space_name == target_name and not occupied_by and not reserved_by:
+                return space
+        return None
+
+    def _reserve_amr_inventory_space(self, amr: AMR, location_name: str) -> Optional[dict]:
+        """Reserve exactly one compatible AMR bay for a return/charge movement."""
+        self._clear_amr_inventory_space_reservations(amr)
+        space = self._reserved_amr_inventory_space(location_name, amr)
+        if space is None:
+            space = self._find_free_amr_inventory_space(location_name, amr)
+        if space is None:
+            setattr(amr, "target_inventory_space_name", "")
+            return None
+        space["reserved_by_amr"] = str(getattr(amr, "id", "") or "").strip()
+        setattr(amr, "target_inventory_space_name", str(space.get("name", "") or ""))
+        return space
+
+    def _clear_amr_inventory_space_reservations(self, amr: AMR) -> None:
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        if not amr_id:
+            return
+        for spaces in self.inventory_spaces_by_location.values():
+            for space in spaces:
+                if str(space.get("reserved_by_amr", "") or "").strip() == amr_id:
+                    space["reserved_by_amr"] = ""
+
     def _free_amr_inventory_space(self, amr: AMR) -> None:
         amr_id = str(getattr(amr, "id", "") or "").strip()
         if not amr_id:
@@ -2537,25 +2610,59 @@ class Simulation:
                         space["occupied"] = False
                 if str(space.get("reserved_by_amr", "") or "").strip() == amr_id:
                     space["reserved_by_amr"] = ""
+        setattr(amr, "inventory_space_name", "")
 
     def _occupy_amr_inventory_space(self, amr: AMR, location_name: str) -> Optional[dict]:
+        target_space_name = str(getattr(amr, "target_inventory_space_name", "") or "").strip()
+        target_space = None
+
+        # Prefer the bay reserved when the return/charge journey was assigned.
+        # This prevents other idle AMRs from taking the bay while this AMR is travelling.
+        if target_space_name:
+            for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
+                if str(space.get("name", "") or "").strip() != target_space_name:
+                    continue
+                if self._inventory_space_accepts_amr(space, amr):
+                    target_space = space
+                    break
+
+        if target_space is None:
+            target_space = self._reserved_amr_inventory_space(location_name, amr)
+        if target_space is None:
+            target_space = self._find_free_amr_inventory_space(location_name, amr)
+
         self._free_amr_inventory_space(amr)
-        space = self._find_free_amr_inventory_space(location_name, amr)
-        if space is None:
-            setattr(amr, "inventory_space_name", "")
+
+        if target_space is None:
+            setattr(amr, "target_inventory_space_name", "")
             return None
-        space["amr_id"] = str(getattr(amr, "id", "") or "").strip()
-        space["occupied"] = True
-        space["reserved_by_amr"] = ""
-        setattr(amr, "inventory_space_name", str(space.get("name", "") or ""))
-        return space
+
+        occupied_by = str(target_space.get("amr_id", "") or "").strip()
+        reserved_by = str(target_space.get("reserved_by_amr", "") or "").strip()
+        amr_id = str(getattr(amr, "id", "") or "").strip()
+        if occupied_by and occupied_by != amr_id:
+            setattr(amr, "target_inventory_space_name", "")
+            return None
+        if reserved_by and reserved_by != amr_id:
+            setattr(amr, "target_inventory_space_name", "")
+            return None
+
+        target_space["amr_id"] = amr_id
+        target_space["occupied"] = True
+        target_space["reserved_by_amr"] = ""
+        setattr(amr, "inventory_space_name", str(target_space.get("name", "") or ""))
+        setattr(amr, "target_inventory_space_name", "")
+        return target_space
 
     def _amr_display_location(self, amr: AMR, location_name: str) -> Optional[Location]:
         location_name = str(location_name or "").strip()
         space_name = str(getattr(amr, "inventory_space_name", "") or "").strip()
         if space_name:
             for space in self.inventory_spaces_by_location.get(location_name, []):
-                if str(space.get("name", "") or "").strip() == space_name and str(space.get("amr_id", "") or "").strip() == str(getattr(amr, "id", "") or "").strip():
+                if str(space.get("name", "") or "").strip() == space_name and (
+                    str(space.get("amr_id", "") or "").strip() == str(getattr(amr, "id", "") or "").strip()
+                    or str(space.get("reserved_by_amr", "") or "").strip() == str(getattr(amr, "id", "") or "").strip()
+                ):
                     loc = self._inventory_space_centre_location(location_name, space)
                     if loc is not None:
                         return loc
@@ -4415,6 +4522,19 @@ class Simulation:
             else PayloadType("empty", 0.0)
         )
         for charge_loc in candidates:
+            # If this charging location has AMR bays configured, only consider it
+            # when a compatible bay is currently free or already reserved for this AMR.
+            amr_spaces = [
+                space
+                for space in self.inventory_spaces_by_location.get(charge_loc.name, [])
+                if self._inventory_space_accepts_amr(space, amr)
+            ]
+            if amr_spaces and (
+                self._reserved_amr_inventory_space(charge_loc.name, amr) is None
+                and self._find_free_amr_inventory_space(charge_loc.name, amr) is None
+            ):
+                continue
+
             if current_loc.floor == charge_loc.floor:
                 route = self._same_floor_segments(amr, current_loc, charge_loc)
                 if route is None:
@@ -4475,6 +4595,18 @@ class Simulation:
             return None
         self.charge_location_name = charge_loc.name
 
+        reserved_charge_space = None
+        if reserve:
+            reserved_charge_space = self._reserve_amr_inventory_space(amr, charge_loc.name)
+            if (
+                reserved_charge_space is None
+                and any(
+                    self._inventory_space_accepts_amr(space, amr)
+                    for space in self.inventory_spaces_by_location.get(charge_loc.name, [])
+                )
+            ):
+                return None
+
         if current_loc.floor == charge_loc.floor:
             route = self._same_floor_segments(amr, current_loc, charge_loc)
             if route is None:
@@ -4491,6 +4623,7 @@ class Simulation:
                 "distance_m": distance_m,
                 "finish_time": finish_time,
                 "end_location": charge_loc.name,
+                "amr_inventory_space": str((reserved_charge_space or {}).get("name", "") or ""),
             }
 
         dummy_payload = next(iter(self.payloads.values()))
@@ -5773,6 +5906,14 @@ class Simulation:
             finish_time = committed["finish_time"]
             previous_location = amr.location_name
             self._free_amr_inventory_space(amr)
+            if getattr(task, "is_idle_return", False) and committed.get("end_location"):
+                reserved_space = self._reserve_amr_inventory_space(
+                    amr, committed["end_location"]
+                )
+                if reserved_space is not None:
+                    committed["amr_inventory_space"] = str(
+                        reserved_space.get("name", "") or ""
+                    )
             amr.total_busy_time += committed["duration"]
             amr.available_time = finish_time
             amr.location_name = committed["end_location"]
@@ -5975,6 +6116,7 @@ class Simulation:
                     "lift_energy_kwh": committed["lift_energy_kwh"],
                     "lift_empty_sec_total": committed["lift_empty_sec_total"],
                     "lift_loaded_sec_total": committed["lift_loaded_sec_total"],
+                    "amr_inventory_space": committed.get("amr_inventory_space", ""),
                 },
             )
             processed_this_tick += 1
@@ -6367,8 +6509,15 @@ class Simulation:
                     return
             completed_amr = next((a for a in self.amrs if a.id == event.payload.get("amr_id")), None)
             completed_amr_loc = self.locations.get(task.dropoff)
+            completed_amr_space = None
             if completed_amr is not None:
-                self._occupy_amr_inventory_space(completed_amr, task.dropoff)
+                completed_amr_space = self._occupy_amr_inventory_space(completed_amr, task.dropoff)
+                if getattr(task, "is_idle_return", False) and completed_amr_space is None:
+                    reason = (
+                        f"No compatible AMR space available at {task.dropoff} "
+                        f"for {completed_amr.id}; AMR left at location node"
+                    )
+                    self.failed_tasks.append({"task_id": task.id, "reason": reason})
                 completed_amr_loc = self._amr_display_location(completed_amr, task.dropoff) or completed_amr_loc
 
             self.log_step(
@@ -7314,11 +7463,44 @@ class Simulation:
         for amr_id in locked_amr_ids:
             self._remove_pending_idle_return_tasks_for_amr(amr_id)
 
+    def _charge_location_for_idle_return(self, amr: AMR, now: float) -> str:
+        """Select the best configured charging location for an idle AMR return."""
+        current_loc = self.locations.get(str(getattr(amr, "location_name", "") or ""))
+        if current_loc is not None:
+            selected = self._select_charge_location_for_amr(amr, current_loc, now)
+            if selected is not None:
+                return selected.name
+        for location_name in list(getattr(self, "charge_location_names", []) or []):
+            if str(location_name or "").strip() in self.locations:
+                return str(location_name or "").strip()
+        return str(getattr(self, "charge_location_name", "") or "").strip()
+
+    def _amr_is_at_configured_charge_location(self, amr: AMR) -> bool:
+        return str(getattr(amr, "location_name", "") or "").strip() in {
+            str(x).strip() for x in (getattr(self, "charge_location_names", []) or []) if str(x).strip()
+        }
+
     def _create_idle_return_task(self, amr: AMR, now: float) -> Optional[Task]:
-        if amr.location_name == self.amr_centre_name:
+        charge_location = self._charge_location_for_idle_return(amr, now)
+        if not charge_location or charge_location not in self.locations:
             return None
 
-        if self.amr_centre_name not in self.locations:
+        charge_amr_spaces = [
+            space
+            for space in self.inventory_spaces_by_location.get(charge_location, [])
+            if self._inventory_space_accepts_amr(space, amr)
+        ]
+        if charge_amr_spaces and (
+            self._reserved_amr_inventory_space(charge_location, amr) is None
+            and self._find_free_amr_inventory_space(charge_location, amr) is None
+        ):
+            return None
+
+        # If the AMR is already at a configured charger, just ensure it occupies
+        # a compatible AMR bay.  Do not create a synthetic movement back to the
+        # legacy amr_centre/start location.
+        if self._amr_is_at_configured_charge_location(amr):
+            self._occupy_amr_inventory_space(amr, amr.location_name)
             return None
 
         self.synthetic_task_counter += 1
@@ -7326,17 +7508,19 @@ class Simulation:
         task = Task(
             id=f"RETURN-{amr.id}-{self.synthetic_task_counter}",
             pickup=amr.location_name,
-            dropoff=self.amr_centre_name,
+            dropoff=charge_location,
             payload=EMPTY_PAYLOAD_NAME,
             release_time=now,
             priority=999999,
             target_time=0.0,
-            labels=[],
+            labels=["idle_charge_return"],
             route_profile=None,
         )
         task.created_during_runtime = True
         task.is_idle_return = True
         task.amr_id = amr.id
+        task.locked_amr_id = amr.id
+        task.target_charge_location = charge_location
         return task
 
     def _queue_idle_return_tasks(self, now: float):
