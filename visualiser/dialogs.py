@@ -164,6 +164,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
+        "timeframe",
     ]
 
     def __init__(
@@ -202,6 +203,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.selected_pickup_locations = []
         self.selected_dropoffs = list(self.base_category.get("dropoff_locations", []))
         self.scheduled_times = list(self.base_category.get("scheduled_times", []))
+        self.timeframe_start_edit = None
+        self.timeframe_end_edit = None
+        self.timeframe_payload_multiple_edit = None
 
         # In the bulk/multiple department configuration dialog, only departments
         # with an existing assigned location for the selected category are valid.
@@ -391,6 +395,15 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.base_daily_volume_edit = QLineEdit(
             str(self.base_category.get("base_daily_volume_m3", 0.0))
         )
+        self.timeframe_start_edit = QLineEdit(
+            str(self.base_category.get("timeframe_start", "09:00"))
+        )
+        self.timeframe_end_edit = QLineEdit(
+            str(self.base_category.get("timeframe_end", "17:00"))
+        )
+        self.timeframe_payload_multiple_edit = QLineEdit(
+            str(self.base_category.get("timeframe_payload_multiple", self.base_category.get("payload_multiple", 1)))
+        )
         self.notes_edit = QPlainTextEdit(str(self.base_category.get("notes", "")))
         self.notes_edit.setFixedHeight(90)
 
@@ -415,6 +428,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Volume per event m³", self.volume_per_event_edit)
         form.addRow("Threshold volume m³", self.threshold_volume_edit)
         form.addRow("Base daily volume m³", self.base_daily_volume_edit)
+        form.addRow("Timeframe start HH:MM", self.timeframe_start_edit)
+        form.addRow("Timeframe end HH:MM", self.timeframe_end_edit)
+        form.addRow("Payload multiple", self.timeframe_payload_multiple_edit)
         form.addRow("Notes", self.notes_edit)
 
         self.waste_stream_notice_label = QLabel(
@@ -475,6 +491,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 self.volume_per_event_edit,
                 self.threshold_volume_edit,
                 self.base_daily_volume_edit,
+                self.timeframe_start_edit,
+                self.timeframe_end_edit,
+                self.timeframe_payload_multiple_edit,
             ):
                 widget.setEnabled(False)
             self.waste_stream_notice_label.setVisible(True)
@@ -848,6 +867,10 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "base_daily_volume_m3": float(
                     self.base_daily_volume_edit.text() or 0.0
                 ),
+                "timeframe_start": self.timeframe_start_edit.text().strip(),
+                "timeframe_end": self.timeframe_end_edit.text().strip(),
+                "timeframe_payload_multiple": int(float(self.timeframe_payload_multiple_edit.text() or 1)),
+                "payload_multiple": int(float(self.timeframe_payload_multiple_edit.text() or 1)),
                 "notes": self.notes_edit.toPlainText().strip(),
             }
 
@@ -861,6 +884,10 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 payload["volume_per_event_m3"] = 0.0
                 payload["threshold_volume_m3"] = 0.0
                 payload["base_daily_volume_m3"] = 0.0
+                payload["timeframe_start"] = ""
+                payload["timeframe_end"] = ""
+                payload["timeframe_payload_multiple"] = 1
+                payload["payload_multiple"] = 1
 
             self.result = {}
 
@@ -961,6 +988,7 @@ class TaskGenerationSettingsDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
+        "timeframe",
     ]
 
     def __init__(
@@ -1172,6 +1200,12 @@ class TaskGenerationSettingsDialog(QDialog):
         self.volume_per_event_edit = QLineEdit()
         self.threshold_volume_edit = QLineEdit()
         self.base_daily_volume_edit = QLineEdit()
+        self.timeframe_start_edit = QLineEdit()
+        self.timeframe_start_edit.setPlaceholderText("HH:MM, e.g. 09:00")
+        self.timeframe_end_edit = QLineEdit()
+        self.timeframe_end_edit.setPlaceholderText("HH:MM, e.g. 17:00")
+        self.timeframe_payload_multiple_edit = QLineEdit()
+        self.timeframe_payload_multiple_edit.setPlaceholderText("1")
         self.notes_edit = QPlainTextEdit()
         self.notes_edit.setFixedHeight(90)
 
@@ -1200,6 +1234,9 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Volume per event m³", self.volume_per_event_edit)
         form.addRow("Threshold volume m³", self.threshold_volume_edit)
         form.addRow("Base daily volume m³", self.base_daily_volume_edit)
+        form.addRow("Timeframe start HH:MM", self.timeframe_start_edit)
+        form.addRow("Timeframe end HH:MM", self.timeframe_end_edit)
+        form.addRow("Payload multiple", self.timeframe_payload_multiple_edit)
         form.addRow("Notes", self.notes_edit)
 
         self.waste_stream_notice_label = QLabel(
@@ -1213,6 +1250,8 @@ class TaskGenerationSettingsDialog(QDialog):
 
         help_label = QLabel(
             "Schedule times are comma-separated HH:MM values. "
+            "Timeframe mode releases the configured payload multiple at the start of each active-day window "
+            "and gives each task a target duration equal to the remaining window, so the payloads are due before the timeframe end. "
             "Drop-off destinations can contain multiple locations; the first is also saved as "
             "dropoff_location for compatibility with existing generators. "
             "For Waste, stream-specific generated volume is configured on the departments' waste streams, "
@@ -1344,6 +1383,19 @@ class TaskGenerationSettingsDialog(QDialog):
                 if widget.text().strip():
                     return True
 
+        if self.timeframe_start_edit.text().strip():
+            return True
+
+        if self.timeframe_end_edit.text().strip():
+            return True
+
+        try:
+            if int(float(self.timeframe_payload_multiple_edit.text() or 1)) != 1:
+                return True
+        except Exception:
+            if self.timeframe_payload_multiple_edit.text().strip():
+                return True
+
         if self.notes_edit.toPlainText().strip():
             return True
 
@@ -1396,6 +1448,10 @@ class TaskGenerationSettingsDialog(QDialog):
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "",
+            "timeframe_end": "",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "departments": {},
             "department_groups": [],
@@ -2203,6 +2259,10 @@ class TaskGenerationSettingsDialog(QDialog):
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
         }
 
@@ -2345,6 +2405,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.volume_per_event_edit.setText("0.0")
         self.threshold_volume_edit.setText("0.0")
         self.base_daily_volume_edit.setText("0.0")
+        self.timeframe_start_edit.setText("")
+        self.timeframe_end_edit.setText("")
+        self.timeframe_payload_multiple_edit.setText("1")
         self.notes_edit.setPlainText("")
         self._set_department_location_role("dropoff", True)
         self._update_mode_field_state()
@@ -2420,6 +2483,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.volume_per_event_edit.setText(str(item.get("volume_per_event_m3", 0.0)))
         self.threshold_volume_edit.setText(str(item.get("threshold_volume_m3", 0.0)))
         self.base_daily_volume_edit.setText(str(item.get("base_daily_volume_m3", 0.0)))
+        self.timeframe_start_edit.setText(str(item.get("timeframe_start", "09:00")))
+        self.timeframe_end_edit.setText(str(item.get("timeframe_end", "17:00")))
+        self.timeframe_payload_multiple_edit.setText(str(item.get("timeframe_payload_multiple", item.get("payload_multiple", 1))))
         self.notes_edit.setPlainText(str(item.get("notes", "")))
         self._loading = was_loading
         self._update_mode_field_state()
@@ -2454,6 +2520,8 @@ class TaskGenerationSettingsDialog(QDialog):
             "scheduled_sporadic",
         }
 
+        uses_timeframe = mode == "timeframe"
+
         # Waste stream generation values are now edited on the Department
         # waste-stream assignments.  The Waste category only controls routing,
         # collection/destination and return-task behaviour.
@@ -2474,6 +2542,9 @@ class TaskGenerationSettingsDialog(QDialog):
         )
         self.frequency_edit.setEnabled((not is_waste) and uses_sporadic)
         self.volume_per_event_edit.setEnabled((not is_waste) and uses_sporadic)
+        self.timeframe_start_edit.setEnabled((not is_waste) and uses_timeframe)
+        self.timeframe_end_edit.setEnabled((not is_waste) and uses_timeframe)
+        self.timeframe_payload_multiple_edit.setEnabled((not is_waste) and uses_timeframe)
 
         using_dept_as_pickup = self._current_department_location_role() == "pickup"
         self.pickup_combo.setEnabled(not using_dept_as_pickup)
@@ -2487,6 +2558,20 @@ class TaskGenerationSettingsDialog(QDialog):
             self.reusable_return_pool_check.setEnabled(return_enabled)
             self.reusable_return_pool_multiplier_edit.setEnabled(return_enabled)
             self.reusable_return_pool_max_edit.setEnabled(return_enabled)
+
+    def _parse_timeframe_hhmm(self, value, field_name):
+        text = str(value or "").strip()
+        try:
+            parts = text.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+            if hour == 24 and minute == 0:
+                return 24 * 60
+            if 0 <= hour <= 23 and 0 <= minute <= 59:
+                return (hour * 60) + minute
+        except Exception:
+            pass
+        raise ValueError(f"{field_name} must be HH:MM, for example 09:00")
 
     def _store_current_category(self):
         if not self.current_key:
@@ -2519,6 +2604,12 @@ class TaskGenerationSettingsDialog(QDialog):
         if not days_active:
             raise ValueError("Select at least one active day")
 
+        if self.mode_combo.currentText().strip() == "timeframe":
+            self._parse_timeframe_hhmm(self.timeframe_start_edit.text(), "Timeframe start")
+            self._parse_timeframe_hhmm(self.timeframe_end_edit.text(), "Timeframe end")
+            if int(float(self.timeframe_payload_multiple_edit.text() or 1)) < 1:
+                raise ValueError("Payload multiple must be at least 1")
+
         display_name = (
             self.display_name_edit.text().strip() or str(category_key).title()
         )
@@ -2550,6 +2641,10 @@ class TaskGenerationSettingsDialog(QDialog):
             "volume_per_event_m3": float(self.volume_per_event_edit.text() or 0.0),
             "threshold_volume_m3": float(self.threshold_volume_edit.text() or 0.0),
             "base_daily_volume_m3": float(self.base_daily_volume_edit.text() or 0.0),
+            "timeframe_start": self.timeframe_start_edit.text().strip(),
+            "timeframe_end": self.timeframe_end_edit.text().strip(),
+            "timeframe_payload_multiple": int(float(self.timeframe_payload_multiple_edit.text() or 1)),
+            "payload_multiple": int(float(self.timeframe_payload_multiple_edit.text() or 1)),
             "notes": self.notes_edit.toPlainText().strip(),
         }
 
@@ -2567,6 +2662,10 @@ class TaskGenerationSettingsDialog(QDialog):
             payload["volume_per_event_m3"] = 0.0
             payload["threshold_volume_m3"] = 0.0
             payload["base_daily_volume_m3"] = 0.0
+            payload["timeframe_start"] = ""
+            payload["timeframe_end"] = ""
+            payload["timeframe_payload_multiple"] = 1
+            payload["payload_multiple"] = 1
 
         category = self.config.setdefault("categories", {}).setdefault(category_key, {})
         overrides = category.setdefault("departments", {})
@@ -2600,6 +2699,9 @@ class TaskGenerationSettingsDialog(QDialog):
                     float(payload.get("volume_per_event_m3", 0.0) or 0.0) != 0.0,
                     float(payload.get("threshold_volume_m3", 0.0) or 0.0) != 0.0,
                     float(payload.get("base_daily_volume_m3", 0.0) or 0.0) != 0.0,
+                    payload.get("timeframe_start"),
+                    payload.get("timeframe_end"),
+                    int(float(payload.get("timeframe_payload_multiple", payload.get("payload_multiple", 1)) or 1)) != 1,
                     payload.get("notes"),
                     payload.get("tracked_item_exchange"),
                 ]

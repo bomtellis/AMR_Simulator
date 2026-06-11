@@ -17,6 +17,7 @@ SCHEDULED_MODES = {"scheduled", "scheduled_threshold", "scheduled_sporadic"}
 THRESHOLD_MODES = {"threshold", "hybrid", "scheduled_threshold"}
 CONTINUOUS_MODES = {"continuous", "hybrid", "threshold", "scheduled_threshold"}
 SPORADIC_MODES = {"sporadic", "hybrid", "scheduled_sporadic"}
+TIMEFRAME_MODES = {"timeframe"}
 
 
 @dataclass
@@ -91,6 +92,12 @@ def _scheduled_times_from_cfg(cfg: dict) -> List[str]:
         except Exception:
             continue
     return sorted(set(clean))
+
+
+def _timeframe_minutes_from_cfg(cfg: dict) -> Tuple[Optional[int], Optional[int]]:
+    start = _parse_hhmm_to_minutes(cfg.get("timeframe_start"), None)
+    end = _parse_hhmm_to_minutes(cfg.get("timeframe_end"), None)
+    return start, end
 
 
 def _day_key_for_datetime(value: datetime) -> str:
@@ -911,6 +918,100 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 records.extend(self._records_for_outbound(task, instance, details))
         return records
 
+    def _timeframe_records(self, instance: dict, now: float) -> List[GeneratedTaskRecord]:
+        cfg = instance["cfg"]
+        mode = _clean_text(cfg.get("generation_mode", "scheduled")) or "scheduled"
+        if mode not in TIMEFRAME_MODES:
+            return []
+
+        payload_name = _clean_text(cfg.get("payload", ""))
+        if payload_name not in self.payloads:
+            return []
+
+        start_minutes, end_minutes = _timeframe_minutes_from_cfg(cfg)
+        if start_minutes is None or end_minutes is None:
+            return []
+        if end_minutes <= start_minutes:
+            end_minutes += 24 * 60
+
+        multiple = max(
+            1,
+            _as_int(
+                cfg.get("timeframe_payload_multiple", cfg.get("payload_multiple", 1)),
+                1,
+            ),
+        )
+
+        current_dt = self.clock.sim_seconds_to_datetime(now)
+        day_start = current_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        records: List[GeneratedTaskRecord] = []
+
+        # Also check the previous day because a timeframe can cross midnight.
+        for day_offset in (-1, 0):
+            base_day = day_start + timedelta(days=day_offset)
+            release_dt = base_day + timedelta(minutes=start_minutes)
+            deadline_dt = base_day + timedelta(minutes=end_minutes)
+            original_release_time = (
+                release_dt - self.clock.start_datetime
+            ).total_seconds()
+            release_time = self._adjust_release_to_department_open(
+                instance, original_release_time
+            )
+            if release_time is None or release_time < 0 or release_time > now:
+                continue
+            if not self._instance_is_active(instance, release_time):
+                continue
+
+            deadline_time = (deadline_dt - self.clock.start_datetime).total_seconds()
+            if deadline_time <= release_time:
+                continue
+
+            schedule_key_base = (
+                instance.get("schedule_key", instance["key"]),
+                "timeframe",
+                release_dt.date().isoformat(),
+                _clean_text(cfg.get("timeframe_start", "")),
+                _clean_text(cfg.get("timeframe_end", "")),
+            )
+
+            for pickup, dropoff in self._pick_pairs(instance):
+                pair_key = (pickup, dropoff)
+                for index in range(multiple):
+                    schedule_key = schedule_key_base + pair_key + (index,)
+                    if schedule_key in self.scheduled_emitted:
+                        continue
+                    self.scheduled_emitted.add(schedule_key)
+
+                    task = self._base_task(
+                        instance=instance,
+                        pickup=pickup,
+                        dropoff=dropoff,
+                        payload_name=payload_name,
+                        release_time=release_time,
+                        label_suffix="timeframe",
+                    )
+                    if task is None:
+                        continue
+                    task.target_time = max(0.0, deadline_time - release_time)
+                    task.quantity = 1
+                    task.timeframe_start = _clean_text(cfg.get("timeframe_start", ""))
+                    task.timeframe_end = _clean_text(cfg.get("timeframe_end", ""))
+                    task.timeframe_deadline_time = deadline_time
+                    task.timeframe_payload_index = index + 1
+                    task.timeframe_payload_multiple = multiple
+                    records.extend(
+                        self._records_for_outbound(
+                            task,
+                            instance,
+                            (
+                                f"Generated timeframe {instance['category_key']} task "
+                                f"{index + 1}/{multiple}; due by {_clean_text(cfg.get('timeframe_end', ''))}"
+                            ),
+                        )
+                    )
+
+        return records
+
     def _schedule_records(
         self, instance: dict, now: float
     ) -> List[GeneratedTaskRecord]:
@@ -1224,6 +1325,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             return generated
 
         for instance in self.instances:
+            generated.extend(self._timeframe_records(instance, now))
             generated.extend(self._schedule_records(instance, now))
             generated.extend(self._volume_records(instance, now))
             generated.extend(self._tracked_item_records(instance, now))

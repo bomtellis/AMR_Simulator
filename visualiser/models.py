@@ -138,6 +138,10 @@ def default_task_generation_category(label: str) -> dict:
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
+        "timeframe_start": "09:00",
+        "timeframe_end": "17:00",
+        "timeframe_payload_multiple": 1,
+        "payload_multiple": 1,
         "notes": "",
     }
 
@@ -254,6 +258,13 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
             clean.insert(0, legacy_dropoff)
         category["dropoff_locations"] = clean
         category["dropoff_location"] = clean[0] if clean else legacy_dropoff
+
+        if "timeframe_payload_multiple" not in category:
+            category["timeframe_payload_multiple"] = category.get("payload_multiple", 1)
+        if "payload_multiple" not in category:
+            category["payload_multiple"] = category.get("timeframe_payload_multiple", 1)
+        category.setdefault("timeframe_start", "09:00")
+        category.setdefault("timeframe_end", "17:00")
 
     # Keep the legacy department_waste mirror in step for older configs/tools.
     # It is not a separate editor workflow; Waste stream volume settings live on
