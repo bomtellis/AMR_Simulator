@@ -1036,6 +1036,15 @@ class TaskGenerationSettingsDialog(QDialog):
         clear_group_btn.clicked.connect(self.clear_configured_department_group)
         department_col.addWidget(clear_group_btn)
 
+        clear_category_departments_btn = QPushButton("Clear all department settings...")
+        clear_category_departments_btn.setToolTip(
+            "Remove every department-specific task generation override for the selected category."
+        )
+        clear_category_departments_btn.clicked.connect(
+            self.clear_all_department_settings_for_category
+        )
+        department_col.addWidget(clear_category_departments_btn)
+
         category_buttons = QHBoxLayout()
         left.addLayout(category_buttons)
         add_category_btn = QPushButton("Add")
@@ -1343,6 +1352,162 @@ class TaskGenerationSettingsDialog(QDialog):
                 return True
 
         return False
+
+    def _blank_category_clear_settings(self, category_key, existing_category=None):
+        """Return a disabled/blank category config used by the clear-all action.
+
+        The clear-all action must not expose or save the built-in category defaults
+        back into every department.  Keeping the display name preserves the category
+        row in the editor, while all operational values are reset to disabled/blank.
+        """
+        category_key = str(category_key or "").strip()
+        existing_category = dict(existing_category or {})
+        display_name = str(
+            existing_category.get("display_name", category_key.title())
+        ).strip() or category_key.title()
+        is_waste = category_key.lower() == "waste"
+
+        return {
+            "enabled": False,
+            "display_name": display_name,
+            "generation_mode": "threshold" if is_waste else "scheduled",
+            "uses_department_waste_streams": bool(
+                existing_category.get("uses_department_waste_streams", is_waste)
+            ),
+            "priority": 0,
+            "department_location_role": "dropoff",
+            "pickup_location": "",
+            "pickup_locations": [],
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "tracked_item_exchange": False,
+            "exchange_mode": "top_up_only",
+            "return_enabled": False,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": False,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "notes": "",
+            "departments": {},
+            "department_groups": [],
+        }
+
+    def clear_all_department_settings_for_category(self):
+        if not self.current_key:
+            QMessageBox.information(
+                self,
+                "Clear department settings",
+                "Select a category first.",
+            )
+            return
+
+        try:
+            self._store_current_category()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid current category", str(exc))
+            return
+
+        category = self.config.setdefault("categories", {}).setdefault(
+            self.current_key, {}
+        )
+
+        overrides = category.get("departments", {})
+        if not isinstance(overrides, dict):
+            overrides = {}
+
+        groups = self._department_groups_for_category(self.current_key)
+        override_count = len(overrides)
+        group_count = len(groups)
+
+        has_category_settings = any(
+            [
+                bool(category.get("enabled", False)),
+                str(category.get("pickup_location", "")).strip(),
+                category.get("pickup_locations"),
+                str(category.get("dropoff_location", "")).strip(),
+                category.get("dropoff_locations"),
+                str(category.get("payload", "")).strip(),
+                bool(category.get("tracked_item_exchange", False)),
+                bool(category.get("return_enabled", False)),
+                str(category.get("return_payload", "")).strip(),
+                str(category.get("route_profile", "")).strip(),
+                category.get("days_active"),
+                category.get("scheduled_times"),
+                float(category.get("priority", 0) or 0) != 0.0,
+                float(category.get("frequency_per_day", 0.0) or 0.0) != 0.0,
+                float(category.get("volume_per_event_m3", 0.0) or 0.0) != 0.0,
+                float(category.get("threshold_volume_m3", 0.0) or 0.0) != 0.0,
+                float(category.get("base_daily_volume_m3", 0.0) or 0.0) != 0.0,
+                str(category.get("notes", "")).strip(),
+            ]
+        )
+
+        if override_count == 0 and group_count == 0 and not has_category_settings:
+            QMessageBox.information(
+                self,
+                "Clear department settings",
+                "No task-generation settings were found for this category.",
+            )
+            return
+
+        category_label = (
+            self.category_list.currentItem().text()
+            if self.category_list.currentItem()
+            else str(self.current_key)
+        )
+
+        message = (
+            f"Clear all task-generation settings for '{category_label}'?\n\n"
+            f"This will remove {override_count} department override(s)"
+        )
+        if group_count:
+            message += f" and {group_count} configured group(s)"
+        message += (
+            ".\n\nThe selected category will also be reset to blank/disabled values, "
+            "so cleared departments do not inherit the category defaults. "
+            "Department location assignments are kept."
+        )
+
+        if (
+            QMessageBox.question(
+                self,
+                "Clear department settings",
+                message,
+            )
+            != QMessageBox.Yes
+        ):
+            return
+
+        self.config.setdefault("categories", {})[self.current_key] = (
+            self._blank_category_clear_settings(self.current_key, category)
+        )
+
+        if str(self.current_key).strip().lower() == "waste":
+            self.config["department_waste"] = {"enabled": False, "priority": 0}
+
+        selected_dept_id = self.current_department_id or ""
+
+        self._loading = True
+        self._refresh_category_list(select_key=self.current_key)
+        self._refresh_department_list(select_dept_id=selected_dept_id)
+        if self.current_key:
+            self._load_category(self.current_key)
+        self._loading = False
+
+        QMessageBox.information(
+            self,
+            "Clear department settings",
+            f"Cleared {override_count} department override(s) and reset the category to blank/disabled values.",
+        )
 
     def clear_configured_department_group(self):
         if not self.current_key:
