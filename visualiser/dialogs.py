@@ -164,7 +164,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
-        "timeframe",
     ]
 
     def __init__(
@@ -203,9 +202,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.selected_pickup_locations = []
         self.selected_dropoffs = list(self.base_category.get("dropoff_locations", []))
         self.scheduled_times = list(self.base_category.get("scheduled_times", []))
-        self.timeframe_start_edit = None
-        self.timeframe_end_edit = None
-        self.timeframe_payload_multiple_edit = None
 
         # In the bulk/multiple department configuration dialog, only departments
         # with an existing assigned location for the selected category are valid.
@@ -372,6 +368,14 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             days_layout.addWidget(chk)
         days_layout.addStretch(1)
 
+        self.run_every_fortnight_check = QCheckBox("Run every fortnight")
+        self.run_every_fortnight_check.setToolTip(
+            "When enabled, generated tasks run in week 1, skip week 2, then repeat every other week from the simulation start date."
+        )
+        self.run_every_fortnight_check.setChecked(
+            bool(self.base_category.get("run_every_fortnight", False))
+        )
+
         schedule_row = QHBoxLayout()
         self.schedule_summary = QLabel()
         self.schedule_summary.setWordWrap(True)
@@ -395,15 +399,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.base_daily_volume_edit = QLineEdit(
             str(self.base_category.get("base_daily_volume_m3", 0.0))
         )
-        self.timeframe_start_edit = QLineEdit(
-            str(self.base_category.get("timeframe_start", "09:00"))
-        )
-        self.timeframe_end_edit = QLineEdit(
-            str(self.base_category.get("timeframe_end", "17:00"))
-        )
-        self.timeframe_payload_multiple_edit = QLineEdit(
-            str(self.base_category.get("timeframe_payload_multiple", self.base_category.get("payload_multiple", 1)))
-        )
         self.notes_edit = QPlainTextEdit(str(self.base_category.get("notes", "")))
         self.notes_edit.setFixedHeight(90)
 
@@ -423,14 +418,12 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
         form.addRow("Days active", days_widget)
+        form.addRow("Fortnightly recurrence", self.run_every_fortnight_check)
         form.addRow("Scheduled times", schedule_row)
         form.addRow("Frequency per day", self.frequency_edit)
         form.addRow("Volume per event m³", self.volume_per_event_edit)
         form.addRow("Threshold volume m³", self.threshold_volume_edit)
         form.addRow("Base daily volume m³", self.base_daily_volume_edit)
-        form.addRow("Timeframe start HH:MM", self.timeframe_start_edit)
-        form.addRow("Timeframe end HH:MM", self.timeframe_end_edit)
-        form.addRow("Payload multiple", self.timeframe_payload_multiple_edit)
         form.addRow("Notes", self.notes_edit)
 
         self.waste_stream_notice_label = QLabel(
@@ -491,9 +484,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 self.volume_per_event_edit,
                 self.threshold_volume_edit,
                 self.base_daily_volume_edit,
-                self.timeframe_start_edit,
-                self.timeframe_end_edit,
-                self.timeframe_payload_multiple_edit,
+                self.run_every_fortnight_check,
             ):
                 widget.setEnabled(False)
             self.waste_stream_notice_label.setVisible(True)
@@ -860,6 +851,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "reusable_return_pool_max": int(float(self.reusable_return_pool_max_edit.text() or 0)),
                 "route_profile": self.route_profile_combo.currentText().strip(),
                 "days_active": days_active,
+                "run_every_fortnight": self.run_every_fortnight_check.isChecked(),
                 "scheduled_times": list(self.scheduled_times),
                 "frequency_per_day": float(self.frequency_edit.text() or 0.0),
                 "volume_per_event_m3": float(self.volume_per_event_edit.text() or 0.0),
@@ -867,10 +859,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "base_daily_volume_m3": float(
                     self.base_daily_volume_edit.text() or 0.0
                 ),
-                "timeframe_start": self.timeframe_start_edit.text().strip(),
-                "timeframe_end": self.timeframe_end_edit.text().strip(),
-                "timeframe_payload_multiple": int(float(self.timeframe_payload_multiple_edit.text() or 1)),
-                "payload_multiple": int(float(self.timeframe_payload_multiple_edit.text() or 1)),
                 "notes": self.notes_edit.toPlainText().strip(),
             }
 
@@ -884,10 +872,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 payload["volume_per_event_m3"] = 0.0
                 payload["threshold_volume_m3"] = 0.0
                 payload["base_daily_volume_m3"] = 0.0
-                payload["timeframe_start"] = ""
-                payload["timeframe_end"] = ""
-                payload["timeframe_payload_multiple"] = 1
-                payload["payload_multiple"] = 1
 
             self.result = {}
 
@@ -988,7 +972,6 @@ class TaskGenerationSettingsDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
-        "timeframe",
     ]
 
     def __init__(
@@ -1063,15 +1046,6 @@ class TaskGenerationSettingsDialog(QDialog):
         clear_group_btn = QPushButton("Clear configured group...")
         clear_group_btn.clicked.connect(self.clear_configured_department_group)
         department_col.addWidget(clear_group_btn)
-
-        clear_category_departments_btn = QPushButton("Clear all department settings...")
-        clear_category_departments_btn.setToolTip(
-            "Remove every department-specific task generation override for the selected category."
-        )
-        clear_category_departments_btn.clicked.connect(
-            self.clear_all_department_settings_for_category
-        )
-        department_col.addWidget(clear_category_departments_btn)
 
         category_buttons = QHBoxLayout()
         left.addLayout(category_buttons)
@@ -1177,6 +1151,11 @@ class TaskGenerationSettingsDialog(QDialog):
             days_layout.addWidget(chk)
         days_layout.addStretch(1)
 
+        self.run_every_fortnight_check = QCheckBox("Run every fortnight")
+        self.run_every_fortnight_check.setToolTip(
+            "When enabled, generated tasks run in week 1, skip week 2, then repeat every other week from the simulation start date."
+        )
+
         self.scheduled_times = []
 
         schedule_row = QHBoxLayout()
@@ -1200,12 +1179,6 @@ class TaskGenerationSettingsDialog(QDialog):
         self.volume_per_event_edit = QLineEdit()
         self.threshold_volume_edit = QLineEdit()
         self.base_daily_volume_edit = QLineEdit()
-        self.timeframe_start_edit = QLineEdit()
-        self.timeframe_start_edit.setPlaceholderText("HH:MM, e.g. 09:00")
-        self.timeframe_end_edit = QLineEdit()
-        self.timeframe_end_edit.setPlaceholderText("HH:MM, e.g. 17:00")
-        self.timeframe_payload_multiple_edit = QLineEdit()
-        self.timeframe_payload_multiple_edit.setPlaceholderText("1")
         self.notes_edit = QPlainTextEdit()
         self.notes_edit.setFixedHeight(90)
 
@@ -1227,6 +1200,7 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
         form.addRow("Days active", days_widget)
+        form.addRow("Fortnightly recurrence", self.run_every_fortnight_check)
 
         form.addRow("Scheduled times", schedule_row)
 
@@ -1234,9 +1208,6 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Volume per event m³", self.volume_per_event_edit)
         form.addRow("Threshold volume m³", self.threshold_volume_edit)
         form.addRow("Base daily volume m³", self.base_daily_volume_edit)
-        form.addRow("Timeframe start HH:MM", self.timeframe_start_edit)
-        form.addRow("Timeframe end HH:MM", self.timeframe_end_edit)
-        form.addRow("Payload multiple", self.timeframe_payload_multiple_edit)
         form.addRow("Notes", self.notes_edit)
 
         self.waste_stream_notice_label = QLabel(
@@ -1250,8 +1221,6 @@ class TaskGenerationSettingsDialog(QDialog):
 
         help_label = QLabel(
             "Schedule times are comma-separated HH:MM values. "
-            "Timeframe mode releases the configured payload multiple at the start of each active-day window "
-            "and gives each task a target duration equal to the remaining window, so the payloads are due before the timeframe end. "
             "Drop-off destinations can contain multiple locations; the first is also saved as "
             "dropoff_location for compatibility with existing generators. "
             "For Waste, stream-specific generated volume is configured on the departments' waste streams, "
@@ -1368,6 +1337,9 @@ class TaskGenerationSettingsDialog(QDialog):
         if self.scheduled_times:
             return True
 
+        if self.run_every_fortnight_check.isChecked():
+            return True
+
         numeric_fields = [
             self.frequency_edit,
             self.volume_per_event_edit,
@@ -1383,19 +1355,6 @@ class TaskGenerationSettingsDialog(QDialog):
                 if widget.text().strip():
                     return True
 
-        if self.timeframe_start_edit.text().strip():
-            return True
-
-        if self.timeframe_end_edit.text().strip():
-            return True
-
-        try:
-            if int(float(self.timeframe_payload_multiple_edit.text() or 1)) != 1:
-                return True
-        except Exception:
-            if self.timeframe_payload_multiple_edit.text().strip():
-                return True
-
         if self.notes_edit.toPlainText().strip():
             return True
 
@@ -1404,166 +1363,6 @@ class TaskGenerationSettingsDialog(QDialog):
                 return True
 
         return False
-
-    def _blank_category_clear_settings(self, category_key, existing_category=None):
-        """Return a disabled/blank category config used by the clear-all action.
-
-        The clear-all action must not expose or save the built-in category defaults
-        back into every department.  Keeping the display name preserves the category
-        row in the editor, while all operational values are reset to disabled/blank.
-        """
-        category_key = str(category_key or "").strip()
-        existing_category = dict(existing_category or {})
-        display_name = str(
-            existing_category.get("display_name", category_key.title())
-        ).strip() or category_key.title()
-        is_waste = category_key.lower() == "waste"
-
-        return {
-            "enabled": False,
-            "display_name": display_name,
-            "generation_mode": "threshold" if is_waste else "scheduled",
-            "uses_department_waste_streams": bool(
-                existing_category.get("uses_department_waste_streams", is_waste)
-            ),
-            "priority": 0,
-            "department_location_role": "dropoff",
-            "pickup_location": "",
-            "pickup_locations": [],
-            "dropoff_location": "",
-            "dropoff_locations": [],
-            "payload": "",
-            "tracked_item_exchange": False,
-            "exchange_mode": "top_up_only",
-            "return_enabled": False,
-            "return_payload": "",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": False,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "",
-            "timeframe_end": "",
-            "timeframe_payload_multiple": 1,
-            "payload_multiple": 1,
-            "notes": "",
-            "departments": {},
-            "department_groups": [],
-        }
-
-    def clear_all_department_settings_for_category(self):
-        if not self.current_key:
-            QMessageBox.information(
-                self,
-                "Clear department settings",
-                "Select a category first.",
-            )
-            return
-
-        try:
-            self._store_current_category()
-        except Exception as exc:
-            QMessageBox.critical(self, "Invalid current category", str(exc))
-            return
-
-        category = self.config.setdefault("categories", {}).setdefault(
-            self.current_key, {}
-        )
-
-        overrides = category.get("departments", {})
-        if not isinstance(overrides, dict):
-            overrides = {}
-
-        groups = self._department_groups_for_category(self.current_key)
-        override_count = len(overrides)
-        group_count = len(groups)
-
-        has_category_settings = any(
-            [
-                bool(category.get("enabled", False)),
-                str(category.get("pickup_location", "")).strip(),
-                category.get("pickup_locations"),
-                str(category.get("dropoff_location", "")).strip(),
-                category.get("dropoff_locations"),
-                str(category.get("payload", "")).strip(),
-                bool(category.get("tracked_item_exchange", False)),
-                bool(category.get("return_enabled", False)),
-                str(category.get("return_payload", "")).strip(),
-                str(category.get("route_profile", "")).strip(),
-                category.get("days_active"),
-                category.get("scheduled_times"),
-                float(category.get("priority", 0) or 0) != 0.0,
-                float(category.get("frequency_per_day", 0.0) or 0.0) != 0.0,
-                float(category.get("volume_per_event_m3", 0.0) or 0.0) != 0.0,
-                float(category.get("threshold_volume_m3", 0.0) or 0.0) != 0.0,
-                float(category.get("base_daily_volume_m3", 0.0) or 0.0) != 0.0,
-                str(category.get("notes", "")).strip(),
-            ]
-        )
-
-        if override_count == 0 and group_count == 0 and not has_category_settings:
-            QMessageBox.information(
-                self,
-                "Clear department settings",
-                "No task-generation settings were found for this category.",
-            )
-            return
-
-        category_label = (
-            self.category_list.currentItem().text()
-            if self.category_list.currentItem()
-            else str(self.current_key)
-        )
-
-        message = (
-            f"Clear all task-generation settings for '{category_label}'?\n\n"
-            f"This will remove {override_count} department override(s)"
-        )
-        if group_count:
-            message += f" and {group_count} configured group(s)"
-        message += (
-            ".\n\nThe selected category will also be reset to blank/disabled values, "
-            "so cleared departments do not inherit the category defaults. "
-            "Department location assignments are kept."
-        )
-
-        if (
-            QMessageBox.question(
-                self,
-                "Clear department settings",
-                message,
-            )
-            != QMessageBox.Yes
-        ):
-            return
-
-        self.config.setdefault("categories", {})[self.current_key] = (
-            self._blank_category_clear_settings(self.current_key, category)
-        )
-
-        if str(self.current_key).strip().lower() == "waste":
-            self.config["department_waste"] = {"enabled": False, "priority": 0}
-
-        selected_dept_id = self.current_department_id or ""
-
-        self._loading = True
-        self._refresh_category_list(select_key=self.current_key)
-        self._refresh_department_list(select_dept_id=selected_dept_id)
-        if self.current_key:
-            self._load_category(self.current_key)
-        self._loading = False
-
-        QMessageBox.information(
-            self,
-            "Clear department settings",
-            f"Cleared {override_count} department override(s) and reset the category to blank/disabled values.",
-        )
 
     def clear_configured_department_group(self):
         if not self.current_key:
@@ -2259,10 +2058,6 @@ class TaskGenerationSettingsDialog(QDialog):
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "timeframe_start": "09:00",
-            "timeframe_end": "17:00",
-            "timeframe_payload_multiple": 1,
-            "payload_multiple": 1,
             "notes": "",
         }
 
@@ -2398,6 +2193,7 @@ class TaskGenerationSettingsDialog(QDialog):
         for day_key, _label in self.DAYS:
             self.day_checks[day_key].setChecked(False)
 
+        self.run_every_fortnight_check.setChecked(False)
         self.scheduled_times = []
         self._refresh_schedule_summary()
 
@@ -2405,9 +2201,6 @@ class TaskGenerationSettingsDialog(QDialog):
         self.volume_per_event_edit.setText("0.0")
         self.threshold_volume_edit.setText("0.0")
         self.base_daily_volume_edit.setText("0.0")
-        self.timeframe_start_edit.setText("")
-        self.timeframe_end_edit.setText("")
-        self.timeframe_payload_multiple_edit.setText("1")
         self.notes_edit.setPlainText("")
         self._set_department_location_role("dropoff", True)
         self._update_mode_field_state()
@@ -2470,6 +2263,7 @@ class TaskGenerationSettingsDialog(QDialog):
         days = set(item.get("days_active", []))
         for day_key, _label in self.DAYS:
             self.day_checks[day_key].setChecked(day_key in days)
+        self.run_every_fortnight_check.setChecked(bool(item.get("run_every_fortnight", False)))
         self.scheduled_times = list(item.get("scheduled_times", []))
 
         legacy_schedule = str(item.get("schedule", "")).strip()
@@ -2483,9 +2277,6 @@ class TaskGenerationSettingsDialog(QDialog):
         self.volume_per_event_edit.setText(str(item.get("volume_per_event_m3", 0.0)))
         self.threshold_volume_edit.setText(str(item.get("threshold_volume_m3", 0.0)))
         self.base_daily_volume_edit.setText(str(item.get("base_daily_volume_m3", 0.0)))
-        self.timeframe_start_edit.setText(str(item.get("timeframe_start", "09:00")))
-        self.timeframe_end_edit.setText(str(item.get("timeframe_end", "17:00")))
-        self.timeframe_payload_multiple_edit.setText(str(item.get("timeframe_payload_multiple", item.get("payload_multiple", 1))))
         self.notes_edit.setPlainText(str(item.get("notes", "")))
         self._loading = was_loading
         self._update_mode_field_state()
@@ -2520,8 +2311,6 @@ class TaskGenerationSettingsDialog(QDialog):
             "scheduled_sporadic",
         }
 
-        uses_timeframe = mode == "timeframe"
-
         # Waste stream generation values are now edited on the Department
         # waste-stream assignments.  The Waste category only controls routing,
         # collection/destination and return-task behaviour.
@@ -2535,6 +2324,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.schedule_summary.setEnabled((not is_waste) and uses_schedule)
         self.schedule_button.setEnabled((not is_waste) and uses_schedule)
         self.clear_schedule_button.setEnabled((not is_waste) and uses_schedule)
+        self.run_every_fortnight_check.setEnabled(not is_waste)
 
         self.threshold_volume_edit.setEnabled((not is_waste) and uses_threshold)
         self.base_daily_volume_edit.setEnabled(
@@ -2542,9 +2332,6 @@ class TaskGenerationSettingsDialog(QDialog):
         )
         self.frequency_edit.setEnabled((not is_waste) and uses_sporadic)
         self.volume_per_event_edit.setEnabled((not is_waste) and uses_sporadic)
-        self.timeframe_start_edit.setEnabled((not is_waste) and uses_timeframe)
-        self.timeframe_end_edit.setEnabled((not is_waste) and uses_timeframe)
-        self.timeframe_payload_multiple_edit.setEnabled((not is_waste) and uses_timeframe)
 
         using_dept_as_pickup = self._current_department_location_role() == "pickup"
         self.pickup_combo.setEnabled(not using_dept_as_pickup)
@@ -2558,20 +2345,6 @@ class TaskGenerationSettingsDialog(QDialog):
             self.reusable_return_pool_check.setEnabled(return_enabled)
             self.reusable_return_pool_multiplier_edit.setEnabled(return_enabled)
             self.reusable_return_pool_max_edit.setEnabled(return_enabled)
-
-    def _parse_timeframe_hhmm(self, value, field_name):
-        text = str(value or "").strip()
-        try:
-            parts = text.split(":")
-            hour = int(parts[0])
-            minute = int(parts[1]) if len(parts) > 1 else 0
-            if hour == 24 and minute == 0:
-                return 24 * 60
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return (hour * 60) + minute
-        except Exception:
-            pass
-        raise ValueError(f"{field_name} must be HH:MM, for example 09:00")
 
     def _store_current_category(self):
         if not self.current_key:
@@ -2604,12 +2377,6 @@ class TaskGenerationSettingsDialog(QDialog):
         if not days_active:
             raise ValueError("Select at least one active day")
 
-        if self.mode_combo.currentText().strip() == "timeframe":
-            self._parse_timeframe_hhmm(self.timeframe_start_edit.text(), "Timeframe start")
-            self._parse_timeframe_hhmm(self.timeframe_end_edit.text(), "Timeframe end")
-            if int(float(self.timeframe_payload_multiple_edit.text() or 1)) < 1:
-                raise ValueError("Payload multiple must be at least 1")
-
         display_name = (
             self.display_name_edit.text().strip() or str(category_key).title()
         )
@@ -2636,15 +2403,12 @@ class TaskGenerationSettingsDialog(QDialog):
             "reusable_return_pool_max": int(float(self.reusable_return_pool_max_edit.text() or 0)),
             "route_profile": self.route_profile_combo.currentText().strip(),
             "days_active": days_active,
+            "run_every_fortnight": self.run_every_fortnight_check.isChecked(),
             "scheduled_times": list(self.scheduled_times),
             "frequency_per_day": float(self.frequency_edit.text() or 0.0),
             "volume_per_event_m3": float(self.volume_per_event_edit.text() or 0.0),
             "threshold_volume_m3": float(self.threshold_volume_edit.text() or 0.0),
             "base_daily_volume_m3": float(self.base_daily_volume_edit.text() or 0.0),
-            "timeframe_start": self.timeframe_start_edit.text().strip(),
-            "timeframe_end": self.timeframe_end_edit.text().strip(),
-            "timeframe_payload_multiple": int(float(self.timeframe_payload_multiple_edit.text() or 1)),
-            "payload_multiple": int(float(self.timeframe_payload_multiple_edit.text() or 1)),
             "notes": self.notes_edit.toPlainText().strip(),
         }
 
@@ -2658,14 +2422,11 @@ class TaskGenerationSettingsDialog(QDialog):
             payload["tracked_item_exchange"] = False
             payload["exchange_mode"] = "top_up_only"
             payload["scheduled_times"] = []
+            payload["run_every_fortnight"] = False
             payload["frequency_per_day"] = 0.0
             payload["volume_per_event_m3"] = 0.0
             payload["threshold_volume_m3"] = 0.0
             payload["base_daily_volume_m3"] = 0.0
-            payload["timeframe_start"] = ""
-            payload["timeframe_end"] = ""
-            payload["timeframe_payload_multiple"] = 1
-            payload["payload_multiple"] = 1
 
         category = self.config.setdefault("categories", {}).setdefault(category_key, {})
         overrides = category.setdefault("departments", {})
@@ -2695,13 +2456,11 @@ class TaskGenerationSettingsDialog(QDialog):
                     payload.get("return_payload"),
                     payload.get("route_profile"),
                     payload.get("scheduled_times"),
+                    payload.get("run_every_fortnight"),
                     float(payload.get("frequency_per_day", 0.0) or 0.0) != 0.0,
                     float(payload.get("volume_per_event_m3", 0.0) or 0.0) != 0.0,
                     float(payload.get("threshold_volume_m3", 0.0) or 0.0) != 0.0,
                     float(payload.get("base_daily_volume_m3", 0.0) or 0.0) != 0.0,
-                    payload.get("timeframe_start"),
-                    payload.get("timeframe_end"),
-                    int(float(payload.get("timeframe_payload_multiple", payload.get("payload_multiple", 1)) or 1)) != 1,
                     payload.get("notes"),
                     payload.get("tracked_item_exchange"),
                 ]

@@ -32,12 +32,6 @@
   },
   "locations": [
     {
-      "name": "RD2",
-      "floor": 0,
-      "x": 173.292,
-      "y": -8.417
-    },
-    {
       "name": "AMR-CENTRE",
       "floor": 2,
       "x": 157.36,
@@ -536,12 +530,6 @@
           ]
         }
       ]
-    },
-    {
-      "name": "RD",
-      "floor": 0,
-      "x": 164.437,
-      "y": -7.997
     },
     {
       "name": "Linen Deliveries",
@@ -7165,6 +7153,20 @@
           ]
         }
       ]
+    },
+    {
+      "name": "D49-STORES",
+      "floor": 0,
+      "x": 164.529,
+      "y": -9.716,
+      "bounding_box": []
+    },
+    {
+      "name": "D49-STORES_2",
+      "floor": 0,
+      "x": 173.242,
+      "y": -9.488,
+      "bounding_box": []
     }
   ],
   "corridors": {
@@ -10494,14 +10496,6 @@
       {
         "from": "Lift-8-F5",
         "to": "C5-4"
-      },
-      {
-        "from": "RD",
-        "to": "C0-1"
-      },
-      {
-        "from": "C0-1",
-        "to": "RD"
       },
       {
         "from": "C0-22",
@@ -15996,14 +15990,6 @@
         "to": "C0-142"
       },
       {
-        "from": "C0-2",
-        "to": "RD2"
-      },
-      {
-        "from": "RD2",
-        "to": "C0-2"
-      },
-      {
         "from": "C0-141",
         "to": "C0-140"
       },
@@ -16042,6 +16028,22 @@
       {
         "from": "C1-27",
         "to": "C1-50"
+      },
+      {
+        "from": "D49-STORES",
+        "to": "C0-1"
+      },
+      {
+        "from": "C0-1",
+        "to": "D49-STORES"
+      },
+      {
+        "from": "D49-STORES_2",
+        "to": "C0-2"
+      },
+      {
+        "from": "C0-2",
+        "to": "D49-STORES_2"
       }
     ],
     "auto_connect": false
@@ -17248,9 +17250,7 @@
         "C0-42",
         "C0-43",
         "C0-5",
-        "C0-6",
-        "RD",
-        "RD2"
+        "C0-6"
       ],
       "allowed_edges": [
         [
@@ -17272,18 +17272,6 @@
         [
           "C0-5",
           "C0-6"
-        ],
-        [
-          "C0-2",
-          "RD2"
-        ],
-        [
-          "RD",
-          "C0-1"
-        ],
-        [
-          "C0-1",
-          "RD"
         ],
         [
           "C0-42",
@@ -21372,6 +21360,59 @@
       },
       "x": 177.0,
       "y": -24.0
+    },
+    {
+      "id": "D49",
+      "name": "Receipts & Distribution",
+      "floor": 0,
+      "enabled": true,
+      "bed_count": 0,
+      "patient_turnover": 0.0,
+      "staff_count": 0,
+      "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
+      "days_active": [
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri"
+      ],
+      "waste_streams": [],
+      "task_generation_locations": {
+        "catering": {
+          "pickup_dropoff_locations": []
+        },
+        "linen": {
+          "pickup_dropoff_locations": []
+        },
+        "pharmacy": {
+          "pickup_dropoff_locations": []
+        },
+        "ssd": {
+          "pickup_dropoff_locations": []
+        },
+        "stores": {
+          "pickup_dropoff_locations": [
+            "D49-STORES",
+            "D49-STORES_2"
+          ]
+        },
+        "waste": {
+          "pickup_dropoff_locations": []
+        }
+      },
+      "task_generation_location_suffixes": {
+        "catering": "-CATERING",
+        "linen": "-LINEN",
+        "pharmacy": "-PHARMACY",
+        "ssd": "-SSD",
+        "stores": "-STORES",
+        "waste": "-WASTE"
+      },
+      "x": 163.435,
+      "y": -5.93
     }
   ],
   "waste_streams": [
@@ -21422,11 +21463,12 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": "",
-        "return_delay_minutes": 0,
         "timeframe_start": "09:00",
         "timeframe_end": "17:00",
+        "timeframe_payload_multiple": 1,
         "payload_multiple": 1,
+        "notes": "",
+        "return_delay_minutes": 0,
         "uses_department_waste_streams": false,
         "flow_direction": "collection",
         "reserve_management": false,
@@ -21461,13 +21503,14 @@
               "fri"
             ],
             "scheduled_times": [],
-            "timeframe_start": "09:00",
-            "timeframe_end": "17:00",
-            "payload_multiple": 1,
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": ""
           },
           "D1": {
@@ -22390,10 +22433,11 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": "",
         "timeframe_start": "09:00",
         "timeframe_end": "17:00",
+        "timeframe_payload_multiple": 1,
         "payload_multiple": 1,
+        "notes": "",
         "uses_department_waste_streams": false,
         "flow_direction": "collection",
         "reserve_management": false,
@@ -22656,11 +22700,12 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.8,
         "base_daily_volume_m3": 0.0,
-        "notes": "",
-        "return_delay_minutes": 0,
         "timeframe_start": "09:00",
         "timeframe_end": "17:00",
+        "timeframe_payload_multiple": 1,
         "payload_multiple": 1,
+        "notes": "",
+        "return_delay_minutes": 0,
         "uses_department_waste_streams": false,
         "flow_direction": "collection",
         "reserve_management": false,
@@ -22733,12 +22778,13 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
+        "timeframe_start": "09:00",
+        "timeframe_end": "17:00",
+        "timeframe_payload_multiple": 1,
+        "payload_multiple": 1,
         "notes": "",
         "uses_department_waste_streams": true,
         "return_delay_minutes": 0,
-        "timeframe_start": "09:00",
-        "timeframe_end": "17:00",
-        "payload_multiple": 1,
         "flow_direction": "collection",
         "reserve_management": false,
         "reserve_max_source": "inventory_spaces",
@@ -23209,95 +23255,120 @@
         ]
       },
       "stores": {
-        "enabled": true,
+        "enabled": false,
         "display_name": "Stores",
         "generation_mode": "scheduled",
-        "priority": 70,
-        "pickup_location": "RD",
+        "priority": 0,
+        "pickup_location": "",
         "dropoff_location": "",
         "dropoff_locations": [],
-        "payload": "Goods Cage",
+        "payload": "",
         "tracked_item_exchange": false,
         "exchange_mode": "top_up_only",
-        "return_enabled": true,
-        "return_payload": "Goods Cage",
-        "reusable_return_pool_enabled": true,
-        "reusable_return_pool_multiplier": 2.0,
+        "return_enabled": false,
+        "return_payload": "",
+        "reusable_return_pool_enabled": false,
+        "reusable_return_pool_multiplier": 0.0,
         "reusable_return_pool_max": 0,
         "route_profile": "",
-        "days_active": [
-          "mon",
-          "tue",
-          "wed",
-          "thu",
-          "fri"
+        "days_active": [],
+        "schedule_times": [
+          "09:30",
+          "14:30"
         ],
-        "schedule_times": [],
         "frequency_per_day": 0.0,
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": "Goods cage deliveries added: weekday average cage volumes are Mon 18, Tue 30, Wed 20, Thu 24, Fri 27. Departmental delivery batches are staggered; each compatible stores department receives one weekly batch of 3 or 4 cages. Return collection is enabled after 120 minutes to represent unpacking/dwell time.",
-        "timeframe_start": "09:00",
-        "timeframe_end": "17:00",
+        "timeframe_start": "",
+        "timeframe_end": "",
+        "timeframe_payload_multiple": 1,
         "payload_multiple": 1,
+        "notes": "",
         "uses_department_waste_streams": false,
-        "flow_direction": "replenishment",
-        "reserve_management": true,
-        "reserve_max_source": "inventory_spaces",
-        "reserve_initial_fill_fraction": 0.0,
-        "reserve_trigger_fraction": 0.25,
-        "replenish_to_fraction": 1.0,
-        "pickup_locations": [
-          "RD"
-        ],
-        "return_delay_minutes": 120.0,
+        "department_location_role": "dropoff",
+        "pickup_locations": [],
+        "return_delay_minutes": 0.0,
+        "scheduled_times": [],
         "departments": {
-          "D1": {
+          "D8": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
+            "generation_mode": "timeframe",
+            "priority": 50,
             "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D1-STORES",
+            "pickup_location": "D9-STORES",
+            "dropoff_location": "D8-STORES",
             "dropoff_locations": [
-              "D1-STORES"
+              "D8-STORES"
             ],
             "payload": "Goods Cage",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
-              "thu"
+              "mon"
             ],
-            "scheduled_times": [
-              "08:30",
-              "08:32",
-              "08:34"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Fraility: 3 cages from RD to D1-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays"
+          },
+          "D14": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D12-STORES_2",
+            "dropoff_locations": [
+              "D12-STORES_2"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
           },
           "D2": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
             "dropoff_location": "D2-STORES",
             "dropoff_locations": [
@@ -23308,33 +23379,107 @@
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
-              "thu"
+              "mon"
             ],
-            "scheduled_times": [
-              "09:15",
-              "09:17",
-              "09:19"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for SDEC: 3 cages from RD to D2-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
+          },
+          "D24": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
+          },
+          "D26": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
           },
           "D3": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
             "dropoff_location": "D3-STORES",
             "dropoff_locations": [
@@ -23345,329 +23490,107 @@
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
-              "thu"
+              "mon"
             ],
-            "scheduled_times": [
-              "10:00",
-              "10:02",
-              "10:04"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Urgent Care: 3 cages from RD to D3-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
           },
-          "D5": {
+          "D38": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
-            "dropoff_location": "D5-STORES",
+            "dropoff_location": "D37-STORES",
             "dropoff_locations": [
-              "D5-STORES"
+              "D37-STORES"
             ],
             "payload": "Goods Cage",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
-              "thu"
+              "mon"
             ],
-            "scheduled_times": [
-              "10:45",
-              "10:47",
-              "10:49"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for OPD2: 3 cages from RD to D5-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
           },
-          "D6": {
+          "D44": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
-            "dropoff_location": "D6-STORES",
+            "dropoff_location": "D44-STORES",
             "dropoff_locations": [
-              "D6-STORES"
+              "D44-STORES"
             ],
             "payload": "Goods Cage",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
-              "thu"
+              "mon"
             ],
-            "scheduled_times": [
-              "11:30",
-              "11:32",
-              "11:34"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Mortuary: 3 cages from RD to D6-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D7": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D7-STORES",
-            "dropoff_locations": [
-              "D7-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "scheduled_times": [
-              "12:15",
-              "12:17",
-              "12:19"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Pharmacy: 3 cages from RD to D7-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D8": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "dropoff_location": "D8-STORES",
-            "dropoff_locations": [
-              "D8-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "scheduled_times": [
-              "13:00",
-              "13:02",
-              "13:04"
-            ],
-            "timeframe_start": "09:00",
-            "timeframe_end": "17:00",
-            "payload_multiple": 1,
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Central Imaging: 3 cages from RD to D8-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D9": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D9-STORES",
-            "dropoff_locations": [
-              "D9-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "scheduled_times": [
-              "13:45",
-              "13:47",
-              "13:49"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Resturant: 3 cages from RD to D9-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D10": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D10-STORES",
-            "dropoff_locations": [
-              "D10-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [
-              "08:30",
-              "08:32",
-              "08:34"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Minor Injuries: 3 cages from RD to D10-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D12": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D12-STORES",
-            "dropoff_locations": [
-              "D12-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [
-              "09:15",
-              "09:17",
-              "09:19"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for ED-Majors: 3 cages from RD to D12-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D13": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D13-STORES",
-            "dropoff_locations": [
-              "D13-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [
-              "10:00",
-              "10:02",
-              "10:04"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for ED-Paediatrics: 3 cages from RD to D13-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
           },
           "D45": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
             "dropoff_location": "D45-STORES",
             "dropoff_locations": [
@@ -23678,70 +23601,33 @@
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
-              "fri"
+              "mon"
             ],
-            "scheduled_times": [
-              "10:45",
-              "10:47",
-              "10:49"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for OPD4: 3 cages from RD to D45-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D16": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [
-              "11:30",
-              "11:32",
-              "11:34"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Ante-natal: 3 cages from RD to D19-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
           },
           "D17": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
             "dropoff_location": "D19-STORES",
             "dropoff_locations": [
@@ -23752,144 +23638,33 @@
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
-              "fri"
+              "tue"
             ],
-            "scheduled_times": [
-              "12:15",
-              "12:17",
-              "12:19"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Ambulatory Care: 3 cages from RD to D19-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D18": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [
-              "13:00",
-              "13:02",
-              "13:04"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Neonatal: 3 cages from RD to D19-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D19": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [
-              "13:45",
-              "13:47",
-              "13:49"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Birthing Suite: 3 cages from RD to D19-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D20": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [
-              "14:30",
-              "14:32",
-              "14:34"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Theatres: 3 cages from RD to D19-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
           },
           "D21": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
             "dropoff_location": "D21-STORES",
             "dropoff_locations": [
@@ -23900,551 +23675,107 @@
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "scheduled_times": [
-              "08:30",
-              "08:32",
-              "08:34"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Intensive Care: 3 cages from RD to D21-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D22": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "scheduled_times": [
-              "09:15",
-              "09:17",
-              "09:19"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Endoscopy: 3 cages from RD to D22-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D23": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "scheduled_times": [
-              "10:00",
-              "10:02",
-              "10:04"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Gynae Outpatients: 3 cages from RD to D22-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D24": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "scheduled_times": [
-              "10:45",
-              "10:47",
-              "10:49"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Urology Outpatients: 3 cages from RD to D22-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D25": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "scheduled_times": [
-              "11:30",
-              "11:32",
-              "11:34"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Breast Care: 3 cages from RD to D22-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D26": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "scheduled_times": [
-              "12:15",
-              "12:17",
-              "12:19"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Cardiorespiratory: 3 cages from RD to D22-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D27": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "tue"
             ],
-            "scheduled_times": [
-              "08:30",
-              "08:32",
-              "08:34"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Minor ops Suite: 3 cages from RD to D22-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
           },
-          "D46": {
+          "D39": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
-            "dropoff_location": "D21-STORES",
+            "dropoff_location": "D39-STORES",
             "dropoff_locations": [
-              "D21-STORES"
+              "D39-STORES"
             ],
             "payload": "Goods Cage",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "tue"
             ],
-            "scheduled_times": [
-              "09:10",
-              "09:12",
-              "09:14"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Surgical Ward: 3 cages from RD to D21-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
           },
-          "D28": {
+          "D40": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
-            "dropoff_location": "D28-STORES",
+            "dropoff_location": "D39-STORES",
             "dropoff_locations": [
-              "D28-STORES"
+              "D39-STORES"
             ],
             "payload": "Goods Cage",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "tue"
             ],
-            "scheduled_times": [
-              "09:50",
-              "09:52",
-              "09:54"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Catering: 3 cages from RD to D28-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
           },
-          "D29": {
+          "D36": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D29-STORES",
-            "dropoff_locations": [
-              "D29-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [
-              "10:30",
-              "10:32",
-              "10:34"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Paediatric Inpatients: 3 cages from RD to D29-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D30": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D29-STORES",
-            "dropoff_locations": [
-              "D29-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [
-              "11:10",
-              "11:12",
-              "11:14"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Maternity Inpatients: 3 cages from RD to D29-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D31": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D31-STORES",
-            "dropoff_locations": [
-              "D31-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [
-              "11:50",
-              "11:52",
-              "11:54"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 1: 3 cages from RD to D31-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D32": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D31-STORES",
-            "dropoff_locations": [
-              "D31-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [
-              "12:30",
-              "12:32",
-              "12:34"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 2: 3 cages from RD to D31-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D33": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D33-STORES",
-            "dropoff_locations": [
-              "D33-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [
-              "13:10",
-              "13:12",
-              "13:14"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 3: 3 cages from RD to D33-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D34": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D33-STORES",
-            "dropoff_locations": [
-              "D33-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [
-              "13:50",
-              "13:52",
-              "13:54"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 4: 3 cages from RD to D33-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D35": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
             "dropoff_location": "D35-STORES",
             "dropoff_locations": [
@@ -24455,182 +23786,70 @@
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "tue"
             ],
-            "scheduled_times": [
-              "14:30",
-              "14:32",
-              "14:34"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Respiratory Inpatients: 3 cages from RD to D35-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
           },
-          "D37": {
+          "D35": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
-            "dropoff_location": "D37-STORES",
+            "dropoff_location": "D35-STORES",
             "dropoff_locations": [
-              "D37-STORES"
+              "D35-STORES"
             ],
             "payload": "Goods Cage",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
-              "wed"
+              "tue"
             ],
-            "scheduled_times": [
-              "08:30",
-              "08:32",
-              "08:34"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 5: 3 cages from RD to D37-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D38": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D37-STORES",
-            "dropoff_locations": [
-              "D37-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "scheduled_times": [
-              "09:15",
-              "09:17",
-              "09:19",
-              "09:21"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Elective Orthopaedic Inpatients: 4 cages from RD to D37-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D39": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D39-STORES",
-            "dropoff_locations": [
-              "D39-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "scheduled_times": [
-              "10:00",
-              "10:02",
-              "10:04"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 6: 3 cages from RD to D39-STORES; return collection after 120 minutes represents unpacking/dwell time."
-          },
-          "D40": {
-            "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
-            "pickup_locations": [
-              "RD"
-            ],
-            "dropoff_location": "D39-STORES",
-            "dropoff_locations": [
-              "D39-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "scheduled_times": [
-              "10:45",
-              "10:47",
-              "10:49"
-            ],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 7: 3 cages from RD to D39-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
           },
           "D41": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
             "dropoff_location": "D41-STORES",
             "dropoff_locations": [
@@ -24641,34 +23860,218 @@
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D42": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D41-STORES",
+            "dropoff_locations": [
+              "D41-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D10": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D10-STORES",
+            "dropoff_locations": [
+              "D10-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "wed"
             ],
-            "scheduled_times": [
-              "11:30",
-              "11:32",
-              "11:34",
-              "11:36"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 8: 4 cages from RD to D41-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D19": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D46": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D21-STORES",
+            "dropoff_locations": [
+              "D21-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D30": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D29-STORES",
+            "dropoff_locations": [
+              "D29-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
           },
           "D43": {
             "enabled": true,
-            "generation_mode": "scheduled",
-            "priority": 70,
-            "department_location_role": "dropoff",
-            "pickup_location": "RD",
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
             "pickup_locations": [
-              "RD"
+              "D49-STORES"
             ],
             "dropoff_location": "D43-STORES",
             "dropoff_locations": [
@@ -24679,26 +24082,602 @@
             "exchange_mode": "top_up_only",
             "return_enabled": true,
             "return_payload": "Goods Cage",
-            "return_delay_minutes": 120.0,
-            "reusable_return_pool_enabled": true,
-            "reusable_return_pool_multiplier": 2.0,
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
             "route_profile": "",
             "days_active": [
               "wed"
             ],
-            "scheduled_times": [
-              "12:15",
-              "12:17",
-              "12:19"
-            ],
+            "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
-            "notes": "Weekly stores goods cage batch for Adult Inpatients 9: 3 cages from RD to D43-STORES; return collection after 120 minutes represents unpacking/dwell time."
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D18": {
+            "enabled": false,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D31": {
+            "enabled": false,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D31-STORES",
+            "dropoff_locations": [
+              "D31-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D29": {
+            "enabled": false,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D29-STORES",
+            "dropoff_locations": [
+              "D29-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D1": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D1-STORES",
+            "dropoff_locations": [
+              "D1-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D20": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D32": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D31-STORES",
+            "dropoff_locations": [
+              "D31-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D33": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D33-STORES",
+            "dropoff_locations": [
+              "D33-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D34": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D33-STORES",
+            "dropoff_locations": [
+              "D33-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
+          },
+          "D37": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D37-STORES",
+            "dropoff_locations": [
+              "D37-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "",
+            "department_location_role": "dropoff"
           }
-        }
+        },
+        "department_groups": [
+          {
+            "id": "GROUP-1",
+            "departments": [
+              "D14",
+              "D2",
+              "D24",
+              "D26",
+              "D3",
+              "D38",
+              "D44",
+              "D45"
+            ],
+            "payload": {
+              "enabled": true,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D12-STORES_2",
+              "dropoff_locations": [
+                "D12-STORES_2"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 60.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "mon"
+              ],
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "Goods deliveries - weekly Mondays",
+              "department_location_role": "dropoff"
+            }
+          },
+          {
+            "id": "GROUP-2",
+            "departments": [
+              "D17",
+              "D21",
+              "D35",
+              "D36",
+              "D39",
+              "D40",
+              "D41",
+              "D42"
+            ],
+            "payload": {
+              "enabled": true,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D19-STORES",
+              "dropoff_locations": [
+                "D19-STORES"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 60.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "tue"
+              ],
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "",
+              "department_location_role": "dropoff"
+            }
+          },
+          {
+            "id": "GROUP-3",
+            "departments": [
+              "D10",
+              "D19",
+              "D30",
+              "D43",
+              "D46"
+            ],
+            "payload": {
+              "enabled": true,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D10-STORES",
+              "dropoff_locations": [
+                "D10-STORES"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 60.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "wed"
+              ],
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "",
+              "department_location_role": "dropoff"
+            }
+          },
+          {
+            "id": "GROUP-4",
+            "departments": [
+              "D18",
+              "D29",
+              "D31"
+            ],
+            "payload": {
+              "enabled": false,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D19-STORES",
+              "dropoff_locations": [
+                "D19-STORES"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 60.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "thu"
+              ],
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "",
+              "department_location_role": "dropoff"
+            }
+          },
+          {
+            "id": "GROUP-5",
+            "departments": [
+              "D1",
+              "D20",
+              "D32",
+              "D33",
+              "D34",
+              "D37"
+            ],
+            "payload": {
+              "enabled": true,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D1-STORES",
+              "dropoff_locations": [
+                "D1-STORES"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 60.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "fri"
+              ],
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "",
+              "department_location_role": "dropoff"
+            }
+          }
+        ]
       },
       "ssd": {
         "enabled": false,
@@ -24733,11 +24712,12 @@
         "volume_per_event_m3": 0.0,
         "threshold_volume_m3": 0.0,
         "base_daily_volume_m3": 0.0,
-        "notes": "",
-        "return_delay_minutes": 0,
         "timeframe_start": "09:00",
         "timeframe_end": "17:00",
+        "timeframe_payload_multiple": 1,
         "payload_multiple": 1,
+        "notes": "",
+        "return_delay_minutes": 0,
         "uses_department_waste_streams": false,
         "flow_direction": "collection",
         "reserve_management": false,
