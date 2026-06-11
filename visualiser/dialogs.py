@@ -1,3 +1,4 @@
+import csv
 import json
 import math
 from typing import Any, List, Optional
@@ -40,6 +41,7 @@ from PySide6.QtWidgets import (
     QTimeEdit,
     QTreeWidget,
     QTreeWidgetItem,
+    QFileDialog,
 )
 
 
@@ -7025,6 +7027,7 @@ class DepartmentListDialog(QDialog):
         category_wizard_btn = QPushButton("Task category wizard...")
         shared_bin_groups_btn = QPushButton("Auto shared bin groups...")
         bulk_waste_btn = QPushButton("Manage waste streams...")
+        export_csv_btn = QPushButton("Export CSV")
 
         row.addWidget(add_btn)
         row.addWidget(edit_btn)
@@ -7033,6 +7036,7 @@ class DepartmentListDialog(QDialog):
         row.addWidget(category_wizard_btn)
         row.addWidget(shared_bin_groups_btn)
         row.addWidget(bulk_waste_btn)
+        row.addWidget(export_csv_btn)
         row.addStretch(1)
         row.addWidget(save_btn)
 
@@ -7045,6 +7049,7 @@ class DepartmentListDialog(QDialog):
         bulk_waste_btn.clicked.connect(
             self.manage_waste_streams_for_selected_departments
         )
+        export_csv_btn.clicked.connect(self.export_departments_csv)
         save_btn.clicked.connect(self.save_items)
 
         self._refresh_table()
@@ -7816,6 +7821,123 @@ class DepartmentListDialog(QDialog):
         self.location_names = sorted(set(self.location_names))
         result.pop("_create_locations", None)
         return result
+
+    def _category_location_text_for_export(self, dept, category_key):
+        category_locations = dept.get("task_generation_locations", {}) or {}
+        if not isinstance(category_locations, dict):
+            return ""
+        entry = category_locations.get(category_key, {})
+        if isinstance(entry, dict):
+            raw = entry.get("pickup_dropoff_locations", entry.get("locations", []))
+        else:
+            raw = entry
+        if isinstance(raw, str):
+            raw = [raw]
+        return "; ".join(str(x).strip() for x in (raw or []) if str(x).strip())
+
+    def _waste_streams_text_for_export(self, dept):
+        labels = []
+        for stream in dept.get("waste_streams", []) or []:
+            if isinstance(stream, dict):
+                name = str(stream.get("name", "") or "").strip()
+                if not name:
+                    continue
+                mode = str(stream.get("generation_mode", "") or "").strip()
+                group = str(
+                    stream.get(
+                        "shared_container_group",
+                        stream.get("shared_container_id", ""),
+                    )
+                    or ""
+                ).strip()
+                parts = [name]
+                if mode:
+                    parts.append(f"mode={mode}")
+                if group:
+                    parts.append(f"shared={group}")
+                labels.append(" [" + ", ".join(parts) + "]" if False else ", ".join(parts))
+            else:
+                name = str(stream or "").strip()
+                if name:
+                    labels.append(name)
+        return "; ".join(labels)
+
+    def _department_export_rows(self):
+        category_keys = [
+            str(category_key).strip()
+            for category_key, *_ in self.task_generation_categories
+            if str(category_key).strip()
+        ]
+        rows = []
+        for dept in self.items:
+            operating_start = str(dept.get("operating_start_time", "00:00") or "00:00")
+            operating_end = str(dept.get("operating_end_time", "") or "")
+            row = {
+                "id": str(dept.get("id", "") or ""),
+                "name": str(dept.get("name", "") or ""),
+                "floor": dept.get("floor", ""),
+                "enabled": "Yes" if dept.get("enabled", True) else "No",
+                "bed_count": dept.get("bed_count", 0),
+                "patient_turnover": dept.get("patient_turnover", 0.0),
+                "staff_count": dept.get("staff_count", 0),
+                "operating_start_time": operating_start,
+                "operating_end_time": operating_end,
+                "hours_operated_per_day": dept.get("hours_operated_per_day", ""),
+                "days_active": "; ".join(str(x).strip() for x in dept.get("days_active", []) if str(x).strip()),
+                "waste_streams": self._waste_streams_text_for_export(dept),
+                "x": dept.get("x", ""),
+                "y": dept.get("y", ""),
+            }
+            for category_key in category_keys:
+                row[f"{category_key}_locations"] = self._category_location_text_for_export(dept, category_key)
+            rows.append(row)
+        return rows
+
+    def export_departments_csv(self):
+        if not self.items:
+            QMessageBox.information(
+                self,
+                "Export departments",
+                "There are no departments to export.",
+            )
+            return
+
+        path, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Export departments to CSV",
+            "departments.csv",
+            "CSV files (*.csv);;All files (*)",
+        )
+        if not path:
+            return
+
+        if not path.lower().endswith(".csv"):
+            path += ".csv"
+
+        try:
+            rows = self._department_export_rows()
+            fieldnames = []
+            for row in rows:
+                for key in row.keys():
+                    if key not in fieldnames:
+                        fieldnames.append(key)
+
+            with open(path, "w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+
+            QMessageBox.information(
+                self,
+                "Export departments",
+                f"Exported {len(rows)} department(s) to:\n{path}",
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Export departments",
+                f"Could not export departments CSV:\n{exc}",
+            )
 
     def _clean_department_items_for_save(self):
         cleaned = []
