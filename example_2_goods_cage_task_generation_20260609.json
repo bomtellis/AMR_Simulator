@@ -9,7 +9,7 @@
     "max_multi_stop_candidate_tasks": 8,
     "max_single_candidate_tasks": 8,
     "max_assignments_per_tick": 5,
-    "assignment_continue_delay_sec": 0.001,
+    "assignment_continue_delay_sec": 3.0,
     "seed_waste_stream_containers_at_start": true,
     "disable_inventory_spaces": false
   },
@@ -16140,6 +16140,16 @@
       "prefer_multi_stop_amr": true,
       "items": {},
       "volume_m3": 0.018
+    },
+    {
+      "name": "Confidential Waste Bag",
+      "weight_kg": 15.0,
+      "length_m": 1.0,
+      "width_m": 0.5,
+      "height_m": 0.1,
+      "track_items": false,
+      "prefer_multi_stop_amr": false,
+      "items": {}
     }
   ],
   "amrs": [
@@ -17351,6 +17361,30 @@
           "initial_container_present": true,
           "shared_container": false,
           "shared_container_group": ""
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
@@ -17444,6 +17478,30 @@
           "initial_container_present": true,
           "shared_container": false,
           "shared_container_group": ""
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
@@ -17521,6 +17579,30 @@
           "generation_mode": "threshold",
           "frequency_per_day": 10.0,
           "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
@@ -17619,7 +17701,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D4-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D4-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D4-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D4-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -17700,7 +17806,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D5-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D5-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D5-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D5-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -18049,7 +18179,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D14-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -18136,39 +18290,53 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D14-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
         "catering": {
-          "pickup_dropoff_locations": [],
-          "locations": []
+          "pickup_dropoff_locations": []
         },
         "linen": {
-          "pickup_dropoff_locations": [],
-          "locations": []
+          "pickup_dropoff_locations": []
         },
         "pharmacy": {
-          "pickup_dropoff_locations": [],
-          "locations": []
+          "pickup_dropoff_locations": []
         },
         "ssd": {
-          "pickup_dropoff_locations": [],
-          "locations": []
+          "pickup_dropoff_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D11-STORES"
-          ],
-          "locations": [
             "D11-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D14-WASTE"
-          ],
-          "locations": [
             "D14-WASTE"
           ]
         }
@@ -18215,7 +18383,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D14-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -18298,7 +18490,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D14-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -18381,7 +18597,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D14-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D14-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D14-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -18521,7 +18761,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D17-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D17-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D17-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D17-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -18608,7 +18872,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D17-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D17-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D17-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D17-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -18777,7 +19065,34 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
@@ -18964,6 +19279,30 @@
           "initial_container_present": true,
           "shared_container": false,
           "shared_container_group": ""
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
@@ -19136,7 +19475,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D27-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D27-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D27-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D27-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19217,7 +19580,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D27-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D27-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D27-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D27-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19300,7 +19687,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D26-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D26-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D26-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D26-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19381,7 +19792,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D26-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D26-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D26-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D26-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19466,7 +19901,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D27-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D27-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D27-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D27-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19538,7 +19997,32 @@
         "sat",
         "sun"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        }
+      ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [
@@ -19618,8 +20102,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D29-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D29-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D29-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D29-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19713,8 +20221,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D29-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D29-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D29-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D29-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19808,8 +20340,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D31-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D31-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D31-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D31-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19903,8 +20459,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D31-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D31-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D31-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D31-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -19998,8 +20578,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D33-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D33-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D33-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D33-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20093,8 +20697,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D33-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D33-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D33-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D33-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20186,7 +20814,34 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D35-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D35-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D35-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20278,8 +20933,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D35-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D35-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D35-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20371,8 +21050,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D37-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D37-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D37-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D37-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20466,8 +21169,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D37-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D37-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D37-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D37-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20559,8 +21286,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D39-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D39-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D39-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D39-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20654,8 +21405,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container_group": "SHARED-BIN-D39-WASTE",
-          "shared_container": true
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D39-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D39-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D39-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20747,7 +21522,34 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D41-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D41-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D41-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20841,8 +21643,32 @@
           "base_daily_volume_m3": 0.0,
           "scheduled_times": [],
           "initial_container_present": true,
-          "shared_container": false,
-          "shared_container_group": ""
+          "shared_container": true,
+          "shared_container_group": "CLINICAL-SHARED-BIN-D41-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D41-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D41-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -20932,7 +21758,34 @@
           "volume_per_event_m3": 0.0,
           "threshold_volume_m3": 0.0,
           "base_daily_volume_m3": 0.0,
-          "scheduled_times": []
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
         }
       ],
       "task_generation_locations": {
@@ -21027,7 +21880,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D4-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D4-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D4-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D4-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -21108,7 +21985,31 @@
           "scheduled_times": [],
           "initial_container_present": true,
           "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D5-WASTE"
+          "shared_container_group": "CLINICAL-SHARED-BIN-D5-WASTE"
+        },
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "DOMESTIC-SHARED-BIN-D5-WASTE"
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": true,
+          "shared_container_group": "LINEN-SHARED-BIN-D5-WASTE"
         }
       ],
       "task_generation_locations": {
@@ -21323,7 +22224,32 @@
         "sat",
         "sun"
       ],
-      "waste_streams": [],
+      "waste_streams": [
+        {
+          "name": "Domestic",
+          "generation_mode": "threshold",
+          "frequency_per_day": 5.0,
+          "volume_per_event_m3": 0.08,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        },
+        {
+          "name": "Linen",
+          "generation_mode": "threshold",
+          "frequency_per_day": 32.0,
+          "volume_per_event_m3": 0.02,
+          "threshold_volume_m3": 0.0,
+          "base_daily_volume_m3": 0.0,
+          "scheduled_times": [],
+          "initial_container_present": true,
+          "shared_container": false,
+          "shared_container_group": ""
+        }
+      ],
       "task_generation_locations": {
         "catering": {
           "pickup_dropoff_locations": [],
@@ -21421,6 +22347,18 @@
       "payload": "Clinical Waste Bin",
       "container_capacity_m3": 0.77,
       "full_threshold_fraction": 0.8
+    },
+    {
+      "name": "Domestic",
+      "payload": "Domestic Waste Bin",
+      "container_capacity_m3": 0.77,
+      "full_threshold_fraction": 0.8
+    },
+    {
+      "name": "Linen",
+      "payload": "Linen Collection Bin",
+      "container_capacity_m3": 1.0,
+      "full_threshold_fraction": 0.8
     }
   ],
   "task_generation": {
@@ -21454,6 +22392,7 @@
           "thu",
           "fri"
         ],
+        "run_every_fortnight": false,
         "schedule_times": [
           "07:30",
           "11:45",
@@ -21502,6 +22441,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -22425,6 +23365,7 @@
           "thu",
           "fri"
         ],
+        "run_every_fortnight": false,
         "schedule_times": [
           "10:00",
           "15:00"
@@ -22471,11 +23412,16 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 2.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": ""
           },
           "D1": {
@@ -22695,6 +23641,7 @@
           "thu",
           "fri"
         ],
+        "run_every_fortnight": false,
         "schedule_times": [],
         "frequency_per_day": 0.0,
         "volume_per_event_m3": 0.0,
@@ -22739,11 +23686,16 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.8,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": ""
           }
         },
@@ -22773,6 +23725,7 @@
           "thu",
           "fri"
         ],
+        "run_every_fortnight": false,
         "schedule_times": [],
         "frequency_per_day": 0.0,
         "volume_per_event_m3": 0.0,
@@ -22819,11 +23772,16 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "",
+            "timeframe_end": "",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": ""
           },
           "D1": {
@@ -23272,6 +24230,7 @@
         "reusable_return_pool_max": 0,
         "route_profile": "",
         "days_active": [],
+        "run_every_fortnight": false,
         "schedule_times": [
           "09:30",
           "14:30"
@@ -23293,7 +24252,7 @@
         "departments": {
           "D8": {
             "enabled": true,
-            "generation_mode": "timeframe",
+            "generation_mode": "scheduled",
             "priority": 50,
             "department_location_role": "dropoff",
             "pickup_location": "D9-STORES",
@@ -23314,6 +24273,44 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "",
+            "timeframe_end": "",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
+            "notes": "Goods deliveries - weekly Mondays"
+          },
+          "D13": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D13-STORES",
+            "dropoff_locations": [
+              "D13-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": true,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23323,7 +24320,1188 @@
             "timeframe_end": "16:00",
             "timeframe_payload_multiple": 3,
             "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Mondays"
+            "notes": "Fortnightly delivery - Tuesday",
+            "department_location_role": "dropoff"
+          },
+          "D11": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D11-STORES",
+            "dropoff_locations": [
+              "D11-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly delivery - Tuesday",
+            "department_location_role": "dropoff"
+          },
+          "D22": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Twice weekly - Endoscopy",
+            "department_location_role": "dropoff"
+          },
+          "D17": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D21": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D21-STORES",
+            "dropoff_locations": [
+              "D21-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D35": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D35-STORES",
+            "dropoff_locations": [
+              "D35-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D36": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D35-STORES",
+            "dropoff_locations": [
+              "D35-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D39": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D39-STORES",
+            "dropoff_locations": [
+              "D39-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D40": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D39-STORES",
+            "dropoff_locations": [
+              "D39-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D41": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D41-STORES",
+            "dropoff_locations": [
+              "D41-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D42": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D41-STORES",
+            "dropoff_locations": [
+              "D41-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D10": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D10-STORES",
+            "dropoff_locations": [
+              "D10-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D19": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D30": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D29-STORES",
+            "dropoff_locations": [
+              "D29-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D43": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D43-STORES",
+            "dropoff_locations": [
+              "D43-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D46": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D21-STORES",
+            "dropoff_locations": [
+              "D21-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D18": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Thursdays",
+            "department_location_role": "dropoff"
+          },
+          "D29": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D29-STORES",
+            "dropoff_locations": [
+              "D29-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Thursdays",
+            "department_location_role": "dropoff"
+          },
+          "D31": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D31-STORES",
+            "dropoff_locations": [
+              "D31-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Thursdays",
+            "department_location_role": "dropoff"
+          },
+          "D1": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D1-STORES",
+            "dropoff_locations": [
+              "D1-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D20": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D32": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D31-STORES",
+            "dropoff_locations": [
+              "D31-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D33": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D33-STORES",
+            "dropoff_locations": [
+              "D33-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D34": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D33-STORES",
+            "dropoff_locations": [
+              "D33-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D37": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D37-STORES",
+            "dropoff_locations": [
+              "D37-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D16": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D23": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D25": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D27": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D4": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D4-STORES",
+            "dropoff_locations": [
+              "D4-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D5": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D5-STORES",
+            "dropoff_locations": [
+              "D5-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D12": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D12-STORES",
+            "dropoff_locations": [
+              "D12-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed",
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Twice weekly - ED Majors",
+            "department_location_role": "dropoff"
           },
           "D14": {
             "enabled": true,
@@ -23350,6 +25528,7 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23387,6 +25566,7 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23424,6 +25604,7 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23461,6 +25642,7 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23498,6 +25680,7 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23535,6 +25718,7 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23572,6 +25756,7 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23609,6 +25794,7 @@
             "days_active": [
               "mon"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
@@ -23619,820 +25805,6 @@
             "timeframe_payload_multiple": 3,
             "payload_multiple": 3,
             "notes": "Goods deliveries - weekly Mondays",
-            "department_location_role": "dropoff"
-          },
-          "D17": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D21": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D21-STORES",
-            "dropoff_locations": [
-              "D21-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D39": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D39-STORES",
-            "dropoff_locations": [
-              "D39-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D40": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D39-STORES",
-            "dropoff_locations": [
-              "D39-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D36": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D35-STORES",
-            "dropoff_locations": [
-              "D35-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D35": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D35-STORES",
-            "dropoff_locations": [
-              "D35-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D41": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D41-STORES",
-            "dropoff_locations": [
-              "D41-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D42": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D41-STORES",
-            "dropoff_locations": [
-              "D41-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D10": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D10-STORES",
-            "dropoff_locations": [
-              "D10-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D19": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D46": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D21-STORES",
-            "dropoff_locations": [
-              "D21-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D30": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D29-STORES",
-            "dropoff_locations": [
-              "D29-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D43": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D43-STORES",
-            "dropoff_locations": [
-              "D43-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D18": {
-            "enabled": false,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D31": {
-            "enabled": false,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D31-STORES",
-            "dropoff_locations": [
-              "D31-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D29": {
-            "enabled": false,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D29-STORES",
-            "dropoff_locations": [
-              "D29-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D1": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D1-STORES",
-            "dropoff_locations": [
-              "D1-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D20": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D32": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D31-STORES",
-            "dropoff_locations": [
-              "D31-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D33": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D33-STORES",
-            "dropoff_locations": [
-              "D33-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D34": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D33-STORES",
-            "dropoff_locations": [
-              "D33-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
-            "department_location_role": "dropoff"
-          },
-          "D37": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D37-STORES",
-            "dropoff_locations": [
-              "D37-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "",
             "department_location_role": "dropoff"
           }
         },
@@ -24474,6 +25846,7 @@
               "days_active": [
                 "mon"
               ],
+              "run_every_fortnight": false,
               "scheduled_times": [],
               "frequency_per_day": 0.0,
               "volume_per_event_m3": 0.0,
@@ -24524,6 +25897,7 @@
               "days_active": [
                 "tue"
               ],
+              "run_every_fortnight": false,
               "scheduled_times": [],
               "frequency_per_day": 0.0,
               "volume_per_event_m3": 0.0,
@@ -24533,7 +25907,7 @@
               "timeframe_end": "16:00",
               "timeframe_payload_multiple": 3,
               "payload_multiple": 3,
-              "notes": "",
+              "notes": "Goods deliveries - weekly Tuesdays",
               "department_location_role": "dropoff"
             }
           },
@@ -24571,6 +25945,7 @@
               "days_active": [
                 "wed"
               ],
+              "run_every_fortnight": false,
               "scheduled_times": [],
               "frequency_per_day": 0.0,
               "volume_per_event_m3": 0.0,
@@ -24580,7 +25955,7 @@
               "timeframe_end": "16:00",
               "timeframe_payload_multiple": 3,
               "payload_multiple": 3,
-              "notes": "",
+              "notes": "Goods deliveries - weekly Wednesday",
               "department_location_role": "dropoff"
             }
           },
@@ -24592,7 +25967,7 @@
               "D31"
             ],
             "payload": {
-              "enabled": false,
+              "enabled": true,
               "generation_mode": "timeframe",
               "priority": 50,
               "pickup_location": "D49-STORES",
@@ -24616,6 +25991,7 @@
               "days_active": [
                 "thu"
               ],
+              "run_every_fortnight": false,
               "scheduled_times": [],
               "frequency_per_day": 0.0,
               "volume_per_event_m3": 0.0,
@@ -24625,7 +26001,7 @@
               "timeframe_end": "16:00",
               "timeframe_payload_multiple": 3,
               "payload_multiple": 3,
-              "notes": "",
+              "notes": "Goods deliveries - weekly Thursdays",
               "department_location_role": "dropoff"
             }
           },
@@ -24664,6 +26040,7 @@
               "days_active": [
                 "fri"
               ],
+              "run_every_fortnight": false,
               "scheduled_times": [],
               "frequency_per_day": 0.0,
               "volume_per_event_m3": 0.0,
@@ -24673,7 +26050,191 @@
               "timeframe_end": "16:00",
               "timeframe_payload_multiple": 3,
               "payload_multiple": 3,
-              "notes": "",
+              "notes": "Goods deliveries - weekly Fridays",
+              "department_location_role": "dropoff"
+            }
+          },
+          {
+            "id": "GROUP-6",
+            "departments": [
+              "D16",
+              "D23",
+              "D25",
+              "D27",
+              "D4",
+              "D5"
+            ],
+            "payload": {
+              "enabled": true,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D19-STORES",
+              "dropoff_locations": [
+                "D19-STORES"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 0.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "mon"
+              ],
+              "run_every_fortnight": true,
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "Fortnightly deliveries - Monday",
+              "department_location_role": "dropoff"
+            }
+          },
+          {
+            "id": "GROUP-7",
+            "departments": [
+              "D11",
+              "D13"
+            ],
+            "payload": {
+              "enabled": true,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D13-STORES",
+              "dropoff_locations": [
+                "D13-STORES"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 0.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "tue"
+              ],
+              "run_every_fortnight": true,
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "Fortnightly delivery - Tuesday",
+              "department_location_role": "dropoff"
+            }
+          },
+          {
+            "id": "GROUP-8",
+            "departments": [
+              "D22"
+            ],
+            "payload": {
+              "enabled": true,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D22-STORES",
+              "dropoff_locations": [
+                "D22-STORES"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 0.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "mon",
+                "thu"
+              ],
+              "run_every_fortnight": false,
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "Twice weekly - Endoscopy",
+              "department_location_role": "dropoff"
+            }
+          },
+          {
+            "id": "GROUP-9",
+            "departments": [
+              "D12"
+            ],
+            "payload": {
+              "enabled": true,
+              "generation_mode": "timeframe",
+              "priority": 50,
+              "pickup_location": "D49-STORES",
+              "pickup_locations": [
+                "D49-STORES"
+              ],
+              "dropoff_location": "D12-STORES",
+              "dropoff_locations": [
+                "D12-STORES"
+              ],
+              "payload": "Goods Cage",
+              "tracked_item_exchange": false,
+              "exchange_mode": "top_up_only",
+              "return_enabled": true,
+              "return_payload": "Goods Cage",
+              "return_delay_minutes": 0.0,
+              "reusable_return_pool_enabled": false,
+              "reusable_return_pool_multiplier": 0.0,
+              "reusable_return_pool_max": 0,
+              "route_profile": "",
+              "days_active": [
+                "wed",
+                "fri"
+              ],
+              "run_every_fortnight": false,
+              "scheduled_times": [],
+              "frequency_per_day": 0.0,
+              "volume_per_event_m3": 0.0,
+              "threshold_volume_m3": 0.0,
+              "base_daily_volume_m3": 0.0,
+              "timeframe_start": "06:00",
+              "timeframe_end": "16:00",
+              "timeframe_payload_multiple": 3,
+              "payload_multiple": 3,
+              "notes": "Twice weekly - ED Majors",
               "department_location_role": "dropoff"
             }
           }
@@ -24703,6 +26264,7 @@
           "thu",
           "fri"
         ],
+        "run_every_fortnight": false,
         "schedule_times": [
           "08:00",
           "12:00",
@@ -24751,11 +26313,16 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [],
             "frequency_per_day": 0.0,
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": ""
           }
         },

@@ -3070,7 +3070,7 @@ class Simulation:
                 if str(space.get("reserved_by_amr", "") or "").strip() == amr_id:
                     space["reserved_by_amr"] = ""
 
-    def _free_amr_inventory_space(self, amr: AMR) -> None:
+    def _free_amr_inventory_space(self, amr: AMR, keep_target_reservation: bool = False) -> None:
         amr_id = str(getattr(amr, "id", "") or "").strip()
         if not amr_id:
             return
@@ -3081,9 +3081,13 @@ class Simulation:
                     if not str(space.get("payload", "") or "").strip():
                         space["occupied"] = False
                 if str(space.get("reserved_by_amr", "") or "").strip() == amr_id:
+                    if keep_target_reservation and self._space_name(space) == str(getattr(amr, "target_inventory_space_name", "") or "").strip():
+                        continue
                     space["reserved_by_amr"] = ""
         setattr(amr, "inventory_space_name", "")
         setattr(amr, "rotation_deg", 0.0)
+        if not keep_target_reservation:
+            setattr(amr, "target_inventory_space_name", "")
 
     def _occupy_amr_inventory_space(self, amr: AMR, location_name: str) -> Optional[dict]:
         """Claim a compatible AMR bay at arrival time.
@@ -6502,7 +6506,8 @@ class Simulation:
             start_time = committed["task_start_time"]
             finish_time = committed["finish_time"]
             previous_location = amr.location_name
-            self._free_amr_inventory_space(amr)
+            keep_target_reservation = bool(getattr(task, "is_idle_return", False))
+            self._free_amr_inventory_space(amr, keep_target_reservation=keep_target_reservation)
             if getattr(task, "is_idle_return", False) and committed.get("end_location"):
                 committed["amr_inventory_space"] = str(getattr(amr, "target_inventory_space_name", "") or committed.get("amr_inventory_space", "") or "")
             amr.total_busy_time += committed["duration"]
