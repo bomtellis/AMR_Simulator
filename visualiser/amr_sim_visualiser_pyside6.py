@@ -200,8 +200,16 @@ class SimulationLog:
         self._lift_event_start_times: Dict[str, List[datetime]] = {}
         self._state_checkpoints: List[tuple] = []
         self._state_checkpoint_stride = 1000
+        self._state_checkpoint_indexes: List[int] = []
         self._state_cache_key = None
         self._state_cache_value = None
+        # Forward playback cursor.  Normal playback advances in time, so keep a
+        # mutable state accumulator and apply only newly crossed events instead
+        # of replaying historic CSV rows from a checkpoint every frame.
+        self._cursor_index = 0
+        self._cursor_time: Optional[datetime] = None
+        self._cursor_payload = self._new_state_accumulators()
+        self._cursor_valid = False
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
 
@@ -315,6 +323,7 @@ class SimulationLog:
         self._rebuild_location_event_index()
         self._rebuild_lift_event_index()
         self._rebuild_state_checkpoints()
+        self.reset_playback_cursor()
         self._state_cache_key = None
         self._state_cache_value = None
 
@@ -365,6 +374,13 @@ class SimulationLog:
                 e.start_time for e in events
             ]
 
+    def location_event_index_at(self, location_name: str, current_time: datetime) -> int:
+        location_name = str(location_name or "").strip()
+        if not location_name or current_time is None:
+            return 0
+        starts = self._location_event_start_times.get(location_name, [])
+        return bisect_right(starts, current_time)
+
     def events_for_location_until(
         self, location_name: str, current_time: datetime
     ) -> List[VisualEvent]:
@@ -372,8 +388,7 @@ class SimulationLog:
         if not location_name or current_time is None:
             return []
         events = self._events_by_location.get(location_name, [])
-        starts = self._location_event_start_times.get(location_name, [])
-        idx = bisect_right(starts, current_time)
+        idx = self.location_event_index_at(location_name, current_time)
         return events[:idx]
 
     def _event_lift_keys(self, row: dict) -> set:
@@ -433,6 +448,58 @@ class SimulationLog:
             dict(current_task_start_by_amr),
             dict(last_task_id_by_amr),
         )
+
+    def reset_playback_cursor(self) -> None:
+        """Reset the incremental state cursor used by forward playback.
+
+        Seeking backwards, loading a new CSV, or jumping to an arbitrary task uses
+        the checkpoint path again.  The next forward playback frame will seed the
+        cursor from the nearest checkpoint and then continue incrementally.
+        """
+        self._cursor_index = 0
+        self._cursor_time = None
+        self._cursor_payload = self._new_state_accumulators()
+        self._cursor_valid = False
+        self._state_cache_key = None
+        self._state_cache_value = None
+
+    def _state_result_from_payload(self, payload, current_time: datetime):
+        amr_states, recent_events, _current_task_start_by_amr, _last_task_id_by_amr = payload
+        for state in amr_states.values():
+            self._refresh_state_position(state, current_time)
+        return amr_states, recent_events[-12:]
+
+    def _seed_cursor_from_checkpoint(self, idx: int):
+        checkpoint_idx, payload = self._checkpoint_for_index(idx)
+        self._cursor_index = checkpoint_idx
+        self._cursor_time = None
+        self._cursor_payload = payload
+        self._cursor_valid = True
+
+    def _apply_events_to_cursor(self, target_idx: int, current_time: datetime):
+        if not self._cursor_valid or target_idx < self._cursor_index:
+            self._seed_cursor_from_checkpoint(target_idx)
+
+        amr_states, recent_events, current_task_start_by_amr, last_task_id_by_amr = (
+            self._cursor_payload
+        )
+        for event in self.events[self._cursor_index:target_idx]:
+            self._apply_state_event(
+                event,
+                current_time,
+                amr_states,
+                recent_events,
+                current_task_start_by_amr,
+                last_task_id_by_amr,
+            )
+
+        # Keep the recent-event buffer bounded during long playback sessions.
+        if len(recent_events) > 64:
+            del recent_events[:-64]
+
+        self._cursor_index = target_idx
+        self._cursor_time = current_time
+        return self._cursor_payload
 
     def _apply_state_event(
         self,
@@ -555,6 +622,7 @@ class SimulationLog:
 
     def _rebuild_state_checkpoints(self):
         self._state_checkpoints = []
+        self._state_checkpoint_indexes = []
         if not self.events:
             return
         amr_states, recent_events, current_task_start_by_amr, last_task_id_by_amr = (
@@ -573,6 +641,7 @@ class SimulationLog:
                 ),
             )
         )
+        self._state_checkpoint_indexes.append(0)
         for idx, event in enumerate(self.events, start=1):
             self._apply_state_event(
                 event,
@@ -600,11 +669,12 @@ class SimulationLog:
                         ),
                     )
                 )
+                self._state_checkpoint_indexes.append(idx)
 
     def _checkpoint_for_index(self, idx: int):
         if not self._state_checkpoints:
             return 0, self._new_state_accumulators()
-        checkpoint_indexes = [item[0] for item in self._state_checkpoints]
+        checkpoint_indexes = self._state_checkpoint_indexes or [item[0] for item in self._state_checkpoints]
         pos = max(0, bisect_right(checkpoint_indexes, idx) - 1)
         checkpoint_idx, payload = self._state_checkpoints[pos]
         return checkpoint_idx, self._copy_state_accumulators(payload)
@@ -667,29 +737,25 @@ class SimulationLog:
         idx = self.event_index_at(current_time)
         cache_key = (idx, current_time)
         if self._state_cache_key == cache_key and self._state_cache_value is not None:
-            return copy.deepcopy(self._state_cache_value)
+            return self._state_cache_value
 
-        checkpoint_idx, payload = self._checkpoint_for_index(idx)
-        amr_states, recent_events, current_task_start_by_amr, last_task_id_by_amr = (
-            payload
-        )
+        # Normal playback moves forward.  Apply only new events since the last
+        # frame; do not rebuild from a historic checkpoint on every tick.
+        if (
+            self._cursor_valid
+            and self._cursor_time is not None
+            and current_time >= self._cursor_time
+            and idx >= self._cursor_index
+        ):
+            payload = self._apply_events_to_cursor(idx, current_time)
+            result = self._state_result_from_payload(payload, current_time)
+        else:
+            self._seed_cursor_from_checkpoint(idx)
+            payload = self._apply_events_to_cursor(idx, current_time)
+            result = self._state_result_from_payload(payload, current_time)
 
-        for event in self.events[checkpoint_idx:idx]:
-            self._apply_state_event(
-                event,
-                current_time,
-                amr_states,
-                recent_events,
-                current_task_start_by_amr,
-                last_task_id_by_amr,
-            )
-
-        for state in amr_states.values():
-            self._refresh_state_position(state, current_time)
-
-        result = (amr_states, recent_events[-12:])
         self._state_cache_key = cache_key
-        self._state_cache_value = copy.deepcopy(result)
+        self._state_cache_value = result
         return result
 
 
@@ -2149,6 +2215,9 @@ class SimulationVisualizer(QMainWindow):
         self.current_time: Optional[datetime] = None
         self.is_playing = False
         self.play_speed = 60.0
+        self._last_play_tick_wall_time: Optional[float] = None
+        self._target_playback_frame_interval_ms = 33
+        self._inventory_cache_max_entries = 6000
         self.lift_monitor_dialog: Optional[LiftMonitorDialog] = None
         self.amr_payload_monitor_dialog: Optional[AmrPayloadMonitorDialog] = None
         self.play_timer = QTimer(self)
@@ -2900,6 +2969,45 @@ class SimulationVisualizer(QMainWindow):
         self._inventory_rows_cache.clear()
         self._lift_monitor_state_cache_key = None
         self._lift_monitor_state_cache_value = None
+        self._last_play_tick_wall_time = None
+        if hasattr(self, "sim_log") and self.sim_log is not None:
+            self.sim_log.reset_playback_cursor()
+
+    def _current_event_index(self) -> int:
+        if not self.current_time or not self.sim_log.events:
+            return 0
+        return self.sim_log.event_index_at(self.current_time)
+
+    def _inventory_cache_key_for_location(self, location_name: str):
+        location_name = str(location_name or "").strip()
+        if self.current_time is not None and self.sim_log.events:
+            event_idx = self.sim_log.location_event_index_at(location_name, self.current_time)
+        else:
+            event_idx = 0
+        # Live waste fill values change continuously.  Bucket them so labels update
+        # periodically without forcing a full inventory replay every paint frame.
+        live_bucket = 0
+        if (
+            getattr(self, "live_waste_fill_check", None) is not None
+            and self.live_waste_fill_check.isChecked()
+            and self.current_time is not None
+        ):
+            if self.sim_log.start_time is not None:
+                live_bucket = int(
+                    max(0.0, (self.current_time - self.sim_log.start_time).total_seconds())
+                    // 30.0
+                )
+            else:
+                live_bucket = int(self.current_time.timestamp() // 30.0)
+        return (location_name, event_idx, live_bucket)
+
+    def _trim_inventory_rows_cache(self):
+        limit = int(getattr(self, "_inventory_cache_max_entries", 6000) or 6000)
+        if limit <= 0 or len(self._inventory_rows_cache) <= limit:
+            return
+        remove_count = max(1, len(self._inventory_rows_cache) - limit)
+        for key in list(self._inventory_rows_cache.keys())[:remove_count]:
+            self._inventory_rows_cache.pop(key, None)
 
     def clear_items(self, items):
         for item in items:
@@ -2930,7 +3038,10 @@ class SimulationVisualizer(QMainWindow):
         self.clear_items(self.dynamic_items)
         if hasattr(self, "dynamic_text_records"):
             self.dynamic_text_records.clear()
-        self._inventory_rows_cache.clear()
+        # Do not clear inventory-row caches every frame.  The cache key includes
+        # the current event index and a small live-fill time bucket, so normal
+        # playback can reuse room payload reconstruction while AMRs move between
+        # CSV inventory events.
         self.draw_room_payloads_qt(self.current_floor())
         self.draw_dynamic_state_qt(self.current_floor())
         self.update_follow_view()
@@ -6050,6 +6161,11 @@ class SimulationVisualizer(QMainWindow):
             target.update(self._enrich_payload_row_details(target))
 
     def _inventory_payload_rows_for_location(self, location_name: str) -> List[dict]:
+        cache_key = self._inventory_cache_key_for_location(location_name)
+        cached = self._inventory_rows_cache.get(cache_key)
+        if cached is not None:
+            return [dict(row) for row in cached]
+
         location = self._location_by_name(location_name)
         if not location:
             return []
@@ -6203,7 +6319,10 @@ class SimulationVisualizer(QMainWindow):
                     rows.append(seeded)
 
         if not self.current_time or not self.sim_log.events:
-            return [self._enrich_payload_row_details(row) for row in rows]
+            result = [self._enrich_payload_row_details(row) for row in rows]
+            self._inventory_rows_cache[cache_key] = [dict(row) for row in result]
+            self._trim_inventory_rows_cache()
+            return [dict(row) for row in result]
 
         for event in self.sim_log.events_for_location_until(
             location_name, self.current_time
@@ -6372,7 +6491,10 @@ class SimulationVisualizer(QMainWindow):
         # Re-enrich every row at the current timeline position.  This is what
         # makes waste container labels/tooltips continue to fill while the
         # visualiser plays, even when there is no new CSV event on this tick.
-        return [self._enrich_payload_row_details(row) for row in rows]
+        result = [self._enrich_payload_row_details(row) for row in rows]
+        self._inventory_rows_cache[cache_key] = [dict(row) for row in result]
+        self._trim_inventory_rows_cache()
+        return [dict(row) for row in result]
 
     def _inventory_space_rows_for_location(self, location_name: str) -> List[dict]:
         location = self._location_by_name(location_name)
@@ -6831,6 +6953,7 @@ class SimulationVisualizer(QMainWindow):
         if not self.sim_log.start_time:
             return
         self.current_time = self.sim_log.fraction_to_time(value / 1000.0)
+        self._invalidate_runtime_caches()
         self.update_time_display()
         self.refresh_dynamic_scene()
         self.view.viewport().update()
@@ -6845,18 +6968,28 @@ class SimulationVisualizer(QMainWindow):
         self.is_playing = not self.is_playing
         self.play_btn.setText("Pause" if self.is_playing else "Play")
         if self.is_playing:
-            self.play_timer.start(100)
+            self._last_play_tick_wall_time = time.monotonic()
+            # Paint at a UI frame rate rather than one large 100 ms step.  The
+            # simulation time advance is calculated from real elapsed time, so
+            # playback speed stays stable even if a frame is delayed.
+            self.play_timer.start(self._target_playback_frame_interval_ms)
         else:
+            self._last_play_tick_wall_time = None
             self.play_timer.stop()
 
     def _tick(self):
         if not self.is_playing or not self.current_time or not self.sim_log.end_time:
             return
-        self.current_time += timedelta(seconds=self.play_speed * 0.1)
+        now = time.monotonic()
+        last = self._last_play_tick_wall_time or now
+        elapsed_wall = max(0.001, min(0.25, now - last))
+        self._last_play_tick_wall_time = now
+        self.current_time += timedelta(seconds=self.play_speed * elapsed_wall)
         if self.current_time >= self.sim_log.end_time:
             self.current_time = self.sim_log.end_time
             self.is_playing = False
             self.play_btn.setText("Play")
+            self._last_play_tick_wall_time = None
             self.play_timer.stop()
         self.update_time_display()
         self.refresh_dynamic_scene()
@@ -6870,6 +7003,7 @@ class SimulationVisualizer(QMainWindow):
             self.current_time = self.sim_log.start_time
         if self.sim_log.end_time and self.current_time > self.sim_log.end_time:
             self.current_time = self.sim_log.end_time
+        self._invalidate_runtime_caches()
         self.update_time_display()
         self.refresh_dynamic_scene()
         self.view.viewport().update()
@@ -6877,6 +7011,7 @@ class SimulationVisualizer(QMainWindow):
     def jump_start(self):
         if self.sim_log.start_time:
             self.current_time = self.sim_log.start_time
+            self._invalidate_runtime_caches()
             self.update_time_display()
             self.refresh_dynamic_scene()
             self.view.viewport().update()
@@ -6884,6 +7019,7 @@ class SimulationVisualizer(QMainWindow):
     def jump_end(self):
         if self.sim_log.end_time:
             self.current_time = self.sim_log.end_time
+            self._invalidate_runtime_caches()
             self.update_time_display()
             self.refresh_dynamic_scene()
             self.view.viewport().update()
@@ -6892,6 +7028,7 @@ class SimulationVisualizer(QMainWindow):
         travel_time = self.sim_log.first_travel_time()
         if travel_time is not None:
             self.current_time = travel_time
+            self._invalidate_runtime_caches()
             self.update_time_display()
             self.refresh_dynamic_scene()
             self.view.viewport().update()

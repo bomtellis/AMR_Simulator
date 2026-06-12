@@ -8056,6 +8056,137 @@ class Simulation:
             writer.writeheader()
             writer.writerows(self.verbose_rows)
 
+    def _row_is_visualiser_relevant(self, row: dict) -> bool:
+        """Return True for verbose rows needed by the playback visualiser.
+
+        Full verbose CSV remains unchanged for reporting/debugging.  This filter
+        creates a smaller animation-oriented CSV containing AMR motion, lift
+        movement, pickup/drop-off, charging, task assignment/generation markers,
+        and physical payload inventory changes.
+        """
+        event_type = str(row.get("event_type", "") or "").strip().lower()
+        segment_type = str(row.get("segment_type", "") or "").strip().lower()
+        status = str(row.get("status", "") or "").strip().lower()
+        amr_id = str(row.get("amr_id", "") or "").strip()
+        lift_id = str(row.get("lift_id", "") or "").strip()
+        inventory_space = str(
+            row.get("inventory_space", "") or row.get("inventory_space_name", "") or ""
+        ).strip()
+        if event_type in {
+            "location_payload_enter",
+            "location_payload_exit",
+            "mass_collection_visit",
+            "task_generated",
+            "return_task_generated",
+            "waste_task_generated",
+            "task_assigned",
+            "multi_stop_task_assigned",
+        } or event_type.endswith("_generated"):
+            return True
+        text = f"{event_type} {segment_type} {status}"
+        if any(
+            token in text
+            for token in (
+                "travel",
+                "move",
+                "movement",
+                "corridor",
+                "edge",
+                "lift",
+                "pickup",
+                "pick_up",
+                "dropoff",
+                "drop_off",
+                "deliver",
+                "unload",
+                "load",
+                "charge",
+                "wait",
+                "queue",
+                "board",
+                "door",
+            )
+        ):
+            return True
+        if amr_id and (row.get("start_x") not in (None, "") or row.get("end_x") not in (None, "")):
+            return True
+        if lift_id or inventory_space:
+            return True
+        return False
+
+    def write_visualiser_csv(self, path: Optional[str] = None) -> str:
+        """Write a smaller CSV intended for animation playback only.
+
+        The full verbose CSV is still written by write_verbose_csv(); this file
+        avoids report/diagnostic rows that make the visualiser parse and index
+        more data than it needs.
+        """
+        output_path = str(path or "simulation_visualiser_steps.csv")
+        if not self.verbose_rows:
+            return output_path
+        fieldnames = [
+            "amr_id",
+            "task_id",
+            "segment_type",
+            "start_time",
+            "end_time",
+            "start_node",
+            "end_node",
+            "amr_location_before",
+            "amr_location_after",
+            "start_x",
+            "start_y",
+            "start_floor",
+            "end_x",
+            "end_y",
+            "end_floor",
+            "status",
+            "sim_time_sec",
+            "sim_datetime",
+            "event_type",
+            "payload",
+            "payload_instance_id",
+            "payload_slot",
+            "onboard_payloads",
+            "onboard_slots",
+            "multi_stop_task_ids",
+            "from_location",
+            "to_location",
+            "lift_id",
+            "duration_sec",
+            "wait_time_sec",
+            "distance_m",
+            "energy_kwh",
+            "battery_soc_before",
+            "battery_soc_after",
+            "is_charging",
+            "amr_inventory_space",
+            "inventory_space",
+            "inventory_space_name",
+            "amr_rotation_deg",
+            "amr_rotation_start_deg",
+            "amr_rotation_end_deg",
+            "task_duration_sec",
+            "details",
+            "task_source",
+            "department_id",
+            "waste_stream",
+            "waste_volume_m3",
+            "container_type",
+            "pending_reason",
+            "tracked_item_exchange",
+            "exchange_mode",
+            "tracked_item_source_payload",
+            "tracked_items",
+        ]
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(
+                row for row in self.verbose_rows if self._row_is_visualiser_relevant(row)
+            )
+        return output_path
+
     def write_failed_tasks_csv(self, path: Optional[str] = None) -> str:
         """Write failed task diagnostics to CSV on every simulator run.
 
@@ -8938,6 +9069,15 @@ def main():
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--verbose-csv", type=str, default="simulation_steps.csv")
     parser.add_argument(
+        "--visualiser-csv",
+        type=str,
+        default=None,
+        help=(
+            "Optional smaller animation CSV. Use with --verbose to write only "
+            "rows needed by the visualiser playback layer."
+        ),
+    )
+    parser.add_argument(
         "--failed-tasks-csv",
         type=str,
         default=None,
@@ -8980,6 +9120,9 @@ def main():
     print(f"Failed tasks CSV written to {failed_tasks_csv_path}")
     if args.verbose:
         print(f"Verbose CSV written to {args.verbose_csv}")
+        if args.visualiser_csv:
+            visualiser_csv_path = sim.write_visualiser_csv(args.visualiser_csv)
+            print(f"Visualiser CSV written to {visualiser_csv_path}")
 
 
 if __name__ == "__main__":
