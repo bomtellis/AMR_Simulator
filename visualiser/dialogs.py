@@ -1134,6 +1134,10 @@ class TaskGenerationSettingsDialog(QDialog):
         edit_group_btn.clicked.connect(self.edit_configured_department_group)
         department_col.addWidget(edit_group_btn)
 
+        delete_group_btn = QPushButton("Delete configured group...")
+        delete_group_btn.clicked.connect(self.delete_configured_department_group)
+        department_col.addWidget(delete_group_btn)
+
         clear_group_btn = QPushButton("Clear configured group...")
         clear_group_btn.clicked.connect(self.clear_configured_department_group)
         department_col.addWidget(clear_group_btn)
@@ -1351,6 +1355,8 @@ class TaskGenerationSettingsDialog(QDialog):
             "and gives each task a target duration equal to the remaining window, so the payloads are due before the timeframe end. "
             "Drop-off destinations can contain multiple locations; the first is also saved as "
             "dropoff_location for compatibility with existing generators. "
+            "Configure multiple can be used more than once for the same category and department; "
+            "each configured group creates an additional run in the simulator. "
             "For Waste, stream-specific generated volume is configured on the departments' waste streams, "
             "not on the task-generation category override."
         )
@@ -1765,6 +1771,117 @@ class TaskGenerationSettingsDialog(QDialog):
             f"Cleared {len(dept_ids)} department override(s).",
         )
 
+    def delete_configured_department_group(self):
+        if not self.current_key:
+            QMessageBox.information(
+                self,
+                "Delete configured group",
+                "Select a category first.",
+            )
+            return
+
+        try:
+            self._store_current_category()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid current category", str(exc))
+            return
+
+        category = self.config.setdefault("categories", {}).setdefault(
+            self.current_key, {}
+        )
+        overrides = category.setdefault("departments", {})
+        if not isinstance(overrides, dict):
+            overrides = {}
+            category["departments"] = overrides
+
+        groups = self._stored_department_group_map(self.current_key)
+
+        if not groups:
+            QMessageBox.information(
+                self,
+                "Delete configured group",
+                "No multi-department configured groups were found for this category.",
+            )
+            return
+
+        dialog = ConfiguredGroupSelectDialog(
+            self,
+            "Delete configured group",
+            groups,
+            self._configured_group_label,
+        )
+
+        if dialog.exec() != QDialog.Accepted or not dialog.result_key:
+            return
+
+        group_id = str(dialog.result_key).strip()
+        group = groups[group_id]
+        dept_ids = sorted(group["departments"])
+        payload_signature = self._bulk_group_signature(group.get("payload", {}))
+
+        if (
+            QMessageBox.question(
+                self,
+                "Delete configured group",
+                (
+                    f"Delete this configured run for {len(dept_ids)} department(s)?\n\n"
+                    + ", ".join(dept_ids[:12])
+                    + ("..." if len(dept_ids) > 12 else "")
+                ),
+            )
+            != QMessageBox.Yes
+        ):
+            return
+
+        remaining_groups = [
+            group
+            for group in self._department_groups_for_category(self.current_key)
+            if str(group.get("id", "")).strip() != group_id
+        ]
+        category["department_groups"] = remaining_groups
+
+        remaining_grouped_departments = {
+            str(dept_id).strip()
+            for group in remaining_groups
+            for dept_id in group.get("departments", [])
+            if str(dept_id).strip()
+        }
+
+        # Bulk configuration also writes per-department overrides for editor
+        # compatibility. Remove matching orphaned overrides so deleting the last
+        # group does not leave an ungrouped simulator run behind.
+        removed_overrides = 0
+        for dept_id in dept_ids:
+            if dept_id in remaining_grouped_departments:
+                continue
+            current_payload = overrides.get(dept_id, {})
+            if (
+                isinstance(current_payload, dict)
+                and self._bulk_group_signature(current_payload) == payload_signature
+            ):
+                overrides.pop(dept_id, None)
+                removed_overrides += 1
+
+        selected_dept_id = self.current_department_id or ""
+        if selected_dept_id in dept_ids and selected_dept_id not in overrides:
+            selected_dept_id = ""
+
+        self._loading = True
+        self._refresh_department_list(select_dept_id=selected_dept_id)
+        if self.current_key:
+            self._load_category(self.current_key)
+        self._loading = False
+
+        message = "Deleted the configured group."
+        if removed_overrides:
+            message += f" Removed {removed_overrides} matching compatibility override(s)."
+
+        QMessageBox.information(
+            self,
+            "Delete configured group",
+            message,
+        )
+
     def _bulk_group_signature(self, payload):
         return json.dumps(payload or {}, sort_keys=True)
 
@@ -1916,14 +2033,6 @@ class TaskGenerationSettingsDialog(QDialog):
 
         if not department_ids:
             return ""
-
-        self._remove_departments_from_groups(
-            category_key,
-            department_ids,
-            except_group_id=group_id,
-        )
-
-        groups = self._department_groups_for_category(category_key)
 
         existing = next(
             (group for group in groups if str(group.get("id", "")).strip() == group_id),

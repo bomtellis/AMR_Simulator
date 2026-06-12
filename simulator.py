@@ -7727,11 +7727,12 @@ class Simulation:
             segment_start_time = event.time
 
             for segment in event.payload["travel_segments"]:
+                segment_type = str(segment.get("type", "") or "").strip()
                 from_node = segment.get("from", "")
                 to_node = segment.get("to", "")
 
                 lift_id = segment.get("lift_id", "")
-                if not lift_id and segment.get("type", "").startswith("lift_"):
+                if not lift_id and segment_type.startswith("lift_"):
                     for key_node in (from_node, to_node):
                         if key_node:
                             for lift in self.lifts:
@@ -7839,7 +7840,9 @@ class Simulation:
                 to_location=charge_location_name,
                 status="finish",
                 energy_kwh=0.0,
-                amr_inventory_space=planned_space if getattr(task, "is_idle_return", False) else "",
+                amr_inventory_space=str(
+                    event.payload.get("amr_inventory_space", "") or ""
+                ),
                 battery_soc_before=100.0,
                 battery_soc_after=amr.battery_soc_percent,
                 is_charging=False,

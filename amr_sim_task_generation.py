@@ -512,6 +512,126 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         return result
 
+    def _grouped_department_overrides(self, category: dict) -> tuple[List[dict], set]:
+        groups = (
+            category.get("department_groups", [])
+            if isinstance(category.get("department_groups", []), list)
+            else []
+        )
+        grouped: List[dict] = []
+        covered_departments = set()
+        seen_ids = set()
+
+        for index, group in enumerate(groups):
+            if not isinstance(group, dict):
+                continue
+
+            payload = group.get("payload", {})
+            departments = [
+                _clean_text(x) for x in group.get("departments", []) if _clean_text(x)
+            ]
+            if not isinstance(payload, dict) or not departments:
+                continue
+
+            group_id = _clean_text(group.get("id", "")) or f"group_{index + 1}"
+            if group_id in seen_ids:
+                group_id = f"{group_id}_{index + 1}"
+            seen_ids.add(group_id)
+            covered_departments.update(departments)
+            grouped.append(
+                {
+                    "id": group_id,
+                    "departments": departments,
+                    "payload": dict(payload),
+                }
+            )
+
+        return grouped, covered_departments
+
+    def _append_department_instance(
+        self,
+        instances: List[dict],
+        category_key_text: str,
+        category: dict,
+        dept: dict,
+        override: dict,
+        instance_suffix: str = "",
+    ) -> None:
+        dept_id = self._department_id(dept)
+        if not dept_id:
+            return
+
+        cfg = self._merge_category_with_override(category, override)
+        if not bool(cfg.get("enabled", False)):
+            return
+
+        dept_locations = self._department_category_locations(dept, category_key_text)
+        role = _clean_text(cfg.get("department_location_role", "dropoff")) or "dropoff"
+
+        pickup_locations = self._pickup_locations_from_cfg(cfg)
+        dropoff_locations = self._dropoff_locations_from_cfg(cfg)
+
+        if role == "pickup" and dept_locations:
+            pickup_locations = dept_locations
+        elif role != "pickup" and dept_locations:
+            dropoff_locations = dept_locations
+
+        suffix = _clean_text(instance_suffix)
+        key_base = f"{category_key_text}:{dept_id}"
+        instance_key = f"{key_base}:{suffix}" if suffix else key_base
+
+        if category_key_text.lower() == "waste":
+            stream_items = self._department_waste_stream_items(dept)
+
+            if stream_items:
+                for stream_item in stream_items:
+                    stream_cfg = self._waste_stream_cfg_for_department(
+                        category, override, stream_item
+                    )
+                    if not stream_cfg:
+                        continue
+                    stream_name = _clean_text(stream_cfg.get("waste_stream"))
+                    container_group = self._waste_container_group_for_instance(
+                        dept_id, stream_name, stream_cfg, pickup_locations
+                    )
+                    stream_cfg["container_group"] = container_group
+                    unique_key = f"waste:{dept_id}:{stream_name}"
+                    if suffix:
+                        unique_key = f"{unique_key}:{suffix}"
+                    instances.append(
+                        {
+                            "key": unique_key,
+                            "volume_key": container_group,
+                            "schedule_key": unique_key,
+                            "category_key": "waste",
+                            "department_id": dept_id,
+                            "department_name": self._department_name(dept),
+                            "department": dict(dept),
+                            "cfg": stream_cfg,
+                            "pickup_locations": pickup_locations,
+                            "dropoff_locations": dropoff_locations,
+                            "waste_stream": stream_name,
+                            "container_group": container_group,
+                        }
+                    )
+                return
+
+            # Backwards compatibility: if no department streams are set,
+            # use the old department waste category override.
+
+        instances.append(
+            {
+                "key": instance_key,
+                "category_key": category_key_text,
+                "department_id": dept_id,
+                "department_name": self._department_name(dept),
+                "department": dict(dept),
+                "cfg": cfg,
+                "pickup_locations": pickup_locations,
+                "dropoff_locations": dropoff_locations,
+            }
+        )
+
     def _threshold_from_waste_stream(self, stream_name: str, cfg: dict) -> float:
         threshold = _as_float(cfg.get("threshold_volume_m3", 0.0), 0.0)
         if threshold > 0:
@@ -608,85 +728,43 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 if isinstance(category.get("departments", {}), dict)
                 else {}
             )
+            groups, grouped_department_ids = self._grouped_department_overrides(category)
+            departments_by_id = {
+                self._department_id(dept): dept
+                for dept in self.departments
+                if self._department_id(dept)
+            }
 
             # Department overrides are independently enabled.  The category
             # default "enabled" flag must not disable configured departments.
             # Waste is the only category that expands into one instance per
             # configured department waste stream.
+            for group in groups:
+                for dept_id in group["departments"]:
+                    dept = departments_by_id.get(dept_id)
+                    if dept is None:
+                        continue
+                    self._append_department_instance(
+                        instances,
+                        category_key_text,
+                        category,
+                        dept,
+                        group["payload"],
+                        f"group:{group['id']}",
+                    )
+
             for dept in self.departments:
                 dept_id = self._department_id(dept)
                 if not dept_id or dept_id not in overrides:
                     continue
-
-                override = overrides.get(dept_id, {})
-                cfg = self._merge_category_with_override(category, override)
-                if not bool(cfg.get("enabled", False)):
+                if dept_id in grouped_department_ids:
                     continue
-
-                dept_locations = self._department_category_locations(
-                    dept, category_key_text
-                )
-                role = (
-                    _clean_text(cfg.get("department_location_role", "dropoff"))
-                    or "dropoff"
-                )
-
-                pickup_locations = self._pickup_locations_from_cfg(cfg)
-                dropoff_locations = self._dropoff_locations_from_cfg(cfg)
-
-                if role == "pickup" and dept_locations:
-                    pickup_locations = dept_locations
-                elif role != "pickup" and dept_locations:
-                    dropoff_locations = dept_locations
-
-                if category_key_text.lower() == "waste":
-                    stream_items = self._department_waste_stream_items(dept)
-
-                    if stream_items:
-                        for stream_item in stream_items:
-                            stream_cfg = self._waste_stream_cfg_for_department(
-                                category, override, stream_item
-                            )
-                            if not stream_cfg:
-                                continue
-                            stream_name = _clean_text(stream_cfg.get("waste_stream"))
-                            container_group = self._waste_container_group_for_instance(
-                                dept_id, stream_name, stream_cfg, pickup_locations
-                            )
-                            stream_cfg["container_group"] = container_group
-                            unique_key = f"waste:{dept_id}:{stream_name}"
-                            instances.append(
-                                {
-                                    "key": unique_key,
-                                    "volume_key": container_group,
-                                    "schedule_key": container_group,
-                                    "category_key": "waste",
-                                    "department_id": dept_id,
-                                    "department_name": self._department_name(dept),
-                                    "department": dict(dept),
-                                    "cfg": stream_cfg,
-                                    "pickup_locations": pickup_locations,
-                                    "dropoff_locations": dropoff_locations,
-                                    "waste_stream": stream_name,
-                                    "container_group": container_group,
-                                }
-                            )
-                        continue
-
-                    # Backwards compatibility: if no department streams are set,
-                    # use the old department waste category override.
-
-                instances.append(
-                    {
-                        "key": f"{category_key_text}:{dept_id}",
-                        "category_key": category_key_text,
-                        "department_id": dept_id,
-                        "department_name": self._department_name(dept),
-                        "department": dict(dept),
-                        "cfg": cfg,
-                        "pickup_locations": pickup_locations,
-                        "dropoff_locations": dropoff_locations,
-                    }
+                self._append_department_instance(
+                    instances,
+                    category_key_text,
+                    category,
+                    dept,
+                    overrides.get(dept_id, {}),
                 )
 
             # Category-level generation is only for a deliberately enabled
