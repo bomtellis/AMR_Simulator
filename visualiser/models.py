@@ -128,6 +128,9 @@ def default_task_generation_category(label: str) -> dict:
         "exchange_mode": "top_up_only",
         "return_enabled": False,
         "return_payload": "",
+        "requires_staff": False,
+        "staff_initial_count": 1,
+        "staff_resource_name": "",
         "reusable_return_pool_enabled": False,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -197,6 +200,7 @@ def default_task_generation_config() -> dict:
             "generation_mode": "scheduled",
             "priority": 70,
             "schedule_times": ["09:30", "14:30"],
+            "requires_staff": True,
         }
     )
     categories["ssd"].update(
@@ -266,6 +270,16 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
             category["payload_multiple"] = category.get("timeframe_payload_multiple", 1)
         category.setdefault("timeframe_start", "09:00")
         category.setdefault("timeframe_end", "17:00")
+        category["requires_staff"] = bool(
+            category.get("requires_staff", category.get("staff_required", False))
+        )
+        try:
+            category["staff_initial_count"] = max(
+                1, int(float(category.get("staff_initial_count", 1) or 1))
+            )
+        except Exception:
+            category["staff_initial_count"] = 1
+        category.setdefault("staff_resource_name", "")
         category["run_every_fortnight"] = bool(category.get("run_every_fortnight", False))
 
     # Keep the legacy department_waste mirror in step for older configs/tools.

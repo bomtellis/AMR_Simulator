@@ -834,6 +834,12 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             waste_stream=_clean_text(cfg.get("waste_stream", "")),
             waste_volume_m3=_as_float(cfg.get("waste_volume_m3", 0.0), 0.0),
             container_type=payload_name,
+            requires_staff=_as_bool(cfg.get("requires_staff", False), False),
+            staff_initial_count=max(
+                1, _as_int(cfg.get("staff_initial_count", 1), 1)
+            ),
+            staff_resource_name=_clean_text(cfg.get("staff_resource_name", "")),
+            staff_category_key=category_key,
         )
         if bool(cfg.get("return_enabled", False)):
             return_payload = _clean_text(cfg.get("return_payload", ""))

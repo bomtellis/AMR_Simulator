@@ -168,6 +168,13 @@ def safe_text(value) -> str:
     return text if text.strip() else "-"
 
 
+def natural_key(value):
+    return [
+        int(text) if text.isdigit() else text.lower()
+        for text in re.split(r"(\d+)", str(value))
+    ]
+
+
 
 
 def split_payload_names(value) -> List[str]:
@@ -871,6 +878,54 @@ def build_amr_busy_intervals(
     return per_amr, pd.DataFrame(route_rows)
 
 
+def build_lift_busy_intervals(
+    lift_rows: pd.DataFrame,
+    ctx: Context,
+) -> Tuple[Dict[str, List[Tuple[float, float]]], pd.DataFrame]:
+    """Return lift busy intervals using the same merge model as AMRs."""
+    columns = ["lift_id", "busy_start", "busy_finish", "busy_time_s"]
+    if (
+        lift_rows is None
+        or lift_rows.empty
+        or "_lift_id" not in lift_rows.columns
+        or "lift_time_s" not in lift_rows.columns
+    ):
+        return {}, pd.DataFrame(columns=columns)
+
+    rows = lift_rows[
+        lift_rows["_lift_id"].notna()
+        & pd.to_numeric(lift_rows["lift_time_s"], errors="coerce").fillna(0).gt(0)
+    ].copy()
+    if rows.empty:
+        return {}, pd.DataFrame(columns=columns)
+
+    per_lift: Dict[str, List[Tuple[float, float]]] = {}
+    busy_rows: List[dict] = []
+    for lift_id, sub in rows.groupby("_lift_id", dropna=False):
+        intervals: List[Tuple[float, float]] = []
+        for _, row in sub.iterrows():
+            start = event_time_to_float(row.get(ctx.time_col), ctx.has_datetime)
+            duration = _to_float(row.get("lift_time_s"), 0.0)
+            if start is None or duration <= 0:
+                continue
+            intervals.append((start, start + duration))
+
+        merged = merge_intervals(intervals, gap_tolerance=1.0)
+        lift_name = safe_text(lift_id)
+        per_lift[lift_name] = merged
+        for start, end in merged:
+            busy_rows.append(
+                {
+                    "lift_id": lift_name,
+                    "busy_start": start,
+                    "busy_finish": end,
+                    "busy_time_s": end - start,
+                }
+            )
+
+    return per_lift, pd.DataFrame(busy_rows, columns=columns)
+
+
 def interval_total(intervals: Iterable[Tuple[float, float]]) -> float:
     return float(sum(max(0.0, float(end) - float(start)) for start, end in intervals))
 
@@ -1022,6 +1077,165 @@ def load_payload_dimensions(json_path: Path) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def _config_display_text(item: dict, fallback: str = "") -> str:
+    for key in ("display_name", "descriptive_name", "friendly_name", "label", "title", "name"):
+        text = str((item or {}).get(key, "") or "").strip()
+        if text:
+            return text
+    return str(fallback or "").strip()
+
+
+def _config_bool(item: dict, keys: Iterable[str]) -> Optional[bool]:
+    for key in keys:
+        if key not in (item or {}):
+            continue
+        value = item.get(key)
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in {"1", "true", "yes", "y", "on", "required"}:
+            return True
+        if text in {"0", "false", "no", "n", "off", "none"}:
+            return False
+    return None
+
+
+def load_task_generation_report_metadata(json_path: Path) -> dict:
+    with open(json_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    task_generation = data.get("task_generation", {}) or {}
+    categories = task_generation.get("categories", {}) or {}
+    category_labels: Dict[str, str] = {}
+    category_human_assist: Dict[str, str] = {}
+    category_staff_initial: Dict[str, int] = {}
+    assist_keys = (
+        "human_assist_required",
+        "requires_human_assist",
+        "person_required",
+        "requires_person",
+        "attendant_required",
+        "porter_required",
+        "manual_unload_required",
+        "requires_manual_unload",
+        "requires_staff",
+        "staff_required",
+    )
+    inferred_assist_categories = {
+        str(x).strip().lower()
+        for x in task_generation.get(
+            "human_assist_categories",
+            task_generation.get("staff_assisted_categories", []),
+        )
+        or []
+        if str(x).strip()
+    }
+    inferred_assist_categories.update(
+        {"catering", "linen", "pharmacy", "ssd", "stores"}
+    )
+
+    for key, cfg in categories.items():
+        if not isinstance(cfg, dict):
+            continue
+        key_text = str(key).strip()
+        category_labels[key_text.lower()] = _config_display_text(cfg, key_text.title())
+        explicit = _config_bool(cfg, assist_keys)
+        if explicit is not None:
+            category_human_assist[key_text.lower()] = "Yes" if explicit else "No"
+        if bool(cfg.get("requires_staff", cfg.get("staff_required", False))):
+            try:
+                category_staff_initial[key_text.lower()] = max(
+                    1, int(float(cfg.get("staff_initial_count", 1) or 1))
+                )
+            except Exception:
+                category_staff_initial[key_text.lower()] = 1
+        elif key_text.lower() in inferred_assist_categories:
+            category_human_assist[key_text.lower()] = "Yes"
+        for dept_cfg in (cfg.get("departments", {}) or {}).values():
+            if not isinstance(dept_cfg, dict):
+                continue
+            dept_explicit = _config_bool(dept_cfg, assist_keys)
+            if dept_explicit:
+                category_human_assist[key_text.lower()] = "Yes"
+            if bool(dept_cfg.get("requires_staff", dept_cfg.get("staff_required", False))):
+                try:
+                    category_staff_initial[key_text.lower()] = max(
+                        category_staff_initial.get(key_text.lower(), 1),
+                        int(float(dept_cfg.get("staff_initial_count", 1) or 1)),
+                    )
+                except Exception:
+                    category_staff_initial.setdefault(key_text.lower(), 1)
+        for group in cfg.get("department_groups", []) or []:
+            if not isinstance(group, dict):
+                continue
+            payload = group.get("payload", {}) or {}
+            if not isinstance(payload, dict):
+                continue
+            group_explicit = _config_bool(payload, assist_keys)
+            if group_explicit:
+                category_human_assist[key_text.lower()] = "Yes"
+            if bool(payload.get("requires_staff", payload.get("staff_required", False))):
+                try:
+                    category_staff_initial[key_text.lower()] = max(
+                        category_staff_initial.get(key_text.lower(), 1),
+                        int(float(payload.get("staff_initial_count", 1) or 1)),
+                    )
+                except Exception:
+                    category_staff_initial.setdefault(key_text.lower(), 1)
+
+    department_by_location: Dict[str, str] = {}
+    category_by_location: Dict[str, str] = {}
+    department_names: Dict[str, str] = {}
+    for dept in data.get("departments", []) or []:
+        dept_id = str(dept.get("id", "") or "").strip()
+        dept_name = _config_display_text(dept, dept_id or "-")
+        if dept_id:
+            department_names[dept_id] = dept_name
+        task_locations = dept.get("task_generation_locations", {}) or {}
+        for category, cfg in task_locations.items():
+            category_key = str(category).strip().lower()
+            category_label = category_labels.get(category_key, str(category).title())
+            for loc_name in (cfg or {}).get("pickup_dropoff_locations", []) or []:
+                if not loc_name:
+                    continue
+                loc_text = str(loc_name).strip()
+                department_by_location[loc_text] = dept_name
+                category_by_location[loc_text] = category_label
+
+    location_display_names: Dict[str, str] = {}
+    location_points: Dict[str, dict] = {}
+    for loc in data.get("locations", []) or []:
+        name = str(loc.get("name", "") or "").strip()
+        if not name:
+            continue
+        location_points[name] = {
+            "x": _to_float(loc.get("x"), 0.0),
+            "y": _to_float(loc.get("y"), 0.0),
+            "floor": loc.get("floor", ""),
+        }
+        display_name = _config_display_text(loc, "")
+        if display_name and display_name != name:
+            location_display_names[name] = display_name
+            continue
+        dept_name = department_by_location.get(name, "")
+        category_label = category_by_location.get(name, "")
+        if dept_name and category_label:
+            location_display_names[name] = f"{dept_name} ({category_label})"
+        elif dept_name:
+            location_display_names[name] = dept_name
+        else:
+            location_display_names[name] = name
+
+    return {
+        "category_labels": category_labels,
+        "category_human_assist": category_human_assist,
+        "category_staff_initial": category_staff_initial,
+        "department_names": department_names,
+        "location_display_names": location_display_names,
+        "location_points": location_points,
+    }
 
 
 def load_location_catalog(json_path: Path) -> pd.DataFrame:
@@ -1878,6 +2092,491 @@ def extract_congestion_point(
     return None, None, None
 
 
+def _task_generation_category_from_row(row: pd.Series, labels: Dict[str, str]) -> str:
+    details = str(row.get("details", "") or "")
+    match = re.search(r"Generated\s+(?:scheduled-threshold|scheduled|sporadic|threshold|timeframe)\s+(.+?)\s+task\b", details, re.I)
+    if match:
+        key = match.group(1).strip().lower()
+        return labels.get(key, key.title())
+
+    task_id = str(row.get("task_id", "") or "").strip()
+    match = re.match(r"RETURN_GEN_([A-Z0-9]+)", task_id, re.I)
+    if match:
+        key = match.group(1).strip().lower()
+        return f"{labels.get(key, key.title())} return"
+    match = re.match(r"GEN_([A-Z0-9]+)", task_id, re.I)
+    if match:
+        key = match.group(1).strip().lower()
+        return labels.get(key, key.title())
+
+    task_source = str(row.get("task_source", "") or "").strip()
+    if task_source == "department_waste":
+        return labels.get("waste", "Waste")
+    if task_source == "task_generation_return":
+        return "Generated return"
+    return task_source.replace("_", " ").title() if task_source else "Generated task"
+
+
+def _task_generation_category_key(label: str, labels: Dict[str, str]) -> str:
+    label_text = str(label or "").strip().lower()
+    if label_text.endswith(" return"):
+        label_text = label_text[: -len(" return")].strip()
+    for key, display in labels.items():
+        if label_text == str(display).strip().lower():
+            return str(key).strip().lower()
+    return re.sub(r"[^a-z0-9]+", "_", label_text).strip("_")
+
+
+def _join_limited(values: Iterable[str], limit: int = 4) -> str:
+    clean = []
+    seen = set()
+    for value in values or []:
+        text = str(value or "").strip()
+        if not text or text == "-" or text in seen:
+            continue
+        clean.append(text)
+        seen.add(text)
+    if not clean:
+        return "-"
+    if len(clean) <= limit:
+        return ", ".join(clean)
+    return ", ".join(clean[:limit]) + f" +{len(clean) - limit} more"
+
+
+def build_generated_task_category_summary(
+    df: pd.DataFrame,
+    ctx: Context,
+    metadata: Optional[dict] = None,
+) -> pd.DataFrame:
+    columns = [
+        "category",
+        "tasks",
+        "first_time",
+        "last_time",
+        "pickup_locations",
+        "dropoff_locations",
+        "payloads",
+        "human_assist",
+    ]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=columns)
+
+    metadata = metadata or {}
+    labels = {
+        str(k).strip().lower(): str(v).strip()
+        for k, v in (metadata.get("category_labels", {}) or {}).items()
+        if str(k).strip()
+    }
+    location_names = metadata.get("location_display_names", {}) or {}
+    human_assist = {
+        str(k).strip().lower(): str(v).strip() or "-"
+        for k, v in (metadata.get("category_human_assist", {}) or {}).items()
+    }
+
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    generated = df[
+        event_text.str.fullmatch(
+            r"task_generated|waste_task_generated|return_task_generated",
+            case=False,
+            na=False,
+        )
+    ].copy()
+    if generated.empty:
+        return pd.DataFrame(columns=columns)
+
+    for col in ("details", "task_id", "task_source", "payload", "from_location", "to_location"):
+        if col not in generated.columns:
+            generated[col] = ""
+
+    generated["_category"] = generated.apply(
+        lambda row: _task_generation_category_from_row(row, labels),
+        axis=1,
+    )
+    generated["_category_key"] = generated["_category"].map(
+        lambda value: _task_generation_category_key(value, labels)
+    )
+    generated["_pickup_display"] = generated["from_location"].map(
+        lambda value: location_names.get(str(value or "").strip(), safe_text(value))
+    )
+    generated["_dropoff_display"] = generated["to_location"].map(
+        lambda value: location_names.get(str(value or "").strip(), safe_text(value))
+    )
+    generated["_payload_display"] = generated["payload"].map(safe_text)
+
+    rows: List[dict] = []
+    for category, sub in generated.groupby("_category", sort=True):
+        sub = sub.sort_values(ctx.time_col)
+        category_key = str(sub["_category_key"].iloc[0] or "").strip().lower()
+        rows.append(
+            {
+                "category": category,
+                "tasks": int(len(sub)),
+                "first_time": fmt_ts(sub[ctx.time_col].iloc[0], ctx.has_datetime),
+                "last_time": fmt_ts(sub[ctx.time_col].iloc[-1], ctx.has_datetime),
+                "pickup_locations": _join_limited(sub["_pickup_display"].tolist()),
+                "dropoff_locations": _join_limited(sub["_dropoff_display"].tolist()),
+                "payloads": _join_limited(sub["_payload_display"].tolist(), limit=3),
+                "human_assist": human_assist.get(category_key, "-"),
+            }
+        )
+
+    return pd.DataFrame(rows, columns=columns).sort_values("category").reset_index(drop=True)
+
+
+def _return_source_task_id(task_id: str) -> str:
+    text = str(task_id or "").strip()
+    if text.startswith("RETURN_GEN_"):
+        body = text[len("RETURN_") :]
+        parts = body.rsplit("_", 1)
+        return parts[0] if len(parts) == 2 and parts[1].isdigit() else body
+    if text.startswith("RETURN-"):
+        body = text[len("RETURN-") :]
+        parts = body.rsplit("-", 1)
+        return parts[0] if len(parts) == 2 and parts[1].isdigit() else body
+    return ""
+
+
+def _event_day_key(value, has_datetime: bool) -> str:
+    if pd.isna(value):
+        return ""
+    if has_datetime:
+        return pd.Timestamp(value).strftime("%a")
+    day_index = int(float(value) // 86400.0) % 7
+    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][day_index]
+
+
+def _event_time_hhmm(value, has_datetime: bool) -> str:
+    if pd.isna(value):
+        return "-"
+    if has_datetime:
+        return pd.Timestamp(value).strftime("%H:%M")
+    seconds = max(0.0, float(value))
+    seconds = seconds % 86400.0
+    hour = int(seconds // 3600)
+    minute = int((seconds % 3600) // 60)
+    return f"{hour:02d}:{minute:02d}"
+
+
+def build_payload_handling_timetable(
+    df: pd.DataFrame,
+    ctx: Context,
+    metadata: Optional[dict] = None,
+) -> pd.DataFrame:
+    day_cols = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    columns = ["category", "category_key", "batch"] + day_cols
+    if df is None or df.empty:
+        return pd.DataFrame(columns=columns)
+
+    metadata = metadata or {}
+    labels = {
+        str(k).strip().lower(): str(v).strip()
+        for k, v in (metadata.get("category_labels", {}) or {}).items()
+        if str(k).strip()
+    }
+    department_names = metadata.get("department_names", {}) or {}
+    location_names = metadata.get("location_display_names", {}) or {}
+    location_points = metadata.get("location_points", {}) or {}
+
+    for col in ("details", "task_id", "task_source", "department_id", "payload", "to_location", "from_location"):
+        if col not in df.columns:
+            df[col] = ""
+
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    staff_rows = df[
+        event_text.str.fullmatch(
+            r"staff_payload_handling|stores_payload_handling", case=False, na=False
+        )
+        & df["task_id"].notna()
+    ].copy()
+
+    records: List[dict] = []
+    if not staff_rows.empty:
+        for _, row in staff_rows.sort_values(ctx.time_col).iterrows():
+            ready_start = row.get(ctx.time_col)
+            duration_s = _to_float(
+                row.get("duration_sec", row.get("_duration_s", 0.0)), 0.0
+            )
+            if ctx.has_datetime:
+                ready_end = pd.Timestamp(ready_start) + pd.to_timedelta(
+                    duration_s, unit="s"
+                )
+            else:
+                ready_end = _to_float(ready_start, 0.0) + duration_s
+            category = _task_generation_category_from_row(row, labels)
+            category_key = _task_generation_category_key(category, labels)
+            resource = str(row.get("person_resource", "") or "").strip().lower()
+            if resource.endswith("_payload_handling"):
+                category_key = resource[: -len("_payload_handling")]
+                category = labels.get(category_key, category_key.title())
+            department_id = str(row.get("department_id", "") or "").strip()
+            department = department_names.get(department_id, department_id or "-")
+            location_id = str(
+                row.get("to_location", "")
+                or row.get("from_location", "")
+                or ""
+            ).strip()
+            location = location_names.get(location_id, location_id)
+            point = location_points.get(location_id, {}) or {}
+            payload = safe_text(row.get("payload", "") or row.get("container_type", ""))
+            day = _event_day_key(ready_start, ctx.has_datetime)
+            if not day:
+                continue
+            window = (
+                f"{_event_time_hhmm(ready_start, ctx.has_datetime)}-"
+                f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
+            )
+            records.append(
+                {
+                    "category": category,
+                    "category_key": category_key,
+                    "department": department,
+                    "location": location,
+                    "location_id": location_id,
+                    "floor": str(point.get("floor", "") or ""),
+                    "x": _to_float(point.get("x"), 0.0),
+                    "y": _to_float(point.get("y"), 0.0),
+                    "has_point": location_id in location_points,
+                    "day": day,
+                    "window": window,
+                    "payload": payload,
+                }
+            )
+
+    completed = df[
+        event_text.str.fullmatch(
+            r"task_complete|multi_stop_task_complete", case=False, na=False
+        )
+        & df["task_id"].notna()
+    ].copy()
+    returns = df[
+        event_text.str.fullmatch(r"return_task_generated", case=False, na=False)
+        & df["task_id"].notna()
+    ].copy()
+
+    if not records and (completed.empty or returns.empty):
+        return pd.DataFrame(columns=columns)
+
+    if not records:
+        completed = completed.sort_values(ctx.time_col).drop_duplicates("task_id", keep="last")
+        completed_by_task = {str(row["task_id"]).strip(): row for _, row in completed.iterrows()}
+
+        for _, return_row in returns.sort_values(ctx.time_col).iterrows():
+            source_id = _return_source_task_id(str(return_row.get("task_id", "") or ""))
+            if not source_id or source_id not in completed_by_task:
+                continue
+
+            complete_row = completed_by_task[source_id]
+            ready_start = complete_row.get(ctx.time_col)
+            ready_end = return_row.get(ctx.time_col)
+            if pd.isna(ready_start) or pd.isna(ready_end):
+                continue
+
+            category = _task_generation_category_from_row(complete_row, labels)
+            category_key = _task_generation_category_key(category, labels)
+            department_id = str(
+                complete_row.get("department_id", "")
+                or return_row.get("department_id", "")
+                or ""
+            ).strip()
+            department = department_names.get(department_id, department_id or "-")
+            location_id = str(
+                complete_row.get("to_location", "")
+                or return_row.get("from_location", "")
+                or ""
+            ).strip()
+            location = location_names.get(location_id, location_id)
+            point = location_points.get(location_id, {}) or {}
+            payload = safe_text(
+                complete_row.get("payload", "") or return_row.get("payload", "")
+            )
+            day = _event_day_key(ready_start, ctx.has_datetime)
+            if not day:
+                continue
+
+            window = (
+                f"{_event_time_hhmm(ready_start, ctx.has_datetime)}-"
+                f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
+            )
+            records.append(
+                {
+                    "category": category,
+                    "category_key": category_key,
+                    "department": department,
+                    "location": location,
+                    "location_id": location_id,
+                    "floor": str(point.get("floor", "") or ""),
+                    "x": _to_float(point.get("x"), 0.0),
+                    "y": _to_float(point.get("y"), 0.0),
+                    "has_point": location_id in location_points,
+                    "day": day,
+                    "window": window,
+                    "payload": payload,
+                }
+            )
+
+    if not records:
+        return pd.DataFrame(columns=columns)
+
+    walk_batch_distance_m = _to_float(
+        metadata.get("walk_batch_distance_m", 45.0), 45.0
+    )
+
+    def assign_batches(sub_records: List[dict]) -> Dict[str, str]:
+        locations: Dict[str, dict] = {}
+        for record in sub_records:
+            loc_id = record["location_id"] or record["location"]
+            if loc_id and loc_id not in locations:
+                locations[loc_id] = record
+
+        batches: List[List[str]] = []
+        for loc_id, record in sorted(locations.items(), key=lambda item: natural_key(item[1]["location"])):
+            placed = False
+            for batch in batches:
+                anchor = locations[batch[0]]
+                same_floor = str(anchor.get("floor", "")) == str(record.get("floor", ""))
+                if anchor.get("has_point") and record.get("has_point") and same_floor:
+                    distance = math.hypot(
+                        float(anchor.get("x", 0.0)) - float(record.get("x", 0.0)),
+                        float(anchor.get("y", 0.0)) - float(record.get("y", 0.0)),
+                    )
+                    if distance <= walk_batch_distance_m:
+                        batch.append(loc_id)
+                        placed = True
+                        break
+                elif anchor.get("department") == record.get("department"):
+                    batch.append(loc_id)
+                    placed = True
+                    break
+            if not placed:
+                batches.append([loc_id])
+
+        mapping: Dict[str, str] = {}
+        for index, batch in enumerate(batches, start=1):
+            names = [locations[loc_id]["location"] for loc_id in batch]
+            departments = [locations[loc_id]["department"] for loc_id in batch]
+            label_locations = _join_limited(names, limit=3)
+            label_departments = _join_limited(departments, limit=2)
+            label = f"Batch {index}: {label_departments}"
+            if label_locations and label_locations != label_departments:
+                label = f"{label} ({label_locations})"
+            for loc_id in batch:
+                mapping[loc_id] = label
+        return mapping
+
+    for category_key in sorted({record["category_key"] for record in records}, key=natural_key):
+        category_records = [record for record in records if record["category_key"] == category_key]
+        batch_map = assign_batches(category_records)
+        for record in category_records:
+            loc_id = record["location_id"] or record["location"]
+            record["batch"] = batch_map.get(loc_id, record["department"])
+
+    cells: Dict[Tuple[str, str, str], Dict[str, List[dict]]] = {}
+    for record in records:
+        key = (record["category"], record["category_key"], record["batch"])
+        cells.setdefault(key, {day_col: [] for day_col in day_cols})[record["day"]].append(record)
+
+    rows = []
+    for category, category_key, batch in sorted(cells, key=lambda item: (natural_key(item[0]), natural_key(item[2]))):
+        row = {"category": category, "category_key": category_key, "batch": batch}
+        for day in day_cols:
+            day_records = cells[(category, category_key, batch)].get(day, [])
+            grouped: Dict[Tuple[str, str], int] = {}
+            for record in day_records:
+                grouped[(record["window"], record["payload"])] = grouped.get((record["window"], record["payload"]), 0) + 1
+            pills = []
+            for (window, payload), count in sorted(grouped.items(), key=lambda item: item[0]):
+                payload_label = payload if payload and payload != "-" else "Payload"
+                if count > 1:
+                    payload_label = f"{count} payloads"
+                pills.append(f"{window}|{payload_label}")
+            row[day] = "\n".join(pills) if pills else "-"
+        rows.append(row)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def build_staff_handling_summary(
+    df: pd.DataFrame,
+    ctx: Context,
+    metadata: Optional[dict] = None,
+) -> pd.DataFrame:
+    columns = [
+        "category",
+        "handling_tasks",
+        "people_required",
+        "initial_people",
+        "added_people",
+        "total_handling_time_s",
+    ]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=columns)
+
+    metadata = metadata or {}
+    labels = {
+        str(k).strip().lower(): str(v).strip()
+        for k, v in (metadata.get("category_labels", {}) or {}).items()
+        if str(k).strip()
+    }
+    configured_initial = {
+        str(k).strip().lower(): int(v or 1)
+        for k, v in (metadata.get("category_staff_initial", {}) or {}).items()
+        if str(k).strip()
+    }
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    staff_rows = df[
+        event_text.str.fullmatch(
+            r"staff_payload_handling|stores_payload_handling", case=False, na=False
+        )
+    ].copy()
+    if staff_rows.empty:
+        return pd.DataFrame(columns=columns)
+
+    rows = []
+    for resource, group in staff_rows.groupby(
+        staff_rows.get("person_resource", pd.Series("", index=staff_rows.index)).fillna(""),
+        sort=True,
+    ):
+        resource_text = str(resource or "").strip().lower()
+        category_key = ""
+        if resource_text.endswith("_payload_handling"):
+            category_key = resource_text[: -len("_payload_handling")]
+        if not category_key:
+            category = _task_generation_category_from_row(group.iloc[0], labels)
+            category_key = _task_generation_category_key(category, labels)
+        category = labels.get(category_key, category_key.title())
+        people_required = int(
+            pd.to_numeric(group.get("people_required", 0), errors="coerce")
+            .fillna(0)
+            .max()
+            or 0
+        )
+        person_ids = {
+            str(x).strip()
+            for x in group.get("person_id", pd.Series(dtype=str)).fillna("").tolist()
+            if str(x).strip()
+        }
+        if people_required <= 0:
+            people_required = len(person_ids)
+        initial_people = max(1, int(configured_initial.get(category_key, 1) or 1))
+        duration = pd.to_numeric(
+            group.get("duration_sec", group.get("_duration_s", 0.0)),
+            errors="coerce",
+        ).fillna(0.0)
+        rows.append(
+            {
+                "category": category,
+                "handling_tasks": int(len(group)),
+                "people_required": people_required,
+                "initial_people": initial_people,
+                "added_people": max(0, people_required - initial_people),
+                "total_handling_time_s": float(duration.sum()),
+            }
+        )
+
+    return pd.DataFrame(rows, columns=columns).sort_values(
+        "category", key=lambda col: col.map(natural_key)
+    )
+
+
 def analyse(
     csv_path: Path,
     target_amr_util: float,
@@ -1887,6 +2586,7 @@ def analyse(
     floor_dxf_map: Optional[Dict[int, str]] = None,
     location_catalog: Optional[pd.DataFrame] = None,
     payload_dimensions: Optional[pd.DataFrame] = None,
+    task_generation_metadata: Optional[dict] = None,
 ) -> Dict[str, pd.DataFrame]:
     payload_weights = payload_weights or {}
     raw = pd.read_csv(csv_path, low_memory=False)
@@ -1927,6 +2627,15 @@ def analyse(
     )
     df["_wait_s"] = (
         pd.to_numeric(df[wait_col], errors="coerce").fillna(0) if wait_col else 0.0
+    )
+    task_generation_summary = build_generated_task_category_summary(
+        df, ctx, task_generation_metadata
+    )
+    payload_handling_timetable = build_payload_handling_timetable(
+        df, ctx, task_generation_metadata
+    )
+    staff_handling_summary = build_staff_handling_summary(
+        df, ctx, task_generation_metadata
     )
 
     if not wait_col and duration_col:
@@ -2198,6 +2907,21 @@ def analyse(
     lift_rows = lift_rows[
         lift_rows["lift_time_s"].notna() & (lift_rows["lift_time_s"] >= 0)
     ].copy()
+    lift_busy_intervals_by_lift, lift_busy_summary = build_lift_busy_intervals(
+        lift_rows, ctx
+    )
+    lift_busy_time_by_lift = {
+        lift: interval_total(intervals)
+        for lift, intervals in lift_busy_intervals_by_lift.items()
+    }
+    lift_trip_count_by_lift = (
+        lift_rows.groupby("_lift_id", dropna=False)
+        .size()
+        .rename(index=safe_text)
+        .to_dict()
+        if not lift_rows.empty
+        else {}
+    )
 
     if lift_rows.empty:
         lift_summary = pd.DataFrame(
@@ -2213,7 +2937,7 @@ def analyse(
         )
     else:
         lift_summary = (
-            lift_rows.groupby("lift_id", dropna=False)
+            lift_rows.groupby("_lift_id", dropna=False)
             .agg(
                 trips=("lift_time_s", "count"),
                 total_lift_time_s=("lift_time_s", "sum"),
@@ -2222,6 +2946,13 @@ def analyse(
             )
             .reset_index()
             .rename(columns={"_lift_id": "lift_id"})
+        )
+        lift_summary["lift_id"] = lift_summary["lift_id"].map(safe_text)
+        lift_summary["trips"] = (
+            lift_summary["lift_id"].map(lift_trip_count_by_lift).fillna(0).astype(int)
+        )
+        lift_summary["total_lift_time_s"] = (
+            lift_summary["lift_id"].map(lift_busy_time_by_lift).fillna(0.0)
         )
         lift_summary["utilisation_pct"] = (
             lift_summary["total_lift_time_s"] / horizon_s * 100
@@ -2435,15 +3166,13 @@ def analyse(
     peak_route_concurrency_amrs = percentile_95_concurrency(active_intervals)
     recommended_amrs = max(1, workload_based_amrs, peak_route_concurrency_amrs)
 
-    lift_intervals: List[Tuple[float, float]] = []
-    for _, row in lift_rows.dropna(subset=["lift_time_s", ctx.time_col]).iterrows():
-        start_n = event_time_to_float(row[ctx.time_col], ctx.has_datetime)
-        if start_n is not None:
-            lift_intervals.append((start_n, start_n + float(row["lift_time_s"])))
+    lift_intervals = [
+        interval
+        for intervals in lift_busy_intervals_by_lift.values()
+        for interval in intervals
+    ]
 
-    total_lift_time_s = (
-        float(lift_rows["lift_time_s"].sum()) if not lift_rows.empty else 0.0
-    )
+    total_lift_time_s = interval_total(lift_intervals)
     avg_lift_util = (
         float(lift_summary["utilisation_pct"].mean()) if not lift_summary.empty else 0.0
     )
@@ -2452,10 +3181,11 @@ def analyse(
         if total_lift_time_s
         else 0
     )
+    peak_lift_concurrency = percentile_95_concurrency(lift_intervals)
     recommended_lifts = max(
         1 if total_lift_time_s else 0,
         workload_based_lifts,
-        percentile_95_concurrency(lift_intervals),
+        peak_lift_concurrency,
     )
 
     summary = pd.DataFrame(
@@ -2486,6 +3216,10 @@ def analyse(
             },
             {"metric": "Total lift time", "value": fmt_duration(total_lift_time_s)},
             {"metric": "Average lift utilisation", "value": f"{avg_lift_util:.1f}%"},
+            {
+                "metric": "Lift concurrency requirement",
+                "value": f"{peak_lift_concurrency}",
+            },
             {"metric": "Recommended AMRs", "value": f"{recommended_amrs}"},
             {"metric": "Recommended lifts", "value": f"{recommended_lifts}"},
         ]
@@ -2499,7 +3233,7 @@ def analyse(
             },
             {
                 "item": "Recommended lifts",
-                "detail": f"Maximum of lift occupancy model and 95th percentile concurrent lift demand using target utilisation {target_lift_util:.0%}.",
+                "detail": f"Maximum of merged lift busy-time workload and 95th percentile lift concurrency using target utilisation {target_lift_util:.0%}. Overlapping rows for the same lift are counted once, matching the AMR recommendation model.",
             },
             {
                 "item": "Lift parsing",
@@ -2636,6 +3370,9 @@ def analyse(
 
     return {
         "summary": summary,
+        "task_generation_summary": task_generation_summary,
+        "payload_handling_timetable": payload_handling_timetable,
+        "staff_handling_summary": staff_handling_summary,
         "amr_summary": amr_summary,
         "amr_route_summary": amr_route_summary,
         "utilisation_summary": amr_utilisation,

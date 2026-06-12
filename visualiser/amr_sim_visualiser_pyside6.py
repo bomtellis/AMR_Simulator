@@ -1251,6 +1251,8 @@ class TasksByLocationDepartmentDialog(QDialog):
         ("end_time_display", "End time", 170),
         ("finish_location", "Finish location", 180),
         ("department", "Department", 170),
+        ("staff", "Staff", 150),
+        ("people_required", "People", 80),
         ("duration", "Duration", 100),
         ("status", "Status", 110),
         ("source", "Source", 100),
@@ -1316,6 +1318,8 @@ class TasksByLocationDepartmentDialog(QDialog):
             "finish_location",
             "department",
             "department_id",
+            "staff",
+            "people_required",
             "status",
             "source",
             "start_time_display",
@@ -7624,7 +7628,10 @@ class SimulationVisualizer(QMainWindow):
             task_id = str(row.get("task_id", "") or "").strip()
             if not task_id:
                 continue
-            if not str(row.get("amr_id", "") or "").strip():
+            if (
+                not str(row.get("amr_id", "") or "").strip()
+                and not str(row.get("person_id", "") or "").strip()
+            ):
                 # Generated/planning rows can describe future tasks but are not a
                 # full executed task journey.
                 continue
@@ -7656,6 +7663,8 @@ class SimulationVisualizer(QMainWindow):
                     "finish_location": "",
                     "department": "",
                     "department_id": "",
+                    "staff": "",
+                    "people_required": "",
                     "status": "in progress",
                     "source": "CSV",
                     "details": "",
@@ -7700,6 +7709,16 @@ class SimulationVisualizer(QMainWindow):
             if dept_name and not task.get("department"):
                 task["department"] = dept_name
 
+            person_id = str(row.get("person_id", "") or "").strip()
+            person_resource = str(row.get("person_resource", "") or "").strip()
+            people_required = str(row.get("people_required", "") or "").strip()
+            if person_id and not task.get("staff"):
+                task["staff"] = person_id
+            elif person_resource and not task.get("staff"):
+                task["staff"] = person_resource
+            if people_required and people_required not in {"0", "0.0"}:
+                task["people_required"] = people_required
+
             if (
                 event_type
                 in {
@@ -7713,6 +7732,8 @@ class SimulationVisualizer(QMainWindow):
                 task["status"] = "completed"
             elif "failed" in text:
                 task["status"] = "failed"
+            elif status:
+                task["status"] = status
 
             detail = str(row.get("details", "") or "").strip()
             if detail:
@@ -7734,6 +7755,8 @@ class SimulationVisualizer(QMainWindow):
             task["duration"] = self._full_task_row_duration(start_dt, end_dt)
             task["start_location"] = task.get("start_location") or "-"
             task["finish_location"] = task.get("finish_location") or "-"
+            task["staff"] = task.get("staff") or "-"
+            task["people_required"] = task.get("people_required") or "-"
             rows.append(task)
         return rows
 
@@ -7769,6 +7792,8 @@ class SimulationVisualizer(QMainWindow):
                     task, location_departments
                 ),
                 "department_id": str(task.get("department_id", "") or "").strip(),
+                "staff": "-",
+                "people_required": "-",
                 "duration": "-",
                 "source": "JSON",
                 "status": "planned",

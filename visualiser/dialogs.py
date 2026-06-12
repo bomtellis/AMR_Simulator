@@ -336,6 +336,20 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.return_delay_edit = QLineEdit(
             str(self.base_category.get("return_delay_minutes", 0))
         )
+        self.requires_staff_check = QCheckBox("Assign category staff during return window")
+        self.requires_staff_check.setToolTip(
+            "Use a separate staff pool for this category. Staff are reserved from delivery completion until the return task is released."
+        )
+        self.requires_staff_check.setChecked(
+            bool(self.base_category.get("requires_staff", self.base_category.get("staff_required", False)))
+        )
+        self.staff_initial_count_edit = QLineEdit(
+            str(self.base_category.get("staff_initial_count", 1))
+        )
+        self.staff_resource_name_edit = QLineEdit(
+            str(self.base_category.get("staff_resource_name", ""))
+        )
+        self.staff_resource_name_edit.setPlaceholderText("Optional, e.g. Stores team")
 
         self.reusable_return_pool_check = QCheckBox(
             "Reuse returned payloads as a capped source pool"
@@ -424,6 +438,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         positive_int_validator = QIntValidator(1, 999999, self)
         self.priority_edit.setValidator(QIntValidator(0, 999999, self))
         self.return_delay_edit.setValidator(QDoubleValidator(0.0, 999999.0, 2, self))
+        self.staff_initial_count_edit.setValidator(QIntValidator(1, 999999, self))
         self.reusable_return_pool_multiplier_edit.setValidator(QDoubleValidator(0.0, 999999.0, 3, self))
         self.reusable_return_pool_max_edit.setValidator(QIntValidator(0, 999999, self))
         self.frequency_edit.setValidator(positive_double_validator)
@@ -446,6 +461,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow("Staff handling", self.requires_staff_check)
+        form.addRow("Initial staff count", self.staff_initial_count_edit)
+        form.addRow("Staff resource name", self.staff_resource_name_edit)
         form.addRow("Reusable return pool", self.reusable_return_pool_check)
         form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
@@ -476,6 +494,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
 
         self.mode_combo.currentTextChanged.connect(self.update_role_field_state)
         self.return_enabled_check.toggled.connect(self.update_role_field_state)
+        self.requires_staff_check.toggled.connect(self.update_role_field_state)
         self.reusable_return_pool_check.toggled.connect(self.update_role_field_state)
         self.tracked_item_exchange_check.toggled.connect(self.update_role_field_state)
         self.refresh_department_summary()
@@ -535,6 +554,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         uses_sporadic = mode in {"sporadic", "hybrid", "scheduled_sporadic"}
         uses_timeframe = mode == "timeframe"
         return_enabled = self.return_enabled_check.isChecked()
+        staff_enabled = return_enabled and self.requires_staff_check.isChecked()
 
         if is_waste:
             self.mode_combo.setEnabled(False)
@@ -564,6 +584,12 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
 
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
+        self._set_form_row_visible(self.requires_staff_check, return_enabled)
+        self._set_form_row_visible(self.staff_initial_count_edit, staff_enabled)
+        self._set_form_row_visible(self.staff_resource_name_edit, staff_enabled)
+        self.requires_staff_check.setEnabled(return_enabled)
+        self.staff_initial_count_edit.setEnabled(staff_enabled)
+        self.staff_resource_name_edit.setEnabled(staff_enabled)
         self._set_form_row_visible(self.reusable_return_pool_check, return_enabled)
         self._set_form_row_visible(self.reusable_return_pool_multiplier_edit, return_enabled and self.reusable_return_pool_check.isChecked())
         self._set_form_row_visible(self.reusable_return_pool_max_edit, return_enabled and self.reusable_return_pool_check.isChecked())
@@ -927,6 +953,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "return_enabled": self.return_enabled_check.isChecked(),
                 "return_payload": self.return_payload_combo.currentText().strip(),
                 "return_delay_minutes": float(self.return_delay_edit.text() or 0),
+                "requires_staff": self.requires_staff_check.isChecked(),
+                "staff_initial_count": max(1, int(float(self.staff_initial_count_edit.text() or 1))),
+                "staff_resource_name": self.staff_resource_name_edit.text().strip(),
                 "reusable_return_pool_enabled": self.reusable_return_pool_check.isChecked(),
                 "reusable_return_pool_multiplier": float(self.reusable_return_pool_multiplier_edit.text() or 2.0),
                 "reusable_return_pool_max": int(float(self.reusable_return_pool_max_edit.text() or 0)),
@@ -1230,6 +1259,13 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_payload_combo.addItems([""] + self.payload_names)
 
         self.return_delay_edit = QLineEdit()
+        self.requires_staff_check = QCheckBox("Assign category staff during return window")
+        self.requires_staff_check.setToolTip(
+            "Use a separate staff pool for this category. Staff are reserved from delivery completion until the return task is released."
+        )
+        self.staff_initial_count_edit = QLineEdit()
+        self.staff_resource_name_edit = QLineEdit()
+        self.staff_resource_name_edit.setPlaceholderText("Optional, e.g. Stores team")
 
         self.reusable_return_pool_check = QCheckBox(
             "Reuse returned payloads as a capped source pool"
@@ -1299,6 +1335,7 @@ class TaskGenerationSettingsDialog(QDialog):
         positive_int_validator = QIntValidator(1, 999999, self)
         self.priority_edit.setValidator(QIntValidator(0, 999999, self))
         self.return_delay_edit.setValidator(QDoubleValidator(0.0, 999999.0, 2, self))
+        self.staff_initial_count_edit.setValidator(QIntValidator(1, 999999, self))
         self.reusable_return_pool_multiplier_edit.setValidator(QDoubleValidator(0.0, 999999.0, 3, self))
         self.reusable_return_pool_max_edit.setValidator(QIntValidator(0, 999999, self))
         self.frequency_edit.setValidator(positive_double_validator)
@@ -1323,6 +1360,9 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow("Staff handling", self.requires_staff_check)
+        form.addRow("Initial staff count", self.staff_initial_count_edit)
+        form.addRow("Staff resource name", self.staff_resource_name_edit)
         form.addRow("Reusable return pool", self.reusable_return_pool_check)
         form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
@@ -1370,6 +1410,7 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.mode_combo.currentTextChanged.connect(self._update_mode_field_state)
         self.return_enabled_check.toggled.connect(self._update_mode_field_state)
+        self.requires_staff_check.toggled.connect(self._update_mode_field_state)
         self.reusable_return_pool_check.toggled.connect(self._update_mode_field_state)
         self.tracked_item_exchange_check.toggled.connect(self._update_mode_field_state)
 
@@ -1436,6 +1477,9 @@ class TaskGenerationSettingsDialog(QDialog):
         pickup = str(payload.get("pickup_location", "")).strip() or "None"
         dropoff = str(payload.get("dropoff_location", "")).strip() or "None"
         delay = str(payload.get("return_delay_minutes", "")).strip()
+        requires_staff = bool(payload.get("requires_staff", payload.get("staff_required", False)))
+        staff_count = str(payload.get("staff_initial_count", 1) or 1).strip()
+        staff_name = str(payload.get("staff_resource_name", "") or "").strip()
 
         lines = [
             f"{category_label}    Payload: {payload_name}    Mode: {mode}",
@@ -1445,6 +1489,11 @@ class TaskGenerationSettingsDialog(QDialog):
 
         if delay not in {"", "0", "0.0"}:
             lines.append(f"Return delay: {delay} min")
+        if requires_staff:
+            staff_text = f"Staff: {staff_count} initial"
+            if staff_name:
+                staff_text += f" ({staff_name})"
+            lines.append(staff_text)
 
         return "\n".join(lines)
 
@@ -1465,6 +1514,9 @@ class TaskGenerationSettingsDialog(QDialog):
             return True
 
         if self.return_payload_combo.currentText().strip():
+            return True
+
+        if hasattr(self, "requires_staff_check") and self.requires_staff_check.isChecked():
             return True
 
         if self.route_profile_combo.currentText().strip():
@@ -1544,6 +1596,9 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_enabled": False,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "requires_staff": False,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
             "reusable_return_pool_enabled": False,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -2457,6 +2512,9 @@ class TaskGenerationSettingsDialog(QDialog):
             "payload": "",
             "return_enabled": key in {"catering", "linen", "waste", "ssd"},
             "return_payload": "",
+            "requires_staff": key == "stores",
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
             "route_profile": "",
             "days_active": ["mon", "tue", "wed", "thu", "fri"],
             "schedule_times": {
@@ -2490,6 +2548,16 @@ class TaskGenerationSettingsDialog(QDialog):
                 item.update(incoming_categories[key])
             if isinstance(source.get(key), dict):
                 item.update(source[key])
+            item["requires_staff"] = bool(
+                item.get("requires_staff", item.get("staff_required", False))
+            )
+            try:
+                item["staff_initial_count"] = max(
+                    1, int(float(item.get("staff_initial_count", 1) or 1))
+                )
+            except Exception:
+                item["staff_initial_count"] = 1
+            item.setdefault("staff_resource_name", "")
             self._normalise_category_dropoffs(item)
             result["categories"][key] = item
 
@@ -2500,6 +2568,16 @@ class TaskGenerationSettingsDialog(QDialog):
                 key, str(incoming.get("display_name", key.title()))
             )
             item.update(incoming)
+            item["requires_staff"] = bool(
+                item.get("requires_staff", item.get("staff_required", False))
+            )
+            try:
+                item["staff_initial_count"] = max(
+                    1, int(float(item.get("staff_initial_count", 1) or 1))
+                )
+            except Exception:
+                item["staff_initial_count"] = 1
+            item.setdefault("staff_resource_name", "")
             self._normalise_category_dropoffs(item)
             result["categories"][key] = item
 
@@ -2595,6 +2673,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(False)
         self.return_payload_combo.setCurrentText("")
         self.return_delay_edit.setText("0")
+        self.requires_staff_check.setChecked(False)
+        self.staff_initial_count_edit.setText("1")
+        self.staff_resource_name_edit.setText("")
         self.reusable_return_pool_check.setChecked(False)
         self.reusable_return_pool_multiplier_edit.setText("2.0")
         self.reusable_return_pool_max_edit.setText("0")
@@ -2675,6 +2756,11 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
         self.return_payload_combo.setCurrentText(str(item.get("return_payload", "")))
         self.return_delay_edit.setText(str(item.get("return_delay_minutes", 0)))
+        self.requires_staff_check.setChecked(
+            bool(item.get("requires_staff", item.get("staff_required", False)))
+        )
+        self.staff_initial_count_edit.setText(str(item.get("staff_initial_count", 1)))
+        self.staff_resource_name_edit.setText(str(item.get("staff_resource_name", "")))
         self.reusable_return_pool_check.setChecked(bool(item.get("reusable_return_pool_enabled", False)))
         self.reusable_return_pool_multiplier_edit.setText(str(item.get("reusable_return_pool_multiplier", 2.0)))
         self.reusable_return_pool_max_edit.setText(str(item.get("reusable_return_pool_max", 0)))
@@ -2787,9 +2873,16 @@ class TaskGenerationSettingsDialog(QDialog):
         self.clear_dropoffs_btn.setEnabled(using_dept_as_pickup)
 
         return_enabled = self.return_enabled_check.isChecked()
+        staff_enabled = return_enabled and self.requires_staff_check.isChecked()
         pool_enabled = return_enabled and self.reusable_return_pool_check.isChecked()
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
+        self._set_form_row_visible(self.requires_staff_check, return_enabled)
+        self._set_form_row_visible(self.staff_initial_count_edit, staff_enabled)
+        self._set_form_row_visible(self.staff_resource_name_edit, staff_enabled)
+        self.requires_staff_check.setEnabled(return_enabled)
+        self.staff_initial_count_edit.setEnabled(staff_enabled)
+        self.staff_resource_name_edit.setEnabled(staff_enabled)
         if hasattr(self, "reusable_return_pool_check"):
             self._set_form_row_visible(self.reusable_return_pool_check, return_enabled)
             self._set_form_row_visible(self.reusable_return_pool_multiplier_edit, pool_enabled)
@@ -2907,6 +3000,9 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_enabled": self.return_enabled_check.isChecked(),
             "return_payload": self.return_payload_combo.currentText().strip(),
             "return_delay_minutes": self._float_from_edit(self.return_delay_edit, 0.0),
+            "requires_staff": self.requires_staff_check.isChecked(),
+            "staff_initial_count": max(1, self._int_from_edit(self.staff_initial_count_edit, 1)),
+            "staff_resource_name": self.staff_resource_name_edit.text().strip(),
             "reusable_return_pool_enabled": self.reusable_return_pool_check.isChecked(),
             "reusable_return_pool_multiplier": self._float_from_edit(self.reusable_return_pool_multiplier_edit, 2.0),
             "reusable_return_pool_max": self._int_from_edit(self.reusable_return_pool_max_edit, 0),
@@ -2968,6 +3064,9 @@ class TaskGenerationSettingsDialog(QDialog):
                     payload.get("payload"),
                     payload.get("return_enabled"),
                     payload.get("return_payload"),
+                    payload.get("requires_staff"),
+                    int(float(payload.get("staff_initial_count", 1) or 1)) != 1,
+                    payload.get("staff_resource_name"),
                     payload.get("route_profile"),
                     payload.get("scheduled_times"),
                     float(payload.get("frequency_per_day", 0.0) or 0.0) != 0.0,

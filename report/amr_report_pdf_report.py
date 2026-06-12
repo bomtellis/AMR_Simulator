@@ -9,7 +9,6 @@ import re
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional
-import re
 
 try:
     import ezdxf
@@ -43,7 +42,10 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-from svglib.svglib import svg2rlg
+try:
+    from svglib.svglib import svg2rlg
+except Exception:  # SVG conversion is optional when --omit-drawings is used
+    svg2rlg = None
 
 from amr_report_analysis import fmt_duration, fmt_ts
 
@@ -205,6 +207,16 @@ def table_from_df(
     styles,
     right_align: Optional[List[int]] = None,
 ) -> Table:
+    df = df.loc[:, ~pd.Index(df.columns).duplicated()].copy()
+    col_widths = list(col_widths[: len(df.columns)])
+    if len(col_widths) < len(df.columns):
+        col_widths.extend([20 * mm] * (len(df.columns) - len(col_widths)))
+    max_width = landscape(A4)[0] - 30 * mm
+    total_width = sum(col_widths)
+    if total_width > max_width:
+        scale = max_width / total_width
+        col_widths = [w * scale for w in col_widths]
+
     header_style = ParagraphStyle(
         "TblHead",
         parent=styles["Small"],
@@ -262,6 +274,150 @@ def table_from_df(
         for idx in right_align:
             style.add("ALIGN", (idx, 1), (idx, -1), "RIGHT")
     tbl.setStyle(style)
+    return tbl
+
+
+CATEGORY_PALETTE = [
+    "#2F5597",
+    "#548235",
+    "#C55A11",
+    "#7F6000",
+    "#7030A0",
+    "#008C95",
+    "#A64D79",
+    "#5B9BD5",
+]
+
+
+def category_colour(category_key: str) -> str:
+    text = str(category_key or "").strip().lower()
+    if not text:
+        return CATEGORY_PALETTE[0]
+    value = sum((idx + 1) * ord(char) for idx, char in enumerate(text))
+    return CATEGORY_PALETTE[value % len(CATEGORY_PALETTE)]
+
+
+def contrasting_text_colour(hex_colour: str) -> Color:
+    text = str(hex_colour or "#2F5597").lstrip("#")
+    try:
+        r = int(text[0:2], 16)
+        g = int(text[2:4], 16)
+        b = int(text[4:6], 16)
+    except Exception:
+        return colors.white
+    brightness = (r * 299 + g * 587 + b * 114) / 1000
+    return colors.black if brightness > 150 else colors.white
+
+
+class PillListFlowable(Flowable):
+    def __init__(
+        self,
+        entries: List[str],
+        fill_colour: str,
+        max_width: float,
+        max_visible: int = 6,
+    ):
+        super().__init__()
+        raw_entries = [
+            str(x).strip() for x in entries if str(x).strip() and str(x).strip() != "-"
+        ]
+        max_visible = max(1, int(max_visible or 1))
+        overflow = max(0, len(raw_entries) - max_visible)
+        self.entries = raw_entries[:max_visible]
+        if overflow:
+            self.entries.append(f"+{overflow} more")
+        self.fill_colour = colors.HexColor(fill_colour)
+        self.text_colour = contrasting_text_colour(fill_colour)
+        self.max_width = max(20.0, float(max_width))
+        self.font_name = "Helvetica-Bold"
+        self.font_size = 6.5
+        self.line_height = 11
+        self.pad_x = 4
+        self.pad_y = 2
+        self.gap = 2
+        self.width = self.max_width
+        self.height = min(max(10, len(self.entries) * self.line_height), 82)
+
+    def wrap(self, availWidth, availHeight):
+        self.width = min(self.max_width, availWidth)
+        self.height = min(max(10, len(self.entries) * self.line_height), 82)
+        return self.width, self.height
+
+    def draw(self):
+        if not self.entries:
+            self.canv.setFillColor(colors.HexColor("#666666"))
+            self.canv.setFont("Helvetica", 7)
+            self.canv.drawString(0, max(0, self.height - 8), "-")
+            return
+
+        y = self.height - self.line_height + 1
+        for entry in self.entries:
+            label = entry.replace("|", "  ")
+            max_chars = max(8, int(self.width / 3.8))
+            if len(label) > max_chars:
+                label = label[: max_chars - 1] + "..."
+            text_width = self.canv.stringWidth(label, self.font_name, self.font_size)
+            pill_width = min(self.width, text_width + (self.pad_x * 2))
+            self.canv.setFillColor(self.fill_colour)
+            self.canv.roundRect(0, y, pill_width, self.line_height - self.gap, 4, fill=1, stroke=0)
+            self.canv.setFillColor(self.text_colour)
+            self.canv.setFont(self.font_name, self.font_size)
+            self.canv.drawString(self.pad_x, y + self.pad_y + 1, label)
+            y -= self.line_height
+
+
+def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
+    day_cols = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    col_widths = [45 * mm] + [30 * mm] * len(day_cols)
+    max_width = landscape(A4)[0] - 30 * mm
+    total_width = sum(col_widths)
+    if total_width > max_width:
+        scale = max_width / total_width
+        col_widths = [w * scale for w in col_widths]
+
+    header_style = ParagraphStyle(
+        "TimetableHead",
+        parent=styles["Small"],
+        fontName="Helvetica-Bold",
+        textColor=colors.HexColor("#17365D"),
+        leading=9,
+    )
+    batch_style = ParagraphStyle(
+        "TimetableBatch",
+        parent=styles["Small"],
+        fontName="Helvetica",
+        fontSize=7,
+        leading=9,
+    )
+    data = [[Paragraph("Location batch", header_style)] + [Paragraph(day, header_style) for day in day_cols]]
+
+    for _, row in df.iterrows():
+        colour = category_colour(row.get("category_key", row.get("Category", "")))
+        data_row = [Paragraph(str(row.get("batch", "-")), batch_style)]
+        for idx, day in enumerate(day_cols, start=1):
+            entries = [
+                part.strip()
+                for part in str(row.get(day, "") or "").split("\n")
+                if part.strip() and part.strip() != "-"
+            ]
+            data_row.append(PillListFlowable(entries, colour, col_widths[idx] - 4))
+        data.append(data_row)
+
+    tbl = Table(data, colWidths=col_widths, repeatRows=1)
+    tbl.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9E2F3")),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#B8CCE4")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7F9FC")]),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
     return tbl
 
 
@@ -471,6 +627,10 @@ def render_dxf_to_svg(
 
 
 def load_svg_as_drawing(svg_path: str):
+    if svg2rlg is None:
+        raise RuntimeError(
+            "svglib is required to render DXF drawings. Use --omit-drawings to skip drawing overlays."
+        )
     return svg2rlg(io.BytesIO(Path(svg_path).read_bytes()))
 
 
@@ -723,6 +883,7 @@ def build_report(
     report_progress(0, 10, "Preparing report")
 
     story = []
+    schedule_story = []
 
     # --- START front page ---
     story += [
@@ -735,7 +896,116 @@ def build_report(
         Spacer(1, 6),
         Paragraph("Executive summary", styles["Section"]),
         table_from_df(results["summary"], [70 * mm, 100 * mm], styles),
+        NextPageTemplate("landscape"),
+        PageBreak(),
+    ]
+
+    task_generation_df = results.get("task_generation_summary", pd.DataFrame()).copy()
+    story += [
+        Paragraph("Generated task category summary", styles["Section"]),
+        Paragraph(
+            "Generated task categories are grouped from simulator task-generated events. Locations use descriptive config names where available.",
+            styles["BodyText"],
+        ),
         Spacer(1, 8),
+    ]
+    if task_generation_df.empty:
+        story.append(
+            Paragraph(
+                "No generated task events were identified in the CSV.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        task_generation_df = task_generation_df.rename(
+            columns={
+                "category": "Category",
+                "tasks": "Tasks",
+                "first_time": "First task",
+                "last_time": "Last task",
+                "pickup_locations": "Pickup locations",
+                "dropoff_locations": "Drop-off locations",
+                "payloads": "Payloads",
+                "human_assist": "Human assist",
+            }
+        )
+        story.append(
+            table_from_df(
+                task_generation_df,
+                [30 * mm, 14 * mm, 32 * mm, 32 * mm, 48 * mm, 48 * mm, 34 * mm, 24 * mm],
+                styles,
+                right_align=[1],
+            )
+        )
+
+    staff_df = results.get("staff_handling_summary", pd.DataFrame()).copy()
+    story += [
+        Spacer(1, 10),
+        Paragraph("Category staff handling", styles["Section"]),
+    ]
+    if staff_df.empty:
+        story.append(
+            Paragraph(
+                "No category staff handling rows were identified in the CSV.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        staff_df["total_handling_time_s"] = staff_df["total_handling_time_s"].map(
+            lambda x: fmt_duration(x) if isinstance(x, (int, float)) else x
+        )
+        staff_df = staff_df.rename(
+            columns={
+                "category": "Category",
+                "handling_tasks": "Handled payloads",
+                "people_required": "People required",
+                "initial_people": "Initial",
+                "added_people": "Added",
+                "total_handling_time_s": "Handling time",
+            }
+        )
+        story.append(
+            table_from_df(
+                staff_df,
+                [38 * mm, 25 * mm, 25 * mm, 18 * mm, 18 * mm, 32 * mm],
+                styles,
+                right_align=[1, 2, 3, 4],
+            )
+        )
+
+    payload_timetable_df = results.get("payload_handling_timetable", pd.DataFrame()).copy()
+    story += [
+        Spacer(1, 10),
+        Paragraph("Payload handling timetable", styles["Section"]),
+        Paragraph(
+            "Ready windows show when delivered payloads are available for local handling before the configured return task is released.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+    if payload_timetable_df.empty:
+        story.append(
+            Paragraph(
+                "No return-window payload handling timetable could be derived from the CSV.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        for category, sub in payload_timetable_df.groupby("category", sort=True):
+            category_key = str(sub["category_key"].iloc[0] or category)
+            colour = category_colour(category_key)
+            story += [
+                Spacer(1, 6),
+                Paragraph(
+                    f'<font color="{colour}">{str(category)}</font>',
+                    styles["Heading3"],
+                ),
+                payload_timetable_table(sub, styles),
+            ]
+
+    story += [
+        NextPageTemplate("standard"),
+        PageBreak(),
         Paragraph("Method", styles["Section"]),
         table_from_df(results["methodology"], [38 * mm, 132 * mm], styles),
         PageBreak(),
@@ -836,7 +1106,7 @@ def build_report(
             "tasks_failed": "Failed",
             "routes": "Routes",
             "total_task_time_s": "Route time",
-            "total_route_time_s": "Route time",
+            "total_route_time_s": "Route duration",
             "total_wait_s": "Wait time",
             "avg_task_time_s": "Avg task",
             "total_distance_km": "Distance (km)",
@@ -845,11 +1115,7 @@ def build_report(
         }
     )
 
-    # Keep a stable, compact column order.  total_route_time_s is retained for
-    # analysis but displayed as Route time through total_task_time_s above.
-    duplicate_cols = [c for c in ["Route time"] if list(amr_df.columns).count(c) > 1]
-    if duplicate_cols:
-        amr_df = amr_df.loc[:, ~amr_df.columns.duplicated()]
+    # Keep a stable, compact column order.
     amr_display_cols = [
         c
         for c in [
@@ -858,7 +1124,7 @@ def build_report(
             "Completed",
             "Failed",
             "Routes",
-            "Route time",
+            "Route duration",
             "Wait time",
             "Avg task",
             "Distance (km)",
@@ -1070,15 +1336,16 @@ def build_report(
 
     # --- START Lift wait Summary ---
 
-    story += [
+    schedule_story += [
         NextPageTemplate("landscape"),
         PageBreak(),
-        Paragraph("Lift wait schedule", styles["Section"]),
+        Paragraph("Detailed schedules", styles["Section"]),
+        Paragraph("Lift wait schedule", styles["Heading3"]),
     ]
 
     lift_wait_df = results["lift_wait_schedule"].copy()
     if lift_wait_df.empty:
-        story.append(
+        schedule_story.append(
             Paragraph(
                 "No lift wait events were identified in the CSV.",
                 styles["BodyText"],
@@ -1103,10 +1370,10 @@ def build_report(
                 "wait_s": "Wait",
             }
         )
-        story.append(
+        schedule_story.append(
             table_from_df(
                 lift_wait_df,
-                [35 * mm, 25 * mm, 50 * mm, 18 * mm, 28 * mm, 28 * mm, 18 * mm],
+                [32 * mm, 20 * mm, 45 * mm, 16 * mm, 26 * mm, 26 * mm, 16 * mm],
                 styles,
             )
         )
@@ -1120,7 +1387,7 @@ def build_report(
     story += [
         NextPageTemplate("standard"),
         PageBreak(),
-        Paragraph("Payload schedule", styles["Section"]),
+        Paragraph("Payload summary", styles["Section"]),
     ]
 
     payload_df = results["payload_schedule"].copy()
@@ -1476,16 +1743,15 @@ def build_report(
 
     # --- START AMR Task Summary ---
 
-    story += [
-        NextPageTemplate("landscape"),
+    schedule_story += [
         PageBreak(),
-        Paragraph("Task detail grouped by AMR", styles["Section"]),
+        Paragraph("Task detail grouped by AMR", styles["Heading3"]),
     ]
 
     tasks = results["tasks"].copy()
     for amr, sub in tasks.groupby("amr", sort=False):
-        story.append(Spacer(1, 4))
-        story.append(Paragraph(f"AMR {amr}", styles["Heading3"]))
+        schedule_story.append(Spacer(1, 4))
+        schedule_story.append(Paragraph(f"AMR {amr}", styles["Heading3"]))
 
         has_dt = pd.api.types.is_datetime64_any_dtype(sub["start"]) or any(
             hasattr(v, "strftime") for v in sub["start"].dropna().tolist()
@@ -1519,18 +1785,18 @@ def build_report(
             "Duration",
             "Wait",
         ]
-        story.append(
+        schedule_story.append(
             table_from_df(
                 display,
                 [
-                    40 * mm,
-                    20 * mm,
-                    42 * mm,
-                    42 * mm,
-                    35 * mm,
-                    35 * mm,
+                    36 * mm,
                     18 * mm,
-                    16 * mm,
+                    38 * mm,
+                    38 * mm,
+                    32 * mm,
+                    32 * mm,
+                    17 * mm,
+                    15 * mm,
                 ],
                 styles,
             )
@@ -1540,6 +1806,8 @@ def build_report(
 
     # --- START Heat map ---
     report_progress(9, 10, "Prepared congestion heatmaps")
+
+    story += schedule_story
 
     heatmap_df = results.get("congestion_paths", pd.DataFrame()).copy()
 

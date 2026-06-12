@@ -114,10 +114,12 @@ class Simulation:
         self.verbose = verbose
         self.verbose_csv_path = verbose_csv_path
         self.verbose_rows: List[dict] = []
+        self._format_sim_time_cache: Dict[float, str] = {}
         self.event_counter = 0
         self.events: List[Event] = []
         self.pending_tasks: List[Tuple[int, float, int, Task]] = []
         self.pending_task_counter = 0
+        self._removed_pending_task_ids = set()
         self.lock = threading.RLock()
         self.route_cache_lock = threading.RLock()
         self.stop_requested = False
@@ -133,6 +135,8 @@ class Simulation:
         self.payload_population_peak: Dict[str, int] = {}
         self._location_recommendation_rows_written = False
         self._payload_population_rows_written = False
+        self.staff_resource_pools: Dict[str, dict] = {}
+        self.staff_assignments: List[dict] = []
 
         # Congestion setup
         building_cfg = config.get("building", {})
@@ -187,12 +191,16 @@ class Simulation:
             2, int(sim_cfg.get("max_multi_stop_candidate_tasks", 8) or 8)
         )
         self.max_assignments_per_tick = max(
-            0, int(sim_cfg.get("max_assignments_per_tick", 25) or 0)
+            0, int(sim_cfg.get("max_assignments_per_tick", 50) or 0)
         )
         self.assignment_continue_delay_sec = max(
             0.001, float(sim_cfg.get("assignment_continue_delay_sec", 0.001) or 0.001)
         )
         self._assignment_continue_scheduled = False
+        self.idle_return_check_interval_sec = max(
+            1.0, float(sim_cfg.get("idle_return_check_interval_sec", 60.0) or 60.0)
+        )
+        self._next_idle_return_check_time = 0.0
         default_route_workers = max(1, min(8, os.cpu_count() or 1))
         self.routing_worker_threads = max(
             1,
@@ -242,6 +250,20 @@ class Simulation:
         self.min_congestion_speed_factor = float(
             building_cfg.get("min_congestion_speed_factor", 0.45)
         )
+        self.reservation_prune_interval_sec = max(
+            1.0, float(sim_cfg.get("reservation_prune_interval_sec", 300.0) or 300.0)
+        )
+        self.reservation_history_retention_sec = max(
+            self.edge_congestion_window_sec * 2.0,
+            float(
+                sim_cfg.get(
+                    "reservation_history_retention_sec",
+                    max(300.0, self.edge_congestion_window_sec * 2.0),
+                )
+                or 0.0
+            ),
+        )
+        self._next_reservation_prune_time = 0.0
 
         self.load_unload_time_sec = float(
             config["building"].get("load_unload_time_sec", 20.0)
@@ -522,7 +544,9 @@ class Simulation:
                 amr.manual_task_compatible = len(payload_slots) == 1
                 self.amrs.append(amr)
 
+        self.amrs_by_id: Dict[str, AMR] = {amr.id: amr for amr in self.amrs}
         self._assign_initial_amrs_to_charge_inventory_spaces()
+        self.amrs_by_id = {amr.id: amr for amr in self.amrs}
 
         # Parse tasks from configuration
 
@@ -2160,14 +2184,12 @@ class Simulation:
         records in the runtime store and stores the highest count observed for
         each payload type.
         """
-        counts: Dict[str, int] = defaultdict(int)
-        for record in getattr(self.payload_instance_store, "_records", {}).values():
-            payload_name = normalise_payload_name(getattr(record, "payload", ""))
-            if not payload_name or is_empty_payload_name(payload_name):
-                continue
-            counts[payload_name] += 1
+        counts = self.payload_instance_store.counts_by_payload()
 
         for payload_name, count in counts.items():
+            payload_name = normalise_payload_name(payload_name)
+            if not payload_name or is_empty_payload_name(payload_name):
+                continue
             self.payload_population_peak[payload_name] = max(
                 int(self.payload_population_peak.get(payload_name, 0) or 0),
                 int(count),
@@ -3006,9 +3028,12 @@ class Simulation:
         amr_id = str(amr_id or "").strip()
         if not amr_id:
             return None
-        for other in getattr(self, "amrs", []) or []:
-            if str(getattr(other, "id", "") or "").strip() == amr_id:
-                return other
+        amr = getattr(self, "amrs_by_id", {}).get(amr_id)
+        if amr is not None:
+            return amr
+        for candidate in getattr(self, "amrs", []) or []:
+            if str(getattr(candidate, "id", "") or "").strip() == amr_id:
+                return candidate
         return None
 
     def _space_is_available_for_amr(self, space: dict, amr: AMR, location_name: str = "") -> bool:
@@ -3046,9 +3071,14 @@ class Simulation:
         reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
         if reserved_by and reserved_by != amr_id:
             other = self._amr_by_id(reserved_by)
-            other_loc = str(getattr(other, "target_charge_location", "") or getattr(other, "location_name", "") or "").strip() if other else ""
+            other_target_loc = str(getattr(other, "target_charge_location", "") or "").strip() if other else ""
+            other_loc = str(getattr(other, "location_name", "") or "").strip() if other else ""
             other_target = str(getattr(other, "target_inventory_space_name", "") or "").strip() if other else ""
-            if other is not None and other_target == space_name and (not loc_name or other_loc == loc_name):
+            if (
+                other is not None
+                and other_target == space_name
+                and (not loc_name or other_target_loc == loc_name or other_loc == loc_name)
+            ):
                 return False
             # Stale reservation marker.
             space["reserved_by_amr"] = ""
@@ -3151,6 +3181,7 @@ class Simulation:
             return None
         space["reserved_by_amr"] = str(getattr(amr, "id", "") or "").strip()
         setattr(amr, "target_inventory_space_name", str(space.get("name", "") or ""))
+        setattr(amr, "target_charge_location", str(location_name or "").strip())
         return space
 
     def _clear_amr_inventory_space_reservations(self, amr: AMR) -> None:
@@ -3232,6 +3263,7 @@ class Simulation:
         target_space["reserved_by_amr"] = ""
         setattr(amr, "inventory_space_name", str(target_space.get("name", "") or ""))
         setattr(amr, "rotation_deg", self._inventory_space_rotation_deg(target_space))
+        setattr(amr, "target_charge_location", location_name)
         setattr(amr, "target_inventory_space_name", "")
         return target_space
 
@@ -3653,6 +3685,148 @@ class Simulation:
             "tracked_items": getattr(task, "tracked_items", {}) or {},
         }
 
+    def _task_category_key(self, task: Optional[Task]) -> str:
+        if task is None:
+            return ""
+        explicit = str(getattr(task, "staff_category_key", "") or "").strip().lower()
+        if explicit:
+            return explicit
+        labels = [
+            str(label).strip().lower()
+            for label in (getattr(task, "labels", []) or [])
+            if str(label).strip()
+        ]
+        for label in labels:
+            if label != "return":
+                return label
+        task_id = str(getattr(task, "id", "") or "").strip().upper()
+        if task_id.startswith("GEN_"):
+            parts = task_id.split("_")
+            if len(parts) > 1 and parts[1]:
+                return parts[1].lower()
+        source = str(getattr(task, "task_source", "") or "").strip().lower()
+        if source == "department_waste":
+            return "waste"
+        return source or normalise_payload_name(getattr(task, "payload", "")).lower()
+
+    def _task_is_stores_delivery(self, task: Optional[Task]) -> bool:
+        if task is None or bool(getattr(task, "is_return_task", False)):
+            return False
+        labels = {
+            str(label).strip().lower()
+            for label in (getattr(task, "labels", []) or [])
+            if str(label).strip()
+        }
+        if "stores" in labels:
+            return True
+        task_id = str(getattr(task, "id", "") or "").strip().upper()
+        if task_id.startswith("GEN_STORES_"):
+            return True
+        source = str(getattr(task, "task_source", "") or "").strip().lower()
+        payload = normalise_payload_name(getattr(task, "payload", ""))
+        return source == "stores" or payload == "stores"
+
+    def _staff_pool_for_category(
+        self,
+        category_key: str,
+        initial_count: int,
+        resource_name: str = "",
+    ) -> dict:
+        category_key = str(category_key or "").strip().lower() or "staff"
+        pool = self.staff_resource_pools.get(category_key)
+        if pool is not None:
+            return pool
+
+        initial_count = max(1, int(initial_count or 1))
+        label = str(resource_name or "").strip() or f"{category_key.title()} staff"
+        pool = {
+            "category_key": category_key,
+            "resource_name": label,
+            "initial_people": initial_count,
+            "available_times": [0.0 for _ in range(initial_count)],
+            "assignments": [],
+        }
+        self.staff_resource_pools[category_key] = pool
+        return pool
+
+    def _task_staff_handling_config(self, task: Optional[Task]) -> Optional[dict]:
+        if task is None or bool(getattr(task, "is_return_task", False)):
+            return None
+        requires_staff = bool(
+            getattr(task, "requires_staff", False)
+            or getattr(task, "staff_required", False)
+        )
+        if not requires_staff and self._task_is_stores_delivery(task):
+            # Backward-compatible default for older configs created before the
+            # editor exposed category staff settings.
+            requires_staff = True
+        if not requires_staff:
+            return None
+        category_key = self._task_category_key(task) or "staff"
+        resource_name = str(getattr(task, "staff_resource_name", "") or "").strip()
+        try:
+            initial_count = max(1, int(float(getattr(task, "staff_initial_count", 1) or 1)))
+        except Exception:
+            initial_count = 1
+        return {
+            "category_key": category_key,
+            "resource_name": resource_name,
+            "initial_count": initial_count,
+        }
+
+    def _assign_staff_for_handling(
+        self,
+        task: Task,
+        start_time: float,
+        handling_duration_sec: float,
+    ) -> Optional[dict]:
+        staff_cfg = self._task_staff_handling_config(task)
+        if staff_cfg is None:
+            return None
+        duration = max(0.0, float(handling_duration_sec or 0.0))
+        if duration <= 0.0:
+            return None
+
+        pool = self._staff_pool_for_category(
+            staff_cfg["category_key"],
+            staff_cfg["initial_count"],
+            staff_cfg["resource_name"],
+        )
+        available_times = pool["available_times"]
+        start_time = float(start_time or 0.0)
+        finish_time = start_time + duration
+        person_index = None
+        for idx, available_time in enumerate(available_times):
+            if float(available_time or 0.0) <= start_time + 1e-9:
+                person_index = idx
+                break
+
+        added_person = False
+        if person_index is None:
+            available_times.append(0.0)
+            person_index = len(available_times) - 1
+            added_person = True
+
+        available_times[person_index] = finish_time
+        category_key = str(pool["category_key"])
+        assignment = {
+            "task_id": str(getattr(task, "id", "") or ""),
+            "category_key": category_key,
+            "resource_name": str(pool.get("resource_name", "") or ""),
+            "person_id": f"{category_key}-person-{person_index + 1}",
+            "person_index": person_index + 1,
+            "start_time": round(start_time, 3),
+            "finish_time": round(finish_time, 3),
+            "duration_sec": round(duration, 3),
+            "location": str(getattr(task, "dropoff", "") or ""),
+            "payload": self._payload_log_name(getattr(task, "payload", "")),
+            "people_required": len(available_times),
+            "added_person": added_person,
+        }
+        pool["assignments"].append(assignment)
+        self.staff_assignments.append(assignment)
+        return assignment
+
     def _schedule_configured_return_task(
         self, task: Task, finish_time: float, amr_id: str = ""
     ) -> None:
@@ -3668,6 +3842,9 @@ class Simulation:
         self.synthetic_task_counter += 1
         delay_sec = (
             max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
+        )
+        staff_assignment = self._assign_staff_for_handling(
+            task, finish_time, delay_sec
         )
         return_task = Task(
             id=f"RETURN-{task.id}-{self.synthetic_task_counter}",
@@ -3809,6 +3986,43 @@ class Simulation:
 
         pickup = self.locations.get(return_task.pickup)
         dropoff = self.locations.get(return_task.dropoff)
+        if staff_assignment is not None:
+            category_key = str(staff_assignment.get("category_key", "") or "")
+            resource_name = str(
+                staff_assignment.get("resource_name", "") or category_key or "Staff"
+            )
+            self.log_step(
+                event_time=finish_time,
+                event_type="staff_payload_handling",
+                task_id=task.id,
+                amr_id="",
+                details=(
+                    f"{staff_assignment['person_id']} handling {resource_name} payload "
+                    f"until {self.clock.format_sim_time(staff_assignment['finish_time'])}"
+                ),
+                from_location=task.dropoff,
+                to_location=task.dropoff,
+                payload_name=self._payload_log_name(task.payload),
+                payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
+                duration_sec=float(staff_assignment["duration_sec"]),
+                start_time=float(staff_assignment["start_time"]),
+                end_time=float(staff_assignment["finish_time"]),
+                start_node=task.dropoff,
+                end_node=task.dropoff,
+                start_x=getattr(pickup, "x", None),
+                start_y=getattr(pickup, "y", None),
+                start_floor=getattr(pickup, "floor", None),
+                end_x=getattr(pickup, "x", None),
+                end_y=getattr(pickup, "y", None),
+                end_floor=getattr(pickup, "floor", None),
+                status="handling",
+                task_source=getattr(task, "task_source", ""),
+                department_id=getattr(task, "department_id", ""),
+                container_type=getattr(task, "container_type", ""),
+                person_resource=f"{category_key}_payload_handling",
+                person_id=str(staff_assignment["person_id"]),
+                people_required=int(staff_assignment["people_required"]),
+            )
         self.log_step(
             event_time=return_task.release_time,
             event_type="return_task_generated",
@@ -3836,6 +4050,21 @@ class Simulation:
             task_source=return_task.task_source,
             department_id=return_task.department_id,
             container_type=return_payload,
+            person_resource=(
+                f"{staff_assignment.get('category_key', '')}_payload_handling"
+                if staff_assignment is not None
+                else ""
+            ),
+            person_id=(
+                str(staff_assignment["person_id"])
+                if staff_assignment is not None
+                else ""
+            ),
+            people_required=(
+                int(staff_assignment["people_required"])
+                if staff_assignment is not None
+                else 0
+            ),
         )
 
     def _fail_task(self, task: Task, reason: str, now: Optional[float] = None) -> None:
@@ -3873,12 +4102,13 @@ class Simulation:
 
     def _rules_cache_key(
         self, rules: Optional[dict]
-    ) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
+    ) -> Tuple[Tuple[str, ...], Tuple[str, ...], Tuple[Tuple[str, str], ...]]:
         if not rules:
-            return ((), ())
+            return ((), (), ())
+        allowed_lifts = tuple(sorted(rules.get("allowed_lifts", set())))
         allowed_nodes = tuple(sorted(rules.get("allowed_nodes", set())))
         allowed_edges = tuple(sorted(rules.get("allowed_edges", set())))
-        return (allowed_nodes, allowed_edges)
+        return (allowed_lifts, allowed_nodes, allowed_edges)
 
     def _empty_route_rules(self) -> dict:
         return {
@@ -4243,6 +4473,8 @@ class Simulation:
             next_candidate = None
 
             for start, end in reservations:
+                if start >= t + duration:
+                    break
                 if not (t + duration <= start or t >= end):
                     overlap_count += 1
                     if next_candidate is None or end < next_candidate:
@@ -4816,10 +5048,41 @@ class Simulation:
 
     def _queue_pending_task(self, task: Task):
         self.pending_task_counter += 1
+        self._removed_pending_task_ids.discard(str(getattr(task, "id", "") or ""))
         heapq.heappush(
             self.pending_tasks,
             (task.priority, task.release_time, self.pending_task_counter, task),
         )
+
+    def _pending_task_removed(self, task: Task) -> bool:
+        return str(getattr(task, "id", "") or "") in self._removed_pending_task_ids
+
+    def _purge_removed_pending_task_heads(self) -> None:
+        while self.pending_tasks and self._pending_task_removed(self.pending_tasks[0][3]):
+            heapq.heappop(self.pending_tasks)
+
+    def _compact_pending_tasks_if_needed(self) -> None:
+        removed_count = len(self._removed_pending_task_ids)
+        if removed_count <= 0:
+            return
+        if removed_count < 128 and removed_count < max(1, len(self.pending_tasks) // 4):
+            return
+        self.pending_tasks = [
+            item for item in self.pending_tasks if not self._pending_task_removed(item[3])
+        ]
+        heapq.heapify(self.pending_tasks)
+        live_ids = {
+            str(getattr(item[3], "id", "") or "")
+            for item in self.pending_tasks
+        }
+        self._removed_pending_task_ids.intersection_update(live_ids)
+
+    def _live_pending_task_items(self):
+        return [
+            item
+            for item in self.pending_tasks
+            if not self._pending_task_removed(item[3])
+        ]
 
     def _distance_same_floor(self, a: Location, b: Location) -> float:
         return math.hypot(b.x - a.x, b.y - a.y)
@@ -4836,6 +5099,8 @@ class Simulation:
         window = self.edge_congestion_window_sec
         count = 0
         for start, end, _ in reservations:
+            if start > t + window:
+                break
             if start <= t + window and end >= t - window:
                 count += 1
         return count
@@ -4858,6 +5123,8 @@ class Simulation:
             for start, end, _ in reservations:
                 start = float(start)
                 end = float(end)
+                if start > t + duration + spacing_time:
+                    break
 
                 if t >= start - 1e-9:
                     adjusted = max(adjusted, start + spacing_time)
@@ -4888,6 +5155,8 @@ class Simulation:
             next_candidate = None
 
             for start, end, _ in reservations:
+                if start > t + duration + spacing_time:
+                    break
                 protected_start = float(start) - spacing_time
                 protected_end = float(end) + spacing_time
 
@@ -4949,7 +5218,12 @@ class Simulation:
         end_time: float,
         amr_id: str,
     ):
-        self.node_reservations[node_name].append((start_time, end_time, amr_id))
+        reservations = self.node_reservations[node_name]
+        item = (start_time, end_time, amr_id)
+        idx = len(reservations)
+        while idx > 0 and reservations[idx - 1][0] > start_time:
+            idx -= 1
+        reservations.insert(idx, item)
 
     def _find_next_node_arrival(
         self,
@@ -4957,7 +5231,7 @@ class Simulation:
         requested_arrival: float,
         spacing_time: float,
     ) -> float:
-        reservations = sorted(self.node_reservations.get(node_name, []))
+        reservations = self.node_reservations.get(node_name, [])
         t = requested_arrival
 
         while True:
@@ -4965,6 +5239,8 @@ class Simulation:
             next_candidate = None
 
             for start, end, _ in reservations:
+                if start > t + spacing_time:
+                    break
                 protected_start = start - spacing_time
                 protected_end = end + spacing_time
 
@@ -5556,7 +5832,11 @@ class Simulation:
             {
                 "start_time": now,
                 "end_time": wait_until,
-                "pending_task_ids": [task.id for _, _, _, task in self.pending_tasks],
+                "pending_task_ids": [
+                    task.id
+                    for _, _, _, task in self.pending_tasks
+                    if not self._pending_task_removed(task)
+                ],
                 "reason": "No AMRs currently available",
             },
         )
@@ -6107,7 +6387,7 @@ class Simulation:
         payload = self._payload_for_task(task)
         payload_name = getattr(payload, "name", str(getattr(task, "payload", "") or ""))
         rules = self._resolve_task_route_rules(task) or {}
-        rules_key = json.dumps(rules, sort_keys=True, default=str) if rules else ""
+        rules_key = self._rules_cache_key(rules)
         return (
             int(getattr(self, "route_estimate_cache_version", 0)),
             self._route_estimate_time_bucket(
@@ -6248,15 +6528,14 @@ class Simulation:
             return multi_stop_best
 
         candidate_tasks = []
-        for item in self.pending_tasks[
-            : min(self.max_single_candidate_tasks, len(self.pending_tasks))
-        ]:
+        for item in self.pending_tasks:
+            if self._pending_task_removed(item[3]):
+                continue
             candidate_tasks.append(item)
+            if len(candidate_tasks) >= self.max_single_candidate_tasks:
+                break
 
-        best = None
-        best_finish = math.inf
-        best_order = math.inf
-
+        single_jobs = []
         for task_order, (_, _, _, task) in enumerate(candidate_tasks):
             if task.release_time > self.current_time:
                 self._set_task_pending_reason(task, "Waiting for release time")
@@ -6280,7 +6559,6 @@ class Simulation:
                     continue
 
             task_prefers_multi_stop = self._task_prefers_multi_stop_amr(task)
-            jobs = []
             for amr_order, amr in enumerate(self.amrs):
                 if not self._task_allowed_for_amr(task, amr):
                     continue
@@ -6288,7 +6566,7 @@ class Simulation:
                     continue
                 if self._needs_post_task_recharge(amr):
                     continue
-                jobs.append(
+                single_jobs.append(
                     {
                         "order": (task_order, amr_order),
                         "amr": amr,
@@ -6301,53 +6579,43 @@ class Simulation:
                     }
                 )
 
-            task_best = None
-            task_best_finish = math.inf
-            task_best_order = math.inf
-            preferred_task_best = None
-            preferred_task_best_finish = math.inf
-            preferred_task_best_order = math.inf
+        best_by_task = {}
+        preferred_by_task = {}
 
-            for job, estimate in self._estimate_candidate_jobs(jobs):
-                if estimate is None:
-                    continue
-                finish_time = estimate["finish_time"]
-                order_tuple = job.get("order", (0, 0))
-                flat_order = (order_tuple[0] * max(len(self.amrs), 1)) + order_tuple[1]
+        for job, estimate in self._estimate_candidate_jobs(single_jobs):
+            if estimate is None:
+                continue
 
-                if (finish_time, flat_order) < (task_best_finish, task_best_order):
-                    task_best_finish = finish_time
-                    task_best_order = flat_order
-                    task_best = (job["amr"], task, estimate)
+            task = job["task_or_tasks"]
+            task_key = str(getattr(task, "id", ""))
+            finish_time = estimate["finish_time"]
+            order_tuple = job.get("order", (0, 0))
+            flat_order = (order_tuple[0] * max(len(self.amrs), 1)) + order_tuple[1]
+            candidate = (finish_time, flat_order, job["amr"], task, estimate)
 
-                if bool(job.get("is_preferred_multi_stop_amr", False)):
-                    if (finish_time, flat_order) < (
-                        preferred_task_best_finish,
-                        preferred_task_best_order,
-                    ):
-                        preferred_task_best_finish = finish_time
-                        preferred_task_best_order = flat_order
-                        preferred_task_best = (job["amr"], task, estimate)
+            current = best_by_task.get(task_key)
+            if current is None or candidate[:2] < current[:2]:
+                best_by_task[task_key] = candidate
 
-            chosen_for_task = preferred_task_best or task_best
-            chosen_finish = (
-                preferred_task_best_finish
-                if preferred_task_best is not None
-                else task_best_finish
-            )
-            chosen_order = (
-                preferred_task_best_order
-                if preferred_task_best is not None
-                else task_best_order
-            )
+            if bool(job.get("is_preferred_multi_stop_amr", False)):
+                current = preferred_by_task.get(task_key)
+                if current is None or candidate[:2] < current[:2]:
+                    preferred_by_task[task_key] = candidate
 
-            if chosen_for_task is not None and (chosen_finish, chosen_order) < (
-                best_finish,
-                best_order,
-            ):
+        best = None
+        best_finish = math.inf
+        best_order = math.inf
+
+        for _priority, _release, _counter, task in candidate_tasks:
+            task_key = str(getattr(task, "id", ""))
+            chosen = preferred_by_task.get(task_key) or best_by_task.get(task_key)
+            if chosen is None:
+                continue
+            chosen_finish, chosen_order, amr, task, estimate = chosen
+            if (chosen_finish, chosen_order) < (best_finish, best_order):
                 best_finish = chosen_finish
                 best_order = chosen_order
-                best = chosen_for_task
+                best = (amr, task, estimate)
 
         return best
 
@@ -6496,6 +6764,8 @@ class Simulation:
     def _fail_released_terminal_pending_task(self, now: float) -> bool:
         """Fail one released task that is terminally impossible, if any."""
         for _priority, _release, _counter, pending_task in list(self.pending_tasks):
+            if self._pending_task_removed(pending_task):
+                continue
             reason = self._released_task_terminal_failure_reason(pending_task)
             if reason:
                 self._fail_task(pending_task, reason, now=now)
@@ -6503,16 +6773,11 @@ class Simulation:
         return False
 
     def _remove_pending_task(self, target_task: Task):
-        rebuilt = []
         target_id = str(getattr(target_task, "id", "")).strip()
-        while self.pending_tasks:
-            item = heapq.heappop(self.pending_tasks)
-            item_id = str(getattr(item[3], "id", "")).strip()
-            if item_id == target_id:
-                continue
-            rebuilt.append(item)
-        for item in rebuilt:
-            heapq.heappush(self.pending_tasks, item)
+        if target_id:
+            self._removed_pending_task_ids.add(target_id)
+        self._purge_removed_pending_task_heads()
+        self._compact_pending_tasks_if_needed()
 
     def _refresh_pending_existing_payload_instances(self) -> None:
         """Attach newly available physical payloads to pending existing-container tasks.
@@ -6529,6 +6794,8 @@ class Simulation:
             return
 
         for _priority, _release, _counter, task in list(self.pending_tasks):
+            if self._pending_task_removed(task):
+                continue
             if not self._task_requires_existing_payload_instance(task):
                 continue
 
@@ -6555,9 +6822,18 @@ class Simulation:
             now + self.assignment_continue_delay_sec, "assignment_continue", {}
         )
 
-    def _try_assign_tasks(self, now: float):
+    def _try_assign_tasks(self, now: float, force_idle_return: bool = False):
         self.current_time = max(self.current_time, now)
         self._assignment_continue_scheduled = False
+        self._purge_removed_pending_task_heads()
+
+        if not self.pending_tasks and not force_idle_return:
+            if self.current_time < self._next_idle_return_check_time:
+                return
+            self._next_idle_return_check_time = (
+                self.current_time + self.idle_return_check_interval_sec
+            )
+
         self._refresh_pending_existing_payload_instances()
         self._purge_idle_returns_blocked_by_locked_work()
         self._queue_idle_return_tasks(self.current_time)
@@ -6570,6 +6846,9 @@ class Simulation:
             )
 
         while self.pending_tasks:
+            self._purge_removed_pending_task_heads()
+            if not self.pending_tasks:
+                break
             if chunk_limit_reached():
                 self._schedule_assignment_continue(self.current_time)
                 return
@@ -7257,6 +7536,31 @@ class Simulation:
                 **self._task_tracking_log_kwargs(task),
             )
 
+    def _prune_historical_reservations(self, now: float) -> None:
+        if now < self._next_reservation_prune_time:
+            return
+
+        self._next_reservation_prune_time = now + self.reservation_prune_interval_sec
+        cutoff = max(0.0, float(now or 0.0) - self.reservation_history_retention_sec)
+
+        def prune_mapping(mapping):
+            remove_keys = []
+            for key, reservations in mapping.items():
+                if not reservations:
+                    continue
+                kept = [item for item in reservations if float(item[1]) >= cutoff]
+                if kept:
+                    mapping[key] = kept
+                else:
+                    remove_keys.append(key)
+            for key in remove_keys:
+                mapping.pop(key, None)
+
+        prune_mapping(self.location_reservations)
+        prune_mapping(self.edge_reservations)
+        prune_mapping(self.directed_edge_reservations)
+        prune_mapping(self.node_reservations)
+
     def run(self):
         self.wall_start_time = time.time()
 
@@ -7267,8 +7571,8 @@ class Simulation:
                         break
 
                     event = heapq.heappop(self.events)
-                    self._update_task_generators_until(event.time)
                     self.current_time = max(self.current_time, event.time)
+                    self._prune_historical_reservations(self.current_time)
                     self._handle_event(event)
 
                 self._print_progress()
@@ -7377,7 +7681,7 @@ class Simulation:
                         )
                         self._fail_task(task, reason, now=event.payload["finish_time"])
                         return
-            completed_amr = next((a for a in self.amrs if a.id == event.payload.get("amr_id")), None)
+            completed_amr = self.amrs_by_id.get(event.payload.get("amr_id"))
             completed_amr_loc = self.locations.get(task.dropoff)
             completed_amr_space = None
             if completed_amr is not None:
@@ -7510,7 +7814,7 @@ class Simulation:
                         "finish_time": event.payload["finish_time"],
                     },
                 )
-            self._try_assign_tasks(event.time)
+            self._try_assign_tasks(event.time, force_idle_return=True)
 
         elif event.event_type == "multi_stop_complete":
             tasks: List[Task] = event.payload["tasks"]
@@ -7572,7 +7876,7 @@ class Simulation:
                 final_location_name = str(
                     event.payload.get("end_location") or task.dropoff or ""
                 )
-                final_amr = next((a for a in self.amrs if a.id == event.payload.get("amr_id")), None)
+                final_amr = self.amrs_by_id.get(event.payload.get("amr_id"))
                 if final_amr is not None:
                     self._occupy_amr_inventory_space(final_amr, final_location_name)
                     final_location = self._amr_display_location(final_amr, final_location_name)
@@ -7678,7 +7982,7 @@ class Simulation:
                     task, event.payload["finish_time"], event.payload.get("amr_id", "")
                 )
 
-            self._try_assign_tasks(event.time)
+            self._try_assign_tasks(event.time, force_idle_return=True)
 
         elif event.event_type == "task_wait":
             self.log_step(
@@ -7708,13 +8012,14 @@ class Simulation:
                 self._handle_mass_collection_capacity_tick(cfg, event.time)
 
         elif event.event_type == "generator_tick":
+            self._update_task_generators_until(event.time)
             next_tick = event.time + max(60.0, self.task_generation_interval_sec)
             if next_tick <= self.task_generation_horizon_sec:
                 self.push_event(next_tick, "generator_tick", {})
             self._try_assign_tasks(event.time)
 
         elif event.event_type == "charge_cycle_start":
-            amr = next(a for a in self.amrs if a.id == event.payload["amr_id"])
+            amr = self.amrs_by_id[event.payload["amr_id"]]
             charge_location_name = str(
                 event.payload.get("charge_location")
                 or getattr(amr, "target_charge_location", "")
@@ -7820,7 +8125,7 @@ class Simulation:
             )
 
         elif event.event_type == "charge_cycle_complete":
-            amr = next(a for a in self.amrs if a.id == event.payload["amr_id"])
+            amr = self.amrs_by_id[event.payload["amr_id"]]
             charge_location_name = str(
                 event.payload.get("charge_location")
                 or getattr(amr, "location_name", "")
@@ -7848,7 +8153,7 @@ class Simulation:
                 is_charging=False,
             )
 
-            self._try_assign_tasks(event.time)
+            self._try_assign_tasks(event.time, force_idle_return=True)
 
         elif event.event_type == "task_overrun":
             task: Task = event.payload["task"]
@@ -7874,6 +8179,36 @@ class Simulation:
     def request_stop(self):
         with self.lock:
             self.stop_requested = True
+
+    def _staff_handling_summary(self) -> dict:
+        categories = {}
+        total_people = 0
+        for category_key, pool in sorted(self.staff_resource_pools.items()):
+            available_times = list(pool.get("available_times", []) or [])
+            people_required = len(available_times)
+            total_people += people_required
+            categories[category_key] = {
+                "resource_name": str(pool.get("resource_name", "") or ""),
+                "initial_people": int(pool.get("initial_people", 0) or 0),
+                "people_required": people_required,
+                "assignments": list(pool.get("assignments", []) or []),
+            }
+        return {
+            "total_people_required": total_people,
+            "categories": categories,
+            "assignments": list(self.staff_assignments),
+        }
+
+    def _format_sim_time_cached(self, sim_time_sec: float) -> str:
+        key = round(float(sim_time_sec or 0.0), 3)
+        cached = self._format_sim_time_cache.get(key)
+        if cached is not None:
+            return cached
+        if len(self._format_sim_time_cache) >= 200000:
+            self._format_sim_time_cache.clear()
+        value = self.clock.format_sim_time(key)
+        self._format_sim_time_cache[key] = value
+        return value
 
     def log_step(
         self,
@@ -7930,13 +8265,16 @@ class Simulation:
         amr_rotation_deg: Optional[float] = None,
         amr_rotation_start_deg: Optional[float] = None,
         amr_rotation_end_deg: Optional[float] = None,
+        person_resource: str = "",
+        person_id: str = "",
+        people_required: int = 0,
     ):
         if not self.verbose:
             return
 
         if amr_id:
             try:
-                current_amr = next((a for a in self.amrs if a.id == amr_id), None)
+                current_amr = self.amrs_by_id.get(amr_id)
             except Exception:
                 current_amr = None
             if current_amr is not None:
@@ -7998,7 +8336,7 @@ class Simulation:
             {
                 # Existing schema
                 "sim_time_sec": round(event_time, 3),
-                "sim_datetime": self.clock.format_sim_time(event_time),
+                "sim_datetime": self._format_sim_time_cached(event_time),
                 "event_type": event_type,
                 "task_id": task_id,
                 "amr_id": amr_id,
@@ -8016,8 +8354,8 @@ class Simulation:
                 "details": details,
                 # New schema
                 "segment_type": segment_type,
-                "start_time": self.clock.format_sim_time(start_time),
-                "end_time": self.clock.format_sim_time(end_time),
+                "start_time": self._format_sim_time_cached(start_time),
+                "end_time": self._format_sim_time_cached(end_time),
                 "start_node": start_node,
                 "end_node": end_node,
                 "start_x": start_x,
@@ -8044,19 +8382,34 @@ class Simulation:
                 "container_type": container_type,
                 "pending_reason": pending_reason,
                 "payload_slot": payload_slot,
-                "onboard_payloads": json.dumps(
-                    onboard_payloads or [], ensure_ascii=False
+                "onboard_payloads": (
+                    json.dumps(onboard_payloads, ensure_ascii=False)
+                    if onboard_payloads
+                    else "[]"
                 ),
-                "onboard_slots": json.dumps(onboard_slots or [], ensure_ascii=False),
-                "multi_stop_task_ids": json.dumps(
-                    multi_stop_task_ids or [], ensure_ascii=False
+                "onboard_slots": (
+                    json.dumps(onboard_slots, ensure_ascii=False)
+                    if onboard_slots
+                    else "[]"
+                ),
+                "multi_stop_task_ids": (
+                    json.dumps(multi_stop_task_ids, ensure_ascii=False)
+                    if multi_stop_task_ids
+                    else "[]"
                 ),
                 "multi_stop_pickup_count": int(multi_stop_pickup_count or 0),
                 "multi_stop_dropoff_count": int(multi_stop_dropoff_count or 0),
                 "tracked_item_exchange": bool(tracked_item_exchange),
                 "exchange_mode": exchange_mode,
                 "tracked_item_source_payload": tracked_item_source_payload,
-                "tracked_items": json.dumps(tracked_items or {}, ensure_ascii=False),
+                "tracked_items": (
+                    json.dumps(tracked_items, ensure_ascii=False)
+                    if tracked_items
+                    else "{}"
+                ),
+                "person_resource": person_resource,
+                "person_id": person_id,
+                "people_required": int(people_required or 0),
             }
         )
 
@@ -8127,6 +8480,9 @@ class Simulation:
             "exchange_mode",
             "tracked_item_source_payload",
             "tracked_items",
+            "person_resource",
+            "person_id",
+            "people_required",
             "location_inventory_spaces_disabled",
             "location_configured_inventory_area_m2",
             "location_peak_payload_count",
@@ -8338,7 +8694,7 @@ class Simulation:
     def _estimate_total_sim_time(self) -> float:
         times = [0.0]
 
-        for _, _, _, task in self.pending_tasks:
+        for _, _, _, task in self._live_pending_task_items():
             times.append(task.release_time)
 
         for event in self.events:
@@ -8411,8 +8767,12 @@ class Simulation:
             "sim_datetime": self.clock.format_sim_time(self.current_time),
             "makespan_hms": format_duration(makespan),
             "completed_tasks": len(self.completed_task_records),
-            "pending_tasks": len(self.pending_tasks),
+            "pending_tasks": len(self._live_pending_task_items()),
             "failed_tasks": self.failed_tasks,
+            "staff_payload_handling": self._staff_handling_summary(),
+            "stores_payload_handling": self._staff_handling_summary()
+            .get("categories", {})
+            .get("stores", {"people_required": 0, "initial_people": 0, "assignments": []}),
             "lifts": [
                 {
                     "lift_id": lift.id,
@@ -8459,8 +8819,15 @@ class Simulation:
             "sim_datetime": self.clock.format_sim_time(self.current_time),
             "duration_hms": format_duration(makespan),
             "completed_tasks": len(self.completed_task_records),
-            "pending_tasks": len(self.pending_tasks),
+            "pending_tasks": len(self._live_pending_task_items()),
             "failed_tasks": self.failed_tasks,
+            "staff_people_required": self._staff_handling_summary().get(
+                "total_people_required", 0
+            ),
+            "stores_people_required": self._staff_handling_summary()
+            .get("categories", {})
+            .get("stores", {})
+            .get("people_required", 0),
         }
 
     def print_summary(self):
@@ -8499,7 +8866,7 @@ class Simulation:
     def _next_pending_task_release_for_amr(self, amr: AMR) -> Optional[float]:
         feasible_release_times = []
 
-        for _, _, _, task in self.pending_tasks:
+        for _, _, _, task in self._live_pending_task_items():
             locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
             if (
                 locked_amr_id
@@ -8522,7 +8889,7 @@ class Simulation:
         return min(feasible_release_times)
 
     def _amr_has_return_task_pending(self, amr: AMR) -> bool:
-        for _, _, _, task in self.pending_tasks:
+        for _, _, _, task in self._live_pending_task_items():
             if (
                 getattr(task, "is_idle_return", False)
                 and getattr(task, "amr_id", "") == amr.id
@@ -8541,7 +8908,7 @@ class Simulation:
         amr_id = str(getattr(amr, "id", "") or "").strip()
         if not amr_id:
             return False
-        for _, _, _, task in self.pending_tasks:
+        for _, _, _, task in self._live_pending_task_items():
             if getattr(task, "is_idle_return", False):
                 continue
             locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
@@ -8555,31 +8922,28 @@ class Simulation:
         if not amr_id or not self.pending_tasks:
             return
 
-        rebuilt = []
         removed = False
-        while self.pending_tasks:
-            item = heapq.heappop(self.pending_tasks)
-            task = item[3]
+        for _priority, _release, _counter, task in self._live_pending_task_items():
             is_idle_for_amr = (
                 bool(getattr(task, "is_idle_return", False))
                 and str(getattr(task, "amr_id", "") or "").strip() == amr_id
             )
             if is_idle_for_amr:
+                task_id = str(getattr(task, "id", "") or "").strip()
+                if task_id:
+                    self._removed_pending_task_ids.add(task_id)
                 removed = True
-                continue
-            rebuilt.append(item)
-
-        for item in rebuilt:
-            heapq.heappush(self.pending_tasks, item)
 
         if removed:
             self._assignment_continue_scheduled = False
+            self._purge_removed_pending_task_heads()
+            self._compact_pending_tasks_if_needed()
 
     def _purge_idle_returns_blocked_by_locked_work(self) -> None:
         """Remove queued empty home returns for AMRs with pending locked work."""
         locked_amr_ids = {
             str(getattr(task, "locked_amr_id", "") or "").strip()
-            for _, _, _, task in self.pending_tasks
+            for _, _, _, task in self._live_pending_task_items()
             if not getattr(task, "is_idle_return", False)
             and str(getattr(task, "locked_amr_id", "") or "").strip()
         }

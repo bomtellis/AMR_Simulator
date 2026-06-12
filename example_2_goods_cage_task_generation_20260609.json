@@ -6,12 +6,15 @@
     "generated_task_release_stagger_sec": 10.0,
     "precompute_static_routes": false,
     "route_precompute_max_pairs": 100000,
-    "max_multi_stop_candidate_tasks": 8,
-    "max_single_candidate_tasks": 8,
-    "max_assignments_per_tick": 5,
+    "max_multi_stop_candidate_tasks": 4,
+    "max_single_candidate_tasks": 4,
+    "max_assignments_per_tick": 50,
     "assignment_continue_delay_sec": 3.0,
+    "reservation_prune_interval_sec": 300.0,
+    "reservation_history_retention_sec": 600.0,
+    "idle_return_check_interval_sec": 60.0,
     "seed_waste_stream_containers_at_start": true,
-    "disable_inventory_spaces": false
+    "disable_inventory_spaces": true
   },
   "building": {
     "load_unload_time_sec": 20.0,
@@ -5568,8 +5571,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -19.0,
               "dy": -0.2
             }
@@ -5597,8 +5600,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -17.7,
               "dy": -0.2
             }
@@ -5626,8 +5629,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -16.4,
               "dy": -0.2
             }
@@ -5655,8 +5658,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -15.1,
               "dy": -0.2
             }
@@ -5684,8 +5687,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -13.8,
               "dy": -0.2
             }
@@ -5713,8 +5716,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -12.5,
               "dy": -0.2
             }
@@ -5742,8 +5745,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -11.2,
               "dy": -0.2
             }
@@ -5771,8 +5774,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -9.9,
               "dy": -0.2
             }
@@ -5800,8 +5803,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -8.6,
               "dy": -0.2
             }
@@ -5829,8 +5832,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -7.3,
               "dy": -0.2
             }
@@ -5858,8 +5861,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -6.0,
               "dy": -0.2
             }
@@ -5887,8 +5890,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -19.0,
               "dy": 0.7
             }
@@ -5916,8 +5919,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -17.7,
               "dy": 0.7
             }
@@ -5945,8 +5948,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -16.4,
               "dy": 0.7
             }
@@ -5974,8 +5977,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -15.1,
               "dy": 0.7
             }
@@ -6003,8 +6006,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -13.8,
               "dy": 0.7
             }
@@ -6032,8 +6035,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -12.5,
               "dy": 0.7
             }
@@ -6061,8 +6064,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -11.2,
               "dy": 0.7
             }
@@ -6090,8 +6093,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -9.9,
               "dy": 0.7
             }
@@ -6119,8 +6122,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -8.6,
               "dy": 0.7
             }
@@ -6148,8 +6151,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -7.3,
               "dy": 0.7
             }
@@ -6177,8 +6180,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -6.0,
               "dy": 0.7
             }
@@ -6206,8 +6209,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -19.0,
               "dy": 1.6
             }
@@ -6235,8 +6238,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -17.7,
               "dy": 1.6
             }
@@ -6264,8 +6267,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -16.4,
               "dy": 1.6
             }
@@ -6293,8 +6296,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -15.1,
               "dy": 1.6
             }
@@ -6322,8 +6325,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -13.8,
               "dy": 1.6
             }
@@ -6351,8 +6354,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -12.5,
               "dy": 1.6
             }
@@ -6380,8 +6383,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -11.2,
               "dy": 1.6
             }
@@ -6409,8 +6412,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -9.9,
               "dy": 1.6
             }
@@ -6438,8 +6441,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -8.6,
               "dy": 1.6
             }
@@ -6467,8 +6470,8 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -7.3,
               "dy": 1.6
             }
@@ -6496,10 +6499,2272 @@
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
+              "payload": "Clinical Waste Bin",
               "dx": -6.0,
               "dy": 1.6
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 34",
+          "points": [
+            {
+              "dx": -19.633,
+              "dy": 2.366
+            },
+            {
+              "dx": -18.833,
+              "dy": 2.366
+            },
+            {
+              "dx": -18.833,
+              "dy": 3.166
+            },
+            {
+              "dx": -19.633,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -19.233,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 35",
+          "points": [
+            {
+              "dx": -18.733,
+              "dy": 2.366
+            },
+            {
+              "dx": -17.933,
+              "dy": 2.366
+            },
+            {
+              "dx": -17.933,
+              "dy": 3.166
+            },
+            {
+              "dx": -18.733,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -18.333,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 36",
+          "points": [
+            {
+              "dx": -17.833,
+              "dy": 2.366
+            },
+            {
+              "dx": -17.033,
+              "dy": 2.366
+            },
+            {
+              "dx": -17.033,
+              "dy": 3.166
+            },
+            {
+              "dx": -17.833,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -17.433,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 37",
+          "points": [
+            {
+              "dx": -16.933,
+              "dy": 2.366
+            },
+            {
+              "dx": -16.133,
+              "dy": 2.366
+            },
+            {
+              "dx": -16.133,
+              "dy": 3.166
+            },
+            {
+              "dx": -16.933,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -16.533,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 38",
+          "points": [
+            {
+              "dx": -16.033,
+              "dy": 2.366
+            },
+            {
+              "dx": -15.233,
+              "dy": 2.366
+            },
+            {
+              "dx": -15.233,
+              "dy": 3.166
+            },
+            {
+              "dx": -16.033,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -15.633,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 39",
+          "points": [
+            {
+              "dx": -15.133,
+              "dy": 2.366
+            },
+            {
+              "dx": -14.333,
+              "dy": 2.366
+            },
+            {
+              "dx": -14.333,
+              "dy": 3.166
+            },
+            {
+              "dx": -15.133,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -14.733,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 40",
+          "points": [
+            {
+              "dx": -14.233,
+              "dy": 2.366
+            },
+            {
+              "dx": -13.433,
+              "dy": 2.366
+            },
+            {
+              "dx": -13.433,
+              "dy": 3.166
+            },
+            {
+              "dx": -14.233,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -13.833,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 41",
+          "points": [
+            {
+              "dx": -13.333,
+              "dy": 2.366
+            },
+            {
+              "dx": -12.533,
+              "dy": 2.366
+            },
+            {
+              "dx": -12.533,
+              "dy": 3.166
+            },
+            {
+              "dx": -13.333,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -12.933,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 42",
+          "points": [
+            {
+              "dx": -12.433,
+              "dy": 2.366
+            },
+            {
+              "dx": -11.633,
+              "dy": 2.366
+            },
+            {
+              "dx": -11.633,
+              "dy": 3.166
+            },
+            {
+              "dx": -12.433,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -12.033,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 43",
+          "points": [
+            {
+              "dx": -11.533,
+              "dy": 2.366
+            },
+            {
+              "dx": -10.733,
+              "dy": 2.366
+            },
+            {
+              "dx": -10.733,
+              "dy": 3.166
+            },
+            {
+              "dx": -11.533,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -11.133,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 44",
+          "points": [
+            {
+              "dx": -10.633,
+              "dy": 2.366
+            },
+            {
+              "dx": -9.833,
+              "dy": 2.366
+            },
+            {
+              "dx": -9.833,
+              "dy": 3.166
+            },
+            {
+              "dx": -10.633,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -10.233,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 45",
+          "points": [
+            {
+              "dx": -9.733,
+              "dy": 2.366
+            },
+            {
+              "dx": -8.933,
+              "dy": 2.366
+            },
+            {
+              "dx": -8.933,
+              "dy": 3.166
+            },
+            {
+              "dx": -9.733,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -9.333,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 46",
+          "points": [
+            {
+              "dx": -8.833,
+              "dy": 2.366
+            },
+            {
+              "dx": -8.033,
+              "dy": 2.366
+            },
+            {
+              "dx": -8.033,
+              "dy": 3.166
+            },
+            {
+              "dx": -8.833,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -8.433,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 47",
+          "points": [
+            {
+              "dx": -7.933,
+              "dy": 2.366
+            },
+            {
+              "dx": -7.133,
+              "dy": 2.366
+            },
+            {
+              "dx": -7.133,
+              "dy": 3.166
+            },
+            {
+              "dx": -7.933,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -7.533,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 48",
+          "points": [
+            {
+              "dx": -7.033,
+              "dy": 2.366
+            },
+            {
+              "dx": -6.233,
+              "dy": 2.366
+            },
+            {
+              "dx": -6.233,
+              "dy": 3.166
+            },
+            {
+              "dx": -7.033,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -6.633,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 49",
+          "points": [
+            {
+              "dx": -6.133,
+              "dy": 2.366
+            },
+            {
+              "dx": -5.333,
+              "dy": 2.366
+            },
+            {
+              "dx": -5.333,
+              "dy": 3.166
+            },
+            {
+              "dx": -6.133,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -5.733,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 50",
+          "points": [
+            {
+              "dx": -5.233,
+              "dy": 2.366
+            },
+            {
+              "dx": -4.433,
+              "dy": 2.366
+            },
+            {
+              "dx": -4.433,
+              "dy": 3.166
+            },
+            {
+              "dx": -5.233,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -4.833,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 51",
+          "points": [
+            {
+              "dx": -4.333,
+              "dy": 2.366
+            },
+            {
+              "dx": -3.533,
+              "dy": 2.366
+            },
+            {
+              "dx": -3.533,
+              "dy": 3.166
+            },
+            {
+              "dx": -4.333,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -3.933,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 52",
+          "points": [
+            {
+              "dx": -3.433,
+              "dy": 2.366
+            },
+            {
+              "dx": -2.633,
+              "dy": 2.366
+            },
+            {
+              "dx": -2.633,
+              "dy": 3.166
+            },
+            {
+              "dx": -3.433,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -3.033,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 53",
+          "points": [
+            {
+              "dx": -2.533,
+              "dy": 2.366
+            },
+            {
+              "dx": -1.733,
+              "dy": 2.366
+            },
+            {
+              "dx": -1.733,
+              "dy": 3.166
+            },
+            {
+              "dx": -2.533,
+              "dy": 3.166
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -2.133,
+              "dy": 2.766
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 54",
+          "points": [
+            {
+              "dx": -19.567,
+              "dy": 3.507
+            },
+            {
+              "dx": -18.767,
+              "dy": 3.507
+            },
+            {
+              "dx": -18.767,
+              "dy": 4.307
+            },
+            {
+              "dx": -19.567,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -19.167,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 55",
+          "points": [
+            {
+              "dx": -18.667,
+              "dy": 3.507
+            },
+            {
+              "dx": -17.867,
+              "dy": 3.507
+            },
+            {
+              "dx": -17.867,
+              "dy": 4.307
+            },
+            {
+              "dx": -18.667,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -18.267,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 56",
+          "points": [
+            {
+              "dx": -17.767,
+              "dy": 3.507
+            },
+            {
+              "dx": -16.967,
+              "dy": 3.507
+            },
+            {
+              "dx": -16.967,
+              "dy": 4.307
+            },
+            {
+              "dx": -17.767,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -17.367,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 57",
+          "points": [
+            {
+              "dx": -16.867,
+              "dy": 3.507
+            },
+            {
+              "dx": -16.067,
+              "dy": 3.507
+            },
+            {
+              "dx": -16.067,
+              "dy": 4.307
+            },
+            {
+              "dx": -16.867,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -16.467,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 58",
+          "points": [
+            {
+              "dx": -15.967,
+              "dy": 3.507
+            },
+            {
+              "dx": -15.167,
+              "dy": 3.507
+            },
+            {
+              "dx": -15.167,
+              "dy": 4.307
+            },
+            {
+              "dx": -15.967,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -15.567,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 59",
+          "points": [
+            {
+              "dx": -15.067,
+              "dy": 3.507
+            },
+            {
+              "dx": -14.267,
+              "dy": 3.507
+            },
+            {
+              "dx": -14.267,
+              "dy": 4.307
+            },
+            {
+              "dx": -15.067,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -14.667,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 60",
+          "points": [
+            {
+              "dx": -14.167,
+              "dy": 3.507
+            },
+            {
+              "dx": -13.367,
+              "dy": 3.507
+            },
+            {
+              "dx": -13.367,
+              "dy": 4.307
+            },
+            {
+              "dx": -14.167,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -13.767,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 61",
+          "points": [
+            {
+              "dx": -13.287,
+              "dy": 3.507
+            },
+            {
+              "dx": -12.487,
+              "dy": 3.507
+            },
+            {
+              "dx": -12.487,
+              "dy": 4.307
+            },
+            {
+              "dx": -13.287,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -12.887,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 62",
+          "points": [
+            {
+              "dx": -12.387,
+              "dy": 3.507
+            },
+            {
+              "dx": -11.587,
+              "dy": 3.507
+            },
+            {
+              "dx": -11.587,
+              "dy": 4.307
+            },
+            {
+              "dx": -12.387,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -11.987,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 63",
+          "points": [
+            {
+              "dx": -11.487,
+              "dy": 3.507
+            },
+            {
+              "dx": -10.687,
+              "dy": 3.507
+            },
+            {
+              "dx": -10.687,
+              "dy": 4.307
+            },
+            {
+              "dx": -11.487,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -11.087,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 64",
+          "points": [
+            {
+              "dx": -10.587,
+              "dy": 3.507
+            },
+            {
+              "dx": -9.787,
+              "dy": 3.507
+            },
+            {
+              "dx": -9.787,
+              "dy": 4.307
+            },
+            {
+              "dx": -10.587,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -10.187,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 65",
+          "points": [
+            {
+              "dx": -9.687,
+              "dy": 3.507
+            },
+            {
+              "dx": -8.887,
+              "dy": 3.507
+            },
+            {
+              "dx": -8.887,
+              "dy": 4.307
+            },
+            {
+              "dx": -9.687,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -9.287,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 66",
+          "points": [
+            {
+              "dx": -8.787,
+              "dy": 3.507
+            },
+            {
+              "dx": -7.987,
+              "dy": 3.507
+            },
+            {
+              "dx": -7.987,
+              "dy": 4.307
+            },
+            {
+              "dx": -8.787,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -8.387,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 67",
+          "points": [
+            {
+              "dx": -7.887,
+              "dy": 3.507
+            },
+            {
+              "dx": -7.087,
+              "dy": 3.507
+            },
+            {
+              "dx": -7.087,
+              "dy": 4.307
+            },
+            {
+              "dx": -7.887,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -7.487,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 68",
+          "points": [
+            {
+              "dx": -6.987,
+              "dy": 3.507
+            },
+            {
+              "dx": -6.187,
+              "dy": 3.507
+            },
+            {
+              "dx": -6.187,
+              "dy": 4.307
+            },
+            {
+              "dx": -6.987,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -6.587,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 69",
+          "points": [
+            {
+              "dx": -6.107,
+              "dy": 3.507
+            },
+            {
+              "dx": -5.307,
+              "dy": 3.507
+            },
+            {
+              "dx": -5.307,
+              "dy": 4.307
+            },
+            {
+              "dx": -6.107,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -5.707,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 70",
+          "points": [
+            {
+              "dx": -5.207,
+              "dy": 3.507
+            },
+            {
+              "dx": -4.407,
+              "dy": 3.507
+            },
+            {
+              "dx": -4.407,
+              "dy": 4.307
+            },
+            {
+              "dx": -5.207,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -4.807,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 71",
+          "points": [
+            {
+              "dx": -4.307,
+              "dy": 3.507
+            },
+            {
+              "dx": -3.507,
+              "dy": 3.507
+            },
+            {
+              "dx": -3.507,
+              "dy": 4.307
+            },
+            {
+              "dx": -4.307,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -3.907,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 72",
+          "points": [
+            {
+              "dx": -3.407,
+              "dy": 3.507
+            },
+            {
+              "dx": -2.607,
+              "dy": 3.507
+            },
+            {
+              "dx": -2.607,
+              "dy": 4.307
+            },
+            {
+              "dx": -3.407,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -3.007,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Domestic Waste Bin space 73",
+          "points": [
+            {
+              "dx": -2.507,
+              "dy": 3.507
+            },
+            {
+              "dx": -1.707,
+              "dy": 3.507
+            },
+            {
+              "dx": -1.707,
+              "dy": 4.307
+            },
+            {
+              "dx": -2.507,
+              "dy": 4.307
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -2.107,
+              "dy": 3.907
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 74",
+          "points": [
+            {
+              "dx": -19.539,
+              "dy": 4.706
+            },
+            {
+              "dx": -18.139,
+              "dy": 4.706
+            },
+            {
+              "dx": -18.139,
+              "dy": 5.506
+            },
+            {
+              "dx": -19.539,
+              "dy": 5.506
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -18.839,
+              "dy": 5.106
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 75",
+          "points": [
+            {
+              "dx": -18.039,
+              "dy": 4.706
+            },
+            {
+              "dx": -16.639,
+              "dy": 4.706
+            },
+            {
+              "dx": -16.639,
+              "dy": 5.506
+            },
+            {
+              "dx": -18.039,
+              "dy": 5.506
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -17.339,
+              "dy": 5.106
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 76",
+          "points": [
+            {
+              "dx": -16.539,
+              "dy": 4.706
+            },
+            {
+              "dx": -15.139,
+              "dy": 4.706
+            },
+            {
+              "dx": -15.139,
+              "dy": 5.506
+            },
+            {
+              "dx": -16.539,
+              "dy": 5.506
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -15.839,
+              "dy": 5.106
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 77",
+          "points": [
+            {
+              "dx": -15.039,
+              "dy": 4.706
+            },
+            {
+              "dx": -13.639,
+              "dy": 4.706
+            },
+            {
+              "dx": -13.639,
+              "dy": 5.506
+            },
+            {
+              "dx": -15.039,
+              "dy": 5.506
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -14.339,
+              "dy": 5.106
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 78",
+          "points": [
+            {
+              "dx": -13.539,
+              "dy": 4.706
+            },
+            {
+              "dx": -12.139,
+              "dy": 4.706
+            },
+            {
+              "dx": -12.139,
+              "dy": 5.506
+            },
+            {
+              "dx": -13.539,
+              "dy": 5.506
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -12.839,
+              "dy": 5.106
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 79",
+          "points": [
+            {
+              "dx": -12.039,
+              "dy": 4.706
+            },
+            {
+              "dx": -10.639,
+              "dy": 4.706
+            },
+            {
+              "dx": -10.639,
+              "dy": 5.506
+            },
+            {
+              "dx": -12.039,
+              "dy": 5.506
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -11.339,
+              "dy": 5.106
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 80",
+          "points": [
+            {
+              "dx": -19.539,
+              "dy": 5.606
+            },
+            {
+              "dx": -18.139,
+              "dy": 5.606
+            },
+            {
+              "dx": -18.139,
+              "dy": 6.406
+            },
+            {
+              "dx": -19.539,
+              "dy": 6.406
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -18.839,
+              "dy": 6.006
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 81",
+          "points": [
+            {
+              "dx": -18.039,
+              "dy": 5.606
+            },
+            {
+              "dx": -16.639,
+              "dy": 5.606
+            },
+            {
+              "dx": -16.639,
+              "dy": 6.406
+            },
+            {
+              "dx": -18.039,
+              "dy": 6.406
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -17.339,
+              "dy": 6.006
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 82",
+          "points": [
+            {
+              "dx": -16.539,
+              "dy": 5.606
+            },
+            {
+              "dx": -15.139,
+              "dy": 5.606
+            },
+            {
+              "dx": -15.139,
+              "dy": 6.406
+            },
+            {
+              "dx": -16.539,
+              "dy": 6.406
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -15.839,
+              "dy": 6.006
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 83",
+          "points": [
+            {
+              "dx": -15.039,
+              "dy": 5.606
+            },
+            {
+              "dx": -13.639,
+              "dy": 5.606
+            },
+            {
+              "dx": -13.639,
+              "dy": 6.406
+            },
+            {
+              "dx": -15.039,
+              "dy": 6.406
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -14.339,
+              "dy": 6.006
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 84",
+          "points": [
+            {
+              "dx": -13.539,
+              "dy": 5.606
+            },
+            {
+              "dx": -12.139,
+              "dy": 5.606
+            },
+            {
+              "dx": -12.139,
+              "dy": 6.406
+            },
+            {
+              "dx": -13.539,
+              "dy": 6.406
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -12.839,
+              "dy": 6.006
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 85",
+          "points": [
+            {
+              "dx": -12.039,
+              "dy": 5.606
+            },
+            {
+              "dx": -10.639,
+              "dy": 5.606
+            },
+            {
+              "dx": -10.639,
+              "dy": 6.406
+            },
+            {
+              "dx": -12.039,
+              "dy": 6.406
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -11.339,
+              "dy": 6.006
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 86",
+          "points": [
+            {
+              "dx": -19.539,
+              "dy": 6.506
+            },
+            {
+              "dx": -18.139,
+              "dy": 6.506
+            },
+            {
+              "dx": -18.139,
+              "dy": 7.306
+            },
+            {
+              "dx": -19.539,
+              "dy": 7.306
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -18.839,
+              "dy": 6.906
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 87",
+          "points": [
+            {
+              "dx": -18.039,
+              "dy": 6.506
+            },
+            {
+              "dx": -16.639,
+              "dy": 6.506
+            },
+            {
+              "dx": -16.639,
+              "dy": 7.306
+            },
+            {
+              "dx": -18.039,
+              "dy": 7.306
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -17.339,
+              "dy": 6.906
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 88",
+          "points": [
+            {
+              "dx": -16.539,
+              "dy": 6.506
+            },
+            {
+              "dx": -15.139,
+              "dy": 6.506
+            },
+            {
+              "dx": -15.139,
+              "dy": 7.306
+            },
+            {
+              "dx": -16.539,
+              "dy": 7.306
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -15.839,
+              "dy": 6.906
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 89",
+          "points": [
+            {
+              "dx": -15.039,
+              "dy": 6.506
+            },
+            {
+              "dx": -13.639,
+              "dy": 6.506
+            },
+            {
+              "dx": -13.639,
+              "dy": 7.306
+            },
+            {
+              "dx": -15.039,
+              "dy": 7.306
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -14.339,
+              "dy": 6.906
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 90",
+          "points": [
+            {
+              "dx": -13.539,
+              "dy": 6.506
+            },
+            {
+              "dx": -12.139,
+              "dy": 6.506
+            },
+            {
+              "dx": -12.139,
+              "dy": 7.306
+            },
+            {
+              "dx": -13.539,
+              "dy": 7.306
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -12.839,
+              "dy": 6.906
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 91",
+          "points": [
+            {
+              "dx": -12.039,
+              "dy": 6.506
+            },
+            {
+              "dx": -10.639,
+              "dy": 6.506
+            },
+            {
+              "dx": -10.639,
+              "dy": 7.306
+            },
+            {
+              "dx": -12.039,
+              "dy": 7.306
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -11.339,
+              "dy": 6.906
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 92",
+          "points": [
+            {
+              "dx": -19.539,
+              "dy": 7.406
+            },
+            {
+              "dx": -18.139,
+              "dy": 7.406
+            },
+            {
+              "dx": -18.139,
+              "dy": 8.206
+            },
+            {
+              "dx": -19.539,
+              "dy": 8.206
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -18.839,
+              "dy": 7.806
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 93",
+          "points": [
+            {
+              "dx": -18.039,
+              "dy": 7.406
+            },
+            {
+              "dx": -16.639,
+              "dy": 7.406
+            },
+            {
+              "dx": -16.639,
+              "dy": 8.206
+            },
+            {
+              "dx": -18.039,
+              "dy": 8.206
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -17.339,
+              "dy": 7.806
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 94",
+          "points": [
+            {
+              "dx": -16.539,
+              "dy": 7.406
+            },
+            {
+              "dx": -15.139,
+              "dy": 7.406
+            },
+            {
+              "dx": -15.139,
+              "dy": 8.206
+            },
+            {
+              "dx": -16.539,
+              "dy": 8.206
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -15.839,
+              "dy": 7.806
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 95",
+          "points": [
+            {
+              "dx": -15.039,
+              "dy": 7.406
+            },
+            {
+              "dx": -13.639,
+              "dy": 7.406
+            },
+            {
+              "dx": -13.639,
+              "dy": 8.206
+            },
+            {
+              "dx": -15.039,
+              "dy": 8.206
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -14.339,
+              "dy": 7.806
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 96",
+          "points": [
+            {
+              "dx": -13.539,
+              "dy": 7.406
+            },
+            {
+              "dx": -12.139,
+              "dy": 7.406
+            },
+            {
+              "dx": -12.139,
+              "dy": 8.206
+            },
+            {
+              "dx": -13.539,
+              "dy": 8.206
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -12.839,
+              "dy": 7.806
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 97",
+          "points": [
+            {
+              "dx": -12.039,
+              "dy": 7.406
+            },
+            {
+              "dx": -10.639,
+              "dy": 7.406
+            },
+            {
+              "dx": -10.639,
+              "dy": 8.206
+            },
+            {
+              "dx": -12.039,
+              "dy": 8.206
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -11.339,
+              "dy": 7.806
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 98",
+          "points": [
+            {
+              "dx": -19.539,
+              "dy": 8.306
+            },
+            {
+              "dx": -18.139,
+              "dy": 8.306
+            },
+            {
+              "dx": -18.139,
+              "dy": 9.106
+            },
+            {
+              "dx": -19.539,
+              "dy": 9.106
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -18.839,
+              "dy": 8.706
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 99",
+          "points": [
+            {
+              "dx": -18.039,
+              "dy": 8.306
+            },
+            {
+              "dx": -16.639,
+              "dy": 8.306
+            },
+            {
+              "dx": -16.639,
+              "dy": 9.106
+            },
+            {
+              "dx": -18.039,
+              "dy": 9.106
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -17.339,
+              "dy": 8.706
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 100",
+          "points": [
+            {
+              "dx": -16.539,
+              "dy": 8.306
+            },
+            {
+              "dx": -15.139,
+              "dy": 8.306
+            },
+            {
+              "dx": -15.139,
+              "dy": 9.106
+            },
+            {
+              "dx": -16.539,
+              "dy": 9.106
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -15.839,
+              "dy": 8.706
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 101",
+          "points": [
+            {
+              "dx": -15.039,
+              "dy": 8.306
+            },
+            {
+              "dx": -13.639,
+              "dy": 8.306
+            },
+            {
+              "dx": -13.639,
+              "dy": 9.106
+            },
+            {
+              "dx": -15.039,
+              "dy": 9.106
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -14.339,
+              "dy": 8.706
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 102",
+          "points": [
+            {
+              "dx": -13.539,
+              "dy": 8.306
+            },
+            {
+              "dx": -12.139,
+              "dy": 8.306
+            },
+            {
+              "dx": -12.139,
+              "dy": 9.106
+            },
+            {
+              "dx": -13.539,
+              "dy": 9.106
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -12.839,
+              "dy": 8.706
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 103",
+          "points": [
+            {
+              "dx": -12.039,
+              "dy": 8.306
+            },
+            {
+              "dx": -10.639,
+              "dy": 8.306
+            },
+            {
+              "dx": -10.639,
+              "dy": 9.106
+            },
+            {
+              "dx": -12.039,
+              "dy": 9.106
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -11.339,
+              "dy": 8.706
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 104",
+          "points": [
+            {
+              "dx": -19.539,
+              "dy": 9.206
+            },
+            {
+              "dx": -18.139,
+              "dy": 9.206
+            },
+            {
+              "dx": -18.139,
+              "dy": 10.006
+            },
+            {
+              "dx": -19.539,
+              "dy": 10.006
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -18.839,
+              "dy": 9.606
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 105",
+          "points": [
+            {
+              "dx": -18.039,
+              "dy": 9.206
+            },
+            {
+              "dx": -16.639,
+              "dy": 9.206
+            },
+            {
+              "dx": -16.639,
+              "dy": 10.006
+            },
+            {
+              "dx": -18.039,
+              "dy": 10.006
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -17.339,
+              "dy": 9.606
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 106",
+          "points": [
+            {
+              "dx": -16.539,
+              "dy": 9.206
+            },
+            {
+              "dx": -15.139,
+              "dy": 9.206
+            },
+            {
+              "dx": -15.139,
+              "dy": 10.006
+            },
+            {
+              "dx": -16.539,
+              "dy": 10.006
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -15.839,
+              "dy": 9.606
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 107",
+          "points": [
+            {
+              "dx": -15.039,
+              "dy": 9.206
+            },
+            {
+              "dx": -13.639,
+              "dy": 9.206
+            },
+            {
+              "dx": -13.639,
+              "dy": 10.006
+            },
+            {
+              "dx": -15.039,
+              "dy": 10.006
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -14.339,
+              "dy": 9.606
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 108",
+          "points": [
+            {
+              "dx": -13.539,
+              "dy": 9.206
+            },
+            {
+              "dx": -12.139,
+              "dy": 9.206
+            },
+            {
+              "dx": -12.139,
+              "dy": 10.006
+            },
+            {
+              "dx": -13.539,
+              "dy": 10.006
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -12.839,
+              "dy": 9.606
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 109",
+          "points": [
+            {
+              "dx": -12.039,
+              "dy": 9.206
+            },
+            {
+              "dx": -10.639,
+              "dy": 9.206
+            },
+            {
+              "dx": -10.639,
+              "dy": 10.006
+            },
+            {
+              "dx": -12.039,
+              "dy": 10.006
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -11.339,
+              "dy": 9.606
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 110",
+          "points": [
+            {
+              "dx": -19.539,
+              "dy": 10.106
+            },
+            {
+              "dx": -18.139,
+              "dy": 10.106
+            },
+            {
+              "dx": -18.139,
+              "dy": 10.906
+            },
+            {
+              "dx": -19.539,
+              "dy": 10.906
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -18.839,
+              "dy": 10.506
+            }
+          ]
+        },
+        {
+          "name": "Linen Collection Bin space 111",
+          "points": [
+            {
+              "dx": -18.039,
+              "dy": 10.106
+            },
+            {
+              "dx": -16.639,
+              "dy": 10.106
+            },
+            {
+              "dx": -16.639,
+              "dy": 10.906
+            },
+            {
+              "dx": -18.039,
+              "dy": 10.906
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -17.339,
+              "dy": 10.506
             }
           ]
         }
@@ -22208,8 +24473,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 176.0,
-      "y": 15.0,
+      "x": 176,
+      "y": 15,
       "operating_start_time": "00:00",
       "operating_end_time": "24:00"
     },
@@ -22390,6 +24655,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "requires_staff": false,
+        "staff_initial_count": 1,
+        "staff_resource_name": "",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -22439,6 +24707,9 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "requires_staff": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22480,6 +24751,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22491,6 +24765,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22502,6 +24777,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22523,6 +24802,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22534,6 +24816,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22545,6 +24828,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22566,6 +24853,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22577,6 +24867,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22588,6 +24879,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22609,6 +24904,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22620,6 +24918,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22631,6 +24930,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22652,6 +24955,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22663,6 +24969,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22674,6 +24981,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22695,6 +25006,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22706,6 +25020,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22717,6 +25032,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22738,6 +25057,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22749,6 +25071,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22760,6 +25083,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22781,6 +25108,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22792,6 +25122,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22803,6 +25134,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22824,6 +25159,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22835,6 +25173,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22846,6 +25185,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22867,6 +25210,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22878,6 +25224,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22889,6 +25236,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22910,6 +25261,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22921,6 +25275,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22932,6 +25287,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22953,6 +25312,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -22964,6 +25326,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -22975,6 +25338,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -22996,6 +25363,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -23007,6 +25377,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -23018,6 +25389,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -23039,6 +25414,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -23050,6 +25428,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -23061,6 +25440,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -23082,6 +25465,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -23093,6 +25479,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -23104,6 +25491,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -23125,6 +25516,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -23136,6 +25530,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -23147,6 +25542,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -23168,6 +25567,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -23179,6 +25581,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -23190,6 +25593,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -23211,6 +25618,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -23222,6 +25632,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -23233,6 +25644,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           },
@@ -23254,6 +25669,9 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "requires_staff": true,
+            "staff_initial_count": 19,
+            "staff_resource_name": "Host team",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -23265,6 +25683,7 @@
               "thu",
               "fri"
             ],
+            "run_every_fortnight": false,
             "scheduled_times": [
               "08:00",
               "11:45",
@@ -23276,6 +25695,10 @@
             "volume_per_event_m3": 0.0,
             "threshold_volume_m3": 0.0,
             "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
             "notes": "",
             "department_location_role": "dropoff"
           }
@@ -23322,6 +25745,9 @@
               "return_enabled": true,
               "return_payload": "Burlodge Trolley",
               "return_delay_minutes": 45.0,
+              "requires_staff": true,
+              "staff_initial_count": 19,
+              "staff_resource_name": "Host team",
               "reusable_return_pool_enabled": true,
               "reusable_return_pool_multiplier": 2.0,
               "reusable_return_pool_max": 0,
@@ -23333,6 +25759,7 @@
                 "thu",
                 "fri"
               ],
+              "run_every_fortnight": false,
               "scheduled_times": [
                 "08:00",
                 "11:45",
@@ -23344,6 +25771,10 @@
               "volume_per_event_m3": 0.0,
               "threshold_volume_m3": 0.0,
               "base_daily_volume_m3": 0.0,
+              "timeframe_start": "09:00",
+              "timeframe_end": "17:00",
+              "timeframe_payload_multiple": 1,
+              "payload_multiple": 1,
               "notes": "",
               "department_location_role": "dropoff"
             }
@@ -23363,6 +25794,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": false,
         "return_payload": "",
+        "requires_staff": false,
+        "staff_initial_count": 1,
+        "staff_resource_name": "",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -23412,6 +25846,9 @@
             "return_enabled": false,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "requires_staff": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25214,6 +27651,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "requires_staff": false,
+        "staff_initial_count": 1,
+        "staff_resource_name": "",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -25259,6 +27699,9 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "requires_staff": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25298,6 +27741,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "requires_staff": false,
+        "staff_initial_count": 1,
+        "staff_resource_name": "",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -25345,6 +27791,9 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "requires_staff": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -27461,6 +29910,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": false,
         "return_payload": "",
+        "requires_staff": true,
+        "staff_initial_count": 1,
+        "staff_resource_name": "",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 0.0,
         "reusable_return_pool_max": 0,
@@ -27502,6 +29954,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -27521,1224 +29976,6 @@
             "payload_multiple": 1,
             "notes": "Goods deliveries - weekly Mondays"
           },
-          "D13": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D13-STORES",
-            "dropoff_locations": [
-              "D13-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly delivery - Tuesday",
-            "department_location_role": "dropoff"
-          },
-          "D11": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D11-STORES",
-            "dropoff_locations": [
-              "D11-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly delivery - Tuesday",
-            "department_location_role": "dropoff"
-          },
-          "D22": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "thu"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Twice weekly - Endoscopy",
-            "department_location_role": "dropoff"
-          },
-          "D17": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Tuesdays",
-            "department_location_role": "dropoff"
-          },
-          "D21": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D21-STORES",
-            "dropoff_locations": [
-              "D21-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Tuesdays",
-            "department_location_role": "dropoff"
-          },
-          "D35": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D35-STORES",
-            "dropoff_locations": [
-              "D35-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Tuesdays",
-            "department_location_role": "dropoff"
-          },
-          "D36": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D35-STORES",
-            "dropoff_locations": [
-              "D35-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Tuesdays",
-            "department_location_role": "dropoff"
-          },
-          "D39": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D39-STORES",
-            "dropoff_locations": [
-              "D39-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Tuesdays",
-            "department_location_role": "dropoff"
-          },
-          "D40": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D39-STORES",
-            "dropoff_locations": [
-              "D39-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Tuesdays",
-            "department_location_role": "dropoff"
-          },
-          "D41": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D41-STORES",
-            "dropoff_locations": [
-              "D41-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Tuesdays",
-            "department_location_role": "dropoff"
-          },
-          "D42": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D41-STORES",
-            "dropoff_locations": [
-              "D41-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Tuesdays",
-            "department_location_role": "dropoff"
-          },
-          "D10": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D10-STORES",
-            "dropoff_locations": [
-              "D10-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Wednesday",
-            "department_location_role": "dropoff"
-          },
-          "D19": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Wednesday",
-            "department_location_role": "dropoff"
-          },
-          "D30": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D29-STORES",
-            "dropoff_locations": [
-              "D29-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Wednesday",
-            "department_location_role": "dropoff"
-          },
-          "D43": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D43-STORES",
-            "dropoff_locations": [
-              "D43-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Wednesday",
-            "department_location_role": "dropoff"
-          },
-          "D46": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D21-STORES",
-            "dropoff_locations": [
-              "D21-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Wednesday",
-            "department_location_role": "dropoff"
-          },
-          "D18": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Thursdays",
-            "department_location_role": "dropoff"
-          },
-          "D29": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D29-STORES",
-            "dropoff_locations": [
-              "D29-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Thursdays",
-            "department_location_role": "dropoff"
-          },
-          "D31": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D31-STORES",
-            "dropoff_locations": [
-              "D31-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "thu"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Thursdays",
-            "department_location_role": "dropoff"
-          },
-          "D1": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D1-STORES",
-            "dropoff_locations": [
-              "D1-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Fridays",
-            "department_location_role": "dropoff"
-          },
-          "D20": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Fridays",
-            "department_location_role": "dropoff"
-          },
-          "D32": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D31-STORES",
-            "dropoff_locations": [
-              "D31-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Fridays",
-            "department_location_role": "dropoff"
-          },
-          "D33": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D33-STORES",
-            "dropoff_locations": [
-              "D33-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Fridays",
-            "department_location_role": "dropoff"
-          },
-          "D34": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D33-STORES",
-            "dropoff_locations": [
-              "D33-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Fridays",
-            "department_location_role": "dropoff"
-          },
-          "D37": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D37-STORES",
-            "dropoff_locations": [
-              "D37-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 60.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "fri"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Goods deliveries - weekly Fridays",
-            "department_location_role": "dropoff"
-          },
-          "D16": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D23": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D25": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D27": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D4": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D4-STORES",
-            "dropoff_locations": [
-              "D4-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D5": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D5-STORES",
-            "dropoff_locations": [
-              "D5-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D12": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D12-STORES",
-            "dropoff_locations": [
-              "D12-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed",
-              "fri"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Twice weekly - ED Majors",
-            "department_location_role": "dropoff"
-          },
           "D14": {
             "enabled": true,
             "generation_mode": "timeframe",
@@ -28757,6 +29994,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -28795,6 +30035,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -28833,6 +30076,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -28871,6 +30117,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -28909,6 +30158,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -28947,6 +30199,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -28985,6 +30240,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -29023,6 +30281,9 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -29041,6 +30302,1320 @@
             "timeframe_payload_multiple": 3,
             "payload_multiple": 3,
             "notes": "Goods deliveries - weekly Mondays",
+            "department_location_role": "dropoff"
+          },
+          "D17": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D21": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D21-STORES",
+            "dropoff_locations": [
+              "D21-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D35": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D35-STORES",
+            "dropoff_locations": [
+              "D35-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D36": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D35-STORES",
+            "dropoff_locations": [
+              "D35-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D39": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D39-STORES",
+            "dropoff_locations": [
+              "D39-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D40": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D39-STORES",
+            "dropoff_locations": [
+              "D39-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D41": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D41-STORES",
+            "dropoff_locations": [
+              "D41-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D42": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D41-STORES",
+            "dropoff_locations": [
+              "D41-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Tuesdays",
+            "department_location_role": "dropoff"
+          },
+          "D10": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D10-STORES",
+            "dropoff_locations": [
+              "D10-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D19": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D30": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D29-STORES",
+            "dropoff_locations": [
+              "D29-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D43": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D43-STORES",
+            "dropoff_locations": [
+              "D43-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D46": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D21-STORES",
+            "dropoff_locations": [
+              "D21-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Wednesday",
+            "department_location_role": "dropoff"
+          },
+          "D18": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Thursdays",
+            "department_location_role": "dropoff"
+          },
+          "D29": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D29-STORES",
+            "dropoff_locations": [
+              "D29-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Thursdays",
+            "department_location_role": "dropoff"
+          },
+          "D31": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D31-STORES",
+            "dropoff_locations": [
+              "D31-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Thursdays",
+            "department_location_role": "dropoff"
+          },
+          "D16": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D23": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D25": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D27": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D4": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D4-STORES",
+            "dropoff_locations": [
+              "D4-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D5": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D5-STORES",
+            "dropoff_locations": [
+              "D5-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D12": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D12-STORES",
+            "dropoff_locations": [
+              "D12-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed",
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Twice weekly - ED Majors",
+            "department_location_role": "dropoff"
+          },
+          "D11": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D11-STORES",
+            "dropoff_locations": [
+              "D11-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly delivery - Tuesday",
+            "department_location_role": "dropoff"
+          },
+          "D13": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D13-STORES",
+            "dropoff_locations": [
+              "D13-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly delivery - Tuesday",
+            "department_location_role": "dropoff"
+          },
+          "D22": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Twice weekly - Endoscopy",
+            "department_location_role": "dropoff"
+          },
+          "D1": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D1-STORES",
+            "dropoff_locations": [
+              "D1-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D20": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D32": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D31-STORES",
+            "dropoff_locations": [
+              "D31-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D33": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D33-STORES",
+            "dropoff_locations": [
+              "D33-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D34": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D33-STORES",
+            "dropoff_locations": [
+              "D33-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D37": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D37-STORES",
+            "dropoff_locations": [
+              "D37-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 60.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Goods deliveries - weekly Fridays",
             "department_location_role": "dropoff"
           }
         },
@@ -29075,6 +31650,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 60.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29126,6 +31704,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 60.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29174,6 +31755,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 60.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29220,6 +31804,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 60.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29269,6 +31856,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 60.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29318,6 +31908,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 0.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29353,9 +31946,9 @@
               "pickup_locations": [
                 "D49-STORES"
               ],
-              "dropoff_location": "D13-STORES",
+              "dropoff_location": "D11-STORES",
               "dropoff_locations": [
-                "D13-STORES"
+                "D11-STORES"
               ],
               "payload": "Goods Cage",
               "tracked_item_exchange": false,
@@ -29363,6 +31956,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 0.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29407,6 +32003,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 0.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29452,6 +32051,9 @@
               "return_enabled": true,
               "return_payload": "Goods Cage",
               "return_delay_minutes": 0.0,
+              "requires_staff": true,
+              "staff_initial_count": 1,
+              "staff_resource_name": "Stores team",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -29489,6 +32091,9 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "requires_staff": false,
+        "staff_initial_count": 1,
+        "staff_resource_name": "",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -29538,6 +32143,9 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "requires_staff": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,

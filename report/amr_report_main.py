@@ -10,6 +10,7 @@ from amr_report_analysis import (
     load_location_catalog,
     load_payload_dimensions,
     load_payload_weights,
+    load_task_generation_report_metadata,
 )
 from amr_report_pdf_report import build_report
 from amr_report_cli import parse_args
@@ -147,6 +148,11 @@ def main() -> None:
     payload_dimensions = (
         load_payload_dimensions(Path(args.config_json)) if args.config_json else None
     )
+    task_generation_metadata = (
+        load_task_generation_report_metadata(Path(args.config_json))
+        if args.config_json
+        else None
+    )
 
     print_progress(15, 100, "Analysing simulation data")
 
@@ -159,6 +165,7 @@ def main() -> None:
         floor_dxf_map,
         location_catalog,
         payload_dimensions,
+        task_generation_metadata,
     )
 
     if args.failed_tasks_csv:

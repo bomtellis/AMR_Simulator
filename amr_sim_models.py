@@ -80,6 +80,10 @@ class Task:
     return_delay_minutes: float = 0.0
     return_route_profile: str = ""
     return_priority: int = 0
+    requires_staff: bool = False
+    staff_initial_count: int = 1
+    staff_resource_name: str = ""
+    staff_category_key: str = ""
 
 
 @dataclass
