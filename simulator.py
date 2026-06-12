@@ -140,6 +140,12 @@ class Simulation:
         self.edge_reservations: Dict[
             Tuple[str, str], List[Tuple[float, float, str]]
         ] = defaultdict(list)
+        # Direction-aware reservations preserve FIFO movement along a corridor
+        # edge. Physical reservations still control capacity/congestion; these
+        # prevent a later AMR in the same direction from visually overtaking.
+        self.directed_edge_reservations: Dict[
+            Tuple[str, str], List[Tuple[float, float, str]]
+        ] = defaultdict(list)
 
         self.node_reservations: Dict[str, List[Tuple[float, float, str]]] = defaultdict(
             list
@@ -1593,6 +1599,18 @@ class Simulation:
             current_location = amr_loc
             carrying_count = 0
 
+            departure_space_name = str(getattr(amr, "inventory_space_name", "") or "").strip()
+            if departure_space_name:
+                departure_segments, departure_duration, _departure_distance = (
+                    self._local_manoeuvre_segments_from_inventory_space(
+                        amr, amr_loc.name, departure_space_name, t, purpose="amr_unstow"
+                    )
+                )
+                if departure_segments:
+                    segments.extend(departure_segments)
+                    t += departure_duration
+                    total += departure_duration
+
             def move_between(
                 location_a, location_b, current_time_value, payload_for_leg, rules=None
             ):
@@ -1677,6 +1695,7 @@ class Simulation:
                             "lift_id": plan["lift"].id,
                             "from": f"{plan['lift'].id}-F{plan['reposition_from_floor']}",
                             "to": f"{plan['lift'].id}-F{plan['reposition_to_floor']}",
+                            "amr_wait_node": plan["origin_lift"].name,
                             "from_floor": plan["reposition_from_floor"],
                             "to_floor": plan["reposition_to_floor"],
                             "wait_time": 0.0,
@@ -1702,10 +1721,10 @@ class Simulation:
                         "from_floor": location_a.floor,
                         "to_floor": location_b.floor,
                         "wait_time": 0.0,
-                        "duration": plan["lift_finish"]
-                        - plan["lift_start"]
-                        - plan.get("reposition_sec", 0.0)
-                        - plan["wait_time"],
+                        "duration": max(
+                            0.0,
+                            plan["lift_finish"] - plan.get("reposition_finish", plan["lift_start"] + plan.get("reposition_sec", 0.0)),
+                        ),
                         "distance_m": plan["vertical_distance_m"],
                         "vertical_distance_m": plan["vertical_distance_m"],
                     }
@@ -2831,6 +2850,56 @@ class Simulation:
             total_distance += dist
 
         return segments, total_duration, total_distance
+
+    def _local_manoeuvre_segments_from_inventory_space(
+        self,
+        amr: AMR,
+        location_name: str,
+        space_name: str,
+        start_time_value: float,
+        purpose: str = "amr_unstow",
+    ) -> Tuple[List[dict], float, float]:
+        """Build visual/logged local manoeuvre segments from an AMR bay to its parent location node."""
+        location_name = str(location_name or "").strip()
+        space_name = str(space_name or "").strip()
+        if not location_name or not space_name:
+            return [], 0.0, 0.0
+
+        target_space = None
+        for space in self.inventory_spaces_by_location.get(location_name, []):
+            if str(space.get("name", "") or "").strip() == space_name:
+                target_space = space
+                break
+        if target_space is None:
+            return [], 0.0, 0.0
+
+        to_space_segments, total_duration, total_distance = self._local_manoeuvre_segments_to_inventory_space(
+            amr,
+            location_name,
+            target_space,
+            start_time_value,
+            purpose=purpose,
+        )
+        if not to_space_segments:
+            return [], 0.0, 0.0
+
+        reversed_segments: List[dict] = []
+        for index, segment in enumerate(reversed(to_space_segments)):
+            item = dict(segment)
+            item["purpose"] = purpose
+            item["from"], item["to"] = segment.get("to", ""), segment.get("from", "")
+            item["from_x"], item["to_x"] = segment.get("to_x"), segment.get("from_x")
+            item["from_y"], item["to_y"] = segment.get("to_y"), segment.get("from_y")
+            item["from_floor"], item["to_floor"] = segment.get("to_floor"), segment.get("from_floor")
+            item["amr_rotation_start_deg"], item["amr_rotation_end_deg"] = (
+                segment.get("amr_rotation_end_deg"),
+                segment.get("amr_rotation_start_deg"),
+            )
+            item["amr_rotation_deg"] = item.get("amr_rotation_end_deg")
+            item["local_path_index"] = index
+            reversed_segments.append(item)
+
+        return reversed_segments, total_duration, total_distance
 
     def _inventory_space_accepts_amr(self, space: dict, amr: AMR) -> bool:
         """Return True when an inventory space can store this AMR.
@@ -4693,36 +4762,83 @@ class Simulation:
                 count += 1
         return count
 
+    def _directed_no_overtake_start(
+        self,
+        directed_edge_key: Tuple[str, str],
+        requested_start: float,
+        duration: float,
+        spacing_time: float,
+    ) -> float:
+        """Return the earliest same-direction edge start that preserves FIFO order."""
+        reservations = self.directed_edge_reservations.get(directed_edge_key, [])
+        t = float(requested_start)
+        duration = max(0.0, float(duration or 0.0))
+        spacing_time = max(0.0, float(spacing_time or 0.0))
+
+        while True:
+            adjusted = t
+            for start, end, _ in reservations:
+                start = float(start)
+                end = float(end)
+
+                if t >= start - 1e-9:
+                    adjusted = max(adjusted, start + spacing_time)
+                    adjusted = max(adjusted, (end + spacing_time) - duration)
+                else:
+                    if t + duration > end - spacing_time:
+                        adjusted = max(adjusted, end + spacing_time)
+
+            if adjusted <= t + 1e-9:
+                return t
+            t = adjusted
+
     def _find_next_edge_start(
         self,
         edge_key: Tuple[str, str],
         requested_start: float,
         duration: float,
         spacing_time: float,
+        directed_edge_key: Optional[Tuple[str, str]] = None,
     ) -> Tuple[float, int]:
         reservations = self.edge_reservations.get(edge_key, [])
-        t = requested_start
+        t = float(requested_start)
+        duration = max(0.0, float(duration or 0.0))
+        spacing_time = max(0.0, float(spacing_time or 0.0))
 
         while True:
             overlap_count = 0
             next_candidate = None
 
             for start, end, _ in reservations:
-                protected_start = start - spacing_time
-                protected_end = end + spacing_time
+                protected_start = float(start) - spacing_time
+                protected_end = float(end) + spacing_time
 
                 if not (t + duration <= protected_start or t >= protected_end):
                     overlap_count += 1
                     if next_candidate is None or protected_end < next_candidate:
                         next_candidate = protected_end
 
-            if overlap_count < self.edge_max_concurrency:
+            candidate_t = t
+            if overlap_count >= self.edge_max_concurrency:
+                if next_candidate is None:
+                    return t, overlap_count
+                candidate_t = max(candidate_t, next_candidate)
+
+            if directed_edge_key is not None:
+                candidate_t = max(
+                    candidate_t,
+                    self._directed_no_overtake_start(
+                        directed_edge_key,
+                        candidate_t,
+                        duration,
+                        spacing_time,
+                    ),
+                )
+
+            if candidate_t <= t + 1e-9 and overlap_count < self.edge_max_concurrency:
                 return t, overlap_count
 
-            if next_candidate is None:
-                return t, overlap_count
-
-            t = next_candidate
+            t = candidate_t
 
     def _reserve_edge(
         self,
@@ -4733,12 +4849,20 @@ class Simulation:
         amr_id: str,
     ):
         edge_key = self._physical_edge_key(from_name, to_name)
-        reservations = self.edge_reservations[edge_key]
         item = (start_time, end_time, amr_id)
+
+        reservations = self.edge_reservations[edge_key]
         idx = len(reservations)
         while idx > 0 and reservations[idx - 1][0] > start_time:
             idx -= 1
         reservations.insert(idx, item)
+
+        directed_key = (from_name, to_name)
+        directed_reservations = self.directed_edge_reservations[directed_key]
+        idx = len(directed_reservations)
+        while idx > 0 and directed_reservations[idx - 1][0] > start_time:
+            idx -= 1
+        directed_reservations.insert(idx, item)
 
     def _reserve_node(
         self,
@@ -4874,6 +4998,7 @@ class Simulation:
                     requested_start=current_time_value,
                     duration=travel_duration,
                     spacing_time=self._spacing_time_sec(amr),
+                    directed_edge_key=(edge["from"], edge["to"]),
                 )
                 edge_wait = max(0.0, edge_start - current_time_value)
 
@@ -4920,8 +5045,12 @@ class Simulation:
                             segments.append(
                                 {
                                     "type": "wait_for_node",
-                                    "from": edge["to"],
-                                    "to": edge["to"],
+                                    # Wait before entering the edge; the blocked
+                                    # node is the destination, but the AMR is
+                                    # still physically at the edge start.
+                                    "from": edge["from"],
+                                    "to": edge["from"],
+                                    "blocked_node": edge["to"],
                                     "duration": stop_wait,
                                     "distance_m": 0.0,
                                     "congestion_count": congestion_count,
@@ -5252,11 +5381,9 @@ class Simulation:
                 "from_floor": current_loc.floor,
                 "to_floor": charge_loc.floor,
                 "wait_time": 0.0,
-                "duration": (
-                    plan["lift_finish"]
-                    - plan["lift_start"]
-                    - plan.get("reposition_sec", 0.0)
-                    - plan["wait_time"]
+                "duration": max(
+                    0.0,
+                    plan["lift_finish"] - plan.get("reposition_finish", plan["lift_start"] + plan.get("reposition_sec", 0.0)),
                 ),
                 "distance_m": plan["vertical_distance_m"],
                 "vertical_distance_m": plan["vertical_distance_m"],
@@ -5529,6 +5656,18 @@ class Simulation:
             segments = list(charge_segments)
             current_location = amr_loc
 
+            departure_space_name = str(getattr(amr, "inventory_space_name", "") or "").strip()
+            if departure_space_name:
+                departure_segments, departure_duration, _departure_distance = (
+                    self._local_manoeuvre_segments_from_inventory_space(
+                        amr, amr_loc.name, departure_space_name, t, purpose="amr_unstow"
+                    )
+                )
+                if departure_segments:
+                    segments.extend(departure_segments)
+                    t += departure_duration
+                    total += departure_duration
+
             lift_empty_sec_total = 0.0
             lift_loaded_sec_total = 0.0
 
@@ -5640,6 +5779,7 @@ class Simulation:
                             "lift_id": plan["lift"].id,
                             "from": f"{plan['lift'].id}-F{plan['reposition_from_floor']}",
                             "to": f"{plan['lift'].id}-F{plan['reposition_to_floor']}",
+                            "amr_wait_node": plan["origin_lift"].name,
                             "from_floor": plan["reposition_from_floor"],
                             "to_floor": plan["reposition_to_floor"],
                             "wait_time": 0.0,
@@ -5678,11 +5818,9 @@ class Simulation:
                         "from_floor": location_a.floor,
                         "to_floor": location_b.floor,
                         "wait_time": 0.0,
-                        "duration": (
-                            plan["lift_finish"]
-                            - plan["lift_start"]
-                            - plan.get("reposition_sec", 0.0)
-                            - plan["wait_time"]
+                        "duration": max(
+                            0.0,
+                            plan["lift_finish"] - plan.get("reposition_finish", plan["lift_start"] + plan.get("reposition_sec", 0.0)),
                         ),
                         "distance_m": plan["vertical_distance_m"],
                         "vertical_distance_m": plan["vertical_distance_m"],
@@ -5875,6 +6013,7 @@ class Simulation:
                 "lift_energy_kwh": lift_energy_kwh,
                 "lift_empty_sec_total": lift_empty_sec_total,
                 "lift_loaded_sec_total": lift_loaded_sec_total,
+                "amr_inventory_space": inventory_space_name,
             }
         except Exception as exc:
             print(f"_estimate_task_for_amr failed for {task.id} on {amr.id}: {exc}")
@@ -6509,7 +6648,7 @@ class Simulation:
             keep_target_reservation = bool(getattr(task, "is_idle_return", False))
             self._free_amr_inventory_space(amr, keep_target_reservation=keep_target_reservation)
             if getattr(task, "is_idle_return", False) and committed.get("end_location"):
-                committed["amr_inventory_space"] = str(getattr(amr, "target_inventory_space_name", "") or committed.get("amr_inventory_space", "") or "")
+                committed["amr_inventory_space"] = str(committed.get("amr_inventory_space", "") or getattr(amr, "target_inventory_space_name", "") or "")
             amr.total_busy_time += committed["duration"]
             amr.available_time = finish_time
             amr.location_name = committed["end_location"]
@@ -6545,6 +6684,11 @@ class Simulation:
             for segment in committed["segments"]:
                 from_node = segment.get("from", "")
                 to_node = segment.get("to", "")
+                segment_type = segment.get("type", "")
+                if segment_type == "lift_reposition":
+                    wait_node = segment.get("amr_wait_node") or to_node or from_node
+                    from_node = wait_node
+                    to_node = wait_node
 
                 lift_id = segment.get("lift_id", "")
                 if not lift_id and segment.get("type", "").startswith("lift_"):
@@ -6558,6 +6702,18 @@ class Simulation:
                             if lift_id:
                                 break
 
+                wait_time = float(segment.get("wait_time", 0.0))
+                duration = float(segment.get("duration", 0.0))
+                segment_type = segment.get("type", "")
+                if segment_type == "lift_reposition":
+                    # Lift repositioning is lift-car movement only. The AMR waits
+                    # at the origin landing until the car arrives; logging the
+                    # car's from/to floors as AMR coordinates made it appear to
+                    # teleport in the visualiser.
+                    wait_node = segment.get("amr_wait_node") or to_node or from_node
+                    from_node = wait_node
+                    to_node = wait_node
+
                 from_coords = self.graph_nodes.get(from_node)
                 to_coords = self.graph_nodes.get(to_node)
                 segment_start_x = segment.get("from_x", getattr(from_coords, "x", None))
@@ -6566,10 +6722,14 @@ class Simulation:
                 segment_end_x = segment.get("to_x", getattr(to_coords, "x", None))
                 segment_end_y = segment.get("to_y", getattr(to_coords, "y", None))
                 segment_end_floor = segment.get("to_floor", getattr(to_coords, "floor", None))
+                if segment_type == "lift_reposition":
+                    segment_start_x = getattr(from_coords, "x", segment_start_x)
+                    segment_start_y = getattr(from_coords, "y", segment_start_y)
+                    segment_start_floor = getattr(from_coords, "floor", segment_start_floor)
+                    segment_end_x = segment_start_x
+                    segment_end_y = segment_start_y
+                    segment_end_floor = segment_start_floor
 
-                wait_time = float(segment.get("wait_time", 0.0))
-                duration = float(segment.get("duration", 0.0))
-                segment_type = segment.get("type", "")
                 segment_has_payload = (
                     carrying_payload
                     or segment_type in {"pickup", "dropoff"}
@@ -6679,7 +6839,7 @@ class Simulation:
                     duration_sec=duration,
                     wait_time_sec=wait_time,
                     distance_m=segment.get("distance_m", 0.0),
-                    segment_type=segment.get("type", ""),
+                    segment_type=segment_type,
                     start_time=segment_start_time,
                     end_time=segment_end_time,
                     start_node=from_node,
@@ -6839,6 +6999,10 @@ class Simulation:
 
             from_node = segment.get("from", "") or segment.get("location", "")
             to_node = segment.get("to", "") or segment.get("location", "")
+            if segment_type == "lift_reposition":
+                wait_node = segment.get("amr_wait_node") or to_node or from_node
+                from_node = wait_node
+                to_node = wait_node
             from_coords = self.graph_nodes.get(from_node)
             to_coords = self.graph_nodes.get(to_node)
             segment_start_x = segment.get("from_x", getattr(from_coords, "x", None))
@@ -6847,6 +7011,13 @@ class Simulation:
             segment_end_x = segment.get("to_x", getattr(to_coords, "x", None))
             segment_end_y = segment.get("to_y", getattr(to_coords, "y", None))
             segment_end_floor = segment.get("to_floor", getattr(to_coords, "floor", None))
+            if segment_type == "lift_reposition":
+                segment_start_x = getattr(from_coords, "x", segment_start_x)
+                segment_start_y = getattr(from_coords, "y", segment_start_y)
+                segment_start_floor = getattr(from_coords, "floor", segment_start_floor)
+                segment_end_x = segment_start_x
+                segment_end_y = segment_start_y
+                segment_end_floor = segment_start_floor
             lift_id = segment.get("lift_id", "")
             if not lift_id and segment_type.startswith("lift_"):
                 for key_node in (from_node, to_node):
@@ -7122,6 +7293,14 @@ class Simulation:
             completed_amr_loc = self.locations.get(task.dropoff)
             completed_amr_space = None
             if completed_amr is not None:
+                planned_space = str(event.payload.get("amr_inventory_space", "") or "").strip()
+                if not planned_space and getattr(task, "is_idle_return", False):
+                    for segment in reversed(event.payload.get("segments", []) or []):
+                        planned_space = str(segment.get("inventory_space", "") or "").strip()
+                        if planned_space:
+                            break
+                if planned_space:
+                    setattr(completed_amr, "target_inventory_space_name", planned_space)
                 completed_amr_space = self._occupy_amr_inventory_space(completed_amr, task.dropoff)
                 if getattr(task, "is_idle_return", False) and completed_amr_space is None:
                     reason = (
@@ -7160,6 +7339,9 @@ class Simulation:
                 waste_stream=getattr(task, "waste_stream", ""),
                 waste_volume_m3=getattr(task, "waste_volume_m3", 0.0),
                 container_type=getattr(task, "container_type", ""),
+                amr_inventory_space=(
+                    planned_space if getattr(task, "is_idle_return", False) else ""
+                ),
             )
 
             self.completed_task_records.append(
@@ -7470,12 +7652,19 @@ class Simulation:
                 segment_end_x = segment.get("to_x", getattr(to_coords, "x", None))
                 segment_end_y = segment.get("to_y", getattr(to_coords, "y", None))
                 segment_end_floor = segment.get("to_floor", getattr(to_coords, "floor", None))
+                if segment_type == "lift_reposition":
+                    segment_start_x = getattr(from_coords, "x", segment_start_x)
+                    segment_start_y = getattr(from_coords, "y", segment_start_y)
+                    segment_start_floor = getattr(from_coords, "floor", segment_start_floor)
+                    segment_end_x = segment_start_x
+                    segment_end_y = segment_start_y
+                    segment_end_floor = segment_start_floor
                 duration = segment.get("duration", 0.0)
                 segment_end_time = segment_start_time + duration
 
                 self.log_step(
                     event_time=segment_start_time,
-                    event_type=f"segment_{segment.get('type', '')}",
+                    event_type=f"segment_{segment_type}",
                     amr_id=amr.id,
                     details=json.dumps(segment, ensure_ascii=False),
                     from_location=from_node,
@@ -7552,6 +7741,7 @@ class Simulation:
                 to_location=charge_location_name,
                 status="finish",
                 energy_kwh=0.0,
+                amr_inventory_space=planned_space if getattr(task, "is_idle_return", False) else "",
                 battery_soc_before=100.0,
                 battery_soc_after=amr.battery_soc_percent,
                 is_charging=False,
