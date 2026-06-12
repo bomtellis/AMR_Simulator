@@ -2143,6 +2143,7 @@ class Simulation:
             payload_name,
             instance_id,
             task=task,
+            inventory_space=str(getattr(task, "assigned_inventory_space", "") or ""),
         )
         self._record_payload_population_snapshot()
 
@@ -2182,6 +2183,7 @@ class Simulation:
         instance_id: str,
         task: Optional[Task] = None,
         event_time: Optional[float] = None,
+        inventory_space: str = "",
     ) -> None:
         if not self.verbose:
             return
@@ -2191,6 +2193,12 @@ class Simulation:
         if not payload_name or not instance_id or not location_name:
             return
         event_time = self.current_time if event_time is None else float(event_time)
+        inventory_space = str(inventory_space or getattr(task, "assigned_inventory_space", "") or "").strip()
+        if not inventory_space:
+            for space in self.inventory_spaces_by_location.get(location_name, []) or []:
+                if str(space.get("payload_instance_id", "") or "").strip() == instance_id:
+                    inventory_space = str(space.get("name", "") or "").strip()
+                    break
         loc = self.locations.get(location_name)
         self.log_step(
             event_time=event_time,
@@ -2217,6 +2225,7 @@ class Simulation:
             waste_stream=str(getattr(task, "waste_stream", "") or ""),
             waste_volume_m3=float(getattr(task, "waste_volume_m3", 0.0) or 0.0),
             container_type=str(getattr(task, "container_type", payload_name) or payload_name),
+            inventory_space=inventory_space,
         )
 
     def _record_location_storage_peak(self, location_name: str) -> None:
@@ -4311,17 +4320,18 @@ class Simulation:
 
     def _occupy_initial_inventory_space(
         self, location_name: str, payload: PayloadType, instance_id: str, task_id: str
-    ) -> None:
+    ) -> str:
         if not self._location_has_inventory_spaces(location_name):
-            return
+            return ""
         space = self._find_free_inventory_space(location_name, payload)
         if space is None:
-            return
+            return ""
         space["occupied"] = True
         space["payload"] = payload.name
         space["payload_instance_id"] = instance_id
         space["task_id"] = task_id
         space["reserved_by_task"] = ""
+        return str(space.get("name", "") or "")
 
     def _seed_initial_waste_stream_containers(self) -> None:
         if not getattr(self, "seed_waste_stream_containers_at_start", False):
@@ -4379,14 +4389,18 @@ class Simulation:
                     self.initial_waste_container_instances[
                         (group_key, pickup_location, payload_name)
                     ] = instance_id
-                    self._occupy_initial_inventory_space(
+                    seeded_inventory_space = self._occupy_initial_inventory_space(
                         pickup_location,
                         payload,
                         instance_id,
                         "initial_waste_container",
                     )
                     self._log_payload_location_event(
-                        "location_payload_enter", pickup_location, payload_name, instance_id
+                        "location_payload_enter",
+                        pickup_location,
+                        payload_name,
+                        instance_id,
+                        inventory_space=seeded_inventory_space,
                     )
                     self._record_payload_population_snapshot()
 
@@ -7825,6 +7839,7 @@ class Simulation:
         battery_soc_after: Optional[float] = None,
         is_charging: Optional[bool] = None,
         amr_inventory_space: str = "",
+        inventory_space: str = "",
         amr_rotation_deg: Optional[float] = None,
         amr_rotation_start_deg: Optional[float] = None,
         amr_rotation_end_deg: Optional[float] = None,
@@ -7930,6 +7945,8 @@ class Simulation:
                 "battery_soc_after": (round(float(battery_soc_after), 2) if battery_soc_after is not None else ""),
                 "is_charging": bool(is_charging) if is_charging is not None else False,
                 "amr_inventory_space": amr_inventory_space,
+                "inventory_space": inventory_space,
+                "inventory_space_name": inventory_space,
                 "amr_rotation_deg": (round(float(amr_rotation_deg), 3) if amr_rotation_deg is not None else ""),
                 "amr_rotation_start_deg": (round(float(amr_rotation_start_deg), 3) if amr_rotation_start_deg is not None else ""),
                 "amr_rotation_end_deg": (round(float(amr_rotation_end_deg), 3) if amr_rotation_end_deg is not None else ""),
@@ -8006,6 +8023,8 @@ class Simulation:
             "battery_soc_after",
             "is_charging",
             "amr_inventory_space",
+            "inventory_space",
+            "inventory_space_name",
             "amr_rotation_deg",
             "amr_rotation_start_deg",
             "amr_rotation_end_deg",

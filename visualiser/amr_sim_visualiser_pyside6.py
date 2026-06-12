@@ -5670,6 +5670,11 @@ class SimulationVisualizer(QMainWindow):
         status = str(row.get("status", "") or "").strip().lower()
         amr_id = str(row.get("amr_id", "") or "").strip()
 
+        if event_type == "location_payload_enter":
+            return "dropoff"
+        if event_type == "location_payload_exit":
+            return "pickup"
+
         # Generated rows and assignment rows are task metadata, not physical
         # inventory movement.  Most generated rows also have no AMR id.
         if (
@@ -5713,6 +5718,17 @@ class SimulationVisualizer(QMainWindow):
             value = str(row.get(key, "")).strip()
             if value:
                 return value
+        details = str(row.get("details", "") or "").strip()
+        if details.startswith("{"):
+            try:
+                payload = json.loads(details)
+            except Exception:
+                payload = {}
+            if isinstance(payload, dict):
+                for key in keys:
+                    value = str(payload.get(key, "") or "").strip()
+                    if value:
+                        return value
         return ""
 
     def _simulation_seed_waste_containers_enabled(self) -> bool:
