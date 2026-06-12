@@ -2,7 +2,7 @@
   "simulation": {
     "start_datetime": "2026-01-01T05:00:00",
     "tick_rate": 1000.0,
-    "end_datetime": "2026-01-02T05:00:00",
+    "end_datetime": "2026-01-01T10:00:00",
     "generated_task_release_stagger_sec": 10.0,
     "precompute_static_routes": false,
     "route_precompute_max_pairs": 100000,
@@ -927,115 +927,115 @@
           "name": "Clinical Waste Bin space 1",
           "points": [
             {
-              "dx": -1.568,
-              "dy": -1.796
+              "dx": -1.435,
+              "dy": 0.008
             },
             {
-              "dx": -1.568,
-              "dy": -0.596
+              "dx": -1.435,
+              "dy": 1.208
             },
             {
-              "dx": -2.368,
-              "dy": -0.596
+              "dx": -2.235,
+              "dy": 1.208
             },
             {
-              "dx": -2.368,
-              "dy": -1.796
+              "dx": -2.235,
+              "dy": 0.008
             }
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 90.0,
-              "dx": -1.968,
-              "dy": -1.196
+              "payload": "Clinical Waste Bin",
+              "dx": -1.835,
+              "dy": 0.608
             }
           ]
         },
         {
-          "name": "Clinical Waste Bin space 2",
+          "name": "Confidential Waste Bag space 1",
           "points": [
             {
-              "dx": -0.533,
-              "dy": -1.811
+              "dx": 1.585,
+              "dy": -1.759
             },
             {
-              "dx": -0.533,
-              "dy": -0.611
+              "dx": 1.585,
+              "dy": -0.759
             },
             {
-              "dx": -1.333,
-              "dy": -0.611
+              "dx": 1.085,
+              "dy": -0.759
             },
             {
-              "dx": -1.333,
-              "dy": -1.811
+              "dx": 1.085,
+              "dy": -1.759
             }
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 90.0,
-              "dx": -0.933,
-              "dy": -1.211
+              "payload": "Confidential Waste Bag",
+              "dx": 1.335,
+              "dy": -1.259
             }
           ]
         },
         {
-          "name": "Clinical Waste Bin space 3",
+          "name": "Domestic Waste Bin space 1",
           "points": [
             {
-              "dx": 0.483,
-              "dy": -1.808
+              "dx": -2.24,
+              "dy": -0.891
             },
             {
-              "dx": 0.483,
-              "dy": -0.608
+              "dx": -1.44,
+              "dy": -0.891
             },
             {
-              "dx": -0.317,
-              "dy": -0.608
+              "dx": -1.44,
+              "dy": -0.091
             },
             {
-              "dx": -0.317,
-              "dy": -1.808
+              "dx": -2.24,
+              "dy": -0.091
             }
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
-              "rotation_deg": 90.0,
-              "dx": 0.083,
-              "dy": -1.208
+              "rotation_deg": 0.0,
+              "payload": "Domestic Waste Bin",
+              "dx": -1.84,
+              "dy": -0.491
             }
           ]
         },
         {
-          "name": "Clinical Waste Bin space 4",
+          "name": "Linen Collection Bin space 1",
           "points": [
             {
-              "dx": 1.527,
-              "dy": -1.813
+              "dx": -1.009,
+              "dy": -1.753
             },
             {
-              "dx": 1.527,
-              "dy": -0.613
+              "dx": 0.391,
+              "dy": -1.753
             },
             {
-              "dx": 0.727,
-              "dy": -0.613
+              "dx": 0.391,
+              "dy": -0.953
             },
             {
-              "dx": 0.727,
-              "dy": -1.813
+              "dx": -1.009,
+              "dy": -0.953
             }
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
-              "rotation_deg": 90.0,
-              "dx": 1.127,
-              "dy": -1.213
+              "rotation_deg": 0.0,
+              "payload": "Linen Collection Bin",
+              "dx": -0.309,
+              "dy": -1.353
             }
           ]
         }
@@ -1069,115 +1069,115 @@
           "name": "Clinical Waste Bin space 1",
           "points": [
             {
-              "dx": -1.715,
-              "dy": -1.551
+              "dx": -1.682,
+              "dy": 0.628
             },
             {
-              "dx": -0.515,
-              "dy": -1.551
+              "dx": -0.482,
+              "dy": 0.628
             },
             {
-              "dx": -0.515,
-              "dy": -0.751
+              "dx": -0.482,
+              "dy": 1.428
             },
             {
-              "dx": -1.715,
-              "dy": -0.751
+              "dx": -1.682,
+              "dy": 1.428
             }
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
-              "dx": -1.115,
-              "dy": -1.151
+              "payload": "Clinical Waste Bin",
+              "dx": -1.082,
+              "dy": 1.028
             }
           ]
         },
         {
-          "name": "Clinical Waste Bin space 2",
+          "name": "Domestic Waste Bin space 1",
           "points": [
             {
-              "dx": -1.716,
-              "dy": -0.52
+              "dx": -1.648,
+              "dy": -0.347
             },
             {
-              "dx": -0.516,
-              "dy": -0.52
+              "dx": -0.848,
+              "dy": -0.347
             },
             {
-              "dx": -0.516,
-              "dy": 0.28
+              "dx": -0.848,
+              "dy": 0.453
             },
             {
-              "dx": -1.716,
-              "dy": 0.28
+              "dx": -1.648,
+              "dy": 0.453
             }
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
-              "dx": -1.116,
-              "dy": -0.12
+              "payload": "Domestic Waste Bin",
+              "dx": -1.248,
+              "dy": 0.053
             }
           ]
         },
         {
-          "name": "Clinical Waste Bin space 3",
+          "name": "Linen Collection Bin space 1",
           "points": [
             {
-              "dx": -1.715,
-              "dy": 0.577
+              "dx": -1.637,
+              "dy": -1.333
             },
             {
-              "dx": -0.515,
-              "dy": 0.577
+              "dx": -0.237,
+              "dy": -1.333
             },
             {
-              "dx": -0.515,
-              "dy": 1.377
+              "dx": -0.237,
+              "dy": -0.533
             },
             {
-              "dx": -1.715,
-              "dy": 1.377
+              "dx": -1.637,
+              "dy": -0.533
             }
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 0.0,
-              "dx": -1.115,
-              "dy": 0.977
+              "payload": "Linen Collection Bin",
+              "dx": -0.937,
+              "dy": -0.933
             }
           ]
         },
         {
-          "name": "Clinical Waste Bin space 4",
+          "name": "Confidential Waste Bag space 1",
           "points": [
             {
-              "dx": 2.137,
-              "dy": -1.656
+              "dx": 2.191,
+              "dy": -1.688
             },
             {
-              "dx": 2.137,
-              "dy": -0.456
+              "dx": 2.191,
+              "dy": -0.688
             },
             {
-              "dx": 1.337,
-              "dy": -0.456
+              "dx": 1.691,
+              "dy": -0.688
             },
             {
-              "dx": 1.337,
-              "dy": -1.656
+              "dx": 1.691,
+              "dy": -1.688
             }
           ],
           "payload_slots": [
             {
-              "payload": "Clinical Waste Bin",
               "rotation_deg": 90.0,
-              "dx": 1.737,
-              "dy": -1.056
+              "payload": "Confidential Waste Bag",
+              "dx": 1.941,
+              "dy": -1.188
             }
           ]
         }

@@ -5738,6 +5738,33 @@ class SimulationVisualizer(QMainWindow):
                 return row
         return None
 
+    def _find_seeded_inventory_row_for_payload_event(
+        self, rows: List[dict], csv_row: dict
+    ):
+        payload = str(
+            csv_row.get("payload", "") or csv_row.get("container_type", "") or ""
+        ).strip()
+        if not payload:
+            return None
+
+        csv_details = self._csv_waste_row_payload_details(csv_row)
+        stream_name = str(csv_details.get("waste_stream", "") or "").strip()
+        instance_id = str(csv_details.get("payload_instance_id", "") or "").strip()
+
+        for row in rows:
+            if not str(row.get("source", "") or "").lower().startswith("seeded"):
+                continue
+            if str(row.get("payload", "") or "").strip() != payload:
+                continue
+            row_instance_id = str(row.get("payload_instance_id", "") or "").strip()
+            if row_instance_id and instance_id and row_instance_id != instance_id:
+                continue
+            row_stream = str(row.get("waste_stream", "") or "").strip()
+            if stream_name and row_stream and row_stream != stream_name:
+                continue
+            return row
+        return None
+
     def _first_empty_inventory_space_row(self, rows: List[dict]):
         for row in rows:
             if str(row.get("payload", "-")).strip() in {"", "-"}:
@@ -6208,6 +6235,50 @@ class SimulationVisualizer(QMainWindow):
                 )
             )
 
+        slot_payloads_by_space: Dict[str, set] = {}
+        for idx, space in enumerate(spaces, start=1):
+            if not isinstance(space, dict):
+                continue
+            space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+            slot_payloads = set()
+            for slot in space.get("payload_slots", []) or []:
+                if not isinstance(slot, dict):
+                    continue
+                slot_payload = str(slot.get("payload", "") or "").strip()
+                if slot_payload:
+                    slot_payloads.add(slot_payload)
+            slot_payloads_by_space[space_name] = slot_payloads
+
+        def row_allows_payload(row: dict, payload_name: str) -> bool:
+            payload_name = str(payload_name or "").strip()
+            if not payload_name:
+                return True
+            space_name = str(row.get("space", "") or "").strip()
+            slot_payloads = slot_payloads_by_space.get(space_name, set())
+            return not slot_payloads or payload_name in slot_payloads
+
+        def compatible_space_row(space_name: str, payload_name: str):
+            target = self._find_inventory_space_row(rows, space_name)
+            if target is not None and not row_allows_payload(target, payload_name):
+                return None
+            return target
+
+        def compatible_empty_row(csv_row: dict):
+            payload_name = str(
+                csv_row.get("payload", "")
+                or csv_row.get("container_type", "")
+                or ""
+            ).strip()
+            target = self._best_empty_inventory_row_for_replacement(rows, csv_row)
+            if target is not None and row_allows_payload(target, payload_name):
+                return target
+            for candidate in rows:
+                if str(candidate.get("payload", "-")).strip() not in {"", "-"}:
+                    continue
+                if row_allows_payload(candidate, payload_name):
+                    return candidate
+            return None
+
         seeded_rows = self._seeded_waste_container_rows_for_location(location_name)
         if seeded_rows:
             # Seeded containers should occupy a real inventory space when the
@@ -6216,20 +6287,6 @@ class SimulationVisualizer(QMainWindow):
             # so the space still looked empty and showed its space-name label.
             # Build a small index of configured slot payloads by space so seeded
             # rows can be placed into the intended physical box.
-            slot_payloads_by_space: Dict[str, set] = {}
-            for idx, space in enumerate(spaces, start=1):
-                if not isinstance(space, dict):
-                    continue
-                space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
-                slot_payloads = set()
-                for slot in space.get("payload_slots", []) or []:
-                    if not isinstance(slot, dict):
-                        continue
-                    slot_payload = str(slot.get("payload", "") or "").strip()
-                    if slot_payload:
-                        slot_payloads.add(slot_payload)
-                slot_payloads_by_space[space_name] = slot_payloads
-
             def apply_seeded_to_row(target: dict, seeded: dict) -> None:
                 target.update(
                     {
@@ -6404,12 +6461,17 @@ class SimulationVisualizer(QMainWindow):
                 row, location_name, "dropoff"
             ):
                 instance_id = str(row.get("payload_instance_id", "") or "").strip()
+                payload_for_event = str(
+                    row.get("payload", "") or row.get("container_type", "") or ""
+                ).strip()
                 target = (
                     self._find_inventory_row_by_payload_instance(rows, instance_id)
-                    or self._find_inventory_space_row(
-                        rows, self._inventory_space_name_from_event(row, "dropoff")
+                    or compatible_space_row(
+                        self._inventory_space_name_from_event(row, "dropoff"),
+                        payload_for_event,
                     )
-                    or self._best_empty_inventory_row_for_replacement(rows, row)
+                    or self._find_seeded_inventory_row_for_payload_event(rows, row)
+                    or compatible_empty_row(row)
                 )
                 if target is None:
                     continue
@@ -6455,12 +6517,20 @@ class SimulationVisualizer(QMainWindow):
 
             if is_pickup and self._event_location_matches(row, location_name, "pickup"):
                 payload = str(row.get("payload", "")).strip()
-                target = self._find_inventory_space_row(
-                    rows, self._inventory_space_name_from_event(row, "pickup")
+                instance_id = str(row.get("payload_instance_id", "") or "").strip()
+                target = (
+                    self._find_inventory_row_by_payload_instance(rows, instance_id)
+                    or compatible_space_row(
+                        self._inventory_space_name_from_event(row, "pickup"), payload
+                    )
+                    or self._find_seeded_inventory_row_for_payload_event(rows, row)
                 )
                 if target is None and payload:
                     for candidate in rows:
-                        if str(candidate.get("payload", "")).strip() == payload:
+                        if (
+                            str(candidate.get("payload", "")).strip() == payload
+                            and row_allows_payload(candidate, payload)
+                        ):
                             target = candidate
                             break
                 if target is None:
