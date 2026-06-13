@@ -800,6 +800,44 @@ def percentile_95_concurrency(intervals: Iterable[Tuple[float, float]]) -> int:
     return int(math.ceil(pd.Series(values).quantile(0.95))) if values else 0
 
 
+def peak_time_weighted_concurrency(
+    intervals: Iterable[Tuple[float, float]], window_sec: float = 300.0
+) -> int:
+    clean = [
+        (float(start), float(end))
+        for start, end in intervals
+        if start is not None
+        and end is not None
+        and not pd.isna(start)
+        and not pd.isna(end)
+        and float(end) > float(start)
+    ]
+    if not clean:
+        return 0
+
+    horizon_start = min(start for start, _ in clean)
+    horizon_end = max(end for _, end in clean)
+    effective_window = max(1e-9, min(float(window_sec), horizon_end - horizon_start))
+
+    # The maximum integral over a fixed-width interval occurs when either the
+    # window start or window end is aligned to an interval boundary.
+    candidates = {horizon_start, max(horizon_start, horizon_end - effective_window)}
+    for start, end in clean:
+        candidates.add(min(max(start, horizon_start), horizon_end - effective_window))
+        candidates.add(min(max(end - effective_window, horizon_start), horizon_end - effective_window))
+
+    peak_weighted = 0.0
+    for window_start in candidates:
+        window_end = window_start + effective_window
+        overlap_s = sum(
+            max(0.0, min(end, window_end) - max(start, window_start))
+            for start, end in clean
+        )
+        peak_weighted = max(peak_weighted, overlap_s / effective_window)
+
+    return int(math.ceil(peak_weighted - 1e-9))
+
+
 def merge_intervals(intervals: Iterable[Tuple[float, float]], gap_tolerance: float = 1.0) -> List[Tuple[float, float]]:
     clean = sorted(
         (float(start), float(end))
@@ -1111,6 +1149,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
     category_labels: Dict[str, str] = {}
     category_human_assist: Dict[str, str] = {}
     category_staff_initial: Dict[str, int] = {}
+    category_schedule_times: Dict[str, List[str]] = {}
     assist_keys = (
         "human_assist_required",
         "requires_human_assist",
@@ -1153,6 +1192,13 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
                 category_staff_initial[key_text.lower()] = 1
         elif key_text.lower() in inferred_assist_categories:
             category_human_assist[key_text.lower()] = "Yes"
+        schedule_values = cfg.get("scheduled_times", cfg.get("schedule_times", []))
+        if isinstance(schedule_values, list):
+            category_schedule_times[key_text.lower()] = [
+                str(value).strip()
+                for value in schedule_values
+                if re.fullmatch(r"\d{1,2}:\d{2}", str(value).strip())
+            ]
         for dept_cfg in (cfg.get("departments", {}) or {}).values():
             if not isinstance(dept_cfg, dict):
                 continue
@@ -1232,6 +1278,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         "category_labels": category_labels,
         "category_human_assist": category_human_assist,
         "category_staff_initial": category_staff_initial,
+        "category_schedule_times": category_schedule_times,
         "department_names": department_names,
         "location_display_names": location_display_names,
         "location_points": location_points,
@@ -2257,6 +2304,42 @@ def _event_time_hhmm(value, has_datetime: bool) -> str:
     return f"{hour:02d}:{minute:02d}"
 
 
+def _hhmm_to_seconds(value: str) -> Optional[int]:
+    text = str(value or "").strip()
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return None
+    return hour * 3600 + minute * 60
+
+
+def _scheduled_window_for_record(
+    start_value,
+    duration_s: float,
+    schedule_times: List[str],
+    has_datetime: bool,
+) -> Optional[str]:
+    schedule_seconds = [
+        sec for sec in (_hhmm_to_seconds(value) for value in schedule_times) if sec is not None
+    ]
+    if not schedule_seconds or pd.isna(start_value):
+        return None
+    if has_datetime:
+        ts = pd.Timestamp(start_value)
+        seconds_of_day = ts.hour * 3600 + ts.minute * 60 + ts.second
+    else:
+        seconds_of_day = int(float(start_value or 0.0) % 86400.0)
+    scheduled_start_sec = min(schedule_seconds, key=lambda sec: abs(sec - seconds_of_day))
+    scheduled_finish_sec = min(86399, scheduled_start_sec + int(max(0.0, duration_s or 0.0)))
+    return (
+        f"{scheduled_start_sec // 3600:02d}:{(scheduled_start_sec % 3600) // 60:02d}-"
+        f"{scheduled_finish_sec // 3600:02d}:{(scheduled_finish_sec % 3600) // 60:02d}"
+    )
+
+
 def build_payload_handling_timetable(
     df: pd.DataFrame,
     ctx: Context,
@@ -2276,6 +2359,10 @@ def build_payload_handling_timetable(
     department_names = metadata.get("department_names", {}) or {}
     location_names = metadata.get("location_display_names", {}) or {}
     location_points = metadata.get("location_points", {}) or {}
+    category_schedule_times = {
+        str(k).strip().lower(): list(v or [])
+        for k, v in (metadata.get("category_schedule_times", {}) or {}).items()
+    }
 
     for col in ("details", "task_id", "task_source", "department_id", "payload", "to_location", "from_location"):
         if col not in df.columns:
@@ -2284,10 +2371,19 @@ def build_payload_handling_timetable(
     event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
     staff_rows = df[
         event_text.str.fullmatch(
-            r"staff_payload_handling|stores_payload_handling", case=False, na=False
+            r"staff_payload_handling|stores_payload_handling|segment_staff_payload_handling",
+            case=False,
+            na=False,
         )
         & df["task_id"].notna()
     ].copy()
+    if not staff_rows.empty and "person_id" in staff_rows.columns:
+        staff_rows["_staff_start_float"] = staff_rows[ctx.time_col].map(
+            lambda value: event_time_to_float(value, ctx.has_datetime)
+        )
+        staff_rows = staff_rows.sort_values(ctx.time_col).drop_duplicates(
+            ["task_id", "person_id", "_staff_start_float"], keep="first"
+        )
 
     records: List[dict] = []
     if not staff_rows.empty:
@@ -2318,6 +2414,8 @@ def build_payload_handling_timetable(
             location = location_names.get(location_id, location_id)
             point = location_points.get(location_id, {}) or {}
             payload = safe_text(row.get("payload", "") or row.get("container_type", ""))
+            person_id = str(row.get("person_id", "") or "").strip()
+            person_label = person_id or str(row.get("person_resource", "") or "").strip() or category
             day = _event_day_key(ready_start, ctx.has_datetime)
             if not day:
                 continue
@@ -2325,6 +2423,16 @@ def build_payload_handling_timetable(
                 f"{_event_time_hhmm(ready_start, ctx.has_datetime)}-"
                 f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
             )
+            if category_key == "catering":
+                fallback_duration = time_delta_seconds(ready_start, ready_end, ctx.has_datetime) or 0.0
+                scheduled_window = _scheduled_window_for_record(
+                    ready_start,
+                    fallback_duration,
+                    category_schedule_times.get(category_key, []),
+                    ctx.has_datetime,
+                )
+                if scheduled_window:
+                    window = scheduled_window
             records.append(
                 {
                     "category": category,
@@ -2339,6 +2447,8 @@ def build_payload_handling_timetable(
                     "day": day,
                     "window": window,
                     "payload": payload,
+                    "person_id": person_id,
+                    "person": person_label,
                 }
             )
 
@@ -2397,6 +2507,15 @@ def build_payload_handling_timetable(
                 f"{_event_time_hhmm(ready_start, ctx.has_datetime)}-"
                 f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
             )
+            if category_key == "catering":
+                scheduled_window = _scheduled_window_for_record(
+                    ready_start,
+                    duration_s,
+                    category_schedule_times.get(category_key, []),
+                    ctx.has_datetime,
+                )
+                if scheduled_window:
+                    window = scheduled_window
             records.append(
                 {
                     "category": category,
@@ -2411,64 +2530,16 @@ def build_payload_handling_timetable(
                     "day": day,
                     "window": window,
                     "payload": payload,
+                    "person_id": "",
+                    "person": category,
                 }
             )
 
     if not records:
         return pd.DataFrame(columns=columns)
 
-    walk_batch_distance_m = _to_float(
-        metadata.get("walk_batch_distance_m", 45.0), 45.0
-    )
-
-    def assign_batches(sub_records: List[dict]) -> Dict[str, str]:
-        locations: Dict[str, dict] = {}
-        for record in sub_records:
-            loc_id = record["location_id"] or record["location"]
-            if loc_id and loc_id not in locations:
-                locations[loc_id] = record
-
-        batches: List[List[str]] = []
-        for loc_id, record in sorted(locations.items(), key=lambda item: natural_key(item[1]["location"])):
-            placed = False
-            for batch in batches:
-                anchor = locations[batch[0]]
-                same_floor = str(anchor.get("floor", "")) == str(record.get("floor", ""))
-                if anchor.get("has_point") and record.get("has_point") and same_floor:
-                    distance = math.hypot(
-                        float(anchor.get("x", 0.0)) - float(record.get("x", 0.0)),
-                        float(anchor.get("y", 0.0)) - float(record.get("y", 0.0)),
-                    )
-                    if distance <= walk_batch_distance_m:
-                        batch.append(loc_id)
-                        placed = True
-                        break
-                elif anchor.get("department") == record.get("department"):
-                    batch.append(loc_id)
-                    placed = True
-                    break
-            if not placed:
-                batches.append([loc_id])
-
-        mapping: Dict[str, str] = {}
-        for index, batch in enumerate(batches, start=1):
-            names = [locations[loc_id]["location"] for loc_id in batch]
-            departments = [locations[loc_id]["department"] for loc_id in batch]
-            label_locations = _join_limited(names, limit=3)
-            label_departments = _join_limited(departments, limit=2)
-            label = f"Batch {index}: {label_departments}"
-            if label_locations and label_locations != label_departments:
-                label = f"{label} ({label_locations})"
-            for loc_id in batch:
-                mapping[loc_id] = label
-        return mapping
-
-    for category_key in sorted({record["category_key"] for record in records}, key=natural_key):
-        category_records = [record for record in records if record["category_key"] == category_key]
-        batch_map = assign_batches(category_records)
-        for record in category_records:
-            loc_id = record["location_id"] or record["location"]
-            record["batch"] = batch_map.get(loc_id, record["department"])
+    for record in records:
+        record["batch"] = record.get("person") or record.get("category") or "Staff"
 
     cells: Dict[Tuple[str, str, str], Dict[str, List[dict]]] = {}
     for record in records:
@@ -2482,13 +2553,13 @@ def build_payload_handling_timetable(
             day_records = cells[(category, category_key, batch)].get(day, [])
             grouped: Dict[Tuple[str, str], int] = {}
             for record in day_records:
-                grouped[(record["window"], record["payload"])] = grouped.get((record["window"], record["payload"]), 0) + 1
+                grouped[(record["window"], record["location"])] = grouped.get((record["window"], record["location"]), 0) + 1
             pills = []
-            for (window, payload), count in sorted(grouped.items(), key=lambda item: item[0]):
-                payload_label = payload if payload and payload != "-" else "Payload"
+            for (window, location), count in sorted(grouped.items(), key=lambda item: item[0]):
+                label = location if location and location != "-" else "Location"
                 if count > 1:
-                    payload_label = f"{count} payloads"
-                pills.append(f"{window}|{payload_label}")
+                    label = f"{label} x{count}"
+                pills.append(f"{window}|{label}")
             row[day] = "\n".join(pills) if pills else "-"
         rows.append(row)
     return pd.DataFrame(rows, columns=columns)
@@ -2524,11 +2595,20 @@ def build_staff_handling_summary(
     event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
     staff_rows = df[
         event_text.str.fullmatch(
-            r"staff_payload_handling|stores_payload_handling", case=False, na=False
+            r"staff_payload_handling|stores_payload_handling|segment_staff_payload_handling",
+            case=False,
+            na=False,
         )
     ].copy()
     if staff_rows.empty:
         return pd.DataFrame(columns=columns)
+    if "person_id" in staff_rows.columns:
+        staff_rows["_staff_start_float"] = staff_rows[ctx.time_col].map(
+            lambda value: event_time_to_float(value, ctx.has_datetime)
+        )
+        staff_rows = staff_rows.sort_values(ctx.time_col).drop_duplicates(
+            ["task_id", "person_id", "_staff_start_float"], keep="first"
+        )
 
     rows = []
     for resource, group in staff_rows.groupby(
@@ -3163,7 +3243,9 @@ def analyse(
             / (horizon_s * max(target_amr_util, 0.01))
         )
     )
-    peak_route_concurrency_amrs = percentile_95_concurrency(active_intervals)
+    peak_route_concurrency_amrs = peak_time_weighted_concurrency(
+        active_intervals, window_sec=300.0
+    )
     recommended_amrs = max(1, workload_based_amrs, peak_route_concurrency_amrs)
 
     lift_intervals = [
@@ -3181,7 +3263,9 @@ def analyse(
         if total_lift_time_s
         else 0
     )
-    peak_lift_concurrency = percentile_95_concurrency(lift_intervals)
+    peak_lift_concurrency = peak_time_weighted_concurrency(
+        lift_intervals, window_sec=300.0
+    )
     recommended_lifts = max(
         1 if total_lift_time_s else 0,
         workload_based_lifts,
@@ -3207,7 +3291,7 @@ def analyse(
                 "value": f"{workload_based_amrs}",
             },
             {
-                "metric": "AMR route concurrency requirement",
+                "metric": "AMR 5-minute peak demand",
                 "value": f"{peak_route_concurrency_amrs}",
             },
             {
@@ -3217,7 +3301,7 @@ def analyse(
             {"metric": "Total lift time", "value": fmt_duration(total_lift_time_s)},
             {"metric": "Average lift utilisation", "value": f"{avg_lift_util:.1f}%"},
             {
-                "metric": "Lift concurrency requirement",
+                "metric": "Lift 5-minute peak demand",
                 "value": f"{peak_lift_concurrency}",
             },
             {"metric": "Recommended AMRs", "value": f"{recommended_amrs}"},
@@ -3229,11 +3313,11 @@ def analyse(
         [
             {
                 "item": "Recommended AMRs",
-                "detail": f"Maximum of actual AMR route-time workload and 95th percentile AMR route concurrency using target utilisation {target_amr_util:.0%}. Multi-stop payload tasks sharing one route are counted once for fleet demand.",
+                "detail": f"Maximum of actual AMR route-time workload and 5-minute time-weighted AMR route demand using target utilisation {target_amr_util:.0%}. Multi-stop payload tasks sharing one route are counted once for fleet demand.",
             },
             {
                 "item": "Recommended lifts",
-                "detail": f"Maximum of merged lift busy-time workload and 95th percentile lift concurrency using target utilisation {target_lift_util:.0%}. Overlapping rows for the same lift are counted once, matching the AMR recommendation model.",
+                "detail": f"Maximum of merged lift busy-time workload and 5-minute time-weighted lift demand using target utilisation {target_lift_util:.0%}. A single lift is treated as carrying one AMR at a time.",
             },
             {
                 "item": "Lift parsing",

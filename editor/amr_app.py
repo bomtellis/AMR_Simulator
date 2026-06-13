@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 )
 
 from amr_dxf_scene import DXFScene
-from amr_dialogs import LiftEditorDialog, PointEditorDialog, TableListEditor
+from amr_dialogs import LiftEditorDialog, LiftListDialog, PointEditorDialog, TableListEditor
 from amr_advanced_dialogs import RouteProfilesEditorV2, TaskEditorWindow, TaskPlannerDialog
 from models import JsonStore
 
@@ -156,6 +156,7 @@ class AMRGraphEditor(QMainWindow):
         self._add_button("Clear Floor DXF", self.clear_floor_dxf)
         self._add_button("Fit View", self.fit_view)
         self._add_button("Validate", self.validate_json)
+        self._add_button("Lifts", self.manage_lifts)
         self._add_button("Payloads", self.manage_payloads)
         self._add_button("AMRs", self.manage_amrs)
         self._add_button("Tasks", self.manage_tasks)
@@ -453,7 +454,7 @@ class AMRGraphEditor(QMainWindow):
                 existing_lift = next((item for item in self.store.data.get("lifts", []) if item["id"] == lift_id), None)
             dialog = LiftEditorDialog(self, existing_lift, default_floor=floor, default_x=x, default_y=y)
             if dialog.exec() and dialog.result:
-                self.store.upsert_lift(dialog.result["id"], dialog.result["served_floors"], dialog.result["floor_locations"], dialog.result["speed_floors_per_sec"], dialog.result["door_time_sec"], dialog.result["boarding_time_sec"], dialog.result["capacity_size_units"], dialog.result["start_floor"])
+                self._save_lift_result(dialog.result, old_id=existing_lift.get("id") if existing_lift else None)
                 self.set_status(f"Saved {dialog.result['id']}"); self.refresh_canvas()
 
     def on_double_click(self, event):
@@ -464,7 +465,7 @@ class AMRGraphEditor(QMainWindow):
             lift_id = point["lift_id"]; existing_lift = next((x for x in self.store.data.get("lifts", []) if x["id"] == lift_id), None)
             dialog = LiftEditorDialog(self, existing_lift, default_floor=floor, default_x=point["x"], default_y=point["y"])
             if dialog.exec() and dialog.result:
-                self.store.upsert_lift(dialog.result["id"], dialog.result["served_floors"], dialog.result["floor_locations"], dialog.result["speed_floors_per_sec"], dialog.result["door_time_sec"], dialog.result["boarding_time_sec"], dialog.result["capacity_size_units"], dialog.result["start_floor"])
+                self._save_lift_result(dialog.result, old_id=existing_lift.get("id") if existing_lift else None)
                 self.set_status(f"Edited {dialog.result['id']}"); self.refresh_canvas()
             return
         dialog = PointEditorDialog(self, f"Edit {picked}", picked, point)
@@ -546,6 +547,35 @@ class AMRGraphEditor(QMainWindow):
         columns=[("name","Name",220),("weight_kg","Weight kg",120),("size_units","Size units",120)]
         self._child = TableListEditor(self,"Payloads",columns,self.store.data.get("payloads",[]),self._save_payloads); self._child.show()
     def _save_payloads(self, items): self.store.data["payloads"] = items; self.set_status("Payloads updated")
+    def manage_lifts(self):
+        self._child = LiftListDialog(self, self.store, self._lifts_changed); self._child.show()
+    def _lifts_changed(self):
+        self.set_status("Lifts updated"); self.refresh_canvas()
+    def _save_lift_result(self, result, old_id=None):
+        if old_id and old_id != result["id"]:
+            self.store.delete_lift(old_id)
+        self.store.upsert_lift(
+            result["id"],
+            result["served_floors"],
+            result["floor_locations"],
+            result["speed_m_per_sec"],
+            result["door_time_sec"],
+            result["boarding_time_sec"],
+            result["capacity_length_m"],
+            result["capacity_width_m"],
+            result["capacity_height_m"],
+            result["car_mass_kg"],
+            result["counterweight_ratio"],
+            result["travel_efficiency"],
+            result["door_power_w"],
+            result["standby_power_w"],
+            result["regen_efficiency"],
+            result["health_percent"],
+            result["health_loss_per_journey_percent"],
+            result["mean_time_between_failures_hours"],
+            result["mean_time_to_repair_hours"],
+            result["start_floor"],
+        )
     def manage_amrs(self):
         columns=[("id","ID",120),("quantity","Quantity",80),("payload_capacity_kg","Payload kg",110),("payload_size_capacity","Payload size",110),("speed_m_per_sec","Speed",90),("motor_power_w","Motor W",90),("battery_capacity_kwh","Battery kWh",100),("battery_charge_rate_kw","Charge kW",100),("recharge_threshold_percent","Recharge %",100),("battery_soc_percent","SOC %",80),("start_location","Start location",160)]
         self._child = TableListEditor(self,"AMRs",columns,self.store.data.get("amrs",[]),self._save_amrs); self._child.show()

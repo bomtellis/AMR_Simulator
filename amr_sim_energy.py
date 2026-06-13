@@ -87,7 +87,13 @@ def total_lift_energy_kwh(
     loaded_floor_delta: int,
     wait_time_sec: float,
     door_time_sec: float,
+    boarding_time_sec: float = 0.0,
 ) -> float:
+    stationary_time_sec = (
+        max(0.0, wait_time_sec)
+        + max(0.0, door_time_sec) * 2
+        + max(0.0, boarding_time_sec) * 2
+    )
     return (
         lift_travel_energy_kwh(
             lift, payload, floor_height_m, reposition_floor_delta, loaded=False
@@ -96,5 +102,5 @@ def total_lift_energy_kwh(
             lift, payload, floor_height_m, loaded_floor_delta, loaded=True
         )
         + lift_door_energy_kwh(lift, door_time_sec, door_cycles=2)
-        + lift_standby_energy_kwh(lift, wait_time_sec)
+        + lift_standby_energy_kwh(lift, stationary_time_sec)
     )

@@ -120,6 +120,7 @@ class Simulation:
         self.pending_tasks: List[Tuple[int, float, int, Task]] = []
         self.pending_task_counter = 0
         self._removed_pending_task_ids = set()
+        self._scheduled_task_wait_time: Optional[float] = None
         self.lock = threading.RLock()
         self.route_cache_lock = threading.RLock()
         self.stop_requested = False
@@ -140,6 +141,7 @@ class Simulation:
 
         # Congestion setup
         building_cfg = config.get("building", {})
+        self.building_config = building_cfg
 
         self.edge_reservations: Dict[
             Tuple[str, str], List[Tuple[float, float, str]]
@@ -169,6 +171,16 @@ class Simulation:
                 or 0.0
             ),
         )
+        self.generated_release_stagger_batch_size = max(
+            1,
+            int(
+                sim_cfg.get(
+                    "generated_task_release_stagger_batch_size",
+                    sim_cfg.get("task_release_stagger_batch_size", 10),
+                )
+                or 10
+            ),
+        )
         self._generated_release_stagger_counts: Dict[float, int] = defaultdict(int)
         self.seed_waste_stream_containers_at_start = bool(
             sim_cfg.get(
@@ -190,11 +202,18 @@ class Simulation:
         self.max_multi_stop_candidate_tasks = max(
             2, int(sim_cfg.get("max_multi_stop_candidate_tasks", 8) or 8)
         )
+        self.multi_stop_pending_scan_limit = max(
+            self.max_multi_stop_candidate_tasks,
+            int(sim_cfg.get("multi_stop_pending_scan_limit", 64) or 64),
+        )
         self.max_assignments_per_tick = max(
             0, int(sim_cfg.get("max_assignments_per_tick", 50) or 0)
         )
-        self.assignment_continue_delay_sec = max(
-            0.001, float(sim_cfg.get("assignment_continue_delay_sec", 0.001) or 0.001)
+        configured_assignment_continue_delay_sec = max(
+            0.0, float(sim_cfg.get("assignment_continue_delay_sec", 0.0) or 0.0)
+        )
+        self.assignment_continue_delay_sec = min(
+            configured_assignment_continue_delay_sec, 0.001
         )
         self._assignment_continue_scheduled = False
         self.idle_return_check_interval_sec = max(
@@ -216,6 +235,18 @@ class Simulation:
         # and only use the routing thread pool when there is enough work to offset
         # Future/as_completed overhead.
         self.route_estimate_cache: Dict[tuple, Optional[dict]] = {}
+        self.staff_travel_cache: Dict[Tuple[str, str], Tuple[float, float]] = {}
+        self._local_obstacle_bbox_cache: Dict[
+            Tuple[str, str], List[Tuple[float, float, float, float]]
+        ] = {}
+        self._local_waypoint_cache: Dict[
+            Tuple[
+                Tuple[float, float],
+                Tuple[float, float],
+                Tuple[Tuple[float, float, float, float], ...],
+            ],
+            List[Tuple[float, float]],
+        ] = {}
         self.route_estimate_cache_version = 0
         self.route_estimate_time_bucket_sec = max(
             1.0, float(sim_cfg.get("route_estimate_time_bucket_sec", 30.0) or 30.0)
@@ -441,13 +472,26 @@ class Simulation:
                 int(floor): (float(coords["x"]), float(coords["y"]))
                 for floor, coords in item.get("floor_locations", {}).items()
             }
+            legacy_speed_floors_per_sec = item.get("speed_floors_per_sec")
+            configured_speed_m_per_sec = item.get("speed_m_per_sec")
+            if configured_speed_m_per_sec is None and legacy_speed_floors_per_sec is None:
+                legacy_speed_floors_per_sec = 0.45
+            if configured_speed_m_per_sec is None:
+                configured_speed_m_per_sec = (
+                    float(legacy_speed_floors_per_sec) * self.floor_height_m
+                )
+            if legacy_speed_floors_per_sec is None:
+                legacy_speed_floors_per_sec = (
+                    float(configured_speed_m_per_sec) / max(self.floor_height_m, 1e-9)
+                )
 
             lift = Lift(
                 id=item["id"],
                 served_floors=list(item["served_floors"]),
-                speed_floors_per_sec=float(item["speed_floors_per_sec"]),
+                speed_floors_per_sec=float(legacy_speed_floors_per_sec),
                 door_time_sec=float(item.get("door_time_sec", 4.0)),
                 boarding_time_sec=float(item.get("boarding_time_sec", 5.0)),
+                speed_m_per_sec=float(configured_speed_m_per_sec),
                 floor_locations=floor_locations,
                 capacity_length_m=float(item.get("capacity_length_m", 2.8)),
                 capacity_width_m=float(item.get("capacity_width_m", 1.8)),
@@ -1428,9 +1472,13 @@ class Simulation:
         if not self._is_multi_stop_amr(amr):
             return None
         slot_count = len(self._runtime_amr_payload_slots(amr))
+        scan_limit = max(
+            slot_count,
+            int(getattr(self, "multi_stop_pending_scan_limit", 64) or 64),
+        )
         released = [
             item[3]
-            for item in sorted(self.pending_tasks)
+            for item in heapq.nsmallest(scan_limit, self.pending_tasks)
             if self._multi_stop_task_is_eligible(item[3])
         ]
         # Payloads marked as preferring multi-stop AMRs should get first access
@@ -1684,6 +1732,7 @@ class Simulation:
                     loaded_floor_delta=(location_b.floor - location_a.floor),
                     wait_time_sec=plan["wait_time"],
                     door_time_sec=plan["lift"].door_time_sec,
+                    boarding_time_sec=plan["lift"].boarding_time_sec,
                 )
                 lift_empty_sec_total += float(plan.get("reposition_sec", 0.0))
                 lift_loaded_sec_total += float(plan.get("loaded_travel_sec", 0.0))
@@ -2656,14 +2705,20 @@ class Simulation:
 
     def _local_obstacle_bboxes(self, location_name: str, exclude_space_name: str = "") -> List[Tuple[float, float, float, float]]:
         """Return expanded bboxes for payload/AMR spaces to avoid locally."""
+        location_name = str(location_name or "").strip()
         bboxes: List[Tuple[float, float, float, float]] = []
         exclude_space_name = str(exclude_space_name or "").strip()
-        for space in self.inventory_spaces_by_location.get(str(location_name or "").strip(), []):
+        cache_key = (location_name, exclude_space_name)
+        cached = self._local_obstacle_bbox_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+        for space in self.inventory_spaces_by_location.get(location_name, []):
             if exclude_space_name and str(space.get("name", "") or "").strip() == exclude_space_name:
                 continue
             bbox = self._expanded_bbox_for_polygon(self._inventory_space_world_polygon(location_name, space), 0.15)
             if bbox is not None:
                 bboxes.append(bbox)
+        self._local_obstacle_bbox_cache[cache_key] = list(bboxes)
         return bboxes
 
     def _clear_local_segment(self, a: Tuple[float, float], b: Tuple[float, float], obstacles: List[Tuple[float, float, float, float]]) -> bool:
@@ -2671,8 +2726,25 @@ class Simulation:
 
     def _local_manoeuvre_waypoints(self, start: Tuple[float, float], end: Tuple[float, float], obstacles: List[Tuple[float, float, float, float]]) -> List[Tuple[float, float]]:
         """Find a short off-graph route around local inventory-space obstacles."""
+        start_key = (round(float(start[0]), 4), round(float(start[1]), 4))
+        end_key = (round(float(end[0]), 4), round(float(end[1]), 4))
+        obstacle_key = tuple(
+            (
+                round(float(min_x), 4),
+                round(float(min_y), 4),
+                round(float(max_x), 4),
+                round(float(max_y), 4),
+            )
+            for min_x, min_y, max_x, max_y in obstacles
+        )
+        cache_key = (start_key, end_key, obstacle_key)
+        cached = self._local_waypoint_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
         if self._clear_local_segment(start, end, obstacles):
-            return [start, end]
+            result = [start, end]
+            self._local_waypoint_cache[cache_key] = list(result)
+            return result
         clearance = 0.35
         candidates: List[Tuple[float, float]] = [start, end]
         for min_x, min_y, max_x, max_y in obstacles:
@@ -2698,7 +2770,9 @@ class Simulation:
             filtered.append(point)
         candidates = filtered
         if len(candidates) < 2:
-            return [start, end]
+            result = [start, end]
+            self._local_waypoint_cache[cache_key] = list(result)
+            return result
         graph: Dict[int, List[Tuple[int, float]]] = {i: [] for i in range(len(candidates))}
         for i in range(len(candidates)):
             for j in range(i + 1, len(candidates)):
@@ -2722,12 +2796,16 @@ class Simulation:
                     previous[nxt] = node
                     heapq.heappush(queue, (nd, nxt))
         if 1 not in distances:
-            return [start, (start[0], end[1]), end]
+            result = [start, (start[0], end[1]), end]
+            self._local_waypoint_cache[cache_key] = list(result)
+            return result
         order = [1]
         while order[-1] != 0:
             order.append(previous[order[-1]])
         order.reverse()
-        return [candidates[i] for i in order]
+        result = [candidates[i] for i in order]
+        self._local_waypoint_cache[cache_key] = list(result)
+        return result
 
     def _normalise_angle_deg(self, value: float) -> float:
         return (float(value) + 180.0) % 360.0 - 180.0
@@ -3744,14 +3822,48 @@ class Simulation:
             "resource_name": label,
             "initial_people": initial_count,
             "available_times": [0.0 for _ in range(initial_count)],
+            "locations": ["" for _ in range(initial_count)],
             "assignments": [],
         }
         self.staff_resource_pools[category_key] = pool
         return pool
 
+    def _staff_travel_distance_time(
+        self,
+        from_location_name: str,
+        to_location_name: str,
+    ) -> Tuple[float, float]:
+        from_name = str(from_location_name or "").strip()
+        to_name = str(to_location_name or "").strip()
+        if not from_name or not to_name or from_name == to_name:
+            return 0.0, 0.0
+        cache_key = (from_name, to_name)
+        cached = self.staff_travel_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        from_loc = self.locations.get(from_name)
+        to_loc = self.locations.get(to_name)
+        if from_loc is None or to_loc is None:
+            return 0.0, 0.0
+
+        horizontal_m = math.hypot(float(to_loc.x) - float(from_loc.x), float(to_loc.y) - float(from_loc.y))
+        vertical_m = abs(int(to_loc.floor) - int(from_loc.floor)) * float(self.floor_height_m)
+        distance_m = horizontal_m + vertical_m
+        building_cfg = getattr(self, "building_config", {}) or {}
+        staff_speed_m_per_sec = float(
+            building_cfg.get("staff_speed_m_per_sec", building_cfg.get("walking_speed_m_per_sec", 1.2))
+            or 1.2
+        )
+        result = (distance_m, distance_m / max(staff_speed_m_per_sec, 1e-9))
+        self.staff_travel_cache[cache_key] = result
+        return result
+
     def _task_staff_handling_config(self, task: Optional[Task]) -> Optional[dict]:
         if task is None or bool(getattr(task, "is_return_task", False)):
             return None
+        cached = getattr(task, "_staff_handling_config_cache", None)
+        if cached is not None:
+            return cached or None
         requires_staff = bool(
             getattr(task, "requires_staff", False)
             or getattr(task, "staff_required", False)
@@ -3761,6 +3873,7 @@ class Simulation:
             # editor exposed category staff settings.
             requires_staff = True
         if not requires_staff:
+            task._staff_handling_config_cache = {}
             return None
         category_key = self._task_category_key(task) or "staff"
         resource_name = str(getattr(task, "staff_resource_name", "") or "").strip()
@@ -3768,17 +3881,20 @@ class Simulation:
             initial_count = max(1, int(float(getattr(task, "staff_initial_count", 1) or 1)))
         except Exception:
             initial_count = 1
-        return {
+        result = {
             "category_key": category_key,
             "resource_name": resource_name,
             "initial_count": initial_count,
         }
+        task._staff_handling_config_cache = result
+        return result
 
     def _assign_staff_for_handling(
         self,
         task: Task,
         start_time: float,
         handling_duration_sec: float,
+        location_name: str = "",
     ) -> Optional[dict]:
         staff_cfg = self._task_staff_handling_config(task)
         if staff_cfg is None:
@@ -3793,21 +3909,40 @@ class Simulation:
             staff_cfg["resource_name"],
         )
         available_times = pool["available_times"]
-        start_time = float(start_time or 0.0)
-        finish_time = start_time + duration
-        person_index = None
+        person_locations = pool.setdefault("locations", ["" for _ in available_times])
+        while len(person_locations) < len(available_times):
+            person_locations.append("")
+
+        requested_start_time = float(start_time or 0.0)
+        handling_location = str(location_name or getattr(task, "dropoff", "") or "").strip()
+        best_choice = None
         for idx, available_time in enumerate(available_times):
-            if float(available_time or 0.0) <= start_time + 1e-9:
-                person_index = idx
-                break
+            previous_location = str(person_locations[idx] or "").strip()
+            travel_distance_m, travel_time_sec = self._staff_travel_distance_time(
+                previous_location, handling_location
+            )
+            arrival_time = max(float(available_time or 0.0) + travel_time_sec, requested_start_time)
+            arrival_delay = max(0.0, arrival_time - requested_start_time)
+            choice = (arrival_delay, travel_distance_m, arrival_time, idx, previous_location, travel_time_sec)
+            if best_choice is None or choice < best_choice:
+                best_choice = choice
 
         added_person = False
-        if person_index is None:
+        if best_choice is None:
             available_times.append(0.0)
+            person_locations.append("")
             person_index = len(available_times) - 1
             added_person = True
+            previous_location = ""
+            travel_distance_m = 0.0
+            travel_time_sec = 0.0
+            start_time = requested_start_time
+        else:
+            _arrival_delay, travel_distance_m, start_time, person_index, previous_location, travel_time_sec = best_choice
 
+        finish_time = start_time + duration
         available_times[person_index] = finish_time
+        person_locations[person_index] = handling_location
         category_key = str(pool["category_key"])
         assignment = {
             "task_id": str(getattr(task, "id", "") or ""),
@@ -3818,7 +3953,12 @@ class Simulation:
             "start_time": round(start_time, 3),
             "finish_time": round(finish_time, 3),
             "duration_sec": round(duration, 3),
-            "location": str(getattr(task, "dropoff", "") or ""),
+            "requested_start_time": round(requested_start_time, 3),
+            "travel_start_time": round(start_time - travel_time_sec, 3),
+            "travel_time_sec": round(travel_time_sec, 3),
+            "travel_distance_m": round(travel_distance_m, 3),
+            "previous_location": previous_location,
+            "location": handling_location,
             "payload": self._payload_log_name(getattr(task, "payload", "")),
             "people_required": len(available_times),
             "added_person": added_person,
@@ -3840,18 +3980,30 @@ class Simulation:
             return
 
         self.synthetic_task_counter += 1
+        handled_in_route = bool(getattr(task, "_staff_handled_in_route", False))
         delay_sec = (
-            max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
+            0.0
+            if handled_in_route
+            else max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
         )
-        staff_assignment = self._assign_staff_for_handling(
-            task, finish_time, delay_sec
+        staff_assignment = (
+            getattr(task, "_staff_route_assignment", None)
+            if handled_in_route
+            else self._assign_staff_for_handling(
+                task, finish_time, delay_sec, location_name=task.dropoff
+            )
+        )
+        release_time = (
+            float(staff_assignment["finish_time"])
+            if staff_assignment is not None
+            else finish_time + delay_sec
         )
         return_task = Task(
             id=f"RETURN-{task.id}-{self.synthetic_task_counter}",
             pickup=task.dropoff,
             dropoff=task.pickup,
             payload=return_payload,
-            release_time=finish_time + delay_sec,
+            release_time=release_time,
             target_time=0.0,
             quantity=1,
             priority=int(
@@ -3992,7 +4144,7 @@ class Simulation:
                 staff_assignment.get("resource_name", "") or category_key or "Staff"
             )
             self.log_step(
-                event_time=finish_time,
+                event_time=float(staff_assignment["start_time"]),
                 event_type="staff_payload_handling",
                 task_id=task.id,
                 amr_id="",
@@ -5099,6 +5251,8 @@ class Simulation:
         window = self.edge_congestion_window_sec
         count = 0
         for start, end, _ in reservations:
+            if end < t - window:
+                continue
             if start > t + window:
                 break
             if start <= t + window and end >= t - window:
@@ -5123,6 +5277,8 @@ class Simulation:
             for start, end, _ in reservations:
                 start = float(start)
                 end = float(end)
+                if end < t - spacing_time:
+                    continue
                 if start > t + duration + spacing_time:
                     break
 
@@ -5155,6 +5311,8 @@ class Simulation:
             next_candidate = None
 
             for start, end, _ in reservations:
+                if end < t - spacing_time:
+                    continue
                 if start > t + duration + spacing_time:
                     break
                 protected_start = float(start) - spacing_time
@@ -5239,6 +5397,8 @@ class Simulation:
             next_candidate = None
 
             for start, end, _ in reservations:
+                if end < t - spacing_time:
+                    continue
                 if start > t + spacing_time:
                     break
                 protected_start = start - spacing_time
@@ -5482,11 +5642,11 @@ class Simulation:
             arrival_at_lift = ready_time + to_lift_sec
             lift_start = max(arrival_at_lift, lift.available_time)
 
-            reposition_sec = abs(lift.current_floor - from_loc.floor) / max(
-                lift.speed_floors_per_sec, 1e-9
+            reposition_sec = lift.vertical_travel_duration_sec(
+                lift.current_floor - from_loc.floor, self.floor_height_m
             )
-            loaded_travel_sec = abs(to_loc.floor - from_loc.floor) / max(
-                lift.speed_floors_per_sec, 1e-9
+            loaded_travel_sec = lift.vertical_travel_duration_sec(
+                to_loc.floor - from_loc.floor, self.floor_height_m
             )
 
             reposition_start = max(arrival_at_lift, lift.available_time)
@@ -5804,7 +5964,10 @@ class Simulation:
         return amr.battery_energy_kwh() < amr.min_reserve_energy_kwh()
 
     def _create_wait_event_for_pending_tasks(self, now: float):
-        if any(e.event_type == "task_wait" and e.time > now for e in self.events):
+        if (
+            self._scheduled_task_wait_time is not None
+            and self._scheduled_task_wait_time > now + 1e-9
+        ):
             return
 
         if not self.pending_tasks:
@@ -5825,6 +5988,7 @@ class Simulation:
             return
 
         wait_until = min(future_times)
+        self._scheduled_task_wait_time = wait_until
 
         self.push_event(
             wait_until,
@@ -6087,6 +6251,7 @@ class Simulation:
                     loaded_floor_delta=(location_b.floor - location_a.floor),
                     wait_time_sec=plan["wait_time"],
                     door_time_sec=plan["lift"].door_time_sec,
+                    boarding_time_sec=plan["lift"].boarding_time_sec,
                 )
 
                 segment_duration = plan["final_finish"] - current_time_value
@@ -6190,6 +6355,7 @@ class Simulation:
                             loaded_floor_delta=(location_b.floor - location_a.floor),
                             wait_time_sec=plan["wait_time"],
                             door_time_sec=plan["lift"].door_time_sec,
+                            boarding_time_sec=plan["lift"].boarding_time_sec,
                         ),
                     }
                 )
@@ -6282,11 +6448,6 @@ class Simulation:
             inventory_space_name = ""
             reserved_space = None
             if reserve:
-                self._reserve_location(
-                    dropoff_loc.name,
-                    t,
-                    t + self.load_unload_time_sec,
-                )
                 if getattr(task, "is_idle_return", False):
                     reserved_space = self._reserve_amr_inventory_space(amr, dropoff_loc.name)
                     if reserved_space is None and self._location_has_any_amr_inventory_spaces(dropoff_loc.name):
@@ -6304,6 +6465,47 @@ class Simulation:
                             self._inventory_pending_reason(dropoff_loc.name, payload),
                         )
                         return None
+                staff_assignment = None
+                staff_handling_duration_sec = 0.0
+                if self._task_staff_handling_config(task) is not None:
+                    staff_handling_duration_sec = (
+                        max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
+                        if bool(getattr(task, "return_enabled", False))
+                        else float(self.load_unload_time_sec)
+                    )
+                    staff_assignment = self._assign_staff_for_handling(
+                        task,
+                        t,
+                        staff_handling_duration_sec,
+                        location_name=dropoff_loc.name,
+                    )
+                    if staff_assignment is not None:
+                        staff_wait = max(0.0, float(staff_assignment["start_time"]) - t)
+                        if staff_wait > 0:
+                            segments.append(
+                                {
+                                    "type": "wait_for_staff",
+                                    "from": dropoff_loc.name,
+                                    "to": dropoff_loc.name,
+                                    "duration": staff_wait,
+                                    "distance_m": 0.0,
+                                    "location": dropoff_loc.name,
+                                    "person_id": staff_assignment["person_id"],
+                                    "person_resource": f"{staff_assignment['category_key']}_payload_handling",
+                                    "people_required": staff_assignment["people_required"],
+                                }
+                            )
+                            t += staff_wait
+                            total += staff_wait
+
+                        task._staff_route_assignment = staff_assignment
+                        task._staff_handled_in_route = True
+
+                self._reserve_location(
+                    dropoff_loc.name,
+                    t,
+                    t + self.load_unload_time_sec,
+                )
                 if reserved_space is not None:
                     inventory_space_name = str(reserved_space.get("name", ""))
                     local_segments, local_duration, _local_distance = self._local_manoeuvre_segments_to_inventory_space(
@@ -6869,7 +7071,6 @@ class Simulation:
 
             # Return trip to home location, but never ahead of locked physical-bin returns.
             self._purge_idle_returns_blocked_by_locked_work()
-            self._queue_idle_return_tasks(self.current_time)
 
             choice = self._select_best_assignment()
             if choice is None:
@@ -7132,6 +7333,9 @@ class Simulation:
                         end_floor=segment_start_floor,
                         status="waiting",
                         energy_kwh=segment.get("energy_kwh", 0.0),
+                        person_resource=str(segment.get("person_resource", "") or ""),
+                        person_id=str(segment.get("person_id", "") or ""),
+                        people_required=int(segment.get("people_required", 0) or 0),
                     )
                     segment_start_time += wait_time
 
@@ -7163,6 +7367,9 @@ class Simulation:
                         end_floor=segment_end_floor,
                         status="waiting",
                         energy_kwh=segment.get("energy_kwh", 0.0),
+                        person_resource=str(segment.get("person_resource", "") or ""),
+                        person_id=str(segment.get("person_id", "") or ""),
+                        people_required=int(segment.get("people_required", 0) or 0),
                     )
 
                 if explicit_wait > 0:
@@ -7212,6 +7419,9 @@ class Simulation:
                     amr_rotation_start_deg=segment.get("amr_rotation_start_deg", None),
                     amr_rotation_end_deg=segment.get("amr_rotation_end_deg", None),
                     amr_rotation_deg=segment.get("amr_rotation_deg", None),
+                    person_resource=str(segment.get("person_resource", "") or ""),
+                    person_id=str(segment.get("person_id", "") or ""),
+                    people_required=int(segment.get("people_required", 0) or 0),
                 )
 
                 segment_start_time = segment_end_time
@@ -7475,7 +7685,8 @@ class Simulation:
         self._generated_release_stagger_counts[key] += 1
         if index > 0:
             task.release_time = release_time + (
-                index * self.generated_release_stagger_sec
+                (index // self.generated_release_stagger_batch_size)
+                * self.generated_release_stagger_sec
             )
 
     def _update_task_generators_until(self, now: float):
@@ -7985,6 +8196,11 @@ class Simulation:
             self._try_assign_tasks(event.time, force_idle_return=True)
 
         elif event.event_type == "task_wait":
+            if (
+                self._scheduled_task_wait_time is not None
+                and abs(float(self._scheduled_task_wait_time) - float(event.time)) <= 1e-9
+            ):
+                self._scheduled_task_wait_time = None
             self.log_step(
                 event_time=event.payload["start_time"],
                 event_type="task_wait",

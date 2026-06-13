@@ -3283,7 +3283,7 @@ class LiftEditorDialog(QDialog):
         default_lift_id = self._suggest_next_lift_id()
         self.id_edit = QLineEdit(self.lift.get("id", default_lift_id))
         self.floors_edit = QLineEdit(", ".join(str(x) for x in floors))
-        self.speed_edit = QLineEdit(str(self.lift.get("speed_floors_per_sec", 0.45)))
+        self.speed_edit = QLineEdit(str(self._default_speed_m_per_sec()))
         self.door_edit = QLineEdit(str(self.lift.get("door_time_sec", 4)))
         self.board_edit = QLineEdit(str(self.lift.get("boarding_time_sec", 6)))
         self.capacity_length_edit = QLineEdit(
@@ -3294,6 +3294,20 @@ class LiftEditorDialog(QDialog):
         )
         self.capacity_height_edit = QLineEdit(
             str(self.lift.get("capacity_height_m", 2.0))
+        )
+        self.car_mass_edit = QLineEdit(str(self.lift.get("car_mass_kg", 1200.0)))
+        self.counterweight_edit = QLineEdit(
+            str(self.lift.get("counterweight_ratio", 0.5))
+        )
+        self.travel_efficiency_edit = QLineEdit(
+            str(self.lift.get("travel_efficiency", 0.75))
+        )
+        self.door_power_edit = QLineEdit(str(self.lift.get("door_power_w", 800.0)))
+        self.standby_power_edit = QLineEdit(
+            str(self.lift.get("standby_power_w", 120.0))
+        )
+        self.regen_efficiency_edit = QLineEdit(
+            str(self.lift.get("regen_efficiency", 0.2))
         )
         self.health_edit = QLineEdit(str(self.lift.get("health_percent", 100.0)))
         self.health_loss_edit = QLineEdit(
@@ -3316,12 +3330,18 @@ class LiftEditorDialog(QDialog):
 
         form.addRow("Lift ID", self.id_edit)
         form.addRow("Served floors", self.floors_edit)
-        form.addRow("Speed floors/sec", self.speed_edit)
+        form.addRow("Speed m/sec", self.speed_edit)
         form.addRow("Door time sec", self.door_edit)
         form.addRow("Boarding time sec", self.board_edit)
         form.addRow("Capacity length m", self.capacity_length_edit)
         form.addRow("Capacity width m", self.capacity_width_edit)
         form.addRow("Capacity height m", self.capacity_height_edit)
+        form.addRow("Car mass kg", self.car_mass_edit)
+        form.addRow("Counterweight ratio", self.counterweight_edit)
+        form.addRow("Travel efficiency", self.travel_efficiency_edit)
+        form.addRow("Door power W", self.door_power_edit)
+        form.addRow("Stationary power W", self.standby_power_edit)
+        form.addRow("Regen efficiency", self.regen_efficiency_edit)
         form.addRow("Health %", self.health_edit)
         form.addRow("Health loss per journey %", self.health_loss_edit)
         form.addRow("MTBF hours", self.mtbf_edit)
@@ -3344,7 +3364,18 @@ class LiftEditorDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-        self.resize(520, 520)
+        self.resize(560, 680)
+
+    def _floor_height_m(self):
+        parent = self.parent()
+        store = getattr(parent, "store", None)
+        data = getattr(store, "data", {}) if store is not None else {}
+        return float((data.get("building", {}) or {}).get("floor_height_m", 4.0) or 4.0)
+
+    def _default_speed_m_per_sec(self):
+        if self.lift.get("speed_m_per_sec") is not None:
+            return float(self.lift.get("speed_m_per_sec") or 0.0)
+        return float(self.lift.get("speed_floors_per_sec", 0.45) or 0.45) * self._floor_height_m()
 
     def _normalise_floor_locations(self, floor_locations):
         normalised = {}
@@ -3437,12 +3468,18 @@ class LiftEditorDialog(QDialog):
             self.result = {
                 "id": lift_id,
                 "served_floors": floors,
-                "speed_floors_per_sec": float(self.speed_edit.text()),
+                "speed_m_per_sec": float(self.speed_edit.text()),
                 "door_time_sec": float(self.door_edit.text()),
                 "boarding_time_sec": float(self.board_edit.text()),
                 "capacity_length_m": float(self.capacity_length_edit.text()),
                 "capacity_width_m": float(self.capacity_width_edit.text()),
                 "capacity_height_m": float(self.capacity_height_edit.text()),
+                "car_mass_kg": float(self.car_mass_edit.text()),
+                "counterweight_ratio": float(self.counterweight_edit.text()),
+                "travel_efficiency": float(self.travel_efficiency_edit.text()),
+                "door_power_w": float(self.door_power_edit.text()),
+                "standby_power_w": float(self.standby_power_edit.text()),
+                "regen_efficiency": float(self.regen_efficiency_edit.text()),
                 "health_percent": float(self.health_edit.text()),
                 "health_loss_per_journey_percent": float(self.health_loss_edit.text()),
                 "mean_time_between_failures_hours": float(self.mtbf_edit.text()),
@@ -3453,6 +3490,154 @@ class LiftEditorDialog(QDialog):
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid lift", str(exc))
+
+
+class LiftListDialog(QDialog):
+    def __init__(self, parent, store, on_changed):
+        super().__init__(parent)
+        self.setWindowTitle("Lifts")
+        self.resize(980, 460)
+        self.store = store
+        self.on_changed = on_changed
+
+        layout = QVBoxLayout(self)
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "ID",
+                "Floors",
+                "Speed m/sec",
+                "Door s",
+                "Board s",
+                "Capacity LxWxH",
+                "Stationary W",
+                "Start floor",
+            ]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        layout.addWidget(self.table)
+
+        buttons = QHBoxLayout()
+        for text, slot in [
+            ("Add", self.add_lift),
+            ("Edit", self.edit_lift),
+            ("Delete", self.delete_lift),
+        ]:
+            btn = QPushButton(text)
+            btn.clicked.connect(slot)
+            buttons.addWidget(btn)
+        buttons.addStretch(1)
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        buttons.addWidget(close_btn)
+        layout.addLayout(buttons)
+
+        self.refresh()
+
+    def refresh(self):
+        self.table.setRowCount(0)
+        for lift in self.store.data.get("lifts", []):
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            floors = ", ".join(str(x) for x in lift.get("served_floors", []))
+            dims = " x ".join(
+                str(lift.get(key, ""))
+                for key in (
+                    "capacity_length_m",
+                    "capacity_width_m",
+                    "capacity_height_m",
+                )
+            )
+            values = [
+                lift.get("id", ""),
+                floors,
+                self._lift_speed_m_per_sec(lift),
+                lift.get("door_time_sec", ""),
+                lift.get("boarding_time_sec", ""),
+                dims,
+                lift.get("standby_power_w", ""),
+                lift.get("start_floor", ""),
+            ]
+            for col, value in enumerate(values):
+                self.table.setItem(row, col, QTableWidgetItem(str(value)))
+
+    def _lift_speed_m_per_sec(self, lift):
+        speed_m_per_sec = lift.get("speed_m_per_sec")
+        if speed_m_per_sec not in (None, ""):
+            return speed_m_per_sec
+        floor_height_m = float(
+            (self.store.data.get("building", {}) or {}).get("floor_height_m", 4.0)
+            or 4.0
+        )
+        return float(lift.get("speed_floors_per_sec", 0.45) or 0.45) * floor_height_m
+
+    def selected_lift(self):
+        rows = self.table.selectionModel().selectedRows()
+        if not rows:
+            return None
+        idx = rows[0].row()
+        lifts = self.store.data.get("lifts", [])
+        return lifts[idx] if 0 <= idx < len(lifts) else None
+
+    def default_floor(self):
+        floor_spin = getattr(self.parent(), "floor_spin", None)
+        return int(floor_spin.value()) if floor_spin is not None else 0
+
+    def save_result(self, result, old_id=None):
+        if old_id and old_id != result["id"]:
+            self.store.delete_lift(old_id)
+        self.store.upsert_lift(
+            result["id"],
+            result["served_floors"],
+            result["floor_locations"],
+            result["speed_m_per_sec"],
+            result["door_time_sec"],
+            result["boarding_time_sec"],
+            result["capacity_length_m"],
+            result["capacity_width_m"],
+            result["capacity_height_m"],
+            result["car_mass_kg"],
+            result["counterweight_ratio"],
+            result["travel_efficiency"],
+            result["door_power_w"],
+            result["standby_power_w"],
+            result["regen_efficiency"],
+            result["health_percent"],
+            result["health_loss_per_journey_percent"],
+            result["mean_time_between_failures_hours"],
+            result["mean_time_to_repair_hours"],
+            result["start_floor"],
+        )
+        self.on_changed()
+        self.refresh()
+
+    def add_lift(self):
+        dialog = LiftEditorDialog(self.parent(), default_floor=self.default_floor())
+        if dialog.exec() and dialog.result:
+            self.save_result(dialog.result)
+
+    def edit_lift(self):
+        lift = self.selected_lift()
+        if lift is None:
+            return
+        dialog = LiftEditorDialog(self.parent(), lift)
+        if dialog.exec() and dialog.result:
+            self.save_result(dialog.result, old_id=lift.get("id"))
+
+    def delete_lift(self):
+        lift = self.selected_lift()
+        if lift is None:
+            return
+        lift_id = str(lift.get("id", "")).strip()
+        if not lift_id:
+            return
+        if QMessageBox.question(self, "Delete lift", f"Delete {lift_id}?") != QMessageBox.Yes:
+            return
+        self.store.delete_lift(lift_id)
+        self.on_changed()
+        self.refresh()
 
 
 def _normalise_amr_payload_slots(amr):

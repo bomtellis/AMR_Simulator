@@ -50,6 +50,7 @@ from dxf_scene import DXFScene
 from dialogs import (
     EdgeConnectionsDialog,
     LiftEditorDialog,
+    LiftListDialog,
     PointEditorDialog,
     TableListEditor,
     DepartmentEditorDialog,
@@ -409,6 +410,7 @@ class AMRGraphEditor(QMainWindow):
             ("Clear Floor DXF", self.clear_floor_dxf),
             ("Fit View", self.fit_view),
             ("Validate", self.validate_json),
+            ("Lifts", self.manage_lifts),
             ("Payloads", self.manage_payloads),
             ("AMRs", self.manage_amrs),
             ("Charging Locations", self.manage_charging_locations),
@@ -1602,22 +1604,7 @@ class AMRGraphEditor(QMainWindow):
                 self, existing_lift, default_floor=floor, default_x=x, default_y=y
             )
             if dialog.exec() == QDialog.Accepted and dialog.result:
-                self.store.upsert_lift(
-                    dialog.result["id"],
-                    dialog.result["served_floors"],
-                    dialog.result["floor_locations"],
-                    dialog.result["speed_floors_per_sec"],
-                    dialog.result["door_time_sec"],
-                    dialog.result["boarding_time_sec"],
-                    dialog.result["capacity_length_m"],
-                    dialog.result["capacity_width_m"],
-                    dialog.result["capacity_height_m"],
-                    dialog.result["health_percent"],
-                    dialog.result["health_loss_per_journey_percent"],
-                    dialog.result["mean_time_between_failures_hours"],
-                    dialog.result["mean_time_to_repair_hours"],
-                    dialog.result["start_floor"],
-                )
+                self._save_lift_result(dialog.result, old_id=existing_lift.get("id") if existing_lift else None)
                 self.set_status(f"Saved {dialog.result['id']}")
                 self.refresh_canvas()
             return
@@ -1643,22 +1630,7 @@ class AMRGraphEditor(QMainWindow):
                 default_y=point["y"],
             )
             if dialog.exec() == QDialog.Accepted and dialog.result:
-                self.store.upsert_lift(
-                    dialog.result["id"],
-                    dialog.result["served_floors"],
-                    dialog.result["floor_locations"],
-                    dialog.result["speed_floors_per_sec"],
-                    dialog.result["door_time_sec"],
-                    dialog.result["boarding_time_sec"],
-                    dialog.result["capacity_length_m"],
-                    dialog.result["capacity_width_m"],
-                    dialog.result["capacity_height_m"],
-                    dialog.result["health_percent"],
-                    dialog.result["health_loss_per_journey_percent"],
-                    dialog.result["mean_time_between_failures_hours"],
-                    dialog.result["mean_time_to_repair_hours"],
-                    dialog.result["start_floor"],
-                )
+                self._save_lift_result(dialog.result, old_id=existing_lift.get("id") if existing_lift else None)
                 self.set_status(f"Edited {dialog.result['id']}")
                 self.refresh_canvas()
             return
@@ -2105,6 +2077,40 @@ class AMRGraphEditor(QMainWindow):
     def _save_payloads(self, items):
         self.store.data["payloads"] = items
         self.set_status("Payloads updated")
+
+    def manage_lifts(self):
+        dialog = LiftListDialog(self, self.store, self._lifts_changed)
+        dialog.exec()
+
+    def _lifts_changed(self):
+        self.set_status("Lifts updated")
+        self.refresh_canvas()
+
+    def _save_lift_result(self, result, old_id=None):
+        if old_id and old_id != result["id"]:
+            self.store.delete_lift(old_id)
+        self.store.upsert_lift(
+            result["id"],
+            result["served_floors"],
+            result["floor_locations"],
+            result["speed_m_per_sec"],
+            result["door_time_sec"],
+            result["boarding_time_sec"],
+            result["capacity_length_m"],
+            result["capacity_width_m"],
+            result["capacity_height_m"],
+            result["car_mass_kg"],
+            result["counterweight_ratio"],
+            result["travel_efficiency"],
+            result["door_power_w"],
+            result["standby_power_w"],
+            result["regen_efficiency"],
+            result["health_percent"],
+            result["health_loss_per_journey_percent"],
+            result["mean_time_between_failures_hours"],
+            result["mean_time_to_repair_hours"],
+            result["start_floor"],
+        )
 
     def manage_amrs(self):
         location_names = sorted(x["name"] for x in self.store.data.get("locations", []))

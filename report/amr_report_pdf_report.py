@@ -7,6 +7,7 @@ import copy
 import io
 import re
 import tempfile
+from xml.sax.saxutils import escape
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -368,7 +369,16 @@ class PillListFlowable(Flowable):
 
 def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
     day_cols = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    col_widths = [45 * mm] + [30 * mm] * len(day_cols)
+    day_labels = {
+        "Mon": "Monday",
+        "Tue": "Tuesday",
+        "Wed": "Wednesday",
+        "Thu": "Thursday",
+        "Fri": "Friday",
+        "Sat": "Saturday",
+        "Sun": "Sunday",
+    }
+    col_widths = [36 * mm] + [34 * mm] * len(day_cols)
     max_width = landscape(A4)[0] - 30 * mm
     total_width = sum(col_widths)
     if total_width > max_width:
@@ -389,7 +399,14 @@ def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
         fontSize=7,
         leading=9,
     )
-    data = [[Paragraph("Location batch", header_style)] + [Paragraph(day, header_style) for day in day_cols]]
+    cell_style = ParagraphStyle(
+        "TimetableFullCell",
+        parent=styles["Small"],
+        fontName="Helvetica",
+        fontSize=6.2,
+        leading=7.4,
+    )
+    data = [[Paragraph("Person", header_style)] + [Paragraph(day_labels.get(day, day), header_style) for day in day_cols]]
 
     for _, row in df.iterrows():
         colour = category_colour(row.get("category_key", row.get("Category", "")))
@@ -400,7 +417,17 @@ def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
                 for part in str(row.get(day, "") or "").split("\n")
                 if part.strip() and part.strip() != "-"
             ]
-            data_row.append(PillListFlowable(entries, colour, col_widths[idx] - 4))
+            if entries:
+                lines = []
+                for entry in entries:
+                    window, _, location = entry.partition("|")
+                    label = f"<b>{escape(window.strip())}</b>"
+                    if location.strip():
+                        label = f"{label}<br/>{escape(location.strip())}"
+                    lines.append(label)
+                data_row.append(Paragraph("<br/>".join(lines), cell_style))
+            else:
+                data_row.append(Paragraph("-", cell_style))
         data.append(data_row)
 
     tbl = Table(data, colWidths=col_widths, repeatRows=1)
@@ -976,9 +1003,9 @@ def build_report(
     payload_timetable_df = results.get("payload_handling_timetable", pd.DataFrame()).copy()
     story += [
         Spacer(1, 10),
-        Paragraph("Payload handling timetable", styles["Section"]),
+        Paragraph("Staff handling timetable", styles["Section"]),
         Paragraph(
-            "Ready windows show when delivered payloads are available for local handling before the configured return task is released.",
+            "Rows are grouped by person. Each day cell shows the location and timeframe for that person's staff-assisted handling work.",
             styles["BodyText"],
         ),
         Spacer(1, 8),
@@ -986,7 +1013,7 @@ def build_report(
     if payload_timetable_df.empty:
         story.append(
             Paragraph(
-                "No return-window payload handling timetable could be derived from the CSV.",
+                "No staff handling timetable could be derived from the CSV.",
                 styles["BodyText"],
             )
         )

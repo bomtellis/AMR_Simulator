@@ -1311,12 +1311,18 @@ class JsonStore:
         lift_id: str,
         served_floors: List[int],
         floor_locations: Dict[int, Tuple[float, float]],
-        speed_floors_per_sec: float = 0.45,
+        speed_m_per_sec: float = 1.8,
         door_time_sec: float = 4,
         boarding_time_sec: float = 6,
         capacity_length_m: float = 1.0,
         capacity_width_m: float = 1.0,
         capacity_height_m: float = 2.0,
+        car_mass_kg: float = 1200.0,
+        counterweight_ratio: float = 0.5,
+        travel_efficiency: float = 0.75,
+        door_power_w: float = 800.0,
+        standby_power_w: float = 120.0,
+        regen_efficiency: float = 0.2,
         health_percent: float = 100.0,
         health_loss_per_journey_percent: float = 0.05,
         mean_time_between_failures_hours: float = 720.0,
@@ -1329,15 +1335,23 @@ class JsonStore:
                 lift = existing
                 break
 
+        floor_height_m = float(self.data.get("building", {}).get("floor_height_m", 4.0) or 4.0)
         payload = {
             "id": lift_id,
             "served_floors": sorted(served_floors),
-            "speed_floors_per_sec": speed_floors_per_sec,
+            "speed_m_per_sec": round(float(speed_m_per_sec), 3),
+            "speed_floors_per_sec": round(float(speed_m_per_sec) / max(floor_height_m, 1e-9), 3),
             "door_time_sec": door_time_sec,
             "boarding_time_sec": boarding_time_sec,
             "capacity_length_m": capacity_length_m,
             "capacity_width_m": capacity_width_m,
             "capacity_height_m": capacity_height_m,
+            "car_mass_kg": car_mass_kg,
+            "counterweight_ratio": counterweight_ratio,
+            "travel_efficiency": travel_efficiency,
+            "door_power_w": door_power_w,
+            "standby_power_w": standby_power_w,
+            "regen_efficiency": regen_efficiency,
             "health_percent": round(float(health_percent), 3),
             "health_loss_per_journey_percent": round(
                 float(health_loss_per_journey_percent), 3

@@ -93,6 +93,7 @@ class Lift:
     speed_floors_per_sec: float
     door_time_sec: float
     boarding_time_sec: float
+    speed_m_per_sec: float = 0.0
     floor_locations: Dict[int, Tuple[float, float]] = field(default_factory=dict)
     capacity_length_m: float = 1.0
     capacity_width_m: float = 1.0
@@ -118,6 +119,15 @@ class Lift:
 
     def can_serve(self, floor_a: int, floor_b: int) -> bool:
         return floor_a in self.served_floors and floor_b in self.served_floors
+
+    def travel_speed_m_per_sec(self, floor_height_m: float) -> float:
+        if self.speed_m_per_sec > 0:
+            return float(self.speed_m_per_sec)
+        return max(0.0, float(self.speed_floors_per_sec or 0.0)) * float(floor_height_m)
+
+    def vertical_travel_duration_sec(self, floor_delta: int, floor_height_m: float) -> float:
+        travel_m = abs(int(floor_delta)) * float(floor_height_m)
+        return travel_m / max(self.travel_speed_m_per_sec(floor_height_m), 1e-9)
 
     def can_fit(self, payload: PayloadType, amr: Optional["AMR"] = None) -> bool:
         total_length = max(payload.length_m, amr.length_m if amr else 0.0)
