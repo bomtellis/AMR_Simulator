@@ -49,8 +49,13 @@ class PayloadInstanceStore:
 
     def __init__(self):
         self._records: Dict[str, PayloadInstanceRecord] = {}
-        self._by_location: Dict[str, List[str]] = {}
+        # Per-location ids are stored in insertion-ordered dictionaries. This
+        # keeps pickup order deterministic while making removal O(1) instead of
+        # repeatedly scanning and shifting a growing list.
+        self._by_location: Dict[str, Dict[str, None]] = {}
         self._counts_by_payload: Dict[str, int] = {}
+        self._counts_by_location_payload: Dict[str, Dict[str, int]] = {}
+        self._known_payload_names = set()
         # Registry of every physical payload instance that has existed during
         # the simulation.  _records only contains currently stored instances,
         # so reports need this registry to distinguish asset population from
@@ -76,6 +81,7 @@ class PayloadInstanceStore:
         instance_id = clean_text(instance_id)
         if not payload_name or not instance_id:
             return
+        self._known_payload_names.add(payload_name)
         existing = self._known_instances.get(instance_id)
         if existing is None:
             self._known_instances[instance_id] = PayloadInstanceRecord(
@@ -126,6 +132,7 @@ class PayloadInstanceStore:
         if previous:
             self._remove_from_location(previous.location, instance_id)
             self._decrement_payload_count(previous.payload)
+            self._decrement_location_payload_count(previous.location, previous.payload)
 
         self.register_instance(
             payload_name,
@@ -142,16 +149,21 @@ class PayloadInstanceStore:
             status="stored",
             metadata=dict(metadata or {}),
         )
-        self._by_location.setdefault(location_name, []).append(instance_id)
+        self._by_location.setdefault(location_name, {})[instance_id] = None
         self._counts_by_payload[payload_name] = (
             int(self._counts_by_payload.get(payload_name, 0) or 0) + 1
         )
+        location_counts = self._counts_by_location_payload.setdefault(location_name, {})
+        location_counts[payload_name] = (
+            int(location_counts.get(payload_name, 0) or 0) + 1
+        )
 
     def _remove_from_location(self, location_name: str, instance_id: str) -> None:
-        ids = self._by_location.get(location_name, [])
-        if instance_id in ids:
-            ids.remove(instance_id)
-        if not ids and location_name in self._by_location:
+        ids = self._by_location.get(location_name)
+        if ids is None:
+            return
+        ids.pop(instance_id, None)
+        if not ids:
             self._by_location.pop(location_name, None)
 
     def _decrement_payload_count(self, payload_name: str) -> None:
@@ -163,6 +175,22 @@ class PayloadInstanceStore:
             self._counts_by_payload[payload_name] = count
         else:
             self._counts_by_payload.pop(payload_name, None)
+
+    def _decrement_location_payload_count(
+        self, location_name: str, payload_name: str
+    ) -> None:
+        location_name = clean_text(location_name)
+        payload_name = normalise_payload_name(payload_name)
+        counts = self._counts_by_location_payload.get(location_name)
+        if not counts or not payload_name:
+            return
+        count = int(counts.get(payload_name, 0) or 0) - 1
+        if count > 0:
+            counts[payload_name] = count
+        else:
+            counts.pop(payload_name, None)
+        if not counts:
+            self._counts_by_location_payload.pop(location_name, None)
 
     def pickup(
         self, location_name: str, payload_name: str = "", instance_id: str = ""
@@ -180,10 +208,11 @@ class PayloadInstanceStore:
             self._remove_from_location(location_name, instance_id)
             self._records.pop(instance_id, None)
             self._decrement_payload_count(record.payload)
+            self._decrement_location_payload_count(location_name, record.payload)
             record.status = "picked_up"
             return record
 
-        for candidate_id in list(self._by_location.get(location_name, [])):
+        for candidate_id in tuple(self._by_location.get(location_name, {})):
             record = self._records.get(candidate_id)
             if not record:
                 continue
@@ -192,6 +221,7 @@ class PayloadInstanceStore:
             self._remove_from_location(location_name, candidate_id)
             self._records.pop(candidate_id, None)
             self._decrement_payload_count(record.payload)
+            self._decrement_location_payload_count(location_name, record.payload)
             record.status = "picked_up"
             return record
 
@@ -211,12 +241,20 @@ class PayloadInstanceStore:
     def records_at(self, location_name: str) -> List[PayloadInstanceRecord]:
         return [
             self._records[i]
-            for i in self._by_location.get(clean_text(location_name), [])
+            for i in self._by_location.get(clean_text(location_name), {})
             if i in self._records
         ]
 
     def counts_by_payload(self) -> Dict[str, int]:
         return dict(self._counts_by_payload)
+
+    def counts_at(self, location_name: str) -> Dict[str, int]:
+        """Return current payload counts at one location without materialising records."""
+        return dict(self._counts_by_location_payload.get(clean_text(location_name), {}))
+
+    def known_payload_names(self) -> set:
+        """Return payload types that have existed during the simulation."""
+        return set(self._known_payload_names)
 
     def known_records(self) -> List[PayloadInstanceRecord]:
         """Return every physical payload instance observed during runtime."""
