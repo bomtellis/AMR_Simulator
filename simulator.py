@@ -8908,7 +8908,11 @@ class Simulation:
                 end_y=getattr(charge_display_loc, "y", None),
                 end_floor=getattr(charge_display_loc, "floor", None),
                 status="charging",
-                energy_kwh=0.0,
+                energy_kwh=(
+                    float(amr.battery_charge_rate_kw)
+                    * float(event.payload["charge_duration"])
+                    / 3600.0
+                ),
                 battery_soc_before=amr.battery_soc_percent,
                 battery_soc_after=100.0,
                 is_charging=True,
