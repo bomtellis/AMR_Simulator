@@ -575,6 +575,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             pickup_locations = dept_locations
         elif role != "pickup" and dept_locations:
             dropoff_locations = dept_locations
+        department_location_role = role if dept_locations else ""
 
         suffix = _clean_text(instance_suffix)
         key_base = f"{category_key_text}:{dept_id}"
@@ -629,6 +630,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 "cfg": cfg,
                 "pickup_locations": pickup_locations,
                 "dropoff_locations": dropoff_locations,
+                "department_location_role": department_location_role,
             }
         )
 
@@ -840,6 +842,12 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             ),
             staff_resource_name=_clean_text(cfg.get("staff_resource_name", "")),
             staff_category_key=category_key,
+            staff_movement_policy=_clean_text(
+                cfg.get("staff_movement_policy", "batch_same_location")
+            )
+            or "batch_same_location",
+            staff_shift_pattern=_clean_text(cfg.get("staff_shift_pattern", "none"))
+            or "none",
         )
         if bool(cfg.get("return_enabled", False)):
             return_payload = _clean_text(cfg.get("return_payload", ""))
@@ -964,7 +972,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             )
         ]
 
-    def _pick_pairs(self, instance: dict) -> List[Tuple[str, str]]:
+    def _pick_pairs(self, instance: dict, occurrence_index: int = 0) -> List[Tuple[str, str]]:
         pickups = [
             x for x in instance.get("pickup_locations", []) if x in self.locations
         ]
@@ -973,6 +981,13 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         ]
         if not pickups or not dropoffs:
             return []
+        role = _clean_text(instance.get("department_location_role", ""))
+        occurrence_index = max(0, int(occurrence_index or 0))
+        if role == "pickup" and len(pickups) > 1:
+            pickups = [pickups[occurrence_index % len(pickups)]]
+        elif role and role != "pickup" and len(dropoffs) > 1:
+            dropoffs = [dropoffs[occurrence_index % len(dropoffs)]]
+
         pairs: List[Tuple[str, str]] = []
         for pickup in pickups:
             for dropoff in dropoffs:
@@ -1085,9 +1100,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 _clean_text(cfg.get("timeframe_end", "")),
             )
 
-            for pickup, dropoff in self._pick_pairs(instance):
-                pair_key = (pickup, dropoff)
-                for index in range(multiple):
+            for index in range(multiple):
+                for pickup, dropoff in self._pick_pairs(instance, index):
+                    pair_key = (pickup, dropoff)
                     schedule_key = schedule_key_base + pair_key + (index,)
                     if schedule_key in self.scheduled_emitted:
                         continue

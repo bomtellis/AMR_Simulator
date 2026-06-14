@@ -84,6 +84,8 @@ class Task:
     staff_initial_count: int = 1
     staff_resource_name: str = ""
     staff_category_key: str = ""
+    staff_movement_policy: str = "batch_same_location"
+    staff_shift_pattern: str = "none"
 
 
 @dataclass

@@ -24716,6 +24716,8 @@
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
+        "staff_movement_policy": "minimise_movement",
+        "staff_shift_pattern": "none",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -24729,9 +24731,11 @@
         ],
         "run_every_fortnight": false,
         "schedule_times": [
-          "07:30",
+          "08:00",
           "11:45",
-          "16:45"
+          "12:45",
+          "16:45",
+          "17:45"
         ],
         "frequency_per_day": 0.0,
         "volume_per_event_m3": 0.0,
@@ -24768,6 +24772,8 @@
             "requires_staff": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -24812,6 +24818,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -24821,7 +24829,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -24863,6 +24873,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -24872,7 +24884,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -24914,6 +24928,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -24923,7 +24939,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -24965,6 +24983,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -24974,7 +24994,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25016,6 +25038,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25025,7 +25049,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25067,6 +25093,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25076,7 +25104,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25118,6 +25148,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25127,7 +25159,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25169,6 +25203,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25178,7 +25214,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25220,6 +25258,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25229,7 +25269,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25271,6 +25313,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25280,7 +25324,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25322,6 +25368,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25331,7 +25379,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25373,6 +25423,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25382,7 +25434,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25424,6 +25478,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25433,7 +25489,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25475,6 +25533,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25484,7 +25544,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25526,6 +25588,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25535,7 +25599,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25577,6 +25643,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25586,7 +25654,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25628,6 +25698,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25637,7 +25709,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25679,6 +25753,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25688,7 +25764,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25730,6 +25808,8 @@
             "requires_staff": true,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25739,7 +25819,9 @@
               "tue",
               "wed",
               "thu",
-              "fri"
+              "fri",
+              "sat",
+              "sun"
             ],
             "run_every_fortnight": false,
             "scheduled_times": [
@@ -25806,6 +25888,8 @@
               "requires_staff": true,
               "staff_initial_count": 19,
               "staff_resource_name": "Host team",
+              "staff_movement_policy": "minimise_movement",
+              "staff_shift_pattern": "four_on_four_off_12h",
               "reusable_return_pool_enabled": true,
               "reusable_return_pool_multiplier": 2.0,
               "reusable_return_pool_max": 0,
@@ -25815,7 +25899,9 @@
                 "tue",
                 "wed",
                 "thu",
-                "fri"
+                "fri",
+                "sat",
+                "sun"
               ],
               "run_every_fortnight": false,
               "scheduled_times": [
@@ -25837,6 +25923,13 @@
               "department_location_role": "dropoff"
             }
           }
+        ],
+        "scheduled_times": [
+          "08:00",
+          "11:45",
+          "12:45",
+          "16:45",
+          "17:45"
         ]
       },
       "pharmacy": {
@@ -25855,6 +25948,8 @@
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
+        "staff_movement_policy": "batch_same_location",
+        "staff_shift_pattern": "none",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -25907,6 +26002,8 @@
             "requires_staff": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25970,7 +26067,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D2": {
             "enabled": true,
@@ -26012,7 +26111,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D3": {
             "enabled": true,
@@ -26054,7 +26155,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D4": {
             "enabled": true,
@@ -26096,7 +26199,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D12": {
             "enabled": true,
@@ -26138,7 +26243,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D13": {
             "enabled": true,
@@ -26180,7 +26287,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D10": {
             "enabled": true,
@@ -26222,7 +26331,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D5": {
             "enabled": true,
@@ -26264,7 +26375,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D44": {
             "enabled": true,
@@ -26306,7 +26419,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D45": {
             "enabled": true,
@@ -26348,7 +26463,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D7": {
             "enabled": true,
@@ -26388,7 +26505,9 @@
             "timeframe_payload_multiple": 2,
             "payload_multiple": 2,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D17": {
             "enabled": true,
@@ -26430,7 +26549,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D16": {
             "enabled": true,
@@ -26472,7 +26593,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D19": {
             "enabled": true,
@@ -26514,7 +26637,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D25": {
             "enabled": true,
@@ -26556,7 +26681,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D26": {
             "enabled": true,
@@ -26598,7 +26725,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D22": {
             "enabled": true,
@@ -26640,7 +26769,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D23": {
             "enabled": true,
@@ -26682,7 +26813,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D21": {
             "enabled": true,
@@ -26724,7 +26857,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D27": {
             "enabled": true,
@@ -26766,7 +26901,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D18": {
             "enabled": true,
@@ -26808,7 +26945,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D46": {
             "enabled": true,
@@ -26850,7 +26989,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D20": {
             "enabled": true,
@@ -26892,7 +27033,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D24": {
             "enabled": true,
@@ -26934,7 +27077,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D31": {
             "enabled": true,
@@ -26976,7 +27121,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D32": {
             "enabled": true,
@@ -27018,7 +27165,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D33": {
             "enabled": true,
@@ -27060,7 +27209,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D34": {
             "enabled": true,
@@ -27102,7 +27253,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D30": {
             "enabled": true,
@@ -27144,7 +27297,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D29": {
             "enabled": true,
@@ -27186,7 +27341,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D37": {
             "enabled": true,
@@ -27228,7 +27385,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D39": {
             "enabled": true,
@@ -27270,7 +27429,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D40": {
             "enabled": true,
@@ -27312,7 +27473,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D36": {
             "enabled": true,
@@ -27354,7 +27517,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D38": {
             "enabled": true,
@@ -27396,7 +27561,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D41": {
             "enabled": true,
@@ -27438,7 +27605,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D43": {
             "enabled": true,
@@ -27480,7 +27649,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D42": {
             "enabled": true,
@@ -27522,7 +27693,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "dropoff"
+            "department_location_role": "dropoff",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           }
         },
         "department_groups": [
@@ -27607,7 +27780,9 @@
               "timeframe_payload_multiple": 2,
               "payload_multiple": 2,
               "notes": "",
-              "department_location_role": "dropoff"
+              "department_location_role": "dropoff",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none"
             }
           },
           {
@@ -27691,7 +27866,9 @@
               "timeframe_payload_multiple": 1,
               "payload_multiple": 1,
               "notes": "",
-              "department_location_role": "dropoff"
+              "department_location_role": "dropoff",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none"
             }
           }
         ]
@@ -27712,6 +27889,8 @@
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
+        "staff_movement_policy": "batch_same_location",
+        "staff_shift_pattern": "none",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -27760,6 +27939,8 @@
             "requires_staff": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -27802,6 +27983,8 @@
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
+        "staff_movement_policy": "batch_same_location",
+        "staff_shift_pattern": "none",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -27852,6 +28035,8 @@
             "requires_staff": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -27919,7 +28104,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D12": {
             "enabled": true,
@@ -27963,7 +28150,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D13": {
             "enabled": true,
@@ -28007,7 +28196,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D11": {
             "enabled": true,
@@ -28051,7 +28242,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D15": {
             "enabled": true,
@@ -28095,7 +28288,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D1": {
             "enabled": true,
@@ -28139,7 +28334,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D10": {
             "enabled": true,
@@ -28183,7 +28380,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D6": {
             "enabled": true,
@@ -28227,7 +28426,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D4": {
             "enabled": true,
@@ -28271,7 +28472,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D5": {
             "enabled": true,
@@ -28315,7 +28518,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D44": {
             "enabled": true,
@@ -28359,7 +28564,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D45": {
             "enabled": true,
@@ -28403,7 +28610,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D7": {
             "enabled": true,
@@ -28447,7 +28656,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D9": {
             "enabled": true,
@@ -28491,7 +28702,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D2": {
             "enabled": true,
@@ -28535,7 +28748,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D3": {
             "enabled": true,
@@ -28579,7 +28794,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D17": {
             "enabled": true,
@@ -28623,7 +28840,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D16": {
             "enabled": true,
@@ -28667,7 +28886,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D19": {
             "enabled": true,
@@ -28711,7 +28932,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D25": {
             "enabled": true,
@@ -28755,7 +28978,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D26": {
             "enabled": true,
@@ -28799,7 +29024,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D22": {
             "enabled": true,
@@ -28843,7 +29070,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D23": {
             "enabled": true,
@@ -28887,7 +29116,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D21": {
             "enabled": true,
@@ -28931,7 +29162,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D27": {
             "enabled": true,
@@ -28975,7 +29208,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D18": {
             "enabled": true,
@@ -29019,7 +29254,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D46": {
             "enabled": true,
@@ -29063,7 +29300,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D20": {
             "enabled": true,
@@ -29107,7 +29346,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D24": {
             "enabled": true,
@@ -29151,7 +29392,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D28": {
             "enabled": true,
@@ -29195,7 +29438,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D31": {
             "enabled": true,
@@ -29239,7 +29484,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D32": {
             "enabled": true,
@@ -29283,7 +29530,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D33": {
             "enabled": true,
@@ -29327,7 +29576,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D34": {
             "enabled": true,
@@ -29371,7 +29622,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D30": {
             "enabled": true,
@@ -29415,7 +29668,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D29": {
             "enabled": true,
@@ -29459,7 +29714,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D37": {
             "enabled": true,
@@ -29503,7 +29760,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D39": {
             "enabled": true,
@@ -29547,7 +29806,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D40": {
             "enabled": true,
@@ -29591,7 +29852,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D36": {
             "enabled": true,
@@ -29635,7 +29898,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D38": {
             "enabled": true,
@@ -29679,7 +29944,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D35": {
             "enabled": true,
@@ -29723,7 +29990,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D41": {
             "enabled": true,
@@ -29767,7 +30036,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D43": {
             "enabled": true,
@@ -29811,7 +30082,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           },
           "D42": {
             "enabled": true,
@@ -29855,7 +30128,9 @@
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
             "notes": "",
-            "department_location_role": "pickup"
+            "department_location_role": "pickup",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none"
           }
         },
         "department_groups": [
@@ -29950,7 +30225,9 @@
               "timeframe_payload_multiple": 1,
               "payload_multiple": 1,
               "notes": "",
-              "department_location_role": "pickup"
+              "department_location_role": "pickup",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none"
             }
           }
         ]
@@ -29971,6 +30248,8 @@
         "requires_staff": true,
         "staff_initial_count": 1,
         "staff_resource_name": "",
+        "staff_movement_policy": "batch_same_location",
+        "staff_shift_pattern": "four_on_four_off_12h",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 0.0,
         "reusable_return_pool_max": 0,
@@ -30015,6 +30294,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "four_on_four_off_12h",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30055,6 +30336,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30096,6 +30379,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30137,6 +30422,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30178,6 +30465,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30219,6 +30508,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30260,6 +30551,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30301,6 +30594,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30342,6 +30637,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30383,6 +30680,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30424,6 +30723,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30465,6 +30766,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30506,6 +30809,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30547,6 +30852,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30588,6 +30895,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30629,6 +30938,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30670,6 +30981,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30711,6 +31024,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30752,6 +31067,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30793,6 +31110,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30834,6 +31153,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30875,6 +31196,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30916,6 +31239,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30957,6 +31282,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -30998,6 +31325,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -31016,418 +31345,6 @@
             "timeframe_payload_multiple": 3,
             "payload_multiple": 3,
             "notes": "Goods deliveries - weekly Thursdays",
-            "department_location_role": "dropoff"
-          },
-          "D16": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D19-STORES",
-            "dropoff_locations": [
-              "D19-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D23": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D25": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D27": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D4": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D4-STORES",
-            "dropoff_locations": [
-              "D4-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D5": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D5-STORES",
-            "dropoff_locations": [
-              "D5-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly deliveries - Monday",
-            "department_location_role": "dropoff"
-          },
-          "D12": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D12-STORES",
-            "dropoff_locations": [
-              "D12-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "wed",
-              "fri"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Twice weekly - ED Majors",
-            "department_location_role": "dropoff"
-          },
-          "D11": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D11-STORES",
-            "dropoff_locations": [
-              "D11-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly delivery - Tuesday",
-            "department_location_role": "dropoff"
-          },
-          "D13": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D13-STORES",
-            "dropoff_locations": [
-              "D13-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "tue"
-            ],
-            "run_every_fortnight": true,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Fortnightly delivery - Tuesday",
-            "department_location_role": "dropoff"
-          },
-          "D22": {
-            "enabled": true,
-            "generation_mode": "timeframe",
-            "priority": 50,
-            "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
-            "dropoff_location": "D22-STORES",
-            "dropoff_locations": [
-              "D22-STORES"
-            ],
-            "payload": "Goods Cage",
-            "tracked_item_exchange": false,
-            "exchange_mode": "top_up_only",
-            "return_enabled": true,
-            "return_payload": "Goods Cage",
-            "return_delay_minutes": 0.0,
-            "requires_staff": true,
-            "staff_initial_count": 1,
-            "staff_resource_name": "Stores team",
-            "reusable_return_pool_enabled": false,
-            "reusable_return_pool_multiplier": 0.0,
-            "reusable_return_pool_max": 0,
-            "route_profile": "",
-            "days_active": [
-              "mon",
-              "thu"
-            ],
-            "run_every_fortnight": false,
-            "scheduled_times": [],
-            "frequency_per_day": 0.0,
-            "volume_per_event_m3": 0.0,
-            "threshold_volume_m3": 0.0,
-            "base_daily_volume_m3": 0.0,
-            "timeframe_start": "06:00",
-            "timeframe_end": "16:00",
-            "timeframe_payload_multiple": 3,
-            "payload_multiple": 3,
-            "notes": "Twice weekly - Endoscopy",
             "department_location_role": "dropoff"
           },
           "D1": {
@@ -31451,6 +31368,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -31492,6 +31411,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -31533,6 +31454,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -31574,6 +31497,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -31615,6 +31540,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -31656,6 +31583,8 @@
             "requires_staff": true,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -31674,6 +31603,438 @@
             "timeframe_payload_multiple": 3,
             "payload_multiple": 3,
             "notes": "Goods deliveries - weekly Fridays",
+            "department_location_role": "dropoff"
+          },
+          "D16": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D19-STORES",
+            "dropoff_locations": [
+              "D19-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D23": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D25": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D27": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D4": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D4-STORES",
+            "dropoff_locations": [
+              "D4-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D5": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D5-STORES",
+            "dropoff_locations": [
+              "D5-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly deliveries - Monday",
+            "department_location_role": "dropoff"
+          },
+          "D11": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D11-STORES",
+            "dropoff_locations": [
+              "D11-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly delivery - Tuesday",
+            "department_location_role": "dropoff"
+          },
+          "D13": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D13-STORES",
+            "dropoff_locations": [
+              "D13-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "tue"
+            ],
+            "run_every_fortnight": true,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Fortnightly delivery - Tuesday",
+            "department_location_role": "dropoff"
+          },
+          "D22": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D22-STORES",
+            "dropoff_locations": [
+              "D22-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "thu"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Twice weekly - Endoscopy",
+            "department_location_role": "dropoff"
+          },
+          "D12": {
+            "enabled": true,
+            "generation_mode": "timeframe",
+            "priority": 50,
+            "pickup_location": "D49-STORES",
+            "pickup_locations": [
+              "D49-STORES"
+            ],
+            "dropoff_location": "D12-STORES",
+            "dropoff_locations": [
+              "D12-STORES"
+            ],
+            "payload": "Goods Cage",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Goods Cage",
+            "return_delay_minutes": 0.0,
+            "requires_staff": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "Stores team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 0.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "wed",
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "06:00",
+            "timeframe_end": "16:00",
+            "timeframe_payload_multiple": 3,
+            "payload_multiple": 3,
+            "notes": "Twice weekly - ED Majors",
             "department_location_role": "dropoff"
           }
         },
@@ -31711,6 +32072,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -31765,6 +32128,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -31816,6 +32181,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -31865,6 +32232,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -31917,6 +32286,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -31969,6 +32340,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -32017,6 +32390,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -32064,6 +32439,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -32112,6 +32489,8 @@
               "requires_staff": true,
               "staff_initial_count": 1,
               "staff_resource_name": "Stores team",
+              "staff_movement_policy": "batch_same_location",
+              "staff_shift_pattern": "none",
               "reusable_return_pool_enabled": false,
               "reusable_return_pool_multiplier": 0.0,
               "reusable_return_pool_max": 0,
@@ -32152,6 +32531,8 @@
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
+        "staff_movement_policy": "batch_same_location",
+        "staff_shift_pattern": "none",
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -32204,6 +32585,8 @@
             "requires_staff": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,

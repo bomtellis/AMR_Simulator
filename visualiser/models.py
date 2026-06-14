@@ -131,6 +131,8 @@ def default_task_generation_category(label: str) -> dict:
         "requires_staff": False,
         "staff_initial_count": 1,
         "staff_resource_name": "",
+        "staff_movement_policy": "batch_same_location",
+        "staff_shift_pattern": "none",
         "reusable_return_pool_enabled": False,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -280,6 +282,18 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
         except Exception:
             category["staff_initial_count"] = 1
         category.setdefault("staff_resource_name", "")
+        policy = str(category.get("staff_movement_policy", "") or "").strip().lower()
+        if policy == "minimize_movement":
+            policy = "minimise_movement"
+        if policy not in {"available_first", "batch_same_location", "minimise_movement"}:
+            policy = "batch_same_location"
+        category["staff_movement_policy"] = policy
+        shift_pattern = str(category.get("staff_shift_pattern", "") or "").strip().lower()
+        if shift_pattern in {"4_on_4_off_12h", "four_on_four_off", "four_on_four_off_12_hour"}:
+            shift_pattern = "four_on_four_off_12h"
+        if shift_pattern not in {"none", "four_on_four_off_12h"}:
+            shift_pattern = "none"
+        category["staff_shift_pattern"] = shift_pattern
         category["run_every_fortnight"] = bool(category.get("run_every_fortnight", False))
 
     # Keep the legacy department_waste mirror in step for older configs/tools.

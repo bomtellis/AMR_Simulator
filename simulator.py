@@ -4135,10 +4135,19 @@ class Simulation:
         category_key: str,
         initial_count: int,
         resource_name: str = "",
+        shift_pattern: str = "none",
     ) -> dict:
         category_key = str(category_key or "").strip().lower() or "staff"
+        shift_pattern = self._normalise_staff_shift_pattern(shift_pattern)
+        shift_multiplier = self._staff_shift_multiplier(shift_pattern)
         pool = self.staff_resource_pools.get(category_key)
         if pool is not None:
+            if shift_pattern != "none":
+                pool["shift_pattern"] = shift_pattern
+                pool["shift_multiplier"] = max(
+                    float(pool.get("shift_multiplier", 1.0) or 1.0),
+                    shift_multiplier,
+                )
             return pool
 
         initial_count = max(1, int(initial_count or 1))
@@ -4149,9 +4158,76 @@ class Simulation:
             "initial_people": initial_count,
             "available_times": [0.0 for _ in range(initial_count)],
             "assignments": [],
+            "active_location_batches": {},
+            "preferred_people_by_location": {},
+            "shift_pattern": shift_pattern,
+            "shift_multiplier": shift_multiplier,
         }
         self.staff_resource_pools[category_key] = pool
         return pool
+
+    @staticmethod
+    def _normalise_staff_shift_pattern(value: str) -> str:
+        pattern = str(value or "").strip().lower()
+        if pattern in {
+            "4_on_4_off_12h",
+            "four_on_four_off",
+            "four_on_four_off_12_hour",
+        }:
+            pattern = "four_on_four_off_12h"
+        return pattern if pattern in {"none", "four_on_four_off_12h"} else "none"
+
+    @staticmethod
+    def _staff_shift_multiplier(shift_pattern: str) -> float:
+        return float(Simulation._staff_shift_team_count(shift_pattern))
+
+    @staticmethod
+    def _staff_shift_team_count(shift_pattern: str) -> int:
+        return 2 if shift_pattern == "four_on_four_off_12h" else 1
+
+    @staticmethod
+    def _staff_rostered_count(on_shift_count: int, shift_multiplier: float) -> int:
+        try:
+            count = max(0, int(on_shift_count or 0))
+            multiplier = max(1.0, float(shift_multiplier or 1.0))
+        except Exception:
+            count = max(0, int(on_shift_count or 0))
+            multiplier = 1.0
+        return int(math.ceil(count * multiplier))
+
+    def _staff_shift_team_key(self, shift_pattern: str, sim_time_sec: float) -> str:
+        shift_pattern = self._normalise_staff_shift_pattern(shift_pattern)
+        if shift_pattern != "four_on_four_off_12h":
+            return ""
+        block = int(max(0.0, float(sim_time_sec or 0.0)) // (4 * 24 * 60 * 60))
+        return "A" if block % 2 == 0 else "B"
+
+    def _staff_shift_roster(self, pool: dict, sim_time_sec: float) -> dict:
+        shift_pattern = str(pool.get("shift_pattern", "none") or "none")
+        team_key = self._staff_shift_team_key(shift_pattern, sim_time_sec)
+        if not team_key:
+            return pool
+        rosters = pool.setdefault("shift_rosters", {})
+        roster = rosters.get(team_key)
+        if roster is None:
+            initial_count = max(1, int(pool.get("initial_people", 1) or 1))
+            roster = {
+                "shift_team": team_key,
+                "available_times": [0.0 for _ in range(initial_count)],
+                "active_location_batches": {},
+                "preferred_people_by_location": {},
+            }
+            rosters[team_key] = roster
+        return roster
+
+    def _staff_pool_on_shift_count(self, pool: dict) -> int:
+        rosters = pool.get("shift_rosters")
+        if isinstance(rosters, dict) and rosters:
+            return max(
+                len((roster or {}).get("available_times", []) or [])
+                for roster in rosters.values()
+            )
+        return len(pool.get("available_times", []) or [])
 
     def _task_staff_handling_config(self, task: Optional[Task]) -> Optional[dict]:
         if task is None or bool(getattr(task, "is_return_task", False)):
@@ -4174,10 +4250,27 @@ class Simulation:
             )
         except Exception:
             initial_count = 1
+        policy = str(
+            getattr(task, "staff_movement_policy", "batch_same_location") or ""
+        ).strip().lower()
+        if policy not in {
+            "available_first",
+            "batch_same_location",
+            "minimise_movement",
+            "minimize_movement",
+        }:
+            policy = "batch_same_location"
+        if policy == "minimize_movement":
+            policy = "minimise_movement"
+        shift_pattern = self._normalise_staff_shift_pattern(
+            getattr(task, "staff_shift_pattern", "none") or "none"
+        )
         return {
             "category_key": category_key,
             "resource_name": resource_name,
             "initial_count": initial_count,
+            "movement_policy": policy,
+            "shift_pattern": shift_pattern,
         }
 
     def _assign_staff_for_handling(
@@ -4197,12 +4290,84 @@ class Simulation:
             staff_cfg["category_key"],
             staff_cfg["initial_count"],
             staff_cfg["resource_name"],
+            staff_cfg["shift_pattern"],
         )
-        available_times = pool["available_times"]
+        roster = self._staff_shift_roster(pool, start_time)
+        available_times = roster["available_times"]
+        shift_team = str(roster.get("shift_team", "") or "")
+        shift_pattern = str(pool.get("shift_pattern", "none") or "none")
+        shift_multiplier = float(pool.get("shift_multiplier", 1.0) or 1.0)
         start_time = float(start_time or 0.0)
         finish_time = start_time + duration
+        location_name = str(getattr(task, "dropoff", "") or "").strip()
+        movement_policy = str(
+            staff_cfg.get("movement_policy", "batch_same_location") or ""
+        ).strip().lower()
+        active_batches = roster.setdefault("active_location_batches", {})
+        active_assignment = (
+            active_batches.get(location_name)
+            if movement_policy in {"batch_same_location", "minimise_movement"}
+            else None
+        )
+        if location_name and active_assignment is not None:
+            active_finish = float(active_assignment.get("finish_time", 0.0) or 0.0)
+            if active_finish > start_time + 1e-9:
+                person_index = max(
+                    0, int(active_assignment.get("person_index", 1) or 1) - 1
+                )
+                finish_time = max(finish_time, active_finish)
+                if person_index < len(available_times):
+                    available_times[person_index] = max(
+                        float(available_times[person_index] or 0.0), finish_time
+                    )
+                assignment = {
+                    "task_id": str(getattr(task, "id", "") or ""),
+                    "category_key": str(pool["category_key"]),
+                    "resource_name": str(pool.get("resource_name", "") or ""),
+                    "person_id": str(active_assignment.get("person_id", "")),
+                    "person_index": person_index + 1,
+                    "start_time": round(start_time, 3),
+                    "finish_time": round(finish_time, 3),
+                    "duration_sec": round(duration, 3),
+                    "location": location_name,
+                    "payload": self._payload_log_name(getattr(task, "payload", "")),
+                    "people_required": self._staff_rostered_count(
+                        self._staff_pool_on_shift_count(pool), shift_multiplier
+                    ),
+                    "staff_on_shift_people_required": self._staff_pool_on_shift_count(
+                        pool
+                    ),
+                    "staff_shift_pattern": shift_pattern,
+                    "staff_shift_team": shift_team,
+                    "staff_shift_multiplier": shift_multiplier,
+                    "staff_initial_on_shift_people": int(
+                        pool.get("initial_people", 0) or 0
+                    ),
+                    "staff_initial_rostered_people": self._staff_rostered_count(
+                        int(pool.get("initial_people", 0) or 0), shift_multiplier
+                    ),
+                    "added_person": False,
+                    "shared_location_batch": True,
+                }
+                active_batches[location_name] = assignment
+                pool["assignments"].append(assignment)
+                self.staff_assignments.append(assignment)
+                return assignment
+
         person_index = None
+        preferred_people = roster.setdefault("preferred_people_by_location", {})
+        preferred_index = preferred_people.get(location_name)
+        if (
+            movement_policy == "minimise_movement"
+            and isinstance(preferred_index, int)
+            and 0 <= preferred_index < len(available_times)
+            and float(available_times[preferred_index] or 0.0) <= start_time + 1e-9
+        ):
+            person_index = preferred_index
+
         for idx, available_time in enumerate(available_times):
+            if person_index is not None:
+                break
             if float(available_time or 0.0) <= start_time + 1e-9:
                 person_index = idx
                 break
@@ -4215,20 +4380,37 @@ class Simulation:
 
         available_times[person_index] = finish_time
         category_key = str(pool["category_key"])
+        team_prefix = f"shift-{shift_team}-" if shift_team else ""
         assignment = {
             "task_id": str(getattr(task, "id", "") or ""),
             "category_key": category_key,
             "resource_name": str(pool.get("resource_name", "") or ""),
-            "person_id": f"{category_key}-person-{person_index + 1}",
+            "person_id": f"{category_key}-{team_prefix}person-{person_index + 1}",
             "person_index": person_index + 1,
             "start_time": round(start_time, 3),
             "finish_time": round(finish_time, 3),
             "duration_sec": round(duration, 3),
-            "location": str(getattr(task, "dropoff", "") or ""),
+            "location": location_name,
             "payload": self._payload_log_name(getattr(task, "payload", "")),
-            "people_required": len(available_times),
+            "people_required": self._staff_rostered_count(
+                self._staff_pool_on_shift_count(pool), shift_multiplier
+            ),
+            "staff_on_shift_people_required": self._staff_pool_on_shift_count(pool),
+            "staff_shift_pattern": shift_pattern,
+            "staff_shift_team": shift_team,
+            "staff_shift_multiplier": shift_multiplier,
+            "staff_initial_on_shift_people": int(pool.get("initial_people", 0) or 0),
+            "staff_initial_rostered_people": self._staff_rostered_count(
+                int(pool.get("initial_people", 0) or 0), shift_multiplier
+            ),
             "added_person": added_person,
+            "shared_location_batch": False,
         }
+        if location_name:
+            if movement_policy in {"batch_same_location", "minimise_movement"}:
+                active_batches[location_name] = assignment
+            if movement_policy == "minimise_movement":
+                preferred_people[location_name] = person_index
         pool["assignments"].append(assignment)
         self.staff_assignments.append(assignment)
         return assignment
@@ -4431,6 +4613,24 @@ class Simulation:
                 person_resource=f"{category_key}_payload_handling",
                 person_id=str(staff_assignment["person_id"]),
                 people_required=int(staff_assignment["people_required"]),
+                staff_on_shift_people_required=int(
+                    staff_assignment.get("staff_on_shift_people_required", 0) or 0
+                ),
+                staff_shift_pattern=str(
+                    staff_assignment.get("staff_shift_pattern", "") or ""
+                ),
+                staff_shift_team=str(
+                    staff_assignment.get("staff_shift_team", "") or ""
+                ),
+                staff_shift_multiplier=float(
+                    staff_assignment.get("staff_shift_multiplier", 1.0) or 1.0
+                ),
+                staff_initial_on_shift_people=int(
+                    staff_assignment.get("staff_initial_on_shift_people", 0) or 0
+                ),
+                staff_initial_rostered_people=int(
+                    staff_assignment.get("staff_initial_rostered_people", 0) or 0
+                ),
             )
         self.log_step(
             event_time=return_task.release_time,
@@ -4471,6 +4671,36 @@ class Simulation:
             ),
             people_required=(
                 int(staff_assignment["people_required"])
+                if staff_assignment is not None
+                else 0
+            ),
+            staff_on_shift_people_required=(
+                int(staff_assignment.get("staff_on_shift_people_required", 0) or 0)
+                if staff_assignment is not None
+                else 0
+            ),
+            staff_shift_pattern=(
+                str(staff_assignment.get("staff_shift_pattern", "") or "")
+                if staff_assignment is not None
+                else ""
+            ),
+            staff_shift_team=(
+                str(staff_assignment.get("staff_shift_team", "") or "")
+                if staff_assignment is not None
+                else ""
+            ),
+            staff_shift_multiplier=(
+                float(staff_assignment.get("staff_shift_multiplier", 1.0) or 1.0)
+                if staff_assignment is not None
+                else 1.0
+            ),
+            staff_initial_on_shift_people=(
+                int(staff_assignment.get("staff_initial_on_shift_people", 0) or 0)
+                if staff_assignment is not None
+                else 0
+            ),
+            staff_initial_rostered_people=(
+                int(staff_assignment.get("staff_initial_rostered_people", 0) or 0)
                 if staff_assignment is not None
                 else 0
             ),
@@ -8744,13 +8974,25 @@ class Simulation:
         categories = {}
         total_people = 0
         for category_key, pool in sorted(self.staff_resource_pools.items()):
-            available_times = list(pool.get("available_times", []) or [])
-            people_required = len(available_times)
+            on_shift_people = self._staff_pool_on_shift_count(pool)
+            shift_pattern = str(pool.get("shift_pattern", "none") or "none")
+            shift_multiplier = float(pool.get("shift_multiplier", 1.0) or 1.0)
+            people_required = self._staff_rostered_count(
+                on_shift_people, shift_multiplier
+            )
+            initial_on_shift = int(pool.get("initial_people", 0) or 0)
+            initial_people = self._staff_rostered_count(
+                initial_on_shift, shift_multiplier
+            )
             total_people += people_required
             categories[category_key] = {
                 "resource_name": str(pool.get("resource_name", "") or ""),
-                "initial_people": int(pool.get("initial_people", 0) or 0),
+                "initial_people": initial_people,
                 "people_required": people_required,
+                "on_shift_people_required": on_shift_people,
+                "initial_on_shift_people": initial_on_shift,
+                "shift_pattern": shift_pattern,
+                "shift_multiplier": shift_multiplier,
                 "assignments": list(pool.get("assignments", []) or []),
             }
         return {
@@ -8824,6 +9066,12 @@ class Simulation:
             "person_resource",
             "person_id",
             "people_required",
+            "staff_on_shift_people_required",
+            "staff_shift_pattern",
+            "staff_shift_team",
+            "staff_shift_multiplier",
+            "staff_initial_on_shift_people",
+            "staff_initial_rostered_people",
             "location_inventory_spaces_disabled",
             "location_configured_inventory_area_m2",
             "location_peak_payload_count",
@@ -9014,6 +9262,12 @@ class Simulation:
         person_resource: str = "",
         person_id: str = "",
         people_required: int = 0,
+        staff_on_shift_people_required: int = 0,
+        staff_shift_pattern: str = "",
+        staff_shift_team: str = "",
+        staff_shift_multiplier: float = 1.0,
+        staff_initial_on_shift_people: int = 0,
+        staff_initial_rostered_people: int = 0,
     ):
         if not self.verbose:
             return
@@ -9185,6 +9439,18 @@ class Simulation:
                 "person_resource": person_resource,
                 "person_id": person_id,
                 "people_required": int(people_required or 0),
+                "staff_on_shift_people_required": int(
+                    staff_on_shift_people_required or 0
+                ),
+                "staff_shift_pattern": staff_shift_pattern,
+                "staff_shift_team": staff_shift_team,
+                "staff_shift_multiplier": float(staff_shift_multiplier or 1.0),
+                "staff_initial_on_shift_people": int(
+                    staff_initial_on_shift_people or 0
+                ),
+                "staff_initial_rostered_people": int(
+                    staff_initial_rostered_people or 0
+                ),
             }
         )
 

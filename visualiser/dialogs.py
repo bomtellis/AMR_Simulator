@@ -45,6 +45,84 @@ from PySide6.QtWidgets import (
 )
 
 
+STAFF_MOVEMENT_POLICIES = [
+    ("First available", "available_first"),
+    ("Batch same location", "batch_same_location"),
+    ("Prefer same location", "minimise_movement"),
+]
+
+STAFF_SHIFT_PATTERNS = [
+    ("No shift pattern", "none"),
+    ("4 on / 4 off, 12-hour days", "four_on_four_off_12h"),
+]
+
+
+def _normalise_staff_movement_policy_value(value) -> str:
+    policy = str(value or "").strip().lower()
+    if policy == "minimize_movement":
+        policy = "minimise_movement"
+    valid = {item[1] for item in STAFF_MOVEMENT_POLICIES}
+    return policy if policy in valid else "batch_same_location"
+
+
+def _normalise_staff_shift_pattern_value(value) -> str:
+    pattern = str(value or "").strip().lower()
+    if pattern in {
+        "4_on_4_off_12h",
+        "four_on_four_off",
+        "four_on_four_off_12_hour",
+    }:
+        pattern = "four_on_four_off_12h"
+    return pattern if pattern in {"none", "four_on_four_off_12h"} else "none"
+
+
+def _set_staff_shift_pattern_combo(combo: QComboBox, value) -> None:
+    pattern = _normalise_staff_shift_pattern_value(value)
+    index = combo.findData(pattern)
+    if index < 0:
+        index = 0
+    combo.setCurrentIndex(index)
+
+
+def _selected_staff_shift_pattern_combo(combo: QComboBox) -> str:
+    return _normalise_staff_shift_pattern_value(combo.currentData())
+
+
+def _make_staff_movement_policy_widget(owner, initial_policy) -> QWidget:
+    widget = QWidget()
+    layout = QHBoxLayout(widget)
+    layout.setContentsMargins(0, 0, 0, 0)
+    owner.staff_movement_policy_checks = {}
+
+    def select_policy(policy):
+        policy = _normalise_staff_movement_policy_value(policy)
+        for value, check in owner.staff_movement_policy_checks.items():
+            check.blockSignals(True)
+            check.setChecked(value == policy)
+            check.blockSignals(False)
+
+    for label, value in STAFF_MOVEMENT_POLICIES:
+        check = QCheckBox(label)
+        owner.staff_movement_policy_checks[value] = check
+        layout.addWidget(check)
+        check.toggled.connect(
+            lambda checked, policy=value: select_policy(policy) if checked else None
+        )
+    layout.addStretch(1)
+
+    owner._set_staff_movement_policy = select_policy
+    owner._selected_staff_movement_policy = lambda: next(
+        (
+            value
+            for value, check in owner.staff_movement_policy_checks.items()
+            if check.isChecked()
+        ),
+        "batch_same_location",
+    )
+    select_policy(initial_policy)
+    return widget
+
+
 class ScheduledTimesDialog(QDialog):
     def __init__(self, parent, times=None):
         super().__init__(parent)
@@ -336,9 +414,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.return_delay_edit = QLineEdit(
             str(self.base_category.get("return_delay_minutes", 0))
         )
-        self.requires_staff_check = QCheckBox("Assign category staff during return window")
+        self.requires_staff_check = QCheckBox("Assign category staff for delivered payload handling")
         self.requires_staff_check.setToolTip(
-            "Use a separate staff pool for this category. Staff are reserved from delivery completion until the return task is released."
+            "Use a separate staff pool for this category. Staff are reserved for delivered payload handling at the drop-off location."
         )
         self.requires_staff_check.setChecked(
             bool(self.base_category.get("requires_staff", self.base_category.get("staff_required", False)))
@@ -350,6 +428,23 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             str(self.base_category.get("staff_resource_name", ""))
         )
         self.staff_resource_name_edit.setPlaceholderText("Optional, e.g. Stores team")
+        policy = str(
+            self.base_category.get("staff_movement_policy", "batch_same_location")
+            or ""
+        ).strip()
+        self.staff_movement_policy_widget = _make_staff_movement_policy_widget(
+            self, policy
+        )
+        self.staff_shift_pattern_combo = QComboBox()
+        for label, value in STAFF_SHIFT_PATTERNS:
+            self.staff_shift_pattern_combo.addItem(label, value)
+        self.staff_shift_pattern_combo.setToolTip(
+            "Select how staff are grouped into shift teams for delivered payload handling."
+        )
+        _set_staff_shift_pattern_combo(
+            self.staff_shift_pattern_combo,
+            self.base_category.get("staff_shift_pattern", "none"),
+        )
 
         self.reusable_return_pool_check = QCheckBox(
             "Reuse returned payloads as a capped source pool"
@@ -464,6 +559,8 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Staff handling", self.requires_staff_check)
         form.addRow("Initial staff count", self.staff_initial_count_edit)
         form.addRow("Staff resource name", self.staff_resource_name_edit)
+        form.addRow("Staff movement", self.staff_movement_policy_widget)
+        form.addRow("Shift pattern", self.staff_shift_pattern_combo)
         form.addRow("Reusable return pool", self.reusable_return_pool_check)
         form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
@@ -554,7 +651,8 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         uses_sporadic = mode in {"sporadic", "hybrid", "scheduled_sporadic"}
         uses_timeframe = mode == "timeframe"
         return_enabled = self.return_enabled_check.isChecked()
-        staff_enabled = return_enabled and self.requires_staff_check.isChecked()
+        show_generation = not is_waste
+        staff_enabled = show_generation and self.requires_staff_check.isChecked()
 
         if is_waste:
             self.mode_combo.setEnabled(False)
@@ -571,7 +669,6 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             self._set_form_row_visible(self.exchange_mode_combo, self.tracked_item_exchange_check.isChecked())
             self.waste_stream_notice_label.setVisible(False)
 
-        show_generation = not is_waste
         self._set_form_row_visible(self.schedule_widget, show_generation and uses_schedule)
         self._set_form_row_visible(self.run_every_fortnight_check, show_generation)
         self._set_form_row_visible(self.frequency_edit, show_generation and uses_sporadic)
@@ -584,12 +681,16 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
 
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
-        self._set_form_row_visible(self.requires_staff_check, return_enabled)
+        self._set_form_row_visible(self.requires_staff_check, show_generation)
         self._set_form_row_visible(self.staff_initial_count_edit, staff_enabled)
         self._set_form_row_visible(self.staff_resource_name_edit, staff_enabled)
-        self.requires_staff_check.setEnabled(return_enabled)
+        self._set_form_row_visible(self.staff_movement_policy_widget, staff_enabled)
+        self._set_form_row_visible(self.staff_shift_pattern_combo, staff_enabled)
+        self.requires_staff_check.setEnabled(show_generation)
         self.staff_initial_count_edit.setEnabled(staff_enabled)
         self.staff_resource_name_edit.setEnabled(staff_enabled)
+        self.staff_movement_policy_widget.setEnabled(staff_enabled)
+        self.staff_shift_pattern_combo.setEnabled(staff_enabled)
         self._set_form_row_visible(self.reusable_return_pool_check, return_enabled)
         self._set_form_row_visible(self.reusable_return_pool_multiplier_edit, return_enabled and self.reusable_return_pool_check.isChecked())
         self._set_form_row_visible(self.reusable_return_pool_max_edit, return_enabled and self.reusable_return_pool_check.isChecked())
@@ -956,6 +1057,10 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "requires_staff": self.requires_staff_check.isChecked(),
                 "staff_initial_count": max(1, int(float(self.staff_initial_count_edit.text() or 1))),
                 "staff_resource_name": self.staff_resource_name_edit.text().strip(),
+                "staff_movement_policy": self._selected_staff_movement_policy(),
+                "staff_shift_pattern": _selected_staff_shift_pattern_combo(
+                    self.staff_shift_pattern_combo
+                ),
                 "reusable_return_pool_enabled": self.reusable_return_pool_check.isChecked(),
                 "reusable_return_pool_multiplier": float(self.reusable_return_pool_multiplier_edit.text() or 2.0),
                 "reusable_return_pool_max": int(float(self.reusable_return_pool_max_edit.text() or 0)),
@@ -1259,13 +1364,22 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_payload_combo.addItems([""] + self.payload_names)
 
         self.return_delay_edit = QLineEdit()
-        self.requires_staff_check = QCheckBox("Assign category staff during return window")
+        self.requires_staff_check = QCheckBox("Assign category staff for delivered payload handling")
         self.requires_staff_check.setToolTip(
-            "Use a separate staff pool for this category. Staff are reserved from delivery completion until the return task is released."
+            "Use a separate staff pool for this category. Staff are reserved for delivered payload handling at the drop-off location."
         )
         self.staff_initial_count_edit = QLineEdit()
         self.staff_resource_name_edit = QLineEdit()
         self.staff_resource_name_edit.setPlaceholderText("Optional, e.g. Stores team")
+        self.staff_movement_policy_widget = _make_staff_movement_policy_widget(
+            self, "batch_same_location"
+        )
+        self.staff_shift_pattern_combo = QComboBox()
+        for label, value in STAFF_SHIFT_PATTERNS:
+            self.staff_shift_pattern_combo.addItem(label, value)
+        self.staff_shift_pattern_combo.setToolTip(
+            "Select how staff are grouped into shift teams for delivered payload handling."
+        )
 
         self.reusable_return_pool_check = QCheckBox(
             "Reuse returned payloads as a capped source pool"
@@ -1363,6 +1477,8 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Staff handling", self.requires_staff_check)
         form.addRow("Initial staff count", self.staff_initial_count_edit)
         form.addRow("Staff resource name", self.staff_resource_name_edit)
+        form.addRow("Staff movement", self.staff_movement_policy_widget)
+        form.addRow("Shift pattern", self.staff_shift_pattern_combo)
         form.addRow("Reusable return pool", self.reusable_return_pool_check)
         form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
@@ -1493,6 +1609,13 @@ class TaskGenerationSettingsDialog(QDialog):
             staff_text = f"Staff: {staff_count} initial"
             if staff_name:
                 staff_text += f" ({staff_name})"
+            if (
+                _normalise_staff_shift_pattern_value(
+                    payload.get("staff_shift_pattern", "none")
+                )
+                == "four_on_four_off_12h"
+            ):
+                staff_text += " + 4 on / 4 off allowance"
             lines.append(staff_text)
 
         return "\n".join(lines)
@@ -1969,13 +2092,16 @@ class TaskGenerationSettingsDialog(QDialog):
             payload = group.get("payload", {})
             if not departments or not isinstance(payload, dict):
                 continue
+            payload = dict(payload)
+            self._normalise_staff_movement_policy(payload)
+            self._normalise_staff_shift_pattern(payload)
 
             seen_ids.add(group_id)
             clean_groups.append(
                 {
                     "id": group_id,
                     "departments": sorted(set(departments)),
-                    "payload": dict(payload),
+                    "payload": payload,
                 }
             )
 
@@ -2515,6 +2641,9 @@ class TaskGenerationSettingsDialog(QDialog):
             "requires_staff": key == "stores",
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_movement_policy": (
+                "minimise_movement" if key == "catering" else "batch_same_location"
+            ),
             "route_profile": "",
             "days_active": ["mon", "tue", "wed", "thu", "fri"],
             "schedule_times": {
@@ -2558,6 +2687,8 @@ class TaskGenerationSettingsDialog(QDialog):
             except Exception:
                 item["staff_initial_count"] = 1
             item.setdefault("staff_resource_name", "")
+            self._normalise_staff_movement_policy(item)
+            self._normalise_staff_shift_pattern(item)
             self._normalise_category_dropoffs(item)
             result["categories"][key] = item
 
@@ -2578,6 +2709,7 @@ class TaskGenerationSettingsDialog(QDialog):
             except Exception:
                 item["staff_initial_count"] = 1
             item.setdefault("staff_resource_name", "")
+            self._normalise_staff_movement_policy(item)
             self._normalise_category_dropoffs(item)
             result["categories"][key] = item
 
@@ -2612,6 +2744,19 @@ class TaskGenerationSettingsDialog(QDialog):
             locations.insert(0, legacy)
         item["dropoff_locations"] = locations
         item["dropoff_location"] = locations[0] if locations else legacy
+
+    def _normalise_staff_movement_policy(self, item):
+        policy = str(item.get("staff_movement_policy", "") or "").strip().lower()
+        if policy == "minimize_movement":
+            policy = "minimise_movement"
+        if policy not in {"available_first", "batch_same_location", "minimise_movement"}:
+            policy = "batch_same_location"
+        item["staff_movement_policy"] = policy
+
+    def _normalise_staff_shift_pattern(self, item):
+        item["staff_shift_pattern"] = _normalise_staff_shift_pattern_value(
+            item.get("staff_shift_pattern", "none")
+        )
 
     def _on_category_changed(self, current, previous):
         if self._loading:
@@ -2676,6 +2821,8 @@ class TaskGenerationSettingsDialog(QDialog):
         self.requires_staff_check.setChecked(False)
         self.staff_initial_count_edit.setText("1")
         self.staff_resource_name_edit.setText("")
+        self._set_staff_movement_policy("batch_same_location")
+        _set_staff_shift_pattern_combo(self.staff_shift_pattern_combo, "none")
         self.reusable_return_pool_check.setChecked(False)
         self.reusable_return_pool_multiplier_edit.setText("2.0")
         self.reusable_return_pool_max_edit.setText("0")
@@ -2761,6 +2908,13 @@ class TaskGenerationSettingsDialog(QDialog):
         )
         self.staff_initial_count_edit.setText(str(item.get("staff_initial_count", 1)))
         self.staff_resource_name_edit.setText(str(item.get("staff_resource_name", "")))
+        self._set_staff_movement_policy(
+            item.get("staff_movement_policy", "batch_same_location")
+        )
+        _set_staff_shift_pattern_combo(
+            self.staff_shift_pattern_combo,
+            item.get("staff_shift_pattern", "none"),
+        )
         self.reusable_return_pool_check.setChecked(bool(item.get("reusable_return_pool_enabled", False)))
         self.reusable_return_pool_multiplier_edit.setText(str(item.get("reusable_return_pool_multiplier", 2.0)))
         self.reusable_return_pool_max_edit.setText(str(item.get("reusable_return_pool_max", 0)))
@@ -2873,16 +3027,20 @@ class TaskGenerationSettingsDialog(QDialog):
         self.clear_dropoffs_btn.setEnabled(using_dept_as_pickup)
 
         return_enabled = self.return_enabled_check.isChecked()
-        staff_enabled = return_enabled and self.requires_staff_check.isChecked()
+        staff_enabled = show_generation and self.requires_staff_check.isChecked()
         pool_enabled = return_enabled and self.reusable_return_pool_check.isChecked()
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
-        self._set_form_row_visible(self.requires_staff_check, return_enabled)
+        self._set_form_row_visible(self.requires_staff_check, show_generation)
         self._set_form_row_visible(self.staff_initial_count_edit, staff_enabled)
         self._set_form_row_visible(self.staff_resource_name_edit, staff_enabled)
-        self.requires_staff_check.setEnabled(return_enabled)
+        self._set_form_row_visible(self.staff_movement_policy_widget, staff_enabled)
+        self._set_form_row_visible(self.staff_shift_pattern_combo, staff_enabled)
+        self.requires_staff_check.setEnabled(show_generation)
         self.staff_initial_count_edit.setEnabled(staff_enabled)
         self.staff_resource_name_edit.setEnabled(staff_enabled)
+        self.staff_movement_policy_widget.setEnabled(staff_enabled)
+        self.staff_shift_pattern_combo.setEnabled(staff_enabled)
         if hasattr(self, "reusable_return_pool_check"):
             self._set_form_row_visible(self.reusable_return_pool_check, return_enabled)
             self._set_form_row_visible(self.reusable_return_pool_multiplier_edit, pool_enabled)
@@ -3003,6 +3161,10 @@ class TaskGenerationSettingsDialog(QDialog):
             "requires_staff": self.requires_staff_check.isChecked(),
             "staff_initial_count": max(1, self._int_from_edit(self.staff_initial_count_edit, 1)),
             "staff_resource_name": self.staff_resource_name_edit.text().strip(),
+            "staff_movement_policy": self._selected_staff_movement_policy(),
+            "staff_shift_pattern": _selected_staff_shift_pattern_combo(
+                self.staff_shift_pattern_combo
+            ),
             "reusable_return_pool_enabled": self.reusable_return_pool_check.isChecked(),
             "reusable_return_pool_multiplier": self._float_from_edit(self.reusable_return_pool_multiplier_edit, 2.0),
             "reusable_return_pool_max": self._int_from_edit(self.reusable_return_pool_max_edit, 0),

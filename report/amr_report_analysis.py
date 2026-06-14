@@ -1149,6 +1149,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
     category_labels: Dict[str, str] = {}
     category_human_assist: Dict[str, str] = {}
     category_staff_initial: Dict[str, int] = {}
+    category_staff_shift_multiplier: Dict[str, float] = {}
     category_schedule_times: Dict[str, List[str]] = {}
     assist_keys = (
         "human_assist_required",
@@ -1179,11 +1180,30 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         if not isinstance(cfg, dict):
             continue
         key_text = str(key).strip()
+        key_lower = key_text.lower()
         category_labels[key_text.lower()] = _config_display_text(cfg, key_text.title())
+
+        def staff_shift_multiplier(item: dict) -> float:
+            pattern = str(item.get("staff_shift_pattern", "") or "").strip().lower()
+            if pattern in {
+                "4_on_4_off_12h",
+                "four_on_four_off",
+                "four_on_four_off_12_hour",
+            }:
+                pattern = "four_on_four_off_12h"
+            return 2.0 if pattern == "four_on_four_off_12h" else 1.0
+
+        def note_staff_shift(item: dict) -> None:
+            category_staff_shift_multiplier[key_lower] = max(
+                category_staff_shift_multiplier.get(key_lower, 1.0),
+                staff_shift_multiplier(item),
+            )
+
         explicit = _config_bool(cfg, assist_keys)
         if explicit is not None:
             category_human_assist[key_text.lower()] = "Yes" if explicit else "No"
         if bool(cfg.get("requires_staff", cfg.get("staff_required", False))):
+            note_staff_shift(cfg)
             try:
                 category_staff_initial[key_text.lower()] = max(
                     1, int(float(cfg.get("staff_initial_count", 1) or 1))
@@ -1192,20 +1212,28 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
                 category_staff_initial[key_text.lower()] = 1
         elif key_text.lower() in inferred_assist_categories:
             category_human_assist[key_text.lower()] = "Yes"
-        schedule_values = cfg.get("scheduled_times", cfg.get("schedule_times", []))
-        if isinstance(schedule_values, list):
-            category_schedule_times[key_text.lower()] = [
-                str(value).strip()
-                for value in schedule_values
-                if re.fullmatch(r"\d{1,2}:\d{2}", str(value).strip())
-            ]
+        def add_schedule_values(item: dict) -> None:
+            schedule_values = item.get("scheduled_times", item.get("schedule_times", []))
+            if not isinstance(schedule_values, list):
+                return
+            existing = category_schedule_times.setdefault(key_text.lower(), [])
+            seen = set(existing)
+            for value in schedule_values:
+                text = str(value).strip()
+                if re.fullmatch(r"\d{1,2}:\d{2}", text) and text not in seen:
+                    existing.append(text)
+                    seen.add(text)
+
+        add_schedule_values(cfg)
         for dept_cfg in (cfg.get("departments", {}) or {}).values():
             if not isinstance(dept_cfg, dict):
                 continue
+            add_schedule_values(dept_cfg)
             dept_explicit = _config_bool(dept_cfg, assist_keys)
             if dept_explicit:
                 category_human_assist[key_text.lower()] = "Yes"
             if bool(dept_cfg.get("requires_staff", dept_cfg.get("staff_required", False))):
+                note_staff_shift(dept_cfg)
                 try:
                     category_staff_initial[key_text.lower()] = max(
                         category_staff_initial.get(key_text.lower(), 1),
@@ -1219,10 +1247,12 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
             payload = group.get("payload", {}) or {}
             if not isinstance(payload, dict):
                 continue
+            add_schedule_values(payload)
             group_explicit = _config_bool(payload, assist_keys)
             if group_explicit:
                 category_human_assist[key_text.lower()] = "Yes"
             if bool(payload.get("requires_staff", payload.get("staff_required", False))):
+                note_staff_shift(payload)
                 try:
                     category_staff_initial[key_text.lower()] = max(
                         category_staff_initial.get(key_text.lower(), 1),
@@ -1278,6 +1308,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         "category_labels": category_labels,
         "category_human_assist": category_human_assist,
         "category_staff_initial": category_staff_initial,
+        "category_staff_shift_multiplier": category_staff_shift_multiplier,
         "category_schedule_times": category_schedule_times,
         "department_names": department_names,
         "location_display_names": location_display_names,
@@ -2446,6 +2477,8 @@ def build_payload_handling_timetable(
                     "has_point": location_id in location_points,
                     "day": day,
                     "window": window,
+                    "_start_value": ready_start,
+                    "_end_value": ready_end,
                     "payload": payload,
                     "person_id": person_id,
                     "person": person_label,
@@ -2508,9 +2541,10 @@ def build_payload_handling_timetable(
                 f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
             )
             if category_key == "catering":
+                fallback_duration = time_delta_seconds(ready_start, ready_end, ctx.has_datetime) or 0.0
                 scheduled_window = _scheduled_window_for_record(
                     ready_start,
-                    duration_s,
+                    fallback_duration,
                     category_schedule_times.get(category_key, []),
                     ctx.has_datetime,
                 )
@@ -2529,17 +2563,48 @@ def build_payload_handling_timetable(
                     "has_point": location_id in location_points,
                     "day": day,
                     "window": window,
+                    "_start_value": ready_start,
+                    "_end_value": ready_end,
                     "payload": payload,
                     "person_id": "",
-                    "person": category,
+                    "person": "",
                 }
             )
 
     if not records:
         return pd.DataFrame(columns=columns)
 
-    for record in records:
-        record["batch"] = record.get("person") or record.get("category") or "Staff"
+    synthetic_available: Dict[Tuple[str, str], List[float]] = {}
+    for record in sorted(
+        records,
+        key=lambda item: (
+            natural_key(item.get("category", "")),
+            natural_key(item.get("person", "")),
+            event_time_to_float(item.get("_start_value"), ctx.has_datetime),
+            event_time_to_float(item.get("_end_value"), ctx.has_datetime),
+            natural_key(item.get("location", "")),
+        ),
+    ):
+        if record.get("person"):
+            record["batch"] = record.get("person") or record.get("category") or "Staff"
+            continue
+
+        category = str(record.get("category", "") or "Staff")
+        category_key = str(record.get("category_key", "") or category)
+        key = (category, category_key)
+        start_value = event_time_to_float(record.get("_start_value"), ctx.has_datetime)
+        end_value = event_time_to_float(record.get("_end_value"), ctx.has_datetime)
+        lanes = synthetic_available.setdefault(key, [])
+        lane_index = None
+        for idx, available_time in enumerate(lanes):
+            if available_time <= start_value + 1e-9:
+                lane_index = idx
+                break
+        if lane_index is None:
+            lanes.append(float("-inf"))
+            lane_index = len(lanes) - 1
+        lanes[lane_index] = max(end_value, start_value)
+        record["batch"] = f"{category} person {lane_index + 1}"
 
     cells: Dict[Tuple[str, str, str], Dict[str, List[dict]]] = {}
     for record in records:
@@ -2592,6 +2657,11 @@ def build_staff_handling_summary(
         for k, v in (metadata.get("category_staff_initial", {}) or {}).items()
         if str(k).strip()
     }
+    configured_shift_multiplier = {
+        str(k).strip().lower(): max(1.0, float(v or 1.0))
+        for k, v in (metadata.get("category_staff_shift_multiplier", {}) or {}).items()
+        if str(k).strip()
+    }
     event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
     staff_rows = df[
         event_text.str.fullmatch(
@@ -2623,20 +2693,70 @@ def build_staff_handling_summary(
             category = _task_generation_category_from_row(group.iloc[0], labels)
             category_key = _task_generation_category_key(category, labels)
         category = labels.get(category_key, category_key.title())
+        people_col = (
+            "people_required"
+            if "people_required" in group.columns
+            else "staff_rostered_people_required"
+        )
         people_required = int(
-            pd.to_numeric(group.get("people_required", 0), errors="coerce")
-            .fillna(0)
-            .max()
+            pd.to_numeric(group.get(people_col, 0), errors="coerce").fillna(0).max()
             or 0
         )
+        on_shift_people_required = 0
+        if "staff_on_shift_people_required" in group.columns:
+            on_shift_people_required = int(
+                pd.to_numeric(
+                    group.get("staff_on_shift_people_required", 0),
+                    errors="coerce",
+                )
+                .fillna(0)
+                .max()
+                or 0
+            )
         person_ids = {
             str(x).strip()
             for x in group.get("person_id", pd.Series(dtype=str)).fillna("").tolist()
             if str(x).strip()
         }
         if people_required <= 0:
-            people_required = len(person_ids)
+            people_required = on_shift_people_required or len(person_ids)
+        shift_multiplier = configured_shift_multiplier.get(category_key, 1.0)
+        if "staff_shift_multiplier" in group.columns:
+            shift_multiplier = max(
+                shift_multiplier,
+                float(
+                    pd.to_numeric(
+                        group.get("staff_shift_multiplier", 1.0), errors="coerce"
+                    )
+                    .fillna(1.0)
+                    .max()
+                    or 1.0
+                ),
+            )
+        if (
+            "staff_on_shift_people_required" in group.columns
+            and shift_multiplier > 1.0
+        ):
+            people_required = max(
+                people_required,
+                int(math.ceil((on_shift_people_required or len(person_ids)) * shift_multiplier)),
+            )
         initial_people = max(1, int(configured_initial.get(category_key, 1) or 1))
+        if "staff_initial_rostered_people" in group.columns:
+            initial_people = max(
+                initial_people,
+                int(
+                    pd.to_numeric(
+                        group.get("staff_initial_rostered_people", 0),
+                        errors="coerce",
+                    )
+                    .fillna(0)
+                    .max()
+                    or 0
+                ),
+            )
+        elif shift_multiplier > 1.0:
+            initial_people = int(math.ceil(initial_people * shift_multiplier))
         duration = pd.to_numeric(
             group.get("duration_sec", group.get("_duration_s", 0.0)),
             errors="coerce",
@@ -2926,56 +3046,229 @@ def analyse(
 
     # How many recharges did the AMR undergo - battery wear
 
-    charge_mask = df["_segment_text"].str.fullmatch(
-        r"segment_charge", case=False, na=False
-    )
-
-    recharge_energy = (
-        df.loc[charge_mask]
-        .groupby(amr_col, dropna=False)["_energy_kwh"]
-        .sum()
-        .reset_index(name="recharge_energy_kwh")
-        .rename(columns={amr_col: "amr"})
-    )
-
-    amr_summary = amr_summary.merge(recharge_energy, on="amr", how="left")
-    amr_summary["recharge_energy_kwh"] = (
-        amr_summary["recharge_energy_kwh"].fillna(0.0).round(3)
-    )
-
-    recharge_summary = (
-        df.loc[charge_mask]
-        .groupby(amr_col, dropna=False)
-        .agg(
-            recharges=("_segment_text", "size"),
-            recharge_energy_kwh=("_energy_kwh", "sum"),
-            recharge_time_s=("_duration_s", "sum"),
+    # The simulator records a charging interval as:
+    #
+    #     event_type   = "segment_charge"
+    #     segment_type = "charge"
+    #
+    # Older report logic searched segment_type for "segment_charge", which
+    # excluded valid recharge rows. Accept both the event and segment forms so
+    # reports remain compatible with current and older simulator CSV files.
+    charge_mask = (
+        df["_event_text"].astype(str).str.fullmatch(
+            r"segment_charge|charge_cycle_start",
+            case=False,
+            na=False,
         )
-        .reset_index()
-        .rename(columns={amr_col: "amr"})
+        | df["_segment_text"].astype(str).str.fullmatch(
+            r"charge|segment_charge",
+            case=False,
+            na=False,
+        )
     )
 
-    if recharge_summary.empty:
+    charge_rows = df.loc[charge_mask].copy()
+
+    # Remove rows that cannot identify an AMR. This also prevents blank summary
+    # rows when legacy CSV files contain generic charging status events.
+    charge_rows = charge_rows[
+        charge_rows[amr_col].notna()
+        & charge_rows[amr_col].astype(str).str.strip().ne("")
+    ].copy()
+
+    def _amr_parameter_value(
+        runtime_amr_id: str,
+        column_name: str,
+        default: float = 0.0,
+    ) -> float:
+        """Return an AMR-type parameter for a runtime AMR instance.
+
+        Runtime AMRs are normally named AMR-TYPE-1, AMR-TYPE-2, etc., while
+        the configuration table contains the base AMR type, such as AMR-TYPE.
+        Prefer an exact match, then use the longest matching type prefix.
+        """
+        if amr_parameters is None or amr_parameters.empty:
+            return float(default)
+
+        if "amr" not in amr_parameters.columns:
+            return float(default)
+
+        if column_name not in amr_parameters.columns:
+            return float(default)
+
+        runtime_id = str(runtime_amr_id or "").strip()
+        if not runtime_id:
+            return float(default)
+
+        parameters = amr_parameters.copy()
+        parameters["_report_amr_type"] = (
+            parameters["amr"].fillna("").astype(str).str.strip()
+        )
+
+        exact = parameters[
+            parameters["_report_amr_type"].str.casefold()
+            == runtime_id.casefold()
+        ]
+
+        if not exact.empty:
+            value = pd.to_numeric(
+                exact.iloc[0][column_name],
+                errors="coerce",
+            )
+            return float(value) if pd.notna(value) else float(default)
+
+        candidates = []
+        runtime_folded = runtime_id.casefold()
+
+        for _, parameter_row in parameters.iterrows():
+            amr_type = str(
+                parameter_row.get("_report_amr_type", "") or ""
+            ).strip()
+
+            if not amr_type:
+                continue
+
+            amr_type_folded = amr_type.casefold()
+
+            if (
+                runtime_folded.startswith(amr_type_folded + "-")
+                or runtime_folded.startswith(amr_type_folded + "_")
+                or runtime_folded.startswith(amr_type_folded + " ")
+            ):
+                candidates.append((len(amr_type), parameter_row))
+
+        if not candidates:
+            return float(default)
+
+        # Longest prefix wins where AMR type names overlap.
+        _, parameter_row = max(candidates, key=lambda item: item[0])
+
+        value = pd.to_numeric(
+            parameter_row.get(column_name),
+            errors="coerce",
+        )
+
+        return float(value) if pd.notna(value) else float(default)
+
+    if charge_rows.empty:
         recharge_summary = pd.DataFrame(
-            columns=["amr", "recharges", "recharge_energy_kwh", "recharge_time_s"]
+            columns=[
+                "amr",
+                "recharges",
+                "recharge_energy_kwh",
+                "recharge_time_s",
+            ]
         )
     else:
-        recharge_summary["recharge_energy_kwh"] = (
-            recharge_summary["recharge_energy_kwh"].fillna(0.0).round(3)
+        charge_rows["_charge_duration_s"] = pd.to_numeric(
+            charge_rows["_duration_s"],
+            errors="coerce",
+        ).fillna(0.0).clip(lower=0.0)
+
+        charge_rows["_logged_recharge_energy_kwh"] = pd.to_numeric(
+            charge_rows["_energy_kwh"],
+            errors="coerce",
+        ).fillna(0.0).clip(lower=0.0)
+
+        charge_rows["_charge_rate_kw"] = charge_rows[amr_col].map(
+            lambda amr_id: _amr_parameter_value(
+                amr_id,
+                "battery_charge_rate_kw",
+                0.0,
+            )
         )
 
-    recharge_counts = (
-        df.loc[charge_mask]
-        .groupby(amr_col, dropna=False)
-        .size()
-        .reset_index(name="recharges")
-        .rename(columns={amr_col: "amr"})
+        # Prefer energy explicitly written by the simulator. For existing CSV
+        # files, where segment_charge energy was recorded as zero, derive the
+        # recharge energy from charge rate multiplied by charging duration.
+        charge_rows["_derived_recharge_energy_kwh"] = (
+            charge_rows["_charge_rate_kw"]
+            * charge_rows["_charge_duration_s"]
+            / 3600.0
+        )
+
+        charge_rows["_recharge_energy_kwh"] = charge_rows[
+            "_logged_recharge_energy_kwh"
+        ].where(
+            charge_rows["_logged_recharge_energy_kwh"] > 0.0,
+            charge_rows["_derived_recharge_energy_kwh"],
+        )
+
+        recharge_summary = (
+            charge_rows.groupby(amr_col, dropna=False)
+            .agg(
+                recharges=("_event_text", "size"),
+                recharge_energy_kwh=("_recharge_energy_kwh", "sum"),
+                recharge_time_s=("_charge_duration_s", "sum"),
+            )
+            .reset_index()
+            .rename(columns={amr_col: "amr"})
+        )
+
+        recharge_summary["recharges"] = (
+            pd.to_numeric(
+                recharge_summary["recharges"],
+                errors="coerce",
+            )
+            .fillna(0)
+            .astype(int)
+        )
+
+        recharge_summary["recharge_energy_kwh"] = (
+            pd.to_numeric(
+                recharge_summary["recharge_energy_kwh"],
+                errors="coerce",
+            )
+            .fillna(0.0)
+            .round(3)
+        )
+
+        recharge_summary["recharge_time_s"] = (
+            pd.to_numeric(
+                recharge_summary["recharge_time_s"],
+                errors="coerce",
+            )
+            .fillna(0.0)
+        )
+
+    recharge_energy = recharge_summary[
+        ["amr", "recharge_energy_kwh"]
+    ].copy()
+
+    recharge_counts = recharge_summary[
+        ["amr", "recharges"]
+    ].copy()
+
+    amr_summary = amr_summary.merge(
+        recharge_energy,
+        on="amr",
+        how="left",
     )
 
-    amr_summary = amr_summary.merge(recharge_counts, on="amr", how="left")
-    amr_summary["recharges"] = amr_summary["recharges"].fillna(0).astype(int)
+    amr_summary["recharge_energy_kwh"] = (
+        pd.to_numeric(
+            amr_summary["recharge_energy_kwh"],
+            errors="coerce",
+        )
+        .fillna(0.0)
+        .round(3)
+    )
 
-    # Lift usage
+    amr_summary = amr_summary.merge(
+        recharge_counts,
+        on="amr",
+        how="left",
+    )
+
+    amr_summary["recharges"] = (
+        pd.to_numeric(
+            amr_summary["recharges"],
+            errors="coerce",
+        )
+        .fillna(0)
+        .astype(int)
+    )
+
 
     df = derive_lift_columns(df, cols)
     lift_mask = df["_segment_text"].str.fullmatch(
