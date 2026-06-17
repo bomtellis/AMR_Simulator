@@ -211,3 +211,4 @@ __marimo__/
 
 # CSV
 *.csv
+simulation_steps.csv
