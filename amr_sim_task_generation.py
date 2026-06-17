@@ -45,6 +45,10 @@ class BaseTaskGenerator:
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         return []
 
+    def task_state_changed(self, task: Task, state: str) -> None:
+        """Receive completion/failure notifications for generated tasks."""
+        return None
+
 
 def _clean_text(value) -> str:
     return str(value or "").strip()
@@ -1009,6 +1013,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 "contributors": {},
                 "sporadic_accumulator": {},
                 "volume_event_accumulator": {},
+                "outstanding_collection_task_ids": set(),
             },
         )
 
@@ -1025,23 +1030,56 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             return []
 
         runtime = self._runtime_for_volume_key(instance)
+        outstanding = runtime.setdefault("outstanding_collection_task_ids", set())
+        physical_container_cycle = self._is_waste_instance(instance)
+
+        # A shared/seeded waste container is one physical object.  Continue to
+        # accumulate all contributing department volume while it is away, but do
+        # not create another collection until its outbound-and-return cycle ends.
+        if physical_container_cycle and outstanding:
+            return []
+
         records: List[GeneratedTaskRecord] = []
         while _as_float(runtime.get("volume", 0.0), 0.0) >= threshold_volume:
-            runtime["volume"] = (
-                _as_float(runtime.get("volume", 0.0), 0.0) - threshold_volume
-            )
+            created_task: Optional[Task] = None
+            created_records: List[GeneratedTaskRecord] = []
             for pickup, dropoff in self._pick_pairs(instance):
                 task = self._base_task(
                     instance, pickup, dropoff, payload_name, release_time, "threshold"
                 )
-                if task is not None:
-                    # This is the amount being collected from the bin, not the
-                    # individual fill-event volume.  Using volume_per_event_m3
-                    # here made threshold collections look like nearly empty bin
-                    # swaps in the CSV/visualiser.
-                    task.generated_volume_m3 = threshold_volume
-                    task.waste_volume_m3 = threshold_volume
-                records.extend(self._records_for_outbound(task, instance, details))
+                if task is None:
+                    continue
+
+                # This is the amount being collected from the bin, not the
+                # individual fill-event volume.
+                task.generated_volume_m3 = threshold_volume
+                task.waste_volume_m3 = threshold_volume
+                task.generator_volume_key = instance.get(
+                    "volume_key", instance["key"]
+                )
+                task.generator_threshold_volume_m3 = threshold_volume
+                task.generator_collection_task_id = task.id
+                task.generator_waits_for_return = bool(
+                    physical_container_cycle
+                    and getattr(task, "return_enabled", False)
+                )
+                created_task = task
+                created_records = self._records_for_outbound(task, instance, details)
+                if created_records:
+                    break
+
+            if created_task is None or not created_records:
+                break
+
+            runtime["volume"] = max(
+                0.0, _as_float(runtime.get("volume", 0.0), 0.0) - threshold_volume
+            )
+            records.extend(created_records)
+
+            if physical_container_cycle:
+                outstanding.add(created_task.id)
+                break
+
         return records
 
     def _timeframe_records(self, instance: dict, now: float) -> List[GeneratedTaskRecord]:
@@ -1234,28 +1272,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             self._instance_department(instance), self.clock.sim_seconds_to_datetime(now)
         )
         if not category_active:
-            runtime = self.runtime.setdefault(
-                instance.get("volume_key", instance["key"]),
-                {
-                    "volume": 0.0,
-                    "contributors": {},
-                    "sporadic_accumulator": {},
-                    "volume_event_accumulator": {},
-                },
-            )
+            runtime = self._runtime_for_volume_key(instance)
             runtime.setdefault("contributors", {})[instance["key"]] = now
             return []
 
-        volume_key = instance.get("volume_key", instance["key"])
-        runtime = self.runtime.setdefault(
-            volume_key,
-            {
-                "volume": 0.0,
-                "contributors": {},
-                "sporadic_accumulator": {},
-                "volume_event_accumulator": {},
-            },
-        )
+        runtime = self._runtime_for_volume_key(instance)
         contributor_key = instance["key"]
         contributors = runtime.setdefault("contributors", {})
         last_time = _as_float(contributors.get(contributor_key, 0.0), 0.0)
@@ -1444,6 +1465,50 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             )
 
         return records
+
+    def task_state_changed(self, task: Task, state: str) -> None:
+        """Release a physical-container generation group after its cycle ends."""
+        volume_key = _clean_text(getattr(task, "generator_volume_key", ""))
+        if not volume_key:
+            return
+        runtime = self.runtime.get(volume_key)
+        if not runtime:
+            return
+
+        collection_id = _clean_text(
+            getattr(task, "generator_collection_task_id", "")
+        ) or _clean_text(getattr(task, "id", ""))
+        outstanding = runtime.setdefault("outstanding_collection_task_ids", set())
+        state = _clean_text(state).lower()
+
+        if state == "failed":
+            # A failed return, or a failure after the physical container was
+            # picked up, leaves the container cycle unresolved.  Keep the group
+            # blocked rather than generating a second task for the same bin.
+            if bool(getattr(task, "is_return_task", False)) or bool(
+                getattr(task, "payload_instance_picked_up", False)
+            ):
+                return
+
+            threshold = _as_float(
+                getattr(task, "generator_threshold_volume_m3", 0.0), 0.0
+            )
+            if collection_id in outstanding and threshold > 0.0:
+                runtime["volume"] = (
+                    _as_float(runtime.get("volume", 0.0), 0.0) + threshold
+                )
+            outstanding.discard(collection_id)
+            return
+
+        if state != "completed":
+            return
+
+        if bool(getattr(task, "is_return_task", False)):
+            outstanding.discard(collection_id)
+            return
+
+        if not bool(getattr(task, "generator_waits_for_return", False)):
+            outstanding.discard(collection_id)
 
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         generated: List[GeneratedTaskRecord] = []
@@ -1729,6 +1794,15 @@ class TaskGenerationManager:
                         override.get("enabled", False)
                     ):
                         return True
+
+            groups = category.get("department_groups", [])
+            if isinstance(groups, list):
+                for group in groups:
+                    if not isinstance(group, dict):
+                        continue
+                    payload = group.get("payload", {})
+                    if isinstance(payload, dict) and bool(payload.get("enabled", False)):
+                        return True
         return False
 
     def _build_generators(self) -> None:
@@ -1802,3 +1876,7 @@ class TaskGenerationManager:
         for generator in self.generators:
             generated.extend(generator.update_until(now))
         return generated
+
+    def task_state_changed(self, task: Task, state: str) -> None:
+        for generator in self.generators:
+            generator.task_state_changed(task, state)

@@ -61,6 +61,10 @@ class PayloadInstanceStore:
         # so reports need this registry to distinguish asset population from
         # task count or movement count.
         self._known_instances: Dict[str, PayloadInstanceRecord] = {}
+        # Exact payload reservations are owned by task id.  This prevents two
+        # generated tasks from binding to the same shared physical container and
+        # allows a failed/deferred task to release only its own reservation.
+        self._reservations: Dict[str, str] = {}
         self._counter = 0
 
     def make_instance_id(self, payload_name: str, task_id: str = "") -> str:
@@ -192,14 +196,55 @@ class PayloadInstanceStore:
         if not counts:
             self._counts_by_location_payload.pop(location_name, None)
 
+    def reservation_owner(self, instance_id: str) -> str:
+        """Return the task id currently reserving a physical payload instance."""
+        return clean_text(self._reservations.get(clean_text(instance_id), ""))
+
+    def is_reserved(self, instance_id: str, excluding_owner: str = "") -> bool:
+        """Return True when an instance is reserved by a different task."""
+        owner = self.reservation_owner(instance_id)
+        excluding_owner = clean_text(excluding_owner)
+        return bool(owner and owner != excluding_owner)
+
+    def reserve_instance(self, instance_id: str, task_id: str) -> bool:
+        """Atomically reserve an existing payload instance for one task."""
+        instance_id = clean_text(instance_id)
+        task_id = clean_text(task_id)
+        if not instance_id or not task_id or instance_id not in self._records:
+            return False
+        owner = self.reservation_owner(instance_id)
+        if owner and owner != task_id:
+            return False
+        self._reservations[instance_id] = task_id
+        return True
+
+    def release_reservation(self, instance_id: str, task_id: str = "") -> bool:
+        """Release a reservation, optionally only when it belongs to task_id."""
+        instance_id = clean_text(instance_id)
+        task_id = clean_text(task_id)
+        owner = self.reservation_owner(instance_id)
+        if not owner:
+            return False
+        if task_id and owner != task_id:
+            return False
+        self._reservations.pop(instance_id, None)
+        return True
+
     def pickup(
-        self, location_name: str, payload_name: str = "", instance_id: str = ""
+        self,
+        location_name: str,
+        payload_name: str = "",
+        instance_id: str = "",
+        reservation_owner: str = "",
     ) -> Optional[PayloadInstanceRecord]:
         location_name = clean_text(location_name)
         payload_name = normalise_payload_name(payload_name)
         instance_id = clean_text(instance_id)
+        reservation_owner = clean_text(reservation_owner)
 
         if instance_id:
+            if self.is_reserved(instance_id, excluding_owner=reservation_owner):
+                return None
             record = self._records.get(instance_id)
             if not record or record.location != location_name:
                 return None
@@ -207,12 +252,15 @@ class PayloadInstanceStore:
                 return None
             self._remove_from_location(location_name, instance_id)
             self._records.pop(instance_id, None)
+            self._reservations.pop(instance_id, None)
             self._decrement_payload_count(record.payload)
             self._decrement_location_payload_count(location_name, record.payload)
             record.status = "picked_up"
             return record
 
         for candidate_id in tuple(self._by_location.get(location_name, {})):
+            if self.is_reserved(candidate_id, excluding_owner=reservation_owner):
+                continue
             record = self._records.get(candidate_id)
             if not record:
                 continue
@@ -220,6 +268,7 @@ class PayloadInstanceStore:
                 continue
             self._remove_from_location(location_name, candidate_id)
             self._records.pop(candidate_id, None)
+            self._reservations.pop(candidate_id, None)
             self._decrement_payload_count(record.payload)
             self._decrement_location_payload_count(location_name, record.payload)
             record.status = "picked_up"

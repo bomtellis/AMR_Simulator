@@ -368,6 +368,14 @@ class PillListFlowable(Flowable):
 
 
 def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
+    """Build a weekly staff timetable that can split safely across pages.
+
+    ReportLab can split a table between rows, but it cannot split one individual
+    row. A busy member of staff can have enough handling entries to make a
+    seven-day row taller than the landscape frame. Split each person's schedule
+    into bounded continuation rows so every physical task remains visible while
+    the table can paginate normally.
+    """
     day_cols = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     day_labels = {
         "Mon": "Monday",
@@ -406,45 +414,104 @@ def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
         fontSize=6.2,
         leading=7.4,
     )
-    data = [[Paragraph("Person", header_style)] + [Paragraph(day_labels.get(day, day), header_style) for day in day_cols]]
+    data = [
+        [Paragraph("Person", header_style)]
+        + [Paragraph(day_labels.get(day, day), header_style) for day in day_cols]
+    ]
 
-    for _, row in df.iterrows():
-        colour = category_colour(row.get("category_key", row.get("Category", "")))
-        data_row = [Paragraph(str(row.get("batch", "-")), batch_style)]
-        for idx, day in enumerate(day_cols, start=1):
+    # Four entries normally occupy no more than about 80-130 points, even when
+    # location names wrap. This leaves ample room for headings and guarantees
+    # that an individual body row remains smaller than the landscape frame.
+    max_entries_per_cell = 4
+    row_background_commands = []
+    body_row_index = 1
+
+    for person_index, (_, row) in enumerate(df.iterrows()):
+        day_entries = {}
+        continuation_count = 1
+        for day in day_cols:
             entries = [
                 part.strip()
                 for part in str(row.get(day, "") or "").split("\n")
                 if part.strip() and part.strip() != "-"
             ]
-            if entries:
-                lines = []
-                for entry in entries:
-                    window, _, location = entry.partition("|")
-                    label = f"<b>{escape(window.strip())}</b>"
-                    if location.strip():
-                        label = f"{label}<br/>{escape(location.strip())}"
-                    lines.append(label)
-                data_row.append(Paragraph("<br/>".join(lines), cell_style))
-            else:
-                data_row.append(Paragraph("-", cell_style))
-        data.append(data_row)
+            day_entries[day] = entries
+            continuation_count = max(
+                continuation_count,
+                int((len(entries) + max_entries_per_cell - 1) // max_entries_per_cell)
+                if entries
+                else 1,
+            )
 
-    tbl = Table(data, colWidths=col_widths, repeatRows=1)
-    tbl.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9E2F3")),
-                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#B8CCE4")),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F7F9FC")]),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 4),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ]
+        batch_name = str(row.get("batch", "-") or "-")
+        background = (
+            colors.white
+            if person_index % 2 == 0
+            else colors.HexColor("#F7F9FC")
         )
+
+        for continuation_index in range(continuation_count):
+            if continuation_index == 0:
+                batch_label = batch_name
+            else:
+                batch_label = (
+                    f'{batch_name}<br/><font size="6">'
+                    f"continued {continuation_index + 1}/{continuation_count}"
+                    "</font>"
+                )
+
+            data_row = [Paragraph(batch_label, batch_style)]
+            slice_start = continuation_index * max_entries_per_cell
+            slice_end = slice_start + max_entries_per_cell
+
+            for day in day_cols:
+                entries = day_entries[day][slice_start:slice_end]
+                if entries:
+                    lines = []
+                    for entry in entries:
+                        window, _, location = entry.partition("|")
+                        label = f"<b>{escape(window.strip())}</b>"
+                        if location.strip():
+                            label = f"{label}<br/>{escape(location.strip())}"
+                        lines.append(label)
+                    data_row.append(Paragraph("<br/>".join(lines), cell_style))
+                else:
+                    data_row.append(Paragraph("-", cell_style))
+
+            data.append(data_row)
+            row_background_commands.append(
+                ("BACKGROUND", (0, body_row_index), (-1, body_row_index), background)
+            )
+            if continuation_index == 0:
+                row_background_commands.append(
+                    (
+                        "LINEABOVE",
+                        (0, body_row_index),
+                        (-1, body_row_index),
+                        0.55,
+                        colors.HexColor("#8EA9C1"),
+                    )
+                )
+            body_row_index += 1
+
+    tbl = Table(
+        data,
+        colWidths=col_widths,
+        repeatRows=1,
+        splitByRow=1,
+        hAlign="LEFT",
     )
+    style_commands = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9E2F3")),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#B8CCE4")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    style_commands.extend(row_background_commands)
+    tbl.setStyle(TableStyle(style_commands))
     return tbl
 
 
@@ -1002,31 +1069,46 @@ def build_report(
 
     payload_timetable_df = results.get("payload_handling_timetable", pd.DataFrame()).copy()
     story += [
-        Spacer(1, 10),
-        Paragraph("Staff handling timetable", styles["Section"]),
-        Paragraph(
-            "Rows are grouped by person. Each day cell shows the location and timeframe for that person's staff-assisted handling work.",
-            styles["BodyText"],
-        ),
-        Spacer(1, 8),
+        NextPageTemplate("landscape"),
+        PageBreak(),
     ]
     if payload_timetable_df.empty:
-        story.append(
+        story += [
+            Paragraph("Staff handling timetable", styles["Section"]),
             Paragraph(
                 "No staff handling timetable could be derived from the CSV.",
                 styles["BodyText"],
-            )
-        )
+            ),
+        ]
     else:
-        for category, sub in payload_timetable_df.groupby("category", sort=True):
+        category_names = sorted(
+            {
+                str(value).strip()
+                for value in payload_timetable_df["category"].dropna().tolist()
+                if str(value).strip()
+            },
+            key=natural_key,
+        )
+        for category_index, category in enumerate(category_names):
+            if category_index:
+                story.append(PageBreak())
+            sub = payload_timetable_df[
+                payload_timetable_df["category"].astype(str) == category
+            ].copy()
             category_key = str(sub["category_key"].iloc[0] or category)
             colour = category_colour(category_key)
             story += [
-                Spacer(1, 6),
+                Paragraph("Staff handling timetable", styles["Section"]),
+                Paragraph(
+                    "This timetable contains every recorded human-assisted task for the category. Rows are grouped by person and each day cell shows the location and handling timeframe.",
+                    styles["BodyText"],
+                ),
+                Spacer(1, 8),
                 Paragraph(
                     f'<font color="{colour}">{str(category)}</font>',
-                    styles["Heading3"],
+                    styles["Heading2"],
                 ),
+                Spacer(1, 4),
                 payload_timetable_table(sub, styles),
             ]
 

@@ -206,7 +206,9 @@ class Simulation:
                 sim_cfg.get("waste_stream_containers_present_at_start", False),
             )
         )
-        self._reserved_existing_payload_instance_ids = set()
+        # PayloadInstanceStore owns exact task reservations.  Keep no parallel
+        # anonymous reservation set, because it cannot release a failed task's
+        # reservation without risking another task's claim.
         self.initial_waste_container_instances: Dict[Tuple[str, str, str], str] = {}
         self.route_precompute_enabled = bool(
             sim_cfg.get("precompute_static_routes", True)
@@ -820,6 +822,10 @@ class Simulation:
                 cfg, payload_name
             ):
                 continue
+            if self.payload_instance_store.is_reserved(
+                str(getattr(record, "instance_id", "") or "")
+            ):
+                continue
             metadata = getattr(record, "metadata", {}) or {}
             state = str(metadata.get("container_state", "") or "").strip().lower()
             # The rotation collects used/full bins.  Empty stock at the store is
@@ -871,6 +877,8 @@ class Simulation:
         payload_name = normalise_payload_name(payload_name)
         for record in self.payload_instance_store.records_at(location_name):
             if getattr(record, "payload", "") != payload_name:
+                continue
+            if self.payload_instance_store.is_reserved(record.instance_id):
                 continue
             if self._record_is_available_empty_container(record):
                 return record
@@ -2049,6 +2057,10 @@ class Simulation:
         if not self._task_requires_existing_payload_instance(task):
             return True
         if instance_id:
+            if self.payload_instance_store.is_reserved(
+                instance_id, excluding_owner=str(getattr(task, "id", "") or "")
+            ):
+                return False
             if not self.payload_instance_store.has_instance_at(
                 task.pickup, instance_id, payload_name
             ):
@@ -2070,6 +2082,10 @@ class Simulation:
             record
             for record in self.payload_instance_store.records_at(task.pickup)
             if record.payload == payload_name
+            and not self.payload_instance_store.is_reserved(
+                record.instance_id,
+                excluding_owner=str(getattr(task, "id", "") or ""),
+            )
         ]
         if (
             bool(getattr(task, "is_return_task", False))
@@ -2106,6 +2122,7 @@ class Simulation:
                 task.pickup,
                 payload_name=payload_name,
                 instance_id=instance_id,
+                reservation_owner=str(getattr(task, "id", "") or ""),
             )
             if record is None and self._task_requires_existing_payload_instance(task):
                 raise RuntimeError(self._pickup_instance_pending_reason(task))
@@ -2135,10 +2152,13 @@ class Simulation:
                         task.pickup,
                         payload_name=payload_name,
                         instance_id=candidate.instance_id,
+                        reservation_owner=str(getattr(task, "id", "") or ""),
                     )
             else:
                 record = self.payload_instance_store.pickup(
-                    task.pickup, payload_name=payload_name
+                    task.pickup,
+                    payload_name=payload_name,
+                    reservation_owner=str(getattr(task, "id", "") or ""),
                 )
             if record is None:
                 raise RuntimeError(self._pickup_instance_pending_reason(task))
@@ -2150,7 +2170,10 @@ class Simulation:
 
         if instance_id:
             task.payload_instance_id = instance_id
-            self._reserved_existing_payload_instance_ids.discard(instance_id)
+            task.payload_instance_picked_up = True
+            self.payload_instance_store.release_reservation(
+                instance_id, str(getattr(task, "id", "") or "")
+            )
 
         # A pickup physically removes stock from the pickup location.  Keep the
         # current occupancy state in sync for subsequent peak/recommendation
@@ -3649,6 +3672,73 @@ class Simulation:
                 return location_name, space
         return "", None
 
+    def _reserve_best_idle_return_destination(
+        self,
+        amr: AMR,
+        task: Task,
+        now: float,
+        exclude_locations: Optional[set] = None,
+    ) -> Tuple[str, Optional[dict]]:
+        """Atomically choose and reserve a bay across all charging locations."""
+        excluded = {str(x or "").strip() for x in (exclude_locations or set())}
+        current_name = str(getattr(amr, "location_name", "") or "").strip()
+        current_loc = self.locations.get(current_name)
+
+        ordered_names: List[str] = []
+        if current_loc is not None:
+            selected = self._select_charge_location_for_amr(amr, current_loc, now)
+            if selected is not None:
+                ordered_names.append(selected.name)
+        ordered_names.extend(list(getattr(self, "charge_location_names", []) or []))
+        legacy = str(getattr(self, "charge_location_name", "") or "").strip()
+        if legacy:
+            ordered_names.append(legacy)
+
+        seen = set()
+        for raw_name in ordered_names:
+            location_name = str(raw_name or "").strip()
+            if (
+                not location_name
+                or location_name in seen
+                or location_name in excluded
+                or location_name not in self.locations
+            ):
+                continue
+            seen.add(location_name)
+
+            has_amr_bays = self._location_has_any_amr_inventory_spaces(location_name)
+            compatible_spaces = [
+                space
+                for space in self.inventory_spaces_by_location.get(location_name, [])
+                if self._inventory_space_accepts_amr(space, amr)
+            ]
+            if has_amr_bays and not compatible_spaces:
+                continue
+
+            reserved_space = None
+            if compatible_spaces:
+                reserved_space = self._reserved_amr_inventory_space(location_name, amr)
+                if reserved_space is None:
+                    reserved_space = self._reserve_amr_inventory_space(
+                        amr, location_name
+                    )
+                if reserved_space is None:
+                    continue
+            else:
+                self._clear_amr_inventory_space_reservations(amr)
+                setattr(amr, "target_inventory_space_name", "")
+                setattr(amr, "target_charge_location", location_name)
+
+            task.pickup = current_name
+            task.dropoff = location_name
+            task.target_charge_location = location_name
+            task.assigned_amr_inventory_space = str(
+                (reserved_space or {}).get("name", "") or ""
+            )
+            return location_name, reserved_space
+
+        return "", None
+
     def _assign_initial_amrs_to_charge_inventory_spaces(self) -> None:
         """Place AMRs at charging locations at simulation start.
 
@@ -4506,6 +4596,18 @@ class Simulation:
         return_task.initial_container_present = bool(
             getattr(task, "initial_container_present", True)
         )
+        return_task.generator_volume_key = str(
+            getattr(task, "generator_volume_key", "") or ""
+        )
+        return_task.generator_threshold_volume_m3 = float(
+            getattr(task, "generator_threshold_volume_m3", 0.0) or 0.0
+        )
+        return_task.generator_collection_task_id = str(
+            getattr(task, "generator_collection_task_id", task.id) or task.id
+        )
+        return_task.generator_waits_for_return = bool(
+            getattr(task, "generator_waits_for_return", False)
+        )
         return_task.returns_same_payload_instance = bool(
             getattr(task, "return_same_payload_instance", False)
         )
@@ -4706,6 +4808,18 @@ class Simulation:
             ),
         )
 
+    def _notify_task_generation_state(self, task: Task, state: str) -> None:
+        manager = getattr(self, "task_generation_manager", None)
+        if manager is not None:
+            manager.task_state_changed(task, state)
+
+    def _release_payload_instance_reservation_for_task(self, task: Task) -> None:
+        instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+        if instance_id:
+            self.payload_instance_store.release_reservation(
+                instance_id, str(getattr(task, "id", "") or "")
+            )
+
     def _fail_task(self, task: Task, reason: str, now: Optional[float] = None) -> None:
         reason = str(reason or "Task failed").strip()
         self._set_task_pending_reason(task, reason)
@@ -4717,6 +4831,8 @@ class Simulation:
             return
 
         self.failed_task_ids.add(task_id)
+        self._release_payload_instance_reservation_for_task(task)
+        self._notify_task_generation_state(task, "failed")
         self.failed_tasks.append({"task_id": task.id, "reason": reason})
         event_time = self.current_time if now is None else now
         self.log_step(
@@ -5397,6 +5513,7 @@ class Simulation:
             task.return_enabled = True
             task.return_payload = normalise_payload_name(getattr(task, "payload", ""))
             task.return_same_payload_instance = True
+            task.generator_waits_for_return = True
             if not getattr(task, "return_priority", 0):
                 task.return_priority = int(getattr(task, "priority", 100) or 100)
             if not str(getattr(task, "return_route_profile", "") or "").strip():
@@ -5422,10 +5539,11 @@ class Simulation:
                 continue
             if not self._record_is_available_empty_container(record):
                 continue
-            if record.instance_id in self._reserved_existing_payload_instance_ids:
+            if not self.payload_instance_store.reserve_instance(
+                record.instance_id, str(getattr(task, "id", "") or "")
+            ):
                 continue
             task.payload_instance_id = record.instance_id
-            self._reserved_existing_payload_instance_ids.add(record.instance_id)
             return
 
         # Shared-bin waste tasks may be generated by whichever department pushes
@@ -5442,9 +5560,9 @@ class Simulation:
         for record in list(records.values()):
             if getattr(record, "payload", "") != payload_name:
                 continue
-            if (
-                getattr(record, "instance_id", "")
-                in self._reserved_existing_payload_instance_ids
+            if self.payload_instance_store.is_reserved(
+                getattr(record, "instance_id", ""),
+                excluding_owner=str(getattr(task, "id", "") or ""),
             ):
                 continue
             if not self._record_is_available_empty_container(record):
@@ -5455,9 +5573,12 @@ class Simulation:
                 != container_group
             ):
                 continue
+            if not self.payload_instance_store.reserve_instance(
+                record.instance_id, str(getattr(task, "id", "") or "")
+            ):
+                continue
             task.payload_instance_id = record.instance_id
             task.pickup = record.location
-            self._reserved_existing_payload_instance_ids.add(record.instance_id)
             return
 
     def _init_department_runtime(self):
@@ -6653,6 +6774,38 @@ class Simulation:
             if getattr(task, "is_idle_return", False):
                 if getattr(task, "amr_id", "") != amr.id:
                     return None
+                if reserve:
+                    selected_location, _selected_space = (
+                        self._reserve_best_idle_return_destination(
+                            amr, task, max(self.current_time, task.release_time)
+                        )
+                    )
+                    if not selected_location:
+                        self._set_task_pending_reason(
+                            task,
+                            f"No compatible AMR space available at any configured charging location for {amr.id}",
+                        )
+                        return None
+                else:
+                    current_loc = self.locations.get(
+                        str(getattr(amr, "location_name", "") or "").strip()
+                    )
+                    selected = (
+                        self._select_charge_location_for_amr(
+                            amr, current_loc, max(self.current_time, task.release_time)
+                        )
+                        if current_loc is not None
+                        else None
+                    )
+                    if selected is None:
+                        self._set_task_pending_reason(
+                            task,
+                            f"No compatible AMR space available at any configured charging location for {amr.id}",
+                        )
+                        return None
+                    task.pickup = str(getattr(amr, "location_name", "") or "").strip()
+                    task.dropoff = selected.name
+                    task.target_charge_location = selected.name
             if task.pickup not in self.locations or task.dropoff not in self.locations:
                 return None
 
@@ -7002,9 +7155,13 @@ class Simulation:
                     t + self.load_unload_time_sec,
                 )
                 if getattr(task, "is_idle_return", False):
-                    reserved_space = self._reserve_amr_inventory_space(
-                        amr, dropoff_loc.name
+                    reserved_space = self._reserved_amr_inventory_space(
+                        dropoff_loc.name, amr
                     )
+                    if reserved_space is None:
+                        reserved_space = self._reserve_amr_inventory_space(
+                            amr, dropoff_loc.name
+                        )
                     if (
                         reserved_space is None
                         and self._location_has_any_amr_inventory_spaces(
@@ -7547,7 +7704,9 @@ class Simulation:
             # If a shared-container task was bound before the bin moved, clear the
             # stale assignment and re-resolve it from the current payload store.
             if instance_id and str(getattr(task, "container_group", "") or "").strip():
-                self._reserved_existing_payload_instance_ids.discard(instance_id)
+                self.payload_instance_store.release_reservation(
+                    instance_id, str(getattr(task, "id", "") or "")
+                )
                 task.payload_instance_id = ""
 
             if not str(getattr(task, "payload_instance_id", "") or "").strip():
@@ -7562,6 +7721,33 @@ class Simulation:
         self.push_event(
             now + self.assignment_continue_delay_sec, "assignment_continue", {}
         )
+
+    def _task_commit_failure_is_transient(self, task: Task) -> bool:
+        if bool(getattr(task, "is_idle_return", False)):
+            return True
+        return bool(
+            self._task_requires_existing_payload_instance(task)
+            and not self._pickup_instance_available(task)
+        )
+
+    def _defer_transient_commit_failure(self, task: Task, amr: AMR) -> None:
+        if bool(getattr(task, "is_idle_return", False)):
+            self._remove_pending_task(task)
+            self._clear_amr_inventory_space_reservations(amr)
+            setattr(amr, "target_inventory_space_name", "")
+            setattr(amr, "target_charge_location", "")
+        else:
+            instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+            if instance_id:
+                self.payload_instance_store.release_reservation(
+                    instance_id, str(getattr(task, "id", "") or "")
+                )
+            if str(getattr(task, "container_group", "") or "").strip():
+                task.payload_instance_id = ""
+            self._set_task_pending_reason(
+                task, self._pickup_instance_pending_reason(task)
+            )
+        self._invalidate_route_estimate_cache()
 
     def _try_assign_tasks(self, now: float, force_idle_return: bool = False):
         self.current_time = max(self.current_time, now)
@@ -7636,6 +7822,15 @@ class Simulation:
                 committed = self._estimate_multi_stop_for_amr(amr, tasks, reserve=True)
 
                 if committed is None:
+                    if any(
+                        self._task_commit_failure_is_transient(failed_task)
+                        for failed_task in tasks
+                    ):
+                        for deferred_task in tasks:
+                            if self._task_commit_failure_is_transient(deferred_task):
+                                self._defer_transient_commit_failure(deferred_task, amr)
+                        self._create_wait_event_for_pending_tasks(self.current_time)
+                        return
                     for failed_task in tasks:
                         reason = (
                             getattr(failed_task, "pending_reason", "")
@@ -7727,6 +7922,10 @@ class Simulation:
             committed = self._estimate_task_for_amr(amr, task, reserve=True)
 
             if committed is None:
+                if self._task_commit_failure_is_transient(task):
+                    self._defer_transient_commit_failure(task, amr)
+                    self._create_wait_event_for_pending_tasks(self.current_time)
+                    return
                 reason = (
                     getattr(task, "pending_reason", "")
                     or "No feasible AMR/lift/battery/graph combination"
@@ -8474,11 +8673,67 @@ class Simulation:
                     getattr(task, "is_idle_return", False)
                     and completed_amr_space is None
                 ):
-                    reason = (
-                        f"No compatible AMR space available at {task.dropoff} "
-                        f"for {completed_amr.id}; AMR left at location node"
+                    self.synthetic_task_counter += 1
+                    relocation = Task(
+                        id=f"RETURN-{completed_amr.id}-{self.synthetic_task_counter}",
+                        pickup=task.dropoff,
+                        dropoff=task.dropoff,
+                        payload=EMPTY_PAYLOAD_NAME,
+                        release_time=event.payload["finish_time"],
+                        priority=999999,
+                        target_time=0.0,
+                        labels=["idle_charge_return", "bay_relocation"],
+                        route_profile=None,
                     )
-                    self.failed_tasks.append({"task_id": task.id, "reason": reason})
+                    relocation.created_during_runtime = True
+                    relocation.is_idle_return = True
+                    relocation.amr_id = completed_amr.id
+                    relocation.locked_amr_id = completed_amr.id
+                    alternative, reserved_space = (
+                        self._reserve_best_idle_return_destination(
+                            completed_amr,
+                            relocation,
+                            event.payload["finish_time"],
+                            exclude_locations={task.dropoff},
+                        )
+                    )
+                    if alternative:
+                        relocation.dropoff = alternative
+                        relocation.target_charge_location = alternative
+                        relocation.assigned_amr_inventory_space = str(
+                            (reserved_space or {}).get("name", "") or ""
+                        )
+                        self._queue_pending_task(relocation)
+                        self.log_step(
+                            event_time=event.payload["finish_time"],
+                            event_type="idle_return_replanned",
+                            task_id=relocation.id,
+                            amr_id=completed_amr.id,
+                            details=(
+                                f"Arrival bay unavailable at {task.dropoff}; "
+                                f"replanned to {alternative}"
+                            ),
+                            from_location=task.dropoff,
+                            to_location=alternative,
+                            status="pending",
+                        )
+                    else:
+                        self._clear_amr_inventory_space_reservations(completed_amr)
+                        setattr(completed_amr, "target_inventory_space_name", "")
+                        setattr(completed_amr, "target_charge_location", "")
+                        self.log_step(
+                            event_time=event.payload["finish_time"],
+                            event_type="idle_return_waiting_for_bay",
+                            task_id=task.id,
+                            amr_id=completed_amr.id,
+                            details=(
+                                "No compatible AMR bay currently available at any "
+                                "configured charging location; retry deferred"
+                            ),
+                            from_location=task.dropoff,
+                            to_location=task.dropoff,
+                            status="pending",
+                        )
                 completed_amr_loc = (
                     self._amr_display_location(completed_amr, task.dropoff)
                     or completed_amr_loc
@@ -8578,6 +8833,7 @@ class Simulation:
             self._schedule_configured_return_task(
                 task, event.payload["finish_time"], event.payload.get("amr_id", "")
             )
+            self._notify_task_generation_state(task, "completed")
 
             target_time = event.payload.get("target_time", 0.0)
             actual_duration = event.payload["duration"]
@@ -8765,6 +9021,7 @@ class Simulation:
                 self._schedule_configured_return_task(
                     task, event.payload["finish_time"], event.payload.get("amr_id", "")
                 )
+                self._notify_task_generation_state(task, "completed")
 
             self._try_assign_tasks(event.time, force_idle_return=True)
 
@@ -9878,6 +10135,11 @@ class Simulation:
                 removed = True
 
         if removed:
+            amr = self.amrs_by_id.get(amr_id)
+            if amr is not None:
+                self._clear_amr_inventory_space_reservations(amr)
+                setattr(amr, "target_inventory_space_name", "")
+                setattr(amr, "target_charge_location", "")
             self._assignment_continue_scheduled = False
             self._purge_removed_pending_task_heads()
             self._compact_pending_tasks_if_needed()
@@ -9982,38 +10244,15 @@ class Simulation:
         if not charge_location or charge_location not in self.locations:
             return None
 
-        charge_location_has_amr_bays = self._location_has_any_amr_inventory_spaces(
-            charge_location
-        )
-        charge_amr_spaces = [
-            space
-            for space in self.inventory_spaces_by_location.get(charge_location, [])
-            if self._inventory_space_accepts_amr(space, amr)
-        ]
-        if charge_location_has_amr_bays and not charge_amr_spaces:
-            return None
-        if charge_amr_spaces and (
-            self._reserved_amr_inventory_space(charge_location, amr) is None
-            and self._find_free_amr_inventory_space(charge_location, amr) is None
-        ):
-            return None
-
-        # If the AMR is already at a configured charger, just ensure it occupies
-        # a compatible AMR bay.  Do not create a synthetic movement back to the
-        # legacy amr_centre/start location.
+        # If the AMR is already at a configured charger, first try to stow it
+        # without creating a zero-length movement.  When that bay has become
+        # unavailable, continue into the atomic all-charger reservation below
+        # so another configured charging location is tried immediately.
         if self._amr_is_stowed_at_configured_charge_space(amr):
             return None
-        if (
-            self._amr_is_at_configured_charge_location(amr)
-            and charge_location == str(getattr(amr, "location_name", "") or "").strip()
-        ):
-            # The AMR is at a configured charging location but not occupying its
-            # bay.  Try to stow it there.  If no bay is available, do not queue a
-            # zero-length return that will keep blocking assignment; let the next
-            # idle-return pass try another configured charge location.
+        if self._amr_is_at_configured_charge_location(amr):
             if self._occupy_amr_inventory_space(amr, amr.location_name) is not None:
                 return None
-            return None
 
         self.synthetic_task_counter += 1
 
@@ -10033,6 +10272,16 @@ class Simulation:
         task.amr_id = amr.id
         task.locked_amr_id = amr.id
         task.target_charge_location = charge_location
+        selected_location, selected_space = self._reserve_best_idle_return_destination(
+            amr, task, now
+        )
+        if not selected_location:
+            return None
+        task.dropoff = selected_location
+        task.target_charge_location = selected_location
+        task.assigned_amr_inventory_space = str(
+            (selected_space or {}).get("name", "") or ""
+        )
         return task
 
     def _queue_idle_return_tasks(self, now: float):

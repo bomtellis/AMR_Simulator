@@ -1163,7 +1163,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         "requires_staff",
         "staff_required",
     )
-    inferred_assist_categories = {
+    configured_assist_categories = {
         str(x).strip().lower()
         for x in task_generation.get(
             "human_assist_categories",
@@ -1172,16 +1172,21 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         or []
         if str(x).strip()
     }
-    inferred_assist_categories.update(
-        {"catering", "linen", "pharmacy", "ssd", "stores"}
-    )
+    # Catering and stores pre-date the generic category staff controls. Keep
+    # these as a compatibility fallback only when the category contains no
+    # explicit staff setting at any level.
+    legacy_assist_categories = {"catering", "stores"}
 
     for key, cfg in categories.items():
         if not isinstance(cfg, dict):
             continue
         key_text = str(key).strip()
         key_lower = key_text.lower()
-        category_labels[key_text.lower()] = _config_display_text(cfg, key_text.title())
+        category_labels[key_lower] = _config_display_text(cfg, key_text.title())
+
+        assist_true = False
+        assist_false = False
+        assist_setting_seen = False
 
         def staff_shift_multiplier(item: dict) -> float:
             pattern = str(item.get("staff_shift_pattern", "") or "").strip().lower()
@@ -1199,24 +1204,13 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
                 staff_shift_multiplier(item),
             )
 
-        explicit = _config_bool(cfg, assist_keys)
-        if explicit is not None:
-            category_human_assist[key_text.lower()] = "Yes" if explicit else "No"
-        if bool(cfg.get("requires_staff", cfg.get("staff_required", False))):
-            note_staff_shift(cfg)
-            try:
-                category_staff_initial[key_text.lower()] = max(
-                    1, int(float(cfg.get("staff_initial_count", 1) or 1))
-                )
-            except Exception:
-                category_staff_initial[key_text.lower()] = 1
-        elif key_text.lower() in inferred_assist_categories:
-            category_human_assist[key_text.lower()] = "Yes"
         def add_schedule_values(item: dict) -> None:
             schedule_values = item.get("scheduled_times", item.get("schedule_times", []))
+            if isinstance(schedule_values, str):
+                schedule_values = [x.strip() for x in schedule_values.split(",")]
             if not isinstance(schedule_values, list):
                 return
-            existing = category_schedule_times.setdefault(key_text.lower(), [])
+            existing = category_schedule_times.setdefault(key_lower, [])
             seen = set(existing)
             for value in schedule_values:
                 text = str(value).strip()
@@ -1224,42 +1218,52 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
                     existing.append(text)
                     seen.add(text)
 
-        add_schedule_values(cfg)
-        for dept_cfg in (cfg.get("departments", {}) or {}).values():
-            if not isinstance(dept_cfg, dict):
-                continue
-            add_schedule_values(dept_cfg)
-            dept_explicit = _config_bool(dept_cfg, assist_keys)
-            if dept_explicit:
-                category_human_assist[key_text.lower()] = "Yes"
-            if bool(dept_cfg.get("requires_staff", dept_cfg.get("staff_required", False))):
-                note_staff_shift(dept_cfg)
+        def inspect_staff_settings(item: dict) -> None:
+            nonlocal assist_true, assist_false, assist_setting_seen
+            if not isinstance(item, dict):
+                return
+            add_schedule_values(item)
+            explicit = _config_bool(item, assist_keys)
+            if explicit is not None:
+                assist_setting_seen = True
+                if explicit:
+                    assist_true = True
+                else:
+                    assist_false = True
+            if explicit is True:
+                note_staff_shift(item)
                 try:
-                    category_staff_initial[key_text.lower()] = max(
-                        category_staff_initial.get(key_text.lower(), 1),
-                        int(float(dept_cfg.get("staff_initial_count", 1) or 1)),
+                    category_staff_initial[key_lower] = max(
+                        category_staff_initial.get(key_lower, 1),
+                        int(float(item.get("staff_initial_count", 1) or 1)),
                     )
                 except Exception:
-                    category_staff_initial.setdefault(key_text.lower(), 1)
+                    category_staff_initial.setdefault(key_lower, 1)
+
+        inspect_staff_settings(cfg)
+        for dept_cfg in (cfg.get("departments", {}) or {}).values():
+            inspect_staff_settings(dept_cfg)
         for group in cfg.get("department_groups", []) or []:
             if not isinstance(group, dict):
                 continue
-            payload = group.get("payload", {}) or {}
-            if not isinstance(payload, dict):
-                continue
-            add_schedule_values(payload)
-            group_explicit = _config_bool(payload, assist_keys)
-            if group_explicit:
-                category_human_assist[key_text.lower()] = "Yes"
-            if bool(payload.get("requires_staff", payload.get("staff_required", False))):
-                note_staff_shift(payload)
-                try:
-                    category_staff_initial[key_text.lower()] = max(
-                        category_staff_initial.get(key_text.lower(), 1),
-                        int(float(payload.get("staff_initial_count", 1) or 1)),
-                    )
-                except Exception:
-                    category_staff_initial.setdefault(key_text.lower(), 1)
+            inspect_staff_settings(group.get("payload", {}) or {})
+
+        if assist_true:
+            category_human_assist[key_lower] = "Yes"
+        elif assist_false:
+            category_human_assist[key_lower] = "No"
+        elif key_lower in configured_assist_categories:
+            category_human_assist[key_lower] = "Yes"
+        elif not assist_setting_seen and key_lower in legacy_assist_categories:
+            category_human_assist[key_lower] = "Yes"
+        else:
+            category_human_assist[key_lower] = "No"
+
+        if key_lower in category_schedule_times:
+            category_schedule_times[key_lower] = sorted(
+                category_schedule_times[key_lower],
+                key=lambda value: _hhmm_to_seconds(value) or 0,
+            )
 
     department_by_location: Dict[str, str] = {}
     category_by_location: Dict[str, str] = {}
@@ -2371,6 +2375,67 @@ def _scheduled_window_for_record(
     )
 
 
+def _human_assist_category_keys(metadata: Optional[dict]) -> set:
+    metadata = metadata or {}
+    return {
+        str(key).strip().lower()
+        for key, value in (metadata.get("category_human_assist", {}) or {}).items()
+        if str(value or "").strip().lower() in {"yes", "true", "1", "required"}
+    }
+
+
+def _staff_handling_event_mask(df: pd.DataFrame) -> pd.Series:
+    """Return a generic mask for staff-assisted payload handling rows.
+
+    Current simulator output uses ``staff_payload_handling`` with a
+    ``<category>_payload_handling`` person resource. Older and future schema
+    versions may write category-specific event names, so both signals are
+    accepted rather than hard-coding catering and stores.
+    """
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    resource_text = df.get("person_resource", pd.Series("", index=df.index)).astype(str)
+    event_match = event_text.str.fullmatch(
+        r"(?:segment_)?(?:[a-z0-9]+(?:_[a-z0-9]+)*)_payload_handling",
+        case=False,
+        na=False,
+    )
+    resource_match = resource_text.str.strip().str.lower().str.endswith(
+        "_payload_handling"
+    )
+    return event_match | resource_match
+
+
+def _clean_optional_text(value) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    return str(value).strip()
+
+
+def _staff_category_from_row(
+    row: pd.Series,
+    labels: Dict[str, str],
+) -> Tuple[str, str]:
+    for column in ("staff_category_key", "category_key", "task_category"):
+        key = _clean_optional_text(row.get(column, "")).lower()
+        if key:
+            return labels.get(key, key.replace("_", " ").title()), key
+
+    resource = _clean_optional_text(row.get("person_resource", "")).lower()
+    if resource.endswith("_payload_handling"):
+        key = resource[: -len("_payload_handling")].strip("_")
+        if key:
+            return labels.get(key, key.replace("_", " ").title()), key
+
+    category = _task_generation_category_from_row(row, labels)
+    category_key = _task_generation_category_key(category, labels)
+    return labels.get(category_key, category), category_key
+
+
 def build_payload_handling_timetable(
     df: pd.DataFrame,
     ctx: Context,
@@ -2381,12 +2446,14 @@ def build_payload_handling_timetable(
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
 
+    df = df.copy()
     metadata = metadata or {}
     labels = {
         str(k).strip().lower(): str(v).strip()
         for k, v in (metadata.get("category_labels", {}) or {}).items()
         if str(k).strip()
     }
+    assisted_category_keys = _human_assist_category_keys(metadata)
     department_names = metadata.get("department_names", {}) or {}
     location_names = metadata.get("location_display_names", {}) or {}
     location_points = metadata.get("location_points", {}) or {}
@@ -2395,18 +2462,20 @@ def build_payload_handling_timetable(
         for k, v in (metadata.get("category_schedule_times", {}) or {}).items()
     }
 
-    for col in ("details", "task_id", "task_source", "department_id", "payload", "to_location", "from_location"):
+    for col in (
+        "details",
+        "task_id",
+        "task_source",
+        "department_id",
+        "payload",
+        "to_location",
+        "from_location",
+    ):
         if col not in df.columns:
             df[col] = ""
 
-    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
     staff_rows = df[
-        event_text.str.fullmatch(
-            r"staff_payload_handling|stores_payload_handling|segment_staff_payload_handling",
-            case=False,
-            na=False,
-        )
-        & df["task_id"].notna()
+        _staff_handling_event_mask(df) & df["task_id"].notna()
     ].copy()
     if not staff_rows.empty and "person_id" in staff_rows.columns:
         staff_rows["_staff_start_float"] = staff_rows[ctx.time_col].map(
@@ -2417,9 +2486,12 @@ def build_payload_handling_timetable(
         )
 
     records: List[dict] = []
+    explicit_task_ids = set()
     if not staff_rows.empty:
         for _, row in staff_rows.sort_values(ctx.time_col).iterrows():
             ready_start = row.get(ctx.time_col)
+            if pd.isna(ready_start):
+                continue
             duration_s = _to_float(
                 row.get("duration_sec", row.get("_duration_s", 0.0)), 0.0
             )
@@ -2429,24 +2501,16 @@ def build_payload_handling_timetable(
                 )
             else:
                 ready_end = _to_float(ready_start, 0.0) + duration_s
-            category = _task_generation_category_from_row(row, labels)
-            category_key = _task_generation_category_key(category, labels)
-            resource = str(row.get("person_resource", "") or "").strip().lower()
-            if resource.endswith("_payload_handling"):
-                category_key = resource[: -len("_payload_handling")]
-                category = labels.get(category_key, category_key.title())
-            department_id = str(row.get("department_id", "") or "").strip()
+            category, category_key = _staff_category_from_row(row, labels)
+            department_id = _clean_optional_text(row.get("department_id", ""))
             department = department_names.get(department_id, department_id or "-")
-            location_id = str(
-                row.get("to_location", "")
-                or row.get("from_location", "")
-                or ""
-            ).strip()
+            location_id = _clean_optional_text(row.get("to_location", ""))
+            if not location_id:
+                location_id = _clean_optional_text(row.get("from_location", ""))
             location = location_names.get(location_id, location_id)
             point = location_points.get(location_id, {}) or {}
             payload = safe_text(row.get("payload", "") or row.get("container_type", ""))
-            person_id = str(row.get("person_id", "") or "").strip()
-            person_label = person_id or str(row.get("person_resource", "") or "").strip() or category
+            person_id = _clean_optional_text(row.get("person_id", ""))
             day = _event_day_key(ready_start, ctx.has_datetime)
             if not day:
                 continue
@@ -2454,16 +2518,17 @@ def build_payload_handling_timetable(
                 f"{_event_time_hhmm(ready_start, ctx.has_datetime)}-"
                 f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
             )
-            if category_key == "catering":
-                fallback_duration = time_delta_seconds(ready_start, ready_end, ctx.has_datetime) or 0.0
-                scheduled_window = _scheduled_window_for_record(
-                    ready_start,
-                    fallback_duration,
-                    category_schedule_times.get(category_key, []),
-                    ctx.has_datetime,
-                )
-                if scheduled_window:
-                    window = scheduled_window
+            scheduled_window = _scheduled_window_for_record(
+                ready_start,
+                duration_s,
+                category_schedule_times.get(category_key, []),
+                ctx.has_datetime,
+            )
+            if scheduled_window:
+                window = scheduled_window
+            task_id = _clean_optional_text(row.get("task_id", ""))
+            if task_id:
+                explicit_task_ids.add(task_id)
             records.append(
                 {
                     "category": category,
@@ -2481,10 +2546,12 @@ def build_payload_handling_timetable(
                     "_end_value": ready_end,
                     "payload": payload,
                     "person_id": person_id,
-                    "person": person_label,
+                    "person": person_id,
+                    "task_id": task_id,
                 }
             )
 
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
     completed = df[
         event_text.str.fullmatch(
             r"task_complete|multi_stop_task_complete", case=False, na=False
@@ -2496,37 +2563,48 @@ def build_payload_handling_timetable(
         & df["task_id"].notna()
     ].copy()
 
-    if not records and (completed.empty or returns.empty):
-        return pd.DataFrame(columns=columns)
-
-    if not records:
-        completed = completed.sort_values(ctx.time_col).drop_duplicates("task_id", keep="last")
-        completed_by_task = {str(row["task_id"]).strip(): row for _, row in completed.iterrows()}
+    # Supplement explicit staff rows with the legacy completed-to-return window
+    # model on a per-task basis. This keeps older CSVs useful and, unlike the old
+    # all-or-nothing fallback, does not omit a newly assisted category merely
+    # because catering or stores already produced explicit staff rows.
+    if not completed.empty and not returns.empty:
+        completed = completed.sort_values(ctx.time_col).drop_duplicates(
+            "task_id", keep="last"
+        )
+        completed_by_task = {
+            str(row["task_id"]).strip(): row for _, row in completed.iterrows()
+        }
+        allow_unconfigured_legacy_fallback = not assisted_category_keys and not records
 
         for _, return_row in returns.sort_values(ctx.time_col).iterrows():
             source_id = _return_source_task_id(str(return_row.get("task_id", "") or ""))
-            if not source_id or source_id not in completed_by_task:
+            if (
+                not source_id
+                or source_id not in completed_by_task
+                or source_id in explicit_task_ids
+            ):
                 continue
 
             complete_row = completed_by_task[source_id]
+            category, category_key = _staff_category_from_row(complete_row, labels)
+            if (
+                category_key not in assisted_category_keys
+                and not allow_unconfigured_legacy_fallback
+            ):
+                continue
+
             ready_start = complete_row.get(ctx.time_col)
             ready_end = return_row.get(ctx.time_col)
             if pd.isna(ready_start) or pd.isna(ready_end):
                 continue
 
-            category = _task_generation_category_from_row(complete_row, labels)
-            category_key = _task_generation_category_key(category, labels)
-            department_id = str(
+            department_id = _clean_optional_text(
                 complete_row.get("department_id", "")
-                or return_row.get("department_id", "")
-                or ""
-            ).strip()
+            ) or _clean_optional_text(return_row.get("department_id", ""))
             department = department_names.get(department_id, department_id or "-")
-            location_id = str(
+            location_id = _clean_optional_text(
                 complete_row.get("to_location", "")
-                or return_row.get("from_location", "")
-                or ""
-            ).strip()
+            ) or _clean_optional_text(return_row.get("from_location", ""))
             location = location_names.get(location_id, location_id)
             point = location_points.get(location_id, {}) or {}
             payload = safe_text(
@@ -2536,20 +2614,19 @@ def build_payload_handling_timetable(
             if not day:
                 continue
 
+            duration_s = time_delta_seconds(ready_start, ready_end, ctx.has_datetime) or 0.0
             window = (
                 f"{_event_time_hhmm(ready_start, ctx.has_datetime)}-"
                 f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
             )
-            if category_key == "catering":
-                fallback_duration = time_delta_seconds(ready_start, ready_end, ctx.has_datetime) or 0.0
-                scheduled_window = _scheduled_window_for_record(
-                    ready_start,
-                    fallback_duration,
-                    category_schedule_times.get(category_key, []),
-                    ctx.has_datetime,
-                )
-                if scheduled_window:
-                    window = scheduled_window
+            scheduled_window = _scheduled_window_for_record(
+                ready_start,
+                duration_s,
+                category_schedule_times.get(category_key, []),
+                ctx.has_datetime,
+            )
+            if scheduled_window:
+                window = scheduled_window
             records.append(
                 {
                     "category": category,
@@ -2568,6 +2645,7 @@ def build_payload_handling_timetable(
                     "payload": payload,
                     "person_id": "",
                     "person": "",
+                    "task_id": source_id,
                 }
             )
 
@@ -2583,6 +2661,7 @@ def build_payload_handling_timetable(
             event_time_to_float(item.get("_start_value"), ctx.has_datetime),
             event_time_to_float(item.get("_end_value"), ctx.has_datetime),
             natural_key(item.get("location", "")),
+            natural_key(item.get("task_id", "")),
         ),
     ):
         if record.get("person"):
@@ -2609,23 +2688,31 @@ def build_payload_handling_timetable(
     cells: Dict[Tuple[str, str, str], Dict[str, List[dict]]] = {}
     for record in records:
         key = (record["category"], record["category_key"], record["batch"])
-        cells.setdefault(key, {day_col: [] for day_col in day_cols})[record["day"]].append(record)
+        cells.setdefault(key, {day_col: [] for day_col in day_cols})[
+            record["day"]
+        ].append(record)
 
     rows = []
-    for category, category_key, batch in sorted(cells, key=lambda item: (natural_key(item[0]), natural_key(item[2]))):
+    for category, category_key, batch in sorted(
+        cells,
+        key=lambda item: (natural_key(item[0]), natural_key(item[2])),
+    ):
         row = {"category": category, "category_key": category_key, "batch": batch}
         for day in day_cols:
-            day_records = cells[(category, category_key, batch)].get(day, [])
-            grouped: Dict[Tuple[str, str], int] = {}
+            day_records = sorted(
+                cells[(category, category_key, batch)].get(day, []),
+                key=lambda item: (
+                    event_time_to_float(item.get("_start_value"), ctx.has_datetime),
+                    event_time_to_float(item.get("_end_value"), ctx.has_datetime),
+                    natural_key(item.get("location", "")),
+                    natural_key(item.get("task_id", "")),
+                ),
+            )
+            entries = []
             for record in day_records:
-                grouped[(record["window"], record["location"])] = grouped.get((record["window"], record["location"]), 0) + 1
-            pills = []
-            for (window, location), count in sorted(grouped.items(), key=lambda item: item[0]):
-                label = location if location and location != "-" else "Location"
-                if count > 1:
-                    label = f"{label} x{count}"
-                pills.append(f"{window}|{label}")
-            row[day] = "\n".join(pills) if pills else "-"
+                label = record.get("location") or "Location"
+                entries.append(f"{record['window']}|{label}")
+            row[day] = "\n".join(entries) if entries else "-"
         rows.append(row)
     return pd.DataFrame(rows, columns=columns)
 
@@ -2662,14 +2749,7 @@ def build_staff_handling_summary(
         for k, v in (metadata.get("category_staff_shift_multiplier", {}) or {}).items()
         if str(k).strip()
     }
-    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
-    staff_rows = df[
-        event_text.str.fullmatch(
-            r"staff_payload_handling|stores_payload_handling|segment_staff_payload_handling",
-            case=False,
-            na=False,
-        )
-    ].copy()
+    staff_rows = df[_staff_handling_event_mask(df)].copy()
     if staff_rows.empty:
         return pd.DataFrame(columns=columns)
     if "person_id" in staff_rows.columns:
@@ -2680,27 +2760,36 @@ def build_staff_handling_summary(
             ["task_id", "person_id", "_staff_start_float"], keep="first"
         )
 
+    category_pairs = staff_rows.apply(
+        lambda row: _staff_category_from_row(row, labels),
+        axis=1,
+    )
+    staff_rows["_staff_category"] = [pair[0] for pair in category_pairs]
+    staff_rows["_staff_category_key"] = [pair[1] for pair in category_pairs]
+
     rows = []
-    for resource, group in staff_rows.groupby(
-        staff_rows.get("person_resource", pd.Series("", index=staff_rows.index)).fillna(""),
-        sort=True,
-    ):
-        resource_text = str(resource or "").strip().lower()
-        category_key = ""
-        if resource_text.endswith("_payload_handling"):
-            category_key = resource_text[: -len("_payload_handling")]
-        if not category_key:
-            category = _task_generation_category_from_row(group.iloc[0], labels)
-            category_key = _task_generation_category_key(category, labels)
-        category = labels.get(category_key, category_key.title())
+    for category_key, group in staff_rows.groupby("_staff_category_key", sort=True):
+        category_key = str(category_key or "staff").strip().lower()
+        category_values = [
+            str(x).strip()
+            for x in group["_staff_category"].dropna().tolist()
+            if str(x).strip()
+        ]
+        category = category_values[0] if category_values else labels.get(
+            category_key, category_key.replace("_", " ").title()
+        )
         people_col = (
             "people_required"
             if "people_required" in group.columns
             else "staff_rostered_people_required"
         )
+        people_values = (
+            group[people_col]
+            if people_col in group.columns
+            else pd.Series(0, index=group.index, dtype=float)
+        )
         people_required = int(
-            pd.to_numeric(group.get(people_col, 0), errors="coerce").fillna(0).max()
-            or 0
+            pd.to_numeric(people_values, errors="coerce").fillna(0).max() or 0
         )
         on_shift_people_required = 0
         if "staff_on_shift_people_required" in group.columns:
@@ -2739,7 +2828,12 @@ def build_staff_handling_summary(
         ):
             people_required = max(
                 people_required,
-                int(math.ceil((on_shift_people_required or len(person_ids)) * shift_multiplier)),
+                int(
+                    math.ceil(
+                        (on_shift_people_required or len(person_ids))
+                        * shift_multiplier
+                    )
+                ),
             )
         initial_people = max(1, int(configured_initial.get(category_key, 1) or 1))
         if "staff_initial_rostered_people" in group.columns:
@@ -2757,8 +2851,17 @@ def build_staff_handling_summary(
             )
         elif shift_multiplier > 1.0:
             initial_people = int(math.ceil(initial_people * shift_multiplier))
+        duration_values = (
+            group["duration_sec"]
+            if "duration_sec" in group.columns
+            else (
+                group["_duration_s"]
+                if "_duration_s" in group.columns
+                else pd.Series(0.0, index=group.index, dtype=float)
+            )
+        )
         duration = pd.to_numeric(
-            group.get("duration_sec", group.get("_duration_s", 0.0)),
+            duration_values,
             errors="coerce",
         ).fillna(0.0)
         rows.append(
