@@ -1068,6 +1068,8 @@ def build_report(
         )
 
     payload_timetable_df = results.get("payload_handling_timetable", pd.DataFrame()).copy()
+    ward_collection_df = results.get("linen_ward_collection", pd.DataFrame()).copy()
+    staff_hours_df = results.get("staff_hours_summary", pd.DataFrame()).copy()
     story += [
         NextPageTemplate("landscape"),
         PageBreak(),
@@ -1076,7 +1078,7 @@ def build_report(
         story += [
             Paragraph("Staff handling timetable", styles["Section"]),
             Paragraph(
-                "No staff handling timetable could be derived from the CSV.",
+                "No in-hours staff handling timetable could be derived from the CSV.",
                 styles["BodyText"],
             ),
         ]
@@ -1095,14 +1097,27 @@ def build_report(
             sub = payload_timetable_df[
                 payload_timetable_df["category"].astype(str) == category
             ].copy()
-            category_key = str(sub["category_key"].iloc[0] or category)
+            category_key = str(sub["category_key"].iloc[0] or category).strip().lower()
             colour = category_colour(category_key)
+            description = (
+                "Each entry shows the actual destination-side handling window, including set-down and person pack-away time. Rows are grouped by person."
+            )
+            if category_key == "linen":
+                hours_match = staff_hours_df[
+                    staff_hours_df.get("category_key", pd.Series(dtype=str)).astype(str).str.lower()
+                    == "linen"
+                ] if not staff_hours_df.empty else pd.DataFrame()
+                linen_hours = (
+                    str(hours_match.iloc[0].get("staff_hours", "09:00-17:00"))
+                    if not hours_match.empty
+                    else "09:00-17:00"
+                )
+                description += (
+                    f" Linen staff are fixed to {linen_hours}; deliveries whose handling falls outside this window are excluded and listed separately for ward staff collection."
+                )
             story += [
                 Paragraph("Staff handling timetable", styles["Section"]),
-                Paragraph(
-                    "This timetable contains every recorded human-assisted task for the category. Rows are grouped by person and each day cell shows the location and handling timeframe.",
-                    styles["BodyText"],
-                ),
+                Paragraph(description, styles["BodyText"]),
                 Spacer(1, 8),
                 Paragraph(
                     f'<font color="{colour}">{str(category)}</font>',
@@ -1111,6 +1126,73 @@ def build_report(
                 Spacer(1, 4),
                 payload_timetable_table(sub, styles),
             ]
+
+    if not ward_collection_df.empty:
+        story += [
+            PageBreak(),
+            Paragraph(
+                "Out-of-hours linen deliveries - ward staff collection",
+                styles["Section"],
+            ),
+            Paragraph(
+                "These linen deliveries arrive before the linen shift starts or require set-down and pack-away after it finishes. They are removed from the linen staff timetable and must be collected or managed by ward staff at the final delivery destination.",
+                styles["BodyText"],
+            ),
+            Spacer(1, 8),
+        ]
+        ward_collection_df = ward_collection_df.rename(
+            columns={
+                "date": "Date",
+                "day": "Day",
+                "delivery_time": "Delivery",
+                "handling_finish": "Handling finish",
+                "department": "Department",
+                "location": "Final destination",
+                "payload": "Payload",
+                "task_id": "Task",
+                "linen_staff_hours": "Linen staff hours",
+                "collection_by": "Collection by",
+                "reason": "Reason",
+            }
+        )
+        ward_display_cols = [
+            c
+            for c in [
+                "Date",
+                "Day",
+                "Delivery",
+                "Handling finish",
+                "Department",
+                "Final destination",
+                "Payload",
+                "Task",
+                "Linen staff hours",
+                "Collection by",
+                "Reason",
+            ]
+            if c in ward_collection_df.columns
+        ]
+        ward_collection_df = ward_collection_df[ward_display_cols]
+        width_map = {
+            "Date": 20 * mm,
+            "Day": 12 * mm,
+            "Delivery": 15 * mm,
+            "Handling finish": 20 * mm,
+            "Department": 24 * mm,
+            "Final destination": 34 * mm,
+            "Payload": 25 * mm,
+            "Task": 30 * mm,
+            "Linen staff hours": 22 * mm,
+            "Collection by": 20 * mm,
+            "Reason": 50 * mm,
+        }
+        story.append(
+            table_from_df(
+                ward_collection_df,
+                [width_map.get(c, 20 * mm) for c in ward_collection_df.columns],
+                styles,
+            )
+        )
 
     story += [
         NextPageTemplate("standard"),

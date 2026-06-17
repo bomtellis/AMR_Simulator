@@ -1140,6 +1140,67 @@ def _config_bool(item: dict, keys: Iterable[str]) -> Optional[bool]:
     return None
 
 
+def _normalise_hhmm_text(value) -> str:
+    text = str(value or "").strip()
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", text)
+    if not match:
+        return ""
+    hour = int(match.group(1))
+    minute = int(match.group(2))
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return ""
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _configured_handling_minutes(item: dict) -> float:
+    if not isinstance(item, dict):
+        return 0.0
+    for key in (
+        "staff_handling_minutes",
+        "handling_duration_minutes",
+        "person_handling_minutes",
+        "set_down_and_pack_away_minutes",
+        "return_delay_minutes",
+    ):
+        value = _to_float(item.get(key), 0.0)
+        if value > 0.0:
+            return float(value)
+    component_total = sum(
+        max(0.0, _to_float(item.get(key), 0.0))
+        for key in (
+            "set_down_minutes",
+            "setdown_minutes",
+            "person_pack_away_minutes",
+            "pack_away_minutes",
+            "packaway_minutes",
+        )
+    )
+    return float(component_total)
+
+
+def _configured_staff_hours(item: dict, allow_timeframe: bool = False) -> Optional[Tuple[str, str]]:
+    if not isinstance(item, dict):
+        return None
+    start_keys = (
+        "staff_hours_start",
+        "staff_start_time",
+        "staff_work_start",
+        "staff_shift_start",
+    )
+    end_keys = (
+        "staff_hours_end",
+        "staff_end_time",
+        "staff_work_end",
+        "staff_shift_end",
+    )
+    start = next((_normalise_hhmm_text(item.get(key)) for key in start_keys if _normalise_hhmm_text(item.get(key))), "")
+    end = next((_normalise_hhmm_text(item.get(key)) for key in end_keys if _normalise_hhmm_text(item.get(key))), "")
+    if allow_timeframe and (not start or not end):
+        start = start or _normalise_hhmm_text(item.get("timeframe_start"))
+        end = end or _normalise_hhmm_text(item.get("timeframe_end"))
+    return (start, end) if start and end else None
+
+
 def load_task_generation_report_metadata(json_path: Path) -> dict:
     with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -1151,6 +1212,10 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
     category_staff_initial: Dict[str, int] = {}
     category_staff_shift_multiplier: Dict[str, float] = {}
     category_schedule_times: Dict[str, List[str]] = {}
+    category_handling_duration_minutes: Dict[str, float] = {}
+    department_handling_duration_minutes: Dict[str, Dict[str, float]] = {}
+    category_staff_hours: Dict[str, dict] = {}
+    department_staff_hours: Dict[str, Dict[str, dict]] = {}
     assist_keys = (
         "human_assist_required",
         "requires_human_assist",
@@ -1218,7 +1283,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
                     existing.append(text)
                     seen.add(text)
 
-        def inspect_staff_settings(item: dict) -> None:
+        def inspect_staff_settings(item: dict, department_ids: Optional[Iterable[str]] = None) -> None:
             nonlocal assist_true, assist_false, assist_setting_seen
             if not isinstance(item, dict):
                 return
@@ -1240,13 +1305,52 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
                 except Exception:
                     category_staff_initial.setdefault(key_lower, 1)
 
+            handling_minutes = _configured_handling_minutes(item)
+            if handling_minutes > 0.0:
+                category_handling_duration_minutes[key_lower] = max(
+                    category_handling_duration_minutes.get(key_lower, 0.0),
+                    handling_minutes,
+                )
+
+            hours = _configured_staff_hours(
+                item, allow_timeframe=(key_lower == "linen")
+            )
+            if hours and key_lower not in category_staff_hours:
+                category_staff_hours[key_lower] = {
+                    "start": hours[0],
+                    "end": hours[1],
+                }
+
+            for department_id in department_ids or []:
+                department_id = str(department_id or "").strip()
+                if not department_id:
+                    continue
+                if handling_minutes > 0.0:
+                    per_department = department_handling_duration_minutes.setdefault(
+                        key_lower, {}
+                    )
+                    per_department[department_id] = max(
+                        per_department.get(department_id, 0.0), handling_minutes
+                    )
+                if hours:
+                    department_staff_hours.setdefault(key_lower, {})[department_id] = {
+                        "start": hours[0],
+                        "end": hours[1],
+                    }
+
         inspect_staff_settings(cfg)
-        for dept_cfg in (cfg.get("departments", {}) or {}).values():
-            inspect_staff_settings(dept_cfg)
+        for dept_id, dept_cfg in (cfg.get("departments", {}) or {}).items():
+            inspect_staff_settings(dept_cfg, [dept_id])
         for group in cfg.get("department_groups", []) or []:
             if not isinstance(group, dict):
                 continue
-            inspect_staff_settings(group.get("payload", {}) or {})
+            inspect_staff_settings(
+                group.get("payload", {}) or {},
+                group.get("departments", []) or [],
+            )
+
+        if key_lower == "linen" and key_lower not in category_staff_hours:
+            category_staff_hours[key_lower] = {"start": "09:00", "end": "17:00"}
 
         if assist_true:
             category_human_assist[key_lower] = "Yes"
@@ -1314,6 +1418,10 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         "category_staff_initial": category_staff_initial,
         "category_staff_shift_multiplier": category_staff_shift_multiplier,
         "category_schedule_times": category_schedule_times,
+        "category_handling_duration_minutes": category_handling_duration_minutes,
+        "department_handling_duration_minutes": department_handling_duration_minutes,
+        "category_staff_hours": category_staff_hours,
+        "department_staff_hours": department_staff_hours,
         "department_names": department_names,
         "location_display_names": location_display_names,
         "location_points": location_points,
@@ -2385,24 +2493,22 @@ def _human_assist_category_keys(metadata: Optional[dict]) -> set:
 
 
 def _staff_handling_event_mask(df: pd.DataFrame) -> pd.Series:
-    """Return a generic mask for staff-assisted payload handling rows.
+    """Return rows that represent actual destination-side staff handling.
 
-    Current simulator output uses ``staff_payload_handling`` with a
-    ``<category>_payload_handling`` person resource. Older and future schema
-    versions may write category-specific event names, so both signals are
-    accepted rather than hard-coding catering and stores.
+    ``person_resource`` is also copied onto related rows such as
+    ``return_task_generated``. Treating that metadata alone as a handling
+    event incorrectly adds the original pickup location to the person's
+    timetable at the same time as the delivery destination. Only explicit
+    payload-handling event types are therefore included. The event-name
+    pattern remains generic so catering, stores and any other assisted
+    category are supported without category-specific code.
     """
     event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
-    resource_text = df.get("person_resource", pd.Series("", index=df.index)).astype(str)
-    event_match = event_text.str.fullmatch(
+    return event_text.str.fullmatch(
         r"(?:segment_)?(?:[a-z0-9]+(?:_[a-z0-9]+)*)_payload_handling",
         case=False,
         na=False,
     )
-    resource_match = resource_text.str.strip().str.lower().str.endswith(
-        "_payload_handling"
-    )
-    return event_match | resource_match
 
 
 def _clean_optional_text(value) -> str:
@@ -2436,10 +2542,289 @@ def _staff_category_from_row(
     return labels.get(category_key, category), category_key
 
 
+def _staff_shift_team_from_row(row: pd.Series, person_id: str = "") -> str:
+    """Return a concise shift/team label for a staff handling record."""
+    team = _clean_optional_text(row.get("staff_shift_team", ""))
+    if not team:
+        match = re.search(r"(?:^|[-_\s])shift[-_\s]*([a-z0-9]+)(?:[-_\s]|$)", str(person_id or ""), re.I)
+        if match:
+            team = match.group(1)
+    return team.upper()
+
+
+def _staff_person_number_from_row(row: pd.Series, person_id: str = "") -> Optional[int]:
+    """Extract the simulator's person number without exposing its raw ID."""
+    for column in ("person_index", "staff_person_index"):
+        value = pd.to_numeric(row.get(column), errors="coerce")
+        if pd.notna(value) and int(value) > 0:
+            return int(value)
+
+    text = str(person_id or "").strip()
+    match = re.search(r"(?:^|[-_\s])person[-_\s]*(\d+)(?:$|[-_\s])", text, re.I)
+    if not match:
+        match = re.search(r"(\d+)$", text)
+    if match:
+        return max(1, int(match.group(1)))
+    return None
+
+
+def _friendly_staff_name(category: str, shift_team: str, person_number: int) -> str:
+    """Build a report-friendly staff name, e.g. Catering Shift A - Person 1."""
+    category_text = str(category or "Staff").strip() or "Staff"
+    team_text = str(shift_team or "").strip().upper()
+    number = max(1, int(person_number or 1))
+    if team_text:
+        return f"{category_text} Shift {team_text} - Person {number}"
+    return f"{category_text} - Person {number}"
+
+
+DEFAULT_HUMAN_HANDLING_MINUTES = 15.0
+
+
+def _positive_seconds(value) -> float:
+    value = _to_float(value, 0.0)
+    return float(value) if value > 0.0 else 0.0
+
+
+def _time_pair_duration_seconds(start_value, end_value) -> float:
+    if start_value is None or end_value is None:
+        return 0.0
+    try:
+        if pd.isna(start_value) or pd.isna(end_value):
+            return 0.0
+    except Exception:
+        pass
+
+    # Numeric simulator clocks are measured in seconds. Do not run calendar
+    # timestamps through pd.to_numeric because pandas represents them as
+    # nanoseconds, which would inflate a 5-minute interval to 300 billion s.
+    if pd.api.types.is_number(start_value) and pd.api.types.is_number(end_value):
+        return max(0.0, float(end_value) - float(start_value))
+
+    try:
+        start_ts = pd.to_datetime(start_value, errors="coerce")
+        end_ts = pd.to_datetime(end_value, errors="coerce")
+        if pd.notna(start_ts) and pd.notna(end_ts):
+            return max(
+                0.0,
+                (pd.Timestamp(end_ts) - pd.Timestamp(start_ts)).total_seconds(),
+            )
+    except Exception:
+        pass
+
+    # Numeric values may arrive as strings in older CSV exports.
+    try:
+        return max(0.0, float(end_value) - float(start_value))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _configured_record_handling_seconds(
+    metadata: Optional[dict], category_key: str, department_id: str
+) -> float:
+    metadata = metadata or {}
+    category_key = str(category_key or "").strip().lower()
+    department_id = str(department_id or "").strip()
+    department_values = (
+        metadata.get("department_handling_duration_minutes", {}) or {}
+    ).get(category_key, {}) or {}
+    minutes = _to_float(department_values.get(department_id), 0.0)
+    if minutes <= 0.0:
+        minutes = _to_float(
+            (metadata.get("category_handling_duration_minutes", {}) or {}).get(
+                category_key
+            ),
+            0.0,
+        )
+    return max(0.0, minutes * 60.0)
+
+
+def _handling_duration_seconds(
+    row: pd.Series,
+    metadata: Optional[dict],
+    category_key: str,
+    department_id: str,
+    ready_start=None,
+    return_time=None,
+) -> float:
+    logged_duration = max(
+        (
+            _positive_seconds(row.get(column))
+            for column in (
+                "duration_sec",
+                "_duration_s",
+                "staff_handling_duration_sec",
+                "handling_duration_sec",
+                "person_handling_duration_sec",
+            )
+        ),
+        default=0.0,
+    )
+
+    # Current simulator rows also carry the handling start and finish even when
+    # a legacy CSV exporter wrote duration_sec as zero.
+    time_pair_duration = max(
+        (
+            _time_pair_duration_seconds(row.get(start_column), row.get(end_column))
+            for start_column, end_column in (
+                ("staff_start_time", "staff_end_time"),
+                ("handling_start_time", "handling_end_time"),
+                ("start_time", "end_time"),
+            )
+        ),
+        default=0.0,
+    )
+
+    # Accept logs that separate set-down and pack-away activities. Where a
+    # legacy duration contains only one component, the combined component time
+    # prevents the report from ending the person's work too early.
+    component_duration = sum(
+        _positive_seconds(row.get(column))
+        for column in (
+            "set_down_duration_sec",
+            "setdown_duration_sec",
+            "set_down_time_sec",
+            "person_pack_away_duration_sec",
+            "pack_away_duration_sec",
+            "packaway_duration_sec",
+            "unload_duration_sec",
+        )
+    )
+    component_duration += 60.0 * sum(
+        max(0.0, _to_float(row.get(column), 0.0))
+        for column in (
+            "set_down_minutes",
+            "person_pack_away_minutes",
+            "pack_away_minutes",
+        )
+    )
+
+    observed_duration = max(
+        logged_duration, time_pair_duration, component_duration
+    )
+    if observed_duration > 0.0:
+        return observed_duration
+
+    # The delayed return release normally marks the end of pack-away time.
+    if ready_start is not None and return_time is not None:
+        return_duration = _time_pair_duration_seconds(ready_start, return_time)
+        if return_duration > 0.0:
+            return float(return_duration)
+
+    configured_seconds = _configured_record_handling_seconds(
+        metadata, category_key, department_id
+    )
+    if configured_seconds > 0.0:
+        return configured_seconds
+
+    # Human handling should never be displayed as a zero-minute activity.
+    return DEFAULT_HUMAN_HANDLING_MINUTES * 60.0
+
+
+def _record_staff_hours(
+    metadata: Optional[dict], category_key: str, department_id: str
+) -> Optional[Tuple[str, str]]:
+    metadata = metadata or {}
+    category_key = str(category_key or "").strip().lower()
+    department_id = str(department_id or "").strip()
+    department_hours = (metadata.get("department_staff_hours", {}) or {}).get(
+        category_key, {}
+    ) or {}
+    value = department_hours.get(department_id) or (
+        metadata.get("category_staff_hours", {}) or {}
+    ).get(category_key)
+    if not value and category_key == "linen":
+        value = {"start": "09:00", "end": "17:00"}
+    if not isinstance(value, dict):
+        return None
+    start = _normalise_hhmm_text(value.get("start"))
+    end = _normalise_hhmm_text(value.get("end"))
+    return (start, end) if start and end else None
+
+
+def _event_seconds_of_day(value, has_datetime: bool) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    if has_datetime:
+        ts = pd.Timestamp(value)
+        return float(ts.hour * 3600 + ts.minute * 60 + ts.second)
+    return float(value) % 86400.0
+
+
+def _within_staff_hours(
+    start_value, end_value, hours: Tuple[str, str], has_datetime: bool
+) -> bool:
+    start_sec = _event_seconds_of_day(start_value, has_datetime)
+    end_sec = _event_seconds_of_day(end_value, has_datetime)
+    opening = _hhmm_to_seconds(hours[0])
+    closing = _hhmm_to_seconds(hours[1])
+    if start_sec is None or end_sec is None or opening is None or closing is None:
+        return True
+    if closing >= opening:
+        return start_sec >= opening and end_sec <= closing and end_sec >= start_sec
+    # Overnight staff window.
+    in_start = start_sec >= opening or start_sec <= closing
+    in_end = end_sec >= opening or end_sec <= closing
+    return in_start and in_end
+
+
+def _ward_collection_reason(
+    start_value, end_value, hours: Tuple[str, str], has_datetime: bool
+) -> str:
+    start_sec = _event_seconds_of_day(start_value, has_datetime)
+    end_sec = _event_seconds_of_day(end_value, has_datetime)
+    opening = _hhmm_to_seconds(hours[0]) or 0
+    closing = _hhmm_to_seconds(hours[1]) or 0
+    if start_sec is not None and closing >= opening and start_sec < opening:
+        return "Delivery is before the linen staff shift starts."
+    if end_sec is not None and closing >= opening and end_sec > closing:
+        return "Set-down and pack-away would finish after the linen staff shift ends."
+    return "Delivery handling falls outside the fixed linen staff hours."
+
+
+def _event_date_label(value, has_datetime: bool) -> str:
+    if has_datetime and value is not None and not pd.isna(value):
+        return pd.Timestamp(value).strftime("%d/%m/%Y")
+    seconds = _to_float(value, 0.0)
+    return f"Simulation day {int(seconds // 86400.0) + 1}"
+
+
+def build_staff_hours_summary(metadata: Optional[dict]) -> pd.DataFrame:
+    metadata = metadata or {}
+    labels = metadata.get("category_labels", {}) or {}
+    rows = []
+    for category_key, value in (metadata.get("category_staff_hours", {}) or {}).items():
+        if not isinstance(value, dict):
+            continue
+        start = _normalise_hhmm_text(value.get("start"))
+        end = _normalise_hhmm_text(value.get("end"))
+        if not start or not end:
+            continue
+        rows.append(
+            {
+                "category": labels.get(category_key, str(category_key).title()),
+                "category_key": str(category_key),
+                "staff_start": start,
+                "staff_end": end,
+                "staff_hours": f"{start}-{end}",
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=["category", "category_key", "staff_start", "staff_end", "staff_hours"],
+    )
+
+
 def build_payload_handling_timetable(
     df: pd.DataFrame,
     ctx: Context,
     metadata: Optional[dict] = None,
+    ward_collection_rows: Optional[List[dict]] = None,
 ) -> pd.DataFrame:
     day_cols = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     columns = ["category", "category_key", "batch"] + day_cols
@@ -2448,6 +2833,7 @@ def build_payload_handling_timetable(
 
     df = df.copy()
     metadata = metadata or {}
+    ward_collection_rows = ward_collection_rows if ward_collection_rows is not None else []
     labels = {
         str(k).strip().lower(): str(v).strip()
         for k, v in (metadata.get("category_labels", {}) or {}).items()
@@ -2474,6 +2860,25 @@ def build_payload_handling_timetable(
         if col not in df.columns:
             df[col] = ""
 
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    completed = df[
+        event_text.str.fullmatch(
+            r"task_complete|multi_stop_task_complete", case=False, na=False
+        )
+        & df["task_id"].notna()
+    ].copy()
+    returns = df[
+        event_text.str.fullmatch(r"return_task_generated", case=False, na=False)
+        & df["task_id"].notna()
+    ].copy()
+    return_times_by_source: Dict[str, List] = {}
+    for _, return_row in returns.sort_values(ctx.time_col).iterrows():
+        source_id = _return_source_task_id(str(return_row.get("task_id", "") or ""))
+        if source_id:
+            return_times_by_source.setdefault(source_id, []).append(
+                return_row.get(ctx.time_col)
+            )
+
     staff_rows = df[
         _staff_handling_event_mask(df) & df["task_id"].notna()
     ].copy()
@@ -2492,25 +2897,40 @@ def build_payload_handling_timetable(
             ready_start = row.get(ctx.time_col)
             if pd.isna(ready_start):
                 continue
-            duration_s = _to_float(
-                row.get("duration_sec", row.get("_duration_s", 0.0)), 0.0
-            )
-            if ctx.has_datetime:
-                ready_end = pd.Timestamp(ready_start) + pd.to_timedelta(
-                    duration_s, unit="s"
-                )
-            else:
-                ready_end = _to_float(ready_start, 0.0) + duration_s
             category, category_key = _staff_category_from_row(row, labels)
             department_id = _clean_optional_text(row.get("department_id", ""))
+            task_id = _clean_optional_text(row.get("task_id", ""))
+            return_time = None
+            for candidate in return_times_by_source.get(task_id, []):
+                delta = time_delta_seconds(ready_start, candidate, ctx.has_datetime)
+                if delta is not None and delta > 0.0:
+                    return_time = candidate
+                    break
+            duration_s = _handling_duration_seconds(
+                row,
+                metadata,
+                category_key,
+                department_id,
+                ready_start=ready_start,
+                return_time=return_time,
+            )
+            ready_end = add_seconds_to_event_time(
+                ready_start, duration_s, ctx.has_datetime
+            )
             department = department_names.get(department_id, department_id or "-")
+            # Human assistance occurs only at the final delivery destination.
+            # Never substitute the task origin when a handling row has no
+            # destination; doing so duplicates the pickup location in the
+            # person's timetable.
             location_id = _clean_optional_text(row.get("to_location", ""))
             if not location_id:
-                location_id = _clean_optional_text(row.get("from_location", ""))
+                continue
             location = location_names.get(location_id, location_id)
             point = location_points.get(location_id, {}) or {}
             payload = safe_text(row.get("payload", "") or row.get("container_type", ""))
             person_id = _clean_optional_text(row.get("person_id", ""))
+            shift_team = _staff_shift_team_from_row(row, person_id)
+            person_number = _staff_person_number_from_row(row, person_id)
             day = _event_day_key(ready_start, ctx.has_datetime)
             if not day:
                 continue
@@ -2518,50 +2938,57 @@ def build_payload_handling_timetable(
                 f"{_event_time_hhmm(ready_start, ctx.has_datetime)}-"
                 f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
             )
-            scheduled_window = _scheduled_window_for_record(
-                ready_start,
-                duration_s,
-                category_schedule_times.get(category_key, []),
-                ctx.has_datetime,
-            )
-            if scheduled_window:
-                window = scheduled_window
-            task_id = _clean_optional_text(row.get("task_id", ""))
             if task_id:
                 explicit_task_ids.add(task_id)
-            records.append(
-                {
-                    "category": category,
-                    "category_key": category_key,
-                    "department": department,
-                    "location": location,
-                    "location_id": location_id,
-                    "floor": str(point.get("floor", "") or ""),
-                    "x": _to_float(point.get("x"), 0.0),
-                    "y": _to_float(point.get("y"), 0.0),
-                    "has_point": location_id in location_points,
-                    "day": day,
-                    "window": window,
-                    "_start_value": ready_start,
-                    "_end_value": ready_end,
-                    "payload": payload,
-                    "person_id": person_id,
-                    "person": person_id,
-                    "task_id": task_id,
-                }
-            )
-
-    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
-    completed = df[
-        event_text.str.fullmatch(
-            r"task_complete|multi_stop_task_complete", case=False, na=False
-        )
-        & df["task_id"].notna()
-    ].copy()
-    returns = df[
-        event_text.str.fullmatch(r"return_task_generated", case=False, na=False)
-        & df["task_id"].notna()
-    ].copy()
+            record = {
+                "category": category,
+                "category_key": category_key,
+                "department": department,
+                "location": location,
+                "location_id": location_id,
+                "floor": str(point.get("floor", "") or ""),
+                "x": _to_float(point.get("x"), 0.0),
+                "y": _to_float(point.get("y"), 0.0),
+                "has_point": location_id in location_points,
+                "day": day,
+                "window": window,
+                "_start_value": ready_start,
+                "_end_value": ready_end,
+                "duration_s": duration_s,
+                "payload": payload,
+                "person_id": person_id,
+                "person": person_id,
+                "person_number": person_number,
+                "shift_team": shift_team,
+                "task_id": task_id,
+            }
+            staff_hours = _record_staff_hours(metadata, category_key, department_id)
+            if (
+                category_key == "linen"
+                and staff_hours
+                and not _within_staff_hours(
+                    ready_start, ready_end, staff_hours, ctx.has_datetime
+                )
+            ):
+                ward_collection_rows.append(
+                    {
+                        "date": _event_date_label(ready_start, ctx.has_datetime),
+                        "day": day,
+                        "delivery_time": _event_time_hhmm(ready_start, ctx.has_datetime),
+                        "handling_finish": _event_time_hhmm(ready_end, ctx.has_datetime),
+                        "department": department,
+                        "location": location,
+                        "payload": payload,
+                        "task_id": task_id,
+                        "linen_staff_hours": f"{staff_hours[0]}-{staff_hours[1]}",
+                        "collection_by": "Ward staff",
+                        "reason": _ward_collection_reason(
+                            ready_start, ready_end, staff_hours, ctx.has_datetime
+                        ),
+                    }
+                )
+                continue
+            records.append(record)
 
     # Supplement explicit staff rows with the legacy completed-to-return window
     # model on a per-task basis. This keeps older CSVs useful and, unlike the old
@@ -2614,45 +3041,80 @@ def build_payload_handling_timetable(
             if not day:
                 continue
 
-            duration_s = time_delta_seconds(ready_start, ready_end, ctx.has_datetime) or 0.0
+            duration_s = _handling_duration_seconds(
+                complete_row,
+                metadata,
+                category_key,
+                department_id,
+                ready_start=ready_start,
+                return_time=ready_end,
+            )
+            ready_end = add_seconds_to_event_time(
+                ready_start, duration_s, ctx.has_datetime
+            )
             window = (
                 f"{_event_time_hhmm(ready_start, ctx.has_datetime)}-"
                 f"{_event_time_hhmm(ready_end, ctx.has_datetime)}"
             )
-            scheduled_window = _scheduled_window_for_record(
-                ready_start,
-                duration_s,
-                category_schedule_times.get(category_key, []),
-                ctx.has_datetime,
-            )
-            if scheduled_window:
-                window = scheduled_window
-            records.append(
-                {
-                    "category": category,
-                    "category_key": category_key,
-                    "department": department,
-                    "location": location,
-                    "location_id": location_id,
-                    "floor": str(point.get("floor", "") or ""),
-                    "x": _to_float(point.get("x"), 0.0),
-                    "y": _to_float(point.get("y"), 0.0),
-                    "has_point": location_id in location_points,
-                    "day": day,
-                    "window": window,
-                    "_start_value": ready_start,
-                    "_end_value": ready_end,
-                    "payload": payload,
-                    "person_id": "",
-                    "person": "",
-                    "task_id": source_id,
-                }
-            )
+            shift_source = complete_row if _clean_optional_text(complete_row.get("staff_shift_team", "")) else return_row
+            shift_team = _staff_shift_team_from_row(shift_source, "")
+
+            record = {
+                "category": category,
+                "category_key": category_key,
+                "department": department,
+                "location": location,
+                "location_id": location_id,
+                "floor": str(point.get("floor", "") or ""),
+                "x": _to_float(point.get("x"), 0.0),
+                "y": _to_float(point.get("y"), 0.0),
+                "has_point": location_id in location_points,
+                "day": day,
+                "window": window,
+                "_start_value": ready_start,
+                "_end_value": ready_end,
+                "duration_s": duration_s,
+                "payload": payload,
+                "person_id": "",
+                "person": "",
+                "person_number": None,
+                "shift_team": shift_team,
+                "task_id": source_id,
+            }
+            staff_hours = _record_staff_hours(metadata, category_key, department_id)
+            if (
+                category_key == "linen"
+                and staff_hours
+                and not _within_staff_hours(
+                    ready_start, ready_end, staff_hours, ctx.has_datetime
+                )
+            ):
+                ward_collection_rows.append(
+                    {
+                        "date": _event_date_label(ready_start, ctx.has_datetime),
+                        "day": day,
+                        "delivery_time": _event_time_hhmm(ready_start, ctx.has_datetime),
+                        "handling_finish": _event_time_hhmm(ready_end, ctx.has_datetime),
+                        "department": department,
+                        "location": location,
+                        "payload": payload,
+                        "task_id": source_id,
+                        "linen_staff_hours": f"{staff_hours[0]}-{staff_hours[1]}",
+                        "collection_by": "Ward staff",
+                        "reason": _ward_collection_reason(
+                            ready_start, ready_end, staff_hours, ctx.has_datetime
+                        ),
+                    }
+                )
+                continue
+            records.append(record)
 
     if not records:
         return pd.DataFrame(columns=columns)
 
-    synthetic_available: Dict[Tuple[str, str], List[float]] = {}
+    synthetic_available: Dict[Tuple[str, str, str], List[float]] = {}
+    unnamed_explicit_people: Dict[Tuple[str, str, str], int] = {}
+    next_explicit_number: Dict[Tuple[str, str], int] = {}
     for record in sorted(
         records,
         key=lambda item: (
@@ -2664,13 +3126,32 @@ def build_payload_handling_timetable(
             natural_key(item.get("task_id", "")),
         ),
     ):
-        if record.get("person"):
-            record["batch"] = record.get("person") or record.get("category") or "Staff"
-            continue
-
         category = str(record.get("category", "") or "Staff")
         category_key = str(record.get("category_key", "") or category)
-        key = (category, category_key)
+        shift_team = str(record.get("shift_team", "") or "").strip().upper()
+
+        if record.get("person"):
+            person_number = record.get("person_number")
+            if person_number is None:
+                raw_person_id = str(record.get("person", "") or "").strip()
+                person_key = (category_key, shift_team, raw_person_id)
+                if person_key not in unnamed_explicit_people:
+                    number_key = (category_key, shift_team)
+                    next_number = next_explicit_number.get(number_key, 1)
+                    unnamed_explicit_people[person_key] = next_number
+                    next_explicit_number[number_key] = next_number + 1
+                person_number = unnamed_explicit_people[person_key]
+            else:
+                number_key = (category_key, shift_team)
+                next_explicit_number[number_key] = max(
+                    next_explicit_number.get(number_key, 1), int(person_number) + 1
+                )
+            record["batch"] = _friendly_staff_name(
+                category, shift_team, int(person_number)
+            )
+            continue
+
+        key = (category, category_key, shift_team)
         start_value = event_time_to_float(record.get("_start_value"), ctx.has_datetime)
         end_value = event_time_to_float(record.get("_end_value"), ctx.has_datetime)
         lanes = synthetic_available.setdefault(key, [])
@@ -2683,7 +3164,9 @@ def build_payload_handling_timetable(
             lanes.append(float("-inf"))
             lane_index = len(lanes) - 1
         lanes[lane_index] = max(end_value, start_value)
-        record["batch"] = f"{category} person {lane_index + 1}"
+        record["batch"] = _friendly_staff_name(
+            category, shift_team, lane_index + 1
+        )
 
     cells: Dict[Tuple[str, str, str], Dict[str, List[dict]]] = {}
     for record in records:
@@ -2766,6 +3249,36 @@ def build_staff_handling_summary(
     )
     staff_rows["_staff_category"] = [pair[0] for pair in category_pairs]
     staff_rows["_staff_category_key"] = [pair[1] for pair in category_pairs]
+    staff_rows["_report_handling_duration_s"] = staff_rows.apply(
+        lambda row: _handling_duration_seconds(
+            row,
+            metadata,
+            row.get("_staff_category_key", ""),
+            _clean_optional_text(row.get("department_id", "")),
+            ready_start=row.get(ctx.time_col),
+        ),
+        axis=1,
+    )
+
+    def include_staff_row(row: pd.Series) -> bool:
+        category_key = str(row.get("_staff_category_key", "") or "").strip().lower()
+        if category_key != "linen":
+            return True
+        department_id = _clean_optional_text(row.get("department_id", ""))
+        hours = _record_staff_hours(metadata, category_key, department_id)
+        if not hours:
+            return True
+        start_value = row.get(ctx.time_col)
+        end_value = add_seconds_to_event_time(
+            start_value,
+            _to_float(row.get("_report_handling_duration_s"), 0.0),
+            ctx.has_datetime,
+        )
+        return _within_staff_hours(start_value, end_value, hours, ctx.has_datetime)
+
+    staff_rows = staff_rows[staff_rows.apply(include_staff_row, axis=1)].copy()
+    if staff_rows.empty:
+        return pd.DataFrame(columns=columns)
 
     rows = []
     for category_key, group in staff_rows.groupby("_staff_category_key", sort=True):
@@ -2851,17 +3364,8 @@ def build_staff_handling_summary(
             )
         elif shift_multiplier > 1.0:
             initial_people = int(math.ceil(initial_people * shift_multiplier))
-        duration_values = (
-            group["duration_sec"]
-            if "duration_sec" in group.columns
-            else (
-                group["_duration_s"]
-                if "_duration_s" in group.columns
-                else pd.Series(0.0, index=group.index, dtype=float)
-            )
-        )
         duration = pd.to_numeric(
-            duration_values,
+            group.get("_report_handling_duration_s", 0.0),
             errors="coerce",
         ).fillna(0.0)
         rows.append(
@@ -2934,9 +3438,31 @@ def analyse(
     task_generation_summary = build_generated_task_category_summary(
         df, ctx, task_generation_metadata
     )
+    ward_collection_rows: List[dict] = []
     payload_handling_timetable = build_payload_handling_timetable(
-        df, ctx, task_generation_metadata
+        df, ctx, task_generation_metadata, ward_collection_rows
     )
+    linen_ward_collection = pd.DataFrame(
+        ward_collection_rows,
+        columns=[
+            "date",
+            "day",
+            "delivery_time",
+            "handling_finish",
+            "department",
+            "location",
+            "payload",
+            "task_id",
+            "linen_staff_hours",
+            "collection_by",
+            "reason",
+        ],
+    )
+    if not linen_ward_collection.empty:
+        linen_ward_collection = linen_ward_collection.sort_values(
+            ["date", "delivery_time", "location", "task_id"]
+        ).reset_index(drop=True)
+    staff_hours_summary = build_staff_hours_summary(task_generation_metadata)
     staff_handling_summary = build_staff_handling_summary(
         df, ctx, task_generation_metadata
     )
@@ -3852,6 +4378,8 @@ def analyse(
         "summary": summary,
         "task_generation_summary": task_generation_summary,
         "payload_handling_timetable": payload_handling_timetable,
+        "linen_ward_collection": linen_ward_collection,
+        "staff_hours_summary": staff_hours_summary,
         "staff_handling_summary": staff_handling_summary,
         "amr_summary": amr_summary,
         "amr_route_summary": amr_route_summary,
