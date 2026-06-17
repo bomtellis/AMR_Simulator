@@ -52,8 +52,8 @@ STAFF_MOVEMENT_POLICIES = [
 ]
 
 STAFF_SHIFT_PATTERNS = [
-    ("No shift pattern", "none"),
-    ("4 on / 4 off, 12-hour days", "four_on_four_off_12h"),
+    ("Global fixed working hours", "none"),
+    ("Global 4 on / 4 off, 12-hour days", "four_on_four_off_12h"),
 ]
 
 
@@ -216,6 +216,197 @@ class ScheduledTimesDialog(QDialog):
 
     def accept(self):
         self.result = sorted(set(self.times))
+        super().accept()
+
+
+class GlobalStaffConfigDialog(QDialog):
+    """Editor for staff hours shared by all staff-assisted task generators."""
+
+    DAYS = [
+        ("mon", "Mon"),
+        ("tue", "Tue"),
+        ("wed", "Wed"),
+        ("thu", "Thu"),
+        ("fri", "Fri"),
+        ("sat", "Sat"),
+        ("sun", "Sun"),
+    ]
+
+    def __init__(self, parent, config=None):
+        super().__init__(parent)
+        self.setWindowTitle("Global staff configuration")
+        self.resize(620, 520)
+        self.result = None
+        self.config = self._normalise(config)
+
+        layout = QVBoxLayout(self)
+        intro = QLabel(
+            "These working patterns are shared by every task-generation category "
+            "that requires staff. Timeframe tasks can be spread across the "
+            "selected pattern's working window instead of all being released at "
+            "the beginning of the day."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.enabled_check = QCheckBox("Enable global staff working patterns")
+        self.enabled_check.setChecked(bool(self.config.get("enabled", True)))
+        layout.addWidget(self.enabled_check)
+
+        self.spread_check = QCheckBox(
+            "Evenly space staff-assisted timeframe tasks across working hours"
+        )
+        self.spread_check.setChecked(
+            bool(self.config.get("spread_timeframe_tasks", True))
+        )
+        layout.addWidget(self.spread_check)
+
+        patterns = self.config.get("shift_patterns", {}) or {}
+        fixed = patterns.get("none", {}) or {}
+        rotating = patterns.get("four_on_four_off_12h", {}) or {}
+
+        layout.addWidget(QLabel("Fixed working-hours pattern"))
+        fixed_form = QFormLayout()
+        layout.addLayout(fixed_form)
+        self.fixed_start_edit = self._time_edit(fixed.get("start_time", "09:00"))
+        self.fixed_end_edit = self._time_edit(fixed.get("end_time", "17:00"))
+        fixed_form.addRow("Start", self.fixed_start_edit)
+        fixed_form.addRow("Finish", self.fixed_end_edit)
+        self.fixed_day_checks, fixed_days_widget = self._day_widget(
+            fixed.get("days_active", ["mon", "tue", "wed", "thu", "fri"])
+        )
+        fixed_form.addRow("Working days", fixed_days_widget)
+
+        layout.addSpacing(8)
+        layout.addWidget(QLabel("4 on / 4 off, 12-hour pattern"))
+        rotating_form = QFormLayout()
+        layout.addLayout(rotating_form)
+        self.rotating_start_edit = self._time_edit(
+            rotating.get("start_time", "07:00")
+        )
+        self.rotating_end_edit = self._time_edit(
+            rotating.get("end_time", "19:00")
+        )
+        rotating_form.addRow("Shift start", self.rotating_start_edit)
+        rotating_form.addRow("Shift finish", self.rotating_end_edit)
+        cycle_label = QLabel(
+            "Two alternating teams are rostered. Team A and Team B swap every "
+            "four days from the simulation start date."
+        )
+        cycle_label.setWordWrap(True)
+        rotating_form.addRow("Cycle", cycle_label)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    @staticmethod
+    def _normalise(config):
+        source = config if isinstance(config, dict) else {}
+        patterns = source.get("shift_patterns", {})
+        if not isinstance(patterns, dict):
+            patterns = {}
+        fixed = dict(patterns.get("none", {}) or {})
+        rotating = dict(patterns.get("four_on_four_off_12h", {}) or {})
+        fixed.setdefault("display_name", "Fixed working hours")
+        fixed.setdefault("start_time", "09:00")
+        fixed.setdefault("end_time", "17:00")
+        fixed.setdefault("days_active", ["mon", "tue", "wed", "thu", "fri"])
+        fixed["work_days"] = 0
+        fixed["rest_days"] = 0
+        rotating.setdefault("display_name", "4 on / 4 off, 12-hour days")
+        rotating.setdefault("start_time", "07:00")
+        rotating.setdefault("end_time", "19:00")
+        rotating.setdefault(
+            "days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        )
+        rotating["work_days"] = 4
+        rotating["rest_days"] = 4
+        return {
+            "enabled": bool(source.get("enabled", True)),
+            "spread_timeframe_tasks": bool(
+                source.get(
+                    "spread_timeframe_tasks",
+                    source.get("space_timeframe_tasks", True),
+                )
+            ),
+            "shift_patterns": {
+                "none": fixed,
+                "four_on_four_off_12h": rotating,
+            },
+        }
+
+    @staticmethod
+    def _time_edit(value):
+        edit = QTimeEdit()
+        edit.setDisplayFormat("HH:mm")
+        parsed = QTime.fromString(str(value or ""), "HH:mm")
+        if not parsed.isValid():
+            parsed = QTime(9, 0)
+        edit.setTime(parsed)
+        return edit
+
+    def _day_widget(self, active_days):
+        widget = QWidget()
+        row = QHBoxLayout(widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        active = {str(x).strip().lower()[:3] for x in (active_days or [])}
+        checks = {}
+        for key, label in self.DAYS:
+            check = QCheckBox(label)
+            check.setChecked(key in active)
+            checks[key] = check
+            row.addWidget(check)
+        row.addStretch(1)
+        return checks, widget
+
+    def accept(self):
+        fixed_days = [
+            key for key, _label in self.DAYS if self.fixed_day_checks[key].isChecked()
+        ]
+        if self.enabled_check.isChecked() and not fixed_days:
+            QMessageBox.critical(
+                self, "Invalid staff configuration", "Select at least one fixed-hours working day."
+            )
+            return
+
+        fixed_start = self.fixed_start_edit.time().toString("HH:mm")
+        fixed_end = self.fixed_end_edit.time().toString("HH:mm")
+        rotating_start = self.rotating_start_edit.time().toString("HH:mm")
+        rotating_end = self.rotating_end_edit.time().toString("HH:mm")
+        if fixed_start == fixed_end or rotating_start == rotating_end:
+            QMessageBox.critical(
+                self,
+                "Invalid staff configuration",
+                "A staff shift start and finish time cannot be the same.",
+            )
+            return
+
+        self.result = {
+            "enabled": self.enabled_check.isChecked(),
+            "spread_timeframe_tasks": self.spread_check.isChecked(),
+            "shift_patterns": {
+                "none": {
+                    "display_name": "Fixed working hours",
+                    "start_time": fixed_start,
+                    "end_time": fixed_end,
+                    "days_active": fixed_days,
+                    "work_days": 0,
+                    "rest_days": 0,
+                },
+                "four_on_four_off_12h": {
+                    "display_name": "4 on / 4 off, 12-hour days",
+                    "start_time": rotating_start,
+                    "end_time": rotating_end,
+                    "days_active": [
+                        "mon", "tue", "wed", "thu", "fri", "sat", "sun"
+                    ],
+                    "work_days": 4,
+                    "rest_days": 4,
+                },
+            },
+        }
         super().accept()
 
 
@@ -1222,12 +1413,25 @@ class TaskGenerationSettingsDialog(QDialog):
         self.selected_dropoffs = []
         self._loading = False
         self.config = self._normalise_config(task_generation)
+        self.staff_config = json.loads(
+            json.dumps(self.config.get("staff_config", {}))
+        )
 
         layout = QVBoxLayout(self)
 
         self.global_enabled = QCheckBox("Enable automatic task generation")
         self.global_enabled.setChecked(bool(self.config.get("enabled", True)))
         layout.addWidget(self.global_enabled)
+
+        global_staff_row = QHBoxLayout()
+        self.global_staff_summary = QLabel()
+        self.global_staff_summary.setWordWrap(True)
+        edit_global_staff_btn = QPushButton("Global staff configuration...")
+        edit_global_staff_btn.clicked.connect(self.edit_global_staff_config)
+        global_staff_row.addWidget(self.global_staff_summary, 1)
+        global_staff_row.addWidget(edit_global_staff_btn)
+        layout.addLayout(global_staff_row)
+        self._refresh_global_staff_summary()
 
         body = QHBoxLayout()
         layout.addLayout(body, 1)
@@ -1507,8 +1711,8 @@ class TaskGenerationSettingsDialog(QDialog):
 
         help_label = QLabel(
             "Schedule times are comma-separated HH:MM values. "
-            "Timeframe mode releases the configured payload multiple at the start of each active-day window "
-            "and gives each task a target duration equal to the remaining window, so the payloads are due before the timeframe end. "
+            "Timeframe mode releases non-staff tasks at the start of the active-day window. "
+            "Staff-assisted timeframe tasks are evenly spaced across the applicable global staff working hours and remain due before the effective timeframe end. "
             "Drop-off destinations can contain multiple locations; the first is also saved as "
             "dropoff_location for compatibility with existing generators. "
             "Configure multiple can be used more than once for the same category and department; "
@@ -2663,9 +2867,52 @@ class TaskGenerationSettingsDialog(QDialog):
             "notes": "",
         }
 
+    def _default_global_staff_config(self):
+        return GlobalStaffConfigDialog._normalise({})
+
+    def _normalise_global_staff_config(self, value):
+        return GlobalStaffConfigDialog._normalise(value)
+
+    def edit_global_staff_config(self):
+        dialog = GlobalStaffConfigDialog(self, self.staff_config)
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.staff_config = self._normalise_global_staff_config(dialog.result)
+            self.config["staff_config"] = json.loads(json.dumps(self.staff_config))
+            self._refresh_global_staff_summary()
+
+    def _refresh_global_staff_summary(self):
+        cfg = self._normalise_global_staff_config(
+            getattr(self, "staff_config", self._default_global_staff_config())
+        )
+        if not cfg.get("enabled", True):
+            self.global_staff_summary.setText("Global staff patterns disabled")
+            return
+        patterns = cfg.get("shift_patterns", {}) or {}
+        fixed = patterns.get("none", {}) or {}
+        rotating = patterns.get("four_on_four_off_12h", {}) or {}
+        fixed_days = ", ".join(
+            str(x).title() for x in fixed.get("days_active", [])
+        )
+        spacing = (
+            "timeframe tasks evenly spaced"
+            if cfg.get("spread_timeframe_tasks", True)
+            else "timeframe task spacing disabled"
+        )
+        self.global_staff_summary.setText(
+            f"Staff: {fixed.get('start_time', '09:00')}-{fixed.get('end_time', '17:00')} "
+            f"({fixed_days}); 4-on/4-off {rotating.get('start_time', '07:00')}-"
+            f"{rotating.get('end_time', '19:00')}; {spacing}."
+        )
+
     def _normalise_config(self, task_generation):
         source = dict(task_generation or {})
-        result = {"enabled": bool(source.get("enabled", True)), "categories": {}}
+        result = {
+            "enabled": bool(source.get("enabled", True)),
+            "staff_config": self._normalise_global_staff_config(
+                source.get("staff_config", source.get("staff", {}))
+            ),
+            "categories": {},
+        }
         incoming_categories = (
             source.get("categories", {})
             if isinstance(source.get("categories", {}), dict)
@@ -2710,6 +2957,7 @@ class TaskGenerationSettingsDialog(QDialog):
                 item["staff_initial_count"] = 1
             item.setdefault("staff_resource_name", "")
             self._normalise_staff_movement_policy(item)
+            self._normalise_staff_shift_pattern(item)
             self._normalise_category_dropoffs(item)
             result["categories"][key] = item
 
@@ -3262,6 +3510,9 @@ class TaskGenerationSettingsDialog(QDialog):
         try:
             self._store_current_category()
             self.config["enabled"] = self.global_enabled.isChecked()
+            self.config["staff_config"] = self._normalise_global_staff_config(
+                self.staff_config
+            )
             waste = self.config["categories"].get("waste", {})
             self.config["department_waste"] = {
                 "enabled": bool(waste.get("enabled", True)),

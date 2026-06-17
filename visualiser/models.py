@@ -152,6 +152,109 @@ def default_task_generation_category(label: str) -> dict:
     }
 
 
+def default_staff_task_generation_config() -> dict:
+    """Return global staff working patterns used by staff-assisted generators."""
+    return {
+        "enabled": True,
+        "spread_timeframe_tasks": True,
+        "shift_patterns": {
+            # ``none`` is the existing category value for a non-rotating team.
+            # It now uses these global fixed hours without changing legacy JSON.
+            "none": {
+                "display_name": "Fixed working hours",
+                "start_time": "09:00",
+                "end_time": "17:00",
+                "days_active": ["mon", "tue", "wed", "thu", "fri"],
+                "work_days": 0,
+                "rest_days": 0,
+            },
+            "four_on_four_off_12h": {
+                "display_name": "4 on / 4 off, 12-hour days",
+                "start_time": "07:00",
+                "end_time": "19:00",
+                "days_active": [
+                    "mon",
+                    "tue",
+                    "wed",
+                    "thu",
+                    "fri",
+                    "sat",
+                    "sun",
+                ],
+                "work_days": 4,
+                "rest_days": 4,
+            },
+        },
+    }
+
+
+def normalise_staff_task_generation_config(value: Optional[dict]) -> dict:
+    defaults = default_staff_task_generation_config()
+    incoming = value if isinstance(value, dict) else {}
+    result = deepcopy(defaults)
+    result["enabled"] = bool(incoming.get("enabled", result["enabled"]))
+    result["spread_timeframe_tasks"] = bool(
+        incoming.get(
+            "spread_timeframe_tasks",
+            incoming.get("space_timeframe_tasks", result["spread_timeframe_tasks"]),
+        )
+    )
+
+    incoming_patterns = incoming.get("shift_patterns", {})
+    if not isinstance(incoming_patterns, dict):
+        incoming_patterns = {}
+
+    for key, raw in incoming_patterns.items():
+        if not isinstance(raw, dict):
+            continue
+        pattern_key = str(key or "").strip().lower()
+        if pattern_key in {
+            "4_on_4_off_12h",
+            "four_on_four_off",
+            "four_on_four_off_12_hour",
+        }:
+            pattern_key = "four_on_four_off_12h"
+        if not pattern_key:
+            continue
+        target = result["shift_patterns"].setdefault(pattern_key, {})
+        target.update(raw)
+
+    valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
+    for key, pattern in list(result["shift_patterns"].items()):
+        if not isinstance(pattern, dict):
+            pattern = {}
+            result["shift_patterns"][key] = pattern
+        fallback = defaults["shift_patterns"].get(key, defaults["shift_patterns"]["none"])
+        pattern["display_name"] = str(
+            pattern.get("display_name", fallback.get("display_name", key.title()))
+            or fallback.get("display_name", key.title())
+        ).strip()
+        for field in ("start_time", "end_time"):
+            candidate = str(pattern.get(field, fallback.get(field, "")) or "").strip()
+            if _parse_hhmm_to_minutes(candidate, None) is None:
+                candidate = str(fallback.get(field, "09:00" if field == "start_time" else "17:00"))
+            pattern[field] = candidate
+        days = pattern.get("days_active", fallback.get("days_active", []))
+        if isinstance(days, str):
+            days = [x.strip() for x in days.split(",")]
+        clean_days = []
+        for day in days or []:
+            day_key = str(day or "").strip().lower()[:3]
+            if day_key in valid_days and day_key not in clean_days:
+                clean_days.append(day_key)
+        pattern["days_active"] = clean_days or list(fallback.get("days_active", []))
+        try:
+            pattern["work_days"] = max(0, int(float(pattern.get("work_days", fallback.get("work_days", 0)) or 0)))
+        except Exception:
+            pattern["work_days"] = int(fallback.get("work_days", 0) or 0)
+        try:
+            pattern["rest_days"] = max(0, int(float(pattern.get("rest_days", fallback.get("rest_days", 0)) or 0)))
+        except Exception:
+            pattern["rest_days"] = int(fallback.get("rest_days", 0) or 0)
+
+    return result
+
+
 def default_task_generation_config() -> dict:
     categories = {
         key: default_task_generation_category(label)
@@ -217,6 +320,7 @@ def default_task_generation_config() -> dict:
 
     return {
         "enabled": True,
+        "staff_config": default_staff_task_generation_config(),
         # Legacy compatibility only. Runtime Waste generation is now driven by
         # task_generation.categories.waste plus departments[].waste_streams[].
         "department_waste": {
@@ -233,6 +337,9 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
         return merged
 
     merged["enabled"] = bool(value.get("enabled", merged["enabled"]))
+    merged["staff_config"] = normalise_staff_task_generation_config(
+        value.get("staff_config", value.get("staff", {}))
+    )
 
     if isinstance(value.get("department_waste"), dict):
         merged["department_waste"].update(value.get("department_waste", {}))

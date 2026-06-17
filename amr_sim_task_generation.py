@@ -82,6 +82,7 @@ def _as_bool(value, default: bool = False) -> bool:
         return False
     return bool(default)
 
+
 def _unique_clean(values: Iterable[str]) -> List[str]:
     result: List[str] = []
     seen = set()
@@ -116,6 +117,97 @@ def _timeframe_minutes_from_cfg(cfg: dict) -> Tuple[Optional[int], Optional[int]
     start = _parse_hhmm_to_minutes(cfg.get("timeframe_start"), None)
     end = _parse_hhmm_to_minutes(cfg.get("timeframe_end"), None)
     return start, end
+
+
+def _normalise_staff_shift_pattern(value: str) -> str:
+    pattern = _clean_text(value).lower()
+    if pattern in {
+        "4_on_4_off_12h",
+        "four_on_four_off",
+        "four_on_four_off_12_hour",
+    }:
+        pattern = "four_on_four_off_12h"
+    return pattern if pattern in {"none", "four_on_four_off_12h"} else "none"
+
+
+def _normalise_global_staff_config(value: Optional[dict]) -> dict:
+    source = value if isinstance(value, dict) else {}
+    patterns = source.get("shift_patterns", {})
+    if not isinstance(patterns, dict):
+        patterns = {}
+
+    defaults = {
+        "none": {
+            "display_name": "Fixed working hours",
+            "start_time": "09:00",
+            "end_time": "17:00",
+            "days_active": ["mon", "tue", "wed", "thu", "fri"],
+            "work_days": 0,
+            "rest_days": 0,
+        },
+        "four_on_four_off_12h": {
+            "display_name": "4 on / 4 off, 12-hour days",
+            "start_time": "07:00",
+            "end_time": "19:00",
+            "days_active": DAY_KEYS,
+            "work_days": 4,
+            "rest_days": 4,
+        },
+    }
+
+    clean_patterns: Dict[str, dict] = {}
+    for pattern_key, fallback in defaults.items():
+        incoming = patterns.get(pattern_key, {})
+        incoming = incoming if isinstance(incoming, dict) else {}
+        start_time = _clean_text(incoming.get("start_time", fallback["start_time"]))
+        end_time = _clean_text(incoming.get("end_time", fallback["end_time"]))
+        if _parse_hhmm_to_minutes(start_time, None) is None:
+            start_time = fallback["start_time"]
+        if _parse_hhmm_to_minutes(end_time, None) is None:
+            end_time = fallback["end_time"]
+        days = incoming.get("days_active", fallback["days_active"])
+        if isinstance(days, str):
+            days = [x.strip() for x in days.split(",")]
+        clean_days = []
+        for day in days or []:
+            day_key = _clean_text(day).lower()[:3]
+            if day_key in DAY_KEYS and day_key not in clean_days:
+                clean_days.append(day_key)
+        clean_patterns[pattern_key] = {
+            "display_name": _clean_text(
+                incoming.get("display_name", fallback["display_name"])
+            )
+            or fallback["display_name"],
+            "start_time": start_time,
+            "end_time": end_time,
+            "days_active": clean_days or list(fallback["days_active"]),
+            "work_days": max(
+                0,
+                _as_int(
+                    incoming.get("work_days", fallback["work_days"]),
+                    fallback["work_days"],
+                ),
+            ),
+            "rest_days": max(
+                0,
+                _as_int(
+                    incoming.get("rest_days", fallback["rest_days"]),
+                    fallback["rest_days"],
+                ),
+            ),
+        }
+
+    return {
+        "enabled": _as_bool(source.get("enabled", True), True),
+        "spread_timeframe_tasks": _as_bool(
+            source.get(
+                "spread_timeframe_tasks",
+                source.get("space_timeframe_tasks", True),
+            ),
+            True,
+        ),
+        "shift_patterns": clean_patterns,
+    }
 
 
 def _day_key_for_datetime(value: datetime) -> str:
@@ -354,6 +446,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         waste_streams: Optional[Dict[str, dict]] = None,
     ):
         self.task_generation = task_generation or {}
+        self.staff_config = _normalise_global_staff_config(
+            self.task_generation.get(
+                "staff_config", self.task_generation.get("staff", {})
+            )
+        )
         self.departments = list(departments or [])
         self.locations = locations or {}
         self.payloads = payloads or {}
@@ -365,6 +462,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self.runtime: Dict[str, dict] = {}
         self.item_runtime: Dict[str, dict] = {}
         self.instances = self._build_instances()
+        self._timeframe_allocation_cache: Dict[tuple, Tuple[int, int]] = {}
 
     def _next_task_id(self, category_key: str, department_id: str = "") -> str:
         self.task_counter += 1
@@ -734,7 +832,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 if isinstance(category.get("departments", {}), dict)
                 else {}
             )
-            groups, grouped_department_ids = self._grouped_department_overrides(category)
+            groups, grouped_department_ids = self._grouped_department_overrides(
+                category
+            )
             departments_by_id = {
                 self._department_id(dept): dept
                 for dept in self.departments
@@ -801,6 +901,192 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             and payload in self.payloads
         )
 
+    def _timeframe_group_key(self, instance: dict) -> tuple:
+        cfg = instance.get("cfg", {}) or {}
+        return (
+            _clean_text(instance.get("category_key", "")).lower(),
+            _clean_text(cfg.get("staff_resource_name", "")).lower(),
+            _normalise_staff_shift_pattern(cfg.get("staff_shift_pattern", "none")),
+            _clean_text(cfg.get("timeframe_start", "")),
+            _clean_text(cfg.get("timeframe_end", "")),
+        )
+
+    def _timeframe_instance_task_count(self, instance: dict) -> int:
+        cfg = instance.get("cfg", {}) or {}
+        multiple = max(
+            1,
+            _as_int(
+                cfg.get("timeframe_payload_multiple", cfg.get("payload_multiple", 1)),
+                1,
+            ),
+        )
+        payload_name = _clean_text(cfg.get("payload", ""))
+        return sum(
+            1
+            for index in range(multiple)
+            for pickup, dropoff in self._pick_pairs(instance, index)
+            if self._valid_locations_and_payload(pickup, dropoff, payload_name)
+        )
+
+    def _instance_has_active_day(self, instance: dict, base_day: datetime) -> bool:
+        cfg = instance.get("cfg", {}) or {}
+        if not _as_bool(cfg.get("enabled", False), False):
+            return False
+        active_days = cfg.get("days_active", []) or []
+        if active_days:
+            allowed = {
+                _clean_text(x).lower()[:3] for x in active_days if _clean_text(x)
+            }
+            if _day_key_for_datetime(base_day) not in allowed:
+                return False
+        if _as_bool(cfg.get("run_every_fortnight", False), False):
+            week_index = max(
+                0, (base_day.date() - self.clock.start_datetime.date()).days // 7
+            )
+            if week_index % 2 != 0:
+                return False
+        dept = self._instance_department(instance)
+        if dept is not None and not _department_operating_periods_for_date(
+            dept, base_day
+        ):
+            return False
+        return True
+
+    def _timeframe_group_allocation(
+        self, instance: dict, base_day: datetime
+    ) -> Tuple[int, int]:
+        group_key = self._timeframe_group_key(instance)
+        date_key = base_day.date().isoformat()
+        cache_key = (group_key, date_key, instance.get("key", ""))
+        cached = self._timeframe_allocation_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        members = [
+            item
+            for item in self.instances
+            if self._timeframe_group_key(item) == group_key
+            and _clean_text(
+                (item.get("cfg", {}) or {}).get("generation_mode", "scheduled")
+            )
+            in TIMEFRAME_MODES
+            and _as_bool(
+                (item.get("cfg", {}) or {}).get("requires_staff", False), False
+            )
+            and self._instance_has_active_day(item, base_day)
+        ]
+        members.sort(key=lambda item: _clean_text(item.get("key", "")))
+
+        offset = 0
+        total = sum(self._timeframe_instance_task_count(item) for item in members)
+        total = max(1, total)
+        for item in members:
+            count = self._timeframe_instance_task_count(item)
+            item_cache_key = (group_key, date_key, item.get("key", ""))
+            self._timeframe_allocation_cache[item_cache_key] = (offset, total)
+            offset += count
+
+        return self._timeframe_allocation_cache.get(cache_key, (0, total))
+
+    def _staff_shift_definition(self, cfg: dict) -> Tuple[str, dict]:
+        pattern_key = _normalise_staff_shift_pattern(
+            cfg.get("staff_shift_pattern", "none")
+        )
+        patterns = self.staff_config.get("shift_patterns", {}) or {}
+        pattern = patterns.get(pattern_key, patterns.get("none", {})) or {}
+        return pattern_key, pattern
+
+    def _staff_shift_window_for_day(
+        self, cfg: dict, base_day: datetime
+    ) -> Optional[Tuple[datetime, datetime]]:
+        if not _as_bool(cfg.get("requires_staff", False), False):
+            return None
+        if not _as_bool(self.staff_config.get("enabled", True), True):
+            return None
+
+        _pattern_key, pattern = self._staff_shift_definition(cfg)
+        active_days = {
+            _clean_text(x).lower()[:3]
+            for x in pattern.get("days_active", DAY_KEYS)
+            if _clean_text(x)
+        }
+        if active_days and _day_key_for_datetime(base_day) not in active_days:
+            return None
+
+        start_minutes = _parse_hhmm_to_minutes(pattern.get("start_time"), None)
+        end_minutes = _parse_hhmm_to_minutes(pattern.get("end_time"), None)
+        if start_minutes is None or end_minutes is None:
+            return None
+        if end_minutes <= start_minutes:
+            end_minutes += 24 * 60
+
+        day_start = base_day.replace(hour=0, minute=0, second=0, microsecond=0)
+        return (
+            day_start + timedelta(minutes=start_minutes),
+            day_start + timedelta(minutes=end_minutes),
+        )
+
+    def _intersect_with_department_hours(
+        self, instance: dict, start_dt: datetime, end_dt: datetime
+    ) -> Optional[Tuple[datetime, datetime]]:
+        dept = self._instance_department(instance)
+        if dept is None:
+            return start_dt, end_dt
+
+        candidate_periods: List[Tuple[datetime, datetime]] = []
+        cursor = (start_dt - timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        final_day = end_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        while cursor <= final_day:
+            candidate_periods.extend(
+                _department_operating_periods_for_date(dept, cursor)
+            )
+            cursor += timedelta(days=1)
+
+        overlaps = []
+        for period_start, period_end in candidate_periods:
+            overlap_start = max(start_dt, period_start)
+            overlap_end = min(end_dt, period_end)
+            if overlap_end > overlap_start:
+                overlaps.append((overlap_start, overlap_end))
+        if not overlaps:
+            return None
+        return max(overlaps, key=lambda pair: (pair[1] - pair[0]).total_seconds())
+
+    def _timeframe_work_window(
+        self,
+        instance: dict,
+        base_day: datetime,
+        timeframe_start: datetime,
+        timeframe_end: datetime,
+    ) -> Tuple[datetime, datetime, bool, bool]:
+        cfg = instance.get("cfg", {}) or {}
+        staff_spread_enabled = bool(
+            _as_bool(cfg.get("requires_staff", False), False)
+            and _as_bool(self.staff_config.get("enabled", True), True)
+            and _as_bool(self.staff_config.get("spread_timeframe_tasks", True), True)
+        )
+        if not staff_spread_enabled:
+            return timeframe_start, timeframe_end, False, False
+
+        shift_window = self._staff_shift_window_for_day(cfg, base_day)
+        if shift_window is None:
+            return timeframe_start, timeframe_end, False, True
+
+        shift_start, shift_end = shift_window
+        overlap_start = max(timeframe_start, shift_start)
+        overlap_end = min(timeframe_end, shift_end)
+        if overlap_end <= overlap_start:
+            return timeframe_start, timeframe_end, False, True
+
+        department_overlap = self._intersect_with_department_hours(
+            instance, overlap_start, overlap_end
+        )
+        if department_overlap is None:
+            return timeframe_start, timeframe_end, False, True
+        return department_overlap[0], department_overlap[1], True, False
+
     def _base_task(
         self,
         instance: dict,
@@ -841,9 +1127,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             waste_volume_m3=_as_float(cfg.get("waste_volume_m3", 0.0), 0.0),
             container_type=payload_name,
             requires_staff=_as_bool(cfg.get("requires_staff", False), False),
-            staff_initial_count=max(
-                1, _as_int(cfg.get("staff_initial_count", 1), 1)
-            ),
+            staff_initial_count=max(1, _as_int(cfg.get("staff_initial_count", 1), 1)),
             staff_resource_name=_clean_text(cfg.get("staff_resource_name", "")),
             staff_category_key=category_key,
             staff_movement_policy=_clean_text(
@@ -853,6 +1137,17 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             staff_shift_pattern=_clean_text(cfg.get("staff_shift_pattern", "none"))
             or "none",
         )
+        if bool(getattr(task, "requires_staff", False)):
+            pattern_key, pattern = self._staff_shift_definition(cfg)
+            task.staff_shift_pattern = pattern_key
+            task.staff_shift_start_time = _clean_text(pattern.get("start_time", ""))
+            task.staff_shift_end_time = _clean_text(pattern.get("end_time", ""))
+            task.staff_shift_days_active = list(pattern.get("days_active", []) or [])
+            task.staff_shift_work_days = max(0, _as_int(pattern.get("work_days", 0), 0))
+            task.staff_shift_rest_days = max(0, _as_int(pattern.get("rest_days", 0), 0))
+            task.staff_timeframe_spacing_enabled = _as_bool(
+                self.staff_config.get("spread_timeframe_tasks", True), True
+            )
         if bool(cfg.get("return_enabled", False)):
             return_payload = _clean_text(cfg.get("return_payload", ""))
             if return_payload in self.payloads:
@@ -976,7 +1271,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             )
         ]
 
-    def _pick_pairs(self, instance: dict, occurrence_index: int = 0) -> List[Tuple[str, str]]:
+    def _pick_pairs(
+        self, instance: dict, occurrence_index: int = 0
+    ) -> List[Tuple[str, str]]:
         pickups = [
             x for x in instance.get("pickup_locations", []) if x in self.locations
         ]
@@ -1013,7 +1310,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 "contributors": {},
                 "sporadic_accumulator": {},
                 "volume_event_accumulator": {},
-                "outstanding_collection_task_ids": set(),
             },
         )
 
@@ -1030,59 +1326,28 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             return []
 
         runtime = self._runtime_for_volume_key(instance)
-        outstanding = runtime.setdefault("outstanding_collection_task_ids", set())
-        physical_container_cycle = self._is_waste_instance(instance)
-
-        # A shared/seeded waste container is one physical object.  Continue to
-        # accumulate all contributing department volume while it is away, but do
-        # not create another collection until its outbound-and-return cycle ends.
-        if physical_container_cycle and outstanding:
-            return []
-
         records: List[GeneratedTaskRecord] = []
         while _as_float(runtime.get("volume", 0.0), 0.0) >= threshold_volume:
-            created_task: Optional[Task] = None
-            created_records: List[GeneratedTaskRecord] = []
+            runtime["volume"] = (
+                _as_float(runtime.get("volume", 0.0), 0.0) - threshold_volume
+            )
             for pickup, dropoff in self._pick_pairs(instance):
                 task = self._base_task(
                     instance, pickup, dropoff, payload_name, release_time, "threshold"
                 )
-                if task is None:
-                    continue
-
-                # This is the amount being collected from the bin, not the
-                # individual fill-event volume.
-                task.generated_volume_m3 = threshold_volume
-                task.waste_volume_m3 = threshold_volume
-                task.generator_volume_key = instance.get(
-                    "volume_key", instance["key"]
-                )
-                task.generator_threshold_volume_m3 = threshold_volume
-                task.generator_collection_task_id = task.id
-                task.generator_waits_for_return = bool(
-                    physical_container_cycle
-                    and getattr(task, "return_enabled", False)
-                )
-                created_task = task
-                created_records = self._records_for_outbound(task, instance, details)
-                if created_records:
-                    break
-
-            if created_task is None or not created_records:
-                break
-
-            runtime["volume"] = max(
-                0.0, _as_float(runtime.get("volume", 0.0), 0.0) - threshold_volume
-            )
-            records.extend(created_records)
-
-            if physical_container_cycle:
-                outstanding.add(created_task.id)
-                break
-
+                if task is not None:
+                    # This is the amount being collected from the bin, not the
+                    # individual fill-event volume.  Using volume_per_event_m3
+                    # here made threshold collections look like nearly empty bin
+                    # swaps in the CSV/visualiser.
+                    task.generated_volume_m3 = threshold_volume
+                    task.waste_volume_m3 = threshold_volume
+                records.extend(self._records_for_outbound(task, instance, details))
         return records
 
-    def _timeframe_records(self, instance: dict, now: float) -> List[GeneratedTaskRecord]:
+    def _timeframe_records(
+        self, instance: dict, now: float
+    ) -> List[GeneratedTaskRecord]:
         cfg = instance["cfg"]
         mode = _clean_text(cfg.get("generation_mode", "scheduled")) or "scheduled"
         if mode not in TIMEFRAME_MODES:
@@ -1110,41 +1375,77 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         day_start = current_dt.replace(hour=0, minute=0, second=0, microsecond=0)
         records: List[GeneratedTaskRecord] = []
 
-        # Also check the previous day because a timeframe can cross midnight.
+        # Also check the previous day because a timeframe or staff shift can cross
+        # midnight. Each individual payload is emitted only when its own spaced
+        # release time has been reached.
         for day_offset in (-1, 0):
             base_day = day_start + timedelta(days=day_offset)
-            release_dt = base_day + timedelta(minutes=start_minutes)
-            deadline_dt = base_day + timedelta(minutes=end_minutes)
-            original_release_time = (
-                release_dt - self.clock.start_datetime
-            ).total_seconds()
-            release_time = self._adjust_release_to_department_open(
-                instance, original_release_time
+            timeframe_start_dt = base_day + timedelta(minutes=start_minutes)
+            timeframe_end_dt = base_day + timedelta(minutes=end_minutes)
+
+            work_start_dt, work_end_dt, spread_applied, out_of_hours = (
+                self._timeframe_work_window(
+                    instance, base_day, timeframe_start_dt, timeframe_end_dt
+                )
             )
-            if release_time is None or release_time < 0 or release_time > now:
-                continue
-            if not self._instance_is_active(instance, release_time):
+            if work_end_dt <= work_start_dt:
                 continue
 
-            deadline_time = (deadline_dt - self.clock.start_datetime).total_seconds()
-            if deadline_time <= release_time:
+            effective_deadline_dt = work_end_dt if spread_applied else timeframe_end_dt
+            deadline_time = (
+                effective_deadline_dt - self.clock.start_datetime
+            ).total_seconds()
+            if deadline_time < 0:
                 continue
 
             schedule_key_base = (
                 instance.get("schedule_key", instance["key"]),
                 "timeframe",
-                release_dt.date().isoformat(),
+                timeframe_start_dt.date().isoformat(),
                 _clean_text(cfg.get("timeframe_start", "")),
                 _clean_text(cfg.get("timeframe_end", "")),
+                _clean_text(cfg.get("staff_shift_pattern", "none")),
+                work_start_dt.isoformat(),
+                work_end_dt.isoformat(),
             )
 
+            window_seconds = max(0.0, (work_end_dt - work_start_dt).total_seconds())
+            group_offset, group_total = self._timeframe_group_allocation(
+                instance, base_day
+            )
+            local_ordinal = 0
             for index in range(multiple):
-                for pickup, dropoff in self._pick_pairs(instance, index):
+                pairs = self._pick_pairs(instance, index)
+                for pickup, dropoff in pairs:
+                    if spread_applied:
+                        global_ordinal = group_offset + local_ordinal
+                        slot_offset = window_seconds * (
+                            float(global_ordinal) / float(max(1, group_total))
+                        )
+                        candidate_release_dt = work_start_dt + timedelta(
+                            seconds=slot_offset
+                        )
+                    else:
+                        candidate_release_dt = timeframe_start_dt
+                    local_ordinal += 1
+
+                    original_release_time = (
+                        candidate_release_dt - self.clock.start_datetime
+                    ).total_seconds()
+                    release_time = self._adjust_release_to_department_open(
+                        instance, original_release_time
+                    )
+                    if release_time is None or release_time < 0 or release_time > now:
+                        continue
+                    if release_time >= deadline_time:
+                        continue
+                    if not self._instance_is_active(instance, release_time):
+                        continue
+
                     pair_key = (pickup, dropoff)
                     schedule_key = schedule_key_base + pair_key + (index,)
                     if schedule_key in self.scheduled_emitted:
                         continue
-                    self.scheduled_emitted.add(schedule_key)
 
                     task = self._base_task(
                         instance=instance,
@@ -1156,6 +1457,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     )
                     if task is None:
                         continue
+
+                    self.scheduled_emitted.add(schedule_key)
                     task.target_time = max(0.0, deadline_time - release_time)
                     task.quantity = 1
                     task.timeframe_start = _clean_text(cfg.get("timeframe_start", ""))
@@ -1163,13 +1466,31 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     task.timeframe_deadline_time = deadline_time
                     task.timeframe_payload_index = index + 1
                     task.timeframe_payload_multiple = multiple
+                    task.staff_timeframe_spaced = bool(spread_applied)
+                    task.staff_out_of_hours_required = bool(out_of_hours)
+                    task.staff_work_window_start = (
+                        work_start_dt - self.clock.start_datetime
+                    ).total_seconds()
+                    task.staff_work_window_end = deadline_time
+
+                    spacing_note = (
+                        f"spaced across staff hours {work_start_dt.strftime('%H:%M')}-"
+                        f"{work_end_dt.strftime('%H:%M')}"
+                        if spread_applied
+                        else (
+                            "outside configured staff hours"
+                            if out_of_hours
+                            else "released at timeframe start"
+                        )
+                    )
                     records.extend(
                         self._records_for_outbound(
                             task,
                             instance,
                             (
                                 f"Generated timeframe {instance['category_key']} task "
-                                f"{index + 1}/{multiple}; due by {_clean_text(cfg.get('timeframe_end', ''))}"
+                                f"{index + 1}/{multiple}; {spacing_note}; due by "
+                                f"{effective_deadline_dt.strftime('%H:%M')}"
                             ),
                         )
                     )
@@ -1272,11 +1593,28 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             self._instance_department(instance), self.clock.sim_seconds_to_datetime(now)
         )
         if not category_active:
-            runtime = self._runtime_for_volume_key(instance)
+            runtime = self.runtime.setdefault(
+                instance.get("volume_key", instance["key"]),
+                {
+                    "volume": 0.0,
+                    "contributors": {},
+                    "sporadic_accumulator": {},
+                    "volume_event_accumulator": {},
+                },
+            )
             runtime.setdefault("contributors", {})[instance["key"]] = now
             return []
 
-        runtime = self._runtime_for_volume_key(instance)
+        volume_key = instance.get("volume_key", instance["key"])
+        runtime = self.runtime.setdefault(
+            volume_key,
+            {
+                "volume": 0.0,
+                "contributors": {},
+                "sporadic_accumulator": {},
+                "volume_event_accumulator": {},
+            },
+        )
         contributor_key = instance["key"]
         contributors = runtime.setdefault("contributors", {})
         last_time = _as_float(contributors.get(contributor_key, 0.0), 0.0)
@@ -1483,7 +1821,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         if state == "failed":
             # A failed return, or a failure after the physical container was
-            # picked up, leaves the container cycle unresolved.  Keep the group
+            # picked up, leaves the container cycle unresolved. Keep the group
             # blocked rather than generating a second task for the same bin.
             if bool(getattr(task, "is_return_task", False)) or bool(
                 getattr(task, "payload_instance_picked_up", False)
@@ -1794,15 +2132,6 @@ class TaskGenerationManager:
                         override.get("enabled", False)
                     ):
                         return True
-
-            groups = category.get("department_groups", [])
-            if isinstance(groups, list):
-                for group in groups:
-                    if not isinstance(group, dict):
-                        continue
-                    payload = group.get("payload", {})
-                    if isinstance(payload, dict) and bool(payload.get("enabled", False)):
-                        return True
         return False
 
     def _build_generators(self) -> None:
@@ -1878,5 +2207,6 @@ class TaskGenerationManager:
         return generated
 
     def task_state_changed(self, task: Task, state: str) -> None:
+        """Forward task completion/failure state to every runtime generator."""
         for generator in self.generators:
             generator.task_state_changed(task, state)

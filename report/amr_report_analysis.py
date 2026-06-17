@@ -168,6 +168,50 @@ def safe_text(value) -> str:
     return text if text.strip() else "-"
 
 
+NON_PHYSICAL_AMR_IDS = frozenset(
+    {
+        "",
+        "-",
+        "none",
+        "null",
+        "nan",
+        "n/a",
+        "na",
+        "unassigned",
+        "not assigned",
+        "unknown",
+        "system",
+    }
+)
+
+
+def is_physical_amr_id(value) -> bool:
+    """Return True only for a real runtime AMR identifier.
+
+    Generated, pending and staff-handling rows can legitimately have no AMR.
+    Task-level reporting represents those rows with ``-``; that placeholder must
+    never be counted as an observed fleet member.
+    """
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except Exception:
+        pass
+    return str(value).strip().casefold() not in NON_PHYSICAL_AMR_IDS
+
+
+def configured_amr_quantity(amr_parameters: Optional[pd.DataFrame]) -> Optional[int]:
+    """Return the physical fleet quantity from the JSON AMR parameter table."""
+    if amr_parameters is None or amr_parameters.empty:
+        return None
+    if "quantity" not in amr_parameters.columns:
+        return None
+    values = pd.to_numeric(amr_parameters["quantity"], errors="coerce").fillna(0)
+    return int(values.clip(lower=0).sum())
+
+
 def natural_key(value):
     return [
         int(text) if text.isdigit() else text.lower()
@@ -3602,9 +3646,25 @@ def analyse(
     completed = tasks[tasks["outcome"] == "completed"].copy()
     failed = tasks[tasks["outcome"] == "failed"].copy()
 
+    # Fleet statistics must use physical AMRs only. Pending generated tasks,
+    # staff-handling rows and other task records without an AMR are represented
+    # by the placeholder ``-`` and previously inflated the observed fleet by one.
+    physical_amr_task_mask = tasks["amr"].map(is_physical_amr_id)
+    fleet_tasks = tasks.loc[physical_amr_task_mask].copy()
+    tasks_without_physical_amr = int((~physical_amr_task_mask).sum())
+
     amr_busy_intervals_by_amr, amr_route_summary = build_amr_busy_intervals(
         df, ctx, amr_col
     )
+    amr_busy_intervals_by_amr = {
+        amr: intervals
+        for amr, intervals in amr_busy_intervals_by_amr.items()
+        if is_physical_amr_id(amr)
+    }
+    if not amr_route_summary.empty and "amr" in amr_route_summary.columns:
+        amr_route_summary = amr_route_summary[
+            amr_route_summary["amr"].map(is_physical_amr_id)
+        ].reset_index(drop=True)
     active_intervals = [
         interval
         for intervals in amr_busy_intervals_by_amr.values()
@@ -3619,7 +3679,7 @@ def analyse(
     }
 
     amr_summary = (
-        tasks.groupby("amr", dropna=False)
+        fleet_tasks.groupby("amr", dropna=False)
         .agg(
             tasks_total=("task_id", "count"),
             tasks_completed=("outcome", lambda s: int((s == "completed").sum())),
@@ -3645,7 +3705,7 @@ def analyse(
     # Utilisation
 
     amr_utilisation = (
-        tasks.groupby("amr", dropna=False)
+        fleet_tasks.groupby("amr", dropna=False)
         .agg(
             tasks_total=("task_id", "count"),
             total_task_time_s=("duration_s", "sum"),
@@ -3701,8 +3761,7 @@ def analyse(
     # Remove rows that cannot identify an AMR. This also prevents blank summary
     # rows when legacy CSV files contain generic charging status events.
     charge_rows = charge_rows[
-        charge_rows[amr_col].notna()
-        & charge_rows[amr_col].astype(str).str.strip().ne("")
+        charge_rows[amr_col].map(is_physical_amr_id)
     ].copy()
 
     def _amr_parameter_value(
@@ -4157,7 +4216,8 @@ def analyse(
         ],
     )
 
-    active_amrs = max(int(tasks["amr"].nunique()), 1)
+    active_amrs = int(fleet_tasks["amr"].nunique())
+    configured_amrs = configured_amr_quantity(amr_parameters)
     total_amr_route_time_s = interval_total(active_intervals)
     workload_based_amrs = int(
         math.ceil(
@@ -4194,12 +4254,15 @@ def analyse(
         peak_lift_concurrency,
     )
 
-    summary = pd.DataFrame(
-        [
+    summary_rows = [
             {"metric": "Simulation start", "value": fmt_ts(t0, ctx.has_datetime)},
             {"metric": "Simulation finish", "value": fmt_ts(t1, ctx.has_datetime)},
             {"metric": "Simulation duration", "value": fmt_duration(horizon_s)},
             {"metric": "AMRs observed", "value": f"{active_amrs}"},
+            {
+                "metric": "Tasks without an AMR assignment",
+                "value": f"{tasks_without_physical_amr}",
+            },
             {"metric": "Tasks total", "value": f"{len(tasks)}"},
             {"metric": "Tasks completed", "value": f"{len(completed)}"},
             {"metric": "Tasks failed", "value": f"{len(failed)}"},
@@ -4229,7 +4292,9 @@ def analyse(
             {"metric": "Recommended AMRs", "value": f"{recommended_amrs}"},
             {"metric": "Recommended lifts", "value": f"{recommended_lifts}"},
         ]
-    )
+    if configured_amrs is not None:
+        summary_rows.insert(3, {"metric": "AMRs configured", "value": f"{configured_amrs}"})
+    summary = pd.DataFrame(summary_rows)
 
     methodology = pd.DataFrame(
         [

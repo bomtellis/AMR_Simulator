@@ -24695,6 +24695,42 @@
   ],
   "task_generation": {
     "enabled": true,
+    "staff_config": {
+      "enabled": true,
+      "spread_timeframe_tasks": false,
+      "shift_patterns": {
+        "none": {
+          "display_name": "Fixed working hours",
+          "start_time": "06:00",
+          "end_time": "17:00",
+          "days_active": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri"
+          ],
+          "work_days": 0,
+          "rest_days": 0
+        },
+        "four_on_four_off_12h": {
+          "display_name": "4 on / 4 off, 12-hour days",
+          "start_time": "07:00",
+          "end_time": "19:00",
+          "days_active": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri",
+            "sat",
+            "sun"
+          ],
+          "work_days": 4,
+          "rest_days": 4
+        }
+      }
+    },
     "department_waste": {
       "enabled": true,
       "priority": 60
