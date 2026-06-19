@@ -9,7 +9,7 @@ import re
 import tempfile
 from xml.sax.saxutils import escape
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 try:
     import ezdxf
@@ -28,7 +28,7 @@ import pandas as pd
 from reportlab.graphics import renderPDF
 from reportlab.lib import colors
 from reportlab.lib.colors import Color
-from reportlab.lib.pagesizes import A0, A4, landscape
+from reportlab.lib.pagesizes import A0, A3, A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
@@ -49,6 +49,131 @@ except Exception:  # SVG conversion is optional when --omit-drawings is used
     svg2rlg = None
 
 from amr_report_analysis import fmt_duration, fmt_ts
+
+
+REPORT_SECTIONS = [
+    ("front_summary", "Executive summary"),
+    ("generated_tasks", "Generated task category summary"),
+    ("staff_handling", "Category staff handling"),
+    ("staff_timetable", "Staff handling timetable"),
+    ("method", "Method"),
+    ("amr_list", "AMR list"),
+    ("amr_fleet", "AMR fleet summary"),
+    ("amr_utilisation", "AMR utilisation and recharge"),
+    ("lift_usage", "Lift usage and waits"),
+    ("payload_summary", "Payload summary"),
+    ("location_space", "Location space utilisation"),
+    ("peak_occupancy", "Peak location occupancy"),
+    ("failed_delivery", "Failed delivery analysis"),
+    ("location_recommendations", "Location storage recommendations"),
+    ("pending_tasks", "Pending tasks"),
+    ("task_detail", "Task detail grouped by AMR"),
+    ("heatmaps", "Congestion heatmaps"),
+]
+
+REPORT_SECTION_LABELS = dict(REPORT_SECTIONS)
+DEFAULT_REPORT_SECTION_ORDER = [section_id for section_id, _label in REPORT_SECTIONS]
+
+REPORT_SECTION_PAGE_TEMPLATES = {
+    "front_summary": "standard",
+    "generated_tasks": "landscape",
+    "staff_handling": "standard",
+    "staff_timetable": "a3_landscape",
+    "method": "standard",
+    "amr_list": "landscape",
+    "amr_fleet": "landscape",
+    "amr_utilisation": "landscape",
+    "lift_usage": "landscape",
+    "payload_summary": "standard",
+    "location_space": "a3_landscape",
+    "peak_occupancy": "a3_landscape",
+    "failed_delivery": "a3_landscape",
+    "location_recommendations": "a3_landscape",
+    "pending_tasks": "a3_landscape",
+    "task_detail": "a3_landscape",
+    "heatmaps": "a0_landscape",
+}
+
+
+def normalise_report_sections(
+    report_sections: Optional[Sequence[str]] = None,
+) -> List[str]:
+    if not report_sections:
+        return list(DEFAULT_REPORT_SECTION_ORDER)
+    seen = set()
+    result = []
+    valid = set(REPORT_SECTION_LABELS)
+    for section_id in report_sections:
+        section_id = str(section_id or "").strip()
+        if section_id in valid and section_id not in seen:
+            result.append(section_id)
+            seen.add(section_id)
+    return result or list(DEFAULT_REPORT_SECTION_ORDER)
+
+
+class SectionedStory:
+    def __init__(self, section_order: Optional[Sequence[str]] = None):
+        self.section_order = normalise_report_sections(section_order)
+        self.selected = set(self.section_order)
+        self.current_section = self.section_order[0] if self.section_order else ""
+        self.sections: Dict[str, List] = {key: [] for key in DEFAULT_REPORT_SECTION_ORDER}
+
+    def section(self, section_id: str) -> None:
+        section_id = str(section_id or "").strip()
+        if section_id in REPORT_SECTION_LABELS:
+            self.current_section = section_id
+
+    def append(self, flowable) -> None:
+        if self.current_section in self.selected:
+            self.sections.setdefault(self.current_section, []).append(flowable)
+
+    def extend(self, flowables) -> None:
+        for flowable in flowables:
+            self.append(flowable)
+
+    def __iadd__(self, flowables):
+        self.extend(flowables)
+        return self
+
+    @staticmethod
+    def _is_template_marker(flowable) -> bool:
+        return isinstance(flowable, NextPageTemplate)
+
+    @staticmethod
+    def _is_page_break(flowable) -> bool:
+        return isinstance(flowable, PageBreak)
+
+    def _normalised_section_content(self, flowables: List) -> List:
+        cleaned = [
+            flowable
+            for flowable in flowables
+            if not self._is_template_marker(flowable)
+        ]
+
+        while cleaned and self._is_page_break(cleaned[0]):
+            cleaned.pop(0)
+        while cleaned and self._is_page_break(cleaned[-1]):
+            cleaned.pop()
+
+        return cleaned
+
+    def flowables(self) -> List:
+        result = []
+        first_section = True
+        for section_id in self.section_order:
+            section_flowables = self._normalised_section_content(
+                self.sections.get(section_id, [])
+            )
+            if not section_flowables:
+                continue
+
+            template_id = REPORT_SECTION_PAGE_TEMPLATES.get(section_id, "standard")
+            result.append(NextPageTemplate(template_id))
+            if not first_section:
+                result.append(PageBreak())
+            result.extend(section_flowables)
+            first_section = False
+        return result
 
 
 def make_styles():
@@ -101,7 +226,7 @@ def make_styles():
 
 
 class NumberedDocTemplate(BaseDocTemplate):
-    def __init__(self, filename, **kwargs):
+    def __init__(self, filename, first_template_id: str = "standard", **kwargs):
         super().__init__(filename, **kwargs)
 
         portrait_frame = Frame(
@@ -119,6 +244,24 @@ class NumberedDocTemplate(BaseDocTemplate):
             a4_landscape_width - self.leftMargin - self.rightMargin,
             a4_landscape_height - self.topMargin - self.bottomMargin,
             id="landscape",
+        )
+
+        a3_portrait_width, a3_portrait_height = A3
+        a3_portrait_frame = Frame(
+            self.leftMargin,
+            self.bottomMargin,
+            a3_portrait_width - self.leftMargin - self.rightMargin,
+            a3_portrait_height - self.topMargin - self.bottomMargin,
+            id="a3_portrait",
+        )
+
+        a3_landscape_width, a3_landscape_height = landscape(A3)
+        a3_landscape_frame = Frame(
+            self.leftMargin,
+            self.bottomMargin,
+            a3_landscape_width - self.leftMargin - self.rightMargin,
+            a3_landscape_height - self.topMargin - self.bottomMargin,
+            id="a3_landscape",
         )
 
         a0_portrait_width, a0_portrait_height = A0
@@ -147,34 +290,49 @@ class NumberedDocTemplate(BaseDocTemplate):
             bottomPadding=0,
         )
 
-        self.addPageTemplates(
-            [
-                PageTemplate(
-                    id="standard",
-                    pagesize=A4,
-                    frames=[portrait_frame],
-                    onPage=self._draw_header_footer,
-                ),
-                PageTemplate(
-                    id="landscape",
-                    pagesize=landscape(A4),
-                    frames=[landscape_frame],
-                    onPage=self._draw_header_footer,
-                ),
-                PageTemplate(
-                    id="a0_standard",
-                    pagesize=A0,
-                    frames=[a0_portrait_frame],
-                    onPage=self._draw_header_footer,
-                ),
-                PageTemplate(
-                    id="a0_landscape",
-                    pagesize=landscape(A0),
-                    frames=[a0_landscape_frame],
-                    onPage=self._draw_header_footer,
-                ),
-            ]
-        )
+        templates = {
+            "standard": PageTemplate(
+                id="standard",
+                pagesize=A4,
+                frames=[portrait_frame],
+                onPage=self._draw_header_footer,
+            ),
+            "landscape": PageTemplate(
+                id="landscape",
+                pagesize=landscape(A4),
+                frames=[landscape_frame],
+                onPage=self._draw_header_footer,
+            ),
+            "a3_portrait": PageTemplate(
+                id="a3_portrait",
+                pagesize=A3,
+                frames=[a3_portrait_frame],
+                onPage=self._draw_header_footer,
+            ),
+            "a3_landscape": PageTemplate(
+                id="a3_landscape",
+                pagesize=landscape(A3),
+                frames=[a3_landscape_frame],
+                onPage=self._draw_header_footer,
+            ),
+            "a0_portrait": PageTemplate(
+                id="a0_portrait",
+                pagesize=A0,
+                frames=[a0_portrait_frame],
+                onPage=self._draw_header_footer,
+            ),
+            "a0_landscape": PageTemplate(
+                id="a0_landscape",
+                pagesize=landscape(A0),
+                frames=[a0_landscape_frame],
+                onPage=self._draw_header_footer,
+            ),
+        }
+        first_template_id = first_template_id if first_template_id in templates else "standard"
+        ordered_template_ids = [first_template_id] + [
+            template_id for template_id in templates if template_id != first_template_id
+        ]
+        self.addPageTemplates([templates[template_id] for template_id in ordered_template_ids])
 
     def _draw_header_footer(self, canvas, doc):
         canvas.saveState()
@@ -196,10 +354,10 @@ class NumberedDocTemplate(BaseDocTemplate):
 
 
 def natural_key(s):
-    return [
+    return tuple(
         int(text) if text.isdigit() else text.lower()
         for text in re.split(r"(\d+)", str(s))
-    ]
+    )
 
 
 def table_from_df(
@@ -957,10 +1115,18 @@ def build_report(
     progress_callback=None,
     heatmap_workers: Optional[int] = None,
     include_drawings: bool = True,
+    report_sections: Optional[Sequence[str]] = None,
 ) -> None:
     styles = make_styles()
+    selected_section_order = normalise_report_sections(report_sections)
+    selected_section_ids = set(selected_section_order)
+    first_template_id = REPORT_SECTION_PAGE_TEMPLATES.get(
+        selected_section_order[0] if selected_section_order else "front_summary",
+        "standard",
+    )
     doc = NumberedDocTemplate(
         str(pdf_path),
+        first_template_id=first_template_id,
         pagesize=A4,
         leftMargin=15 * mm,
         rightMargin=15 * mm,
@@ -976,10 +1142,11 @@ def build_report(
 
     report_progress(0, 10, "Preparing report")
 
-    story = []
+    story = SectionedStory(selected_section_order)
     schedule_story = []
 
     # --- START front page ---
+    story.section("front_summary")
     story += [
         Paragraph("AMR Simulation Performance Report", styles["ReportTitle"]),
         Paragraph(f"Source CSV: {csv_path.name}", styles["ReportSub"]),
@@ -995,6 +1162,7 @@ def build_report(
     ]
 
     task_generation_df = results.get("task_generation_summary", pd.DataFrame()).copy()
+    story.section("generated_tasks")
     story += [
         Paragraph("Generated task category summary", styles["Section"]),
         Paragraph(
@@ -1033,6 +1201,7 @@ def build_report(
         )
 
     staff_df = results.get("staff_handling_summary", pd.DataFrame()).copy()
+    story.section("staff_handling")
     story += [
         Spacer(1, 10),
         Paragraph("Category staff handling", styles["Section"]),
@@ -1070,6 +1239,7 @@ def build_report(
     payload_timetable_df = results.get("payload_handling_timetable", pd.DataFrame()).copy()
     ward_collection_df = results.get("linen_ward_collection", pd.DataFrame()).copy()
     staff_hours_df = results.get("staff_hours_summary", pd.DataFrame()).copy()
+    story.section("staff_timetable")
     story += [
         NextPageTemplate("landscape"),
         PageBreak(),
@@ -1194,6 +1364,7 @@ def build_report(
             )
         )
 
+    story.section("method")
     story += [
         NextPageTemplate("standard"),
         PageBreak(),
@@ -1208,6 +1379,7 @@ def build_report(
 
     amr_list_df = results["amr_list"].copy()
     amr_list_df = amr_list_df.drop(columns=["payload_capacity_size_units"])
+    story.section("amr_list")
     story += [Spacer(1, 8), Paragraph("AMR list", styles["Section"])]
 
     if amr_list_df.empty:
@@ -1256,6 +1428,7 @@ def build_report(
     # --- START AMR Fleet Summary ---
 
     amr_df = results["amr_summary"].copy()
+    story.section("amr_fleet")
 
     amr_df_total = {
         "amr": "Total",
@@ -1374,6 +1547,7 @@ def build_report(
     # --- START AMR Utilisation Summary ---
 
     amr_utilisation_df = results["utilisation_summary"].copy()
+    story.section("amr_utilisation")
     amr_utilisation_df = amr_utilisation_df.drop(
         columns=["tasks_total", "total_task_time_s", "total_route_time_s", "total_wait_s"],
         errors="ignore",
@@ -1442,6 +1616,7 @@ def build_report(
 
     # --- START Lift usage Summary ---
 
+    story.section("lift_usage")
     story += [
         Paragraph("Lift usage summary", styles["Section"]),
         Paragraph("All times in the format of mm:ss", styles["BodyText"]),
@@ -1575,6 +1750,7 @@ def build_report(
 
     # --- START Payload Summary ---
 
+    story.section("payload_summary")
     story += [
         NextPageTemplate("standard"),
         PageBreak(),
@@ -1619,6 +1795,7 @@ def build_report(
 
     # --- START Location space utilisation ---
 
+    story.section("location_space")
     story += [
         NextPageTemplate("landscape"),
         PageBreak(),
@@ -1709,6 +1886,7 @@ def build_report(
 
     # --- START Peak location occupancy ---
 
+    story.section("peak_occupancy")
     story += [
         PageBreak(),
         Paragraph("Peak location occupancy", styles["Section"]),
@@ -1771,6 +1949,7 @@ def build_report(
 
     # --- START Failed delivery analysis ---
 
+    story.section("failed_delivery")
     story += [
         PageBreak(),
         Paragraph("Failed delivery analysis", styles["Section"]),
@@ -1854,6 +2033,7 @@ def build_report(
 
     # --- START Location recommendations ---
 
+    story.section("location_recommendations")
     story += [
         PageBreak(),
         Paragraph("Location storage recommendations", styles["Section"]),
@@ -1930,10 +2110,79 @@ def build_report(
 
     # --- END Location recommendations ---
 
+    # --- START Pending tasks ---
+
+    story.section("pending_tasks")
+    story += [
+        PageBreak(),
+        Paragraph("Pending tasks", styles["Section"]),
+        Paragraph(
+            "Pending tasks are task records that were generated or seen in the event log but did not reach assignment, completion or failure before the report horizon ended.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+    pending_tasks_df = results.get("pending_tasks", pd.DataFrame()).copy()
+    if pending_tasks_df.empty:
+        story.append(
+            Paragraph(
+                "No pending tasks were identified in the simulation event log.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        has_dt = pd.api.types.is_datetime64_any_dtype(pending_tasks_df["start"]) or any(
+            hasattr(v, "strftime") for v in pending_tasks_df["start"].dropna().tolist()
+        )
+        for col in ("start", "finish"):
+            if col in pending_tasks_df.columns:
+                pending_tasks_df[col] = pending_tasks_df[col].map(
+                    lambda v: fmt_ts(v, has_dt) if not pd.isna(v) else "-"
+                )
+        pending_tasks_df = pending_tasks_df.rename(
+            columns={
+                "task_id": "Task",
+                "amr": "AMR",
+                "origin": "From",
+                "destination": "To",
+                "payload": "Payload",
+                "start": "First seen",
+                "finish": "Last seen",
+                "pending_reason": "Reason",
+            }
+        )
+        display_cols = [
+            c
+            for c in [
+                "Task",
+                "AMR",
+                "From",
+                "To",
+                "Payload",
+                "First seen",
+                "Last seen",
+                "Reason",
+            ]
+            if c in pending_tasks_df.columns
+        ]
+        pending_tasks_df = pending_tasks_df[display_cols]
+        story.append(
+            table_from_df(
+                pending_tasks_df,
+                [36 * mm, 18 * mm, 34 * mm, 34 * mm, 26 * mm, 28 * mm, 28 * mm, 60 * mm][
+                    : len(pending_tasks_df.columns)
+                ],
+                styles,
+            )
+        )
+
+    # --- END Pending tasks ---
+
     report_progress(9, 11, "Adding AMR sections")
 
     # --- START AMR Task Summary ---
 
+    story.section("task_detail")
     schedule_story += [
         PageBreak(),
         Paragraph("Task detail grouped by AMR", styles["Heading3"]),
@@ -1996,11 +2245,21 @@ def build_report(
     # --- END AMR Task Summary ---
 
     # --- START Heat map ---
-    report_progress(9, 10, "Prepared congestion heatmaps")
+    report_progress(
+        9,
+        10,
+        "Prepared congestion heatmaps"
+        if "heatmaps" in selected_section_ids
+        else "Skipped congestion heatmaps",
+    )
 
     story += schedule_story
 
-    heatmap_df = results.get("congestion_paths", pd.DataFrame()).copy()
+    heatmap_df = (
+        results.get("congestion_paths", pd.DataFrame()).copy()
+        if "heatmaps" in selected_section_ids
+        else pd.DataFrame()
+    )
 
     # TEST FOR SINGLE FLOOR
     # heatmap_df = heatmap_df[heatmap_df["floor"] == 0]
@@ -2060,6 +2319,7 @@ def build_report(
                 )
 
     heatmap_story: List = []
+    story.section("heatmaps")
     if prepared_heatmaps:
         heatmap_story += [NextPageTemplate("a0_landscape"), PageBreak()]
 
@@ -2088,5 +2348,5 @@ def build_report(
     # --- END Heat map ---
 
     report_progress(10, 11, "Building PDF")
-    doc.build(story)
+    doc.build(story.flowables())
     report_progress(11, 11, "PDF complete")

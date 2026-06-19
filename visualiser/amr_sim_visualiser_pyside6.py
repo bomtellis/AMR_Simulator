@@ -5,6 +5,8 @@ from bisect import bisect_right
 import json
 import math
 import os
+import re
+import shutil
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -26,6 +28,7 @@ from PySide6.QtGui import (
     QMouseEvent,
     QSurfaceFormat,
     QFontDatabase,
+    QPixmap,
 )
 from PySide6.QtCore import QPointF, QTimer, Qt, QRectF, QRect, QObject, Signal, QThread
 from PySide6.QtWidgets import (
@@ -198,6 +201,7 @@ class SimulationLog:
         self._location_event_start_times: Dict[str, List[datetime]] = {}
         self._events_by_lift: Dict[str, List[VisualEvent]] = {}
         self._lift_event_start_times: Dict[str, List[datetime]] = {}
+        self.initial_amr_home_spaces: Dict[str, dict] = {}
         self._state_checkpoints: List[tuple] = []
         self._state_checkpoint_stride = 1000
         self._state_checkpoint_indexes: List[int] = []
@@ -295,7 +299,12 @@ class SimulationLog:
         prefer_sim_datetime = (
             event_type == "mass_collection_visit"
             or event_type.endswith("_generated")
-            or event_type in {"task_assigned", "multi_stop_task_assigned"}
+            or event_type
+            in {
+                "task_assigned",
+                "multi_stop_task_assigned",
+                "charge_cycle_complete",
+            }
         )
 
         if prefer_sim_datetime and sim_dt is not None:
@@ -322,10 +331,40 @@ class SimulationLog:
         self.end_time = max((e.end_time for e in self.events), default=None)
         self._rebuild_location_event_index()
         self._rebuild_lift_event_index()
+        self._rebuild_initial_amr_home_spaces()
         self._rebuild_state_checkpoints()
         self.reset_playback_cursor()
         self._state_cache_key = None
         self._state_cache_value = None
+
+    def _rebuild_initial_amr_home_spaces(self):
+        self.initial_amr_home_spaces = {}
+        for event in self.events:
+            row = event.row
+            event_type = str(row.get("event_type", "") or "").strip()
+            if event_type != "initial_amr_charging_location":
+                continue
+            amr_id = str(row.get("amr_id", "") or "").strip()
+            space_name = str(row.get("amr_inventory_space", "") or "").strip()
+            location_name = (
+                str(row.get("to_location", "") or "").strip()
+                or str(row.get("from_location", "") or "").strip()
+                or str(row.get("end_node", "") or "").strip()
+                or str(row.get("start_node", "") or "").strip()
+            )
+            if not amr_id or not location_name:
+                continue
+            self.initial_amr_home_spaces[amr_id] = {
+                "location": location_name,
+                "space": space_name,
+                "x": self._float_or_none(row.get("end_x"))
+                if self._float_or_none(row.get("end_x")) is not None
+                else self._float_or_none(row.get("start_x")),
+                "y": self._float_or_none(row.get("end_y"))
+                if self._float_or_none(row.get("end_y")) is not None
+                else self._float_or_none(row.get("start_y")),
+                "rotation_deg": self._float_or_none(row.get("amr_rotation_deg")),
+            }
 
     def event_index_at(self, current_time: datetime) -> int:
         if not self.events or current_time is None:
@@ -682,32 +721,76 @@ class SimulationLog:
     def load(self, path: str):
         self.events = []
         self._event_start_times = []
-        with open(path, "r", encoding="utf-8-sig", newline="") as f:
-            reader = csv.DictReader(f)
-            rows = list(reader)
+        chunk_size = 10000
+        temp_dir = None
+        chunk_paths: List[str] = []
+        total_rows = 0
 
-        # Parse timestamp-heavy CSV rows in worker processes for large logs.
-        # Qt objects are not touched here; only plain dicts and datetimes are returned.
-        if len(rows) >= 5000:
-            workers = min(max(1, (os.cpu_count() or 2) - 1), 8)
-            try:
-                with ProcessPoolExecutor(max_workers=workers) as pool:
-                    parsed = pool.map(
-                        _parse_visual_event_row_process, rows, chunksize=1000
-                    )
-                    self.events = [event for event in parsed if event is not None]
-            except Exception:
-                self.events = [
-                    event
-                    for event in (self._row_to_visual_event(row) for row in rows)
-                    if event is not None
-                ]
-        else:
-            self.events = [
-                event
-                for event in (self._row_to_visual_event(row) for row in rows)
-                if event is not None
-            ]
+        try:
+            temp_parent = Path(path).resolve().parent
+            temp_path = temp_parent / (
+                f"amr_visualiser_events_{os.getpid()}_{int(time.time() * 1000)}"
+            )
+            suffix = 0
+            while temp_path.exists():
+                suffix += 1
+                temp_path = temp_parent / (
+                    f"amr_visualiser_events_{os.getpid()}_{int(time.time() * 1000)}_{suffix}"
+                )
+            temp_path.mkdir(parents=True, exist_ok=False)
+            temp_dir = str(temp_path)
+            with open(path, "r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.DictReader(f)
+                fieldnames = reader.fieldnames or []
+                writer = None
+                chunk_file = None
+                chunk_row_count = 0
+
+                for row in reader:
+                    if writer is None or chunk_row_count >= chunk_size:
+                        if chunk_file is not None:
+                            chunk_file.close()
+                        chunk_path = os.path.join(
+                            temp_dir, f"events_{len(chunk_paths):05d}.csv"
+                        )
+                        chunk_file = open(
+                            chunk_path, "w", encoding="utf-8", newline=""
+                        )
+                        writer = csv.DictWriter(
+                            chunk_file, fieldnames=fieldnames, extrasaction="ignore"
+                        )
+                        writer.writeheader()
+                        chunk_paths.append(chunk_path)
+                        chunk_row_count = 0
+                    writer.writerow(row)
+                    chunk_row_count += 1
+                    total_rows += 1
+
+                if chunk_file is not None:
+                    chunk_file.close()
+
+            # Parse timestamp-heavy CSV chunks in worker processes for large logs.
+            # Qt objects are not touched here; only plain dicts and datetimes are returned.
+            if total_rows >= 5000 and chunk_paths:
+                workers = min(max(1, (os.cpu_count() or 2) - 1), 8, len(chunk_paths))
+                try:
+                    with ProcessPoolExecutor(max_workers=workers) as pool:
+                        for events in pool.map(
+                            _parse_visual_event_chunk_file_process, chunk_paths
+                        ):
+                            self.events.extend(events)
+                except Exception:
+                    self.events = []
+                    for chunk_path in chunk_paths:
+                        self.events.extend(
+                            _parse_visual_event_chunk_file_process(chunk_path)
+                        )
+            else:
+                for chunk_path in chunk_paths:
+                    self.events.extend(_parse_visual_event_chunk_file_process(chunk_path))
+        finally:
+            if temp_dir:
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
         self._rebuild_event_index()
 
@@ -775,10 +858,12 @@ class GraphicsView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
+        self.setCacheMode(QGraphicsView.CacheBackground)
         self.setBackgroundBrush(QBrush(QColor("#111111")))
 
         self.opengl_enabled = False
         self.opengl_error = ""
+        self.graphics_backend = "raster"
         self.enable_opengl_viewport()
 
     def enable_opengl_viewport(self) -> bool:
@@ -808,10 +893,12 @@ class GraphicsView(QGraphicsView):
             # handles the compositing work.
             self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
             self.opengl_enabled = True
+            self.graphics_backend = "opengl"
             self.opengl_error = ""
             return True
         except Exception as exc:  # pragma: no cover - driver/platform dependent
             self.opengl_enabled = False
+            self.graphics_backend = "raster"
             self.opengl_error = str(exc)
             self.setViewportUpdateMode(QGraphicsView.BoundingRectViewportUpdate)
             return False
@@ -929,6 +1016,18 @@ def _load_dxf_floor_process(job):
 def _parse_visual_event_row_process(row):
     """Process-safe CSV row parser used by SimulationLog.load for large logs."""
     return SimulationLog._row_to_visual_event(row)
+
+
+def _parse_visual_event_chunk_file_process(path):
+    """Parse one temporary CSV chunk in a worker process."""
+    events = []
+    with open(path, "r", encoding="utf-8-sig", newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            event = SimulationLog._row_to_visual_event(row)
+            if event is not None:
+                events.append(event)
+    return events
 
 
 class DxfLoadWorker(QObject):
@@ -2220,8 +2319,10 @@ class SimulationVisualizer(QMainWindow):
         self.is_playing = False
         self.play_speed = 60.0
         self._last_play_tick_wall_time: Optional[float] = None
-        self._target_playback_frame_interval_ms = 33
+        self._target_playback_frame_interval_ms = 16
         self._inventory_cache_max_entries = 6000
+        self._room_payload_cache_key = None
+        self._brush_texture_cache: Dict[Tuple[str, int], QBrush] = {}
         self.lift_monitor_dialog: Optional[LiftMonitorDialog] = None
         self.amr_payload_monitor_dialog: Optional[AmrPayloadMonitorDialog] = None
         self.play_timer = QTimer(self)
@@ -2331,12 +2432,17 @@ class SimulationVisualizer(QMainWindow):
 
         self.static_items = []
         self.dynamic_items = []
+        self.room_payload_items = []
+        self.amr_dynamic_items = []
+        self._dynamic_draw_layer = "amr"
         # Text is drawn as a separate viewport overlay layer instead of
         # QGraphicsTextItems.  The map geometry is drawn by the OpenGL-backed
         # scene pass; labels are composited afterwards for sharper text and
         # to avoid adding thousands of text items to the scene index.
         self.static_text_records = []
         self.dynamic_text_records = []
+        self.room_payload_text_records = []
+        self.amr_dynamic_text_records = []
         self.node_context_menu = QMenu(self)
 
         def add_btn(text, fn):
@@ -2446,10 +2552,10 @@ class SimulationVisualizer(QMainWindow):
         self.status_label.setWordWrap(True)
         side_layout.addWidget(self.status_label)
         if getattr(self.view, "opengl_enabled", False):
-            self.status_label.setText("Ready - OpenGL viewport enabled")
+            self.status_label.setText("Ready - OpenGL accelerated viewport enabled")
         elif getattr(self.view, "opengl_error", ""):
             self.status_label.setText(
-                f"Ready - raster viewport fallback ({self.view.opengl_error})"
+                f"Warning - no Vulkan/OpenGL viewport available; raster fallback active ({self.view.opengl_error})"
             )
 
         # The old bottom-left event log was expensive to update on large CSVs
@@ -2875,6 +2981,26 @@ class SimulationVisualizer(QMainWindow):
                 x_min, x_max = x_max, x_min
             if y_min > y_max:
                 y_min, y_max = y_max, y_min
+            try:
+                if (
+                    getattr(self, "follow_enabled_check", None) is not None
+                    and self.follow_enabled_check.isChecked()
+                    and self.current_time is not None
+                ):
+                    followed_amr = self.follow_combo.currentText().strip()
+                    if followed_amr:
+                        amr_states, _recent = self._current_state()
+                        state = amr_states.get(followed_amr) or {}
+                        fx = self._float_or_none(state.get("x"))
+                        fy = self._float_or_none(state.get("y"))
+                        if fx is not None and fy is not None:
+                            follow_margin = max(safe_margin, 35.0)
+                            x_min = min(x_min, float(fx) - follow_margin)
+                            x_max = max(x_max, float(fx) + follow_margin)
+                            y_min = min(y_min, float(fy) - follow_margin)
+                            y_max = max(y_max, float(fy) + follow_margin)
+            except Exception:
+                pass
             return x_min, y_min, x_max, y_max
         except Exception:
             return -1e12, -1e12, 1e12, 1e12
@@ -2974,6 +3100,7 @@ class SimulationVisualizer(QMainWindow):
         self._lift_monitor_state_cache_key = None
         self._lift_monitor_state_cache_value = None
         self._last_play_tick_wall_time = None
+        self._room_payload_cache_key = None
         if hasattr(self, "sim_log") and self.sim_log is not None:
             self.sim_log.reset_playback_cursor()
 
@@ -3018,6 +3145,53 @@ class SimulationVisualizer(QMainWindow):
             self.graphics_scene.removeItem(item)
         items.clear()
 
+    def _active_dynamic_items(self):
+        if getattr(self, "_dynamic_draw_layer", "amr") == "room":
+            return self.room_payload_items
+        return self.amr_dynamic_items
+
+    def _active_dynamic_text_records(self):
+        if getattr(self, "_dynamic_draw_layer", "amr") == "room":
+            return self.room_payload_text_records
+        return self.amr_dynamic_text_records
+
+    def _visible_world_cache_bucket(self) -> Tuple[int, int, int, int, int]:
+        rect = self._visible_world_rect(margin_m=12.0)
+        scale_bucket = int(max(1.0, float(self.view.transform().m11() or 1.0)) * 10)
+        return tuple(int(math.floor(value / 10.0)) for value in rect) + (scale_bucket,)
+
+    def _followed_amr_cache_bucket(self) -> Tuple[str, int, int, int]:
+        if not self.follow_enabled_check.isChecked() or not self.current_time:
+            return ("", 0, 0, self.current_floor())
+        followed_amr = self.follow_combo.currentText().strip()
+        if not followed_amr:
+            return ("", 0, 0, self.current_floor())
+        amr_states, _recent = self._current_state()
+        state = amr_states.get(followed_amr) or {}
+        x = self._float_or_none(state.get("x"))
+        y = self._float_or_none(state.get("y"))
+        if x is None or y is None:
+            return (followed_amr, 0, 0, self.current_floor())
+        return (followed_amr, int(math.floor(float(x) / 10.0)), int(math.floor(float(y) / 10.0)), int(state.get("floor", self.current_floor()) or self.current_floor()))
+
+    def _room_payload_scene_cache_key(self):
+        event_idx = self._current_event_index()
+        live_bucket = 0
+        if self.current_time is not None and self.sim_log.start_time is not None:
+            live_bucket = int(
+                max(0.0, (self.current_time - self.sim_log.start_time).total_seconds())
+                // 30.0
+            )
+        return (
+            self.current_floor(),
+            event_idx,
+            live_bucket,
+            self.show_room_payloads_check.isChecked(),
+            self.show_labels_check.isChecked(),
+            self._visible_world_cache_bucket(),
+            self._followed_amr_cache_bucket(),
+        )
+
     def refresh_all(self):
         self.refresh_static_scene()
         self.refresh_dynamic_scene()
@@ -3027,6 +3201,7 @@ class SimulationVisualizer(QMainWindow):
         self.clear_items(self.static_items)
         if hasattr(self, "static_text_records"):
             self.static_text_records.clear()
+        self._room_payload_cache_key = None
         floor = self.current_floor()
 
         if self.show_dxf_check.isChecked():
@@ -3039,15 +3214,29 @@ class SimulationVisualizer(QMainWindow):
         self.view.viewport().update()
 
     def refresh_dynamic_scene(self):
-        self.clear_items(self.dynamic_items)
-        if hasattr(self, "dynamic_text_records"):
-            self.dynamic_text_records.clear()
+        self.clear_items(self.amr_dynamic_items)
+        if hasattr(self, "amr_dynamic_text_records"):
+            self.amr_dynamic_text_records.clear()
         # Do not clear inventory-row caches every frame.  The cache key includes
         # the current event index and a small live-fill time bucket, so normal
         # playback can reuse room payload reconstruction while AMRs move between
         # CSV inventory events.
-        self.draw_room_payloads_qt(self.current_floor())
+        payload_cache_key = self._room_payload_scene_cache_key()
+        if payload_cache_key != self._room_payload_cache_key:
+            self.clear_items(self.room_payload_items)
+            if hasattr(self, "room_payload_text_records"):
+                self.room_payload_text_records.clear()
+            self._dynamic_draw_layer = "room"
+            self.draw_room_payloads_qt(self.current_floor())
+            self._dynamic_draw_layer = "amr"
+            self._room_payload_cache_key = payload_cache_key
+        else:
+            self._dynamic_draw_layer = "amr"
         self.draw_dynamic_state_qt(self.current_floor())
+        self.dynamic_items = self.room_payload_items + self.amr_dynamic_items
+        self.dynamic_text_records = (
+            self.room_payload_text_records + self.amr_dynamic_text_records
+        )
         self.update_follow_view()
         self.update_lift_monitor_dialog()
         self.update_amr_payload_monitor_dialog()
@@ -3059,7 +3248,7 @@ class SimulationVisualizer(QMainWindow):
         pen.setWidthF(width)
         item.setPen(pen)
         self.graphics_scene.addItem(item)
-        (self.dynamic_items if dynamic else self.static_items).append(item)
+        (self._active_dynamic_items() if dynamic else self.static_items).append(item)
         return item
 
     def get_text_pixel_size(self) -> int:
@@ -3074,6 +3263,29 @@ class SimulationVisualizer(QMainWindow):
         # of the view transform.  QGraphicsView then scales the text naturally
         # with the rest of the drawing.
         return 0.38 if dynamic else 0.45
+
+    def _texture_brush(self, color, alpha: int = 180) -> QBrush:
+        """Return a tiny raster texture brush for repeated moving-object fills."""
+        qcolor = QColor(color)
+        qcolor.setAlpha(max(0, min(255, int(alpha))))
+        key = (qcolor.name(QColor.HexArgb), int(alpha))
+        cached = self._brush_texture_cache.get(key)
+        if cached is not None:
+            return cached
+
+        pixmap = QPixmap(16, 16)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.fillRect(0, 0, 16, 16, qcolor)
+        highlight = QColor("#ffffff")
+        highlight.setAlpha(28)
+        painter.setPen(QPen(highlight, 1))
+        painter.drawLine(0, 15, 15, 0)
+        painter.drawLine(-8, 15, 7, 0)
+        painter.end()
+        brush = QBrush(pixmap)
+        self._brush_texture_cache[key] = brush
+        return brush
 
     def draw_text_item(
         self,
@@ -3118,7 +3330,7 @@ class SimulationVisualizer(QMainWindow):
             "data": {},
         }
         if dynamic:
-            self.dynamic_text_records.append(record)
+            self._active_dynamic_text_records().append(record)
         else:
             self.static_text_records.append(record)
         return TextOverlayProxy(record)
@@ -3168,7 +3380,7 @@ class SimulationVisualizer(QMainWindow):
             "scene_height": max(0.02, float(scene_height or 0.02)),
         }
         if dynamic:
-            self.dynamic_text_records.append(record)
+            self._active_dynamic_text_records().append(record)
         else:
             self.static_text_records.append(record)
         return TextOverlayProxy(record)
@@ -4266,6 +4478,19 @@ class SimulationVisualizer(QMainWindow):
         slot_type = self._amr_slot_type_for_space(space)
         return self._space_is_amr_space(space) and (not slot_type or slot_type == amr_type)
 
+    def _csv_initial_amr_home_space_map(self) -> Dict[str, dict]:
+        return dict(getattr(self.sim_log, "initial_amr_home_spaces", {}) or {})
+
+    @staticmethod
+    def _natural_text_key(value: str):
+        parts = []
+        for part in re.split(r"(\d+)", str(value or "")):
+            if part.isdigit():
+                parts.append((0, int(part)))
+            else:
+                parts.append((1, part.lower()))
+        return parts
+
     def _configured_amr_home_space_map(self) -> Dict[str, dict]:
         """Deterministically map AMR IDs to compatible AMR spaces for display fallback.
 
@@ -4306,7 +4531,12 @@ class SimulationVisualizer(QMainWindow):
                 })
 
         for amr_type, spaces in spaces_by_type.items():
-            spaces.sort(key=lambda s: (str(s.get("location", "")), str(s.get("space", ""))))
+            spaces.sort(
+                key=lambda s: (
+                    str(s.get("location", "")),
+                    self._natural_text_key(str(s.get("space", ""))),
+                )
+            )
 
         for amr_def in self.layout_model.data.get("amrs", []) or []:
             amr_type = str(amr_def.get("id", "") or "").strip()
@@ -4327,6 +4557,9 @@ class SimulationVisualizer(QMainWindow):
         space_name = str(space_name or "").strip()
         if not space_name:
             return ""
+        csv_home = self._csv_initial_amr_home_space_map().get(str(amr_id or "").strip())
+        if csv_home and str(csv_home.get("space", "") or "").strip() == space_name:
+            return str(csv_home.get("location", "") or "").strip()
         # Prefer the deterministic home map for this exact AMR.  This handles
         # initial rows that contain only amr_inventory_space/amr_rotation_deg.
         home = self._configured_amr_home_space_map().get(str(amr_id or "").strip())
@@ -4370,7 +4603,8 @@ class SimulationVisualizer(QMainWindow):
 
     def _current_amr_space_occupancy_by_location(self) -> Dict[str, Dict[str, dict]]:
         occupancy: Dict[str, Dict[str, dict]] = {}
-        home_map = self._configured_amr_home_space_map()
+        csv_home_map = self._csv_initial_amr_home_space_map()
+        configured_home_map = self._configured_amr_home_space_map()
         try:
             amr_states, _recent = self._current_state()
         except Exception:
@@ -4395,7 +4629,7 @@ class SimulationVisualizer(QMainWindow):
                 location_name = self._amr_space_location_for_space_name(space_name, amr_id)
 
             if not space_name:
-                home = home_map.get(amr_id)
+                home = csv_home_map.get(amr_id) or configured_home_map.get(amr_id)
                 if home and self._state_is_stationary_at_location(state, str(home.get("location", ""))):
                     location_name = str(home.get("location", "") or "").strip()
                     space_name = str(home.get("space", "") or "").strip()
@@ -4468,6 +4702,7 @@ class SimulationVisualizer(QMainWindow):
 
         item.setBrush(QBrush(fill))
         item.setPen(QPen(outline, 0.0))
+        item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         item.setData(0, "inventory_space_status")
         item.setData(1, str(space.get("name", "") or ""))
 
@@ -4481,7 +4716,7 @@ class SimulationVisualizer(QMainWindow):
             tooltip_lines.append(f"Source: {source}")
         item.setToolTip("\n".join(tooltip_lines))
         self.graphics_scene.addItem(item)
-        self.dynamic_items.append(item)
+        self._active_dynamic_items().append(item)
 
         if self.show_labels_check.isChecked() and not occupied and not suppress_empty_label:
             cx, cy = self._space_centroid_world(location, space)
@@ -4553,12 +4788,13 @@ class SimulationVisualizer(QMainWindow):
         else:
             fill = QColor(46, 204, 113, 145)
             outline = QColor("#d7ffe7")
-        item.setBrush(QBrush(fill))
+        item.setBrush(self._texture_brush(fill, fill.alpha()))
         item.setPen(QPen(outline, 0.0))
+        item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         item.setData(0, "room_payload")
         item.setData(1, payload_name)
         self.graphics_scene.addItem(item)
-        self.dynamic_items.append(item)
+        self._active_dynamic_items().append(item)
 
         details = self._enrich_payload_row_details(
             row_details or {"payload": payload_name, "status": status, "source": source}
@@ -4942,7 +5178,7 @@ class SimulationVisualizer(QMainWindow):
         if space_name:
             return True
         amr_id = str(state.get("amr_id", "") or raw.get("amr_id", "") or "").strip()
-        home = self._configured_amr_home_space_map().get(amr_id)
+        home = self._csv_initial_amr_home_space_map().get(amr_id) or self._configured_amr_home_space_map().get(amr_id)
         if home and self._state_is_stationary_at_location(state, str(home.get("location", "") or "")):
             return True
         return False
@@ -4965,10 +5201,11 @@ class SimulationVisualizer(QMainWindow):
             poly_pts.append(QPointF(sx, sy))
 
         poly = QGraphicsPolygonItem(QPolygonF(poly_pts))
-        poly.setBrush(QBrush(QColor(fill)))
+        poly.setBrush(self._texture_brush(fill, 205))
         poly.setPen(QPen(QColor("#858585"), 0.0))
+        poly.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
         self.graphics_scene.addItem(poly)
-        self.dynamic_items.append(poly)
+        self._active_dynamic_items().append(poly)
 
         front_x = x + (hl * math.cos(heading))
         front_y = y + (hl * math.sin(heading))
@@ -6832,8 +7069,9 @@ class SimulationVisualizer(QMainWindow):
                 item = QGraphicsEllipseItem(x - r, y - r, r * 2, r * 2)
                 item.setBrush(QBrush(QColor("#ff9f1c" if is_followed else "#4da3ff")))
                 item.setPen(QPen(QColor("#858585"), 0.0))
+                item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
                 self.graphics_scene.addItem(item)
-                self.dynamic_items.append(item)
+                self._active_dynamic_items().append(item)
 
             action = (
                 state.get("event_type")
@@ -8179,7 +8417,9 @@ if __name__ == "__main__":
         default_format.setDepthBufferSize(24)
         default_format.setStencilBufferSize(8)
         default_format.setSamples(4)
+        default_format.setSwapInterval(1)
         QSurfaceFormat.setDefaultFormat(default_format)
+        QApplication.setAttribute(Qt.AA_ShareOpenGLContexts, True)
 
     app = QApplication(sys.argv)
     configure_application_font(app)

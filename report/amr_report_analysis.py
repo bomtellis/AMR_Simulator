@@ -213,10 +213,10 @@ def configured_amr_quantity(amr_parameters: Optional[pd.DataFrame]) -> Optional[
 
 
 def natural_key(value):
-    return [
+    return tuple(
         int(text) if text.isdigit() else text.lower()
         for text in re.split(r"(\d+)", str(value))
-    ]
+    )
 
 
 
@@ -3591,6 +3591,7 @@ def analyse(
         )
         payload_weight_kg = float(payload_weights.get(str(payload), 0.0))
         failure_reason = "-"
+        pending_reason = "-"
         if outcome == "failed":
             reason_values: List[str] = []
             if reason_col and reason_col in g.columns:
@@ -3614,12 +3615,45 @@ def analyse(
                 failure_reason = (
                     "Task failed; no detailed reason was present in the CSV event log."
                 )
+        elif outcome == "incomplete":
+            reason_values = []
+            if "pending_reason" in g.columns:
+                reason_values.extend(
+                    [
+                        str(v).strip()
+                        for v in g["pending_reason"].dropna().tolist()
+                        if str(v).strip()
+                    ]
+                )
+            if reason_col and reason_col in g.columns:
+                reason_values.extend(
+                    [
+                        str(v).strip()
+                        for v in g[reason_col].dropna().tolist()
+                        if str(v).strip()
+                    ]
+                )
+            wait_reasons = [
+                str(v).strip()
+                for v in g.get("details", pd.Series(dtype=str)).dropna().tolist()
+                if str(v).strip()
+                and WAIT_PATTERNS.search(str(v))
+            ]
+            if reason_values:
+                pending_reason = reason_values[-1]
+            elif wait_reasons:
+                pending_reason = wait_reasons[-1]
+            elif start_row.empty:
+                pending_reason = "Generated but not assigned before the simulation ended."
+            else:
+                pending_reason = "Assigned but not completed before the simulation ended."
         task_rows.append(
             {
                 "amr": safe_text(amr),
                 "task_id": safe_text(task_id),
                 "outcome": outcome,
                 "failure_reason": failure_reason,
+                "pending_reason": pending_reason,
                 "start": start,
                 "finish": end,
                 "duration_s": duration_s,
@@ -3645,6 +3679,33 @@ def analyse(
     tasks = pd.DataFrame(task_rows)
     completed = tasks[tasks["outcome"] == "completed"].copy()
     failed = tasks[tasks["outcome"] == "failed"].copy()
+    pending_tasks = tasks[tasks["outcome"] == "incomplete"].copy()
+    if pending_tasks.empty:
+        pending_tasks = pd.DataFrame(
+            columns=[
+                "task_id",
+                "amr",
+                "origin",
+                "destination",
+                "payload",
+                "start",
+                "finish",
+                "pending_reason",
+            ]
+        )
+    else:
+        pending_tasks = pending_tasks[
+            [
+                "task_id",
+                "amr",
+                "origin",
+                "destination",
+                "payload",
+                "start",
+                "finish",
+                "pending_reason",
+            ]
+        ].sort_values(["start", "task_id"], key=lambda col: col.map(natural_key) if col.name == "task_id" else col)
 
     # Fleet statistics must use physical AMRs only. Pending generated tasks,
     # staff-handling rows and other task records without an AMR are represented
@@ -4266,6 +4327,7 @@ def analyse(
             {"metric": "Tasks total", "value": f"{len(tasks)}"},
             {"metric": "Tasks completed", "value": f"{len(completed)}"},
             {"metric": "Tasks failed", "value": f"{len(failed)}"},
+            {"metric": "Tasks pending", "value": f"{len(pending_tasks)}"},
             {"metric": "AMR routes observed", "value": f"{len(amr_route_summary)}"},
             {
                 "metric": "Total AMR route time",
@@ -4451,6 +4513,7 @@ def analyse(
         "utilisation_summary": amr_utilisation,
         "lift_summary": lift_summary,
         "tasks": tasks.sort_values(["amr", "start", "task_id"]).reset_index(drop=True),
+        "pending_tasks": pending_tasks.reset_index(drop=True),
         "methodology": methodology,
         "payload_schedule": payload_schedule,
         "location_space_utilisation": location_space_utilisation,

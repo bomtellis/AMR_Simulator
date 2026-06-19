@@ -9194,6 +9194,8 @@ class Simulation:
                 details=f"{amr.id} fully charged",
                 from_location=charge_location_name,
                 to_location=charge_location_name,
+                start_time=event.time,
+                end_time=event.time,
                 status="finish",
                 energy_kwh=0.0,
                 amr_inventory_space=str(

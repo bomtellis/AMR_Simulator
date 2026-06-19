@@ -5,7 +5,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Analyse AMR simulation CSV data and create a PDF report."
     )
-    parser.add_argument("csv", help="Path to the simulation CSV")
+    parser.add_argument("csv", nargs="?", help="Path to the simulation CSV")
     parser.add_argument("-o", "--output", help="Path to the PDF report", default=None)
     parser.add_argument(
         "--target-amr-util",
@@ -46,5 +46,28 @@ def parse_args():
             "simulation event log. Use this with verbose simulator output."
         ),
         default=None,
+    )
+    parser.add_argument(
+        "--report-sections",
+        help=(
+            "Comma-separated report section IDs to include, in output order. "
+            "Use --list-report-sections to print available IDs."
+        ),
+        default=None,
+    )
+    parser.add_argument(
+        "--select-report-sections",
+        action="store_true",
+        help="Open a dialog to select and order PDF report sections before building.",
+    )
+    parser.add_argument(
+        "--report-dialog",
+        action="store_true",
+        help="Open a dialog to select input files, output path and PDF report sections.",
+    )
+    parser.add_argument(
+        "--list-report-sections",
+        action="store_true",
+        help="Print available report section IDs and exit.",
     )
     return parser.parse_args()
