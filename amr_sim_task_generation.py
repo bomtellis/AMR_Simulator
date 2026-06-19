@@ -206,8 +206,38 @@ def _normalise_global_staff_config(value: Optional[dict]) -> dict:
             ),
             True,
         ),
+        "walking_speed_m_per_sec": max(
+            0.1, _as_float(source.get("walking_speed_m_per_sec", 1.2), 1.2)
+        ),
+        "lift_wait_seconds": max(
+            0.0, _as_float(source.get("lift_wait_seconds", 30.0), 30.0)
+        ),
+        "default_handling_minutes": max(
+            0.0, _as_float(source.get("default_handling_minutes", 15.0), 15.0)
+        ),
         "shift_patterns": clean_patterns,
     }
+
+
+def _normalise_staff_weekly_hours(value) -> Dict[str, dict]:
+    source = value if isinstance(value, dict) else {}
+    clean: Dict[str, dict] = {}
+    for day_key in DAY_KEYS:
+        raw = source.get(day_key, {})
+        raw = raw if isinstance(raw, dict) else {}
+        enabled = _as_bool(raw.get("enabled", False), False)
+        start_time = _clean_text(raw.get("start_time", "09:00")) or "09:00"
+        end_time = _clean_text(raw.get("end_time", "17:00")) or "17:00"
+        if _parse_hhmm_to_minutes(start_time, None) is None:
+            start_time = "09:00"
+        if _parse_hhmm_to_minutes(end_time, None) is None:
+            end_time = "17:00"
+        clean[day_key] = {
+            "enabled": enabled,
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+    return clean
 
 
 def _day_key_for_datetime(value: datetime) -> str:
@@ -903,10 +933,24 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
     def _timeframe_group_key(self, instance: dict) -> tuple:
         cfg = instance.get("cfg", {}) or {}
+        weekly_hours = _normalise_staff_weekly_hours(
+            cfg.get("staff_working_hours", {})
+        )
+        weekly_key = tuple(
+            (
+                day_key,
+                bool(weekly_hours[day_key].get("enabled", False)),
+                _clean_text(weekly_hours[day_key].get("start_time", "")),
+                _clean_text(weekly_hours[day_key].get("end_time", "")),
+            )
+            for day_key in DAY_KEYS
+        )
         return (
             _clean_text(instance.get("category_key", "")).lower(),
             _clean_text(cfg.get("staff_resource_name", "")).lower(),
             _normalise_staff_shift_pattern(cfg.get("staff_shift_pattern", "none")),
+            bool(_as_bool(cfg.get("staff_use_custom_working_hours", False), False)),
+            weekly_key,
             _clean_text(cfg.get("timeframe_start", "")),
             _clean_text(cfg.get("timeframe_end", "")),
         )
@@ -1001,20 +1045,37 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     ) -> Optional[Tuple[datetime, datetime]]:
         if not _as_bool(cfg.get("requires_staff", False), False):
             return None
-        if not _as_bool(self.staff_config.get("enabled", True), True):
+        use_custom_hours = _as_bool(
+            cfg.get("staff_use_custom_working_hours", False), False
+        )
+        if (
+            not use_custom_hours
+            and not _as_bool(self.staff_config.get("enabled", True), True)
+        ):
             return None
 
-        _pattern_key, pattern = self._staff_shift_definition(cfg)
-        active_days = {
-            _clean_text(x).lower()[:3]
-            for x in pattern.get("days_active", DAY_KEYS)
-            if _clean_text(x)
-        }
-        if active_days and _day_key_for_datetime(base_day) not in active_days:
-            return None
-
-        start_minutes = _parse_hhmm_to_minutes(pattern.get("start_time"), None)
-        end_minutes = _parse_hhmm_to_minutes(pattern.get("end_time"), None)
+        if use_custom_hours:
+            weekly_hours = _normalise_staff_weekly_hours(
+                cfg.get("staff_working_hours", {})
+            )
+            day_cfg = weekly_hours.get(_day_key_for_datetime(base_day), {})
+            if not _as_bool(day_cfg.get("enabled", False), False):
+                return None
+            start_minutes = _parse_hhmm_to_minutes(
+                day_cfg.get("start_time"), None
+            )
+            end_minutes = _parse_hhmm_to_minutes(day_cfg.get("end_time"), None)
+        else:
+            _pattern_key, pattern = self._staff_shift_definition(cfg)
+            active_days = {
+                _clean_text(x).lower()[:3]
+                for x in pattern.get("days_active", DAY_KEYS)
+                if _clean_text(x)
+            }
+            if active_days and _day_key_for_datetime(base_day) not in active_days:
+                return None
+            start_minutes = _parse_hhmm_to_minutes(pattern.get("start_time"), None)
+            end_minutes = _parse_hhmm_to_minutes(pattern.get("end_time"), None)
         if start_minutes is None or end_minutes is None:
             return None
         if end_minutes <= start_minutes:
@@ -1136,6 +1197,15 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             or "batch_same_location",
             staff_shift_pattern=_clean_text(cfg.get("staff_shift_pattern", "none"))
             or "none",
+            staff_handling_minutes=max(
+                0.0, _as_float(cfg.get("staff_handling_minutes", 0.0), 0.0)
+            ),
+            staff_use_custom_working_hours=_as_bool(
+                cfg.get("staff_use_custom_working_hours", False), False
+            ),
+            staff_working_hours=_normalise_staff_weekly_hours(
+                cfg.get("staff_working_hours", {})
+            ),
         )
         if bool(getattr(task, "requires_staff", False)):
             pattern_key, pattern = self._staff_shift_definition(cfg)

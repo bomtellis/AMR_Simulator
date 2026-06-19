@@ -157,6 +157,29 @@ class Simulation:
         self._payload_population_rows_written = False
         self.staff_resource_pools: Dict[str, dict] = {}
         self.staff_assignments: List[dict] = []
+        task_generation_cfg = config.get("task_generation", {}) or {}
+        staff_cfg = task_generation_cfg.get(
+            "staff_config", task_generation_cfg.get("staff", {})
+        ) or {}
+        try:
+            self.staff_walk_speed_m_per_sec = max(
+                0.1, float(staff_cfg.get("walking_speed_m_per_sec", 1.2) or 1.2)
+            )
+        except Exception:
+            self.staff_walk_speed_m_per_sec = 1.2
+        try:
+            self.staff_lift_wait_seconds = max(
+                0.0, float(staff_cfg.get("lift_wait_seconds", 30.0) or 0.0)
+            )
+        except Exception:
+            self.staff_lift_wait_seconds = 30.0
+        try:
+            self.staff_default_handling_minutes = max(
+                0.0, float(staff_cfg.get("default_handling_minutes", 15.0) or 0.0)
+            )
+        except Exception:
+            self.staff_default_handling_minutes = 15.0
+        self._staff_travel_cache: Dict[Tuple[str, str], Tuple[float, float, str]] = {}
 
         # Congestion setup
         building_cfg = config.get("building", {})
@@ -4247,6 +4270,7 @@ class Simulation:
             "resource_name": label,
             "initial_people": initial_count,
             "available_times": [0.0 for _ in range(initial_count)],
+            "last_locations": ["" for _ in range(initial_count)],
             "assignments": [],
             "active_location_batches": {},
             "preferred_people_by_location": {},
@@ -4304,6 +4328,7 @@ class Simulation:
             roster = {
                 "shift_team": team_key,
                 "available_times": [0.0 for _ in range(initial_count)],
+                "last_locations": ["" for _ in range(initial_count)],
                 "active_location_batches": {},
                 "preferred_people_by_location": {},
             }
@@ -4361,7 +4386,253 @@ class Simulation:
             "initial_count": initial_count,
             "movement_policy": policy,
             "shift_pattern": shift_pattern,
+            "handling_minutes": max(
+                0.0, float(getattr(task, "staff_handling_minutes", 0.0) or 0.0)
+            ),
+            "use_custom_working_hours": bool(
+                getattr(task, "staff_use_custom_working_hours", False)
+            ),
+            "working_hours": dict(
+                getattr(task, "staff_working_hours", {}) or {}
+            ),
         }
+
+    @staticmethod
+    def _parse_staff_hhmm(value: str) -> Optional[int]:
+        text = str(value or "").strip()
+        try:
+            hour_text, minute_text = text.split(":", 1)
+            hour = int(hour_text)
+            minute = int(minute_text)
+        except Exception:
+            return None
+        if hour == 24 and minute == 0:
+            return 24 * 60
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour * 60 + minute
+        return None
+
+    def _staff_work_period_for_day(self, task: Task, day_dt) -> Optional[Tuple[float, float]]:
+        day_keys = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        day_key = day_keys[day_dt.weekday()]
+        use_custom = bool(getattr(task, "staff_use_custom_working_hours", False))
+        start_text = ""
+        end_text = ""
+        if use_custom:
+            weekly = getattr(task, "staff_working_hours", {}) or {}
+            day_cfg = weekly.get(day_key, {}) if isinstance(weekly, dict) else {}
+            if not isinstance(day_cfg, dict) or not _bool_from_config(
+                day_cfg.get("enabled", False), False
+            ):
+                return None
+            start_text = str(day_cfg.get("start_time", "09:00") or "09:00")
+            end_text = str(day_cfg.get("end_time", "17:00") or "17:00")
+        else:
+            start_text = str(getattr(task, "staff_shift_start_time", "") or "")
+            end_text = str(getattr(task, "staff_shift_end_time", "") or "")
+            active_days = {
+                str(value or "").strip().lower()[:3]
+                for value in (getattr(task, "staff_shift_days_active", []) or [])
+                if str(value or "").strip()
+            }
+            pattern = self._normalise_staff_shift_pattern(
+                getattr(task, "staff_shift_pattern", "none") or "none"
+            )
+            if pattern != "four_on_four_off_12h" and active_days and day_key not in active_days:
+                return None
+            # Older direct/static task records did not carry shift metadata. Keep
+            # their previous 24-hour availability rather than silently dropping work.
+            if not start_text and not end_text:
+                start_minutes, end_minutes = 0, 24 * 60
+            else:
+                start_minutes = self._parse_staff_hhmm(start_text)
+                end_minutes = self._parse_staff_hhmm(end_text)
+        if use_custom or start_text or end_text:
+            start_minutes = self._parse_staff_hhmm(start_text)
+            end_minutes = self._parse_staff_hhmm(end_text)
+        if start_minutes is None or end_minutes is None or start_minutes == end_minutes:
+            return None
+        day_start = day_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        start_dt = day_start + __import__("datetime").timedelta(minutes=start_minutes)
+        end_dt = day_start + __import__("datetime").timedelta(minutes=end_minutes)
+        if end_minutes <= start_minutes:
+            end_dt += __import__("datetime").timedelta(days=1)
+        origin = self.clock.start_datetime
+        return (
+            (start_dt - origin).total_seconds(),
+            (end_dt - origin).total_seconds(),
+        )
+
+    def _next_staff_assignment_window(
+        self,
+        task: Task,
+        requested_handling_start: float,
+        person_available_time: float,
+        travel_duration_sec: float,
+        handling_duration_sec: float,
+    ) -> dict:
+        requested = max(0.0, float(requested_handling_start or 0.0))
+        available = max(0.0, float(person_available_time or 0.0))
+        travel = max(0.0, float(travel_duration_sec or 0.0))
+        handling = max(0.0, float(handling_duration_sec or 0.0))
+        reference_dt = self.clock.sim_seconds_to_datetime(requested)
+        first_day = reference_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Include the previous day so an overnight shift remains usable after midnight.
+        first_day -= __import__("datetime").timedelta(days=1)
+        for day_offset in range(0, 35):
+            day_dt = first_day + __import__("datetime").timedelta(days=day_offset)
+            period = self._staff_work_period_for_day(task, day_dt)
+            if period is None:
+                continue
+            period_start, period_end = period
+            earliest_travel_start = max(available, period_start)
+            earliest_arrival = earliest_travel_start + travel
+            handling_start = max(requested, earliest_arrival)
+            # Travel is scheduled just in time where possible, but never before
+            # the person is free or before their working period starts.
+            travel_start = max(earliest_travel_start, handling_start - travel)
+            travel_finish = travel_start + travel
+            handling_start = max(handling_start, travel_finish)
+            finish_time = handling_start + handling
+            if finish_time <= period_end + 1e-9:
+                return {
+                    "travel_start_time": travel_start,
+                    "travel_finish_time": travel_finish,
+                    "start_time": handling_start,
+                    "finish_time": finish_time,
+                    "work_period_start": period_start,
+                    "work_period_end": period_end,
+                }
+        # Invalid schedules should not make the simulation unusable. This fallback
+        # preserves chronological movement and is exposed in assignment metadata.
+        travel_start = max(available, requested - travel)
+        travel_finish = travel_start + travel
+        handling_start = max(requested, travel_finish)
+        return {
+            "travel_start_time": travel_start,
+            "travel_finish_time": travel_finish,
+            "start_time": handling_start,
+            "finish_time": handling_start + handling,
+            "work_period_start": None,
+            "work_period_end": None,
+            "working_hours_fallback": True,
+        }
+
+    def _staff_node_coordinates(self, node_name: str, floor: int) -> Optional[Tuple[float, float]]:
+        location = self.locations.get(str(node_name or ""))
+        if location is not None and int(location.floor) == int(floor):
+            return float(location.x), float(location.y)
+        node_name = str(node_name or "")
+        for lift in self.lifts:
+            if node_name == f"{lift.id}-F{int(floor)}":
+                coords = (getattr(lift, "floor_locations", {}) or {}).get(int(floor))
+                if coords is not None and len(coords) >= 2:
+                    return float(coords[0]), float(coords[1])
+        return None
+
+    def _staff_same_floor_distance(self, floor: int, start_name: str, end_name: str) -> float:
+        if not start_name or not end_name or start_name == end_name:
+            return 0.0
+        try:
+            route = self._shortest_path_same_floor(int(floor), start_name, end_name)
+        except Exception:
+            route = None
+        if route is not None:
+            try:
+                return max(0.0, float(route.get("distance_m", 0.0) or 0.0))
+            except Exception:
+                pass
+        start_xy = self._staff_node_coordinates(start_name, floor)
+        end_xy = self._staff_node_coordinates(end_name, floor)
+        if start_xy is not None and end_xy is not None:
+            return math.hypot(end_xy[0] - start_xy[0], end_xy[1] - start_xy[1])
+        return 0.0
+
+    def _staff_travel_between_locations(
+        self, from_location: str, to_location: str
+    ) -> Tuple[float, float, str]:
+        from_name = str(from_location or "").strip()
+        to_name = str(to_location or "").strip()
+        if not from_name or not to_name or from_name == to_name:
+            return 0.0, 0.0, ""
+        cache_key = (from_name, to_name)
+        cached = self._staff_travel_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        start = self.locations.get(from_name)
+        finish = self.locations.get(to_name)
+        speed = max(0.1, float(self.staff_walk_speed_m_per_sec or 1.2))
+        if start is None or finish is None:
+            result = (0.0, 0.0, "")
+            self._staff_travel_cache[cache_key] = result
+            return result
+        if int(start.floor) == int(finish.floor):
+            distance = self._staff_same_floor_distance(start.floor, from_name, to_name)
+            result = (distance / speed, distance, "")
+            self._staff_travel_cache[cache_key] = result
+            return result
+
+        best = None
+        for lift in self.lifts:
+            if not lift.can_serve(int(start.floor), int(finish.floor)):
+                continue
+            start_node = f"{lift.id}-F{int(start.floor)}"
+            finish_node = f"{lift.id}-F{int(finish.floor)}"
+            first_distance = self._staff_same_floor_distance(
+                start.floor, from_name, start_node
+            )
+            last_distance = self._staff_same_floor_distance(
+                finish.floor, finish_node, to_name
+            )
+            vertical_distance = abs(int(finish.floor) - int(start.floor)) * float(
+                getattr(self, "floor_height_m", 4.0) or 4.0
+            )
+            try:
+                lift_travel = float(
+                    lift.vertical_travel_duration_sec(
+                        int(finish.floor) - int(start.floor),
+                        float(getattr(self, "floor_height_m", 4.0) or 4.0),
+                    )
+                )
+            except Exception:
+                lift_travel = abs(int(finish.floor) - int(start.floor)) / max(
+                    float(getattr(lift, "speed_floors_per_sec", 1.0) or 1.0), 1e-9
+                )
+            service_time = (
+                float(self.staff_lift_wait_seconds or 0.0)
+                + 2.0 * max(0.0, float(getattr(lift, "door_time_sec", 0.0) or 0.0))
+                + 2.0 * max(0.0, float(getattr(lift, "boarding_time_sec", 0.0) or 0.0))
+            )
+            total_duration = (first_distance + last_distance) / speed + lift_travel + service_time
+            total_distance = first_distance + last_distance + vertical_distance
+            candidate = (total_duration, total_distance, str(lift.id))
+            if best is None or candidate[0] < best[0]:
+                best = candidate
+        if best is None:
+            horizontal = math.hypot(float(finish.x) - float(start.x), float(finish.y) - float(start.y))
+            floor_delta = abs(int(finish.floor) - int(start.floor))
+            best = (
+                horizontal / speed + floor_delta * 60.0 + float(self.staff_lift_wait_seconds or 0.0),
+                horizontal + floor_delta * float(getattr(self, "floor_height_m", 4.0) or 4.0),
+                "",
+            )
+        self._staff_travel_cache[cache_key] = best
+        return best
+
+    def _staff_handling_duration_sec(self, task: Task, return_delay_sec: float) -> float:
+        try:
+            explicit_minutes = max(
+                0.0, float(getattr(task, "staff_handling_minutes", 0.0) or 0.0)
+            )
+        except Exception:
+            explicit_minutes = 0.0
+        if explicit_minutes > 0.0:
+            return explicit_minutes * 60.0
+        # Preserve old projects where return_delay_minutes doubled as the payload
+        # handling period before a return was generated.
+        if return_delay_sec > 0.0:
+            return float(return_delay_sec)
+        return max(0.0, float(self.staff_default_handling_minutes or 0.0) * 60.0)
 
     def _assign_staff_for_handling(
         self,
@@ -4376,19 +4647,27 @@ class Simulation:
         if duration <= 0.0:
             return None
 
+        requested_start = max(0.0, float(start_time or 0.0))
         pool = self._staff_pool_for_category(
             staff_cfg["category_key"],
             staff_cfg["initial_count"],
             staff_cfg["resource_name"],
             staff_cfg["shift_pattern"],
         )
-        roster = self._staff_shift_roster(pool, start_time)
-        available_times = roster["available_times"]
+        baseline_window = self._next_staff_assignment_window(
+            task, requested_start, 0.0, 0.0, duration
+        )
+        baseline_start = float(baseline_window["start_time"] or requested_start)
+        roster = self._staff_shift_roster(pool, baseline_start)
+        available_times = roster.setdefault("available_times", [])
+        last_locations = roster.setdefault(
+            "last_locations", ["" for _ in range(len(available_times))]
+        )
+        while len(last_locations) < len(available_times):
+            last_locations.append("")
         shift_team = str(roster.get("shift_team", "") or "")
         shift_pattern = str(pool.get("shift_pattern", "none") or "none")
         shift_multiplier = float(pool.get("shift_multiplier", 1.0) or 1.0)
-        start_time = float(start_time or 0.0)
-        finish_time = start_time + duration
         location_name = str(getattr(task, "dropoff", "") or "").strip()
         movement_policy = str(
             staff_cfg.get("movement_policy", "batch_same_location") or ""
@@ -4401,22 +4680,27 @@ class Simulation:
         )
         if location_name and active_assignment is not None:
             active_finish = float(active_assignment.get("finish_time", 0.0) or 0.0)
-            if active_finish > start_time + 1e-9:
+            if active_finish > baseline_start + 1e-9:
                 person_index = max(
                     0, int(active_assignment.get("person_index", 1) or 1) - 1
                 )
-                finish_time = max(finish_time, active_finish)
+                actual_start = max(
+                    baseline_start, float(active_assignment.get("start_time", baseline_start) or baseline_start)
+                )
+                finish_time = max(actual_start + duration, active_finish)
                 if person_index < len(available_times):
                     available_times[person_index] = max(
                         float(available_times[person_index] or 0.0), finish_time
                     )
+                    last_locations[person_index] = location_name
                 assignment = {
                     "task_id": str(getattr(task, "id", "") or ""),
                     "category_key": str(pool["category_key"]),
                     "resource_name": str(pool.get("resource_name", "") or ""),
                     "person_id": str(active_assignment.get("person_id", "")),
                     "person_index": person_index + 1,
-                    "start_time": round(start_time, 3),
+                    "requested_start_time": round(requested_start, 3),
+                    "start_time": round(actual_start, 3),
                     "finish_time": round(finish_time, 3),
                     "duration_sec": round(duration, 3),
                     "location": location_name,
@@ -4424,51 +4708,103 @@ class Simulation:
                     "people_required": self._staff_rostered_count(
                         self._staff_pool_on_shift_count(pool), shift_multiplier
                     ),
-                    "staff_on_shift_people_required": self._staff_pool_on_shift_count(
-                        pool
-                    ),
+                    "staff_on_shift_people_required": self._staff_pool_on_shift_count(pool),
                     "staff_shift_pattern": shift_pattern,
                     "staff_shift_team": shift_team,
                     "staff_shift_multiplier": shift_multiplier,
-                    "staff_initial_on_shift_people": int(
-                        pool.get("initial_people", 0) or 0
-                    ),
+                    "staff_initial_on_shift_people": int(pool.get("initial_people", 0) or 0),
                     "staff_initial_rostered_people": self._staff_rostered_count(
                         int(pool.get("initial_people", 0) or 0), shift_multiplier
                     ),
                     "added_person": False,
                     "shared_location_batch": True,
+                    "travel_from_location": location_name,
+                    "travel_to_location": location_name,
+                    "travel_duration_sec": 0.0,
+                    "travel_distance_m": 0.0,
+                    "travel_lift_id": "",
+                    "travel_start_time": round(actual_start, 3),
+                    "travel_finish_time": round(actual_start, 3),
+                    "staff_wait_for_travel_sec": round(max(0.0, actual_start - requested_start), 3),
+                    "working_hours_fallback": bool(
+                        baseline_window.get("working_hours_fallback", False)
+                    ),
                 }
                 active_batches[location_name] = assignment
                 pool["assignments"].append(assignment)
                 self.staff_assignments.append(assignment)
                 return assignment
 
-        person_index = None
+        candidates = []
         preferred_people = roster.setdefault("preferred_people_by_location", {})
         preferred_index = preferred_people.get(location_name)
-        if (
-            movement_policy == "minimise_movement"
-            and isinstance(preferred_index, int)
-            and 0 <= preferred_index < len(available_times)
-            and float(available_times[preferred_index] or 0.0) <= start_time + 1e-9
-        ):
-            person_index = preferred_index
-
         for idx, available_time in enumerate(available_times):
-            if person_index is not None:
-                break
-            if float(available_time or 0.0) <= start_time + 1e-9:
-                person_index = idx
-                break
+            previous_location = str(last_locations[idx] or "")
+            travel_duration, travel_distance, lift_id = self._staff_travel_between_locations(
+                previous_location, location_name
+            )
+            window = self._next_staff_assignment_window(
+                task, requested_start, float(available_time or 0.0), travel_duration, duration
+            )
+            preference_rank = 0 if (
+                movement_policy == "minimise_movement"
+                and isinstance(preferred_index, int)
+                and preferred_index == idx
+            ) else 1
+            candidates.append(
+                {
+                    "person_index": idx,
+                    "available_time": float(available_time or 0.0),
+                    "previous_location": previous_location,
+                    "travel_duration_sec": travel_duration,
+                    "travel_distance_m": travel_distance,
+                    "travel_lift_id": lift_id,
+                    "window": window,
+                    "sort_key": (
+                        float(window["start_time"]),
+                        preference_rank,
+                        travel_duration,
+                        idx,
+                    ),
+                }
+            )
+        candidates.sort(key=lambda item: item["sort_key"])
+
+        chosen = None
+        if candidates and candidates[0]["window"]["start_time"] <= baseline_start + 1e-9:
+            chosen = candidates[0]
+        else:
+            free_before_baseline = [
+                item for item in candidates
+                if item["available_time"] <= baseline_start + 1e-9
+            ]
+            if free_before_baseline:
+                # A person is free but must physically travel. Delay the handling
+                # instead of inventing another person at the destination.
+                chosen = min(free_before_baseline, key=lambda item: item["sort_key"])
 
         added_person = False
-        if person_index is None:
+        if chosen is None:
             available_times.append(0.0)
+            last_locations.append("")
             person_index = len(available_times) - 1
+            chosen = {
+                "person_index": person_index,
+                "available_time": 0.0,
+                "previous_location": "",
+                "travel_duration_sec": 0.0,
+                "travel_distance_m": 0.0,
+                "travel_lift_id": "",
+                "window": baseline_window,
+            }
             added_person = True
 
+        person_index = int(chosen["person_index"])
+        window = chosen["window"]
+        actual_start = float(window["start_time"] or baseline_start)
+        finish_time = float(window["finish_time"] or (actual_start + duration))
         available_times[person_index] = finish_time
+        last_locations[person_index] = location_name
         category_key = str(pool["category_key"])
         team_prefix = f"shift-{shift_team}-" if shift_team else ""
         assignment = {
@@ -4477,7 +4813,8 @@ class Simulation:
             "resource_name": str(pool.get("resource_name", "") or ""),
             "person_id": f"{category_key}-{team_prefix}person-{person_index + 1}",
             "person_index": person_index + 1,
-            "start_time": round(start_time, 3),
+            "requested_start_time": round(requested_start, 3),
+            "start_time": round(actual_start, 3),
             "finish_time": round(finish_time, 3),
             "duration_sec": round(duration, 3),
             "location": location_name,
@@ -4495,6 +4832,15 @@ class Simulation:
             ),
             "added_person": added_person,
             "shared_location_batch": False,
+            "travel_from_location": str(chosen.get("previous_location", "") or ""),
+            "travel_to_location": location_name,
+            "travel_duration_sec": round(float(chosen.get("travel_duration_sec", 0.0) or 0.0), 3),
+            "travel_distance_m": round(float(chosen.get("travel_distance_m", 0.0) or 0.0), 3),
+            "travel_lift_id": str(chosen.get("travel_lift_id", "") or ""),
+            "travel_start_time": round(float(window.get("travel_start_time", actual_start) or actual_start), 3),
+            "travel_finish_time": round(float(window.get("travel_finish_time", actual_start) or actual_start), 3),
+            "staff_wait_for_travel_sec": round(max(0.0, actual_start - requested_start), 3),
+            "working_hours_fallback": bool(window.get("working_hours_fallback", False)),
         }
         if location_name:
             if movement_policy in {"batch_same_location", "minimise_movement"}:
@@ -4505,10 +4851,117 @@ class Simulation:
         self.staff_assignments.append(assignment)
         return assignment
 
+    def _log_staff_handling_assignment(self, task: Task, assignment: Optional[dict]) -> None:
+        if assignment is None:
+            return
+        category_key = str(assignment.get("category_key", "") or "")
+        resource_name = str(assignment.get("resource_name", "") or category_key or "Staff")
+        location_name = str(assignment.get("location", "") or getattr(task, "dropoff", "") or "")
+        location = self.locations.get(location_name)
+        travel_from = str(assignment.get("travel_from_location", "") or "")
+        travel_to = str(assignment.get("travel_to_location", "") or location_name)
+        travel_start = float(assignment.get("travel_start_time", assignment.get("start_time", 0.0)) or 0.0)
+        travel_finish = float(assignment.get("travel_finish_time", travel_start) or travel_start)
+        travel_duration = max(0.0, float(assignment.get("travel_duration_sec", 0.0) or 0.0))
+        if travel_duration > 1e-9 and travel_from:
+            from_loc = self.locations.get(travel_from)
+            to_loc = self.locations.get(travel_to)
+            self.log_step(
+                event_time=travel_start,
+                event_type="staff_travel",
+                task_id=str(getattr(task, "id", "") or ""),
+                details=(
+                    f"{assignment['person_id']} travels from {travel_from} to {travel_to} "
+                    f"before handling {resource_name} payload"
+                ),
+                from_location=travel_from,
+                to_location=travel_to,
+                duration_sec=travel_duration,
+                distance_m=float(assignment.get("travel_distance_m", 0.0) or 0.0),
+                start_time=travel_start,
+                end_time=travel_finish,
+                start_node=travel_from,
+                end_node=travel_to,
+                start_x=getattr(from_loc, "x", None),
+                start_y=getattr(from_loc, "y", None),
+                start_floor=getattr(from_loc, "floor", None),
+                end_x=getattr(to_loc, "x", None),
+                end_y=getattr(to_loc, "y", None),
+                end_floor=getattr(to_loc, "floor", None),
+                lift_id=str(assignment.get("travel_lift_id", "") or ""),
+                status="staff_travel",
+                task_source=getattr(task, "task_source", ""),
+                department_id=getattr(task, "department_id", ""),
+                container_type=getattr(task, "container_type", ""),
+                person_resource=f"{category_key}_staff_travel",
+                person_id=str(assignment["person_id"]),
+                people_required=int(assignment.get("people_required", 0) or 0),
+                staff_on_shift_people_required=int(assignment.get("staff_on_shift_people_required", 0) or 0),
+                staff_shift_pattern=str(assignment.get("staff_shift_pattern", "") or ""),
+                staff_shift_team=str(assignment.get("staff_shift_team", "") or ""),
+                staff_shift_multiplier=float(assignment.get("staff_shift_multiplier", 1.0) or 1.0),
+                staff_initial_on_shift_people=int(assignment.get("staff_initial_on_shift_people", 0) or 0),
+                staff_initial_rostered_people=int(assignment.get("staff_initial_rostered_people", 0) or 0),
+            )
+        start = float(assignment.get("start_time", 0.0) or 0.0)
+        finish = float(assignment.get("finish_time", start) or start)
+        self.log_step(
+            event_time=start,
+            event_type="staff_payload_handling",
+            task_id=str(getattr(task, "id", "") or ""),
+            amr_id="",
+            details=(
+                f"{assignment['person_id']} handling {resource_name} payload "
+                f"until {self.clock.format_sim_time(finish)}"
+            ),
+            from_location=location_name,
+            to_location=location_name,
+            payload_name=self._payload_log_name(getattr(task, "payload", "")),
+            payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
+            duration_sec=float(assignment.get("duration_sec", max(0.0, finish - start)) or 0.0),
+            wait_time_sec=float(assignment.get("staff_wait_for_travel_sec", 0.0) or 0.0),
+            start_time=start,
+            end_time=finish,
+            start_node=location_name,
+            end_node=location_name,
+            start_x=getattr(location, "x", None),
+            start_y=getattr(location, "y", None),
+            start_floor=getattr(location, "floor", None),
+            end_x=getattr(location, "x", None),
+            end_y=getattr(location, "y", None),
+            end_floor=getattr(location, "floor", None),
+            status="handling",
+            task_source=getattr(task, "task_source", ""),
+            department_id=getattr(task, "department_id", ""),
+            container_type=getattr(task, "container_type", ""),
+            person_resource=f"{category_key}_payload_handling",
+            person_id=str(assignment["person_id"]),
+            people_required=int(assignment.get("people_required", 0) or 0),
+            staff_on_shift_people_required=int(assignment.get("staff_on_shift_people_required", 0) or 0),
+            staff_shift_pattern=str(assignment.get("staff_shift_pattern", "") or ""),
+            staff_shift_team=str(assignment.get("staff_shift_team", "") or ""),
+            staff_shift_multiplier=float(assignment.get("staff_shift_multiplier", 1.0) or 1.0),
+            staff_initial_on_shift_people=int(assignment.get("staff_initial_on_shift_people", 0) or 0),
+            staff_initial_rostered_people=int(assignment.get("staff_initial_rostered_people", 0) or 0),
+        )
+
     def _schedule_configured_return_task(
         self, task: Task, finish_time: float, amr_id: str = ""
     ) -> None:
-        if not bool(getattr(task, "return_enabled", False)):
+        return_enabled = bool(getattr(task, "return_enabled", False))
+        staff_required = self._task_staff_handling_config(task) is not None
+        if not return_enabled and not staff_required:
+            return
+
+        delay_sec = (
+            max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
+        )
+        handling_duration_sec = self._staff_handling_duration_sec(task, delay_sec)
+        staff_assignment = self._assign_staff_for_handling(
+            task, finish_time, handling_duration_sec
+        )
+        self._log_staff_handling_assignment(task, staff_assignment)
+        if not return_enabled:
             return
 
         return_payload = str(getattr(task, "return_payload", "") or "").strip()
@@ -4518,16 +4971,17 @@ class Simulation:
             return
 
         self.synthetic_task_counter += 1
-        delay_sec = (
-            max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
-        )
-        staff_assignment = self._assign_staff_for_handling(task, finish_time, delay_sec)
+        return_release_time = finish_time + delay_sec
+        if staff_assignment is not None:
+            return_release_time = max(
+                return_release_time, float(staff_assignment.get("finish_time", finish_time) or finish_time)
+            )
         return_task = Task(
             id=f"RETURN-{task.id}-{self.synthetic_task_counter}",
             pickup=task.dropoff,
             dropoff=task.pickup,
             payload=return_payload,
-            release_time=finish_time + delay_sec,
+            release_time=return_release_time,
             target_time=0.0,
             quantity=1,
             priority=int(
@@ -4679,61 +5133,6 @@ class Simulation:
 
         pickup = self.locations.get(return_task.pickup)
         dropoff = self.locations.get(return_task.dropoff)
-        if staff_assignment is not None:
-            category_key = str(staff_assignment.get("category_key", "") or "")
-            resource_name = str(
-                staff_assignment.get("resource_name", "") or category_key or "Staff"
-            )
-            self.log_step(
-                event_time=finish_time,
-                event_type="staff_payload_handling",
-                task_id=task.id,
-                amr_id="",
-                details=(
-                    f"{staff_assignment['person_id']} handling {resource_name} payload "
-                    f"until {self.clock.format_sim_time(staff_assignment['finish_time'])}"
-                ),
-                from_location=task.dropoff,
-                to_location=task.dropoff,
-                payload_name=self._payload_log_name(task.payload),
-                payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
-                duration_sec=float(staff_assignment["duration_sec"]),
-                start_time=float(staff_assignment["start_time"]),
-                end_time=float(staff_assignment["finish_time"]),
-                start_node=task.dropoff,
-                end_node=task.dropoff,
-                start_x=getattr(pickup, "x", None),
-                start_y=getattr(pickup, "y", None),
-                start_floor=getattr(pickup, "floor", None),
-                end_x=getattr(pickup, "x", None),
-                end_y=getattr(pickup, "y", None),
-                end_floor=getattr(pickup, "floor", None),
-                status="handling",
-                task_source=getattr(task, "task_source", ""),
-                department_id=getattr(task, "department_id", ""),
-                container_type=getattr(task, "container_type", ""),
-                person_resource=f"{category_key}_payload_handling",
-                person_id=str(staff_assignment["person_id"]),
-                people_required=int(staff_assignment["people_required"]),
-                staff_on_shift_people_required=int(
-                    staff_assignment.get("staff_on_shift_people_required", 0) or 0
-                ),
-                staff_shift_pattern=str(
-                    staff_assignment.get("staff_shift_pattern", "") or ""
-                ),
-                staff_shift_team=str(
-                    staff_assignment.get("staff_shift_team", "") or ""
-                ),
-                staff_shift_multiplier=float(
-                    staff_assignment.get("staff_shift_multiplier", 1.0) or 1.0
-                ),
-                staff_initial_on_shift_people=int(
-                    staff_assignment.get("staff_initial_on_shift_people", 0) or 0
-                ),
-                staff_initial_rostered_people=int(
-                    staff_assignment.get("staff_initial_rostered_people", 0) or 0
-                ),
-            )
         self.log_step(
             event_time=return_task.release_time,
             event_type="return_task_generated",

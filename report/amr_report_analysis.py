@@ -1169,6 +1169,21 @@ def _config_display_text(item: dict, fallback: str = "") -> str:
     return str(fallback or "").strip()
 
 
+def _to_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return bool(default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on", "required", "enabled"}:
+        return True
+    if text in {"0", "false", "no", "n", "off", "none", "disabled"}:
+        return False
+    return bool(default)
+
+
 def _config_bool(item: dict, keys: Iterable[str]) -> Optional[bool]:
     for key in keys:
         if key not in (item or {}):
@@ -1222,9 +1237,40 @@ def _configured_handling_minutes(item: dict) -> float:
     return float(component_total)
 
 
-def _configured_staff_hours(item: dict, allow_timeframe: bool = False) -> Optional[Tuple[str, str]]:
+def _configured_staff_weekly_hours(item: dict) -> Optional[dict]:
+    if not isinstance(item, dict) or not _to_bool(
+        item.get("staff_use_custom_working_hours", False), False
+    ):
+        return None
+    source = item.get("staff_working_hours", {})
+    if not isinstance(source, dict):
+        return None
+    result = {}
+    for day_key in ("mon", "tue", "wed", "thu", "fri", "sat", "sun"):
+        raw = source.get(day_key, {})
+        raw = raw if isinstance(raw, dict) else {}
+        enabled = _to_bool(raw.get("enabled", False), False)
+        start = _normalise_hhmm_text(raw.get("start_time"))
+        end = _normalise_hhmm_text(raw.get("end_time"))
+        result[day_key] = {
+            "enabled": enabled,
+            "start": start or "09:00",
+            "end": end or "17:00",
+        }
+    return result
+
+
+def _configured_staff_hours(
+    item: dict, allow_timeframe: bool = False, staff_config: Optional[dict] = None
+) -> Optional[Tuple[str, str]]:
     if not isinstance(item, dict):
         return None
+    weekly = _configured_staff_weekly_hours(item)
+    if weekly:
+        for day_key in ("mon", "tue", "wed", "thu", "fri", "sat", "sun"):
+            value = weekly.get(day_key, {})
+            if value.get("enabled", False):
+                return value.get("start", "09:00"), value.get("end", "17:00")
     start_keys = (
         "staff_hours_start",
         "staff_start_time",
@@ -1242,6 +1288,15 @@ def _configured_staff_hours(item: dict, allow_timeframe: bool = False) -> Option
     if allow_timeframe and (not start or not end):
         start = start or _normalise_hhmm_text(item.get("timeframe_start"))
         end = end or _normalise_hhmm_text(item.get("timeframe_end"))
+    if (not start or not end) and isinstance(staff_config, dict):
+        pattern_key = str(item.get("staff_shift_pattern", "none") or "none").strip().lower()
+        if pattern_key in {"4_on_4_off_12h", "four_on_four_off", "four_on_four_off_12_hour"}:
+            pattern_key = "four_on_four_off_12h"
+        patterns = staff_config.get("shift_patterns", {}) or {}
+        pattern = patterns.get(pattern_key, {}) if isinstance(patterns, dict) else {}
+        if isinstance(pattern, dict):
+            start = start or _normalise_hhmm_text(pattern.get("start_time"))
+            end = end or _normalise_hhmm_text(pattern.get("end_time"))
     return (start, end) if start and end else None
 
 
@@ -1251,6 +1306,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
 
     task_generation = data.get("task_generation", {}) or {}
     categories = task_generation.get("categories", {}) or {}
+    staff_config = task_generation.get("staff_config", {}) or {}
     category_labels: Dict[str, str] = {}
     category_human_assist: Dict[str, str] = {}
     category_staff_initial: Dict[str, int] = {}
@@ -1260,6 +1316,8 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
     department_handling_duration_minutes: Dict[str, Dict[str, float]] = {}
     category_staff_hours: Dict[str, dict] = {}
     department_staff_hours: Dict[str, Dict[str, dict]] = {}
+    category_staff_weekly_hours: Dict[str, dict] = {}
+    department_staff_weekly_hours: Dict[str, Dict[str, dict]] = {}
     assist_keys = (
         "human_assist_required",
         "requires_human_assist",
@@ -1356,9 +1414,14 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
                     handling_minutes,
                 )
 
+            weekly_hours = _configured_staff_weekly_hours(item)
             hours = _configured_staff_hours(
-                item, allow_timeframe=(key_lower == "linen")
+                item,
+                allow_timeframe=(key_lower == "linen"),
+                staff_config=staff_config,
             )
+            if weekly_hours and key_lower not in category_staff_weekly_hours:
+                category_staff_weekly_hours[key_lower] = weekly_hours
             if hours and key_lower not in category_staff_hours:
                 category_staff_hours[key_lower] = {
                     "start": hours[0],
@@ -1376,6 +1439,10 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
                     per_department[department_id] = max(
                         per_department.get(department_id, 0.0), handling_minutes
                     )
+                if weekly_hours:
+                    department_staff_weekly_hours.setdefault(key_lower, {})[
+                        department_id
+                    ] = weekly_hours
                 if hours:
                     department_staff_hours.setdefault(key_lower, {})[department_id] = {
                         "start": hours[0],
@@ -1466,6 +1533,8 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         "department_handling_duration_minutes": department_handling_duration_minutes,
         "category_staff_hours": category_staff_hours,
         "department_staff_hours": department_staff_hours,
+        "category_staff_weekly_hours": category_staff_weekly_hours,
+        "department_staff_weekly_hours": department_staff_weekly_hours,
         "department_names": department_names,
         "location_display_names": location_display_names,
         "location_points": location_points,
@@ -2766,11 +2835,38 @@ def _handling_duration_seconds(
 
 
 def _record_staff_hours(
-    metadata: Optional[dict], category_key: str, department_id: str
+    metadata: Optional[dict],
+    category_key: str,
+    department_id: str,
+    event_value=None,
+    has_datetime: bool = False,
 ) -> Optional[Tuple[str, str]]:
     metadata = metadata or {}
     category_key = str(category_key or "").strip().lower()
     department_id = str(department_id or "").strip()
+    department_weekly = (
+        metadata.get("department_staff_weekly_hours", {}) or {}
+    ).get(category_key, {}) or {}
+    weekly = department_weekly.get(department_id) or (
+        metadata.get("category_staff_weekly_hours", {}) or {}
+    ).get(category_key)
+    if isinstance(weekly, dict) and event_value is not None:
+        try:
+            if has_datetime:
+                weekday = pd.Timestamp(event_value).weekday()
+            else:
+                weekday = int(float(event_value) // 86400.0) % 7
+            day_key = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")[weekday]
+            day_value = weekly.get(day_key, {})
+            if isinstance(day_value, dict):
+                if not _to_bool(day_value.get("enabled", False), False):
+                    return ("Closed", "Closed")
+                start = _normalise_hhmm_text(day_value.get("start"))
+                end = _normalise_hhmm_text(day_value.get("end"))
+                if start and end:
+                    return start, end
+        except Exception:
+            pass
     department_hours = (metadata.get("department_staff_hours", {}) or {}).get(
         category_key, {}
     ) or {}
@@ -2803,6 +2899,8 @@ def _event_seconds_of_day(value, has_datetime: bool) -> Optional[float]:
 def _within_staff_hours(
     start_value, end_value, hours: Tuple[str, str], has_datetime: bool
 ) -> bool:
+    if any(str(value or "").strip().lower() == "closed" for value in hours):
+        return False
     start_sec = _event_seconds_of_day(start_value, has_datetime)
     end_sec = _event_seconds_of_day(end_value, has_datetime)
     opening = _hhmm_to_seconds(hours[0])
@@ -2820,6 +2918,8 @@ def _within_staff_hours(
 def _ward_collection_reason(
     start_value, end_value, hours: Tuple[str, str], has_datetime: bool
 ) -> str:
+    if any(str(value or "").strip().lower() == "closed" for value in hours):
+        return "No category staff are rostered on this day."
     start_sec = _event_seconds_of_day(start_value, has_datetime)
     end_sec = _event_seconds_of_day(end_value, has_datetime)
     opening = _hhmm_to_seconds(hours[0]) or 0
@@ -2842,12 +2942,35 @@ def build_staff_hours_summary(metadata: Optional[dict]) -> pd.DataFrame:
     metadata = metadata or {}
     labels = metadata.get("category_labels", {}) or {}
     rows = []
-    for category_key, value in (metadata.get("category_staff_hours", {}) or {}).items():
-        if not isinstance(value, dict):
-            continue
+    all_categories = set((metadata.get("category_staff_hours", {}) or {}).keys())
+    all_categories.update((metadata.get("category_staff_weekly_hours", {}) or {}).keys())
+    for category_key in sorted(all_categories):
+        value = (metadata.get("category_staff_hours", {}) or {}).get(category_key, {})
+        value = value if isinstance(value, dict) else {}
         start = _normalise_hhmm_text(value.get("start"))
         end = _normalise_hhmm_text(value.get("end"))
-        if not start or not end:
+        weekly = (metadata.get("category_staff_weekly_hours", {}) or {}).get(
+            category_key, {}
+        )
+        weekly_parts = []
+        if isinstance(weekly, dict):
+            labels_by_day = {
+                "mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu",
+                "fri": "Fri", "sat": "Sat", "sun": "Sun",
+            }
+            for day_key in labels_by_day:
+                day_value = weekly.get(day_key, {})
+                if isinstance(day_value, dict) and _to_bool(
+                    day_value.get("enabled", False), False
+                ):
+                    weekly_parts.append(
+                        f"{labels_by_day[day_key]} {day_value.get('start', '09:00')}-"
+                        f"{day_value.get('end', '17:00')}"
+                    )
+        staff_hours_text = "; ".join(weekly_parts)
+        if not staff_hours_text and start and end:
+            staff_hours_text = f"{start}-{end}"
+        if not staff_hours_text:
             continue
         rows.append(
             {
@@ -2855,7 +2978,7 @@ def build_staff_hours_summary(metadata: Optional[dict]) -> pd.DataFrame:
                 "category_key": str(category_key),
                 "staff_start": start,
                 "staff_end": end,
-                "staff_hours": f"{start}-{end}",
+                "staff_hours": staff_hours_text,
             }
         )
     return pd.DataFrame(
@@ -3006,7 +3129,7 @@ def build_payload_handling_timetable(
                 "shift_team": shift_team,
                 "task_id": task_id,
             }
-            staff_hours = _record_staff_hours(metadata, category_key, department_id)
+            staff_hours = _record_staff_hours(metadata, category_key, department_id, ready_start, ctx.has_datetime)
             if (
                 category_key == "linen"
                 and staff_hours
@@ -3125,7 +3248,7 @@ def build_payload_handling_timetable(
                 "shift_team": shift_team,
                 "task_id": source_id,
             }
-            staff_hours = _record_staff_hours(metadata, category_key, department_id)
+            staff_hours = _record_staff_hours(metadata, category_key, department_id, ready_start, ctx.has_datetime)
             if (
                 category_key == "linen"
                 and staff_hours
@@ -3309,10 +3432,12 @@ def build_staff_handling_summary(
         if category_key != "linen":
             return True
         department_id = _clean_optional_text(row.get("department_id", ""))
-        hours = _record_staff_hours(metadata, category_key, department_id)
+        start_value = row.get(ctx.time_col)
+        hours = _record_staff_hours(
+            metadata, category_key, department_id, start_value, ctx.has_datetime
+        )
         if not hours:
             return True
-        start_value = row.get(ctx.time_col)
         end_value = add_seconds_to_event_time(
             start_value,
             _to_float(row.get("_report_handling_duration_s"), 0.0),

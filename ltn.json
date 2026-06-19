@@ -24698,6 +24698,9 @@
     "staff_config": {
       "enabled": true,
       "spread_timeframe_tasks": false,
+      "walking_speed_m_per_sec": 1.2,
+      "lift_wait_seconds": 30.0,
+      "default_handling_minutes": 15.0,
       "shift_patterns": {
         "none": {
           "display_name": "Fixed working hours",
@@ -24754,6 +24757,45 @@
         "staff_resource_name": "",
         "staff_movement_policy": "minimise_movement",
         "staff_shift_pattern": "none",
+        "staff_handling_minutes": 15.0,
+        "staff_use_custom_working_hours": false,
+        "staff_working_hours": {
+          "mon": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "tue": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "wed": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "thu": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "fri": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sat": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sun": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          }
+        },
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -24806,10 +24848,49 @@
             "return_payload": "",
             "return_delay_minutes": 0.0,
             "requires_staff": false,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 1,
             "staff_resource_name": "",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -25986,6 +26067,45 @@
         "staff_resource_name": "",
         "staff_movement_policy": "batch_same_location",
         "staff_shift_pattern": "none",
+        "staff_handling_minutes": 15.0,
+        "staff_use_custom_working_hours": false,
+        "staff_working_hours": {
+          "mon": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "tue": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "wed": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "thu": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "fri": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sat": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sun": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          }
+        },
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -26036,10 +26156,49 @@
             "return_payload": "",
             "return_delay_minutes": 0.0,
             "requires_staff": false,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 1,
             "staff_resource_name": "",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28044,6 +28203,45 @@
         "staff_resource_name": "",
         "staff_movement_policy": "batch_same_location",
         "staff_shift_pattern": "none",
+        "staff_handling_minutes": 15.0,
+        "staff_use_custom_working_hours": false,
+        "staff_working_hours": {
+          "mon": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "tue": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "wed": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "thu": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "fri": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sat": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sun": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          }
+        },
         "reusable_return_pool_enabled": true,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -28095,10 +28293,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": false,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 1,
             "staff_resource_name": "",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28141,10 +28378,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28190,10 +28466,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28239,10 +28554,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28288,10 +28642,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28337,10 +28730,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28386,10 +28818,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28435,10 +28906,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28484,10 +28994,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28533,10 +29082,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28582,10 +29170,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28631,10 +29258,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28680,10 +29346,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28729,10 +29434,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28778,10 +29522,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28827,10 +29610,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28876,10 +29698,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28925,10 +29786,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -28974,10 +29874,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -29023,10 +29962,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -29072,10 +30050,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -29121,10 +30138,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -29170,10 +30226,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -29219,10 +30314,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -29268,10 +30402,49 @@
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 8,
             "staff_resource_name": "Linen Team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": true,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "06:00",
+                "end_time": "14:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": true,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -29343,10 +30516,49 @@
               "return_payload": "Linen Trolley",
               "return_delay_minutes": 0.0,
               "requires_staff": true,
+              "staff_handling_minutes": 15.0,
               "staff_initial_count": 8,
               "staff_resource_name": "Linen Team",
               "staff_movement_policy": "batch_same_location",
               "staff_shift_pattern": "none",
+              "staff_use_custom_working_hours": true,
+              "staff_working_hours": {
+                "mon": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "tue": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "wed": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "thu": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "fri": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "sat": {
+                  "enabled": false,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "sun": {
+                  "enabled": false,
+                  "start_time": "09:00",
+                  "end_time": "17:00"
+                }
+              },
               "reusable_return_pool_enabled": true,
               "reusable_return_pool_multiplier": 2.0,
               "reusable_return_pool_max": 0,
@@ -29398,10 +30610,49 @@
               "return_payload": "Linen Trolley",
               "return_delay_minutes": 0.0,
               "requires_staff": true,
+              "staff_handling_minutes": 15.0,
               "staff_initial_count": 8,
               "staff_resource_name": "Linen Team",
               "staff_movement_policy": "batch_same_location",
               "staff_shift_pattern": "none",
+              "staff_use_custom_working_hours": true,
+              "staff_working_hours": {
+                "mon": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "tue": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "wed": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "thu": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "fri": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "sat": {
+                  "enabled": false,
+                  "start_time": "09:00",
+                  "end_time": "17:00"
+                },
+                "sun": {
+                  "enabled": false,
+                  "start_time": "09:00",
+                  "end_time": "17:00"
+                }
+              },
               "reusable_return_pool_enabled": true,
               "reusable_return_pool_multiplier": 2.0,
               "reusable_return_pool_max": 0,
@@ -29453,10 +30704,49 @@
               "return_payload": "Linen Trolley",
               "return_delay_minutes": 0.0,
               "requires_staff": true,
+              "staff_handling_minutes": 15.0,
               "staff_initial_count": 8,
               "staff_resource_name": "Linen Team",
               "staff_movement_policy": "batch_same_location",
               "staff_shift_pattern": "none",
+              "staff_use_custom_working_hours": true,
+              "staff_working_hours": {
+                "mon": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "tue": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "wed": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "thu": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "fri": {
+                  "enabled": true,
+                  "start_time": "06:00",
+                  "end_time": "14:00"
+                },
+                "sat": {
+                  "enabled": false,
+                  "start_time": "09:00",
+                  "end_time": "17:00"
+                },
+                "sun": {
+                  "enabled": false,
+                  "start_time": "09:00",
+                  "end_time": "17:00"
+                }
+              },
               "reusable_return_pool_enabled": true,
               "reusable_return_pool_multiplier": 2.0,
               "reusable_return_pool_max": 0,
@@ -29502,6 +30792,45 @@
         "staff_resource_name": "",
         "staff_movement_policy": "batch_same_location",
         "staff_shift_pattern": "none",
+        "staff_handling_minutes": 15.0,
+        "staff_use_custom_working_hours": false,
+        "staff_working_hours": {
+          "mon": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "tue": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "wed": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "thu": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "fri": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sat": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sun": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          }
+        },
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -29550,10 +30879,49 @@
             "return_payload": "",
             "return_delay_minutes": 0.0,
             "requires_staff": false,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 1,
             "staff_resource_name": "",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -31767,6 +33135,45 @@
         "staff_resource_name": "",
         "staff_movement_policy": "batch_same_location",
         "staff_shift_pattern": "four_on_four_off_12h",
+        "staff_handling_minutes": 15.0,
+        "staff_use_custom_working_hours": false,
+        "staff_working_hours": {
+          "mon": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "tue": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "wed": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "thu": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "fri": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sat": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sun": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          }
+        },
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 0.0,
         "reusable_return_pool_max": 0,
@@ -31809,10 +33216,49 @@
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
             "requires_staff": true,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 1,
             "staff_resource_name": "",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "four_on_four_off_12h",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -34050,6 +35496,45 @@
         "staff_resource_name": "",
         "staff_movement_policy": "batch_same_location",
         "staff_shift_pattern": "none",
+        "staff_handling_minutes": 15.0,
+        "staff_use_custom_working_hours": false,
+        "staff_working_hours": {
+          "mon": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "tue": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "wed": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "thu": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "fri": {
+            "enabled": true,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sat": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          },
+          "sun": {
+            "enabled": false,
+            "start_time": "09:00",
+            "end_time": "17:00"
+          }
+        },
         "reusable_return_pool_enabled": false,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -34100,10 +35585,49 @@
             "return_payload": "",
             "return_delay_minutes": 0.0,
             "requires_staff": false,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 1,
             "staff_resource_name": "",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -34138,11 +35662,18 @@
       "enabled": true,
       "location": "D47-WASTE",
       "payloads": [
-        "Clinical Waste Bin"
+        "Clinical Waste Bin",
+        "Domestic Waste Bin",
+        "Linen Collection Bin"
       ],
       "days_active": [
+        "mon",
+        "tue",
         "wed",
-        "sat"
+        "thu",
+        "fri",
+        "sat",
+        "sun"
       ],
       "scheduled_times": [
         "19:00"

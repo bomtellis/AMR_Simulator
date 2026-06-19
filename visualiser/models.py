@@ -133,6 +133,9 @@ def default_task_generation_category(label: str) -> dict:
         "staff_resource_name": "",
         "staff_movement_policy": "batch_same_location",
         "staff_shift_pattern": "none",
+        "staff_handling_minutes": 15.0,
+        "staff_use_custom_working_hours": False,
+        "staff_working_hours": {},
         "reusable_return_pool_enabled": False,
         "reusable_return_pool_multiplier": 2.0,
         "reusable_return_pool_max": 0,
@@ -157,6 +160,9 @@ def default_staff_task_generation_config() -> dict:
     return {
         "enabled": True,
         "spread_timeframe_tasks": True,
+        "walking_speed_m_per_sec": 1.2,
+        "lift_wait_seconds": 30.0,
+        "default_handling_minutes": 15.0,
         "shift_patterns": {
             # ``none`` is the existing category value for a non-rotating team.
             # It now uses these global fixed hours without changing legacy JSON.
@@ -199,6 +205,17 @@ def normalise_staff_task_generation_config(value: Optional[dict]) -> dict:
             incoming.get("space_timeframe_tasks", result["spread_timeframe_tasks"]),
         )
     )
+    for field_name, minimum in (
+        ("walking_speed_m_per_sec", 0.1),
+        ("lift_wait_seconds", 0.0),
+        ("default_handling_minutes", 0.0),
+    ):
+        try:
+            result[field_name] = max(
+                minimum, float(incoming.get(field_name, result[field_name]))
+            )
+        except Exception:
+            pass
 
     incoming_patterns = incoming.get("shift_patterns", {})
     if not isinstance(incoming_patterns, dict):
@@ -401,6 +418,19 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
         if shift_pattern not in {"none", "four_on_four_off_12h"}:
             shift_pattern = "none"
         category["staff_shift_pattern"] = shift_pattern
+        try:
+            category["staff_handling_minutes"] = max(
+                0.0, float(category.get("staff_handling_minutes", 15.0) or 0.0)
+            )
+        except Exception:
+            category["staff_handling_minutes"] = 15.0
+        category["staff_use_custom_working_hours"] = bool(
+            category.get("staff_use_custom_working_hours", False)
+        )
+        weekly = category.get("staff_working_hours", {})
+        category["staff_working_hours"] = (
+            dict(weekly) if isinstance(weekly, dict) else {}
+        )
         category["run_every_fortnight"] = bool(category.get("run_every_fortnight", False))
 
     # Keep the legacy department_waste mirror in step for older configs/tools.

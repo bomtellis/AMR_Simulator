@@ -86,6 +86,14 @@ class Task:
     staff_category_key: str = ""
     staff_movement_policy: str = "batch_same_location"
     staff_shift_pattern: str = "none"
+    staff_handling_minutes: float = 0.0
+    staff_use_custom_working_hours: bool = False
+    staff_working_hours: Dict[str, dict] = field(default_factory=dict)
+    staff_shift_start_time: str = ""
+    staff_shift_end_time: str = ""
+    staff_shift_days_active: List[str] = field(default_factory=list)
+    staff_shift_work_days: int = 0
+    staff_shift_rest_days: int = 0
 
 
 @dataclass

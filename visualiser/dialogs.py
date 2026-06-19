@@ -219,6 +219,153 @@ class ScheduledTimesDialog(QDialog):
         super().accept()
 
 
+
+def _default_staff_weekly_hours() -> dict:
+    return {
+        key: {
+            "enabled": key in {"mon", "tue", "wed", "thu", "fri"},
+            "start_time": "09:00",
+            "end_time": "17:00",
+        }
+        for key in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+    }
+
+
+def _normalise_staff_weekly_hours(value) -> dict:
+    source = value if isinstance(value, dict) else {}
+    result = _default_staff_weekly_hours()
+    for day_key, fallback in result.items():
+        raw = source.get(day_key, {})
+        raw = raw if isinstance(raw, dict) else {}
+        start_time = str(raw.get("start_time", fallback["start_time"]) or "").strip()
+        end_time = str(raw.get("end_time", fallback["end_time"]) or "").strip()
+        if not QTime.fromString(start_time, "HH:mm").isValid():
+            start_time = fallback["start_time"]
+        if not QTime.fromString(end_time, "HH:mm").isValid():
+            end_time = fallback["end_time"]
+        result[day_key] = {
+            "enabled": bool(raw.get("enabled", fallback["enabled"])),
+            "start_time": start_time,
+            "end_time": end_time,
+        }
+    return result
+
+
+def _staff_weekly_hours_summary(use_custom: bool, value) -> str:
+    if not use_custom:
+        return "Use selected global shift pattern"
+    hours = _normalise_staff_weekly_hours(value)
+    active = []
+    labels = {
+        "mon": "Mon", "tue": "Tue", "wed": "Wed", "thu": "Thu",
+        "fri": "Fri", "sat": "Sat", "sun": "Sun",
+    }
+    for key in labels:
+        item = hours[key]
+        if item.get("enabled", False):
+            active.append(
+                f"{labels[key]} {item.get('start_time', '09:00')}-{item.get('end_time', '17:00')}"
+            )
+    if not active:
+        return "Custom hours: no working days"
+    if len(active) <= 3:
+        return "; ".join(active)
+    return f"{len(active)} custom working days"
+
+
+class StaffWeeklyHoursDialog(QDialog):
+    DAYS = [
+        ("mon", "Monday"), ("tue", "Tuesday"), ("wed", "Wednesday"),
+        ("thu", "Thursday"), ("fri", "Friday"), ("sat", "Saturday"),
+        ("sun", "Sunday"),
+    ]
+
+    def __init__(self, parent, use_custom=False, hours=None):
+        super().__init__(parent)
+        self.setWindowTitle("Staff working hours by day")
+        self.resize(560, 420)
+        self.result = None
+        self.hours = _normalise_staff_weekly_hours(hours)
+
+        layout = QVBoxLayout(self)
+        intro = QLabel(
+            "Override the global shift hours for this category or department. "
+            "These hours control timeframe task spacing and the actual times at "
+            "which staff can travel to and handle delivered payloads."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        self.custom_check = QCheckBox("Use these custom working hours")
+        self.custom_check.setChecked(bool(use_custom))
+        layout.addWidget(self.custom_check)
+
+        grid = QGridLayout()
+        grid.addWidget(QLabel("Working"), 0, 0)
+        grid.addWidget(QLabel("Day"), 0, 1)
+        grid.addWidget(QLabel("Start"), 0, 2)
+        grid.addWidget(QLabel("Finish"), 0, 3)
+        self.rows = {}
+        for row_index, (day_key, day_label) in enumerate(self.DAYS, start=1):
+            item = self.hours[day_key]
+            enabled = QCheckBox()
+            enabled.setChecked(bool(item.get("enabled", False)))
+            start_edit = QTimeEdit()
+            start_edit.setDisplayFormat("HH:mm")
+            start_edit.setTime(QTime.fromString(item.get("start_time", "09:00"), "HH:mm"))
+            end_edit = QTimeEdit()
+            end_edit.setDisplayFormat("HH:mm")
+            end_edit.setTime(QTime.fromString(item.get("end_time", "17:00"), "HH:mm"))
+            enabled.toggled.connect(start_edit.setEnabled)
+            enabled.toggled.connect(end_edit.setEnabled)
+            start_edit.setEnabled(enabled.isChecked())
+            end_edit.setEnabled(enabled.isChecked())
+            self.rows[day_key] = (enabled, start_edit, end_edit)
+            grid.addWidget(enabled, row_index, 0)
+            grid.addWidget(QLabel(day_label), row_index, 1)
+            grid.addWidget(start_edit, row_index, 2)
+            grid.addWidget(end_edit, row_index, 3)
+        layout.addLayout(grid)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def accept(self):
+        hours = {}
+        for day_key, _day_label in self.DAYS:
+            enabled, start_edit, end_edit = self.rows[day_key]
+            start_time = start_edit.time().toString("HH:mm")
+            end_time = end_edit.time().toString("HH:mm")
+            if enabled.isChecked() and start_time == end_time:
+                QMessageBox.critical(
+                    self,
+                    "Invalid staff working hours",
+                    f"{_day_label} start and finish times cannot be the same.",
+                )
+                return
+            hours[day_key] = {
+                "enabled": enabled.isChecked(),
+                "start_time": start_time,
+                "end_time": end_time,
+            }
+        if self.custom_check.isChecked() and not any(
+            item.get("enabled", False) for item in hours.values()
+        ):
+            QMessageBox.critical(
+                self,
+                "Invalid staff working hours",
+                "Select at least one working day or disable the custom-hours override.",
+            )
+            return
+        self.result = {
+            "use_custom": self.custom_check.isChecked(),
+            "hours": hours,
+        }
+        super().accept()
+
+
 class GlobalStaffConfigDialog(QDialog):
     """Editor for staff hours shared by all staff-assisted task generators."""
 
@@ -260,6 +407,28 @@ class GlobalStaffConfigDialog(QDialog):
             bool(self.config.get("spread_timeframe_tasks", True))
         )
         layout.addWidget(self.spread_check)
+
+        travel_form = QFormLayout()
+        self.walking_speed_edit = QLineEdit(
+            str(self.config.get("walking_speed_m_per_sec", 1.2))
+        )
+        self.walking_speed_edit.setValidator(QDoubleValidator(0.1, 10.0, 2, self))
+        self.lift_wait_edit = QLineEdit(
+            str(self.config.get("lift_wait_seconds", 30.0))
+        )
+        self.lift_wait_edit.setValidator(QDoubleValidator(0.0, 3600.0, 1, self))
+        self.default_handling_edit = QLineEdit(
+            str(self.config.get("default_handling_minutes", 15.0))
+        )
+        self.default_handling_edit.setValidator(
+            QDoubleValidator(0.0, 1440.0, 2, self)
+        )
+        travel_form.addRow("Walking speed (m/s)", self.walking_speed_edit)
+        travel_form.addRow("Lift wait allowance (seconds)", self.lift_wait_edit)
+        travel_form.addRow(
+            "Default payload handling (minutes)", self.default_handling_edit
+        )
+        layout.addLayout(travel_form)
 
         patterns = self.config.get("shift_patterns", {}) or {}
         fixed = patterns.get("none", {}) or {}
@@ -323,6 +492,12 @@ class GlobalStaffConfigDialog(QDialog):
         )
         rotating["work_days"] = 4
         rotating["rest_days"] = 4
+        def positive_float(name, default, minimum=0.0):
+            try:
+                return max(minimum, float(source.get(name, default)))
+            except Exception:
+                return float(default)
+
         return {
             "enabled": bool(source.get("enabled", True)),
             "spread_timeframe_tasks": bool(
@@ -330,6 +505,13 @@ class GlobalStaffConfigDialog(QDialog):
                     "spread_timeframe_tasks",
                     source.get("space_timeframe_tasks", True),
                 )
+            ),
+            "walking_speed_m_per_sec": positive_float(
+                "walking_speed_m_per_sec", 1.2, 0.1
+            ),
+            "lift_wait_seconds": positive_float("lift_wait_seconds", 30.0, 0.0),
+            "default_handling_minutes": positive_float(
+                "default_handling_minutes", 15.0, 0.0
             ),
             "shift_patterns": {
                 "none": fixed,
@@ -386,6 +568,11 @@ class GlobalStaffConfigDialog(QDialog):
         self.result = {
             "enabled": self.enabled_check.isChecked(),
             "spread_timeframe_tasks": self.spread_check.isChecked(),
+            "walking_speed_m_per_sec": float(self.walking_speed_edit.text() or 1.2),
+            "lift_wait_seconds": float(self.lift_wait_edit.text() or 30.0),
+            "default_handling_minutes": float(
+                self.default_handling_edit.text() or 15.0
+            ),
             "shift_patterns": {
                 "none": {
                     "display_name": "Fixed working hours",
@@ -605,6 +792,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.return_delay_edit = QLineEdit(
             str(self.base_category.get("return_delay_minutes", 0))
         )
+        self.staff_handling_minutes_edit = QLineEdit(
+            str(self.base_category.get("staff_handling_minutes", 15.0))
+        )
         self.requires_staff_check = QCheckBox("Assign category staff for delivered payload handling")
         self.requires_staff_check.setToolTip(
             "Use a separate staff pool for this category. Staff are reserved for delivered payload handling at the drop-off location."
@@ -636,6 +826,21 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             self.staff_shift_pattern_combo,
             self.base_category.get("staff_shift_pattern", "none"),
         )
+        self.staff_use_custom_working_hours = bool(
+            self.base_category.get("staff_use_custom_working_hours", False)
+        )
+        self.staff_working_hours = _normalise_staff_weekly_hours(
+            self.base_category.get("staff_working_hours", {})
+        )
+        self.staff_hours_widget = QWidget()
+        staff_hours_row = QHBoxLayout(self.staff_hours_widget)
+        staff_hours_row.setContentsMargins(0, 0, 0, 0)
+        self.staff_hours_summary = QLabel()
+        self.staff_hours_summary.setWordWrap(True)
+        edit_staff_hours_btn = QPushButton("Edit...")
+        edit_staff_hours_btn.clicked.connect(self.edit_staff_working_hours)
+        staff_hours_row.addWidget(self.staff_hours_summary, 1)
+        staff_hours_row.addWidget(edit_staff_hours_btn)
 
         self.reusable_return_pool_check = QCheckBox(
             "Reuse returned payloads as a capped source pool"
@@ -724,6 +929,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         positive_int_validator = QIntValidator(1, 999999, self)
         self.priority_edit.setValidator(QIntValidator(0, 999999, self))
         self.return_delay_edit.setValidator(QDoubleValidator(0.0, 999999.0, 2, self))
+        self.staff_handling_minutes_edit.setValidator(
+            QDoubleValidator(0.0, 1440.0, 2, self)
+        )
         self.staff_initial_count_edit.setValidator(QIntValidator(1, 999999, self))
         self.reusable_return_pool_multiplier_edit.setValidator(QDoubleValidator(0.0, 999999.0, 3, self))
         self.reusable_return_pool_max_edit.setValidator(QIntValidator(0, 999999, self))
@@ -748,10 +956,12 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
         form.addRow("Staff handling", self.requires_staff_check)
+        form.addRow("Handling time (minutes)", self.staff_handling_minutes_edit)
         form.addRow("Initial staff count", self.staff_initial_count_edit)
         form.addRow("Staff resource name", self.staff_resource_name_edit)
         form.addRow("Staff movement", self.staff_movement_policy_widget)
         form.addRow("Shift pattern", self.staff_shift_pattern_combo)
+        form.addRow("Working hours by day", self.staff_hours_widget)
         form.addRow("Reusable return pool", self.reusable_return_pool_check)
         form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
@@ -790,6 +1000,29 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.update_role_field_state()
         self.refresh_dropoff_summary()
         self.refresh_schedule_summary()
+        self.refresh_staff_working_hours_summary()
+
+    def edit_staff_working_hours(self):
+        dialog = StaffWeeklyHoursDialog(
+            self,
+            self.staff_use_custom_working_hours,
+            self.staff_working_hours,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.staff_use_custom_working_hours = bool(
+                dialog.result.get("use_custom", False)
+            )
+            self.staff_working_hours = _normalise_staff_weekly_hours(
+                dialog.result.get("hours", {})
+            )
+            self.refresh_staff_working_hours_summary()
+
+    def refresh_staff_working_hours_summary(self):
+        self.staff_hours_summary.setText(
+            _staff_weekly_hours_summary(
+                self.staff_use_custom_working_hours, self.staff_working_hours
+            )
+        )
 
     def set_department_location_role(self, role, checked):
         if not checked:
@@ -873,15 +1106,19 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
         self._set_form_row_visible(self.requires_staff_check, show_generation)
+        self._set_form_row_visible(self.staff_handling_minutes_edit, staff_enabled)
         self._set_form_row_visible(self.staff_initial_count_edit, staff_enabled)
         self._set_form_row_visible(self.staff_resource_name_edit, staff_enabled)
         self._set_form_row_visible(self.staff_movement_policy_widget, staff_enabled)
         self._set_form_row_visible(self.staff_shift_pattern_combo, staff_enabled)
+        self._set_form_row_visible(self.staff_hours_widget, staff_enabled)
         self.requires_staff_check.setEnabled(show_generation)
+        self.staff_handling_minutes_edit.setEnabled(staff_enabled)
         self.staff_initial_count_edit.setEnabled(staff_enabled)
         self.staff_resource_name_edit.setEnabled(staff_enabled)
         self.staff_movement_policy_widget.setEnabled(staff_enabled)
         self.staff_shift_pattern_combo.setEnabled(staff_enabled)
+        self.staff_hours_widget.setEnabled(staff_enabled)
         self._set_form_row_visible(self.reusable_return_pool_check, return_enabled)
         self._set_form_row_visible(self.reusable_return_pool_multiplier_edit, return_enabled and self.reusable_return_pool_check.isChecked())
         self._set_form_row_visible(self.reusable_return_pool_max_edit, return_enabled and self.reusable_return_pool_check.isChecked())
@@ -1246,11 +1483,20 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "return_payload": self.return_payload_combo.currentText().strip(),
                 "return_delay_minutes": float(self.return_delay_edit.text() or 0),
                 "requires_staff": self.requires_staff_check.isChecked(),
+                "staff_handling_minutes": max(
+                    0.0, float(self.staff_handling_minutes_edit.text() or 0.0)
+                ),
                 "staff_initial_count": max(1, int(float(self.staff_initial_count_edit.text() or 1))),
                 "staff_resource_name": self.staff_resource_name_edit.text().strip(),
                 "staff_movement_policy": self._selected_staff_movement_policy(),
                 "staff_shift_pattern": _selected_staff_shift_pattern_combo(
                     self.staff_shift_pattern_combo
+                ),
+                "staff_use_custom_working_hours": bool(
+                    self.staff_use_custom_working_hours
+                ),
+                "staff_working_hours": _normalise_staff_weekly_hours(
+                    self.staff_working_hours
                 ),
                 "reusable_return_pool_enabled": self.reusable_return_pool_check.isChecked(),
                 "reusable_return_pool_multiplier": float(self.reusable_return_pool_multiplier_edit.text() or 2.0),
@@ -1568,6 +1814,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_payload_combo.addItems([""] + self.payload_names)
 
         self.return_delay_edit = QLineEdit()
+        self.staff_handling_minutes_edit = QLineEdit()
         self.requires_staff_check = QCheckBox("Assign category staff for delivered payload handling")
         self.requires_staff_check.setToolTip(
             "Use a separate staff pool for this category. Staff are reserved for delivered payload handling at the drop-off location."
@@ -1584,6 +1831,17 @@ class TaskGenerationSettingsDialog(QDialog):
         self.staff_shift_pattern_combo.setToolTip(
             "Select how staff are grouped into shift teams for delivered payload handling."
         )
+        self.staff_use_custom_working_hours = False
+        self.staff_working_hours = _normalise_staff_weekly_hours({})
+        self.staff_hours_widget = QWidget()
+        staff_hours_row = QHBoxLayout(self.staff_hours_widget)
+        staff_hours_row.setContentsMargins(0, 0, 0, 0)
+        self.staff_hours_summary = QLabel()
+        self.staff_hours_summary.setWordWrap(True)
+        edit_staff_hours_btn = QPushButton("Edit...")
+        edit_staff_hours_btn.clicked.connect(self.edit_staff_working_hours)
+        staff_hours_row.addWidget(self.staff_hours_summary, 1)
+        staff_hours_row.addWidget(edit_staff_hours_btn)
 
         self.reusable_return_pool_check = QCheckBox(
             "Reuse returned payloads as a capped source pool"
@@ -1653,6 +1911,9 @@ class TaskGenerationSettingsDialog(QDialog):
         positive_int_validator = QIntValidator(1, 999999, self)
         self.priority_edit.setValidator(QIntValidator(0, 999999, self))
         self.return_delay_edit.setValidator(QDoubleValidator(0.0, 999999.0, 2, self))
+        self.staff_handling_minutes_edit.setValidator(
+            QDoubleValidator(0.0, 1440.0, 2, self)
+        )
         self.staff_initial_count_edit.setValidator(QIntValidator(1, 999999, self))
         self.reusable_return_pool_multiplier_edit.setValidator(QDoubleValidator(0.0, 999999.0, 3, self))
         self.reusable_return_pool_max_edit.setValidator(QIntValidator(0, 999999, self))
@@ -1679,10 +1940,12 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
         form.addRow("Staff handling", self.requires_staff_check)
+        form.addRow("Handling time (minutes)", self.staff_handling_minutes_edit)
         form.addRow("Initial staff count", self.staff_initial_count_edit)
         form.addRow("Staff resource name", self.staff_resource_name_edit)
         form.addRow("Staff movement", self.staff_movement_policy_widget)
         form.addRow("Shift pattern", self.staff_shift_pattern_combo)
+        form.addRow("Working hours by day", self.staff_hours_widget)
         form.addRow("Reusable return pool", self.reusable_return_pool_check)
         form.addRow("Pool multiplier", self.reusable_return_pool_multiplier_edit)
         form.addRow("Pool hard cap (0 = auto)", self.reusable_return_pool_max_edit)
@@ -1712,7 +1975,7 @@ class TaskGenerationSettingsDialog(QDialog):
         help_label = QLabel(
             "Schedule times are comma-separated HH:MM values. "
             "Timeframe mode releases non-staff tasks at the start of the active-day window. "
-            "Staff-assisted timeframe tasks are evenly spaced across the applicable global staff working hours and remain due before the effective timeframe end. "
+            "Staff-assisted timeframe tasks are evenly spaced across the applicable category/department working hours (or the global shift pattern when no override is selected) and remain due before the effective timeframe end. "
             "Drop-off destinations can contain multiple locations; the first is also saved as "
             "dropoff_location for compatibility with existing generators. "
             "Configure multiple can be used more than once for the same category and department; "
@@ -1754,6 +2017,29 @@ class TaskGenerationSettingsDialog(QDialog):
         self._loading = False
 
         self._refresh_schedule_summary()
+        self._refresh_staff_working_hours_summary()
+
+    def edit_staff_working_hours(self):
+        dialog = StaffWeeklyHoursDialog(
+            self,
+            self.staff_use_custom_working_hours,
+            self.staff_working_hours,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.staff_use_custom_working_hours = bool(
+                dialog.result.get("use_custom", False)
+            )
+            self.staff_working_hours = _normalise_staff_weekly_hours(
+                dialog.result.get("hours", {})
+            )
+            self._refresh_staff_working_hours_summary()
+
+    def _refresh_staff_working_hours_summary(self):
+        self.staff_hours_summary.setText(
+            _staff_weekly_hours_summary(
+                self.staff_use_custom_working_hours, self.staff_working_hours
+            )
+        )
 
     def _department_display_name(self, dept_id):
         dept_id = str(dept_id).strip()
@@ -1820,7 +2106,15 @@ class TaskGenerationSettingsDialog(QDialog):
                 == "four_on_four_off_12h"
             ):
                 staff_text += " + 4 on / 4 off allowance"
+            handling = payload.get("staff_handling_minutes", 15.0)
+            staff_text += f"; handling {handling:g} min" if isinstance(handling, (int, float)) else ""
             lines.append(staff_text)
+            lines.append(
+                "Hours: " + _staff_weekly_hours_summary(
+                    bool(payload.get("staff_use_custom_working_hours", False)),
+                    payload.get("staff_working_hours", {}),
+                )
+            )
 
         return "\n".join(lines)
 
@@ -1924,8 +2218,13 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_payload": "",
             "return_delay_minutes": 0.0,
             "requires_staff": False,
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": False,
+            "staff_working_hours": {},
             "reusable_return_pool_enabled": False,
             "reusable_return_pool_multiplier": 0.0,
             "reusable_return_pool_max": 0,
@@ -2843,11 +3142,15 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_enabled": key in {"catering", "linen", "waste", "ssd"},
             "return_payload": "",
             "requires_staff": key == "stores",
+            "staff_handling_minutes": 15.0,
             "staff_initial_count": 1,
             "staff_resource_name": "",
             "staff_movement_policy": (
                 "minimise_movement" if key == "catering" else "batch_same_location"
             ),
+            "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": False,
+            "staff_working_hours": {},
             "route_profile": "",
             "days_active": ["mon", "tue", "wed", "thu", "fri"],
             "schedule_times": {
@@ -2901,7 +3204,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.global_staff_summary.setText(
             f"Staff: {fixed.get('start_time', '09:00')}-{fixed.get('end_time', '17:00')} "
             f"({fixed_days}); 4-on/4-off {rotating.get('start_time', '07:00')}-"
-            f"{rotating.get('end_time', '19:00')}; {spacing}."
+            f"{rotating.get('end_time', '19:00')}; {spacing}; "
+            f"walking {cfg.get('walking_speed_m_per_sec', 1.2):g} m/s, "
+            f"lift wait {cfg.get('lift_wait_seconds', 30.0):g}s."
         )
 
     def _normalise_config(self, task_generation):
@@ -2936,6 +3241,7 @@ class TaskGenerationSettingsDialog(QDialog):
             item.setdefault("staff_resource_name", "")
             self._normalise_staff_movement_policy(item)
             self._normalise_staff_shift_pattern(item)
+            self._normalise_category_staff_hours(item)
             self._normalise_category_dropoffs(item)
             result["categories"][key] = item
 
@@ -2958,6 +3264,7 @@ class TaskGenerationSettingsDialog(QDialog):
             item.setdefault("staff_resource_name", "")
             self._normalise_staff_movement_policy(item)
             self._normalise_staff_shift_pattern(item)
+            self._normalise_category_staff_hours(item)
             self._normalise_category_dropoffs(item)
             result["categories"][key] = item
 
@@ -2980,6 +3287,20 @@ class TaskGenerationSettingsDialog(QDialog):
             "priority": int(float(result["categories"]["waste"].get("priority", 60))),
         }
         return result
+
+    def _normalise_category_staff_hours(self, item):
+        try:
+            item["staff_handling_minutes"] = max(
+                0.0, float(item.get("staff_handling_minutes", 15.0) or 0.0)
+            )
+        except Exception:
+            item["staff_handling_minutes"] = 15.0
+        item["staff_use_custom_working_hours"] = bool(
+            item.get("staff_use_custom_working_hours", False)
+        )
+        item["staff_working_hours"] = _normalise_staff_weekly_hours(
+            item.get("staff_working_hours", {})
+        )
 
     def _normalise_category_dropoffs(self, item):
         selected = item.get("dropoff_locations")
@@ -3151,6 +3472,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
         self.return_payload_combo.setCurrentText(str(item.get("return_payload", "")))
         self.return_delay_edit.setText(str(item.get("return_delay_minutes", 0)))
+        self.staff_handling_minutes_edit.setText(
+            str(item.get("staff_handling_minutes", 15.0))
+        )
         self.requires_staff_check.setChecked(
             bool(item.get("requires_staff", item.get("staff_required", False)))
         )
@@ -3163,6 +3487,13 @@ class TaskGenerationSettingsDialog(QDialog):
             self.staff_shift_pattern_combo,
             item.get("staff_shift_pattern", "none"),
         )
+        self.staff_use_custom_working_hours = bool(
+            item.get("staff_use_custom_working_hours", False)
+        )
+        self.staff_working_hours = _normalise_staff_weekly_hours(
+            item.get("staff_working_hours", {})
+        )
+        self._refresh_staff_working_hours_summary()
         self.reusable_return_pool_check.setChecked(bool(item.get("reusable_return_pool_enabled", False)))
         self.reusable_return_pool_multiplier_edit.setText(str(item.get("reusable_return_pool_multiplier", 2.0)))
         self.reusable_return_pool_max_edit.setText(str(item.get("reusable_return_pool_max", 0)))
@@ -3280,15 +3611,19 @@ class TaskGenerationSettingsDialog(QDialog):
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
         self._set_form_row_visible(self.requires_staff_check, show_generation)
+        self._set_form_row_visible(self.staff_handling_minutes_edit, staff_enabled)
         self._set_form_row_visible(self.staff_initial_count_edit, staff_enabled)
         self._set_form_row_visible(self.staff_resource_name_edit, staff_enabled)
         self._set_form_row_visible(self.staff_movement_policy_widget, staff_enabled)
         self._set_form_row_visible(self.staff_shift_pattern_combo, staff_enabled)
+        self._set_form_row_visible(self.staff_hours_widget, staff_enabled)
         self.requires_staff_check.setEnabled(show_generation)
+        self.staff_handling_minutes_edit.setEnabled(staff_enabled)
         self.staff_initial_count_edit.setEnabled(staff_enabled)
         self.staff_resource_name_edit.setEnabled(staff_enabled)
         self.staff_movement_policy_widget.setEnabled(staff_enabled)
         self.staff_shift_pattern_combo.setEnabled(staff_enabled)
+        self.staff_hours_widget.setEnabled(staff_enabled)
         if hasattr(self, "reusable_return_pool_check"):
             self._set_form_row_visible(self.reusable_return_pool_check, return_enabled)
             self._set_form_row_visible(self.reusable_return_pool_multiplier_edit, pool_enabled)
@@ -3407,11 +3742,20 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_payload": self.return_payload_combo.currentText().strip(),
             "return_delay_minutes": self._float_from_edit(self.return_delay_edit, 0.0),
             "requires_staff": self.requires_staff_check.isChecked(),
+            "staff_handling_minutes": max(
+                0.0, self._float_from_edit(self.staff_handling_minutes_edit, 15.0)
+            ),
             "staff_initial_count": max(1, self._int_from_edit(self.staff_initial_count_edit, 1)),
             "staff_resource_name": self.staff_resource_name_edit.text().strip(),
             "staff_movement_policy": self._selected_staff_movement_policy(),
             "staff_shift_pattern": _selected_staff_shift_pattern_combo(
                 self.staff_shift_pattern_combo
+            ),
+            "staff_use_custom_working_hours": bool(
+                self.staff_use_custom_working_hours
+            ),
+            "staff_working_hours": _normalise_staff_weekly_hours(
+                self.staff_working_hours
             ),
             "reusable_return_pool_enabled": self.reusable_return_pool_check.isChecked(),
             "reusable_return_pool_multiplier": self._float_from_edit(self.reusable_return_pool_multiplier_edit, 2.0),
