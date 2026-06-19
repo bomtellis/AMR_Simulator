@@ -61,6 +61,7 @@ REPORT_SECTIONS = [
     ("pending_tasks", "Pending tasks"),
     ("failed_delivery", "Failed delivery analysis"),
     ("lift_usage", "Lift usage and waits"),
+    ("lift_usage_profile", "Lift usage profile"),
     ("generated_tasks", "Generated task category summary"),
     ("staff_handling", "Category staff handling"),
     ("staff_timetable", "Staff handling timetable"),
@@ -84,6 +85,7 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "amr_fleet": "landscape",
     "amr_utilisation": "landscape",
     "lift_usage": "landscape",
+    "lift_usage_profile": "a3_landscape",
     "payload_summary": "standard",
     "location_space": "a3_landscape",
     "peak_occupancy": "a3_landscape",
@@ -466,6 +468,148 @@ def contrasting_text_colour(hex_colour: str) -> Color:
         return colors.white
     brightness = (r * 299 + g * 587 + b * 114) / 1000
     return colors.black if brightness > 150 else colors.white
+
+
+class LiftUsageProfileChart(Flowable):
+    """A3-friendly line chart showing lift trips by 30-minute time-of-day bucket."""
+
+    def __init__(self, profile_df: pd.DataFrame, width: float, height: float):
+        super().__init__()
+        self.profile_df = profile_df.copy() if profile_df is not None else pd.DataFrame()
+        self.width = float(width)
+        self.height = float(height)
+
+    def wrap(self, availWidth, availHeight):
+        self.width = min(self.width, availWidth)
+        return self.width, self.height
+
+    def draw(self):
+        c = self.canv
+        x0 = 20 * mm
+        y0 = 24 * mm
+        plot_w = max(10 * mm, self.width - 48 * mm)
+        plot_h = max(10 * mm, self.height - 54 * mm)
+
+        c.saveState()
+        c.setStrokeColor(colors.HexColor("#B8CCE4"))
+        c.setLineWidth(0.5)
+        c.setFillColor(colors.white)
+        c.rect(0, 0, self.width, self.height, stroke=0, fill=1)
+
+        df = self.profile_df.copy()
+        if df.empty:
+            c.setFillColor(colors.HexColor("#666666"))
+            c.setFont("Helvetica", 10)
+            c.drawString(x0, y0 + plot_h / 2, "No lift usage profile data was available.")
+            c.restoreState()
+            return
+
+        df["interval_start_min"] = pd.to_numeric(df.get("interval_start_min"), errors="coerce")
+        df["trips"] = pd.to_numeric(df.get("trips"), errors="coerce").fillna(0)
+        df = df[df["interval_start_min"].notna()].copy()
+        if df.empty:
+            c.setFillColor(colors.HexColor("#666666"))
+            c.setFont("Helvetica", 10)
+            c.drawString(x0, y0 + plot_h / 2, "No lift usage profile data was available.")
+            c.restoreState()
+            return
+
+        intervals = sorted(df["interval_start_min"].dropna().unique().tolist())
+        lift_ids = sorted(df["lift_id"].dropna().astype(str).unique().tolist(), key=natural_key)
+        if not intervals or not lift_ids:
+            c.restoreState()
+            return
+
+        max_y = int(max(1, df["trips"].max()))
+        tick_count = min(6, max_y + 1)
+        y_ticks = sorted(set(int(round(i * max_y / max(1, tick_count - 1))) for i in range(tick_count)))
+        if y_ticks[0] != 0:
+            y_ticks.insert(0, 0)
+
+        def x_pos(minute):
+            if len(intervals) == 1:
+                return x0 + plot_w / 2
+            return x0 + (float(minute) - float(intervals[0])) / max(1.0, float(intervals[-1] - intervals[0])) * plot_w
+
+        def y_pos(value):
+            return y0 + (float(value) / max_y) * plot_h
+
+        # Grid and axes
+        c.setFont("Helvetica", 7)
+        for tick in y_ticks:
+            y = y_pos(tick)
+            c.setStrokeColor(colors.HexColor("#E6EEF8"))
+            c.line(x0, y, x0 + plot_w, y)
+            c.setFillColor(colors.HexColor("#666666"))
+            c.drawRightString(x0 - 3 * mm, y - 2, str(tick))
+
+        c.setStrokeColor(colors.HexColor("#17365D"))
+        c.setLineWidth(0.8)
+        c.line(x0, y0, x0 + plot_w, y0)
+        c.line(x0, y0, x0, y0 + plot_h)
+
+        # X axis labels every two hours, plus the final bucket if needed.
+        label_minutes = [minute for minute in intervals if int(minute) % 120 == 0]
+        if intervals[-1] not in label_minutes:
+            label_minutes.append(intervals[-1])
+        for minute in label_minutes:
+            x = x_pos(minute)
+            c.setStrokeColor(colors.HexColor("#E6EEF8"))
+            c.line(x, y0, x, y0 + plot_h)
+            label = f"{int(minute // 60):02d}:{int(minute % 60):02d}"
+            c.setFillColor(colors.HexColor("#666666"))
+            c.drawCentredString(x, y0 - 5 * mm, label)
+
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillColor(colors.HexColor("#17365D"))
+        c.drawCentredString(x0 + plot_w / 2, y0 - 13 * mm, "Time of day")
+        c.saveState()
+        c.translate(x0 - 14 * mm, y0 + plot_h / 2)
+        c.rotate(90)
+        c.drawCentredString(0, 0, "Trips per 30 minute interval")
+        c.restoreState()
+
+        palette = [
+            "#2F5597", "#548235", "#C55A11", "#7030A0", "#008C95", "#A64D79",
+            "#5B9BD5", "#70AD47", "#FFC000", "#4472C4", "#ED7D31", "#7F7F7F",
+        ]
+        for lift_index, lift_id in enumerate(lift_ids):
+            sub = df[df["lift_id"].astype(str) == lift_id].set_index("interval_start_min")
+            points = []
+            for minute in intervals:
+                value = sub["trips"].get(minute, 0) if "trips" in sub.columns else 0
+                points.append((x_pos(minute), y_pos(value)))
+            if len(points) < 2:
+                continue
+            colour = colors.HexColor(palette[lift_index % len(palette)])
+            c.setStrokeColor(colour)
+            c.setLineWidth(1.2)
+            path = c.beginPath()
+            path.moveTo(points[0][0], points[0][1])
+            for x, y in points[1:]:
+                path.lineTo(x, y)
+            c.drawPath(path, stroke=1, fill=0)
+
+        # Legend
+        legend_x = x0
+        legend_y = y0 + plot_h + 9 * mm
+        c.setFont("Helvetica", 7.5)
+        cursor_x = legend_x
+        for lift_index, lift_id in enumerate(lift_ids):
+            label = str(lift_id)
+            item_w = min(42 * mm, 7 * mm + c.stringWidth(label, "Helvetica", 7.5) + 5 * mm)
+            if cursor_x + item_w > x0 + plot_w:
+                legend_y += 5 * mm
+                cursor_x = legend_x
+            colour = colors.HexColor(palette[lift_index % len(palette)])
+            c.setStrokeColor(colour)
+            c.setLineWidth(2)
+            c.line(cursor_x, legend_y, cursor_x + 5 * mm, legend_y)
+            c.setFillColor(colors.black)
+            c.drawString(cursor_x + 7 * mm, legend_y - 2, label)
+            cursor_x += item_w
+
+        c.restoreState()
 
 
 class PillListFlowable(Flowable):
@@ -1699,6 +1843,33 @@ def build_report(
         story.append(lift_df_table)
 
     # --- END Lift usage Summary ---
+
+    # --- START Lift usage profile graph ---
+
+    story.section("lift_usage_profile")
+    story += [
+        Paragraph("Lift usage profile", styles["Section"]),
+        Paragraph(
+            "Trips are counted in 30-minute time-of-day intervals and broken down by lift. Multi-day simulations are aggregated by clock time so the graph shows the daily demand profile.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+    lift_profile_df = results.get("lift_usage_profile", pd.DataFrame()).copy()
+    if lift_profile_df.empty:
+        story.append(
+            Paragraph(
+                "No lift_transfer or lift_reposition segments were available for a lift usage profile.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        a3_width, a3_height = landscape(A3)
+        chart_width = a3_width - doc.leftMargin - doc.rightMargin
+        chart_height = a3_height - doc.topMargin - doc.bottomMargin - 28 * mm
+        story.append(LiftUsageProfileChart(lift_profile_df, chart_width, chart_height))
+
+    # --- END Lift usage profile graph ---
 
     # --- START Lift wait Summary ---
 

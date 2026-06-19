@@ -1042,6 +1042,85 @@ def choose_task_endpoint(
     return None
 
 
+
+def build_lift_usage_profile(
+    lift_rows: pd.DataFrame,
+    ctx: Context,
+    interval_minutes: int = 30,
+) -> pd.DataFrame:
+    """Return lift trip counts by time-of-day interval for each lift.
+
+    The profile is aggregated by clock time across the simulated period. This
+    keeps multi-day runs readable by showing the typical daily lift demand
+    pattern rather than one very long date-time axis.
+    """
+    columns = ["interval", "interval_start_min", "lift_id", "trips"]
+    if (
+        lift_rows is None
+        or lift_rows.empty
+        or "_lift_id" not in lift_rows.columns
+        or ctx.time_col not in lift_rows.columns
+    ):
+        return pd.DataFrame(columns=columns)
+
+    interval_minutes = max(1, int(interval_minutes or 30))
+    bucket_count = int(math.ceil((24 * 60) / interval_minutes))
+    buckets = list(range(bucket_count))
+
+    rows = lift_rows[lift_rows["_lift_id"].notna()].copy()
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+
+    lift_ids = sorted({safe_text(value) for value in rows["_lift_id"].dropna()}, key=natural_key)
+    if not lift_ids:
+        return pd.DataFrame(columns=columns)
+
+    if ctx.has_datetime:
+        event_time = pd.to_datetime(rows[ctx.time_col], errors="coerce")
+        minute_of_day = event_time.dt.hour * 60 + event_time.dt.minute
+    else:
+        event_seconds = pd.to_numeric(rows[ctx.time_col], errors="coerce")
+        minute_of_day = ((event_seconds % 86400) // 60).astype("float")
+
+    rows = rows.assign(
+        _profile_lift_id=rows["_lift_id"].map(safe_text),
+        _profile_minute=minute_of_day,
+    )
+    rows = rows[rows["_profile_minute"].notna()].copy()
+    if rows.empty:
+        return pd.DataFrame(columns=columns)
+
+    rows["_profile_bucket"] = (
+        rows["_profile_minute"].astype(float) // interval_minutes
+    ).astype(int).clip(lower=0, upper=bucket_count - 1)
+
+    counts = (
+        rows.groupby(["_profile_bucket", "_profile_lift_id"], dropna=False)
+        .size()
+        .rename("trips")
+        .reset_index()
+    )
+
+    index = pd.MultiIndex.from_product(
+        [buckets, lift_ids], names=["_profile_bucket", "_profile_lift_id"]
+    )
+    counts = (
+        counts.set_index(["_profile_bucket", "_profile_lift_id"])
+        .reindex(index, fill_value=0)
+        .reset_index()
+    )
+
+    def _label(start_minute: int) -> str:
+        hour = int(start_minute // 60)
+        minute = int(start_minute % 60)
+        return f"{hour:02d}:{minute:02d}"
+
+    counts["interval_start_min"] = counts["_profile_bucket"] * interval_minutes
+    counts["interval"] = counts["interval_start_min"].map(_label)
+    counts["lift_id"] = counts["_profile_lift_id"].map(safe_text)
+    counts["trips"] = pd.to_numeric(counts["trips"], errors="coerce").fillna(0).astype(int)
+    return counts[columns].sort_values(["interval_start_min", "lift_id"], key=lambda col: col.map(natural_key) if col.name == "lift_id" else col).reset_index(drop=True)
+
 def extract_lift_and_floor(value) -> Tuple[Optional[str], Optional[int]]:
     if value is None or pd.isna(value):
         return None, None
@@ -4154,6 +4233,7 @@ def analyse(
     lift_rows = lift_rows[
         lift_rows["lift_time_s"].notna() & (lift_rows["lift_time_s"] >= 0)
     ].copy()
+    lift_usage_profile = build_lift_usage_profile(lift_rows, ctx, interval_minutes=30)
     lift_busy_intervals_by_lift, lift_busy_summary = build_lift_busy_intervals(
         lift_rows, ctx
     )
@@ -4637,6 +4717,7 @@ def analyse(
         "amr_route_summary": amr_route_summary,
         "utilisation_summary": amr_utilisation,
         "lift_summary": lift_summary,
+        "lift_usage_profile": lift_usage_profile,
         "tasks": tasks.sort_values(["amr", "start", "task_id"]).reset_index(drop=True),
         "pending_tasks": pending_tasks.reset_index(drop=True),
         "methodology": methodology,
