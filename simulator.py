@@ -207,6 +207,9 @@ class Simulation:
             list
         )
         self.node_reservation_max_duration: Dict[str, float] = defaultdict(float)
+        self.lift_reservations: Dict[
+            str, List[Tuple[float, float, int, int, str]]
+        ] = defaultdict(list)
         self.node_clearance_time_sec = float(
             building_cfg.get("node_clearance_time_sec", 0.5)
         )
@@ -489,6 +492,7 @@ class Simulation:
         # Parse lifts from configuration
 
         self.lifts: List[Lift] = []
+        self.lift_initial_floors: Dict[str, int] = {}
         for item in config["lifts"]:
             floor_locations = {
                 int(floor): (float(coords["x"]), float(coords["y"]))
@@ -532,6 +536,7 @@ class Simulation:
                     )
 
             self.lifts.append(lift)
+            self.lift_initial_floors[lift.id] = int(lift.current_floor)
 
         self.graph_nodes: Dict[str, Location] = {}
         self.floor_graphs: Dict[int, Dict[str, List[dict]]] = defaultdict(
@@ -1759,8 +1764,7 @@ class Simulation:
                     self._reserve_corridor_segments(
                         amr, plan["from_lift_segments"], plan["lift_finish"]
                     )
-                    plan["lift"].available_time = plan["lift_finish"]
-                    plan["lift"].current_floor = location_b.floor
+                    self._reserve_lift_journey(plan, amr.id)
                     self._apply_lift_journey_wear(
                         plan["lift"],
                         journey_operating_sec=float(plan.get("reposition_sec", 0.0))
@@ -4919,7 +4923,9 @@ class Simulation:
             payload_name=self._payload_log_name(getattr(task, "payload", "")),
             payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
             duration_sec=float(assignment.get("duration_sec", max(0.0, finish - start)) or 0.0),
-            wait_time_sec=float(assignment.get("staff_wait_for_travel_sec", 0.0) or 0.0),
+            staff_wait_for_travel_sec=float(
+                assignment.get("staff_wait_for_travel_sec", 0.0) or 0.0
+            ),
             start_time=start,
             end_time=finish,
             start_node=location_name,
@@ -6652,6 +6658,128 @@ class Simulation:
     def _lift_location_on_floor(self, lift: Lift, floor: int) -> Location:
         return lift.location_on_floor(floor)
 
+    def _lift_vertical_seconds(self, lift: Lift, from_floor: int, to_floor: int) -> float:
+        return abs(int(to_floor) - int(from_floor)) / max(
+            float(lift.speed_floors_per_sec or 0.0), 1e-9
+        )
+
+    def _lift_service_finish_time(
+        self,
+        lift: Lift,
+        reposition_start: float,
+        reposition_sec: float,
+        loaded_travel_sec: float,
+    ) -> Tuple[float, float, float, float]:
+        reposition_finish = float(reposition_start) + float(reposition_sec)
+        board_start = reposition_finish
+        loaded_start = board_start + lift.door_time_sec + lift.boarding_time_sec
+        loaded_finish = loaded_start + loaded_travel_sec
+        unload_finish = loaded_finish + lift.door_time_sec + lift.boarding_time_sec
+        return reposition_finish, loaded_start, loaded_finish, unload_finish
+
+    def _find_lift_journey_slot(
+        self,
+        lift: Lift,
+        arrival_at_lift: float,
+        origin_floor: int,
+        destination_floor: int,
+    ) -> dict:
+        reservations = self.lift_reservations.get(lift.id, [])
+        initial_floor = int(
+            self.lift_initial_floors.get(lift.id, getattr(lift, "current_floor", 0))
+        )
+        previous_finish = 0.0
+        previous_floor = initial_floor
+        blackout_until = max(
+            0.0,
+            float(getattr(lift, "failed_until", 0.0) or 0.0),
+            float(getattr(lift, "available_time", 0.0) or 0.0)
+            if not reservations
+            else 0.0,
+        )
+
+        loaded_travel_sec = self._lift_vertical_seconds(
+            lift, origin_floor, destination_floor
+        )
+
+        for (
+            next_start,
+            next_finish,
+            next_origin,
+            next_destination,
+            _owner,
+        ) in reservations:
+            reposition_sec = self._lift_vertical_seconds(
+                lift, previous_floor, origin_floor
+            )
+            reposition_start = max(
+                float(arrival_at_lift), previous_finish, blackout_until
+            )
+            reposition_finish, loaded_start, loaded_finish, unload_finish = (
+                self._lift_service_finish_time(
+                    lift, reposition_start, reposition_sec, loaded_travel_sec
+                )
+            )
+            reset_for_next_sec = self._lift_vertical_seconds(
+                lift, destination_floor, int(next_origin)
+            )
+            if unload_finish + reset_for_next_sec <= float(next_start) + 1e-9:
+                return {
+                    "lift_start": reposition_start,
+                    "lift_finish": unload_finish,
+                    "reposition_from_floor": previous_floor,
+                    "reposition_to_floor": origin_floor,
+                    "reposition_sec": reposition_sec,
+                    "reposition_finish": reposition_finish,
+                    "loaded_start": loaded_start,
+                    "loaded_finish": loaded_finish,
+                    "loaded_travel_sec": loaded_travel_sec,
+                }
+
+            previous_finish = max(previous_finish, float(next_finish))
+            previous_floor = int(next_destination)
+
+        reposition_sec = self._lift_vertical_seconds(lift, previous_floor, origin_floor)
+        reposition_start = max(float(arrival_at_lift), previous_finish, blackout_until)
+        reposition_finish, loaded_start, loaded_finish, unload_finish = (
+            self._lift_service_finish_time(
+                lift, reposition_start, reposition_sec, loaded_travel_sec
+            )
+        )
+        return {
+            "lift_start": reposition_start,
+            "lift_finish": unload_finish,
+            "reposition_from_floor": previous_floor,
+            "reposition_to_floor": origin_floor,
+            "reposition_sec": reposition_sec,
+            "reposition_finish": reposition_finish,
+            "loaded_start": loaded_start,
+            "loaded_finish": loaded_finish,
+            "loaded_travel_sec": loaded_travel_sec,
+        }
+
+    def _reserve_lift_journey(self, plan: dict, amr_id: str = "") -> None:
+        lift = plan["lift"]
+        item = (
+            float(plan["lift_start"]),
+            float(plan["lift_finish"]),
+            int(plan["reposition_to_floor"]),
+            int(plan["destination_lift"].floor),
+            str(amr_id or ""),
+        )
+        insort_right(self.lift_reservations[lift.id], item)
+        tail = max(
+            self.lift_reservations[lift.id],
+            key=lambda reservation: reservation[1],
+            default=None,
+        )
+        if tail is not None:
+            lift.available_time = max(
+                float(getattr(lift, "failed_until", 0.0) or 0.0),
+                float(tail[1]),
+            )
+            lift.current_floor = int(tail[3])
+
     def _nearest_compatible_lift_plan(
         self,
         ready_time: float,
@@ -6695,25 +6823,14 @@ class Simulation:
             to_lift_segments, to_lift_sec, to_lift_distance_m = to_lift_route
 
             arrival_at_lift = ready_time + to_lift_sec
-            lift_start = max(arrival_at_lift, lift.available_time)
-
-            reposition_sec = abs(lift.current_floor - from_loc.floor) / max(
-                lift.speed_floors_per_sec, 1e-9
+            lift_slot = self._find_lift_journey_slot(
+                lift,
+                arrival_at_lift,
+                int(from_loc.floor),
+                int(to_loc.floor),
             )
-            loaded_travel_sec = abs(to_loc.floor - from_loc.floor) / max(
-                lift.speed_floors_per_sec, 1e-9
-            )
-
-            reposition_start = max(arrival_at_lift, lift.available_time)
-            reposition_finish = reposition_start + reposition_sec
-
-            board_start = reposition_finish
-            loaded_start = board_start + lift.door_time_sec + lift.boarding_time_sec
-            loaded_finish = loaded_start + loaded_travel_sec
-            unload_finish = loaded_finish + lift.door_time_sec + lift.boarding_time_sec
-
-            lift_start = reposition_start
-            lift_finish = unload_finish
+            lift_start = lift_slot["lift_start"]
+            lift_finish = lift_slot["lift_finish"]
 
             from_lift_route = self._same_floor_segments(
                 amr,
@@ -6748,14 +6865,14 @@ class Simulation:
                     "vertical_distance_m": abs(to_loc.floor - from_loc.floor)
                     * self.floor_height_m,
                     "final_finish": final_finish,
-                    "reposition_from_floor": lift.current_floor,
-                    "reposition_to_floor": from_loc.floor,
-                    "reposition_sec": reposition_sec,
-                    "loaded_travel_sec": loaded_travel_sec,
-                    "reposition_start": reposition_start,
-                    "reposition_finish": reposition_finish,
-                    "loaded_start": loaded_start,
-                    "loaded_finish": loaded_finish,
+                    "reposition_from_floor": lift_slot["reposition_from_floor"],
+                    "reposition_to_floor": lift_slot["reposition_to_floor"],
+                    "reposition_sec": lift_slot["reposition_sec"],
+                    "loaded_travel_sec": lift_slot["loaded_travel_sec"],
+                    "reposition_start": lift_start,
+                    "reposition_finish": lift_slot["reposition_finish"],
+                    "loaded_start": lift_slot["loaded_start"],
+                    "loaded_finish": lift_slot["loaded_finish"],
                 }
 
         return best_plan
@@ -6969,8 +7086,7 @@ class Simulation:
         transfer_segments.extend(plan["from_lift_segments"])
 
         if reserve:
-            plan["lift"].available_time = plan["lift_finish"]
-            plan["lift"].current_floor = charge_loc.floor
+            self._reserve_lift_journey(plan, amr.id)
             self._apply_lift_journey_wear(
                 plan["lift"],
                 journey_operating_sec=float(plan.get("reposition_sec", 0.0))
@@ -7369,8 +7485,7 @@ class Simulation:
                         segments=plan["from_lift_segments"],
                         start_time=plan["lift_finish"],
                     )
-                    plan["lift"].available_time = plan["lift_finish"]
-                    plan["lift"].current_floor = location_b.floor
+                    self._reserve_lift_journey(plan, amr.id)
                     self._apply_lift_journey_wear(
                         plan["lift"],
                         journey_operating_sec=float(plan.get("reposition_sec", 0.0))
@@ -9734,6 +9849,7 @@ class Simulation:
             "staff_shift_multiplier",
             "staff_initial_on_shift_people",
             "staff_initial_rostered_people",
+            "staff_wait_for_travel_sec",
             "location_inventory_spaces_disabled",
             "location_configured_inventory_area_m2",
             "location_peak_payload_count",
@@ -9930,6 +10046,7 @@ class Simulation:
         staff_shift_multiplier: float = 1.0,
         staff_initial_on_shift_people: int = 0,
         staff_initial_rostered_people: int = 0,
+        staff_wait_for_travel_sec: float = 0.0,
     ):
         if not self.verbose:
             return
@@ -10112,6 +10229,9 @@ class Simulation:
                 ),
                 "staff_initial_rostered_people": int(
                     staff_initial_rostered_people or 0
+                ),
+                "staff_wait_for_travel_sec": round(
+                    float(staff_wait_for_travel_sec or 0.0), 3
                 ),
             }
         )

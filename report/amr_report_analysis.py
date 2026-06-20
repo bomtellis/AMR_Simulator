@@ -3719,6 +3719,13 @@ def analyse(
         wait_mask = df["_event_text"].str.contains(WAIT_PATTERNS, na=False)
         df.loc[wait_mask, "_wait_s"] = df.loc[wait_mask, "_duration_s"].fillna(0)
 
+    staff_handling_mask = _staff_handling_event_mask(df)
+    if staff_handling_mask.any():
+        # Staff handling has its own resource timeline. Older simulator logs
+        # stored staff delay in the generic AMR wait column, which made task and
+        # fleet waiting metrics look wildly inflated.
+        df.loc[staff_handling_mask, "_wait_s"] = 0.0
+
     t0 = df[ctx.time_col].dropna().min()
     t1 = df[ctx.time_col].dropna().max()
     horizon_s = max(time_delta_seconds(t0, t1, ctx.has_datetime) or 0.0, 1.0)
