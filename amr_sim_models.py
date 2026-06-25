@@ -16,6 +16,10 @@ class Location:
     floor: int
     x: float
     y: float
+    wash_cycle_required: bool = False
+    wash_cycle_duration_sec: float = 0.0
+    wash_location: str = ""
+    people_area_type: str = "none"
 
 
 @dataclass
@@ -30,6 +34,12 @@ class PayloadType:
     # Payload-in-payload / consumables tracking.
     track_items: bool = False
     items: Dict[str, dict] = field(default_factory=dict)
+    # Permitted orientations relative to the AMR travel direction.
+    # ``lengthways`` keeps payload length longitudinal; ``sideways`` swaps
+    # length and width when checking the AMR payload deck.
+    allowed_carry_orientations: List[str] = field(
+        default_factory=lambda: ["lengthways", "sideways"]
+    )
 
     @property
     def footprint_area_m2(self) -> float:
@@ -94,6 +104,8 @@ class Task:
     staff_shift_days_active: List[str] = field(default_factory=list)
     staff_shift_work_days: int = 0
     staff_shift_rest_days: int = 0
+    payload_orientation: str = "lengthways"
+    wash_cycle_required: bool = False
 
 
 @dataclass
@@ -126,6 +138,8 @@ class Lift:
     journeys_completed: int = 0
     operating_time_since_failure_sec: float = 0.0
     failures_count: int = 0
+    minimum_operational_health_percent: float = 20.0
+    health_speed_penalty_at_zero: float = 0.5
 
     def can_serve(self, floor_a: int, floor_b: int) -> bool:
         return floor_a in self.served_floors and floor_b in self.served_floors
@@ -139,9 +153,19 @@ class Lift:
         travel_m = abs(int(floor_delta)) * float(floor_height_m)
         return travel_m / max(self.travel_speed_m_per_sec(floor_height_m), 1e-9)
 
-    def can_fit(self, payload: PayloadType, amr: Optional["AMR"] = None) -> bool:
-        total_length = max(payload.length_m, amr.length_m if amr else 0.0)
-        total_width = max(payload.width_m, amr.width_m if amr else 0.0)
+    def can_fit(
+        self,
+        payload: PayloadType,
+        amr: Optional["AMR"] = None,
+        orientation: str = "lengthways",
+    ) -> bool:
+        orientation = str(orientation or "lengthways").strip().lower()
+        payload_length = float(payload.length_m)
+        payload_width = float(payload.width_m)
+        if orientation == "sideways":
+            payload_length, payload_width = payload_width, payload_length
+        total_length = max(payload_length, amr.length_m if amr else 0.0)
+        total_width = max(payload_width, amr.width_m if amr else 0.0)
         total_height = max(payload.height_m, amr.height_m if amr else 0.0)
         return (
             total_length <= self.capacity_length_m
@@ -191,13 +215,25 @@ class AMR:
     payload: str = ""
     payload_instance_id: str = ""
 
-    def can_carry(self, payload: PayloadType) -> bool:
-        return (
-            payload.weight_kg <= self.payload_capacity_kg
-            and payload.length_m <= self.payload_length_capacity_m
-            and payload.width_m <= self.payload_width_capacity_m
-            and payload.height_m <= self.payload_height_capacity_m
+    def can_carry(self, payload: PayloadType, orientation: Optional[str] = None) -> bool:
+        orientations = [orientation] if orientation else list(
+            getattr(payload, "allowed_carry_orientations", None)
+            or ["lengthways", "sideways"]
         )
+        for candidate in orientations:
+            candidate = str(candidate or "lengthways").strip().lower()
+            if candidate == "sideways":
+                length_m, width_m = payload.width_m, payload.length_m
+            else:
+                length_m, width_m = payload.length_m, payload.width_m
+            if (
+                payload.weight_kg <= self.payload_capacity_kg
+                and length_m <= self.payload_length_capacity_m
+                and width_m <= self.payload_width_capacity_m
+                and payload.height_m <= self.payload_height_capacity_m
+            ):
+                return True
+        return False
 
     def battery_energy_kwh(self) -> float:
         return self.battery_capacity_kwh * (self.battery_soc_percent / 100.0)

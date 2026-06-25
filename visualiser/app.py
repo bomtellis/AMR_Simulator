@@ -64,6 +64,9 @@ from dialogs import (
     TaskGenerationSettingsDialog,
     PayloadListDialog,
     SimulationSettingsDialog,
+    PeopleMovementListDialog,
+    ScenarioTestingDialog,
+    CorridorSettingsDialog,
 )
 from advanced_dialogs import (
     MultiSelectPicker,
@@ -379,9 +382,12 @@ class AMRGraphEditor(QMainWindow):
         self.show_labels_check.setChecked(True)
         self.show_location_bounds_check = QCheckBox("Show location bounding boxes")
         self.show_location_bounds_check.setChecked(False)
+        self.show_charging_spaces_check = QCheckBox("Show charging spaces")
+        self.show_charging_spaces_check.setChecked(True)
         self.show_dxf_check.toggled.connect(self.refresh_canvas)
         self.show_labels_check.toggled.connect(self.refresh_canvas)
         self.show_location_bounds_check.toggled.connect(self.refresh_canvas)
+        self.show_charging_spaces_check.toggled.connect(self.refresh_canvas)
 
         sidebar_layout.addWidget(QLabel("Mode"))
         sidebar_layout.addWidget(self.mode_combo)
@@ -400,12 +406,16 @@ class AMRGraphEditor(QMainWindow):
         sidebar_layout.addWidget(self.show_dxf_check)
         sidebar_layout.addWidget(self.show_labels_check)
         sidebar_layout.addWidget(self.show_location_bounds_check)
+        sidebar_layout.addWidget(self.show_charging_spaces_check)
         sidebar_layout.addSpacing(10)
 
         for text, handler in [
             ("Open JSON", self.open_json),
             ("Save JSON", self.save_json),
             ("Simulation Settings", self.manage_simulation_settings),
+            ("Scenario Testing", self.manage_scenario_testing),
+            ("People Movement", self.manage_people_movement),
+            ("Corridor Settings", self.manage_corridor_settings),
             ("Map DXF to Floor", self.load_dxf),
             ("Clear Floor DXF", self.clear_floor_dxf),
             ("Fit View", self.fit_view),
@@ -935,8 +945,29 @@ class AMRGraphEditor(QMainWindow):
         self.draw_temporary_location_bounding_box(floor)
         self.draw_edges(floor)
         self.draw_points(floor)
+        if self.show_charging_spaces_check.isChecked():
+            self.draw_charging_space_markers(floor)
         self.file_label.setText(self.current_json_path or "New file")
         self.canvas.viewport().update()
+
+    def draw_charging_space_markers(self, floor):
+        """Overlay a compact charger count beside locations with charger-equipped AMR bays."""
+        for location in self.store.locations_for_floor(floor):
+            spaces = list(location.get("inventory_spaces", []) or [])
+            chargers = [
+                space for space in spaces
+                if isinstance(space, dict)
+                and bool(space.get("stores_amr", False) or str(space.get("space_type", "")).lower() == "amr")
+                and bool(space.get("has_charger", False))
+            ]
+            if not chargers:
+                continue
+            point = self.world_to_scene(float(location.get("x", 0.0)), float(location.get("y", 0.0)))
+            label = self.scene.addText(f"⚡ {len(chargers)}")
+            label.setDefaultTextColor(QColor("#ffd54f"))
+            label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+            label.setPos(point.x() + 0.35, point.y() - 0.75)
+            label.setZValue(40)
 
     def _edge_rows_for_point(self, point_name):
         points = self.store.all_points()
@@ -1642,6 +1673,12 @@ class AMRGraphEditor(QMainWindow):
             self.store.set_point_position(
                 picked, dialog.result["x"], dialog.result["y"]
             )
+            if point.get("kind") == "location":
+                location = self.store.get_location(picked)
+                if location is not None:
+                    for key in ("wash_cycle_required", "wash_cycle_duration_sec", "wash_location", "people_area_type"):
+                        if key in dialog.result:
+                            location[key] = dialog.result[key]
             self.store.rename_point(picked, dialog.result["name"])
             self.selected_point_name = dialog.result["name"]
             self.set_status(f"Edited {dialog.result['name']}")
@@ -2000,6 +2037,42 @@ class AMRGraphEditor(QMainWindow):
             end_text = dialog.result.get("end_datetime", "") or "not set"
             self.set_status(f"Simulation end date set to {end_text}")
 
+    def manage_scenario_testing(self):
+        dialog = ScenarioTestingDialog(
+            self,
+            self.store.scenario_testing(),
+            self.store.data,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.store.set_scenario_testing(dialog.result)
+            simulation = self.store.data.setdefault("simulation", {})
+            simulation["scenario_mode"] = bool(dialog.result.get("enabled", False))
+            simulation["scenario_enhanced_logging"] = bool(dialog.result.get("enhanced_logging", False))
+            self.set_status(
+                f"Scenario testing set to {dialog.result.get('active_scenario', 'Normal operation')}"
+            )
+
+    def manage_people_movement(self):
+        locations = sorted(self.store.all_points().keys())
+        dialog = PeopleMovementListDialog(
+            self, locations, self.store.people_movements()
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.store.set_people_movements(dialog.result)
+            self.set_status(f"Updated {len(dialog.result)} people movement profile(s)")
+
+    def manage_corridor_settings(self):
+        building = self.store.data.setdefault("building", {})
+        dialog = CorridorSettingsDialog(
+            self,
+            self.store.data.setdefault("corridors", {}).setdefault("edges", []),
+            default_width=float(building.get("default_corridor_width_m", 2.4) or 2.4),
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.store.data["corridors"]["edges"] = dialog.result
+            self.set_status("Corridor widths, lane behaviour and people occupancy updated")
+            self.refresh_canvas()
+
     def load_dxf(self):
         floor = self.floor_spin.value()
         initialdir = ""
@@ -2109,6 +2182,8 @@ class AMRGraphEditor(QMainWindow):
             result["health_loss_per_journey_percent"],
             result["mean_time_between_failures_hours"],
             result["mean_time_to_repair_hours"],
+            result["minimum_operational_health_percent"],
+            result["health_speed_penalty_at_zero"],
             result["start_floor"],
         )
 

@@ -7,6 +7,7 @@ import math
 import os
 import threading
 import time
+from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
@@ -102,7 +103,29 @@ class Simulation:
         verbose_csv_path: Optional[str] = None,
     ):
         self.location_reservations = defaultdict(list)
+        self.config = config
         sim_cfg = config.get("simulation", {})
+        scenario_cfg = config.get("scenario_testing", {}) or {}
+        self.scenario_mode = bool(scenario_cfg.get("enabled", False))
+        self.scenario_name = str(scenario_cfg.get("active_scenario", "Normal operation") or "Normal operation")
+        self.scenario_enhanced_logging = bool(scenario_cfg.get("enhanced_logging", False))
+        self.scenario_description = ""
+        self.scenario_events: List[dict] = []
+        if self.scenario_mode and self.scenario_name != "Normal operation":
+            for scenario in scenario_cfg.get("scenarios", []) or []:
+                if str(scenario.get("name", "") or "").strip() == self.scenario_name:
+                    self.scenario_description = str(scenario.get("description", "") or "")
+                    self.scenario_events = [dict(x) for x in scenario.get("events", []) or [] if isinstance(x, dict)]
+                    break
+        else:
+            self.scenario_mode = False
+            self.scenario_name = "Normal operation"
+        self.scenario_delay_sec = 0.0
+        self.scenario_affected_segments = 0
+        self.people_delay_sec = 0.0
+        self.people_affected_segments = 0
+        self.wash_cycles_completed = 0
+        self.charge_intervals: List[dict] = []
         start_datetime = parse_datetime(
             sim_cfg.get("start_datetime", "2026-01-01T08:00:00")
         )
@@ -308,6 +331,16 @@ class Simulation:
         self.min_congestion_speed_factor = float(
             building_cfg.get("min_congestion_speed_factor", 0.45)
         )
+        self.default_corridor_width_m = max(
+            0.1, float(building_cfg.get("default_corridor_width_m", 2.4) or 2.4)
+        )
+        self.people_slowdown_per_person = max(
+            0.0, float(building_cfg.get("people_slowdown_per_person", 0.08) or 0.08)
+        )
+        self.minimum_people_speed_factor = max(
+            0.05, min(1.0, float(building_cfg.get("minimum_people_speed_factor", 0.35) or 0.35))
+        )
+        self.people_edge_reservations: Dict[Tuple[str, str], List[dict]] = defaultdict(list)
         self.reservation_prune_interval_sec = max(
             1.0, float(sim_cfg.get("reservation_prune_interval_sec", 300.0) or 300.0)
         )
@@ -352,6 +385,10 @@ class Simulation:
                 floor=int(loc["floor"]),
                 x=float(loc.get("x", 0.0)),
                 y=float(loc.get("y", 0.0)),
+                wash_cycle_required=bool(loc.get("wash_cycle_required", False)),
+                wash_cycle_duration_sec=max(0.0, float(loc.get("wash_cycle_duration_sec", 300.0) or 0.0)),
+                wash_location=str(loc.get("wash_location", "") or "").strip(),
+                people_area_type=str(loc.get("people_area_type", "none") or "none").strip().lower(),
             )
             for loc in config["locations"]
         }
@@ -442,6 +479,11 @@ class Simulation:
                 size_units=legacy_size,
                 track_items=bool(p.get("track_items", False)),
                 items=clean_items,
+                allowed_carry_orientations=[
+                    str(x).strip().lower()
+                    for x in (p.get("allowed_carry_orientations", ["lengthways", "sideways"]) or ["lengthways"])
+                    if str(x).strip().lower() in {"lengthways", "sideways"}
+                ] or ["lengthways"],
             )
             # Optional payload-level preference from the visualiser payload dialog.
             # Kept as a runtime attribute so older amr_sim_models.PayloadType
@@ -527,6 +569,12 @@ class Simulation:
                 mean_time_to_repair_hours=float(
                     item.get("mean_time_to_repair_hours", 4.0)
                 ),
+                minimum_operational_health_percent=float(
+                    item.get("minimum_operational_health_percent", 20.0)
+                ),
+                health_speed_penalty_at_zero=float(
+                    item.get("health_speed_penalty_at_zero", 0.5)
+                ),
             )
 
             for floor in lift.served_floors:
@@ -547,6 +595,7 @@ class Simulation:
         )
         self._build_floor_graphs(config.get("corridors", {}))
         self._precompute_static_routes()
+        self._init_people_movements(config.get("people_movements", []))
 
         # Parse AMRS from configuration
 
@@ -1263,6 +1312,11 @@ class Simulation:
                         "payload_height_capacity_m": float(
                             slot.get("payload_height_capacity_m", 0.0) or 0.0
                         ),
+                        "allowed_payload_orientations": [
+                            str(x).strip().lower()
+                            for x in (slot.get("allowed_payload_orientations", ["lengthways", "sideways"]) or ["lengthways"])
+                            if str(x).strip().lower() in {"lengthways", "sideways"}
+                        ] or ["lengthways"],
                     }
                 )
         if not slots:
@@ -1293,6 +1347,7 @@ class Simulation:
                         )
                         or 1.0
                     ),
+                    "allowed_payload_orientations": ["lengthways", "sideways"],
                 }
             )
         return slots
@@ -1362,6 +1417,11 @@ class Simulation:
                         "payload_height_capacity_m": float(
                             slot.get("payload_height_capacity_m", 0.0) or 0.0
                         ),
+                        "allowed_payload_orientations": [
+                            str(x).strip().lower()
+                            for x in (slot.get("allowed_payload_orientations", ["lengthways", "sideways"]) or ["lengthways"])
+                            if str(x).strip().lower() in {"lengthways", "sideways"}
+                        ] or ["lengthways"],
                     }
                 )
         if not clean:
@@ -1380,6 +1440,7 @@ class Simulation:
                     "payload_height_capacity_m": float(
                         getattr(amr, "payload_height_capacity_m", 0.0) or 0.0
                     ),
+                    "allowed_payload_orientations": ["lengthways", "sideways"],
                 }
             )
         return clean
@@ -1388,25 +1449,69 @@ class Simulation:
         slots = self._runtime_amr_payload_slots(amr)
         return bool(getattr(amr, "multi_stop_enabled", False)) and len(slots) > 1
 
-    def _payload_fits_slot(self, payload: PayloadType, slot: dict) -> bool:
-        return (
-            float(payload.weight_kg)
-            <= float(slot.get("payload_capacity_kg", 0.0) or 0.0)
-            and float(payload.length_m)
-            <= float(slot.get("payload_length_capacity_m", 0.0) or 0.0)
-            and float(payload.width_m)
-            <= float(slot.get("payload_width_capacity_m", 0.0) or 0.0)
-            and float(payload.height_m)
-            <= float(slot.get("payload_height_capacity_m", 0.0) or 0.0)
-        )
+    def _payload_orientation_dimensions(
+        self, payload: PayloadType, orientation: str
+    ) -> Tuple[float, float, float]:
+        orientation = str(orientation or "lengthways").strip().lower()
+        length = float(payload.length_m)
+        width = float(payload.width_m)
+        if orientation == "sideways":
+            length, width = width, length
+        return length, width, float(payload.height_m)
+
+    def _compatible_payload_orientations(
+        self, payload: PayloadType, slot: dict
+    ) -> List[str]:
+        payload_allowed = [
+            str(x).strip().lower()
+            for x in (getattr(payload, "allowed_carry_orientations", None) or ["lengthways", "sideways"])
+            if str(x).strip().lower() in {"lengthways", "sideways"}
+        ]
+        slot_allowed = [
+            str(x).strip().lower()
+            for x in (slot.get("allowed_payload_orientations", ["lengthways", "sideways"]) or ["lengthways"])
+            if str(x).strip().lower() in {"lengthways", "sideways"}
+        ]
+        compatible = []
+        for orientation in ("lengthways", "sideways"):
+            if orientation not in payload_allowed or orientation not in slot_allowed:
+                continue
+            length, width, height = self._payload_orientation_dimensions(payload, orientation)
+            if (
+                float(payload.weight_kg) <= float(slot.get("payload_capacity_kg", 0.0) or 0.0)
+                and length <= float(slot.get("payload_length_capacity_m", 0.0) or 0.0)
+                and width <= float(slot.get("payload_width_capacity_m", 0.0) or 0.0)
+                and height <= float(slot.get("payload_height_capacity_m", 0.0) or 0.0)
+            ):
+                compatible.append(orientation)
+        return compatible
+
+    def _payload_fits_slot(
+        self, payload: PayloadType, slot: dict, orientation: Optional[str] = None
+    ) -> bool:
+        orientations = self._compatible_payload_orientations(payload, slot)
+        if orientation is None:
+            return bool(orientations)
+        return str(orientation or "").strip().lower() in orientations
+
+    def _choose_payload_orientation(
+        self, amr: AMR, payload: PayloadType, preferred_slot: str = ""
+    ) -> Tuple[str, str]:
+        for slot in self._runtime_amr_payload_slots(amr):
+            slot_name = str(slot.get("name", "") or "")
+            if preferred_slot and slot_name != preferred_slot:
+                continue
+            orientations = self._compatible_payload_orientations(payload, slot)
+            if orientations:
+                # Prefer lengthways because it usually minimises lateral swept width.
+                orientation = "lengthways" if "lengthways" in orientations else orientations[0]
+                return slot_name, orientation
+        return "", ""
 
     def _amr_can_carry_payload(self, amr: AMR, payload: PayloadType) -> bool:
         if is_empty_payload_name(payload.name):
             return True
-        return any(
-            self._payload_fits_slot(payload, slot)
-            for slot in self._runtime_amr_payload_slots(amr)
-        )
+        return bool(self._choose_payload_orientation(amr, payload)[0])
 
     def _assign_tasks_to_amr_slots(
         self, amr: AMR, tasks: List[Task]
@@ -1419,47 +1524,63 @@ class Simulation:
             payload = self._payload_for_task(task)
             if payload is None or is_empty_payload_name(payload.name):
                 return None
-            volume = (
-                float(payload.length_m)
-                * float(payload.width_m)
-                * float(payload.height_m)
-            )
+            volume = float(payload.length_m) * float(payload.width_m) * float(payload.height_m)
             sortable.append((float(payload.weight_kg), volume, task.id, task, payload))
         for _weight, _volume, _task_id, task, payload in sorted(sortable, reverse=True):
             assigned = None
+            assigned_orientation = ""
             for slot in slots:
                 slot_name = str(slot.get("name", ""))
                 if slot_name in used_slots:
                     continue
-                if self._payload_fits_slot(payload, slot):
+                orientations = self._compatible_payload_orientations(payload, slot)
+                if orientations:
                     assigned = slot_name
+                    assigned_orientation = "lengthways" if "lengthways" in orientations else orientations[0]
                     break
             if assigned is None:
                 return None
             assignments[task.id] = assigned
+            task.payload_orientation = assigned_orientation
             used_slots.add(assigned)
         return assignments
 
     def _make_aggregate_payload(self, tasks: List[Task]) -> PayloadType:
-        payloads = [self._payload_for_task(task) for task in tasks]
-        payloads = [payload for payload in payloads if payload is not None]
-        if not payloads:
+        oriented_payloads = []
+        for task in tasks:
+            payload = self._payload_for_task(task)
+            if payload is None:
+                continue
+            orientation = str(getattr(task, "payload_orientation", "lengthways") or "lengthways")
+            length, width, height = self._payload_orientation_dimensions(payload, orientation)
+            oriented_payloads.append((payload, length, width, height))
+        if not oriented_payloads:
             return self.payloads[EMPTY_PAYLOAD_NAME]
+        # Multi-stop payloads occupy separate AMR slots.  For corridor and lift
+        # clearance use the largest oriented envelope actually carried, rather
+        # than silently rotating every payload back to its catalogue orientation.
         return PayloadType(
             name="multi_payload",
-            weight_kg=sum(float(payload.weight_kg) for payload in payloads),
-            length_m=max(float(payload.length_m) for payload in payloads),
-            width_m=max(float(payload.width_m) for payload in payloads),
-            height_m=max(float(payload.height_m) for payload in payloads),
+            weight_kg=sum(float(payload.weight_kg) for payload, _l, _w, _h in oriented_payloads),
+            length_m=max(length for _payload, length, _width, _height in oriented_payloads),
+            width_m=max(width for _payload, _length, width, _height in oriented_payloads),
+            height_m=max(height for _payload, _length, _width, height in oriented_payloads),
             size_units=sum(
                 float(getattr(payload, "size_units", 0.0) or 0.0)
-                for payload in payloads
+                for payload, _length, _width, _height in oriented_payloads
             ),
+            allowed_carry_orientations=["lengthways"],
         )
 
     def _multi_stop_task_is_eligible(self, task: Task) -> bool:
         if getattr(task, "is_idle_return", False) or getattr(
             task, "is_return_task", False
+        ):
+            return False
+        pickup_loc = self.locations.get(str(getattr(task, "pickup", "") or ""))
+        dropoff_loc = self.locations.get(str(getattr(task, "dropoff", "") or ""))
+        if bool(getattr(pickup_loc, "wash_cycle_required", False)) or bool(
+            getattr(dropoff_loc, "wash_cycle_required", False)
         ):
             return False
         if bool(getattr(task, "manual_task", False)) or bool(
@@ -1718,6 +1839,8 @@ class Simulation:
                         location_b,
                         rules=rules,
                         start_time_value=current_time_value,
+                        payload=payload_for_leg,
+                        orientation="lengthways",
                     )
                     if route is None:
                         return math.inf, None, 0.0, 0.0
@@ -1741,6 +1864,7 @@ class Simulation:
                     location_b,
                     payload_for_leg,
                     rules=rules,
+                    orientation="lengthways",
                 )
                 if plan is None:
                     return math.inf, None, 0.0, 0.0
@@ -2031,6 +2155,8 @@ class Simulation:
                 battery_soc_after = amr.battery_soc_percent
             else:
                 battery_soc_after = projected_battery_soc_after
+            if reserve:
+                self._record_committed_segment_impacts(segments)
             return {
                 "multi_stop": True,
                 "tasks": tasks,
@@ -2680,6 +2806,7 @@ class Simulation:
                         "reserved_by_amr": str(
                             raw_space.get("reserved_by_amr", "") or ""
                         ).strip(),
+                        "has_charger": bool(raw_space.get("has_charger", False)),
                     }
                 )
 
@@ -3467,8 +3594,12 @@ class Simulation:
                 return True
         return False
 
+    @staticmethod
+    def _inventory_space_has_charger(space: dict) -> bool:
+        return bool((space or {}).get("has_charger", False))
+
     def _find_named_amr_inventory_space(
-        self, location_name: str, space_name: str, amr: AMR
+        self, location_name: str, space_name: str, amr: AMR, require_charger: bool = False
     ) -> Optional[dict]:
         space_name = str(space_name or "").strip()
         if not space_name:
@@ -3480,13 +3611,15 @@ class Simulation:
                 continue
             if not self._inventory_space_accepts_amr(space, amr):
                 return None
+            if require_charger and not self._inventory_space_has_charger(space):
+                return None
             if not self._space_is_available_for_amr(space, amr, location_name):
                 return None
             return space
         return None
 
     def _find_free_amr_inventory_space(
-        self, location_name: str, amr: AMR
+        self, location_name: str, amr: AMR, require_charger: bool = False
     ) -> Optional[dict]:
         """Return the nearest compatible AMR bay at a location.
 
@@ -3507,6 +3640,8 @@ class Simulation:
         ):
             if not self._inventory_space_accepts_amr(space, amr):
                 continue
+            if require_charger and not self._inventory_space_has_charger(space):
+                continue
             if not self._space_is_available_for_amr(space, amr, location_name):
                 continue
             centre = self._inventory_space_centre_location(location_name, space)
@@ -3526,7 +3661,7 @@ class Simulation:
         return candidates[0][2]
 
     def _reserved_amr_inventory_space(
-        self, location_name: str, amr: AMR
+        self, location_name: str, amr: AMR, require_charger: bool = False
     ) -> Optional[dict]:
         """Return the AMR bay already reserved for this AMR at a location."""
         location_name = str(location_name or "").strip()
@@ -3537,6 +3672,8 @@ class Simulation:
             home_name = str(getattr(amr, "home_inventory_space_name", "") or "").strip()
         for space in self.inventory_spaces_by_location.get(location_name, []):
             if not self._inventory_space_accepts_amr(space, amr):
+                continue
+            if require_charger and not self._inventory_space_has_charger(space):
                 continue
             space_name = self._space_name(space)
             reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
@@ -3560,13 +3697,13 @@ class Simulation:
         return None
 
     def _reserve_amr_inventory_space(
-        self, amr: AMR, location_name: str
+        self, amr: AMR, location_name: str, require_charger: bool = False
     ) -> Optional[dict]:
         """Reserve exactly one compatible AMR bay for a return/charge movement."""
         self._clear_amr_inventory_space_reservations(amr)
-        space = self._reserved_amr_inventory_space(location_name, amr)
+        space = self._reserved_amr_inventory_space(location_name, amr, require_charger=require_charger)
         if space is None:
-            space = self._find_free_amr_inventory_space(location_name, amr)
+            space = self._find_free_amr_inventory_space(location_name, amr, require_charger=require_charger)
         if space is None:
             setattr(amr, "target_inventory_space_name", "")
             return None
@@ -3612,7 +3749,7 @@ class Simulation:
             setattr(amr, "target_inventory_space_name", "")
 
     def _occupy_amr_inventory_space(
-        self, amr: AMR, location_name: str
+        self, amr: AMR, location_name: str, require_charger: bool = False
     ) -> Optional[dict]:
         """Claim a compatible AMR bay at arrival time.
 
@@ -3637,14 +3774,14 @@ class Simulation:
         target_space = None
         if target_space_name:
             target_space = self._find_named_amr_inventory_space(
-                location_name, target_space_name, amr
+                location_name, target_space_name, amr, require_charger=require_charger
             )
 
         if target_space is None:
-            target_space = self._reserved_amr_inventory_space(location_name, amr)
+            target_space = self._reserved_amr_inventory_space(location_name, amr, require_charger=require_charger)
 
         if target_space is None:
-            target_space = self._find_free_amr_inventory_space(location_name, amr)
+            target_space = self._find_free_amr_inventory_space(location_name, amr, require_charger=require_charger)
 
         if target_space is None:
             setattr(amr, "target_inventory_space_name", "")
@@ -3658,7 +3795,7 @@ class Simulation:
         if (occupied_by and occupied_by != amr_id) or (
             reserved_by and reserved_by != amr_id
         ):
-            target_space = self._find_free_amr_inventory_space(location_name, amr)
+            target_space = self._find_free_amr_inventory_space(location_name, amr, require_charger=require_charger)
             if target_space is None:
                 setattr(amr, "target_inventory_space_name", "")
                 return None
@@ -5353,23 +5490,35 @@ class Simulation:
             self.floor_graphs[node.floor][node.name]
             self.floor_reverse_graphs[node.floor][node.name]
 
-        def add_directed_edge(a_name: str, b_name: str, distance_m: float):
+        def add_directed_edge(
+            a_name: str,
+            b_name: str,
+            distance_m: float,
+            *,
+            bidirectional: bool = True,
+            width_m: Optional[float] = None,
+            people_area_type: str = "none",
+        ):
             a = self.graph_nodes[a_name]
-            self.floor_graphs[a.floor][a_name].append(
-                {"to": b_name, "distance_m": distance_m}
-            )
-            # Reverse adjacency is used by bidirectional Dijkstra.  Each reverse
-            # edge points from the original destination back to the original
-            # source but keeps the same distance.
-            self.floor_reverse_graphs[a.floor][b_name].append(
-                {"to": a_name, "distance_m": distance_m}
-            )
+            edge_data = {
+                "to": b_name,
+                "distance_m": distance_m,
+                "bidirectional": bool(bidirectional),
+                "width_m": max(0.1, float(width_m or self.default_corridor_width_m)),
+                "people_area_type": str(people_area_type or "none").strip().lower(),
+            }
+            self.floor_graphs[a.floor][a_name].append(edge_data)
+            reverse_data = dict(edge_data)
+            reverse_data["to"] = a_name
+            self.floor_reverse_graphs[a.floor][b_name].append(reverse_data)
 
         def add_edge(
             a_name: str,
             b_name: str,
             distance_m: Optional[float] = None,
             bidirectional: bool = True,
+            width_m: Optional[float] = None,
+            people_area_type: str = "none",
         ):
             if a_name not in self.graph_nodes or b_name not in self.graph_nodes:
                 raise ValueError(
@@ -5386,9 +5535,15 @@ class Simulation:
                 if distance_m is not None
                 else self._distance_same_floor(a, b)
             )
-            add_directed_edge(a_name, b_name, dist)
+            add_directed_edge(
+                a_name, b_name, dist, bidirectional=bidirectional,
+                width_m=width_m, people_area_type=people_area_type,
+            )
             if bidirectional:
-                add_directed_edge(b_name, a_name, dist)
+                add_directed_edge(
+                    b_name, a_name, dist, bidirectional=bidirectional,
+                    width_m=width_m, people_area_type=people_area_type,
+                )
 
         for edge in corridor_cfg.get("edges", []):
             add_edge(
@@ -5396,6 +5551,8 @@ class Simulation:
                 edge["to"],
                 edge.get("distance_m"),
                 edge.get("bidirectional", True),
+                edge.get("width_m", self.default_corridor_width_m),
+                edge.get("people_area_type", "none"),
             )
 
         # Optional: connect locations/lifts to nearby graph nodes when explicit edges are not supplied
@@ -5435,6 +5592,235 @@ class Simulation:
                         ),
                     )
                     add_edge(lift_name, nearest)
+
+    def _scenario_resource_matches(self, resource_type: str, resource_id: str, candidate: str) -> bool:
+        resource_type = str(resource_type or "").strip().lower()
+        resource_id = str(resource_id or "").strip()
+        candidate = str(candidate or "").strip()
+        if resource_type == "corridor":
+            normalise = lambda value: " -> ".join(x.strip() for x in value.replace("<->", "->").split("->") if x.strip())
+            wanted = normalise(resource_id)
+            actual = normalise(candidate)
+            if wanted == actual:
+                return True
+            try:
+                wa, wb = [x.strip() for x in wanted.split("->")]
+                aa, ab = [x.strip() for x in actual.split("->")]
+                return {wa, wb} == {aa, ab}
+            except Exception:
+                return False
+        if resource_type == "amr":
+            return candidate == resource_id or candidate.startswith(resource_id + "-")
+        return candidate == resource_id
+
+    def _scenario_event_state(self, resource_type: str, candidate: str, sim_time_sec: float) -> dict:
+        state = {"availability_percent": 100.0, "speed_factor": 1.0, "blocked_until": float(sim_time_sec), "notes": ""}
+        if not self.scenario_mode:
+            return state
+        dt = self.clock.sim_seconds_to_datetime(float(sim_time_sec))
+        day_key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][dt.weekday()]
+        minute = dt.hour * 60 + dt.minute + dt.second / 60.0
+        for event in self.scenario_events:
+            if str(event.get("resource_type", "") or "").strip().lower() != resource_type:
+                continue
+            if not self._scenario_resource_matches(resource_type, event.get("resource_id", ""), candidate):
+                continue
+            days = {str(x).strip().lower()[:3] for x in (event.get("days_active", []) or []) if str(x).strip()}
+            if days and day_key not in days:
+                continue
+            start_min = self._parse_hhmm_to_minutes(event.get("start_time"), 0)
+            end_min = self._parse_hhmm_to_minutes(event.get("end_time"), 24 * 60)
+            if end_min == start_min:
+                active = True
+            elif end_min > start_min:
+                active = start_min <= minute < end_min
+            else:
+                active = minute >= start_min or minute < end_min
+            if not active:
+                continue
+            availability = max(0.0, min(100.0, float(event.get("availability_percent", 100.0) or 0.0)))
+            speed_factor = max(0.0, min(1.0, float(event.get("speed_factor", 1.0) or 0.0)))
+            state["availability_percent"] = min(state["availability_percent"], availability)
+            state["speed_factor"] = min(state["speed_factor"], speed_factor)
+            state["notes"] = str(event.get("notes", "") or state["notes"])
+            if availability <= 0.0:
+                if end_min > start_min:
+                    seconds_to_end = max(0.0, (end_min - minute) * 60.0)
+                elif minute >= start_min:
+                    seconds_to_end = max(0.0, ((24 * 60 - minute) + end_min) * 60.0)
+                else:
+                    seconds_to_end = max(0.0, (end_min - minute) * 60.0)
+                state["blocked_until"] = max(state["blocked_until"], float(sim_time_sec) + seconds_to_end)
+        return state
+
+    def _lift_health_speed_factor(self, lift: Lift) -> float:
+        health = max(0.0, min(100.0, float(getattr(lift, "health_percent", 100.0) or 0.0)))
+        minimum = max(0.0, min(100.0, float(getattr(lift, "minimum_operational_health_percent", 20.0) or 0.0)))
+        if health < minimum:
+            return 0.0
+        at_zero = max(0.05, min(1.0, float(getattr(lift, "health_speed_penalty_at_zero", 0.5) or 0.5)))
+        return at_zero + (1.0 - at_zero) * (health / 100.0)
+
+    def _resource_speed_factor(self, resource_type: str, resource_id: str, sim_time_sec: float) -> Tuple[float, float, str]:
+        state = self._scenario_event_state(resource_type, resource_id, sim_time_sec)
+        availability_factor = max(0.0, min(1.0, float(state["availability_percent"]) / 100.0))
+        speed_factor = min(float(state["speed_factor"]), availability_factor if availability_factor > 0 else 0.0)
+        return speed_factor, float(state["blocked_until"]), str(state.get("notes", ""))
+
+    def _shortest_people_path_same_floor(
+        self, floor: int, start_name: str, end_name: str, group_type: str
+    ) -> Optional[dict]:
+        graph = self.floor_graphs.get(floor, {})
+        if start_name not in graph or end_name not in graph:
+            return None
+        group_type = str(group_type or "staff").strip().lower()
+        heap = [(0.0, start_name)]
+        best = {start_name: 0.0}
+        previous = {}
+        while heap:
+            distance, node = heapq.heappop(heap)
+            if distance > best.get(node, math.inf):
+                continue
+            if node == end_name:
+                break
+            for edge in graph.get(node, []):
+                area = str(edge.get("people_area_type", "none") or "none").strip().lower()
+                if area not in {"none", "both", group_type}:
+                    continue
+                nxt = edge["to"]
+                new_distance = distance + float(edge.get("distance_m", 0.0) or 0.0)
+                if new_distance < best.get(nxt, math.inf):
+                    best[nxt] = new_distance
+                    previous[nxt] = (node, dict(edge))
+                    heapq.heappush(heap, (new_distance, nxt))
+        if end_name not in best:
+            return None
+        edges = []
+        node = end_name
+        while node != start_name:
+            parent, edge = previous[node]
+            item = dict(edge)
+            item.update({"from": parent, "to": node})
+            edges.append(item)
+            node = parent
+        edges.reverse()
+        return {"distance_m": best[end_name], "edges": edges}
+
+    def _people_route_edges(
+        self, start: Location, end: Location, group_type: str = "staff"
+    ) -> List[dict]:
+        if start.floor == end.floor:
+            route = self._shortest_people_path_same_floor(
+                start.floor, start.name, end.name, group_type
+            )
+            return list(route.get("edges", [])) if route else []
+        best = None
+        best_distance = math.inf
+        for lift in self.lifts:
+            if not lift.can_serve(start.floor, end.floor):
+                continue
+            origin = lift.location_on_floor(start.floor)
+            destination = lift.location_on_floor(end.floor)
+            first = self._shortest_people_path_same_floor(
+                start.floor, start.name, origin.name, group_type
+            )
+            second = self._shortest_people_path_same_floor(
+                end.floor, destination.name, end.name, group_type
+            )
+            if first is None or second is None:
+                continue
+            distance = float(first["distance_m"]) + float(second["distance_m"])
+            if distance < best_distance:
+                best_distance = distance
+                best = list(first["edges"]) + list(second["edges"])
+        return best or []
+
+    def _init_people_movements(self, raw_movements) -> None:
+        self.people_movements = []
+        if not isinstance(raw_movements, list):
+            return
+        horizon = max(0.0, float(getattr(self, "task_generation_horizon_sec", 0.0) or 0.0))
+        day_count = max(1, int(math.ceil(horizon / 86400.0)) + 2)
+        for index, raw in enumerate(raw_movements, start=1):
+            if not isinstance(raw, dict) or not bool(raw.get("enabled", True)):
+                continue
+            start = self.locations.get(str(raw.get("start_location", "") or "").strip())
+            end = self.locations.get(str(raw.get("end_location", "") or "").strip())
+            if start is None or end is None:
+                continue
+            group_type = str(raw.get("group_type", "staff") or "staff").strip().lower()
+            edges = self._people_route_edges(start, end, group_type)
+            if not edges:
+                continue
+            profile = {
+                "id": str(raw.get("id", f"PEOPLE-{index}") or f"PEOPLE-{index}"),
+                "group_type": group_type,
+                "people_per_trip": max(1, int(float(raw.get("people_per_trip", 1) or 1))),
+                "walking_speed_m_per_sec": max(0.1, float(raw.get("walking_speed_m_per_sec", 1.2) or 1.2)),
+                "amr_speed_factor": max(0.05, min(1.0, float(raw.get("amr_speed_factor", 0.7) or 0.7))),
+                "days_active": {str(x).strip().lower()[:3] for x in (raw.get("days_active", []) or []) if str(x).strip()},
+                "start_time": str(raw.get("start_time", "08:00") or "08:00"),
+                "end_time": str(raw.get("end_time", "18:00") or "18:00"),
+                "interval_minutes": max(0.1, float(raw.get("interval_minutes", 15.0) or 15.0)),
+                "edges": edges,
+            }
+            self.people_movements.append(profile)
+            start_min = self._parse_hhmm_to_minutes(profile["start_time"], 0)
+            end_min = self._parse_hhmm_to_minutes(profile["end_time"], 24 * 60)
+            for day_index in range(day_count):
+                day_dt = (self.clock.start_datetime + timedelta(days=day_index)).replace(hour=0, minute=0, second=0, microsecond=0)
+                day_key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][day_dt.weekday()]
+                if profile["days_active"] and day_key not in profile["days_active"]:
+                    continue
+                day_start_sec = (day_dt - self.clock.start_datetime).total_seconds()
+                window_end = end_min if end_min > start_min else end_min + 24 * 60
+                departure_min = float(start_min)
+                while departure_min < float(window_end) - 1e-9:
+                    t = day_start_sec + departure_min * 60.0
+                    for edge in edges:
+                        duration = float(edge.get("distance_m", 0.0)) / profile["walking_speed_m_per_sec"]
+                        key = self._physical_edge_key(edge["from"], edge["to"])
+                        self.people_edge_reservations[key].append({
+                            "start": t, "end": t + duration, "count": profile["people_per_trip"],
+                            "speed_factor": profile["amr_speed_factor"], "group_type": profile["group_type"],
+                            "movement_id": profile["id"],
+                        })
+                        t += duration
+                    departure_min += profile["interval_minutes"]
+        for reservations in self.people_edge_reservations.values():
+            reservations.sort(key=lambda item: (item["start"], item["end"]))
+
+    def _people_on_edge(self, edge_key: Tuple[str, str], start_time: float, duration: float) -> Tuple[int, float, str]:
+        count = 0
+        factor = 1.0
+        groups = set()
+        end_time = float(start_time) + max(0.0, float(duration))
+        for item in self.people_edge_reservations.get(edge_key, []):
+            if float(item["start"]) >= end_time:
+                break
+            if float(item["end"]) <= float(start_time):
+                continue
+            count += int(item.get("count", 0) or 0)
+            factor = min(factor, float(item.get("speed_factor", 1.0) or 1.0))
+            groups.add(str(item.get("group_type", "") or ""))
+        if count > 0:
+            factor = min(factor, max(self.minimum_people_speed_factor, 1.0 - count * self.people_slowdown_per_person))
+        return count, factor, ",".join(sorted(x for x in groups if x))
+
+    def _corridor_lane_capacity(self, edge: dict, amr: AMR, payload: Optional[PayloadType], orientation: str = "lengthways") -> Tuple[int, float, float]:
+        width = max(0.1, float(edge.get("width_m", self.default_corridor_width_m) or self.default_corridor_width_m))
+        if not bool(edge.get("bidirectional", True)):
+            return 1, width, width
+        lane_width = width / 2.0
+        payload_length = 0.0
+        payload_cross_width = 0.0
+        if payload is not None and not is_empty_payload_name(payload.name):
+            payload_length, payload_cross_width, _ = self._payload_orientation_dimensions(payload, orientation)
+        carrying_length = max(float(getattr(amr, "length_m", 0.0) or 0.0), payload_length)
+        carrying_width = max(float(getattr(amr, "width_m", 0.0) or 0.0), payload_cross_width)
+        if carrying_length > lane_width + 1e-9 or carrying_width > lane_width + 1e-9:
+            return 1, lane_width, carrying_length
+        return 2, lane_width, carrying_length
 
     def _static_route_endpoint_names_by_floor(self) -> Dict[int, List[str]]:
         """Return route endpoint nodes worth pre-caching.
@@ -5536,9 +5922,9 @@ class Simulation:
         b_heap = [(0.0, end_name)]
         f_best = {start_name: 0.0}
         b_best = {end_name: 0.0}
-        f_prev: Dict[str, Tuple[str, float]] = {}
+        f_prev: Dict[str, Tuple[str, dict]] = {}
         # b_prev maps a node to the next node on the path towards end_name.
-        b_prev: Dict[str, Tuple[str, float]] = {}
+        b_prev: Dict[str, Tuple[str, dict]] = {}
         best_distance = math.inf
         meeting_node = None
 
@@ -5564,7 +5950,7 @@ class Simulation:
                     new_dist = dist + edge["distance_m"]
                     if new_dist < f_best.get(nxt, math.inf):
                         f_best[nxt] = new_dist
-                        f_prev[nxt] = (node, edge["distance_m"])
+                        f_prev[nxt] = (node, dict(edge))
                         heapq.heappush(f_heap, (new_dist, nxt))
                     if nxt in b_best:
                         candidate = new_dist + b_best[nxt]
@@ -5590,7 +5976,7 @@ class Simulation:
                     new_dist = dist + edge["distance_m"]
                     if new_dist < b_best.get(nxt, math.inf):
                         b_best[nxt] = new_dist
-                        b_prev[nxt] = (node, edge["distance_m"])
+                        b_prev[nxt] = (node, dict(edge))
                         heapq.heappush(b_heap, (new_dist, nxt))
                     if nxt in f_best:
                         candidate = new_dist + f_best[nxt]
@@ -5604,15 +5990,19 @@ class Simulation:
         path_edges = []
         node = meeting_node
         while node != start_name:
-            parent, distance_m = f_prev[node]
-            path_edges.append({"from": parent, "to": node, "distance_m": distance_m})
+            parent, edge_data = f_prev[node]
+            path_edge = dict(edge_data)
+            path_edge.update({"from": parent, "to": node})
+            path_edges.append(path_edge)
             node = parent
         path_edges.reverse()
 
         node = meeting_node
         while node != end_name:
-            child, distance_m = b_prev[node]
-            path_edges.append({"from": node, "to": child, "distance_m": distance_m})
+            child, edge_data = b_prev[node]
+            path_edge = dict(edge_data)
+            path_edge.update({"from": node, "to": child})
+            path_edges.append(path_edge)
             node = child
 
         result = {"distance_m": best_distance, "edges": path_edges}
@@ -6351,12 +6741,14 @@ class Simulation:
         duration: float,
         spacing_time: float,
         directed_edge_key: Optional[Tuple[str, str]] = None,
+        max_concurrency: Optional[int] = None,
     ) -> Tuple[float, int]:
         reservations = self.edge_reservations.get(edge_key, [])
         max_reserved_duration = self.edge_reservation_max_duration.get(edge_key, 0.0)
         t = float(requested_start)
         duration = max(0.0, float(duration or 0.0))
         spacing_time = max(0.0, float(spacing_time or 0.0))
+        capacity = max(1, int(max_concurrency if max_concurrency is not None else self.edge_max_concurrency))
 
         while True:
             overlap_count = 0
@@ -6378,7 +6770,7 @@ class Simulation:
                         next_candidate = protected_end
 
             candidate_t = t
-            if overlap_count >= self.edge_max_concurrency:
+            if overlap_count >= capacity:
                 if next_candidate is None:
                     return t, overlap_count
                 candidate_t = max(candidate_t, next_candidate)
@@ -6394,7 +6786,7 @@ class Simulation:
                     ),
                 )
 
-            if candidate_t <= t + 1e-9 and overlap_count < self.edge_max_concurrency:
+            if candidate_t <= t + 1e-9 and overlap_count < capacity:
                 return t, overlap_count
 
             t = candidate_t
@@ -6530,138 +6922,147 @@ class Simulation:
         end: Location,
         rules: Optional[dict] = None,
         start_time_value: Optional[float] = None,
+        payload: Optional[PayloadType] = None,
+        orientation: str = "lengthways",
     ) -> Optional[Tuple[List[dict], float, float]]:
-        route = self._shortest_path_same_floor(
-            start.floor,
-            start.name,
-            end.name,
-            rules=rules,
-        )
+        route = self._shortest_path_same_floor(start.floor, start.name, end.name, rules=rules)
         if route is None:
             return None
-
         segments: List[dict] = []
         total_duration = 0.0
-        current_time_value = start_time_value
+        current = start_time_value
         spacing_time = self._spacing_time_sec(amr)
-
         for edge in route["edges"]:
-            base_duration = edge["distance_m"] / max(amr.speed_m_per_sec, 1e-9)
-
-            if current_time_value is None:
+            base_duration = float(edge["distance_m"]) / max(float(amr.speed_m_per_sec), 1e-9)
+            lane_count, lane_width, carrying_length = self._corridor_lane_capacity(edge, amr, payload, orientation)
+            congestion_count = 0
+            people_count = 0
+            people_groups = ""
+            people_factor = 1.0
+            scenario_factor = 1.0
+            scenario_notes = ""
+            scenario_wait = 0.0
+            edge_wait = 0.0
+            node_wait = 0.0
+            if current is None:
                 duration = base_duration
                 speed_factor = 1.0
-                congestion_count = 0
-                edge_wait = 0.0
-                node_wait = 0.0
             else:
+                corridor_id = f"{edge['from']} -> {edge['to']}"
+                corridor_factor, blocked_until, corridor_notes = self._resource_speed_factor("corridor", corridor_id, current)
+                amr_factor, amr_blocked_until, amr_notes = self._resource_speed_factor("amr", amr.id, current)
+                blocked_until = max(blocked_until, amr_blocked_until)
+                if blocked_until > current + 1e-9:
+                    scenario_wait = blocked_until - current
+                    segments.append({
+                        "type": "wait_for_scenario", "from": edge["from"], "to": edge["from"],
+                        "duration": scenario_wait, "distance_m": 0.0,
+                        "scenario_name": self.scenario_name,
+                        "scenario_reason": corridor_notes or amr_notes or "Configured resource outage",
+                    })
+                    total_duration += scenario_wait
+                    current = blocked_until
+                    corridor_factor, _blocked, corridor_notes = self._resource_speed_factor("corridor", corridor_id, current)
+                    amr_factor, _blocked, amr_notes = self._resource_speed_factor("amr", amr.id, current)
+                scenario_factor = min(corridor_factor or 1e-9, amr_factor or 1e-9)
+                scenario_notes = corridor_notes or amr_notes
                 edge_key = self._physical_edge_key(edge["from"], edge["to"])
-                congestion_count = self._edge_recent_demand(
-                    edge_key, current_time_value
-                )
-
-                speed_factor = max(
-                    self.min_congestion_speed_factor,
-                    1.0 - (congestion_count * self.edge_slowdown_per_amr),
-                )
-
-                # Start with a slowed-but-moving duration
-                travel_duration = base_duration / max(speed_factor, 1e-9)
-
+                congestion_count = self._edge_recent_demand(edge_key, current)
+                congestion_factor = max(self.min_congestion_speed_factor, 1.0 - congestion_count * self.edge_slowdown_per_amr)
+                people_count, people_factor, people_groups = self._people_on_edge(edge_key, current, base_duration)
+                speed_factor = max(0.01, min(congestion_factor, people_factor, scenario_factor))
+                travel_duration = base_duration / speed_factor
                 edge_start, _ = self._find_next_edge_start(
-                    edge_key=edge_key,
-                    requested_start=current_time_value,
-                    duration=travel_duration,
-                    spacing_time=spacing_time,
-                    directed_edge_key=(edge["from"], edge["to"]),
+                    edge_key=edge_key, requested_start=current, duration=travel_duration,
+                    spacing_time=spacing_time, directed_edge_key=(edge["from"], edge["to"]),
+                    max_concurrency=lane_count,
                 )
-                edge_wait = max(0.0, edge_start - current_time_value)
-
+                edge_wait = max(0.0, edge_start - current)
                 if edge_wait > 0:
-                    segments.append(
-                        {
-                            "type": "wait_for_edge",
-                            "from": edge["from"],
-                            "to": edge["from"],
-                            "duration": edge_wait,
-                            "distance_m": 0.0,
-                            "congestion_count": congestion_count,
-                        }
-                    )
+                    segments.append({
+                        "type": "wait_for_edge", "from": edge["from"], "to": edge["from"],
+                        "duration": edge_wait, "distance_m": 0.0,
+                        "congestion_count": congestion_count, "route_lane_count": lane_count,
+                    })
                     total_duration += edge_wait
-                    current_time_value = edge_start
-
-                proposed_arrival = current_time_value + travel_duration
-                safe_arrival = self._find_next_node_arrival(
-                    edge["to"],
-                    proposed_arrival,
-                    spacing_time,
-                )
-
+                    current = edge_start
+                proposed_arrival = current + travel_duration
+                safe_arrival = self._find_next_node_arrival(edge["to"], proposed_arrival, spacing_time)
                 node_wait = max(0.0, safe_arrival - proposed_arrival)
-
                 if node_wait > 0:
-                    # First try to absorb delay by slowing down on the segment
+                    # Preserve the existing smooth-congestion behaviour: absorb
+                    # a node conflict by slowing along the edge where possible.
+                    # If that would require an impractically low speed, wait at
+                    # the edge start and then travel at the lowest active safety
+                    # factor (congestion, people or scenario).
                     adjusted_duration = travel_duration + node_wait
-                    effective_speed_factor = base_duration / max(
-                        adjusted_duration, 1e-9
+                    effective_speed_factor = base_duration / max(adjusted_duration, 1e-9)
+                    minimum_active_factor = max(
+                        0.01,
+                        min(
+                            self.min_congestion_speed_factor,
+                            people_factor,
+                            scenario_factor,
+                        ),
                     )
-
-                    if effective_speed_factor >= self.min_congestion_speed_factor:
+                    if effective_speed_factor >= minimum_active_factor:
                         duration = adjusted_duration
+                        speed_factor = min(speed_factor, effective_speed_factor)
+                        node_wait = 0.0
                     else:
-                        duration = base_duration / max(
-                            self.min_congestion_speed_factor, 1e-9
-                        )
-                        stop_wait = max(
-                            0.0, safe_arrival - (current_time_value + duration)
-                        )
+                        duration = base_duration / minimum_active_factor
+                        stop_wait = max(0.0, safe_arrival - (current + duration))
                         if stop_wait > 0:
-                            segments.append(
-                                {
-                                    "type": "wait_for_node",
-                                    # Wait before entering the edge; the blocked
-                                    # node is the destination, but the AMR is
-                                    # still physically at the edge start.
-                                    "from": edge["from"],
-                                    "to": edge["from"],
-                                    "blocked_node": edge["to"],
-                                    "duration": stop_wait,
-                                    "distance_m": 0.0,
-                                    "congestion_count": congestion_count,
-                                }
-                            )
+                            segments.append({
+                                "type": "wait_for_node",
+                                "from": edge["from"],
+                                "to": edge["from"],
+                                "blocked_node": edge["to"],
+                                "duration": stop_wait,
+                                "distance_m": 0.0,
+                                "congestion_count": congestion_count,
+                                "route_lane_count": lane_count,
+                            })
                             total_duration += stop_wait
+                            current += stop_wait
                         node_wait = stop_wait
-                        speed_factor = self.min_congestion_speed_factor
+                        speed_factor = minimum_active_factor
                 else:
                     duration = travel_duration
-
-            segments.append(
-                {
-                    "type": "corridor",
-                    "from": edge["from"],
-                    "to": edge["to"],
-                    "duration": duration,
-                    "distance_m": edge["distance_m"],
-                    "speed_factor": speed_factor,
-                    "congestion_count": congestion_count,
-                }
-            )
+            people_delay = max(0.0, base_duration / max(people_factor, 1e-9) - base_duration) if people_count else 0.0
+            scenario_delay = max(0.0, base_duration / max(scenario_factor, 1e-9) - base_duration) + scenario_wait if self.scenario_mode else 0.0
+            segments.append({
+                "type": "corridor", "from": edge["from"], "to": edge["to"],
+                "duration": duration, "distance_m": edge["distance_m"],
+                "speed_factor": speed_factor, "congestion_count": congestion_count,
+                "people_count": people_count, "people_groups": people_groups,
+                "people_speed_factor": people_factor, "people_delay_sec": people_delay,
+                "scenario_name": self.scenario_name if self.scenario_mode else "",
+                "scenario_reason": scenario_notes, "scenario_delay_sec": scenario_delay,
+                "route_lane_count": lane_count, "corridor_width_m": float(edge.get("width_m", self.default_corridor_width_m)),
+                "lane_width_m": lane_width, "carrying_length_m": carrying_length,
+                "payload_orientation": orientation if payload is not None else "",
+            })
             total_duration += duration
-
-            if current_time_value is not None:
-                current_time_value += duration + node_wait
-
+            if current is not None:
+                current += duration
         return segments, total_duration, route["distance_m"]
 
     def _lift_location_on_floor(self, lift: Lift, floor: int) -> Location:
         return lift.location_on_floor(floor)
 
-    def _lift_vertical_seconds(self, lift: Lift, from_floor: int, to_floor: int) -> float:
-        return abs(int(to_floor) - int(from_floor)) / max(
-            float(lift.speed_floors_per_sec or 0.0), 1e-9
+    def _lift_vertical_seconds(
+        self, lift: Lift, from_floor: int, to_floor: int, at_time: Optional[float] = None
+    ) -> float:
+        health_factor = self._lift_health_speed_factor(lift)
+        scenario_factor, _blocked_until, _notes = self._resource_speed_factor(
+            "lift", lift.id, self.current_time if at_time is None else at_time
         )
+        combined_factor = health_factor * scenario_factor
+        if combined_factor <= 0.0:
+            return math.inf
+        base_speed = max(float(lift.speed_floors_per_sec or 0.0), 1e-9)
+        return abs(int(to_floor) - int(from_floor)) / max(base_speed * combined_factor, 1e-9)
 
     def _lift_service_finish_time(
         self,
@@ -6788,6 +7189,7 @@ class Simulation:
         to_loc: Location,
         payload: PayloadType,
         rules: Optional[dict] = None,
+        orientation: str = "lengthways",
     ) -> Optional[dict]:
         best_plan = None
         best_finish = math.inf
@@ -6798,7 +7200,12 @@ class Simulation:
                 continue
             if not lift.can_serve(from_loc.floor, to_loc.floor):
                 continue
-            if not lift.can_fit(payload, amr):
+            if self._lift_health_speed_factor(lift) <= 0.0:
+                continue
+            lift_scenario = self._scenario_event_state("lift", lift.id, ready_time)
+            if float(lift_scenario.get("availability_percent", 100.0)) <= 0.0:
+                continue
+            if not lift.can_fit(payload, amr, orientation=orientation):
                 continue
 
             origin_lift = self._lift_location_on_floor(lift, from_loc.floor)
@@ -6816,6 +7223,8 @@ class Simulation:
                 origin_lift,
                 rules=rules,
                 start_time_value=ready_time,
+                payload=payload,
+                orientation=orientation,
             )
             if to_lift_route is None:
                 continue
@@ -6838,6 +7247,8 @@ class Simulation:
                 to_loc,
                 rules=rules,
                 start_time_value=lift_finish,
+                payload=payload,
+                orientation=orientation,
             )
             if from_lift_route is None:
                 continue
@@ -6894,11 +7305,9 @@ class Simulation:
             return None
         best_loc = None
         best_finish = math.inf
-        dummy_payload = (
-            next(iter(self.payloads.values()))
-            if self.payloads
-            else PayloadType("empty", 0.0)
-        )
+        dummy_payload = self.payloads.get(EMPTY_PAYLOAD_NAME)
+        if dummy_payload is None:
+            dummy_payload = PayloadType("empty", 0.0)
         for charge_loc in candidates:
             # Charging locations that define AMR bays must have a compatible bay
             # for this AMR type.  Previously a location with AMR-B bays but no
@@ -6911,17 +7320,21 @@ class Simulation:
                 space
                 for space in self.inventory_spaces_by_location.get(charge_loc.name, [])
                 if self._inventory_space_accepts_amr(space, amr)
+                and self._inventory_space_has_charger(space)
             ]
             if location_has_amr_bays and not amr_spaces:
                 continue
             if amr_spaces and (
-                self._reserved_amr_inventory_space(charge_loc.name, amr) is None
-                and self._find_free_amr_inventory_space(charge_loc.name, amr) is None
+                self._reserved_amr_inventory_space(charge_loc.name, amr, require_charger=True) is None
+                and self._find_free_amr_inventory_space(charge_loc.name, amr, require_charger=True) is None
             ):
                 continue
 
             if current_loc.floor == charge_loc.floor:
-                route = self._same_floor_segments(amr, current_loc, charge_loc)
+                route = self._same_floor_segments(
+                    amr, current_loc, charge_loc, start_time_value=now,
+                    payload=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation="lengthways"
+                )
                 if route is None:
                     continue
                 finish = now + route[1]
@@ -6948,8 +7361,9 @@ class Simulation:
             0.0, float(journey_operating_sec or 0.0)
         )
 
+        health_factor = max(0.1, min(1.0, float(getattr(lift, "health_percent", 100.0) or 0.0) / 100.0))
         mtbf_sec = (
-            max(0.0, float(lift.mean_time_between_failures_hours or 0.0)) * 3600.0
+            max(0.0, float(lift.mean_time_between_failures_hours or 0.0)) * 3600.0 * health_factor
         )
         if mtbf_sec <= 0.0:
             return
@@ -6988,7 +7402,7 @@ class Simulation:
         reserved_charge_space = None
         if reserve:
             reserved_charge_space = self._reserve_amr_inventory_space(
-                amr, charge_loc.name
+                amr, charge_loc.name, require_charger=True
             )
             if reserved_charge_space is None and any(
                 self._inventory_space_accepts_amr(space, amr)
@@ -6997,7 +7411,10 @@ class Simulation:
                 return None
 
         if current_loc.floor == charge_loc.floor:
-            route = self._same_floor_segments(amr, current_loc, charge_loc)
+            route = self._same_floor_segments(
+                amr, current_loc, charge_loc, start_time_value=current_time_value,
+                payload=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation="lengthways"
+            )
             if route is None:
                 return None
             segments, travel_sec, distance_m = route
@@ -7018,7 +7435,9 @@ class Simulation:
                 ),
             }
 
-        dummy_payload = next(iter(self.payloads.values()))
+        dummy_payload = self.payloads.get(EMPTY_PAYLOAD_NAME)
+        if dummy_payload is None:
+            dummy_payload = PayloadType("empty", 0.0)
         plan = self._nearest_compatible_lift_plan(
             current_time_value, amr, current_loc, charge_loc, dummy_payload
         )
@@ -7111,6 +7530,27 @@ class Simulation:
             ),
         }
 
+    def _amr_is_at_operational_charger(self, amr: AMR) -> bool:
+        location_name = str(getattr(amr, "location_name", "") or "").strip()
+        if location_name not in self.charge_location_names:
+            return False
+        spaces = self.inventory_spaces_by_location.get(location_name, []) or []
+        amr_spaces = [
+            space for space in spaces
+            if bool(space.get("stores_amr", False))
+            or str(space.get("space_type", "") or "").strip().lower() == "amr"
+        ]
+        # Preserve legacy location-level charging only where no AMR bays exist.
+        if not amr_spaces:
+            return True
+        occupied_name = str(getattr(amr, "inventory_space_name", "") or "").strip()
+        return any(
+            self._space_name(space) == occupied_name
+            and self._inventory_space_accepts_amr(space, amr)
+            and self._inventory_space_has_charger(space)
+            for space in amr_spaces
+        )
+
     def _plan_charge_cycle_if_needed(
         self,
         amr: AMR,
@@ -7126,17 +7566,24 @@ class Simulation:
         adjusted_ready_time = ready_time
 
         if requires_recharge_before_route(amr, required_energy_kwh):
-            charge_duration = amr.charge_duration_sec_to_full()
-            extra_segments.append(
-                {
-                    "type": "charge",
-                    "location": amr.location_name,
-                    "duration": charge_duration,
-                    "battery_soc_before": amr.battery_soc_percent,
-                    "battery_soc_after": 100.0,
-                }
-            )
-            adjusted_ready_time += charge_duration
+            # Never charge on an arbitrary corridor/location node.  In-place
+            # pre-route charging is valid only when the AMR is actually parked
+            # in a charger-equipped bay (or at a legacy charger location with no
+            # explicit AMR bays).  Otherwise the assignment is deferred and the
+            # scheduler sends the AMR to a charger.
+            if self._amr_is_at_operational_charger(amr):
+                charge_duration = amr.charge_duration_sec_to_full()
+                extra_segments.append(
+                    {
+                        "type": "charge",
+                        "location": amr.location_name,
+                        "duration": charge_duration,
+                        "battery_soc_before": amr.battery_soc_percent,
+                        "battery_soc_after": 100.0,
+                        "charger_space": str(getattr(amr, "inventory_space_name", "") or ""),
+                    }
+                )
+                adjusted_ready_time += charge_duration
 
         return adjusted_ready_time, extra_segments, required_energy_kwh
 
@@ -7200,6 +7647,14 @@ class Simulation:
         charge_duration = amr.charge_duration_sec_to_full()
         charge_start = plan["finish_time"]
         charge_finish = charge_start + charge_duration
+        self.charge_intervals.append({
+            "amr_id": amr.id,
+            "location": plan.get("charge_location", plan.get("end_location", "")),
+            "space": plan.get("amr_inventory_space", ""),
+            "start_time": charge_start,
+            "end_time": charge_finish,
+            "duration_sec": charge_duration,
+        })
 
         amr.is_charging = True
         amr.available_time = charge_finish
@@ -7286,6 +7741,11 @@ class Simulation:
 
     def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False):
         try:
+            availability_time = max(self.current_time, float(getattr(amr, "available_time", 0.0) or 0.0), float(getattr(task, "release_time", 0.0) or 0.0))
+            amr_scenario_state = self._scenario_event_state("amr", amr.id, availability_time)
+            if float(amr_scenario_state.get("availability_percent", 100.0)) <= 0.0:
+                self._set_task_pending_reason(task, f"AMR {amr.id} unavailable in scenario {self.scenario_name}")
+                return None
             if getattr(task, "is_idle_return", False):
                 if getattr(task, "amr_id", "") != amr.id:
                     return None
@@ -7335,9 +7795,14 @@ class Simulation:
                 return None
             if not self._amr_can_carry_payload(amr, payload):
                 self._set_task_pending_reason(
-                    task, "No AMR has sufficient payload weight/dimensions"
+                    task, "No AMR has sufficient payload weight/dimensions/orientation"
                 )
                 return None
+            payload_slot_name, payload_orientation = self._choose_payload_orientation(amr, payload)
+            if not is_empty_payload_name(payload.name) and not payload_slot_name:
+                self._set_task_pending_reason(task, "No compatible AMR payload orientation is available")
+                return None
+            task.payload_orientation = payload_orientation or "lengthways"
 
             if self._location_has_payload_inventory_spaces(task.dropoff):
                 free_space = self._find_free_inventory_space(task.dropoff, payload)
@@ -7364,14 +7829,16 @@ class Simulation:
 
             to_pickup_est = (
                 self._same_floor_segments(
-                    amr, amr_loc, pickup_loc, rules=pre_pickup_rules
+                    amr, amr_loc, pickup_loc, rules=pre_pickup_rules,
+                    payload=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation="lengthways"
                 )
                 if amr_loc.floor == pickup_loc.floor
                 else None
             )
             loaded_est = (
                 self._same_floor_segments(
-                    amr, pickup_loc, dropoff_loc, rules=loaded_route_rules
+                    amr, pickup_loc, dropoff_loc, rules=loaded_route_rules,
+                    payload=payload, orientation=task.payload_orientation
                 )
                 if pickup_loc.floor == dropoff_loc.floor
                 else None
@@ -7380,9 +7847,15 @@ class Simulation:
             loaded_sec = loaded_est[1] if loaded_est else 0.0
 
             t = max(self.current_time, amr.available_time, task.release_time)
-            charge_ready_time, charge_segments, _ = self._plan_charge_cycle_if_needed(
+            charge_ready_time, charge_segments, required_route_energy_kwh = self._plan_charge_cycle_if_needed(
                 amr, payload, to_pickup_sec, loaded_sec, t
             )
+            if requires_recharge_before_route(amr, required_route_energy_kwh) and not charge_segments:
+                self._set_task_pending_reason(
+                    task,
+                    f"AMR {amr.id} requires a charger-equipped bay before this route",
+                )
+                return None
             t = charge_ready_time
             task_start_time = t
 
@@ -7412,6 +7885,8 @@ class Simulation:
                 location_b: Location,
                 current_time_value: float,
                 rules: Optional[dict] = None,
+                payload_for_leg: Optional[PayloadType] = None,
+                orientation_for_leg: str = "lengthways",
             ) -> Tuple[float, Location, Optional[List[dict]], float]:
                 nonlocal total
 
@@ -7422,6 +7897,8 @@ class Simulation:
                         location_b,
                         rules=rules,
                         start_time_value=current_time_value,
+                        payload=payload_for_leg,
+                        orientation=orientation_for_leg,
                     )
                     if route is None:
                         return math.inf, location_b, None, 0.0
@@ -7448,8 +7925,9 @@ class Simulation:
                     amr,
                     location_a,
                     location_b,
-                    payload,
+                    payload_for_leg or self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
                     rules=rules,
+                    orientation=orientation_for_leg,
                 )
                 if plan is None:
                     return math.inf, location_b, None, 0.0
@@ -7457,7 +7935,7 @@ class Simulation:
                 nonlocal lift_energy_kwh_total
                 lift_energy_kwh_total += total_lift_energy_kwh(
                     lift=plan["lift"],
-                    payload=payload,
+                    payload=payload_for_leg or self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
                     floor_height_m=self.floor_height_m,
                     reposition_floor_delta=(
                         plan["reposition_to_floor"] - plan["reposition_from_floor"]
@@ -7531,7 +8009,7 @@ class Simulation:
                             * self.floor_height_m,
                             "energy_kwh": total_lift_energy_kwh(
                                 lift=plan["lift"],
-                                payload=payload,
+                                payload=payload_for_leg or self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
                                 floor_height_m=self.floor_height_m,
                                 reposition_floor_delta=(
                                     plan["reposition_to_floor"]
@@ -7586,7 +8064,8 @@ class Simulation:
 
             travel_to_pickup_sec = 0.0
             t, current_location, new_segments, seg_time = move_between(
-                current_location, pickup_loc, t, rules=pre_pickup_rules
+                current_location, pickup_loc, t, rules=pre_pickup_rules,
+                payload_for_leg=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation_for_leg="lengthways"
             )
             if new_segments is None or math.isinf(t):
                 return None
@@ -7632,14 +8111,14 @@ class Simulation:
 
             loaded_travel_sec = 0.0
             t, current_location, new_segments, seg_time = move_between(
-                current_location, dropoff_loc, t, rules=loaded_route_rules
+                current_location, dropoff_loc, t, rules=loaded_route_rules,
+                payload_for_leg=payload, orientation_for_leg=task.payload_orientation
             )
             if new_segments is None or math.isinf(t):
                 return None
             loaded_travel_sec += seg_time
             segments.extend(new_segments)
 
-            # ... keep the rest of the function unchanged
             dropoff_start = self._find_next_available_time(
                 dropoff_loc.name,
                 t,
@@ -7744,6 +8223,40 @@ class Simulation:
                 }
             )
 
+            wash_trigger = None
+            for candidate in (pickup_loc, dropoff_loc):
+                if bool(getattr(candidate, "wash_cycle_required", False)):
+                    wash_trigger = candidate
+            if wash_trigger is not None and not getattr(task, "is_idle_return", False):
+                task.wash_cycle_required = True
+                wash_target_name = str(getattr(wash_trigger, "wash_location", "") or "").strip()
+                wash_target = self.locations.get(wash_target_name) or dropoff_loc
+                if wash_target.name != current_location.name:
+                    t, current_location, wash_travel_segments, wash_travel_sec = move_between(
+                        current_location, wash_target, t, rules=None,
+                        payload_for_leg=self.payloads.get(EMPTY_PAYLOAD_NAME),
+                        orientation_for_leg="lengthways",
+                    )
+                    if wash_travel_segments is None or math.isinf(t):
+                        self._set_task_pending_reason(task, f"No route to wash location {wash_target.name}")
+                        return None
+                    for wash_segment in wash_travel_segments:
+                        wash_segment.setdefault("wash_transfer", True)
+                    segments.extend(wash_travel_segments)
+                    travel_to_pickup_sec += wash_travel_sec
+                wash_duration = max(0.0, float(getattr(wash_trigger, "wash_cycle_duration_sec", 0.0) or 0.0))
+                if wash_duration > 0.0:
+                    segments.append({
+                        "type": "wash_cycle", "from": wash_target.name, "to": wash_target.name,
+                        "location": wash_target.name, "duration": wash_duration, "distance_m": 0.0,
+                        "wash_trigger_location": wash_trigger.name,
+                    })
+                    total += wash_duration
+                    t += wash_duration
+                end_location_name = wash_target.name
+            else:
+                end_location_name = dropoff_loc.name
+
             corridor_energy_kwh = total_route_energy_kwh(
                 amr, payload, travel_to_pickup_sec, loaded_travel_sec
             )
@@ -7758,11 +8271,19 @@ class Simulation:
                 / max(amr.battery_capacity_kwh, 1e-9)
             )
 
-            end_location_name = dropoff_loc.name
-
             if reserve:
                 if charge_segments:
-                    amr.total_charge_time += charge_segments[0]["duration"]
+                    charge_duration = float(charge_segments[0]["duration"] or 0.0)
+                    charge_start = float(task_start_time) - charge_duration
+                    self.charge_intervals.append({
+                        "amr_id": amr.id,
+                        "location": str(amr.location_name or ""),
+                        "space": str(getattr(amr, "inventory_space_name", "") or ""),
+                        "start_time": charge_start,
+                        "end_time": float(task_start_time),
+                        "duration_sec": charge_duration,
+                    })
+                    amr.total_charge_time += charge_duration
                     amr.charge_to_full()
 
                 amr.consume_energy(actual_energy_kwh)
@@ -7770,6 +8291,8 @@ class Simulation:
             else:
                 battery_soc_after = projected_battery_soc_after
 
+            if reserve:
+                self._record_committed_segment_impacts(segments)
             return {
                 "task_start_time": task_start_time,
                 "finish_time": t,
@@ -7783,6 +8306,8 @@ class Simulation:
                 "lift_empty_sec_total": lift_empty_sec_total,
                 "lift_loaded_sec_total": lift_loaded_sec_total,
                 "amr_inventory_space": inventory_space_name,
+                "payload_slot": payload_slot_name,
+                "payload_orientation": task.payload_orientation,
             }
         except Exception as exc:
             print(f"_estimate_task_for_amr failed for {task.id} on {amr.id}: {exc}")
@@ -8143,6 +8668,38 @@ class Simulation:
             )
             for amr in compatible_amrs
         )
+        if not dropoff_reachable and pickup_loc.floor != dropoff_loc.floor:
+            serving_lifts = [
+                lift
+                for lift in self.lifts
+                if lift.can_serve(pickup_loc.floor, dropoff_loc.floor)
+            ]
+            if serving_lifts and all(
+                self._lift_health_speed_factor(lift) <= 0.0
+                for lift in serving_lifts
+            ):
+                health_text = ", ".join(
+                    f"{lift.id}={float(getattr(lift, 'health_percent', 0.0) or 0.0):.1f}% "
+                    f"(minimum {float(getattr(lift, 'minimum_operational_health_percent', 0.0) or 0.0):.1f}%)"
+                    for lift in serving_lifts
+                )
+                return (
+                    f"All lifts serving floors {pickup_loc.floor} and {dropoff_loc.floor} "
+                    f"are below their operational health threshold: {health_text}"
+                )
+            if serving_lifts and self.scenario_mode and all(
+                float(
+                    self._scenario_event_state(
+                        "lift", lift.id, self.current_time
+                    ).get("availability_percent", 100.0)
+                )
+                <= 0.0
+                for lift in serving_lifts
+            ):
+                return (
+                    f"All lifts serving floors {pickup_loc.floor} and {dropoff_loc.floor} "
+                    f"are unavailable in scenario {self.scenario_name}"
+                )
         if not dropoff_reachable:
             return (
                 f"No graph/lift route from {pickup_name} to {dropoff_name} "
@@ -8314,6 +8871,19 @@ class Simulation:
 
             choice = self._select_best_assignment()
             if choice is None:
+                range_charge_scheduled = False
+                for candidate_amr in self.amrs:
+                    if getattr(candidate_amr, "is_charging", False):
+                        continue
+                    if float(getattr(candidate_amr, "available_time", 0.0) or 0.0) > self.current_time:
+                        continue
+                    if float(getattr(candidate_amr, "battery_soc_percent", 100.0) or 100.0) >= 99.999:
+                        continue
+                    if self._schedule_charge_cycle(candidate_amr, self.current_time):
+                        range_charge_scheduled = True
+                if range_charge_scheduled:
+                    continue
+
                 # If the scheduler cannot find any assignment, fail one released
                 # task that is terminally impossible.  This prevents invalid
                 # locations, missing payloads, impossible route restrictions,
@@ -8499,6 +9069,7 @@ class Simulation:
             carrying_payload = False
 
             for segment in committed["segments"]:
+                segment.setdefault("payload_orientation", committed.get("payload_orientation", getattr(task, "payload_orientation", "")))
                 from_node = segment.get("from", "")
                 to_node = segment.get("to", "")
                 segment_type = segment.get("type", "")
@@ -8705,6 +9276,9 @@ class Simulation:
                     "lift_empty_sec_total": committed["lift_empty_sec_total"],
                     "lift_loaded_sec_total": committed["lift_loaded_sec_total"],
                     "amr_inventory_space": committed.get("amr_inventory_space", ""),
+                    "end_location": committed.get("end_location", task.dropoff),
+                    "payload_orientation": committed.get("payload_orientation", getattr(task, "payload_orientation", "")),
+                    "payload_slot": committed.get("payload_slot", ""),
                 },
             )
             processed_this_tick += 1
@@ -9165,7 +9739,8 @@ class Simulation:
                         self._fail_task(task, reason, now=event.payload["finish_time"])
                         return
             completed_amr = self.amrs_by_id.get(event.payload.get("amr_id"))
-            completed_amr_loc = self.locations.get(task.dropoff)
+            completed_end_location_name = str(event.payload.get("end_location") or task.dropoff or "")
+            completed_amr_loc = self.locations.get(completed_end_location_name)
             completed_amr_space = None
             if completed_amr is not None:
                 planned_space = str(
@@ -9181,7 +9756,7 @@ class Simulation:
                 if planned_space:
                     setattr(completed_amr, "target_inventory_space_name", planned_space)
                 completed_amr_space = self._occupy_amr_inventory_space(
-                    completed_amr, task.dropoff
+                    completed_amr, completed_end_location_name
                 )
                 if (
                     getattr(task, "is_idle_return", False)
@@ -9268,8 +9843,8 @@ class Simulation:
                 distance_m=0.0,
                 start_time=event.payload["finish_time"],
                 end_time=event.payload["finish_time"],
-                start_node=task.dropoff,
-                end_node=task.dropoff,
+                start_node=completed_end_location_name,
+                end_node=completed_end_location_name,
                 start_x=getattr(completed_amr_loc, "x", None),
                 start_y=getattr(completed_amr_loc, "y", None),
                 start_floor=getattr(completed_amr_loc, "floor", None),
@@ -9292,8 +9867,14 @@ class Simulation:
                     "task_id": task.id,
                     "pickup": task.pickup,
                     "dropoff": task.dropoff,
-                    "payload": self._payload_log_name(task.payload),
-                    "payload_instance_id": getattr(task, "payload_instance_id", ""),
+                    "payload": (
+                        "" if self.scenario_mode and not self.scenario_enhanced_logging
+                        else self._payload_log_name(task.payload)
+                    ),
+                    "payload_instance_id": (
+                        "" if self.scenario_mode and not self.scenario_enhanced_logging
+                        else getattr(task, "payload_instance_id", "")
+                    ),
                     "amr_id": event.payload["amr_id"],
                     "start_datetime": self.clock.format_sim_time(
                         event.payload["start_time"]
@@ -9321,7 +9902,12 @@ class Simulation:
                         and event.payload["duration"] > event.payload["target_time"]
                         else 0.0
                     ),
+                    "duration_sec": round(float(event.payload["duration"]), 3),
+                    "distance_m": round(sum(float(seg.get("distance_m", 0.0) or 0.0) for seg in event.payload.get("segments", []) or []), 3),
                     "energy_kwh": round(event.payload["energy_kwh"], 4),
+                    "payload_orientation": str(event.payload.get("payload_orientation", getattr(task, "payload_orientation", "")) or ""),
+                    "wash_cycle_required": bool(getattr(task, "wash_cycle_required", False)),
+                    "scenario_name": self.scenario_name,
                     "battery_soc_after": round(event.payload["battery_soc_after"], 2),
                     "segments": event.payload["segments"],
                     "lift_energy_kwh": round(
@@ -9477,8 +10063,8 @@ class Simulation:
                         "task_id": task.id,
                         "pickup": task.pickup,
                         "dropoff": task.dropoff,
-                        "payload": self._payload_log_name(task.payload),
-                        "payload_instance_id": getattr(task, "payload_instance_id", ""),
+                        "payload": ("" if self.scenario_mode and not self.scenario_enhanced_logging else self._payload_log_name(task.payload)),
+                        "payload_instance_id": ("" if self.scenario_mode and not self.scenario_enhanced_logging else getattr(task, "payload_instance_id", "")),
                         "amr_id": event.payload["amr_id"],
                         "start_datetime": self.clock.format_sim_time(
                             event.payload["start_time"]
@@ -9504,7 +10090,12 @@ class Simulation:
                             and event.payload["duration"] > task.target_time
                             else 0.0
                         ),
+                        "duration_sec": round(float(event.payload["duration"]), 3),
+                        "distance_m": round(sum(float(seg.get("distance_m", 0.0) or 0.0) for seg in event.payload.get("segments", []) or []), 3),
                         "energy_kwh": round(event.payload["energy_kwh"], 4),
+                        "payload_orientation": str(getattr(task, "payload_orientation", "") or ""),
+                        "wash_cycle_required": bool(getattr(task, "wash_cycle_required", False)),
+                        "scenario_name": self.scenario_name,
                         "battery_soc_after": round(
                             event.payload["battery_soc_after"], 2
                         ),
@@ -9658,7 +10249,14 @@ class Simulation:
 
             if charge_location_name:
                 amr.location_name = charge_location_name
-            self._occupy_amr_inventory_space(amr, amr.location_name)
+            occupied_charger = self._occupy_amr_inventory_space(
+                amr, amr.location_name, require_charger=True
+            )
+            if occupied_charger is None and self._location_has_any_amr_inventory_spaces(amr.location_name):
+                self.failed_tasks.append({
+                    "task_id": f"CHARGE-{amr.id}",
+                    "reason": f"No charger-equipped AMR space available at {amr.location_name}",
+                })
             charge_display_loc = self._amr_display_location(amr, amr.location_name)
             self.log_step(
                 event_time=event.payload["charge_start"],
@@ -9859,6 +10457,23 @@ class Simulation:
             "location_payload_volume_m3",
             "location_recommended_area_m2",
             "location_recommended_volume_m3",
+            "scenario_mode",
+            "scenario_name",
+            "scenario_delay_sec",
+            "scenario_reason",
+            "people_count",
+            "people_groups",
+            "people_speed_factor",
+            "people_delay_sec",
+            "route_lane_count",
+            "corridor_width_m",
+            "lane_width_m",
+            "carrying_length_m",
+            "payload_orientation",
+            "wash_cycle",
+            "lift_health_percent",
+            "lift_operational",
+            "charger_space",
         ]
 
     @staticmethod
@@ -9917,6 +10532,14 @@ class Simulation:
             "exchange_mode",
             "tracked_item_source_payload",
             "tracked_items",
+            "scenario_mode",
+            "scenario_name",
+            "people_count",
+            "route_lane_count",
+            "payload_orientation",
+            "wash_cycle",
+            "lift_health_percent",
+            "charger_space",
         ]
 
     def _append_verbose_row(self, row: dict) -> None:
@@ -10051,6 +10674,66 @@ class Simulation:
         if not self.verbose:
             return
 
+        reduced_scenario_logging = self.scenario_mode and not self.scenario_enhanced_logging
+        event_key = str(event_type or "").strip().lower()
+        if reduced_scenario_logging and (
+            event_key in {"location_payload_enter", "location_payload_exit", "payload_population_summary"}
+            or "payload_transition" in event_key
+        ):
+            return
+        if reduced_scenario_logging:
+            payload_name = ""
+            payload_instance_id = ""
+            payload_slot = ""
+            onboard_payloads = None
+            onboard_slots = None
+            tracked_item_exchange = False
+            exchange_mode = ""
+            tracked_item_source_payload = ""
+            tracked_items = None
+            container_type = ""
+
+        segment_meta = {}
+        if isinstance(details, str) and details.lstrip().startswith("{"):
+            try:
+                parsed_details = json.loads(details)
+                if isinstance(parsed_details, dict):
+                    segment_meta = parsed_details
+            except Exception:
+                segment_meta = {}
+        if reduced_scenario_logging:
+            if segment_meta:
+                omitted_detail_keys = {
+                    "payload",
+                    "payload_name",
+                    "payload_instance_id",
+                    "payload_slot",
+                    "slot_name",
+                    "onboard_payloads",
+                    "onboard_slots",
+                    "tracked_items",
+                    "tracked_item_source_payload",
+                    "container_type",
+                }
+                details = json.dumps(
+                    {
+                        key: value
+                        for key, value in segment_meta.items()
+                        if str(key).strip().lower() not in omitted_detail_keys
+                    },
+                    ensure_ascii=False,
+                )
+            elif isinstance(details, str) and details:
+                for known_payload_name in sorted(
+                    (name for name in self.payloads if not is_empty_payload_name(name)),
+                    key=len,
+                    reverse=True,
+                ):
+                    details = details.replace(known_payload_name, "[payload omitted]")
+
+        scenario_delay_value = max(0.0, float(segment_meta.get("scenario_delay_sec", 0.0) or 0.0))
+        people_delay_value = max(0.0, float(segment_meta.get("people_delay_sec", 0.0) or 0.0))
+        people_count_value = max(0, int(float(segment_meta.get("people_count", 0) or 0)))
         if amr_id:
             try:
                 current_amr = self.amrs_by_id.get(amr_id)
@@ -10233,15 +10916,358 @@ class Simulation:
                 "staff_wait_for_travel_sec": round(
                     float(staff_wait_for_travel_sec or 0.0), 3
                 ),
+                "scenario_mode": bool(self.scenario_mode),
+                "scenario_name": self.scenario_name if self.scenario_mode else "Normal operation",
+                "scenario_delay_sec": round(scenario_delay_value, 3),
+                "scenario_reason": str(segment_meta.get("scenario_reason", "") or ""),
+                "people_count": people_count_value,
+                "people_groups": str(segment_meta.get("people_groups", "") or ""),
+                "people_speed_factor": round(float(segment_meta.get("people_speed_factor", 1.0) or 1.0), 4),
+                "people_delay_sec": round(people_delay_value, 3),
+                "route_lane_count": int(float(segment_meta.get("route_lane_count", 0) or 0)),
+                "corridor_width_m": round(float(segment_meta.get("corridor_width_m", 0.0) or 0.0), 3),
+                "lane_width_m": round(float(segment_meta.get("lane_width_m", 0.0) or 0.0), 3),
+                "carrying_length_m": round(float(segment_meta.get("carrying_length_m", 0.0) or 0.0), 3),
+                "payload_orientation": str(segment_meta.get("payload_orientation", "") or ""),
+                "wash_cycle": str(segment_type or segment_meta.get("type", "")).strip().lower() == "wash_cycle",
+                "lift_health_percent": (
+                    round(float(getattr(next((x for x in self.lifts if x.id == lift_id), None), "health_percent", 0.0)), 3)
+                    if lift_id else ""
+                ),
+                "lift_operational": (
+                    self._lift_health_speed_factor(next((x for x in self.lifts if x.id == lift_id), None)) > 0.0
+                    if lift_id and any(x.id == lift_id for x in self.lifts) else ""
+                ),
+                "charger_space": bool(
+                    amr_inventory_space and any(
+                        self._space_name(space) == amr_inventory_space and self._inventory_space_has_charger(space)
+                        for spaces in self.inventory_spaces_by_location.values() for space in spaces
+                    )
+                ),
             }
         )
+
+    def _record_committed_segment_impacts(self, segments: List[dict]) -> None:
+        """Accumulate operational impacts once for a committed route plan.
+
+        Impact reporting must remain available when verbose CSV logging is disabled,
+        so this is deliberately independent from ``log_step``.
+        """
+        for segment in segments or []:
+            scenario_delay = max(0.0, float(segment.get("scenario_delay_sec", 0.0) or 0.0))
+            people_delay = max(0.0, float(segment.get("people_delay_sec", 0.0) or 0.0))
+            people_count = max(0, int(float(segment.get("people_count", 0) or 0)))
+            if scenario_delay > 0.0:
+                self.scenario_delay_sec += scenario_delay
+                self.scenario_affected_segments += 1
+            if people_count > 0:
+                self.people_delay_sec += people_delay
+                self.people_affected_segments += 1
+            if str(segment.get("type", "") or "").strip().lower() == "wash_cycle":
+                self.wash_cycles_completed += 1
+
+    def _configured_charger_counts(self) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for location_name in self.charge_location_names:
+            spaces = self.inventory_spaces_by_location.get(location_name, [])
+            amr_spaces = [space for space in spaces if bool(space.get("stores_amr", False)) or str(space.get("space_type", "")).lower() == "amr"]
+            if amr_spaces:
+                counts[location_name] = sum(1 for space in amr_spaces if self._inventory_space_has_charger(space))
+            elif location_name in self.locations:
+                # Backwards-compatible location-level charger when no bays are drawn.
+                counts[location_name] = 1
+        return counts
+
+    @staticmethod
+    def _peak_interval_concurrency(intervals: List[dict]) -> int:
+        events = []
+        for item in intervals:
+            start = float(item.get("start_time", 0.0) or 0.0)
+            end = float(item.get("end_time", start) or start)
+            if end <= start:
+                continue
+            events.append((start, 1))
+            events.append((end, -1))
+        current = 0
+        peak = 0
+        # End events precede start events at identical timestamps.
+        for _time_value, delta in sorted(events, key=lambda item: (item[0], item[1])):
+            current += delta
+            peak = max(peak, current)
+        return peak
+
+    def charger_estimate_summary(self) -> dict:
+        configured_by_location = self._configured_charger_counts()
+        intervals_by_location: Dict[str, List[dict]] = defaultdict(list)
+        for interval in self.charge_intervals:
+            intervals_by_location[str(interval.get("location", "") or "")].append(interval)
+        all_intervals = list(self.charge_intervals)
+        required_peak = self._peak_interval_concurrency(all_intervals)
+        configured = sum(configured_by_location.values())
+        duration_hours = max(float(self.current_time) / 3600.0, 1e-9)
+        charge_hours = sum(max(0.0, float(x.get("end_time", 0.0)) - float(x.get("start_time", 0.0))) for x in all_intervals) / 3600.0
+        location_rows = []
+        for location_name in sorted(set(configured_by_location) | set(intervals_by_location)):
+            intervals = intervals_by_location.get(location_name, [])
+            required = self._peak_interval_concurrency(intervals)
+            location_rows.append({
+                "location": location_name,
+                "configured_chargers": int(configured_by_location.get(location_name, 0)),
+                "required_peak_concurrent_chargers": required,
+                "recommended_n_plus_one": required + 1 if required > 0 else 0,
+                "shortfall": max(0, required - int(configured_by_location.get(location_name, 0))),
+                "charge_cycles": len(intervals),
+                "charging_hours": round(sum(max(0.0, float(x.get("end_time", 0.0)) - float(x.get("start_time", 0.0))) for x in intervals) / 3600.0, 3),
+            })
+        return {
+            "configured_chargers": configured,
+            "required_peak_concurrent_chargers": required_peak,
+            "recommended_n_plus_one": required_peak + 1 if required_peak > 0 else 0,
+            "shortfall": max(0, required_peak - configured),
+            "charge_cycles": len(all_intervals),
+            "charging_hours": round(charge_hours, 3),
+            "configured_utilisation_percent": round(100.0 * charge_hours / max(configured * duration_hours, 1e-9), 2) if configured else 0.0,
+            "locations": location_rows,
+        }
+
+    def _append_scenario_summary_row(self) -> None:
+        if not self.verbose or getattr(self, "_scenario_summary_written", False):
+            return
+        self._scenario_summary_written = True
+        charger = self.charger_estimate_summary()
+        details = {
+            "scenario_mode": bool(self.scenario_mode),
+            "scenario_name": self.scenario_name,
+            "description": self.scenario_description,
+            "enhanced_logging": bool(self.scenario_enhanced_logging),
+            "scenario_delay_sec": round(self.scenario_delay_sec, 3),
+            "scenario_affected_segments": self.scenario_affected_segments,
+            "people_delay_sec": round(self.people_delay_sec, 3),
+            "people_affected_segments": self.people_affected_segments,
+            "wash_cycles": self.wash_cycles_completed,
+            "completed_tasks": len(self.completed_task_records),
+            "failed_tasks": len(self.failed_tasks),
+            "configured_chargers": charger["configured_chargers"],
+            "required_peak_concurrent_chargers": charger["required_peak_concurrent_chargers"],
+            "charger_shortfall": charger["shortfall"],
+        }
+        self._append_verbose_row({
+            "sim_time_sec": round(self.current_time, 3),
+            "sim_datetime": self._format_sim_time_cached(self.current_time),
+            "event_type": "scenario_impact_summary",
+            "status": "summary",
+            "scenario_mode": bool(self.scenario_mode),
+            "scenario_name": self.scenario_name,
+            "scenario_delay_sec": round(self.scenario_delay_sec, 3),
+            "people_delay_sec": round(self.people_delay_sec, 3),
+            "wash_cycle": self.wash_cycles_completed > 0,
+            "details": json.dumps(details, ensure_ascii=False),
+        })
+
+    def write_transport_matrix_csv(self, path: str) -> str:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        path = str(output_path)
+        grouped: Dict[Tuple[str, str], dict] = {}
+        for record in self.completed_task_records:
+            origin = str(record.get("pickup", "") or "")
+            destination = str(record.get("dropoff", "") or "")
+            key = (origin, destination)
+            item = grouped.setdefault(key, {
+                "origin": origin, "destination": destination, "trips": 0,
+                "total_distance_m": 0.0, "total_duration_sec": 0.0,
+                "total_energy_kwh": 0.0, "wash_cycle_trips": 0,
+                "payloads": defaultdict(int), "amrs": set(),
+            })
+            item["trips"] += 1
+            segments = list(record.get("segments", []) or [])
+            record_task_id = str(record.get("task_id", "") or "").strip()
+            carrying = False
+            pickup_seen = False
+            loaded_distance = 0.0
+            loaded_duration = 0.0
+            for segment in segments:
+                seg_type = str(segment.get("type", "") or "").lower()
+                raw_ids = segment.get("task_ids", segment.get("task_id", []))
+                if isinstance(raw_ids, str):
+                    segment_task_ids = {x.strip() for x in raw_ids.split(",") if x.strip()}
+                elif isinstance(raw_ids, (list, tuple, set)):
+                    segment_task_ids = {str(x).strip() for x in raw_ids if str(x).strip()}
+                else:
+                    segment_task_ids = set()
+                applies_to_record = not segment_task_ids or record_task_id in segment_task_ids
+                if seg_type == "pickup" and applies_to_record:
+                    carrying = True
+                    pickup_seen = True
+                    loaded_duration += float(segment.get("duration", 0.0) or 0.0)
+                    continue
+                if seg_type == "dropoff" and carrying and applies_to_record:
+                    loaded_duration += float(segment.get("duration", 0.0) or 0.0)
+                    carrying = False
+                    continue
+                if carrying:
+                    loaded_distance += float(segment.get("distance_m", 0.0) or 0.0)
+                    loaded_duration += float(segment.get("duration", 0.0) or 0.0)
+            item["total_distance_m"] += (
+                loaded_distance
+                if pickup_seen
+                else float(record.get("distance_m", 0.0) or 0.0)
+            )
+            item["total_duration_sec"] += (
+                loaded_duration
+                if pickup_seen
+                else float(record.get("duration_sec", 0.0) or 0.0)
+            )
+            item["total_energy_kwh"] += float(record.get("energy_kwh", 0.0) or 0.0)
+            item["wash_cycle_trips"] += int(bool(record.get("wash_cycle_required", False)))
+            payload_name = str(record.get("payload", "") or "")
+            if payload_name:
+                item["payloads"][payload_name] += 1
+            amr_id = str(record.get("amr_id", "") or "")
+            if amr_id:
+                item["amrs"].add(amr_id)
+        fieldnames = [
+            "origin", "destination", "trips", "total_distance_m", "average_distance_m",
+            "total_duration_sec", "average_duration_sec", "total_energy_kwh",
+            "wash_cycle_trips", "unique_amrs", "payload_mix", "scenario_name",
+        ]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for key in sorted(grouped):
+                item = grouped[key]
+                trips = max(1, int(item["trips"]))
+                writer.writerow({
+                    "origin": item["origin"], "destination": item["destination"], "trips": item["trips"],
+                    "total_distance_m": round(item["total_distance_m"], 3),
+                    "average_distance_m": round(item["total_distance_m"] / trips, 3),
+                    "total_duration_sec": round(item["total_duration_sec"], 3),
+                    "average_duration_sec": round(item["total_duration_sec"] / trips, 3),
+                    "total_energy_kwh": round(item["total_energy_kwh"], 4),
+                    "wash_cycle_trips": item["wash_cycle_trips"],
+                    "unique_amrs": len(item["amrs"]),
+                    "payload_mix": ("" if self.scenario_mode and not self.scenario_enhanced_logging else json.dumps(dict(sorted(item["payloads"].items())), ensure_ascii=False)),
+                    "scenario_name": self.scenario_name,
+                })
+        return str(path)
+
+    def write_route_lengths_csv(self, path: str) -> str:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        path = str(output_path)
+        fieldnames = [
+            "origin", "destination", "origin_floor", "destination_floor",
+            "route_length_m", "horizontal_length_m", "vertical_length_m",
+            "lift_id", "route_nodes", "reachable",
+        ]
+        locations = [self.locations[name] for name in sorted(self.locations)]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            for origin in locations:
+                for destination in locations:
+                    if origin.name == destination.name:
+                        continue
+                    best = None
+                    if origin.floor == destination.floor:
+                        route = self._shortest_path_same_floor(origin.floor, origin.name, destination.name)
+                        if route is not None:
+                            nodes = [origin.name] + [edge["to"] for edge in route["edges"]]
+                            best = (float(route["distance_m"]), float(route["distance_m"]), 0.0, "", nodes)
+                    else:
+                        for lift in self.lifts:
+                            if not lift.can_serve(origin.floor, destination.floor):
+                                continue
+                            origin_lift = lift.location_on_floor(origin.floor)
+                            destination_lift = lift.location_on_floor(destination.floor)
+                            first = self._shortest_path_same_floor(origin.floor, origin.name, origin_lift.name)
+                            second = self._shortest_path_same_floor(destination.floor, destination_lift.name, destination.name)
+                            if first is None or second is None:
+                                continue
+                            horizontal = float(first["distance_m"]) + float(second["distance_m"])
+                            vertical = abs(destination.floor - origin.floor) * self.floor_height_m
+                            total = horizontal + vertical
+                            nodes = [origin.name] + [edge["to"] for edge in first["edges"]] + [destination_lift.name] + [edge["to"] for edge in second["edges"]]
+                            if best is None or total < best[0]:
+                                best = (total, horizontal, vertical, lift.id, nodes)
+                    if best is None:
+                        writer.writerow({
+                            "origin": origin.name, "destination": destination.name,
+                            "origin_floor": origin.floor, "destination_floor": destination.floor,
+                            "route_length_m": "", "horizontal_length_m": "", "vertical_length_m": "",
+                            "lift_id": "", "route_nodes": "", "reachable": False,
+                        })
+                    else:
+                        writer.writerow({
+                            "origin": origin.name, "destination": destination.name,
+                            "origin_floor": origin.floor, "destination_floor": destination.floor,
+                            "route_length_m": round(best[0], 3), "horizontal_length_m": round(best[1], 3),
+                            "vertical_length_m": round(best[2], 3), "lift_id": best[3],
+                            "route_nodes": " -> ".join(best[4]), "reachable": True,
+                        })
+        return str(path)
+
+    def write_charger_estimate_csv(self, path: str) -> str:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        path = str(output_path)
+        summary = self.charger_estimate_summary()
+        fieldnames = [
+            "scope", "location", "configured_chargers", "required_peak_concurrent_chargers",
+            "recommended_n_plus_one", "shortfall", "charge_cycles", "charging_hours",
+            "configured_utilisation_percent", "scenario_name",
+        ]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerow({
+                "scope": "overall", "location": "ALL",
+                "configured_chargers": summary["configured_chargers"],
+                "required_peak_concurrent_chargers": summary["required_peak_concurrent_chargers"],
+                "recommended_n_plus_one": summary["recommended_n_plus_one"],
+                "shortfall": summary["shortfall"], "charge_cycles": summary["charge_cycles"],
+                "charging_hours": summary["charging_hours"],
+                "configured_utilisation_percent": summary["configured_utilisation_percent"],
+                "scenario_name": self.scenario_name,
+            })
+            for row in summary["locations"]:
+                writer.writerow({"scope": "location", **row, "scenario_name": self.scenario_name})
+        return str(path)
+
+    def write_scenario_impact_csv(self, path: str) -> str:
+        output_path = Path(path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        path = str(output_path)
+        charger = self.charger_estimate_summary()
+        rows = [
+            ("Scenario mode", bool(self.scenario_mode), ""),
+            ("Scenario", self.scenario_name, ""),
+            ("Scenario-attributed delay", round(self.scenario_delay_sec, 3), "seconds"),
+            ("Scenario-affected route segments", self.scenario_affected_segments, "segments"),
+            ("People-attributed delay", round(self.people_delay_sec, 3), "seconds"),
+            ("People-affected route segments", self.people_affected_segments, "segments"),
+            ("Wash cycles", self.wash_cycles_completed, "cycles"),
+            ("Completed tasks", len(self.completed_task_records), "tasks"),
+            ("Failed tasks", len(self.failed_tasks), "tasks"),
+            ("Configured chargers", charger["configured_chargers"], "chargers"),
+            ("Peak concurrent chargers required", charger["required_peak_concurrent_chargers"], "chargers"),
+            ("Charger shortfall", charger["shortfall"], "chargers"),
+        ]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["metric", "value", "unit", "description"])
+            for metric, value, unit in rows:
+                writer.writerow([metric, value, unit, self.scenario_description if metric == "Scenario" else ""])
+        return str(path)
 
     def write_verbose_csv(self):
         """Flush the bounded verbose buffer and append final summary rows."""
         if not self.verbose_csv_path:
             return
 
-        self._append_payload_population_summary_rows()
+        self._append_scenario_summary_row()
+        if not (self.scenario_mode and not self.scenario_enhanced_logging):
+            self._append_payload_population_summary_rows()
         self._append_location_space_recommendation_rows()
         self._flush_verbose_rows_to_csv()
         self._ensure_verbose_csv_header()
@@ -10487,6 +11513,18 @@ class Simulation:
             "completed_tasks": len(self.completed_task_records),
             "pending_tasks": len(self._live_pending_task_items()),
             "failed_tasks": self.failed_tasks,
+            "scenario": {
+                "enabled": bool(self.scenario_mode),
+                "name": self.scenario_name,
+                "description": self.scenario_description,
+                "enhanced_logging": bool(self.scenario_enhanced_logging),
+                "scenario_delay_sec": round(self.scenario_delay_sec, 3),
+                "scenario_affected_segments": self.scenario_affected_segments,
+                "people_delay_sec": round(self.people_delay_sec, 3),
+                "people_affected_segments": self.people_affected_segments,
+                "wash_cycles": self.wash_cycles_completed,
+            },
+            "charger_estimate": self.charger_estimate_summary(),
             "staff_payload_handling": self._staff_handling_summary(),
             "stores_payload_handling": self._staff_handling_summary()
             .get("categories", {})
@@ -10499,6 +11537,9 @@ class Simulation:
                     "current_floor": lift.current_floor,
                     "available_time": round(lift.available_time, 3),
                     "health_percent": round(lift.health_percent, 3),
+                    "minimum_operational_health_percent": round(float(getattr(lift, "minimum_operational_health_percent", 0.0) or 0.0), 3),
+                    "health_speed_factor": round(self._lift_health_speed_factor(lift), 4),
+                    "operational": bool(self._lift_health_speed_factor(lift) > 0.0 and float(getattr(lift, "failed_until", 0.0) or 0.0) <= self.current_time),
                     "journeys_completed": lift.journeys_completed,
                     "mean_time_between_failures_hours": lift.mean_time_between_failures_hours,
                     "mean_time_to_repair_hours": lift.mean_time_to_repair_hours,
@@ -10541,6 +11582,14 @@ class Simulation:
             "completed_tasks": len(self.completed_task_records),
             "pending_tasks": len(self._live_pending_task_items()),
             "failed_tasks": self.failed_tasks,
+            "scenario_mode": bool(self.scenario_mode),
+            "scenario_name": self.scenario_name,
+            "scenario_delay_sec": round(self.scenario_delay_sec, 3),
+            "people_delay_sec": round(self.people_delay_sec, 3),
+            "wash_cycles": self.wash_cycles_completed,
+            "configured_chargers": self.charger_estimate_summary().get("configured_chargers", 0),
+            "peak_chargers_required": self.charger_estimate_summary().get("required_peak_concurrent_chargers", 0),
+            "charger_shortfall": self.charger_estimate_summary().get("shortfall", 0),
             "staff_people_required": self._staff_handling_summary().get(
                 "total_people_required", 0
             ),
@@ -11269,6 +12318,10 @@ def main():
             "dynamic_tasks.csv -> dynamic_tasks_failed_tasks.csv."
         ),
     )
+    parser.add_argument("--transport-matrix-csv", type=str, default=None, help="Origin-to-destination transport matrix CSV path.")
+    parser.add_argument("--route-lengths-csv", type=str, default=None, help="All-pairs graph route length CSV path.")
+    parser.add_argument("--charger-estimate-csv", type=str, default=None, help="Charger demand and shortfall CSV path.")
+    parser.add_argument("--scenario-impact-csv", type=str, default=None, help="Scenario operational impact CSV path.")
     args = parser.parse_args()
 
     if args.write_example:
@@ -11300,6 +12353,23 @@ def main():
     )
     failed_tasks_csv_path = sim.write_failed_tasks_csv(failed_tasks_csv_path)
     print(f"Failed tasks CSV written to {failed_tasks_csv_path}")
+
+    config_path = Path(args.config).resolve()
+    export_paths = {
+        "Transport matrix": args.transport_matrix_csv or str(config_path.with_name(f"{config_path.stem}_transport_matrix.csv")),
+        "Route lengths": args.route_lengths_csv or str(config_path.with_name(f"{config_path.stem}_route_lengths.csv")),
+        "Charger estimate": args.charger_estimate_csv or str(config_path.with_name(f"{config_path.stem}_charger_estimate.csv")),
+        "Scenario impact": args.scenario_impact_csv or str(config_path.with_name(f"{config_path.stem}_scenario_impact.csv")),
+    }
+    written_exports = {
+        "Transport matrix": sim.write_transport_matrix_csv(export_paths["Transport matrix"]),
+        "Route lengths": sim.write_route_lengths_csv(export_paths["Route lengths"]),
+        "Charger estimate": sim.write_charger_estimate_csv(export_paths["Charger estimate"]),
+        "Scenario impact": sim.write_scenario_impact_csv(export_paths["Scenario impact"]),
+    }
+    for label, output_path in written_exports.items():
+        print(f"{label} CSV written to {output_path}")
+
     if args.verbose:
         print(f"Verbose CSV written to {args.verbose_csv}")
         if args.visualiser_csv:

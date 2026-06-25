@@ -85,6 +85,11 @@ def normalise_amr_payload_slots(amr: dict) -> list:
                 "payload_height_capacity_m": float(
                     slot.get("payload_height_capacity_m", 0.0) or 0.0
                 ),
+                "allowed_payload_orientations": [
+                    str(x).strip().lower()
+                    for x in (slot.get("allowed_payload_orientations") or ["lengthways", "sideways"])
+                    if str(x).strip().lower() in {"lengthways", "sideways"}
+                ] or ["lengthways"],
             }
             clean.append(clean_slot)
 
@@ -104,6 +109,7 @@ def normalise_amr_payload_slots(amr: dict) -> list:
                 "payload_height_capacity_m": float(
                     amr.get("payload_height_capacity_m", 1.0) or 1.0
                 ),
+                "allowed_payload_orientations": ["lengthways", "sideways"],
             }
         ]
 
@@ -468,11 +474,16 @@ DEFAULT_JSON = {
         "assignment_continue_delay_sec": 0.001,
         "seed_waste_stream_containers_at_start": False,
         "disable_inventory_spaces": False,
+        "scenario_mode": False,
+        "scenario_enhanced_logging": False,
     },
     "building": {
         "load_unload_time_sec": 20.0,
         "floor_height_m": 4.0,
         "charge_locations": ["AMR-CENTRE"],
+        "default_corridor_width_m": 2.4,
+        "people_slowdown_per_person": 0.03,
+        "minimum_people_speed_factor": 0.25,
     },
     "locations": [],
     "corridors": {
@@ -486,6 +497,13 @@ DEFAULT_JSON = {
     "departments": [],
     "amrs": [],
     "lifts": [],
+    "people_movements": [],
+    "scenario_testing": {
+        "enabled": False,
+        "active_scenario": "Normal operation",
+        "enhanced_logging": False,
+        "scenarios": [],
+    },
     "floor_dxf_files": [],
     "tasks": [],
     "task_generation": default_task_generation_config(),
@@ -508,6 +526,10 @@ class JsonStore:
         self.ensure_amr_defaults()
         self.ensure_department_defaults()
         self.ensure_mass_collection_defaults()
+        self.ensure_location_defaults()
+        self.ensure_corridor_defaults()
+        self.ensure_people_movement_defaults()
+        self.ensure_scenario_defaults()
 
     def ensure_simulation_defaults(self) -> None:
         simulation = self.data.setdefault("simulation", {})
@@ -678,6 +700,96 @@ class JsonStore:
                 }
 
             payload["items"] = clean
+            orientations = payload.get("allowed_carry_orientations", ["lengthways", "sideways"])
+            if isinstance(orientations, str):
+                orientations = [x.strip() for x in orientations.split(",")]
+            payload["allowed_carry_orientations"] = [
+                str(x).strip().lower()
+                for x in (orientations or [])
+                if str(x).strip().lower() in {"lengthways", "sideways"}
+            ] or ["lengthways"]
+
+    def ensure_location_defaults(self) -> None:
+        for location in self.data.setdefault("locations", []):
+            location.setdefault("wash_cycle_required", False)
+            location.setdefault("wash_cycle_duration_sec", 300.0)
+            location.setdefault("wash_location", "")
+            area = str(location.get("people_area_type", "none") or "none").strip().lower()
+            location["people_area_type"] = area if area in {"none", "staff", "public", "both"} else "none"
+            for space in location.setdefault("inventory_spaces", []):
+                if not isinstance(space, dict):
+                    continue
+                is_amr = bool(space.get("stores_amr", False)) or str(space.get("space_type", "")).lower() == "amr"
+                for slot in space.get("payload_slots", []) or []:
+                    if isinstance(slot, dict) and (str(slot.get("slot_type", "")).lower() == "amr" or str(slot.get("amr_type", "")).strip()):
+                        is_amr = True
+                if is_amr:
+                    space.setdefault("has_charger", False)
+
+    def ensure_corridor_defaults(self) -> None:
+        default_width = float(self.data.setdefault("building", {}).get("default_corridor_width_m", 2.4) or 2.4)
+        for edge in self.data.setdefault("corridors", {}).setdefault("edges", []):
+            edge.setdefault("bidirectional", True)
+            edge.setdefault("width_m", default_width)
+            area = str(edge.get("people_area_type", "none") or "none").strip().lower()
+            edge["people_area_type"] = area if area in {"none", "staff", "public", "both"} else "none"
+
+    def ensure_people_movement_defaults(self) -> None:
+        clean = []
+        for index, raw in enumerate(self.data.setdefault("people_movements", []), start=1):
+            if not isinstance(raw, dict):
+                continue
+            group = str(raw.get("group_type", "staff") or "staff").strip().lower()
+            if group not in {"staff", "public"}:
+                group = "staff"
+            clean.append({
+                "id": str(raw.get("id", f"PEOPLE-{index}") or f"PEOPLE-{index}"),
+                "enabled": bool(raw.get("enabled", True)),
+                "group_type": group,
+                "start_location": str(raw.get("start_location", "") or ""),
+                "end_location": str(raw.get("end_location", "") or ""),
+                "people_per_trip": max(1, int(float(raw.get("people_per_trip", 1) or 1))),
+                "start_time": str(raw.get("start_time", "08:00") or "08:00"),
+                "end_time": str(raw.get("end_time", "18:00") or "18:00"),
+                "interval_minutes": max(0.1, float(raw.get("interval_minutes", 15.0) or 15.0)),
+                "walking_speed_m_per_sec": max(0.1, float(raw.get("walking_speed_m_per_sec", 1.2) or 1.2)),
+                "days_active": list(raw.get("days_active", ["mon", "tue", "wed", "thu", "fri"]) or []),
+                "amr_speed_factor": max(0.05, min(1.0, float(raw.get("amr_speed_factor", 0.7) or 0.7))),
+            })
+        self.data["people_movements"] = clean
+
+    def ensure_scenario_defaults(self) -> None:
+        cfg = self.data.setdefault("scenario_testing", {})
+        cfg.setdefault("enabled", False)
+        cfg.setdefault("active_scenario", "Normal operation")
+        cfg.setdefault("enhanced_logging", False)
+        clean = []
+        for index, scenario in enumerate(cfg.setdefault("scenarios", []), start=1):
+            if not isinstance(scenario, dict):
+                continue
+            events = []
+            for event in scenario.get("events", []) or []:
+                if not isinstance(event, dict):
+                    continue
+                resource_type = str(event.get("resource_type", "lift") or "lift").strip().lower()
+                if resource_type not in {"lift", "corridor", "amr"}:
+                    resource_type = "lift"
+                events.append({
+                    "resource_type": resource_type,
+                    "resource_id": str(event.get("resource_id", "") or ""),
+                    "start_time": str(event.get("start_time", "00:00") or "00:00"),
+                    "end_time": str(event.get("end_time", "24:00") or "24:00"),
+                    "availability_percent": max(0.0, min(100.0, float(event.get("availability_percent", 0.0) or 0.0))),
+                    "speed_factor": max(0.0, min(1.0, float(event.get("speed_factor", 1.0) or 1.0))),
+                    "days_active": list(event.get("days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]) or []),
+                    "notes": str(event.get("notes", "") or ""),
+                })
+            clean.append({
+                "name": str(scenario.get("name", f"Scenario {index}") or f"Scenario {index}"),
+                "description": str(scenario.get("description", "") or ""),
+                "events": events,
+            })
+        cfg["scenarios"] = clean
 
     def ensure_amr_defaults(self) -> None:
         for amr in self.data.setdefault("amrs", []):
@@ -902,6 +1014,10 @@ class JsonStore:
                 "x": round(x, 3),
                 "y": round(y, 3),
                 "bounding_box": [],
+                "wash_cycle_required": False,
+                "wash_cycle_duration_sec": 300.0,
+                "wash_location": "",
+                "people_area_type": "none",
             }
         )
 
@@ -1101,7 +1217,14 @@ class JsonStore:
             return
         edges = self.data["corridors"]["edges"]
         if not any(e["from"] == from_name and e["to"] == to_name for e in edges):
-            edges.append({"from": from_name, "to": to_name})
+            default_width = float(self.data.get("building", {}).get("default_corridor_width_m", 2.4) or 2.4)
+            edges.append({
+                "from": from_name,
+                "to": to_name,
+                "bidirectional": True,
+                "width_m": default_width,
+                "people_area_type": "none",
+            })
 
     def remove_edge(self, from_name: str, to_name: str) -> None:
         self.data["corridors"]["edges"] = [
@@ -1478,6 +1601,8 @@ class JsonStore:
         health_loss_per_journey_percent: float = 0.05,
         mean_time_between_failures_hours: float = 720.0,
         mean_time_to_repair_hours: float = 4.0,
+        minimum_operational_health_percent: float = 20.0,
+        health_speed_penalty_at_zero: float = 0.5,
         start_floor: int = 0,
     ) -> None:
         lift = None
@@ -1511,6 +1636,8 @@ class JsonStore:
                 float(mean_time_between_failures_hours), 3
             ),
             "mean_time_to_repair_hours": round(float(mean_time_to_repair_hours), 3),
+            "minimum_operational_health_percent": round(float(minimum_operational_health_percent), 3),
+            "health_speed_penalty_at_zero": round(float(health_speed_penalty_at_zero), 3),
             "start_floor": start_floor,
             "floor_locations": {
                 str(f): {"x": round(pos[0], 3), "y": round(pos[1], 3)}
@@ -1785,6 +1912,22 @@ class JsonStore:
                     f"but only {compatible} found at configured charging location(s). {detail}."
                 )
         return errors
+
+    def people_movements(self) -> list:
+        self.ensure_people_movement_defaults()
+        return self.data.get("people_movements", [])
+
+    def set_people_movements(self, movements: list) -> None:
+        self.data["people_movements"] = list(movements or [])
+        self.ensure_people_movement_defaults()
+
+    def scenario_testing(self) -> dict:
+        self.ensure_scenario_defaults()
+        return self.data.get("scenario_testing", {})
+
+    def set_scenario_testing(self, value: dict) -> None:
+        self.data["scenario_testing"] = dict(value or {})
+        self.ensure_scenario_defaults()
 
     def validate(self) -> List[str]:
         errors = []

@@ -4713,8 +4713,86 @@ def analyse(
             ignore_index=True,
         )
 
+    # Scenario, pedestrian, wash, lane and charger impact summary.  The
+    # simulator emits a single scenario_impact_summary row at the end of the
+    # event log; fall back to aggregating segment columns for older CSVs.
+    scenario_details = {}
+    if event_col and "details" in df.columns:
+        scenario_rows = df[
+            df[event_col].astype(str).str.lower().eq("scenario_impact_summary")
+        ]
+        if not scenario_rows.empty:
+            try:
+                parsed = json.loads(str(scenario_rows.iloc[-1].get("details", "") or "{}"))
+                if isinstance(parsed, dict):
+                    scenario_details = parsed
+            except Exception:
+                scenario_details = {}
+
+    def _numeric_column_total(column_name: str) -> float:
+        if column_name not in df.columns:
+            return 0.0
+        values = pd.to_numeric(df[column_name], errors="coerce").fillna(0.0)
+        if event_col:
+            summary_mask = df[event_col].astype(str).str.lower().eq("scenario_impact_summary")
+            values = values.loc[~summary_mask]
+        return float(values.sum())
+
+    scenario_name = str(scenario_details.get("scenario_name", "") or "").strip()
+    if not scenario_name and "scenario_name" in df.columns:
+        candidates = [str(x).strip() for x in df["scenario_name"].dropna().tolist() if str(x).strip()]
+        scenario_name = candidates[-1] if candidates else "Normal operation"
+    scenario_name = scenario_name or "Normal operation"
+    scenario_mode = bool(
+        scenario_details.get(
+            "scenario_mode",
+            scenario_name.lower() not in {"normal operation", "normal", "baseline"},
+        )
+    )
+    scenario_delay = float(scenario_details.get("scenario_delay_sec", _numeric_column_total("scenario_delay_sec")) or 0.0)
+    people_delay = float(scenario_details.get("people_delay_sec", _numeric_column_total("people_delay_sec")) or 0.0)
+    scenario_segments = int(float(scenario_details.get("scenario_affected_segments", 0) or 0))
+    people_segments = int(float(scenario_details.get("people_affected_segments", 0) or 0))
+    if scenario_segments <= 0 and "scenario_delay_sec" in df.columns:
+        scenario_segments = int((pd.to_numeric(df["scenario_delay_sec"], errors="coerce").fillna(0.0) > 0).sum())
+    if people_segments <= 0 and "people_count" in df.columns:
+        people_segments = int((pd.to_numeric(df["people_count"], errors="coerce").fillna(0.0) > 0).sum())
+    wash_cycles = int(float(scenario_details.get("wash_cycles", 0) or 0))
+    if wash_cycles <= 0 and "wash_cycle" in df.columns:
+        wash_cycles = int(df["wash_cycle"].astype(str).str.lower().isin({"true", "1", "yes"}).sum())
+    lane_constrained = 0
+    if "route_lane_count" in df.columns:
+        lane_constrained = int((pd.to_numeric(df["route_lane_count"], errors="coerce").fillna(0) == 1).sum())
+    lift_health_min = None
+    lift_unavailable_rows = 0
+    if "lift_health_percent" in df.columns:
+        health_values = pd.to_numeric(df["lift_health_percent"], errors="coerce").dropna()
+        if not health_values.empty:
+            lift_health_min = float(health_values.min())
+    if "lift_operational" in df.columns:
+        lift_unavailable_rows = int(df["lift_operational"].astype(str).str.lower().isin({"false", "0", "no"}).sum())
+    configured_chargers = int(float(scenario_details.get("configured_chargers", 0) or 0))
+    required_chargers = int(float(scenario_details.get("required_peak_concurrent_chargers", 0) or 0))
+    charger_shortfall = int(float(scenario_details.get("charger_shortfall", max(0, required_chargers - configured_chargers)) or 0))
+    reduced_logging = bool(scenario_mode and payload_col and df[payload_col].fillna("").astype(str).str.strip().eq("").mean() > 0.8)
+
+    scenario_impact = pd.DataFrame(
+        [
+            {"metric": "Operating mode", "value": "Scenario" if scenario_mode else "Normal operation", "unit": "", "interpretation": scenario_name},
+            {"metric": "Scenario-attributed delay", "value": round(scenario_delay, 3), "unit": "s", "interpretation": f"Across {scenario_segments} affected route segments"},
+            {"metric": "Pedestrian-attributed delay", "value": round(people_delay, 3), "unit": "s", "interpretation": f"Across {people_segments} occupied route segments"},
+            {"metric": "Wash cycles", "value": wash_cycles, "unit": "cycles", "interpretation": "Infection/hazard location decontamination cycles"},
+            {"metric": "Single-lane constrained traversals", "value": lane_constrained, "unit": "segments", "interpretation": "Bidirectional routes serialised by corridor or carried-payload width"},
+            {"metric": "Minimum observed lift health", "value": "" if lift_health_min is None else round(lift_health_min, 2), "unit": "%", "interpretation": f"{lift_unavailable_rows} logged lift-unavailable rows"},
+            {"metric": "Configured chargers", "value": configured_chargers, "unit": "chargers", "interpretation": "Only AMR bays explicitly marked as charging spaces"},
+            {"metric": "Peak chargers required", "value": required_chargers, "unit": "chargers", "interpretation": f"Shortfall: {charger_shortfall}"},
+            {"metric": "Scenario CSV logging", "value": "Reduced" if reduced_logging else "Enhanced/full", "unit": "", "interpretation": "Reduced mode suppresses payload transition detail but retains trip records"},
+        ]
+    )
+
     return {
         "summary": summary,
+        "scenario_impact": scenario_impact,
         "task_generation_summary": task_generation_summary,
         "payload_handling_timetable": payload_handling_timetable,
         "linen_ward_collection": linen_ward_collection,

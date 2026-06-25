@@ -3901,6 +3901,31 @@ class PointEditorDialog(QDialog):
             form.addRow("Bounding length", QLabel(f"{length:.3f} m"))
             form.addRow("Bounding width", QLabel(f"{width:.3f} m"))
             form.addRow("Bounding area", QLabel(f"{area:.3f} m²"))
+            self.wash_cycle_check = QCheckBox("AMR must complete a wash cycle after visiting")
+            self.wash_cycle_check.setChecked(bool(point.get("wash_cycle_required", False)))
+            self.wash_duration_edit = QLineEdit(str(point.get("wash_cycle_duration_sec", 300.0)))
+            self.wash_location_combo = QComboBox()
+            location_names = []
+            if parent_obj and hasattr(parent_obj, "store"):
+                location_names = sorted(
+                    str(item.get("name", "")).strip()
+                    for item in parent_obj.store.data.get("locations", [])
+                    if str(item.get("name", "")).strip()
+                )
+            self.wash_location_combo.addItems(["(wash at this location)"] + location_names)
+            wash_location = str(point.get("wash_location", "") or "").strip()
+            if wash_location and self.wash_location_combo.findText(wash_location) >= 0:
+                self.wash_location_combo.setCurrentText(wash_location)
+            self.people_area_combo = QComboBox()
+            for label, value in [("No routine occupancy", "none"), ("Staff", "staff"), ("Public", "public"), ("Staff and public", "both")]:
+                self.people_area_combo.addItem(label, value)
+            area_value = str(point.get("people_area_type", "none") or "none").lower()
+            area_index = self.people_area_combo.findData(area_value)
+            self.people_area_combo.setCurrentIndex(max(0, area_index))
+            form.addRow("Wash cycle", self.wash_cycle_check)
+            form.addRow("Wash duration sec", self.wash_duration_edit)
+            form.addRow("Wash location", self.wash_location_combo)
+            form.addRow("People occupancy", self.people_area_combo)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -3915,6 +3940,13 @@ class PointEditorDialog(QDialog):
             if not name:
                 raise ValueError("Name is required")
             self.result = {"name": name, "x": x, "y": y}
+            if self.point.get("kind") == "location":
+                self.result.update({
+                    "wash_cycle_required": bool(self.wash_cycle_check.isChecked()),
+                    "wash_cycle_duration_sec": max(0.0, float(self.wash_duration_edit.text() or 0.0)),
+                    "wash_location": ("" if self.wash_location_combo.currentIndex() == 0 else self.wash_location_combo.currentText().strip()),
+                    "people_area_type": str(self.people_area_combo.currentData() or "none"),
+                })
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid value", str(exc))
@@ -4074,6 +4106,8 @@ class LiftEditorDialog(QDialog):
             str(self.lift.get("mean_time_between_failures_hours", 720.0))
         )
         self.mttr_edit = QLineEdit(str(self.lift.get("mean_time_to_repair_hours", 4.0)))
+        self.minimum_health_edit = QLineEdit(str(self.lift.get("minimum_operational_health_percent", 20.0)))
+        self.health_speed_penalty_edit = QLineEdit(str(self.lift.get("health_speed_penalty_at_zero", 0.5)))
         self.start_floor_edit = QLineEdit(
             str(self.lift.get("start_floor", self.default_floor))
         )
@@ -4103,6 +4137,8 @@ class LiftEditorDialog(QDialog):
         form.addRow("Health loss per journey %", self.health_loss_edit)
         form.addRow("MTBF hours", self.mtbf_edit)
         form.addRow("MTTR hours", self.mttr_edit)
+        form.addRow("Minimum operational health %", self.minimum_health_edit)
+        form.addRow("Speed factor at 0% health", self.health_speed_penalty_edit)
         form.addRow("Start floor", self.start_floor_edit)
         form.addRow("Auto per-floor positions", self.positions_edit)
         form.addRow(
@@ -4241,6 +4277,8 @@ class LiftEditorDialog(QDialog):
                 "health_loss_per_journey_percent": float(self.health_loss_edit.text()),
                 "mean_time_between_failures_hours": float(self.mtbf_edit.text()),
                 "mean_time_to_repair_hours": float(self.mttr_edit.text()),
+                "minimum_operational_health_percent": float(self.minimum_health_edit.text()),
+                "health_speed_penalty_at_zero": float(self.health_speed_penalty_edit.text()),
                 "start_floor": start_floor,
                 "floor_locations": positions,
             }
@@ -4365,6 +4403,8 @@ class LiftListDialog(QDialog):
             result["health_loss_per_journey_percent"],
             result["mean_time_between_failures_hours"],
             result["mean_time_to_repair_hours"],
+            result["minimum_operational_health_percent"],
+            result["health_speed_penalty_at_zero"],
             result["start_floor"],
         )
         self.on_changed()
@@ -4421,6 +4461,11 @@ def _normalise_amr_payload_slots(amr):
                     "payload_height_capacity_m": float(
                         slot.get("payload_height_capacity_m", 0.0) or 0.0
                     ),
+                    "allowed_payload_orientations": [
+                        str(x).strip().lower()
+                        for x in (slot.get("allowed_payload_orientations") or ["lengthways", "sideways"])
+                        if str(x).strip().lower() in {"lengthways", "sideways"}
+                    ] or ["lengthways"],
                 }
             )
 
@@ -4440,6 +4485,7 @@ def _normalise_amr_payload_slots(amr):
                 "payload_height_capacity_m": float(
                     amr.get("payload_height_capacity_m", 1.0) or 1.0
                 ),
+                "allowed_payload_orientations": ["lengthways", "sideways"],
             }
         ]
 
@@ -4512,9 +4558,9 @@ class AMREditorDialog(QDialog):
         form.addRow("Multi-stop", self.multi_stop_check)
 
         layout.addWidget(QLabel("Payload slots"))
-        self.slots_table = QTableWidget(0, 5)
+        self.slots_table = QTableWidget(0, 6)
         self.slots_table.setHorizontalHeaderLabels(
-            ["Slot", "Weight kg", "Length m", "Width m", "Height m"]
+            ["Slot", "Weight kg", "Length m", "Width m", "Height m", "Orientations"]
         )
         self.slots_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.slots_table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -4558,6 +4604,7 @@ class AMREditorDialog(QDialog):
                 slot.get("payload_length_capacity_m", 0.0),
                 slot.get("payload_width_capacity_m", 0.0),
                 slot.get("payload_height_capacity_m", 0.0),
+                ",".join(slot.get("allowed_payload_orientations", ["lengthways", "sideways"])),
             ]
             for col, value in enumerate(values):
                 self.slots_table.setItem(row, col, QTableWidgetItem(str(value)))
@@ -4570,6 +4617,7 @@ class AMREditorDialog(QDialog):
                 "payload_length_capacity_m": 1.0,
                 "payload_width_capacity_m": 1.0,
                 "payload_height_capacity_m": 1.0,
+                "allowed_payload_orientations": ["lengthways", "sideways"],
             }
         )
         self._refresh_slots_table()
@@ -4593,6 +4641,7 @@ class AMREditorDialog(QDialog):
             length_item = self.slots_table.item(row, 2)
             width_item = self.slots_table.item(row, 3)
             height_item = self.slots_table.item(row, 4)
+            orientations_item = self.slots_table.item(row, 5)
 
             source_name = (
                 name_item.text().strip()
@@ -4612,6 +4661,10 @@ class AMREditorDialog(QDialog):
                 "payload_height_capacity_m": float(
                     height_item.text() if height_item else 0.0
                 ),
+                "allowed_payload_orientations": [
+                    x.strip().lower() for x in (orientations_item.text() if orientations_item else "lengthways,sideways").split(",")
+                    if x.strip().lower() in {"lengthways", "sideways"}
+                ] or ["lengthways"],
             }
 
             insert_at = row + 1
@@ -4646,6 +4699,7 @@ class AMREditorDialog(QDialog):
             length_item = self.slots_table.item(row, 2)
             width_item = self.slots_table.item(row, 3)
             height_item = self.slots_table.item(row, 4)
+            orientations_item = self.slots_table.item(row, 5)
             slot = {
                 "name": (name_item.text().strip() if name_item else "")
                 or f"Slot {row + 1}",
@@ -4659,6 +4713,10 @@ class AMREditorDialog(QDialog):
                 "payload_height_capacity_m": float(
                     height_item.text() if height_item else 0.0
                 ),
+                "allowed_payload_orientations": [
+                    x.strip().lower() for x in (orientations_item.text() if orientations_item else "lengthways,sideways").split(",")
+                    if x.strip().lower() in {"lengthways", "sideways"}
+                ] or ["lengthways"],
             }
             if slot["payload_capacity_kg"] <= 0:
                 raise ValueError(
@@ -4841,6 +4899,14 @@ class PayloadTrackedItemDialog(QDialog):
             if threshold > max_qty:
                 raise ValueError("Top-up threshold cannot be greater than maximum")
 
+            allowed_orientations = []
+            if self.lengthways_check.isChecked():
+                allowed_orientations.append("lengthways")
+            if self.sideways_check.isChecked():
+                allowed_orientations.append("sideways")
+            if not allowed_orientations:
+                raise ValueError("Select at least one permitted carrying orientation")
+
             self.result = {
                 "name": name,
                 "max": max_qty,
@@ -4891,6 +4957,17 @@ class PayloadEditorDialog(QDialog):
         self.prefer_multi_stop_amr_check.setChecked(
             bool(self.seed.get("prefer_multi_stop_amr", False))
         )
+        allowed_orientations = self.seed.get("allowed_carry_orientations", ["lengthways", "sideways"]) or []
+        self.lengthways_check = QCheckBox("Lengthways")
+        self.sideways_check = QCheckBox("Sideways")
+        self.lengthways_check.setChecked("lengthways" in allowed_orientations)
+        self.sideways_check.setChecked("sideways" in allowed_orientations)
+        orientation_widget = QWidget()
+        orientation_layout = QHBoxLayout(orientation_widget)
+        orientation_layout.setContentsMargins(0, 0, 0, 0)
+        orientation_layout.addWidget(self.lengthways_check)
+        orientation_layout.addWidget(self.sideways_check)
+        orientation_layout.addStretch(1)
 
         form.addRow("Payload name", self.name_edit)
         form.addRow("Weight kg", self.weight_edit)
@@ -4899,6 +4976,7 @@ class PayloadEditorDialog(QDialog):
         form.addRow("Height m", self.height_edit)
         form.addRow("Track items", self.track_items_check)
         form.addRow("Prefer multi-stop AMR", self.prefer_multi_stop_amr_check)
+        form.addRow("Permitted carrying orientation", orientation_widget)
 
         layout.addWidget(QLabel("Tracked items"))
 
@@ -5068,6 +5146,7 @@ class PayloadEditorDialog(QDialog):
                 "height_m": float(self.height_edit.text() or 0.0),
                 "track_items": self.track_items_check.isChecked(),
                 "prefer_multi_stop_amr": self.prefer_multi_stop_amr_check.isChecked(),
+                "allowed_carry_orientations": allowed_orientations,
                 "items": items_payload,
             }
 
@@ -5490,6 +5569,213 @@ class RouteProfilesEditor(QDialog):
         self.on_save = on_save
         self.profiles = profiles
 
+
+
+class PeopleMovementEditorDialog(QDialog):
+    def __init__(self, parent, location_names, seed=None):
+        super().__init__(parent)
+        self.setWindowTitle("People movement profile")
+        self.result = None
+        seed = dict(seed or {})
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+        self.id_edit = QLineEdit(str(seed.get("id", "PEOPLE-1")))
+        self.enabled_check = QCheckBox("Enabled")
+        self.enabled_check.setChecked(bool(seed.get("enabled", True)))
+        self.group_combo = QComboBox()
+        self.group_combo.addItem("Staff", "staff")
+        self.group_combo.addItem("Public", "public")
+        idx = self.group_combo.findData(str(seed.get("group_type", "staff")))
+        self.group_combo.setCurrentIndex(max(0, idx))
+        self.start_combo = QComboBox(); self.start_combo.addItems(sorted(location_names))
+        self.end_combo = QComboBox(); self.end_combo.addItems(sorted(location_names))
+        self.start_combo.setCurrentText(str(seed.get("start_location", "")))
+        self.end_combo.setCurrentText(str(seed.get("end_location", "")))
+        self.people_edit = QLineEdit(str(seed.get("people_per_trip", 1)))
+        self.start_time_edit = QLineEdit(str(seed.get("start_time", "08:00")))
+        self.end_time_edit = QLineEdit(str(seed.get("end_time", "18:00")))
+        self.interval_edit = QLineEdit(str(seed.get("interval_minutes", 15.0)))
+        self.walk_speed_edit = QLineEdit(str(seed.get("walking_speed_m_per_sec", 1.2)))
+        self.amr_factor_edit = QLineEdit(str(seed.get("amr_speed_factor", 0.7)))
+        self.days_edit = QLineEdit(",".join(seed.get("days_active", ["mon","tue","wed","thu","fri"])))
+        for label, widget in [
+            ("Profile ID", self.id_edit), ("Enabled", self.enabled_check),
+            ("People type", self.group_combo), ("Start location", self.start_combo),
+            ("End location", self.end_combo), ("People per movement", self.people_edit),
+            ("Daily start time", self.start_time_edit), ("Daily end time", self.end_time_edit),
+            ("Movement interval minutes", self.interval_edit), ("Walking speed m/sec", self.walk_speed_edit),
+            ("AMR speed factor while sharing route", self.amr_factor_edit),
+            ("Days active", self.days_edit),
+        ]:
+            form.addRow(label, widget)
+        note = QLabel("People are routed through the same graph. Their time occupancy on each corridor edge slows AMRs using that edge at the same time.")
+        note.setWordWrap(True); layout.addWidget(note)
+        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+    def accept(self):
+        try:
+            profile_id=self.id_edit.text().strip()
+            if not profile_id: raise ValueError("Profile ID is required")
+            start=self.start_combo.currentText().strip(); end=self.end_combo.currentText().strip()
+            if not start or not end or start==end: raise ValueError("Select different start and end locations")
+            self.result={
+                "id":profile_id,"enabled":self.enabled_check.isChecked(),"group_type":str(self.group_combo.currentData()),
+                "start_location":start,"end_location":end,"people_per_trip":max(1,int(float(self.people_edit.text()))),
+                "start_time":self.start_time_edit.text().strip() or "00:00","end_time":self.end_time_edit.text().strip() or "24:00",
+                "interval_minutes":max(0.1,float(self.interval_edit.text())),"walking_speed_m_per_sec":max(0.1,float(self.walk_speed_edit.text())),
+                "amr_speed_factor":max(0.05,min(1.0,float(self.amr_factor_edit.text()))),
+                "days_active":[x.strip().lower()[:3] for x in self.days_edit.text().split(",") if x.strip()],
+            }
+            super().accept()
+        except Exception as exc: QMessageBox.critical(self,"Invalid people movement",str(exc))
+
+class PeopleMovementListDialog(QDialog):
+    def __init__(self,parent,location_names,movements):
+        super().__init__(parent); self.setWindowTitle("People movement through graph"); self.resize(1000,480)
+        self.location_names=list(location_names); self.movements=[dict(x) for x in movements or []]; self.result=None
+        layout=QVBoxLayout(self)
+        self.table=QTableWidget(0,9); self.table.setHorizontalHeaderLabels(["ID","Enabled","Type","From","To","People","Start-end","Interval min","AMR factor"])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); layout.addWidget(self.table)
+        row=QHBoxLayout(); layout.addLayout(row)
+        for text,fn in [("Add",self.add_item),("Edit",self.edit_item),("Delete",self.delete_item)]:
+            b=QPushButton(text); b.clicked.connect(fn); row.addWidget(b)
+        row.addStretch(1)
+        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); row.addWidget(buttons)
+        self.refresh()
+    def refresh(self):
+        self.table.setRowCount(0)
+        for item in self.movements:
+            r=self.table.rowCount(); self.table.insertRow(r)
+            vals=[item.get("id",""),"Yes" if item.get("enabled",True) else "No",item.get("group_type",""),item.get("start_location",""),item.get("end_location",""),item.get("people_per_trip",1),f"{item.get('start_time','')} - {item.get('end_time','')}",item.get("interval_minutes",15),item.get("amr_speed_factor",0.7)]
+            for c,v in enumerate(vals): self.table.setItem(r,c,QTableWidgetItem(str(v)))
+    def selected_index(self):
+        rows=self.table.selectionModel().selectedRows(); return rows[0].row() if rows else -1
+    def add_item(self):
+        d=PeopleMovementEditorDialog(self,self.location_names,{"id":f"PEOPLE-{len(self.movements)+1}"})
+        if d.exec()==QDialog.Accepted and d.result: self.movements.append(d.result); self.refresh()
+    def edit_item(self):
+        i=self.selected_index()
+        if i<0:return
+        d=PeopleMovementEditorDialog(self,self.location_names,self.movements[i])
+        if d.exec()==QDialog.Accepted and d.result: self.movements[i]=d.result; self.refresh(); self.table.selectRow(i)
+    def delete_item(self):
+        i=self.selected_index()
+        if i>=0: del self.movements[i]; self.refresh()
+    def accept(self): self.result=self.movements; super().accept()
+
+class ScenarioEventDialog(QDialog):
+    def __init__(self,parent,resource_options,seed=None):
+        super().__init__(parent); self.setWindowTitle("Scenario event"); self.result=None; seed=dict(seed or {})
+        layout=QVBoxLayout(self); form=QFormLayout(); layout.addLayout(form)
+        self.type_combo=QComboBox()
+        for label,value in [("Lift","lift"),("Corridor edge","corridor"),("AMR / AMR type","amr")]: self.type_combo.addItem(label,value)
+        idx=self.type_combo.findData(str(seed.get("resource_type","lift"))); self.type_combo.setCurrentIndex(max(0,idx))
+        self.resource_combo=QComboBox(); self._resource_options=resource_options
+        self.start_edit=QLineEdit(str(seed.get("start_time","00:00"))); self.end_edit=QLineEdit(str(seed.get("end_time","24:00")))
+        self.availability_edit=QLineEdit(str(seed.get("availability_percent",0.0))); self.speed_edit=QLineEdit(str(seed.get("speed_factor",1.0)))
+        self.days_edit=QLineEdit(",".join(seed.get("days_active",["mon","tue","wed","thu","fri","sat","sun"])))
+        self.notes_edit=QLineEdit(str(seed.get("notes","")))
+        self.type_combo.currentIndexChanged.connect(self._refresh_resources); self._refresh_resources()
+        resource_id=str(seed.get("resource_id",""));
+        if resource_id and self.resource_combo.findText(resource_id)>=0:self.resource_combo.setCurrentText(resource_id)
+        for label,w in [("Resource type",self.type_combo),("Resource",self.resource_combo),("Start time",self.start_edit),("End time",self.end_edit),("Availability %",self.availability_edit),("Speed factor",self.speed_edit),("Days active",self.days_edit),("Notes",self.notes_edit)]: form.addRow(label,w)
+        note=QLabel("Availability 0% creates an outage. A lower speed factor models degraded operation. Lift health still applies in addition to this event."); note.setWordWrap(True); layout.addWidget(note)
+        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+    def _refresh_resources(self):
+        current=self.resource_combo.currentText(); self.resource_combo.clear(); self.resource_combo.addItems(self._resource_options.get(str(self.type_combo.currentData()),[]));
+        if current and self.resource_combo.findText(current)>=0:self.resource_combo.setCurrentText(current)
+    def accept(self):
+        try:
+            rid=self.resource_combo.currentText().strip()
+            if not rid: raise ValueError("Select a resource")
+            self.result={"resource_type":str(self.type_combo.currentData()),"resource_id":rid,"start_time":self.start_edit.text().strip() or "00:00","end_time":self.end_edit.text().strip() or "24:00","availability_percent":max(0.0,min(100.0,float(self.availability_edit.text()))),"speed_factor":max(0.0,min(1.0,float(self.speed_edit.text()))),"days_active":[x.strip().lower()[:3] for x in self.days_edit.text().split(",") if x.strip()],"notes":self.notes_edit.text().strip()}
+            super().accept()
+        except Exception as exc: QMessageBox.critical(self,"Invalid scenario event",str(exc))
+
+class ScenarioTestingDialog(QDialog):
+    def __init__(self,parent,config,store_data):
+        super().__init__(parent); self.setWindowTitle("Scenario testing"); self.resize(1050,600); self.result=None
+        self.config=dict(config or {}); self.scenarios=[dict(x) for x in self.config.get("scenarios",[]) or []]
+        self.resource_options={
+            "lift":sorted(str(x.get("id","")) for x in store_data.get("lifts",[]) if str(x.get("id",""))),
+            "amr":sorted(str(x.get("id","")) for x in store_data.get("amrs",[]) if str(x.get("id",""))),
+            "corridor":sorted(f"{x.get('from','')} -> {x.get('to','')}" for x in store_data.get("corridors",{}).get("edges",[]) if x.get("from") and x.get("to")),
+        }
+        layout=QVBoxLayout(self); top=QHBoxLayout(); layout.addLayout(top)
+        self.enabled_check=QCheckBox("Enable scenario mode"); self.enabled_check.setChecked(bool(self.config.get("enabled",False))); top.addWidget(self.enabled_check)
+        self.enhanced_check=QCheckBox("Enhanced payload transition logging"); self.enhanced_check.setChecked(bool(self.config.get("enhanced_logging",False))); top.addWidget(self.enhanced_check)
+        top.addStretch(1)
+        scenario_row=QHBoxLayout(); layout.addLayout(scenario_row); scenario_row.addWidget(QLabel("Active scenario")); self.scenario_combo=QComboBox(); scenario_row.addWidget(self.scenario_combo,1)
+        for text,fn in [("New",self.new_scenario),("Rename",self.rename_scenario),("Delete",self.delete_scenario)]: b=QPushButton(text); b.clicked.connect(fn); scenario_row.addWidget(b)
+        self.description_edit=QPlainTextEdit(); self.description_edit.setMaximumHeight(80); layout.addWidget(QLabel("Scenario description")); layout.addWidget(self.description_edit)
+        self.table=QTableWidget(0,8); self.table.setHorizontalHeaderLabels(["Resource type","Resource","Start","End","Availability %","Speed factor","Days","Notes"]); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); layout.addWidget(self.table,1)
+        event_row=QHBoxLayout(); layout.addLayout(event_row)
+        for text,fn in [("Add event",self.add_event),("Edit event",self.edit_event),("Delete event",self.delete_event)]: b=QPushButton(text); b.clicked.connect(fn); event_row.addWidget(b)
+        event_row.addStretch(1); buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); event_row.addWidget(buttons)
+        self.scenario_combo.currentIndexChanged.connect(self.load_scenario); self._refresh_scenarios()
+    def _refresh_scenarios(self):
+        current=str(self.config.get("active_scenario","Normal operation")); self.scenario_combo.blockSignals(True); self.scenario_combo.clear(); self.scenario_combo.addItem("Normal operation")
+        for sc in self.scenarios:self.scenario_combo.addItem(str(sc.get("name","Scenario")))
+        idx=self.scenario_combo.findText(current); self.scenario_combo.setCurrentIndex(max(0,idx)); self.scenario_combo.blockSignals(False); self.load_scenario()
+    def _save_current_description(self):
+        idx=self.scenario_combo.currentIndex()-1
+        if 0<=idx<len(self.scenarios): self.scenarios[idx]["description"]=self.description_edit.toPlainText()
+    def current_scenario(self):
+        idx=self.scenario_combo.currentIndex()-1; return self.scenarios[idx] if 0<=idx<len(self.scenarios) else None
+    def load_scenario(self):
+        sc=self.current_scenario(); self.description_edit.setEnabled(sc is not None); self.description_edit.setPlainText(str(sc.get("description","")) if sc else "Normal operation assumes all configured assets are available; lift health and routine failures still apply.")
+        self.table.setRowCount(0)
+        for ev in (sc.get("events",[]) if sc else []):
+            r=self.table.rowCount(); self.table.insertRow(r); vals=[ev.get("resource_type",""),ev.get("resource_id",""),ev.get("start_time",""),ev.get("end_time",""),ev.get("availability_percent",0),ev.get("speed_factor",1),",".join(ev.get("days_active",[]) or []),ev.get("notes","")]
+            for c,v in enumerate(vals):self.table.setItem(r,c,QTableWidgetItem(str(v)))
+    def new_scenario(self):
+        self._save_current_description(); name,ok=QInputDialog.getText(self,"New scenario","Scenario name")
+        if ok and name.strip(): self.scenarios.append({"name":name.strip(),"description":"","events":[]}); self.config["active_scenario"]=name.strip(); self._refresh_scenarios()
+    def rename_scenario(self):
+        sc=self.current_scenario()
+        if not sc:return
+        name,ok=QInputDialog.getText(self,"Rename scenario","Scenario name",text=str(sc.get("name","")))
+        if ok and name.strip(): sc["name"]=name.strip(); self.config["active_scenario"]=name.strip(); self._refresh_scenarios()
+    def delete_scenario(self):
+        idx=self.scenario_combo.currentIndex()-1
+        if idx>=0: del self.scenarios[idx]; self.config["active_scenario"]="Normal operation"; self._refresh_scenarios()
+    def selected_event(self):
+        rows=self.table.selectionModel().selectedRows(); return rows[0].row() if rows else -1
+    def add_event(self):
+        sc=self.current_scenario()
+        if not sc: QMessageBox.information(self,"Scenario","Create or select a scenario first."); return
+        d=ScenarioEventDialog(self,self.resource_options)
+        if d.exec()==QDialog.Accepted and d.result: sc.setdefault("events",[]).append(d.result); self.load_scenario()
+    def edit_event(self):
+        sc=self.current_scenario(); i=self.selected_event()
+        if not sc or i<0:return
+        d=ScenarioEventDialog(self,self.resource_options,sc.setdefault("events",[])[i])
+        if d.exec()==QDialog.Accepted and d.result:sc["events"][i]=d.result;self.load_scenario();self.table.selectRow(i)
+    def delete_event(self):
+        sc=self.current_scenario(); i=self.selected_event()
+        if sc and i>=0:del sc.setdefault("events",[])[i];self.load_scenario()
+    def accept(self):
+        self._save_current_description(); active=self.scenario_combo.currentText().strip() or "Normal operation"
+        self.result={"enabled":self.enabled_check.isChecked() and active!="Normal operation","active_scenario":active,"enhanced_logging":self.enhanced_check.isChecked(),"scenarios":self.scenarios}; super().accept()
+
+class CorridorSettingsDialog(QDialog):
+    def __init__(self,parent,edges,default_width=2.4):
+        super().__init__(parent); self.setWindowTitle("Corridor lane and people settings"); self.resize(1000,560); self.edges=[dict(x) for x in edges or []]; self.default_width=float(default_width); self.result=None
+        layout=QVBoxLayout(self); note=QLabel("A bidirectional corridor forms two lanes when its width and the carried payload permit it. When the carried payload length exceeds one lane width, the simulator serialises traffic to one AMR at a time."); note.setWordWrap(True); layout.addWidget(note)
+        self.table=QTableWidget(len(self.edges),5); self.table.setHorizontalHeaderLabels(["From","To","Bidirectional","Width m","People occupancy"]); layout.addWidget(self.table,1)
+        for r,e in enumerate(self.edges):
+            self.table.setItem(r,0,QTableWidgetItem(str(e.get("from","")))); self.table.item(r,0).setFlags(self.table.item(r,0).flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(r,1,QTableWidgetItem(str(e.get("to","")))); self.table.item(r,1).setFlags(self.table.item(r,1).flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(r,2,QTableWidgetItem("Yes" if e.get("bidirectional",True) else "No")); self.table.setItem(r,3,QTableWidgetItem(str(e.get("width_m",self.default_width)))); self.table.setItem(r,4,QTableWidgetItem(str(e.get("people_area_type","none"))))
+        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+    def accept(self):
+        try:
+            out=[]
+            for r,e in enumerate(self.edges):
+                item=dict(e); item["bidirectional"]=str(self.table.item(r,2).text()).strip().lower() in {"yes","true","1","y"}; item["width_m"]=max(0.1,float(self.table.item(r,3).text())); area=str(self.table.item(r,4).text()).strip().lower(); item["people_area_type"]=area if area in {"none","staff","public","both"} else "none"; out.append(item)
+            self.result=out; super().accept()
+        except Exception as exc: QMessageBox.critical(self,"Invalid corridor settings",str(exc))
 
 class SimulationSettingsDialog(QDialog):
     def __init__(self, parent, simulation=None):
@@ -9957,6 +10243,21 @@ class InventorySpacesDialog(QDialog):
         amr_tools.addWidget(array_spaces_btn)
         right.addLayout(amr_tools)
 
+        capacity_tools = QHBoxLayout()
+        self.charger_check = QCheckBox("Selected AMR space contains a charger")
+        self.charger_check.setToolTip(
+            "Only AMR spaces with this enabled can recharge an AMR. Other AMR spaces remain parking/stowage bays."
+        )
+        auto_arrange_btn = QPushButton("Auto arrange payload capacity...")
+        auto_arrange_btn.setToolTip(
+            "Create the requested number of payload spaces while reserving AMR approach and movement clearance."
+        )
+        auto_arrange_btn.clicked.connect(self.auto_arrange_payload_capacity)
+        capacity_tools.addWidget(self.charger_check)
+        capacity_tools.addStretch(1)
+        capacity_tools.addWidget(auto_arrange_btn)
+        right.addLayout(capacity_tools)
+
         self.scene = QGraphicsScene(self)
         self.view = ZoomableInventoryView(self.scene)
         self.view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -10204,7 +10505,12 @@ class InventorySpacesDialog(QDialog):
         name = self.name_edit.text().strip() or self.spaces[
             self.selected_space_index
         ].get("name", f"Inventory {self.selected_space_index + 1}")
-        self.spaces[self.selected_space_index] = {
+        existing_space = self.spaces[self.selected_space_index]
+        slots_copy = [dict(slot) for slot in existing_space.get("payload_slots", [])]
+        stores_amr = bool(existing_space.get("stores_amr", False)) or str(existing_space.get("space_type", "")).lower() == "amr"
+        if slots_copy and str(slots_copy[0].get("slot_type", "")).lower() == "amr":
+            stores_amr = True
+        updated_space = {
             "name": name,
             "points": [
                 {
@@ -10213,13 +10519,17 @@ class InventorySpacesDialog(QDialog):
                 }
                 for p in self.current_points
             ],
-            "payload_slots": [
-                dict(slot)
-                for slot in self.spaces[self.selected_space_index].get(
-                    "payload_slots", []
-                )
-            ],
+            "payload_slots": slots_copy,
         }
+        for key in ("occupied", "payload", "payload_instance_id", "reserved_by_task", "task_id", "amr_id", "reserved_by_amr"):
+            if key in existing_space:
+                updated_space[key] = existing_space.get(key)
+        if stores_amr:
+            updated_space["space_type"] = "amr"
+            updated_space["stores_amr"] = True
+            updated_space["amr_type"] = str(existing_space.get("amr_type", "") or (slots_copy[0].get("amr_type", "") if slots_copy else ""))
+            updated_space["has_charger"] = bool(self.charger_check.isChecked())
+        self.spaces[self.selected_space_index] = updated_space
         return True
 
     def _slot_polygon_points(self, slot):
@@ -10380,6 +10690,7 @@ class InventorySpacesDialog(QDialog):
             "name": name,
             "space_type": "amr",
             "stores_amr": True,
+            "has_charger": False,
             "points": [
                 {"dx": round(float(p["x"]) - lx, 3), "dy": round(float(p["y"]) - ly, 3)}
                 for p in points_abs
@@ -10422,7 +10733,7 @@ class InventorySpacesDialog(QDialog):
                 "rotation_deg": self._normalise_degrees(rotation_deg),
             }
             base_name = f"{name} AMR"
-            extra = {"space_type": "amr", "stores_amr": True}
+            extra = {"space_type": "amr", "stores_amr": True, "has_charger": False}
         else:
             length, width = self._payload_dimensions(name)
             slot = {
@@ -10636,6 +10947,121 @@ class InventorySpacesDialog(QDialog):
             self.current_points = points
 
         return True
+
+    def auto_arrange_payload_capacity(self):
+        location_box = self.store.get_location_bounding_box_points(self.location_name)
+        if len(location_box) < 3:
+            QMessageBox.critical(
+                self,
+                "Auto arrange payload capacity",
+                "Draw or define the location bounding box first.",
+            )
+            return
+        payload_name = self.payload_combo.currentText().strip()
+        if not payload_name:
+            payload_name, ok = QInputDialog.getItem(
+                self, "Payload type", "Payload to store", self._payload_names(), 0, False
+            )
+            if not ok or not payload_name:
+                return
+        count, ok = QInputDialog.getInt(
+            self,
+            "Payload quantity",
+            "Number of payloads to store at this location",
+            value=1,
+            minValue=1,
+            maxValue=10000,
+        )
+        if not ok:
+            return
+
+        payload_length, payload_width = self._payload_dimensions(payload_name)
+        if payload_length <= 0 or payload_width <= 0:
+            QMessageBox.critical(self, "Auto arrange payload capacity", "Payload dimensions must be greater than zero.")
+            return
+
+        amr_lengths = [float(a.get("length_m", 0.8) or 0.8) for a in self.store.data.get("amrs", [])]
+        amr_widths = [float(a.get("width_m", 0.6) or 0.6) for a in self.store.data.get("amrs", [])]
+        max_amr_length = max(amr_lengths or [0.8])
+        max_amr_width = max(amr_widths or [0.6])
+        safety_clearance = max(0.2, float(self.store.data.get("building", {}).get("inventory_access_clearance_m", 0.3) or 0.3))
+        access_aisle = max_amr_width + (2.0 * safety_clearance)
+        end_turning = max_amr_length + safety_clearance
+        gap = safety_clearance
+
+        xs = [float(p["x"]) for p in location_box]
+        ys = [float(p["y"]) for p in location_box]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        room_length = max_x - min_x
+        room_width = max_y - min_y
+
+        # Compare two shelf orientations. One side is deliberately reserved as
+        # a clear travel aisle, with an end turning/approach zone.
+        candidates = []
+        for item_length, item_width, rotation in ((payload_length, payload_width, 0.0), (payload_width, payload_length, 90.0)):
+            usable_length = max(0.0, room_length - end_turning)
+            usable_width = max(0.0, room_width - access_aisle)
+            cols = int((usable_length + gap) // (item_length + gap)) if item_length > 0 else 0
+            rows = int((usable_width + gap) // (item_width + gap)) if item_width > 0 else 0
+            candidates.append((cols * rows, cols, rows, item_length, item_width, rotation))
+        capacity, cols, rows, item_length, item_width, rotation = max(candidates, key=lambda item: item[0])
+
+        if capacity < count:
+            # Suggest a compact rectangular room using approximately square rows.
+            suggest_cols = max(1, int(math.ceil(math.sqrt(count))))
+            suggest_rows = int(math.ceil(count / suggest_cols))
+            required_length = end_turning + (suggest_cols * item_length) + (max(0, suggest_cols - 1) * gap)
+            required_width = access_aisle + (suggest_rows * item_width) + (max(0, suggest_rows - 1) * gap)
+            required_area = required_length * required_width
+            QMessageBox.critical(
+                self,
+                "Location too small",
+                (
+                    f"{self.location_name} can safely store approximately {capacity} {payload_name} payload(s), "
+                    f"not the requested {count}.\n\n"
+                    f"Current bounding size: {room_length:.2f} m × {room_width:.2f} m.\n"
+                    f"Suggested minimum clear area: {required_length:.2f} m × {required_width:.2f} m "
+                    f"({required_area:.2f} m²).\n\n"
+                    f"This includes a {access_aisle:.2f} m AMR access aisle and a {end_turning:.2f} m approach/turning zone."
+                ),
+            )
+            return
+
+        # Remove existing payload spaces of this type only, leaving AMR bays and
+        # other payload storage untouched.
+        self._commit_current_space(show_errors=False)
+        kept = []
+        for space in self.spaces:
+            slots = space.get("payload_slots", []) or []
+            if slots and str(slots[0].get("payload", "")).strip() == payload_name:
+                continue
+            kept.append(space)
+        self.spaces = kept
+
+        start_x = min_x + end_turning + (item_length / 2.0)
+        start_y = min_y + access_aisle + (item_width / 2.0)
+        created = []
+        for index in range(count):
+            col = index % cols
+            row = index // cols
+            cx = start_x + col * (item_length + gap)
+            cy = start_y + row * (item_width + gap)
+            space, _length, _width = self._space_template_for_kind(
+                "payload", payload_name, cx, cy, rotation_deg=rotation
+            )
+            self.spaces.append(space)
+            created.append(len(self.spaces) - 1)
+
+        self.selected_space_index = created[0] if created else None
+        self.selected_space_indices = set(created)
+        self.refresh_list()
+        if self.selected_space_index is not None:
+            self.space_list.setCurrentRow(self.selected_space_index)
+        self.refresh_scene()
+        self.status_label.setText(
+            f"Auto arranged {count} {payload_name} space(s), retaining a {access_aisle:.2f} m access aisle."
+        )
 
     def auto_align_payloads(self):
         location_box = self.store.get_location_bounding_box_points(self.location_name)
@@ -10863,6 +11289,13 @@ class InventorySpacesDialog(QDialog):
         self.name_edit.setText(space.get("name", ""))
 
         slots = space.setdefault("payload_slots", [])
+        is_amr_space = bool(space.get("stores_amr", False)) or str(space.get("space_type", "")).lower() == "amr"
+        if slots and str(slots[0].get("slot_type", "")).lower() == "amr":
+            is_amr_space = True
+        self.charger_check.blockSignals(True)
+        self.charger_check.setChecked(bool(space.get("has_charger", False)))
+        self.charger_check.setEnabled(is_amr_space)
+        self.charger_check.blockSignals(False)
         if slots:
             self.current_points = self._slot_polygon_points(slots[0])
             self.selected_payload_index = 0

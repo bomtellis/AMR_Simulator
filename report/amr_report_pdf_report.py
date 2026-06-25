@@ -53,6 +53,7 @@ from amr_report_analysis import fmt_duration, fmt_ts
 
 REPORT_SECTIONS = [
     ("front_summary", "Executive summary"),
+    ("scenario_impact", "Scenario impact and resilience"),
     ("method", "Method"),
     ("amr_list", "AMR list"),
     ("amr_fleet", "AMR fleet summary"),
@@ -77,6 +78,7 @@ DEFAULT_REPORT_SECTION_ORDER = [section_id for section_id, _label in REPORT_SECT
 
 REPORT_SECTION_PAGE_TEMPLATES = {
     "front_summary": "standard",
+    "scenario_impact": "landscape",
     "generated_tasks": "landscape",
     "staff_handling": "standard",
     "staff_timetable": "a3_landscape",
@@ -1304,6 +1306,42 @@ def build_report(
         NextPageTemplate("landscape"),
         PageBreak(),
     ]
+
+    scenario_impact_df = results.get("scenario_impact", pd.DataFrame()).copy()
+    story.section("scenario_impact")
+    story += [
+        Paragraph("Scenario impact and resilience", styles["Section"]),
+        Paragraph(
+            "This section quantifies operational effects applied by the active scenario, including corridor and AMR degradation, pedestrian route occupancy, wash cycles, payload-width lane restrictions, lift health and charger demand. Run the same configuration in normal operation and each scenario to compare completed work, delay and resource shortfall on a like-for-like basis.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+    if scenario_impact_df.empty:
+        story.append(Paragraph("No scenario impact fields were present in the event log.", styles["BodyText"]))
+    else:
+        scenario_impact_df = scenario_impact_df.rename(
+            columns={
+                "metric": "Metric",
+                "value": "Value",
+                "unit": "Unit",
+                "interpretation": "Interpretation",
+            }
+        )
+        story.append(
+            table_from_df(
+                scenario_impact_df,
+                [55 * mm, 28 * mm, 22 * mm, 145 * mm],
+                styles,
+                right_align=[1],
+            )
+        )
+        story.append(Spacer(1, 6))
+        story.append(Paragraph(
+            "In reduced scenario logging mode, payload names and payload transition rows are intentionally omitted from CSV output. Trip completion, route use, delay, lift, charger and failure information remain available; enable enhanced logging when validating detailed payload state changes.",
+            styles["BodyText"],
+        ))
+    story += [NextPageTemplate("landscape"), PageBreak()]
 
     task_generation_df = results.get("task_generation_summary", pd.DataFrame()).copy()
     story.section("generated_tasks")
