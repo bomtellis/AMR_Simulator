@@ -1,6 +1,6 @@
 # Autonomous Mobile Robot Simulator
 
-***Project licensed under MIT License.***
+***Project licensed under AGPL.***
 
 This script simulates paths taken by autonomous mobile robots around a facility to deliver payloads to destinations.
 
