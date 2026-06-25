@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
     QGraphicsScene,
@@ -3926,6 +3927,14 @@ class PointEditorDialog(QDialog):
             form.addRow("Wash duration sec", self.wash_duration_edit)
             form.addRow("Wash location", self.wash_location_combo)
             form.addRow("People occupancy", self.people_area_combo)
+        elif point.get("kind") == "corridor_node":
+            self.has_door_check = QCheckBox("This corridor node is a door opening")
+            self.has_door_check.setChecked(bool(point.get("has_door", False)))
+            self.door_clear_width_edit = QLineEdit(
+                str(point.get("door_clear_width_m", 0.9))
+            )
+            form.addRow("Door", self.has_door_check)
+            form.addRow("Door clear opening m", self.door_clear_width_edit)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -3946,6 +3955,11 @@ class PointEditorDialog(QDialog):
                     "wash_cycle_duration_sec": max(0.0, float(self.wash_duration_edit.text() or 0.0)),
                     "wash_location": ("" if self.wash_location_combo.currentIndex() == 0 else self.wash_location_combo.currentText().strip()),
                     "people_area_type": str(self.people_area_combo.currentData() or "none"),
+                })
+            elif self.point.get("kind") == "corridor_node":
+                self.result.update({
+                    "has_door": bool(self.has_door_check.isChecked()),
+                    "door_clear_width_m": max(0.1, float(self.door_clear_width_edit.text() or 0.9)),
                 })
             super().accept()
         except Exception as exc:
@@ -5572,11 +5586,28 @@ class RouteProfilesEditor(QDialog):
 
 
 class PeopleMovementEditorDialog(QDialog):
-    def __init__(self, parent, location_names, seed=None):
+    def __init__(
+        self,
+        parent,
+        location_names,
+        corridor_options,
+        seed=None,
+        initially_selected_corridors=None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("People movement profile")
+        self.resize(720, 620)
         self.result = None
         seed = dict(seed or {})
+        self.location_names = sorted(set(str(x) for x in location_names if str(x)))
+        self.corridor_options = sorted(set(str(x) for x in corridor_options if str(x)))
+        seeded_corridors = list(seed.get("corridor_edges", []) or [])
+        if initially_selected_corridors:
+            seeded_corridors = list(initially_selected_corridors)
+        self.selected_corridors = [
+            x for x in self.corridor_options if x in set(str(v) for v in seeded_corridors)
+        ]
+
         layout = QVBoxLayout(self)
         form = QFormLayout()
         layout.addLayout(form)
@@ -5586,10 +5617,18 @@ class PeopleMovementEditorDialog(QDialog):
         self.group_combo = QComboBox()
         self.group_combo.addItem("Staff", "staff")
         self.group_combo.addItem("Public", "public")
-        idx = self.group_combo.findData(str(seed.get("group_type", "staff")))
+        self.group_combo.addItem("Mixed staff and public", "both")
+        group = str(seed.get("group_type", "staff") or "staff").lower()
+        if group == "mixed":
+            group = "both"
+        idx = self.group_combo.findData(group)
         self.group_combo.setCurrentIndex(max(0, idx))
-        self.start_combo = QComboBox(); self.start_combo.addItems(sorted(location_names))
-        self.end_combo = QComboBox(); self.end_combo.addItems(sorted(location_names))
+        self.start_combo = QComboBox()
+        self.start_combo.addItem("")
+        self.start_combo.addItems(self.location_names)
+        self.end_combo = QComboBox()
+        self.end_combo.addItem("")
+        self.end_combo.addItems(self.location_names)
         self.start_combo.setCurrentText(str(seed.get("start_location", "")))
         self.end_combo.setCurrentText(str(seed.get("end_location", "")))
         self.people_edit = QLineEdit(str(seed.get("people_per_trip", 1)))
@@ -5598,184 +5637,959 @@ class PeopleMovementEditorDialog(QDialog):
         self.interval_edit = QLineEdit(str(seed.get("interval_minutes", 15.0)))
         self.walk_speed_edit = QLineEdit(str(seed.get("walking_speed_m_per_sec", 1.2)))
         self.amr_factor_edit = QLineEdit(str(seed.get("amr_speed_factor", 0.7)))
-        self.days_edit = QLineEdit(",".join(seed.get("days_active", ["mon","tue","wed","thu","fri"])))
+        self.days_edit = QLineEdit(",".join(seed.get("days_active", ["mon", "tue", "wed", "thu", "fri"])))
+
+        corridor_widget = QWidget()
+        corridor_layout = QHBoxLayout(corridor_widget)
+        corridor_layout.setContentsMargins(0, 0, 0, 0)
+        self.corridor_summary = QLabel()
+        self.corridor_summary.setWordWrap(True)
+        corridor_button = QPushButton("Select corridors…")
+        corridor_button.clicked.connect(self.select_corridors)
+        corridor_layout.addWidget(self.corridor_summary, 1)
+        corridor_layout.addWidget(corridor_button)
+
         for label, widget in [
-            ("Profile ID", self.id_edit), ("Enabled", self.enabled_check),
-            ("People type", self.group_combo), ("Start location", self.start_combo),
-            ("End location", self.end_combo), ("People per movement", self.people_edit),
-            ("Daily start time", self.start_time_edit), ("Daily end time", self.end_time_edit),
-            ("Movement interval minutes", self.interval_edit), ("Walking speed m/sec", self.walk_speed_edit),
+            ("Profile ID", self.id_edit),
+            ("Enabled", self.enabled_check),
+            ("People type", self.group_combo),
+            ("Route start location", self.start_combo),
+            ("Route end location", self.end_combo),
+            ("Explicit corridor assets", corridor_widget),
+            ("People per movement / interval", self.people_edit),
+            ("Daily start time", self.start_time_edit),
+            ("Daily end time", self.end_time_edit),
+            ("Movement interval minutes", self.interval_edit),
+            ("Walking speed m/sec", self.walk_speed_edit),
             ("AMR speed factor while sharing route", self.amr_factor_edit),
             ("Days active", self.days_edit),
         ]:
             form.addRow(label, widget)
-        note = QLabel("People are routed through the same graph. Their time occupancy on each corridor edge slows AMRs using that edge at the same time.")
-        note.setWordWrap(True); layout.addWidget(note)
-        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+
+        note = QLabel(
+            "Choose different start and end points to route people through the graph, "
+            "or select one or more corridor assets to apply this usage profile directly. "
+            "Explicit corridor profiles are useful for public/staff occupancy surveys and scenario studies."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self._update_corridor_summary()
+
+    def _update_corridor_summary(self):
+        count = len(self.selected_corridors)
+        if not count:
+            self.corridor_summary.setText("Route between start and end locations")
+        elif count <= 3:
+            self.corridor_summary.setText("; ".join(self.selected_corridors))
+        else:
+            self.corridor_summary.setText(
+                f"{count} corridors selected: " + "; ".join(self.selected_corridors[:3]) + "…"
+            )
+
+    def select_corridors(self):
+        dialog = MultiSelectPicker(
+            self,
+            "Select corridor assets for this people profile",
+            self.corridor_options,
+            selected=self.selected_corridors,
+            group_resolver=lambda value: value.split(" -> ", 1)[0][:1].upper() or "Corridors",
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.selected_corridors = list(dialog.result)
+            self._update_corridor_summary()
+
     def accept(self):
         try:
-            profile_id=self.id_edit.text().strip()
-            if not profile_id: raise ValueError("Profile ID is required")
-            start=self.start_combo.currentText().strip(); end=self.end_combo.currentText().strip()
-            if not start or not end or start==end: raise ValueError("Select different start and end locations")
-            self.result={
-                "id":profile_id,"enabled":self.enabled_check.isChecked(),"group_type":str(self.group_combo.currentData()),
-                "start_location":start,"end_location":end,"people_per_trip":max(1,int(float(self.people_edit.text()))),
-                "start_time":self.start_time_edit.text().strip() or "00:00","end_time":self.end_time_edit.text().strip() or "24:00",
-                "interval_minutes":max(0.1,float(self.interval_edit.text())),"walking_speed_m_per_sec":max(0.1,float(self.walk_speed_edit.text())),
-                "amr_speed_factor":max(0.05,min(1.0,float(self.amr_factor_edit.text()))),
-                "days_active":[x.strip().lower()[:3] for x in self.days_edit.text().split(",") if x.strip()],
+            profile_id = self.id_edit.text().strip()
+            if not profile_id:
+                raise ValueError("Profile ID is required")
+            start = self.start_combo.currentText().strip()
+            end = self.end_combo.currentText().strip()
+            if not self.selected_corridors and (not start or not end or start == end):
+                raise ValueError(
+                    "Select explicit corridor assets or choose different start and end locations"
+                )
+            self.result = {
+                "id": profile_id,
+                "enabled": self.enabled_check.isChecked(),
+                "group_type": str(self.group_combo.currentData()),
+                "start_location": start,
+                "end_location": end,
+                "corridor_edges": list(self.selected_corridors),
+                "people_per_trip": max(1, int(float(self.people_edit.text()))),
+                "start_time": self.start_time_edit.text().strip() or "00:00",
+                "end_time": self.end_time_edit.text().strip() or "24:00",
+                "interval_minutes": max(0.1, float(self.interval_edit.text())),
+                "walking_speed_m_per_sec": max(0.1, float(self.walk_speed_edit.text())),
+                "amr_speed_factor": max(0.05, min(1.0, float(self.amr_factor_edit.text()))),
+                "days_active": [
+                    x.strip().lower()[:3]
+                    for x in self.days_edit.text().split(",")
+                    if x.strip()
+                ],
             }
             super().accept()
-        except Exception as exc: QMessageBox.critical(self,"Invalid people movement",str(exc))
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid people movement", str(exc))
+
 
 class PeopleMovementListDialog(QDialog):
-    def __init__(self,parent,location_names,movements):
-        super().__init__(parent); self.setWindowTitle("People movement through graph"); self.resize(1000,480)
-        self.location_names=list(location_names); self.movements=[dict(x) for x in movements or []]; self.result=None
-        layout=QVBoxLayout(self)
-        self.table=QTableWidget(0,9); self.table.setHorizontalHeaderLabels(["ID","Enabled","Type","From","To","People","Start-end","Interval min","AMR factor"])
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); layout.addWidget(self.table)
-        row=QHBoxLayout(); layout.addLayout(row)
-        for text,fn in [("Add",self.add_item),("Edit",self.edit_item),("Delete",self.delete_item)]:
-            b=QPushButton(text); b.clicked.connect(fn); row.addWidget(b)
+    def __init__(
+        self,
+        parent,
+        location_names,
+        corridor_options,
+        movements,
+        initially_selected_corridors=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("People movement through graph")
+        self.resize(1180, 520)
+        self.location_names = list(location_names)
+        self.corridor_options = list(corridor_options)
+        self.initially_selected_corridors = list(initially_selected_corridors or [])
+        self.movements = [dict(x) for x in movements or []]
+        self.result = None
+        layout = QVBoxLayout(self)
+        self.table = QTableWidget(0, 10)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "ID",
+                "Enabled",
+                "Type",
+                "From",
+                "To",
+                "Corridors",
+                "People",
+                "Start-end",
+                "Interval min",
+                "AMR factor",
+            ]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        layout.addWidget(self.table)
+        row = QHBoxLayout()
+        layout.addLayout(row)
+        for text, fn in [
+            ("Add", self.add_item),
+            ("Add from topology selection", self.add_from_topology),
+            ("Edit", self.edit_item),
+            ("Delete", self.delete_item),
+        ]:
+            button = QPushButton(text)
+            button.clicked.connect(fn)
+            if text == "Add from topology selection":
+                button.setEnabled(bool(self.initially_selected_corridors))
+            row.addWidget(button)
         row.addStretch(1)
-        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); row.addWidget(buttons)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        row.addWidget(buttons)
         self.refresh()
+
     def refresh(self):
         self.table.setRowCount(0)
         for item in self.movements:
-            r=self.table.rowCount(); self.table.insertRow(r)
-            vals=[item.get("id",""),"Yes" if item.get("enabled",True) else "No",item.get("group_type",""),item.get("start_location",""),item.get("end_location",""),item.get("people_per_trip",1),f"{item.get('start_time','')} - {item.get('end_time','')}",item.get("interval_minutes",15),item.get("amr_speed_factor",0.7)]
-            for c,v in enumerate(vals): self.table.setItem(r,c,QTableWidgetItem(str(v)))
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            corridors = list(item.get("corridor_edges", []) or [])
+            values = [
+                item.get("id", ""),
+                "Yes" if item.get("enabled", True) else "No",
+                item.get("group_type", ""),
+                item.get("start_location", ""),
+                item.get("end_location", ""),
+                str(len(corridors)) if corridors else "Routed",
+                item.get("people_per_trip", 1),
+                f"{item.get('start_time', '')} - {item.get('end_time', '')}",
+                item.get("interval_minutes", 15),
+                item.get("amr_speed_factor", 0.7),
+            ]
+            for col, value in enumerate(values):
+                self.table.setItem(row, col, QTableWidgetItem(str(value)))
+
     def selected_index(self):
-        rows=self.table.selectionModel().selectedRows(); return rows[0].row() if rows else -1
+        rows = self.table.selectionModel().selectedRows()
+        return rows[0].row() if rows else -1
+
+    def _open_editor(self, seed=None, selected_corridors=None):
+        return PeopleMovementEditorDialog(
+            self,
+            self.location_names,
+            self.corridor_options,
+            seed=seed,
+            initially_selected_corridors=selected_corridors,
+        )
+
     def add_item(self):
-        d=PeopleMovementEditorDialog(self,self.location_names,{"id":f"PEOPLE-{len(self.movements)+1}"})
-        if d.exec()==QDialog.Accepted and d.result: self.movements.append(d.result); self.refresh()
+        dialog = self._open_editor({"id": f"PEOPLE-{len(self.movements) + 1}"})
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            self.movements.append(dialog.result)
+            self.refresh()
+
+    def add_from_topology(self):
+        dialog = self._open_editor(
+            {"id": f"PEOPLE-{len(self.movements) + 1}"},
+            selected_corridors=self.initially_selected_corridors,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            self.movements.append(dialog.result)
+            self.refresh()
+
     def edit_item(self):
-        i=self.selected_index()
-        if i<0:return
-        d=PeopleMovementEditorDialog(self,self.location_names,self.movements[i])
-        if d.exec()==QDialog.Accepted and d.result: self.movements[i]=d.result; self.refresh(); self.table.selectRow(i)
+        index = self.selected_index()
+        if index < 0:
+            return
+        dialog = self._open_editor(self.movements[index])
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            self.movements[index] = dialog.result
+            self.refresh()
+            self.table.selectRow(index)
+
     def delete_item(self):
-        i=self.selected_index()
-        if i>=0: del self.movements[i]; self.refresh()
-    def accept(self): self.result=self.movements; super().accept()
+        index = self.selected_index()
+        if index >= 0:
+            del self.movements[index]
+            self.refresh()
+
+    def accept(self):
+        self.result = self.movements
+        super().accept()
+
 
 class ScenarioEventDialog(QDialog):
-    def __init__(self,parent,resource_options,seed=None):
-        super().__init__(parent); self.setWindowTitle("Scenario event"); self.result=None; seed=dict(seed or {})
-        layout=QVBoxLayout(self); form=QFormLayout(); layout.addLayout(form)
-        self.type_combo=QComboBox()
-        for label,value in [("Lift","lift"),("Corridor edge","corridor"),("AMR / AMR type","amr")]: self.type_combo.addItem(label,value)
-        idx=self.type_combo.findData(str(seed.get("resource_type","lift"))); self.type_combo.setCurrentIndex(max(0,idx))
-        self.resource_combo=QComboBox(); self._resource_options=resource_options
-        self.start_edit=QLineEdit(str(seed.get("start_time","00:00"))); self.end_edit=QLineEdit(str(seed.get("end_time","24:00")))
-        self.availability_edit=QLineEdit(str(seed.get("availability_percent",0.0))); self.speed_edit=QLineEdit(str(seed.get("speed_factor",1.0)))
-        self.days_edit=QLineEdit(",".join(seed.get("days_active",["mon","tue","wed","thu","fri","sat","sun"])))
-        self.notes_edit=QLineEdit(str(seed.get("notes","")))
-        self.type_combo.currentIndexChanged.connect(self._refresh_resources); self._refresh_resources()
-        resource_id=str(seed.get("resource_id",""));
-        if resource_id and self.resource_combo.findText(resource_id)>=0:self.resource_combo.setCurrentText(resource_id)
-        for label,w in [("Resource type",self.type_combo),("Resource",self.resource_combo),("Start time",self.start_edit),("End time",self.end_edit),("Availability %",self.availability_edit),("Speed factor",self.speed_edit),("Days active",self.days_edit),("Notes",self.notes_edit)]: form.addRow(label,w)
-        note=QLabel("Availability 0% creates an outage. A lower speed factor models degraded operation. Lift health still applies in addition to this event."); note.setWordWrap(True); layout.addWidget(note)
-        buttons=QDialogButtonBox(QDialogButtonBox.Ok|QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+    def __init__(self, parent, resource_options, seed=None):
+        super().__init__(parent)
+        self.setWindowTitle("Scenario event")
+        self.resize(660, 500)
+        self.result = None
+        seed = dict(seed or {})
+        self._resource_options = resource_options
+        self.selected_resources = []
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        layout.addLayout(form)
+        self.type_combo = QComboBox()
+        for label, value in [
+            ("Lift", "lift"),
+            ("Corridor edge", "corridor"),
+            ("Corridor node / door", "corridor_node"),
+            ("AMR / AMR type", "amr"),
+        ]:
+            self.type_combo.addItem(label, value)
+        idx = self.type_combo.findData(str(seed.get("resource_type", "lift")))
+        self.type_combo.setCurrentIndex(max(0, idx))
+        resource_widget = QWidget()
+        resource_layout = QHBoxLayout(resource_widget)
+        resource_layout.setContentsMargins(0, 0, 0, 0)
+        self.resource_summary = QLabel()
+        self.resource_summary.setWordWrap(True)
+        resource_button = QPushButton("Select assets…")
+        resource_button.clicked.connect(self.select_resources)
+        resource_layout.addWidget(self.resource_summary, 1)
+        resource_layout.addWidget(resource_button)
+        self.start_edit = QLineEdit(str(seed.get("start_time", "00:00")))
+        self.end_edit = QLineEdit(str(seed.get("end_time", "24:00")))
+        self.availability_edit = QLineEdit(str(seed.get("availability_percent", 0.0)))
+        self.speed_edit = QLineEdit(str(seed.get("speed_factor", 1.0)))
+        self.days_edit = QLineEdit(
+            ",".join(seed.get("days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]))
+        )
+        self.notes_edit = QLineEdit(str(seed.get("notes", "")))
+        resource_ids = seed.get("resource_ids", [])
+        if isinstance(resource_ids, str):
+            resource_ids = [x.strip() for x in resource_ids.split(",") if x.strip()]
+        legacy = str(seed.get("resource_id", "") or "").strip()
+        if legacy and legacy not in resource_ids:
+            resource_ids = [legacy] + list(resource_ids)
+        options = set(self._resource_options.get(str(self.type_combo.currentData()), []))
+        self.selected_resources = [x for x in resource_ids if x in options]
+        self.type_combo.currentIndexChanged.connect(self._resource_type_changed)
+        for label, widget in [
+            ("Resource type", self.type_combo),
+            ("Resources", resource_widget),
+            ("Start time", self.start_edit),
+            ("End time", self.end_edit),
+            ("Availability %", self.availability_edit),
+            ("Speed factor", self.speed_edit),
+            ("Days active", self.days_edit),
+            ("Notes", self.notes_edit),
+        ]:
+            form.addRow(label, widget)
+        note = QLabel(
+            "One event can affect multiple assets. Availability 0% creates an outage; "
+            "a lower speed factor models degraded operation. Door nodes affect every incident corridor."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self._update_resource_summary()
+
+    def _resource_type_changed(self):
+        options = set(self._resource_options.get(str(self.type_combo.currentData()), []))
+        self.selected_resources = [x for x in self.selected_resources if x in options]
+        self._update_resource_summary()
+
     def _refresh_resources(self):
-        current=self.resource_combo.currentText(); self.resource_combo.clear(); self.resource_combo.addItems(self._resource_options.get(str(self.type_combo.currentData()),[]));
-        if current and self.resource_combo.findText(current)>=0:self.resource_combo.setCurrentText(current)
+        """Backwards-compatible alias retained for existing integrations."""
+        self._resource_type_changed()
+
+    def _update_resource_summary(self):
+        if not self.selected_resources:
+            self.resource_summary.setText("No assets selected")
+        elif len(self.selected_resources) <= 3:
+            self.resource_summary.setText("; ".join(self.selected_resources))
+        else:
+            self.resource_summary.setText(
+                f"{len(self.selected_resources)} assets selected: "
+                + "; ".join(self.selected_resources[:3])
+                + "…"
+            )
+
+    def select_resources(self):
+        resource_type = str(self.type_combo.currentData())
+        options = self._resource_options.get(resource_type, [])
+        dialog = MultiSelectPicker(
+            self,
+            f"Select {self.type_combo.currentText().lower()} assets",
+            options,
+            selected=self.selected_resources,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.selected_resources = list(dialog.result)
+            self._update_resource_summary()
+
     def accept(self):
         try:
-            rid=self.resource_combo.currentText().strip()
-            if not rid: raise ValueError("Select a resource")
-            self.result={"resource_type":str(self.type_combo.currentData()),"resource_id":rid,"start_time":self.start_edit.text().strip() or "00:00","end_time":self.end_edit.text().strip() or "24:00","availability_percent":max(0.0,min(100.0,float(self.availability_edit.text()))),"speed_factor":max(0.0,min(1.0,float(self.speed_edit.text()))),"days_active":[x.strip().lower()[:3] for x in self.days_edit.text().split(",") if x.strip()],"notes":self.notes_edit.text().strip()}
+            if not self.selected_resources:
+                raise ValueError("Select one or more resources")
+            self.result = {
+                "resource_type": str(self.type_combo.currentData()),
+                "resource_ids": list(self.selected_resources),
+                "resource_id": self.selected_resources[0],
+                "start_time": self.start_edit.text().strip() or "00:00",
+                "end_time": self.end_edit.text().strip() or "24:00",
+                "availability_percent": max(
+                    0.0, min(100.0, float(self.availability_edit.text()))
+                ),
+                "speed_factor": max(0.0, min(1.0, float(self.speed_edit.text()))),
+                "days_active": [
+                    x.strip().lower()[:3]
+                    for x in self.days_edit.text().split(",")
+                    if x.strip()
+                ],
+                "notes": self.notes_edit.text().strip(),
+            }
             super().accept()
-        except Exception as exc: QMessageBox.critical(self,"Invalid scenario event",str(exc))
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid scenario event", str(exc))
+
 
 class ScenarioTestingDialog(QDialog):
-    def __init__(self,parent,config,store_data):
-        super().__init__(parent); self.setWindowTitle("Scenario testing"); self.resize(1050,600); self.result=None
-        self.config=dict(config or {}); self.scenarios=[dict(x) for x in self.config.get("scenarios",[]) or []]
-        self.resource_options={
-            "lift":sorted(str(x.get("id","")) for x in store_data.get("lifts",[]) if str(x.get("id",""))),
-            "amr":sorted(str(x.get("id","")) for x in store_data.get("amrs",[]) if str(x.get("id",""))),
-            "corridor":sorted(f"{x.get('from','')} -> {x.get('to','')}" for x in store_data.get("corridors",{}).get("edges",[]) if x.get("from") and x.get("to")),
+    def __init__(self, parent, config, store_data, topology_selection=None):
+        super().__init__(parent)
+        self.setWindowTitle("Scenario testing")
+        self.resize(1120, 650)
+        self.result = None
+        self.config = dict(config or {})
+        self.scenarios = [dict(x) for x in self.config.get("scenarios", []) or []]
+        corridors = store_data.get("corridors", {})
+        self.resource_options = {
+            "lift": sorted(
+                str(x.get("id", ""))
+                for x in store_data.get("lifts", [])
+                if str(x.get("id", ""))
+            ),
+            "amr": sorted(
+                str(x.get("id", ""))
+                for x in store_data.get("amrs", [])
+                if str(x.get("id", ""))
+            ),
+            "corridor": sorted(
+                f"{x.get('from', '')} -> {x.get('to', '')}"
+                for x in corridors.get("edges", [])
+                if x.get("from") and x.get("to")
+            ),
+            "corridor_node": sorted(
+                str(x.get("name", ""))
+                for x in corridors.get("nodes", [])
+                if str(x.get("name", ""))
+            ),
         }
-        layout=QVBoxLayout(self); top=QHBoxLayout(); layout.addLayout(top)
-        self.enabled_check=QCheckBox("Enable scenario mode"); self.enabled_check.setChecked(bool(self.config.get("enabled",False))); top.addWidget(self.enabled_check)
-        self.enhanced_check=QCheckBox("Enhanced payload transition logging"); self.enhanced_check.setChecked(bool(self.config.get("enhanced_logging",False))); top.addWidget(self.enhanced_check)
+        self.topology_selection = dict(topology_selection or {})
+        layout = QVBoxLayout(self)
+        top = QHBoxLayout()
+        layout.addLayout(top)
+        self.enabled_check = QCheckBox("Enable scenario mode")
+        self.enabled_check.setChecked(bool(self.config.get("enabled", False)))
+        top.addWidget(self.enabled_check)
+        self.enhanced_check = QCheckBox("Enhanced payload transition logging")
+        self.enhanced_check.setChecked(bool(self.config.get("enhanced_logging", False)))
+        top.addWidget(self.enhanced_check)
         top.addStretch(1)
-        scenario_row=QHBoxLayout(); layout.addLayout(scenario_row); scenario_row.addWidget(QLabel("Active scenario")); self.scenario_combo=QComboBox(); scenario_row.addWidget(self.scenario_combo,1)
-        for text,fn in [("New",self.new_scenario),("Rename",self.rename_scenario),("Delete",self.delete_scenario)]: b=QPushButton(text); b.clicked.connect(fn); scenario_row.addWidget(b)
-        self.description_edit=QPlainTextEdit(); self.description_edit.setMaximumHeight(80); layout.addWidget(QLabel("Scenario description")); layout.addWidget(self.description_edit)
-        self.table=QTableWidget(0,8); self.table.setHorizontalHeaderLabels(["Resource type","Resource","Start","End","Availability %","Speed factor","Days","Notes"]); self.table.setSelectionBehavior(QAbstractItemView.SelectRows); self.table.setSelectionMode(QAbstractItemView.SingleSelection); layout.addWidget(self.table,1)
-        event_row=QHBoxLayout(); layout.addLayout(event_row)
-        for text,fn in [("Add event",self.add_event),("Edit event",self.edit_event),("Delete event",self.delete_event)]: b=QPushButton(text); b.clicked.connect(fn); event_row.addWidget(b)
-        event_row.addStretch(1); buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); event_row.addWidget(buttons)
-        self.scenario_combo.currentIndexChanged.connect(self.load_scenario); self._refresh_scenarios()
+        scenario_row = QHBoxLayout()
+        layout.addLayout(scenario_row)
+        scenario_row.addWidget(QLabel("Active scenario"))
+        self.scenario_combo = QComboBox()
+        scenario_row.addWidget(self.scenario_combo, 1)
+        for text, fn in [
+            ("New", self.new_scenario),
+            ("Rename", self.rename_scenario),
+            ("Delete", self.delete_scenario),
+        ]:
+            button = QPushButton(text)
+            button.clicked.connect(fn)
+            scenario_row.addWidget(button)
+        self.description_edit = QPlainTextEdit()
+        self.description_edit.setMaximumHeight(80)
+        layout.addWidget(QLabel("Scenario description"))
+        layout.addWidget(self.description_edit)
+        self.table = QTableWidget(0, 8)
+        self.table.setHorizontalHeaderLabels(
+            [
+                "Resource type",
+                "Resources",
+                "Start",
+                "End",
+                "Availability %",
+                "Speed factor",
+                "Days",
+                "Notes",
+            ]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        layout.addWidget(self.table, 1)
+        event_row = QHBoxLayout()
+        layout.addLayout(event_row)
+        for text, fn in [
+            ("Add event", self.add_event),
+            ("Add topology selection", self.add_topology_event),
+            ("Edit event", self.edit_event),
+            ("Delete event", self.delete_event),
+        ]:
+            button = QPushButton(text)
+            button.clicked.connect(fn)
+            if text == "Add topology selection":
+                button.setEnabled(
+                    bool(self.topology_selection.get("corridor"))
+                    or bool(self.topology_selection.get("corridor_node"))
+                )
+            event_row.addWidget(button)
+        event_row.addStretch(1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        event_row.addWidget(buttons)
+        self.scenario_combo.currentIndexChanged.connect(self.load_scenario)
+        self._refresh_scenarios()
+
     def _refresh_scenarios(self):
-        current=str(self.config.get("active_scenario","Normal operation")); self.scenario_combo.blockSignals(True); self.scenario_combo.clear(); self.scenario_combo.addItem("Normal operation")
-        for sc in self.scenarios:self.scenario_combo.addItem(str(sc.get("name","Scenario")))
-        idx=self.scenario_combo.findText(current); self.scenario_combo.setCurrentIndex(max(0,idx)); self.scenario_combo.blockSignals(False); self.load_scenario()
+        current = str(self.config.get("active_scenario", "Normal operation"))
+        self.scenario_combo.blockSignals(True)
+        self.scenario_combo.clear()
+        self.scenario_combo.addItem("Normal operation")
+        for scenario in self.scenarios:
+            self.scenario_combo.addItem(str(scenario.get("name", "Scenario")))
+        idx = self.scenario_combo.findText(current)
+        self.scenario_combo.setCurrentIndex(max(0, idx))
+        self.scenario_combo.blockSignals(False)
+        self.load_scenario()
+
     def _save_current_description(self):
-        idx=self.scenario_combo.currentIndex()-1
-        if 0<=idx<len(self.scenarios): self.scenarios[idx]["description"]=self.description_edit.toPlainText()
+        idx = self.scenario_combo.currentIndex() - 1
+        if 0 <= idx < len(self.scenarios):
+            self.scenarios[idx]["description"] = self.description_edit.toPlainText()
+
     def current_scenario(self):
-        idx=self.scenario_combo.currentIndex()-1; return self.scenarios[idx] if 0<=idx<len(self.scenarios) else None
+        idx = self.scenario_combo.currentIndex() - 1
+        return self.scenarios[idx] if 0 <= idx < len(self.scenarios) else None
+
     def load_scenario(self):
-        sc=self.current_scenario(); self.description_edit.setEnabled(sc is not None); self.description_edit.setPlainText(str(sc.get("description","")) if sc else "Normal operation assumes all configured assets are available; lift health and routine failures still apply.")
+        scenario = self.current_scenario()
+        self.description_edit.setEnabled(scenario is not None)
+        self.description_edit.setPlainText(
+            str(scenario.get("description", ""))
+            if scenario
+            else "Normal operation assumes all configured assets are available; lift health and routine failures still apply."
+        )
         self.table.setRowCount(0)
-        for ev in (sc.get("events",[]) if sc else []):
-            r=self.table.rowCount(); self.table.insertRow(r); vals=[ev.get("resource_type",""),ev.get("resource_id",""),ev.get("start_time",""),ev.get("end_time",""),ev.get("availability_percent",0),ev.get("speed_factor",1),",".join(ev.get("days_active",[]) or []),ev.get("notes","")]
-            for c,v in enumerate(vals):self.table.setItem(r,c,QTableWidgetItem(str(v)))
+        for event in scenario.get("events", []) if scenario else []:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            resources = list(event.get("resource_ids", []) or [])
+            if not resources and event.get("resource_id"):
+                resources = [event.get("resource_id")]
+            resource_text = "; ".join(str(x) for x in resources)
+            values = [
+                event.get("resource_type", ""),
+                resource_text,
+                event.get("start_time", ""),
+                event.get("end_time", ""),
+                event.get("availability_percent", 0),
+                event.get("speed_factor", 1),
+                ",".join(event.get("days_active", []) or []),
+                event.get("notes", ""),
+            ]
+            for col, value in enumerate(values):
+                self.table.setItem(row, col, QTableWidgetItem(str(value)))
+
     def new_scenario(self):
-        self._save_current_description(); name,ok=QInputDialog.getText(self,"New scenario","Scenario name")
-        if ok and name.strip(): self.scenarios.append({"name":name.strip(),"description":"","events":[]}); self.config["active_scenario"]=name.strip(); self._refresh_scenarios()
+        self._save_current_description()
+        name, ok = QInputDialog.getText(self, "New scenario", "Scenario name")
+        if ok and name.strip():
+            self.scenarios.append({"name": name.strip(), "description": "", "events": []})
+            self.config["active_scenario"] = name.strip()
+            self._refresh_scenarios()
+
     def rename_scenario(self):
-        sc=self.current_scenario()
-        if not sc:return
-        name,ok=QInputDialog.getText(self,"Rename scenario","Scenario name",text=str(sc.get("name","")))
-        if ok and name.strip(): sc["name"]=name.strip(); self.config["active_scenario"]=name.strip(); self._refresh_scenarios()
+        scenario = self.current_scenario()
+        if not scenario:
+            return
+        name, ok = QInputDialog.getText(
+            self,
+            "Rename scenario",
+            "Scenario name",
+            text=str(scenario.get("name", "")),
+        )
+        if ok and name.strip():
+            scenario["name"] = name.strip()
+            self.config["active_scenario"] = name.strip()
+            self._refresh_scenarios()
+
     def delete_scenario(self):
-        idx=self.scenario_combo.currentIndex()-1
-        if idx>=0: del self.scenarios[idx]; self.config["active_scenario"]="Normal operation"; self._refresh_scenarios()
+        idx = self.scenario_combo.currentIndex() - 1
+        if idx >= 0:
+            del self.scenarios[idx]
+            self.config["active_scenario"] = "Normal operation"
+            self._refresh_scenarios()
+
     def selected_event(self):
-        rows=self.table.selectionModel().selectedRows(); return rows[0].row() if rows else -1
+        rows = self.table.selectionModel().selectedRows()
+        return rows[0].row() if rows else -1
+
+    def _ensure_scenario(self):
+        scenario = self.current_scenario()
+        if scenario is None:
+            QMessageBox.information(self, "Scenario", "Create or select a scenario first.")
+        return scenario
+
     def add_event(self):
-        sc=self.current_scenario()
-        if not sc: QMessageBox.information(self,"Scenario","Create or select a scenario first."); return
-        d=ScenarioEventDialog(self,self.resource_options)
-        if d.exec()==QDialog.Accepted and d.result: sc.setdefault("events",[]).append(d.result); self.load_scenario()
+        scenario = self._ensure_scenario()
+        if not scenario:
+            return
+        dialog = ScenarioEventDialog(self, self.resource_options)
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            scenario.setdefault("events", []).append(dialog.result)
+            self.load_scenario()
+
+    def add_topology_event(self):
+        scenario = self._ensure_scenario()
+        if not scenario:
+            return
+        available_types = []
+        if self.topology_selection.get("corridor"):
+            available_types.append(("Corridor edges", "corridor"))
+        if self.topology_selection.get("corridor_node"):
+            available_types.append(("Corridor nodes / doors", "corridor_node"))
+        if not available_types:
+            QMessageBox.information(
+                self,
+                "Topology selection",
+                "Select one or more corridor edges or corridor nodes in the topology view first.",
+            )
+            return
+        resource_type = available_types[0][1]
+        if len(available_types) > 1:
+            labels = [label for label, _value in available_types]
+            choice, ok = QInputDialog.getItem(
+                self,
+                "Topology selection",
+                "Create an event for:",
+                labels,
+                0,
+                False,
+            )
+            if not ok:
+                return
+            resource_type = next(
+                value for label, value in available_types if label == choice
+            )
+        seed = {
+            "resource_type": resource_type,
+            "resource_ids": list(self.topology_selection.get(resource_type, []) or []),
+            "availability_percent": 0.0,
+            "speed_factor": 1.0,
+        }
+        dialog = ScenarioEventDialog(self, self.resource_options, seed)
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            scenario.setdefault("events", []).append(dialog.result)
+            self.load_scenario()
+
     def edit_event(self):
-        sc=self.current_scenario(); i=self.selected_event()
-        if not sc or i<0:return
-        d=ScenarioEventDialog(self,self.resource_options,sc.setdefault("events",[])[i])
-        if d.exec()==QDialog.Accepted and d.result:sc["events"][i]=d.result;self.load_scenario();self.table.selectRow(i)
+        scenario = self.current_scenario()
+        index = self.selected_event()
+        if not scenario or index < 0:
+            return
+        dialog = ScenarioEventDialog(
+            self, self.resource_options, scenario.setdefault("events", [])[index]
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            scenario["events"][index] = dialog.result
+            self.load_scenario()
+            self.table.selectRow(index)
+
     def delete_event(self):
-        sc=self.current_scenario(); i=self.selected_event()
-        if sc and i>=0:del sc.setdefault("events",[])[i];self.load_scenario()
+        scenario = self.current_scenario()
+        index = self.selected_event()
+        if scenario and index >= 0:
+            del scenario.setdefault("events", [])[index]
+            self.load_scenario()
+
     def accept(self):
-        self._save_current_description(); active=self.scenario_combo.currentText().strip() or "Normal operation"
-        self.result={"enabled":self.enabled_check.isChecked() and active!="Normal operation","active_scenario":active,"enhanced_logging":self.enhanced_check.isChecked(),"scenarios":self.scenarios}; super().accept()
+        self._save_current_description()
+        active = self.scenario_combo.currentText().strip() or "Normal operation"
+        self.result = {
+            "enabled": self.enabled_check.isChecked() and active != "Normal operation",
+            "active_scenario": active,
+            "enhanced_logging": self.enhanced_check.isChecked(),
+            "scenarios": self.scenarios,
+        }
+        super().accept()
+
 
 class CorridorSettingsDialog(QDialog):
-    def __init__(self,parent,edges,default_width=2.4):
-        super().__init__(parent); self.setWindowTitle("Corridor lane and people settings"); self.resize(1000,560); self.edges=[dict(x) for x in edges or []]; self.default_width=float(default_width); self.result=None
-        layout=QVBoxLayout(self); note=QLabel("A bidirectional corridor forms two lanes when its width and the carried payload permit it. When the carried payload length exceeds one lane width, the simulator serialises traffic to one AMR at a time."); note.setWordWrap(True); layout.addWidget(note)
-        self.table=QTableWidget(len(self.edges),5); self.table.setHorizontalHeaderLabels(["From","To","Bidirectional","Width m","People occupancy"]); layout.addWidget(self.table,1)
-        for r,e in enumerate(self.edges):
-            self.table.setItem(r,0,QTableWidgetItem(str(e.get("from","")))); self.table.item(r,0).setFlags(self.table.item(r,0).flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(r,1,QTableWidgetItem(str(e.get("to","")))); self.table.item(r,1).setFlags(self.table.item(r,1).flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(r,2,QTableWidgetItem("Yes" if e.get("bidirectional",True) else "No")); self.table.setItem(r,3,QTableWidgetItem(str(e.get("width_m",self.default_width)))); self.table.setItem(r,4,QTableWidgetItem(str(e.get("people_area_type","none"))))
-        buttons=QDialogButtonBox(QDialogButtonBox.Save|QDialogButtonBox.Cancel); buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+    def __init__(
+        self,
+        parent,
+        edges,
+        nodes,
+        default_width=2.4,
+        default_door_width=0.9,
+        people_profiles=None,
+        initially_selected_edges=None,
+        initially_selected_nodes=None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Corridor, lane, door and people settings")
+        self.resize(1180, 680)
+        self.edges = [dict(x) for x in edges or []]
+        self.nodes = [dict(x) for x in nodes or []]
+        self.default_width = float(default_width)
+        self.default_door_width = float(default_door_width)
+        self.people_profiles = sorted(set(str(x) for x in people_profiles or [] if str(x)))
+        self.initially_selected_edges = set(initially_selected_edges or [])
+        self.initially_selected_nodes = set(initially_selected_nodes or [])
+        self.selected_profile_ids = []
+        self.result = None
+
+        layout = QVBoxLayout(self)
+        note = QLabel(
+            "Corridor width is the nominal clear width. If either endpoint is marked as a door, "
+            "the simulator uses the smaller door clear opening as the effective width. "
+            "A bidirectional corridor forms two lanes only when the AMR and carried payload fit within one lane."
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        tabs = QTabWidget()
+        layout.addWidget(tabs, 1)
+        self._build_corridor_tab(tabs)
+        self._build_door_tab(tabs)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self._refresh_edge_table()
+        self._refresh_node_table()
+        self._select_initial_rows()
+
+    @staticmethod
+    def edge_label(edge):
+        return f"{edge.get('from', '')} -> {edge.get('to', '')}"
+
+    def _node_map(self):
+        return {str(node.get("name", "")): node for node in self.nodes}
+
+    def effective_width(self, edge):
+        width = max(0.1, float(edge.get("width_m", self.default_width) or self.default_width))
+        node_map = self._node_map()
+        for endpoint in (edge.get("from"), edge.get("to")):
+            node = node_map.get(str(endpoint))
+            if node and bool(node.get("has_door", False)):
+                width = min(
+                    width,
+                    max(
+                        0.1,
+                        float(node.get("door_clear_width_m", self.default_door_width) or self.default_door_width),
+                    ),
+                )
+        return width
+
+    def _build_corridor_tab(self, tabs):
+        page = QWidget()
+        tabs.addTab(page, "Corridors")
+        layout = QVBoxLayout(page)
+        self.edge_table = QTableWidget(0, 7)
+        self.edge_table.setHorizontalHeaderLabels(
+            ["From", "To", "Bidirectional", "Nominal width m", "Effective width m", "People use", "Usage profiles"]
+        )
+        self.edge_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.edge_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        layout.addWidget(self.edge_table, 1)
+
+        controls = QGridLayout()
+        layout.addLayout(controls)
+        select_button = QPushButton("Select corridor assets…")
+        select_button.clicked.connect(self.select_edge_assets)
+        controls.addWidget(select_button, 0, 0)
+        controls.addWidget(QLabel("Bidirectional"), 0, 1)
+        self.bulk_bidirectional = QComboBox()
+        self.bulk_bidirectional.addItems(["Leave unchanged", "Yes", "No"])
+        controls.addWidget(self.bulk_bidirectional, 0, 2)
+        controls.addWidget(QLabel("Nominal width m"), 0, 3)
+        self.bulk_width = QLineEdit()
+        self.bulk_width.setPlaceholderText("Leave unchanged")
+        controls.addWidget(self.bulk_width, 0, 4)
+        controls.addWidget(QLabel("People use"), 1, 1)
+        self.bulk_people = QComboBox()
+        for label, value in [
+            ("Leave unchanged", ""),
+            ("None / unrestricted", "none"),
+            ("Staff", "staff"),
+            ("Public", "public"),
+            ("Mixed staff/public", "both"),
+        ]:
+            self.bulk_people.addItem(label, value)
+        controls.addWidget(self.bulk_people, 1, 2)
+        profile_button = QPushButton("Select usage profiles…")
+        profile_button.clicked.connect(self.select_usage_profiles)
+        controls.addWidget(profile_button, 1, 3)
+        self.profile_summary = QLabel("Leave unchanged")
+        controls.addWidget(self.profile_summary, 1, 4)
+        apply_button = QPushButton("Apply to selected corridors")
+        apply_button.clicked.connect(self.apply_edge_bulk)
+        controls.addWidget(apply_button, 0, 5, 2, 1)
+
+    def _build_door_tab(self, tabs):
+        page = QWidget()
+        tabs.addTab(page, "Door nodes")
+        layout = QVBoxLayout(page)
+        self.node_table = QTableWidget(0, 4)
+        self.node_table.setHorizontalHeaderLabels(["Node", "Floor", "Door", "Clear opening m"])
+        self.node_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.node_table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        layout.addWidget(self.node_table, 1)
+        controls = QHBoxLayout()
+        layout.addLayout(controls)
+        select_button = QPushButton("Select corridor nodes…")
+        select_button.clicked.connect(self.select_node_assets)
+        controls.addWidget(select_button)
+        controls.addWidget(QLabel("Door state"))
+        self.bulk_door = QComboBox()
+        self.bulk_door.addItems(["Leave unchanged", "Door", "Not a door"])
+        controls.addWidget(self.bulk_door)
+        controls.addWidget(QLabel("Clear opening m"))
+        self.bulk_door_width = QLineEdit()
+        self.bulk_door_width.setPlaceholderText("Leave unchanged")
+        controls.addWidget(self.bulk_door_width)
+        apply_button = QPushButton("Apply to selected nodes")
+        apply_button.clicked.connect(self.apply_node_bulk)
+        controls.addWidget(apply_button)
+        controls.addStretch(1)
+
+    def _refresh_edge_table(self):
+        self.edge_table.setRowCount(0)
+        for edge in self.edges:
+            row = self.edge_table.rowCount()
+            self.edge_table.insertRow(row)
+            profiles = ", ".join(edge.get("people_profile_ids", []) or [])
+            values = [
+                edge.get("from", ""),
+                edge.get("to", ""),
+                "Yes" if edge.get("bidirectional", True) else "No",
+                edge.get("width_m", self.default_width),
+                f"{self.effective_width(edge):.3f}",
+                edge.get("people_area_type", "none"),
+                profiles,
+            ]
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                if col in {0, 1, 4}:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                self.edge_table.setItem(row, col, item)
+
+    def _refresh_node_table(self):
+        self.node_table.setRowCount(0)
+        for node in self.nodes:
+            row = self.node_table.rowCount()
+            self.node_table.insertRow(row)
+            values = [
+                node.get("name", ""),
+                node.get("floor", ""),
+                "Yes" if node.get("has_door", False) else "No",
+                node.get("door_clear_width_m", self.default_door_width),
+            ]
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                if col in {0, 1}:
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                self.node_table.setItem(row, col, item)
+
+    @staticmethod
+    def _set_selected_rows(table, rows):
+        table.clearSelection()
+        for row in rows:
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
+                if item is not None:
+                    item.setSelected(True)
+
+    def _select_initial_rows(self):
+        edge_rows = [
+            row
+            for row, edge in enumerate(self.edges)
+            if self.edge_label(edge) in self.initially_selected_edges
+        ]
+        node_rows = [
+            row
+            for row, node in enumerate(self.nodes)
+            if str(node.get("name", "")) in self.initially_selected_nodes
+        ]
+        self._set_selected_rows(self.edge_table, edge_rows)
+        self._set_selected_rows(self.node_table, node_rows)
+
+    def selected_edge_rows(self):
+        return sorted({index.row() for index in self.edge_table.selectionModel().selectedRows()})
+
+    def selected_node_rows(self):
+        return sorted({index.row() for index in self.node_table.selectionModel().selectedRows()})
+
+    def select_edge_assets(self):
+        options = [self.edge_label(edge) for edge in self.edges]
+        selected = [self.edge_label(self.edges[row]) for row in self.selected_edge_rows()]
+        dialog = MultiSelectPicker(self, "Select corridor assets", options, selected=selected)
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            wanted = set(dialog.result)
+            self._set_selected_rows(
+                self.edge_table,
+                [
+                    row
+                    for row, edge in enumerate(self.edges)
+                    if self.edge_label(edge) in wanted
+                ],
+            )
+
+    def select_node_assets(self):
+        options = [str(node.get("name", "")) for node in self.nodes]
+        selected = [str(self.nodes[row].get("name", "")) for row in self.selected_node_rows()]
+        dialog = MultiSelectPicker(
+            self,
+            "Select corridor nodes / door openings",
+            options,
+            selected=selected,
+            group_resolver=lambda value: f"Floor {self._node_map().get(value, {}).get('floor', '')}",
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            wanted = set(dialog.result)
+            self._set_selected_rows(
+                self.node_table,
+                [
+                    row
+                    for row, node in enumerate(self.nodes)
+                    if str(node.get("name", "")) in wanted
+                ],
+            )
+
+    def select_usage_profiles(self):
+        dialog = MultiSelectPicker(
+            self,
+            "Select people usage profiles",
+            self.people_profiles,
+            selected=self.selected_profile_ids,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.selected_profile_ids = list(dialog.result)
+            self.profile_summary.setText(
+                ", ".join(self.selected_profile_ids) if self.selected_profile_ids else "Clear profiles"
+            )
+
+    def apply_edge_bulk(self):
+        rows = self.selected_edge_rows()
+        if not rows:
+            QMessageBox.information(self, "Corridors", "Select one or more corridor rows first.")
+            return
+        width_text = self.bulk_width.text().strip()
+        width = None if not width_text else max(0.1, float(width_text))
+        people_value = str(self.bulk_people.currentData() or "")
+        for row in rows:
+            edge = self.edges[row]
+            if self.bulk_bidirectional.currentIndex() == 1:
+                edge["bidirectional"] = True
+            elif self.bulk_bidirectional.currentIndex() == 2:
+                edge["bidirectional"] = False
+            if width is not None:
+                edge["width_m"] = width
+            if people_value:
+                edge["people_area_type"] = people_value
+            if self.profile_summary.text() != "Leave unchanged":
+                edge["people_profile_ids"] = list(self.selected_profile_ids)
+        self._refresh_edge_table()
+        self._set_selected_rows(self.edge_table, rows)
+
+    def apply_node_bulk(self):
+        rows = self.selected_node_rows()
+        if not rows:
+            QMessageBox.information(self, "Door nodes", "Select one or more corridor nodes first.")
+            return
+        width_text = self.bulk_door_width.text().strip()
+        width = None if not width_text else max(0.1, float(width_text))
+        for row in rows:
+            node = self.nodes[row]
+            if self.bulk_door.currentIndex() == 1:
+                node["has_door"] = True
+            elif self.bulk_door.currentIndex() == 2:
+                node["has_door"] = False
+            if width is not None:
+                node["door_clear_width_m"] = width
+        self._refresh_node_table()
+        self._refresh_edge_table()
+        self._set_selected_rows(self.node_table, rows)
+
     def accept(self):
         try:
-            out=[]
-            for r,e in enumerate(self.edges):
-                item=dict(e); item["bidirectional"]=str(self.table.item(r,2).text()).strip().lower() in {"yes","true","1","y"}; item["width_m"]=max(0.1,float(self.table.item(r,3).text())); area=str(self.table.item(r,4).text()).strip().lower(); item["people_area_type"]=area if area in {"none","staff","public","both"} else "none"; out.append(item)
-            self.result=out; super().accept()
-        except Exception as exc: QMessageBox.critical(self,"Invalid corridor settings",str(exc))
+            out_edges = []
+            for row, original in enumerate(self.edges):
+                edge = dict(original)
+                edge["bidirectional"] = str(self.edge_table.item(row, 2).text()).strip().lower() in {"yes", "true", "1", "y"}
+                edge["width_m"] = max(0.1, float(self.edge_table.item(row, 3).text()))
+                area = str(self.edge_table.item(row, 5).text()).strip().lower()
+                if area == "mixed":
+                    area = "both"
+                edge["people_area_type"] = area if area in {"none", "staff", "public", "both"} else "none"
+                edge["people_profile_ids"] = [
+                    x.strip() for x in self.edge_table.item(row, 6).text().split(",") if x.strip()
+                ]
+                out_edges.append(edge)
+            out_nodes = []
+            for row, original in enumerate(self.nodes):
+                node = dict(original)
+                node["has_door"] = str(self.node_table.item(row, 2).text()).strip().lower() in {"yes", "true", "1", "y"}
+                node["door_clear_width_m"] = max(0.1, float(self.node_table.item(row, 3).text()))
+                out_nodes.append(node)
+            self.result = {"edges": out_edges, "nodes": out_nodes}
+            super().accept()
+        except Exception as exc:
+            QMessageBox.critical(self, "Invalid corridor settings", str(exc))
+
 
 class SimulationSettingsDialog(QDialog):
     def __init__(self, parent, simulation=None):

@@ -482,6 +482,7 @@ DEFAULT_JSON = {
         "floor_height_m": 4.0,
         "charge_locations": ["AMR-CENTRE"],
         "default_corridor_width_m": 2.4,
+        "default_door_clear_width_m": 0.9,
         "people_slowdown_per_person": 0.03,
         "minimum_people_speed_factor": 0.25,
     },
@@ -727,12 +728,46 @@ class JsonStore:
                     space.setdefault("has_charger", False)
 
     def ensure_corridor_defaults(self) -> None:
-        default_width = float(self.data.setdefault("building", {}).get("default_corridor_width_m", 2.4) or 2.4)
-        for edge in self.data.setdefault("corridors", {}).setdefault("edges", []):
+        building = self.data.setdefault("building", {})
+        default_width = float(building.get("default_corridor_width_m", 2.4) or 2.4)
+        default_door_width = float(building.get("default_door_clear_width_m", 0.9) or 0.9)
+        building.setdefault("default_door_clear_width_m", default_door_width)
+
+        corridors = self.data.setdefault("corridors", {})
+        for node in corridors.setdefault("nodes", []):
+            if not isinstance(node, dict):
+                continue
+            node["has_door"] = bool(node.get("has_door", False))
+            try:
+                node["door_clear_width_m"] = max(0.1, float(node.get("door_clear_width_m", default_door_width) or default_door_width))
+            except Exception:
+                node["door_clear_width_m"] = default_door_width
+
+        for edge in corridors.setdefault("edges", []):
+            if not isinstance(edge, dict):
+                continue
             edge.setdefault("bidirectional", True)
-            edge.setdefault("width_m", default_width)
+            try:
+                edge["width_m"] = max(0.1, float(edge.get("width_m", default_width) or default_width))
+            except Exception:
+                edge["width_m"] = default_width
             area = str(edge.get("people_area_type", "none") or "none").strip().lower()
+            if area == "mixed":
+                area = "both"
             edge["people_area_type"] = area if area in {"none", "staff", "public", "both"} else "none"
+            profile_ids = edge.get("people_profile_ids", [])
+            if isinstance(profile_ids, str):
+                profile_ids = [x.strip() for x in profile_ids.split(",") if x.strip()]
+            edge["people_profile_ids"] = list(dict.fromkeys(str(x).strip() for x in (profile_ids or []) if str(x).strip()))
+
+    @staticmethod
+    def _normalise_corridor_resource(value) -> str:
+        if isinstance(value, (list, tuple)) and len(value) >= 2:
+            a, b = str(value[0]).strip(), str(value[1]).strip()
+            return f"{a} -> {b}" if a and b else ""
+        text = str(value or "").strip().replace("<->", "->")
+        parts = [x.strip() for x in text.split("->") if x.strip()]
+        return f"{parts[0]} -> {parts[1]}" if len(parts) >= 2 else ""
 
     def ensure_people_movement_defaults(self) -> None:
         clean = []
@@ -740,14 +775,22 @@ class JsonStore:
             if not isinstance(raw, dict):
                 continue
             group = str(raw.get("group_type", "staff") or "staff").strip().lower()
-            if group not in {"staff", "public"}:
+            if group == "mixed":
+                group = "both"
+            if group not in {"staff", "public", "both"}:
                 group = "staff"
+            corridor_edges = []
+            for value in raw.get("corridor_edges", []) or []:
+                normalised = self._normalise_corridor_resource(value)
+                if normalised and normalised not in corridor_edges:
+                    corridor_edges.append(normalised)
             clean.append({
                 "id": str(raw.get("id", f"PEOPLE-{index}") or f"PEOPLE-{index}"),
                 "enabled": bool(raw.get("enabled", True)),
                 "group_type": group,
                 "start_location": str(raw.get("start_location", "") or ""),
                 "end_location": str(raw.get("end_location", "") or ""),
+                "corridor_edges": corridor_edges,
                 "people_per_trip": max(1, int(float(raw.get("people_per_trip", 1) or 1))),
                 "start_time": str(raw.get("start_time", "08:00") or "08:00"),
                 "end_time": str(raw.get("end_time", "18:00") or "18:00"),
@@ -772,11 +815,23 @@ class JsonStore:
                 if not isinstance(event, dict):
                     continue
                 resource_type = str(event.get("resource_type", "lift") or "lift").strip().lower()
-                if resource_type not in {"lift", "corridor", "amr"}:
+                if resource_type not in {"lift", "corridor", "corridor_node", "amr"}:
                     resource_type = "lift"
+                raw_ids = event.get("resource_ids", [])
+                if isinstance(raw_ids, str):
+                    raw_ids = [x.strip() for x in raw_ids.split(",") if x.strip()]
+                resource_ids = [str(x).strip() for x in (raw_ids or []) if str(x).strip()]
+                legacy = str(event.get("resource_id", "") or "").strip()
+                if legacy and legacy not in resource_ids:
+                    resource_ids.insert(0, legacy)
+                if resource_type == "corridor":
+                    resource_ids = [self._normalise_corridor_resource(x) for x in resource_ids]
+                    resource_ids = [x for x in resource_ids if x]
+                resource_ids = list(dict.fromkeys(resource_ids))
                 events.append({
                     "resource_type": resource_type,
-                    "resource_id": str(event.get("resource_id", "") or ""),
+                    "resource_ids": resource_ids,
+                    "resource_id": resource_ids[0] if resource_ids else "",
                     "start_time": str(event.get("start_time", "00:00") or "00:00"),
                     "end_time": str(event.get("end_time", "24:00") or "24:00"),
                     "availability_percent": max(0.0, min(100.0, float(event.get("availability_percent", 0.0) or 0.0))),
@@ -1002,8 +1057,16 @@ class JsonStore:
         return edges
 
     def add_corridor_node(self, name: str, floor: int, x: float, y: float) -> None:
+        default_door_width = float(self.data.get("building", {}).get("default_door_clear_width_m", 0.9) or 0.9)
         self.data["corridors"]["nodes"].append(
-            {"name": name, "floor": floor, "x": round(x, 3), "y": round(y, 3)}
+            {
+                "name": name,
+                "floor": floor,
+                "x": round(x, 3),
+                "y": round(y, 3),
+                "has_door": False,
+                "door_clear_width_m": default_door_width,
+            }
         )
 
     def add_location(self, name: str, floor: int, x: float, y: float) -> None:
@@ -1224,6 +1287,7 @@ class JsonStore:
                 "bidirectional": True,
                 "width_m": default_width,
                 "people_area_type": "none",
+                "people_profile_ids": [],
             })
 
     def remove_edge(self, from_name: str, to_name: str) -> None:
@@ -1302,6 +1366,42 @@ class JsonStore:
                 [new_name if part == old_name else part for part in edge_pair]
                 for edge_pair in profile.get("allowed_edges", [])
             ]
+
+        def rename_corridor_resource(value):
+            text = str(value or "").strip().replace("<->", "->")
+            parts = [x.strip() for x in text.split("->") if x.strip()]
+            if len(parts) < 2:
+                return new_name if text == old_name else text
+            parts = [new_name if part == old_name else part for part in parts[:2]]
+            return f"{parts[0]} -> {parts[1]}"
+
+        for movement in self.data.get("people_movements", []):
+            if movement.get("start_location") == old_name:
+                movement["start_location"] = new_name
+            if movement.get("end_location") == old_name:
+                movement["end_location"] = new_name
+            movement["corridor_edges"] = [
+                rename_corridor_resource(value)
+                for value in movement.get("corridor_edges", []) or []
+            ]
+
+        scenario_cfg = self.data.get("scenario_testing", {}) or {}
+        for scenario in scenario_cfg.get("scenarios", []) or []:
+            for event in scenario.get("events", []) or []:
+                resource_type = str(event.get("resource_type", "") or "").lower()
+                resource_ids = list(event.get("resource_ids", []) or [])
+                legacy = str(event.get("resource_id", "") or "").strip()
+                if legacy and legacy not in resource_ids:
+                    resource_ids.insert(0, legacy)
+                if resource_type == "corridor":
+                    resource_ids = [rename_corridor_resource(value) for value in resource_ids]
+                elif resource_type == "corridor_node":
+                    resource_ids = [
+                        new_name if str(value) == old_name else str(value)
+                        for value in resource_ids
+                    ]
+                event["resource_ids"] = resource_ids
+                event["resource_id"] = resource_ids[0] if resource_ids else ""
 
 
     def _remove_location_name_from_value(self, value, location_name: str):

@@ -334,6 +334,9 @@ class Simulation:
         self.default_corridor_width_m = max(
             0.1, float(building_cfg.get("default_corridor_width_m", 2.4) or 2.4)
         )
+        self.default_door_clear_width_m = max(
+            0.1, float(building_cfg.get("default_door_clear_width_m", 0.9) or 0.9)
+        )
         self.people_slowdown_per_person = max(
             0.0, float(building_cfg.get("people_slowdown_per_person", 0.08) or 0.08)
         )
@@ -5485,6 +5488,16 @@ class Simulation:
                 floor=int(node_data["floor"]),
                 x=float(node_data["x"]),
                 y=float(node_data["y"]),
+                has_door=bool(node_data.get("has_door", False)),
+                door_clear_width_m=max(
+                    0.1,
+                    float(
+                        node_data.get(
+                            "door_clear_width_m", self.default_door_clear_width_m
+                        )
+                        or self.default_door_clear_width_m
+                    ),
+                ),
             )
             self.graph_nodes[node.name] = node
             self.floor_graphs[node.floor][node.name]
@@ -5498,14 +5511,45 @@ class Simulation:
             bidirectional: bool = True,
             width_m: Optional[float] = None,
             people_area_type: str = "none",
+            people_profile_ids: Optional[List[str]] = None,
         ):
             a = self.graph_nodes[a_name]
+            b = self.graph_nodes[b_name]
+            configured_width = max(
+                0.1, float(width_m or self.default_corridor_width_m)
+            )
+            effective_width = configured_width
+            door_nodes = []
+            for node in (a, b):
+                if bool(getattr(node, "has_door", False)):
+                    opening = max(
+                        0.1,
+                        float(
+                            getattr(
+                                node,
+                                "door_clear_width_m",
+                                self.default_door_clear_width_m,
+                            )
+                            or self.default_door_clear_width_m
+                        ),
+                    )
+                    effective_width = min(effective_width, opening)
+                    door_nodes.append(node.name)
+            profile_ids = [
+                str(x).strip()
+                for x in (people_profile_ids or [])
+                if str(x).strip()
+            ]
             edge_data = {
                 "to": b_name,
                 "distance_m": distance_m,
                 "bidirectional": bool(bidirectional),
-                "width_m": max(0.1, float(width_m or self.default_corridor_width_m)),
+                "configured_width_m": configured_width,
+                "width_m": effective_width,
+                "door_restricted": effective_width < configured_width - 1e-9,
+                "door_nodes": door_nodes,
                 "people_area_type": str(people_area_type or "none").strip().lower(),
+                "people_profile_ids": profile_ids,
             }
             self.floor_graphs[a.floor][a_name].append(edge_data)
             reverse_data = dict(edge_data)
@@ -5519,6 +5563,7 @@ class Simulation:
             bidirectional: bool = True,
             width_m: Optional[float] = None,
             people_area_type: str = "none",
+            people_profile_ids: Optional[List[str]] = None,
         ):
             if a_name not in self.graph_nodes or b_name not in self.graph_nodes:
                 raise ValueError(
@@ -5536,13 +5581,23 @@ class Simulation:
                 else self._distance_same_floor(a, b)
             )
             add_directed_edge(
-                a_name, b_name, dist, bidirectional=bidirectional,
-                width_m=width_m, people_area_type=people_area_type,
+                a_name,
+                b_name,
+                dist,
+                bidirectional=bidirectional,
+                width_m=width_m,
+                people_area_type=people_area_type,
+                people_profile_ids=people_profile_ids,
             )
             if bidirectional:
                 add_directed_edge(
-                    b_name, a_name, dist, bidirectional=bidirectional,
-                    width_m=width_m, people_area_type=people_area_type,
+                    b_name,
+                    a_name,
+                    dist,
+                    bidirectional=bidirectional,
+                    width_m=width_m,
+                    people_area_type=people_area_type,
+                    people_profile_ids=people_profile_ids,
                 )
 
         for edge in corridor_cfg.get("edges", []):
@@ -5553,6 +5608,7 @@ class Simulation:
                 edge.get("bidirectional", True),
                 edge.get("width_m", self.default_corridor_width_m),
                 edge.get("people_area_type", "none"),
+                edge.get("people_profile_ids", []),
             )
 
         # Optional: connect locations/lifts to nearby graph nodes when explicit edges are not supplied
@@ -5623,7 +5679,15 @@ class Simulation:
         for event in self.scenario_events:
             if str(event.get("resource_type", "") or "").strip().lower() != resource_type:
                 continue
-            if not self._scenario_resource_matches(resource_type, event.get("resource_id", ""), candidate):
+            resource_ids = event.get("resource_ids", [])
+            if isinstance(resource_ids, str):
+                resource_ids = [x.strip() for x in resource_ids.split(",") if x.strip()]
+            if not resource_ids and event.get("resource_id"):
+                resource_ids = [event.get("resource_id")]
+            if not any(
+                self._scenario_resource_matches(resource_type, resource_id, candidate)
+                for resource_id in resource_ids
+            ):
                 continue
             days = {str(x).strip().lower()[:3] for x in (event.get("days_active", []) or []) if str(x).strip()}
             if days and day_key not in days:
@@ -5668,7 +5732,12 @@ class Simulation:
         return speed_factor, float(state["blocked_until"]), str(state.get("notes", ""))
 
     def _shortest_people_path_same_floor(
-        self, floor: int, start_name: str, end_name: str, group_type: str
+        self,
+        floor: int,
+        start_name: str,
+        end_name: str,
+        group_type: str,
+        profile_id: str = "",
     ) -> Optional[dict]:
         graph = self.floor_graphs.get(floor, {})
         if start_name not in graph or end_name not in graph:
@@ -5685,7 +5754,18 @@ class Simulation:
                 break
             for edge in graph.get(node, []):
                 area = str(edge.get("people_area_type", "none") or "none").strip().lower()
-                if area not in {"none", "both", group_type}:
+                if group_type == "both":
+                    allowed_areas = {"none", "both", "staff", "public"}
+                else:
+                    allowed_areas = {"none", "both", group_type}
+                if area not in allowed_areas:
+                    continue
+                assigned_profiles = {
+                    str(x).strip()
+                    for x in (edge.get("people_profile_ids", []) or [])
+                    if str(x).strip()
+                }
+                if assigned_profiles and profile_id and profile_id not in assigned_profiles:
                     continue
                 nxt = edge["to"]
                 new_distance = distance + float(edge.get("distance_m", 0.0) or 0.0)
@@ -5707,11 +5787,15 @@ class Simulation:
         return {"distance_m": best[end_name], "edges": edges}
 
     def _people_route_edges(
-        self, start: Location, end: Location, group_type: str = "staff"
+        self,
+        start: Location,
+        end: Location,
+        group_type: str = "staff",
+        profile_id: str = "",
     ) -> List[dict]:
         if start.floor == end.floor:
             route = self._shortest_people_path_same_floor(
-                start.floor, start.name, end.name, group_type
+                start.floor, start.name, end.name, group_type, profile_id
             )
             return list(route.get("edges", [])) if route else []
         best = None
@@ -5722,10 +5806,10 @@ class Simulation:
             origin = lift.location_on_floor(start.floor)
             destination = lift.location_on_floor(end.floor)
             first = self._shortest_people_path_same_floor(
-                start.floor, start.name, origin.name, group_type
+                start.floor, start.name, origin.name, group_type, profile_id
             )
             second = self._shortest_people_path_same_floor(
-                end.floor, destination.name, end.name, group_type
+                end.floor, destination.name, end.name, group_type, profile_id
             )
             if first is None or second is None:
                 continue
@@ -5739,56 +5823,151 @@ class Simulation:
         self.people_movements = []
         if not isinstance(raw_movements, list):
             return
-        horizon = max(0.0, float(getattr(self, "task_generation_horizon_sec", 0.0) or 0.0))
+
+        def resolve_corridor_assets(values) -> List[dict]:
+            resolved = []
+            seen = set()
+            for value in values or []:
+                text = str(value or "").strip().replace("<->", "->")
+                parts = [x.strip() for x in text.split("->") if x.strip()]
+                if len(parts) < 2:
+                    continue
+                a_name, b_name = parts[0], parts[1]
+                key = self._physical_edge_key(a_name, b_name)
+                if key in seen:
+                    continue
+                found = None
+                for floor_graph in self.floor_graphs.values():
+                    for edge in floor_graph.get(a_name, []):
+                        if edge.get("to") == b_name:
+                            found = dict(edge)
+                            found.update({"from": a_name, "to": b_name})
+                            break
+                    if found is not None:
+                        break
+                    for edge in floor_graph.get(b_name, []):
+                        if edge.get("to") == a_name:
+                            found = dict(edge)
+                            found.update({"from": b_name, "to": a_name})
+                            break
+                    if found is not None:
+                        break
+                if found is not None:
+                    seen.add(key)
+                    resolved.append(found)
+            return resolved
+
+        horizon = max(
+            0.0,
+            float(getattr(self, "task_generation_horizon_sec", 0.0) or 0.0),
+        )
         day_count = max(1, int(math.ceil(horizon / 86400.0)) + 2)
         for index, raw in enumerate(raw_movements, start=1):
             if not isinstance(raw, dict) or not bool(raw.get("enabled", True)):
                 continue
-            start = self.locations.get(str(raw.get("start_location", "") or "").strip())
-            end = self.locations.get(str(raw.get("end_location", "") or "").strip())
-            if start is None or end is None:
-                continue
+            profile_id = str(raw.get("id", f"PEOPLE-{index}") or f"PEOPLE-{index}")
             group_type = str(raw.get("group_type", "staff") or "staff").strip().lower()
-            edges = self._people_route_edges(start, end, group_type)
+            if group_type == "mixed":
+                group_type = "both"
+            if group_type not in {"staff", "public", "both"}:
+                group_type = "staff"
+
+            explicit_edges = resolve_corridor_assets(raw.get("corridor_edges", []) or [])
+            direct_corridor_profile = bool(explicit_edges)
+            if direct_corridor_profile:
+                edges = explicit_edges
+            else:
+                start = self.locations.get(
+                    str(raw.get("start_location", "") or "").strip()
+                )
+                end = self.locations.get(
+                    str(raw.get("end_location", "") or "").strip()
+                )
+                if start is None or end is None:
+                    continue
+                edges = self._people_route_edges(
+                    start, end, group_type, profile_id=profile_id
+                )
             if not edges:
                 continue
+
             profile = {
-                "id": str(raw.get("id", f"PEOPLE-{index}") or f"PEOPLE-{index}"),
+                "id": profile_id,
                 "group_type": group_type,
-                "people_per_trip": max(1, int(float(raw.get("people_per_trip", 1) or 1))),
-                "walking_speed_m_per_sec": max(0.1, float(raw.get("walking_speed_m_per_sec", 1.2) or 1.2)),
-                "amr_speed_factor": max(0.05, min(1.0, float(raw.get("amr_speed_factor", 0.7) or 0.7))),
-                "days_active": {str(x).strip().lower()[:3] for x in (raw.get("days_active", []) or []) if str(x).strip()},
+                "people_per_trip": max(
+                    1, int(float(raw.get("people_per_trip", 1) or 1))
+                ),
+                "walking_speed_m_per_sec": max(
+                    0.1,
+                    float(raw.get("walking_speed_m_per_sec", 1.2) or 1.2),
+                ),
+                "amr_speed_factor": max(
+                    0.05,
+                    min(
+                        1.0,
+                        float(raw.get("amr_speed_factor", 0.7) or 0.7),
+                    ),
+                ),
+                "days_active": {
+                    str(x).strip().lower()[:3]
+                    for x in (raw.get("days_active", []) or [])
+                    if str(x).strip()
+                },
                 "start_time": str(raw.get("start_time", "08:00") or "08:00"),
                 "end_time": str(raw.get("end_time", "18:00") or "18:00"),
-                "interval_minutes": max(0.1, float(raw.get("interval_minutes", 15.0) or 15.0)),
+                "interval_minutes": max(
+                    0.1, float(raw.get("interval_minutes", 15.0) or 15.0)
+                ),
                 "edges": edges,
+                "direct_corridor_profile": direct_corridor_profile,
             }
             self.people_movements.append(profile)
             start_min = self._parse_hhmm_to_minutes(profile["start_time"], 0)
-            end_min = self._parse_hhmm_to_minutes(profile["end_time"], 24 * 60)
+            end_min = self._parse_hhmm_to_minutes(
+                profile["end_time"], 24 * 60
+            )
             for day_index in range(day_count):
-                day_dt = (self.clock.start_datetime + timedelta(days=day_index)).replace(hour=0, minute=0, second=0, microsecond=0)
-                day_key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][day_dt.weekday()]
+                day_dt = (
+                    self.clock.start_datetime + timedelta(days=day_index)
+                ).replace(hour=0, minute=0, second=0, microsecond=0)
+                day_key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][
+                    day_dt.weekday()
+                ]
                 if profile["days_active"] and day_key not in profile["days_active"]:
                     continue
                 day_start_sec = (day_dt - self.clock.start_datetime).total_seconds()
                 window_end = end_min if end_min > start_min else end_min + 24 * 60
                 departure_min = float(start_min)
                 while departure_min < float(window_end) - 1e-9:
-                    t = day_start_sec + departure_min * 60.0
+                    departure_time = day_start_sec + departure_min * 60.0
+                    sequential_time = departure_time
                     for edge in edges:
-                        duration = float(edge.get("distance_m", 0.0)) / profile["walking_speed_m_per_sec"]
+                        duration = (
+                            float(edge.get("distance_m", 0.0))
+                            / profile["walking_speed_m_per_sec"]
+                        )
+                        reservation_start = (
+                            departure_time
+                            if direct_corridor_profile
+                            else sequential_time
+                        )
                         key = self._physical_edge_key(edge["from"], edge["to"])
-                        self.people_edge_reservations[key].append({
-                            "start": t, "end": t + duration, "count": profile["people_per_trip"],
-                            "speed_factor": profile["amr_speed_factor"], "group_type": profile["group_type"],
-                            "movement_id": profile["id"],
-                        })
-                        t += duration
+                        self.people_edge_reservations[key].append(
+                            {
+                                "start": reservation_start,
+                                "end": reservation_start + duration,
+                                "count": profile["people_per_trip"],
+                                "speed_factor": profile["amr_speed_factor"],
+                                "group_type": profile["group_type"],
+                                "movement_id": profile["id"],
+                            }
+                        )
+                        if not direct_corridor_profile:
+                            sequential_time += duration
                     departure_min += profile["interval_minutes"]
+
         for reservations in self.people_edge_reservations.values():
-            reservations.sort(key=lambda item: (item["start"], item["end"]))
+            reservations.sort(key=lambda item: float(item.get("start", 0.0)))
 
     def _people_on_edge(self, edge_key: Tuple[str, str], start_time: float, duration: float) -> Tuple[int, float, str]:
         count = 0
@@ -6949,23 +7128,64 @@ class Simulation:
                 speed_factor = 1.0
             else:
                 corridor_id = f"{edge['from']} -> {edge['to']}"
-                corridor_factor, blocked_until, corridor_notes = self._resource_speed_factor("corridor", corridor_id, current)
-                amr_factor, amr_blocked_until, amr_notes = self._resource_speed_factor("amr", amr.id, current)
-                blocked_until = max(blocked_until, amr_blocked_until)
+                corridor_factor, blocked_until, corridor_notes = self._resource_speed_factor(
+                    "corridor", corridor_id, current
+                )
+                from_node_factor, from_node_blocked, from_node_notes = self._resource_speed_factor(
+                    "corridor_node", edge["from"], current
+                )
+                to_node_factor, to_node_blocked, to_node_notes = self._resource_speed_factor(
+                    "corridor_node", edge["to"], current
+                )
+                amr_factor, amr_blocked_until, amr_notes = self._resource_speed_factor(
+                    "amr", amr.id, current
+                )
+                blocked_until = max(
+                    blocked_until,
+                    from_node_blocked,
+                    to_node_blocked,
+                    amr_blocked_until,
+                )
                 if blocked_until > current + 1e-9:
                     scenario_wait = blocked_until - current
                     segments.append({
-                        "type": "wait_for_scenario", "from": edge["from"], "to": edge["from"],
-                        "duration": scenario_wait, "distance_m": 0.0,
+                        "type": "wait_for_scenario",
+                        "from": edge["from"],
+                        "to": edge["from"],
+                        "duration": scenario_wait,
+                        "distance_m": 0.0,
                         "scenario_name": self.scenario_name,
-                        "scenario_reason": corridor_notes or amr_notes or "Configured resource outage",
+                        "scenario_reason": (
+                            corridor_notes
+                            or from_node_notes
+                            or to_node_notes
+                            or amr_notes
+                            or "Configured resource outage"
+                        ),
                     })
                     total_duration += scenario_wait
                     current = blocked_until
-                    corridor_factor, _blocked, corridor_notes = self._resource_speed_factor("corridor", corridor_id, current)
-                    amr_factor, _blocked, amr_notes = self._resource_speed_factor("amr", amr.id, current)
-                scenario_factor = min(corridor_factor or 1e-9, amr_factor or 1e-9)
-                scenario_notes = corridor_notes or amr_notes
+                    corridor_factor, _blocked, corridor_notes = self._resource_speed_factor(
+                        "corridor", corridor_id, current
+                    )
+                    from_node_factor, _blocked, from_node_notes = self._resource_speed_factor(
+                        "corridor_node", edge["from"], current
+                    )
+                    to_node_factor, _blocked, to_node_notes = self._resource_speed_factor(
+                        "corridor_node", edge["to"], current
+                    )
+                    amr_factor, _blocked, amr_notes = self._resource_speed_factor(
+                        "amr", amr.id, current
+                    )
+                scenario_factor = min(
+                    corridor_factor or 1e-9,
+                    from_node_factor or 1e-9,
+                    to_node_factor or 1e-9,
+                    amr_factor or 1e-9,
+                )
+                scenario_notes = (
+                    corridor_notes or from_node_notes or to_node_notes or amr_notes
+                )
                 edge_key = self._physical_edge_key(edge["from"], edge["to"])
                 congestion_count = self._edge_recent_demand(edge_key, current)
                 congestion_factor = max(self.min_congestion_speed_factor, 1.0 - congestion_count * self.edge_slowdown_per_amr)
@@ -7039,7 +7259,11 @@ class Simulation:
                 "people_speed_factor": people_factor, "people_delay_sec": people_delay,
                 "scenario_name": self.scenario_name if self.scenario_mode else "",
                 "scenario_reason": scenario_notes, "scenario_delay_sec": scenario_delay,
-                "route_lane_count": lane_count, "corridor_width_m": float(edge.get("width_m", self.default_corridor_width_m)),
+                "route_lane_count": lane_count,
+                "corridor_width_m": float(edge.get("width_m", self.default_corridor_width_m)),
+                "configured_corridor_width_m": float(edge.get("configured_width_m", edge.get("width_m", self.default_corridor_width_m))),
+                "door_restricted": bool(edge.get("door_restricted", False)),
+                "door_nodes": ",".join(edge.get("door_nodes", []) or []),
                 "lane_width_m": lane_width, "carrying_length_m": carrying_length,
                 "payload_orientation": orientation if payload is not None else "",
             })
@@ -10467,6 +10691,9 @@ class Simulation:
             "people_delay_sec",
             "route_lane_count",
             "corridor_width_m",
+            "configured_corridor_width_m",
+            "door_restricted",
+            "door_nodes",
             "lane_width_m",
             "carrying_length_m",
             "payload_orientation",
@@ -10536,6 +10763,10 @@ class Simulation:
             "scenario_name",
             "people_count",
             "route_lane_count",
+            "corridor_width_m",
+            "configured_corridor_width_m",
+            "door_restricted",
+            "door_nodes",
             "payload_orientation",
             "wash_cycle",
             "lift_health_percent",
@@ -10926,6 +11157,9 @@ class Simulation:
                 "people_delay_sec": round(people_delay_value, 3),
                 "route_lane_count": int(float(segment_meta.get("route_lane_count", 0) or 0)),
                 "corridor_width_m": round(float(segment_meta.get("corridor_width_m", 0.0) or 0.0), 3),
+                "configured_corridor_width_m": round(float(segment_meta.get("configured_corridor_width_m", segment_meta.get("corridor_width_m", 0.0)) or 0.0), 3),
+                "door_restricted": bool(segment_meta.get("door_restricted", False)),
+                "door_nodes": str(segment_meta.get("door_nodes", "") or ""),
                 "lane_width_m": round(float(segment_meta.get("lane_width_m", 0.0) or 0.0), 3),
                 "carrying_length_m": round(float(segment_meta.get("carrying_length_m", 0.0) or 0.0), 3),
                 "payload_orientation": str(segment_meta.get("payload_orientation", "") or ""),

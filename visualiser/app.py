@@ -28,18 +28,24 @@ from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFormLayout,
+    QFrame,
+    QGridLayout,
     QGraphicsItem,
     QGraphicsPolygonItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsView,
+    QGroupBox,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
     QProgressBar,
+    QScrollArea,
+    QSizePolicy,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
     QInputDialog,
@@ -314,6 +320,10 @@ class AMRGraphEditor(QMainWindow):
         self.last_pan = None
         self.selected_for_edge = None
         self.selected_point_name = None
+        self.selected_point_names = set()
+        self.selected_edge_keys = set()
+        self.topology_selection_rect_start = None
+        self.topology_selection_rect_item = None
         self.dragging_point_name = None
         self.drag_mode_active = False
         self.edge_delete_start = None
@@ -330,18 +340,14 @@ class AMRGraphEditor(QMainWindow):
     def _build_ui(self):
         central = QWidget(self)
         self.setCentralWidget(central)
-        layout = QHBoxLayout(central)
-
-        self.sidebar = QWidget()
-        self.sidebar.setFixedWidth(260)
-        sidebar_layout = QVBoxLayout(self.sidebar)
-        layout.addWidget(self.sidebar)
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         self.scene = QGraphicsScene(self)
         self.canvas = EditorGraphicsView(self)
         self.canvas.setScene(self.scene)
         self.canvas.set_overlay_provider(self.draw_overlay_panels)
-        layout.addWidget(self.canvas, 1)
 
         self.canvas.leftClicked.connect(self.on_left_click)
         self.canvas.leftDoubleClicked.connect(self.on_double_click)
@@ -389,67 +395,403 @@ class AMRGraphEditor(QMainWindow):
         self.show_location_bounds_check.toggled.connect(self.refresh_canvas)
         self.show_charging_spaces_check.toggled.connect(self.refresh_canvas)
 
-        sidebar_layout.addWidget(QLabel("Mode"))
-        sidebar_layout.addWidget(self.mode_combo)
-        sidebar_layout.addSpacing(10)
-        sidebar_layout.addWidget(QLabel("Floor"))
-        floor_row = QHBoxLayout()
-        floor_row.addWidget(self.floor_spin)
-        go_btn = QPushButton("Go")
-        go_btn.clicked.connect(self.refresh_canvas)
-        floor_row.addWidget(go_btn)
-        sidebar_layout.addLayout(floor_row)
-        sidebar_layout.addSpacing(10)
-        sidebar_layout.addWidget(self.snap_check)
-        sidebar_layout.addWidget(self.bidirectional_check)
-        sidebar_layout.addWidget(self.chain_edges_check)
-        sidebar_layout.addWidget(self.show_dxf_check)
-        sidebar_layout.addWidget(self.show_labels_check)
-        sidebar_layout.addWidget(self.show_location_bounds_check)
-        sidebar_layout.addWidget(self.show_charging_spaces_check)
-        sidebar_layout.addSpacing(10)
+        self.ribbon_tabs = QTabWidget()
+        self.ribbon_tabs.setDocumentMode(True)
+        self.ribbon_tabs.tabBar().setUsesScrollButtons(True)
+        self.ribbon_tabs.setElideMode(Qt.ElideRight)
+        self.ribbon_tabs.setMinimumHeight(160)
+        self.ribbon_tabs.setMaximumHeight(240)
+        layout.addWidget(self.ribbon_tabs)
 
-        for text, handler in [
-            ("Open JSON", self.open_json),
-            ("Save JSON", self.save_json),
-            ("Simulation Settings", self.manage_simulation_settings),
-            ("Scenario Testing", self.manage_scenario_testing),
-            ("People Movement", self.manage_people_movement),
-            ("Corridor Settings", self.manage_corridor_settings),
-            ("Map DXF to Floor", self.load_dxf),
-            ("Clear Floor DXF", self.clear_floor_dxf),
-            ("Fit View", self.fit_view),
-            ("Validate", self.validate_json),
-            ("Lifts", self.manage_lifts),
-            ("Payloads", self.manage_payloads),
-            ("AMRs", self.manage_amrs),
-            ("Charging Locations", self.manage_charging_locations),
-            ("Tasks", self.manage_tasks),
-            ("Task Planner", self.manage_task_planner),
-            ("Task Generation", self.manage_task_generation),
-            ("Route Profiles", self.manage_route_profiles),
-            ("Waste Streams", self.manage_waste_streams),
-            ("Mass Collections", self.manage_mass_collections),
-            ("Departments", self.manage_departments),
+        ribbon_pages = []
+
+        def create_page(title):
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(False)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            scroll.setFrameShape(QFrame.NoFrame)
+            content = QWidget()
+            content.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+            page_layout = QHBoxLayout(content)
+            page_layout.setContentsMargins(6, 5, 6, 5)
+            page_layout.setSpacing(6)
+            scroll.setWidget(content)
+            self.ribbon_tabs.addTab(scroll, title)
+            ribbon_pages.append((content, page_layout))
+            return page_layout
+
+        def add_group(page_layout, title, widgets, columns=2):
+            box = QGroupBox(title)
+            grid = QGridLayout(box)
+            grid.setContentsMargins(7, 6, 7, 6)
+            grid.setHorizontalSpacing(5)
+            grid.setVerticalSpacing(4)
+            row = 0
+            col = 0
+            for widget in widgets:
+                if isinstance(widget, tuple):
+                    label, control = widget
+                    grid.addWidget(QLabel(label), row, col)
+                    grid.addWidget(control, row, col + 1)
+                    row += 1
+                    col = 0
+                    continue
+                grid.addWidget(widget, row, col)
+                col += 1
+                if col >= columns:
+                    row += 1
+                    col = 0
+            page_layout.addWidget(box)
+            return box
+
+        def button(text, handler, tooltip=""):
+            control = QPushButton(text)
+            control.clicked.connect(handler)
+            if tooltip:
+                control.setToolTip(tooltip)
+            return control
+
+        home = create_page("Home")
+        add_group(
+            home,
+            "File",
+            [
+                button("Open JSON", self.open_json),
+                button("Save JSON", self.save_json),
+                button("Validate", self.validate_json),
+            ],
+            columns=3,
+        )
+        add_group(
+            home,
+            "Drawing",
+            [
+                button("Map DXF to floor", self.load_dxf),
+                button("Clear floor DXF", self.clear_floor_dxf),
+                button("Fit view", self.fit_view),
+            ],
+            columns=3,
+        )
+
+        edit = create_page("Edit")
+        add_group(edit, "Placement", [("Mode", self.mode_combo)], columns=2)
+        floor_go = button("Go", self.refresh_canvas)
+        floor_widget = QWidget()
+        floor_layout = QHBoxLayout(floor_widget)
+        floor_layout.setContentsMargins(0, 0, 0, 0)
+        floor_layout.addWidget(self.floor_spin)
+        floor_layout.addWidget(floor_go)
+        add_group(edit, "Floor", [("Current floor", floor_widget)], columns=2)
+        add_group(
+            edit,
+            "Drawing behaviour",
+            [self.snap_check, self.bidirectional_check, self.chain_edges_check],
+            columns=1,
+        )
+
+        view = create_page("View")
+        add_group(
+            view,
+            "Display",
+            [
+                self.show_dxf_check,
+                self.show_labels_check,
+                self.show_location_bounds_check,
+                self.show_charging_spaces_check,
+            ],
+            columns=2,
+        )
+        add_group(view, "Navigation", [button("Fit view", self.fit_view)], columns=1)
+
+        simulation = create_page("Simulation")
+        add_group(
+            simulation,
+            "Configuration",
+            [
+                button("Simulation settings", self.manage_simulation_settings),
+                button("Scenario testing", self.manage_scenario_testing),
+                button("People movement", self.manage_people_movement),
+                button("Corridor widths and doors", self.manage_corridor_settings),
+            ],
+            columns=2,
+        )
+        classification_button = QPushButton("Classify selected corridors")
+        classification_menu = QMenu(classification_button)
+        for label, value in [
+            ("No restriction", "none"),
+            ("Staff", "staff"),
+            ("Public", "public"),
+            ("Mixed staff/public", "both"),
         ]:
-            btn = QPushButton(text)
-            btn.clicked.connect(handler)
-            sidebar_layout.addWidget(btn)
-            if text in {"Validate", "Route Profiles"}:
-                sidebar_layout.addSpacing(10)
+            action = classification_menu.addAction(label)
+            action.triggered.connect(
+                lambda _checked=False, area=value: self.classify_selected_corridors(area)
+            )
+        classification_button.setMenu(classification_menu)
+        door_button = QPushButton("Set selected door nodes")
+        door_menu = QMenu(door_button)
+        mark_door = door_menu.addAction("Mark as door…")
+        clear_door = door_menu.addAction("Remove door classification")
+        mark_door.triggered.connect(self.mark_selected_nodes_as_doors)
+        clear_door.triggered.connect(self.clear_selected_node_doors)
+        door_button.setMenu(door_menu)
+        add_group(
+            simulation,
+            "Topology selection",
+            [
+                button("Scenario from selection", self.manage_scenario_testing),
+                button("People profile from selection", self.create_people_profile_from_selection),
+                button("Edit selected corridors", self.manage_corridor_settings),
+                classification_button,
+                door_button,
+                button("Clear selection", self.clear_topology_selection),
+            ],
+            columns=2,
+        )
 
-        sidebar_layout.addWidget(QLabel("Current file"))
-        self.file_label = QLabel("New file")
-        self.file_label.setWordWrap(True)
-        sidebar_layout.addWidget(self.file_label)
-        sidebar_layout.addWidget(QLabel("Status"))
+        assets = create_page("Assets")
+        add_group(
+            assets,
+            "AMR system",
+            [
+                button("AMRs", self.manage_amrs),
+                button("Payloads", self.manage_payloads),
+                button("Charging locations", self.manage_charging_locations),
+                button("Lifts", self.manage_lifts),
+            ],
+            columns=2,
+        )
+
+        operations = create_page("Operations")
+        add_group(
+            operations,
+            "Tasks and routing",
+            [
+                button("Tasks", self.manage_tasks),
+                button("Task planner", self.manage_task_planner),
+                button("Task generation", self.manage_task_generation),
+                button("Route profiles", self.manage_route_profiles),
+            ],
+            columns=2,
+        )
+
+        services = create_page("Services")
+        add_group(
+            services,
+            "Departments and waste",
+            [
+                button("Departments", self.manage_departments),
+                button("Waste streams", self.manage_waste_streams),
+                button("Mass collections", self.manage_mass_collections),
+            ],
+            columns=3,
+        )
+
+        for content, page_layout in ribbon_pages:
+            page_layout.addStretch(1)
+            content.adjustSize()
+
+        layout.addWidget(self.canvas, 1)
+
         self.status_label = QLabel("Ready")
-        self.status_label.setWordWrap(True)
-        sidebar_layout.addWidget(self.status_label)
-        sidebar_layout.addStretch(1)
+        self.status_label.setMinimumWidth(240)
+        self.file_label = QLabel("New file")
+        self.file_label.setToolTip("Current JSON file")
+        self.statusBar().addWidget(self.status_label, 1)
+        self.statusBar().addPermanentWidget(self.file_label)
 
     def set_status(self, text):
         self.status_label.setText(text)
+
+    @staticmethod
+    def _physical_edge_key(from_name, to_name):
+        a = str(from_name or "").strip()
+        b = str(to_name or "").strip()
+        return tuple(sorted((a, b)))
+
+    def _edge_label_for_key(self, key):
+        for edge in self.store.data.get("corridors", {}).get("edges", []):
+            if self._physical_edge_key(edge.get("from"), edge.get("to")) == key:
+                return f"{edge.get('from', '')} -> {edge.get('to', '')}"
+        return f"{key[0]} -> {key[1]}"
+
+    def _selected_corridor_keys(self, include_incident_nodes=True):
+        keys = set(self.selected_edge_keys)
+        if include_incident_nodes:
+            node_names = set(self.selected_point_names)
+            for edge in self.store.data.get("corridors", {}).get("edges", []):
+                if edge.get("from") in node_names or edge.get("to") in node_names:
+                    keys.add(self._physical_edge_key(edge.get("from"), edge.get("to")))
+        return keys
+
+    def selected_corridor_labels(self, include_incident_nodes=True):
+        return sorted(
+            self._edge_label_for_key(key)
+            for key in self._selected_corridor_keys(include_incident_nodes)
+        )
+
+    def selected_corridor_node_names(self):
+        points = self.store.all_points()
+        return sorted(
+            name
+            for name in self.selected_point_names
+            if points.get(name, {}).get("kind") == "corridor_node"
+        )
+
+    def topology_selection_payload(self):
+        return {
+            "corridor": self.selected_corridor_labels(include_incident_nodes=False),
+            "corridor_node": self.selected_corridor_node_names(),
+        }
+
+    def clear_topology_selection(self):
+        self.selected_point_names.clear()
+        self.selected_edge_keys.clear()
+        self.selected_point_name = None
+        self.dragging_point_name = None
+        self.drag_mode_active = False
+        self.set_status("Topology selection cleared")
+        self.refresh_canvas()
+
+    def find_nearest_edge_key(self, x, y, floor, radius_world=0.45):
+        points = self.store.all_points()
+        best_key = None
+        best_distance = float(radius_world)
+        visited = set()
+        for edge in self.store.data.get("corridors", {}).get("edges", []):
+            a = points.get(edge.get("from"))
+            b = points.get(edge.get("to"))
+            if not a or not b:
+                continue
+            if int(a.get("floor", -1)) != int(floor) or int(b.get("floor", -1)) != int(floor):
+                continue
+            key = self._physical_edge_key(edge.get("from"), edge.get("to"))
+            if key in visited:
+                continue
+            visited.add(key)
+            ax, ay = float(a.get("x", 0.0)), float(a.get("y", 0.0))
+            bx, by = float(b.get("x", 0.0)), float(b.get("y", 0.0))
+            dx, dy = bx - ax, by - ay
+            length_sq = dx * dx + dy * dy
+            if length_sq <= 1e-12:
+                distance = math.hypot(x - ax, y - ay)
+            else:
+                t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / length_sq))
+                px, py = ax + t * dx, ay + t * dy
+                distance = math.hypot(x - px, y - py)
+            if distance <= best_distance:
+                best_distance = distance
+                best_key = key
+        return best_key
+
+    def classify_selected_corridors(self, area_type):
+        keys = self._selected_corridor_keys(include_incident_nodes=True)
+        if not keys:
+            QMessageBox.information(
+                self,
+                "Corridor classification",
+                "Select one or more corridor edges or corridor nodes first.",
+            )
+            return
+        area = str(area_type or "none").lower()
+        if area == "mixed":
+            area = "both"
+        updated = 0
+        for edge in self.store.data.get("corridors", {}).get("edges", []):
+            if self._physical_edge_key(edge.get("from"), edge.get("to")) in keys:
+                edge["people_area_type"] = area
+                updated += 1
+        self.set_status(f"Classified {len(keys)} corridor asset(s) as {area}")
+        self.refresh_canvas()
+
+    def mark_selected_nodes_as_doors(self):
+        names = self.selected_corridor_node_names()
+        if not names:
+            QMessageBox.information(
+                self, "Door nodes", "Select one or more corridor nodes first."
+            )
+            return
+        default_width = float(
+            self.store.data.get("building", {}).get("default_door_clear_width_m", 0.9)
+            or 0.9
+        )
+        width, ok = QInputDialog.getDouble(
+            self,
+            "Door clear opening",
+            "Clear opening width (m):",
+            default_width,
+            0.1,
+            20.0,
+            3,
+        )
+        if not ok:
+            return
+        for node in self.store.data.get("corridors", {}).get("nodes", []):
+            if node.get("name") in names:
+                node["has_door"] = True
+                node["door_clear_width_m"] = float(width)
+        self.set_status(f"Marked {len(names)} corridor node(s) as {width:.3f} m doors")
+        self.refresh_canvas()
+
+    def clear_selected_node_doors(self):
+        names = self.selected_corridor_node_names()
+        if not names:
+            QMessageBox.information(
+                self, "Door nodes", "Select one or more corridor nodes first."
+            )
+            return
+        for node in self.store.data.get("corridors", {}).get("nodes", []):
+            if node.get("name") in names:
+                node["has_door"] = False
+        self.set_status(f"Removed door classification from {len(names)} node(s)")
+        self.refresh_canvas()
+
+    def create_people_profile_from_selection(self):
+        selected = self.selected_corridor_labels(include_incident_nodes=True)
+        if not selected:
+            QMessageBox.information(
+                self,
+                "People movement",
+                "Select one or more corridor edges or corridor nodes first.",
+            )
+            return
+        locations = sorted(self.store.all_points().keys())
+        corridor_options = sorted(
+            {
+                f"{edge.get('from', '')} -> {edge.get('to', '')}"
+                for edge in self.store.data.get("corridors", {}).get("edges", [])
+                if edge.get("from") and edge.get("to")
+            }
+        )
+        seed = {"id": f"PEOPLE-{len(self.store.people_movements()) + 1}"}
+        from dialogs import PeopleMovementEditorDialog
+
+        dialog = PeopleMovementEditorDialog(
+            self,
+            locations,
+            corridor_options,
+            seed=seed,
+            initially_selected_corridors=selected,
+        )
+        if dialog.exec() == QDialog.Accepted and dialog.result:
+            movements = list(self.store.people_movements())
+            movements.append(dialog.result)
+            self.store.set_people_movements(movements)
+            profile_id = dialog.result.get("id", "")
+            selected_keys = self._selected_corridor_keys(include_incident_nodes=True)
+            for edge in self.store.data.get("corridors", {}).get("edges", []):
+                if self._physical_edge_key(edge.get("from"), edge.get("to")) in selected_keys:
+                    profile_ids = list(edge.get("people_profile_ids", []) or [])
+                    if profile_id and profile_id not in profile_ids:
+                        profile_ids.append(profile_id)
+                    edge["people_profile_ids"] = profile_ids
+                    group = str(dialog.result.get("group_type", "staff") or "staff")
+                    edge["people_area_type"] = "both" if group == "both" else group
+            self.set_status(
+                f"Created people profile {profile_id} for {len(selected_keys)} corridor asset(s)"
+            )
+            self.refresh_canvas()
 
     def start_department_location_placement(
         self,
@@ -1146,7 +1488,12 @@ class AMRGraphEditor(QMainWindow):
 
     def draw_edges(self, floor):
         points = self.store.all_points()
-        pen_same_floor = QPen(QColor("#6aa9ff"), 0)
+        colour_by_area = {
+            "none": QColor("#6aa9ff"),
+            "staff": QColor("#4fc3f7"),
+            "public": QColor("#ffb74d"),
+            "both": QColor("#ba68c8"),
+        }
         pen_cross_floor = QPen(QColor("#ff4d4f"), 0)
         for edge in self.store.data.get("corridors", {}).get("edges", []):
             a = points.get(edge["from"])
@@ -1159,14 +1506,22 @@ class AMRGraphEditor(QMainWindow):
                 continue
             pa = self.world_to_scene(a["x"], a["y"])
             pb = self.world_to_scene(b["x"], b["y"])
-            pen = pen_cross_floor if a_floor != b_floor else pen_same_floor
+            key = self._physical_edge_key(edge.get("from"), edge.get("to"))
+            if key in self.selected_edge_keys:
+                pen = QPen(QColor("#00e5ff"), 0.12)
+            elif a_floor != b_floor:
+                pen = pen_cross_floor
+            else:
+                area = str(edge.get("people_area_type", "none") or "none").lower()
+                pen = QPen(colour_by_area.get(area, colour_by_area["none"]), 0)
             item = self.scene.addLine(pa.x(), pa.y(), pb.x(), pb.y(), pen)
+            item.setZValue(5 if key in self.selected_edge_keys else 0)
             self._item_lookup[item] = ("edge", edge)
 
     def draw_points(self, floor):
         for name, point in self.store.points_for_floor(floor).items():
             pos = self.world_to_scene(point["x"], point["y"])
-            selected = name == self.selected_point_name
+            selected = name in self.selected_point_names or name == self.selected_point_name
             route_selected = (
                 self.route_profile_selection_active
                 and name in self.route_profile_selected_nodes
@@ -1179,13 +1534,11 @@ class AMRGraphEditor(QMainWindow):
             outline = QPen(
                 (
                     QColor("#00e5ff")
-                    if route_selected
-                    else QColor("#ffffff") if selected else QColor("transparent")
+                    if route_selected or selected
+                    else QColor("transparent")
                 ),
-                0,
+                0.12 if selected else 0,
             )
-            if self.route_profile_selection_active and route_selected:
-                item.setZValue(30)
             if kind == "location":
                 r = 0.3
                 item = self.scene.addEllipse(
@@ -1199,15 +1552,24 @@ class AMRGraphEditor(QMainWindow):
                 label_color = QColor("#9bf0cd")
             elif kind == "corridor_node":
                 r = 0.3
+                has_door = bool(point.get("has_door", False))
                 item = self.scene.addRect(
                     pos.x() - r,
                     pos.y() - r,
                     2 * r,
                     2 * r,
                     outline,
-                    QBrush(QColor("#f2c94c")),
+                    QBrush(QColor("#ff8f00") if has_door else QColor("#f2c94c")),
                 )
-                label_color = QColor("#ffe8a3")
+                label_color = QColor("#ffd180") if has_door else QColor("#ffe8a3")
+                if has_door:
+                    door_text = QGraphicsSimpleTextItem("D")
+                    door_text.setBrush(QBrush(QColor("#ffffff")))
+                    door_text.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+                    door_text.setPos(pos.x() - 0.12, pos.y() - 0.55)
+                    door_text.setZValue(35)
+                    self.scene.addItem(door_text)
+                    self._item_lookup[door_text] = ("point_label", name)
             elif kind == "department":
                 poly = QPolygonF(
                     [
@@ -1219,7 +1581,7 @@ class AMRGraphEditor(QMainWindow):
                 )
                 item = QGraphicsPolygonItem(poly)
                 item.setBrush(QBrush(QColor("#14b8a6")))
-                item.setPen(QPen(QColor("#7be7dc"), 0.08))
+                item.setPen(outline if selected else QPen(QColor("#7be7dc"), 0.08))
                 self.scene.addItem(item)
                 label_color = QColor("#bff7f2")
             else:
@@ -1236,14 +1598,17 @@ class AMRGraphEditor(QMainWindow):
                 item.setBrush(QBrush(QColor("#ff7b72")))
                 self.scene.addItem(item)
                 label_color = QColor("#ffb3ae")
+            if not route_allowed:
+                item.setOpacity(0.3)
             item.setFlag(QGraphicsItem.ItemIgnoresTransformations, False)
+            item.setZValue(30 if route_selected or selected else 10)
             self._item_lookup[item] = ("point", name)
             self._point_item_lookup[name] = item
             if self.show_labels_check.isChecked():
                 text = QGraphicsSimpleTextItem(name)
                 text.setBrush(label_color)
                 text.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
-                text.setPos(pos.x() + 0.5, pos.y() - 0)
+                text.setPos(pos.x() + 0.5, pos.y())
                 self.scene.addItem(text)
                 self._item_lookup[text] = ("point_label", name)
 
@@ -1255,11 +1620,15 @@ class AMRGraphEditor(QMainWindow):
             "Legend",
             "Green circle = location",
             "Yellow square = corridor node",
+            "Orange D square = door node",
+            "Blue/orange/purple edge = staff/public/mixed",
             "Teal diamond = department",
             "Red diamond = lift node",
             f"Mode: {self.mode_combo.currentText()} | Floor: {floor}",
             f"DXF: {dxf_name}",
             "Double-click a point to edit",
+            "Ctrl-click nodes/edges for multiple selection",
+            f"Selected: {len(self.selected_point_names)} nodes, {len(self.selected_edge_keys)} corridors",
         ]
         if self.mode_combo.currentText() == "department":
             lines.append("Click anywhere to add a department")
@@ -1440,15 +1809,15 @@ class AMRGraphEditor(QMainWindow):
     def on_left_click(self, event, sx, sy):
         mode = self.mode_combo.currentText()
         floor = self.floor_spin.value()
-        x, y = self.scene_to_world(sx, sy)
-        x, y = self.snap(x, y)
+        raw_x, raw_y = self.scene_to_world(sx, sy)
+        x, y = self.snap(raw_x, raw_y)
 
         if self.department_location_placement_active:
             self.finish_department_location_placement(x, y, floor)
             return
 
         if self.route_profile_selection_active:
-            picked = self._route_profile_pickable_point_at(x, y, floor)
+            picked = self._route_profile_pickable_point_at(raw_x, raw_y, floor)
 
             if picked:
                 if not (event.modifiers() & Qt.ControlModifier):
@@ -1470,16 +1839,54 @@ class AMRGraphEditor(QMainWindow):
             self.last_pan = event.position().toPoint()
             return
 
-        picked = self.find_nearest_point_name(x, y, floor)
-        self.selected_point_name = picked
+        picked = self.find_nearest_point_name(raw_x, raw_y, floor)
+        picked_edge = None if picked else self.find_nearest_edge_key(raw_x, raw_y, floor)
 
         if mode == "select_move":
+            additive = bool(
+                event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)
+            )
+            self.dragging_point_name = None
+            self.drag_mode_active = False
             if picked:
-                self.dragging_point_name = picked
-                self.drag_mode_active = True
-                self.set_status(f"Selected {picked}")
+                if not additive:
+                    self.selected_point_names.clear()
+                    self.selected_edge_keys.clear()
+                if additive and picked in self.selected_point_names:
+                    self.selected_point_names.remove(picked)
+                    self.selected_point_name = None
+                else:
+                    self.selected_point_names.add(picked)
+                    self.selected_point_name = picked
+                    if not additive:
+                        self.dragging_point_name = picked
+                        self.drag_mode_active = True
+                self.set_status(
+                    f"Selected {len(self.selected_point_names)} node(s) and "
+                    f"{len(self.selected_edge_keys)} corridor(s)"
+                )
+            elif picked_edge is not None:
+                if not additive:
+                    self.selected_point_names.clear()
+                    self.selected_edge_keys.clear()
+                    self.selected_point_name = None
+                if additive and picked_edge in self.selected_edge_keys:
+                    self.selected_edge_keys.remove(picked_edge)
+                else:
+                    self.selected_edge_keys.add(picked_edge)
+                self.set_status(
+                    f"Selected {len(self.selected_point_names)} node(s) and "
+                    f"{len(self.selected_edge_keys)} corridor(s)"
+                )
+            elif not additive:
+                self.selected_point_names.clear()
+                self.selected_edge_keys.clear()
+                self.selected_point_name = None
+                self.set_status("Selection cleared")
             self.refresh_canvas()
             return
+
+        self.selected_point_name = picked
 
         if mode == "delete":
             if picked:
@@ -1679,7 +2086,17 @@ class AMRGraphEditor(QMainWindow):
                     for key in ("wash_cycle_required", "wash_cycle_duration_sec", "wash_location", "people_area_type"):
                         if key in dialog.result:
                             location[key] = dialog.result[key]
+            elif point.get("kind") == "corridor_node":
+                for node in self.store.data.get("corridors", {}).get("nodes", []):
+                    if node.get("name") == picked:
+                        for key in ("has_door", "door_clear_width_m"):
+                            if key in dialog.result:
+                                node[key] = dialog.result[key]
+                        break
             self.store.rename_point(picked, dialog.result["name"])
+            if picked in self.selected_point_names:
+                self.selected_point_names.remove(picked)
+                self.selected_point_names.add(dialog.result["name"])
             self.selected_point_name = dialog.result["name"]
             self.set_status(f"Edited {dialog.result['name']}")
             self.refresh_canvas()
@@ -1724,6 +2141,7 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)
+        picked_edge = None if picked else self.find_nearest_edge_key(x, y, floor)
 
         if self.department_location_placement_active:
             self.cancel_department_location_placement()
@@ -1745,6 +2163,56 @@ class AMRGraphEditor(QMainWindow):
                 self._cancel_route_profile_graphical_selection()
 
             return
+
+        if mode == "select_move":
+            if picked and picked not in self.selected_point_names:
+                self.selected_point_names = {picked}
+                self.selected_edge_keys.clear()
+                self.selected_point_name = picked
+            elif picked_edge is not None and picked_edge not in self.selected_edge_keys:
+                self.selected_edge_keys = {picked_edge}
+                self.selected_point_names.clear()
+                self.selected_point_name = None
+            if self.selected_edge_keys or len(self.selected_point_names) > 1:
+                menu = QMenu(self)
+                menu.addAction(
+                    "Edit selected corridor widths / doors",
+                    self.manage_corridor_settings,
+                )
+                menu.addAction(
+                    "Create people movement profile",
+                    self.create_people_profile_from_selection,
+                )
+                menu.addAction(
+                    "Add selection to scenario",
+                    self.manage_scenario_testing,
+                )
+                classify_menu = menu.addMenu("Classify corridor use")
+                for label, area in [
+                    ("No restriction", "none"),
+                    ("Staff", "staff"),
+                    ("Public", "public"),
+                    ("Mixed staff/public", "both"),
+                ]:
+                    action = classify_menu.addAction(label)
+                    action.triggered.connect(
+                        lambda _checked=False, value=area: self.classify_selected_corridors(value)
+                    )
+                if self.selected_corridor_node_names():
+                    door_menu = menu.addMenu("Door nodes")
+                    door_menu.addAction(
+                        "Mark selected nodes as doors…",
+                        self.mark_selected_nodes_as_doors,
+                    )
+                    door_menu.addAction(
+                        "Remove door classification",
+                        self.clear_selected_node_doors,
+                    )
+                menu.addSeparator()
+                menu.addAction("Clear selection", self.clear_topology_selection)
+                menu.exec(event.globalPosition().toPoint())
+                self.refresh_canvas()
+                return
 
         if mode == "location_bbox" and self.bounding_box_location_name:
             hit_index = self.find_nearest_bounding_box_point_index(x, y)
@@ -2006,6 +2474,11 @@ class AMRGraphEditor(QMainWindow):
             return
         self.store = JsonStore.from_file(path)
         self.current_json_path = path
+        self.selected_point_name = None
+        self.selected_point_names.clear()
+        self.selected_edge_keys.clear()
+        self.dragging_point_name = None
+        self.drag_mode_active = False
         self._clear_dxf_cache()
         current_floor = self.floor_spin.value()
         self._pending_fit_after_load = bool(self.get_floor_dxf_path(current_floor))
@@ -2042,6 +2515,7 @@ class AMRGraphEditor(QMainWindow):
             self,
             self.store.scenario_testing(),
             self.store.data,
+            topology_selection=self.topology_selection_payload(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
             self.store.set_scenario_testing(dialog.result)
@@ -2054,23 +2528,103 @@ class AMRGraphEditor(QMainWindow):
 
     def manage_people_movement(self):
         locations = sorted(self.store.all_points().keys())
+        corridor_options = sorted(
+            {
+                f"{edge.get('from', '')} -> {edge.get('to', '')}"
+                for edge in self.store.data.get("corridors", {}).get("edges", [])
+                if edge.get("from") and edge.get("to")
+            }
+        )
         dialog = PeopleMovementListDialog(
-            self, locations, self.store.people_movements()
+            self,
+            locations,
+            corridor_options,
+            self.store.people_movements(),
+            initially_selected_corridors=self.selected_corridor_labels(
+                include_incident_nodes=True
+            ),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
             self.store.set_people_movements(dialog.result)
+            profile_by_edge = {}
+            valid_profile_ids = {
+                str(profile.get("id", "") or "").strip()
+                for profile in dialog.result
+                if str(profile.get("id", "") or "").strip()
+            }
+            direct_profile_ids = {
+                str(profile.get("id", "") or "").strip()
+                for profile in dialog.result
+                if str(profile.get("id", "") or "").strip()
+                and bool(profile.get("corridor_edges", []) or [])
+            }
+            for profile in dialog.result:
+                if not bool(profile.get("enabled", True)):
+                    continue
+                group_type = str(profile.get("group_type", "staff") or "staff").strip().lower()
+                if group_type == "mixed":
+                    group_type = "both"
+                profile_id = str(profile.get("id", "") or "").strip()
+                for label in profile.get("corridor_edges", []) or []:
+                    if " -> " not in str(label):
+                        continue
+                    start, end = str(label).split(" -> ", 1)
+                    key = self._physical_edge_key(start, end)
+                    entry = profile_by_edge.setdefault(key, {"types": set(), "profiles": set()})
+                    entry["types"].add(group_type)
+                    if profile_id:
+                        entry["profiles"].add(profile_id)
+            for edge in self.store.data.get("corridors", {}).get("edges", []):
+                key = self._physical_edge_key(edge.get("from"), edge.get("to"))
+                entry = profile_by_edge.get(key)
+                retained_profiles = {
+                    str(profile_id).strip()
+                    for profile_id in edge.get("people_profile_ids", []) or []
+                    if str(profile_id).strip() in valid_profile_ids
+                    and str(profile_id).strip() not in direct_profile_ids
+                }
+                if entry is not None:
+                    types = entry["types"]
+                    edge["people_area_type"] = (
+                        "both" if "both" in types or len(types) > 1 else next(iter(types), "none")
+                    )
+                    retained_profiles.update(entry["profiles"])
+                edge["people_profile_ids"] = sorted(retained_profiles)
+            self.store.ensure_corridor_defaults()
             self.set_status(f"Updated {len(dialog.result)} people movement profile(s)")
+            self.refresh_canvas()
 
     def manage_corridor_settings(self):
         building = self.store.data.setdefault("building", {})
+        corridors = self.store.data.setdefault("corridors", {})
         dialog = CorridorSettingsDialog(
             self,
-            self.store.data.setdefault("corridors", {}).setdefault("edges", []),
-            default_width=float(building.get("default_corridor_width_m", 2.4) or 2.4),
+            corridors.setdefault("edges", []),
+            corridors.setdefault("nodes", []),
+            default_width=float(
+                building.get("default_corridor_width_m", 2.4) or 2.4
+            ),
+            default_door_width=float(
+                building.get("default_door_clear_width_m", 0.9) or 0.9
+            ),
+            people_profiles=[
+                item.get("id", "") for item in self.store.people_movements()
+            ],
+            initially_selected_edges=[
+                f"{edge.get('from', '')} -> {edge.get('to', '')}"
+                for edge in corridors.setdefault("edges", [])
+                if self._physical_edge_key(edge.get("from"), edge.get("to"))
+                in self._selected_corridor_keys(include_incident_nodes=False)
+            ],
+            initially_selected_nodes=self.selected_corridor_node_names(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
-            self.store.data["corridors"]["edges"] = dialog.result
-            self.set_status("Corridor widths, lane behaviour and people occupancy updated")
+            self.store.data["corridors"]["edges"] = dialog.result.get("edges", [])
+            self.store.data["corridors"]["nodes"] = dialog.result.get("nodes", [])
+            self.store.ensure_corridor_defaults()
+            self.set_status(
+                "Corridor widths, door openings, lane behaviour and people occupancy updated"
+            )
             self.refresh_canvas()
 
     def load_dxf(self):

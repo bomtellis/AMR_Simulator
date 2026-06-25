@@ -20,6 +20,10 @@ class Location:
     wash_cycle_duration_sec: float = 0.0
     wash_location: str = ""
     people_area_type: str = "none"
+    # Corridor graph nodes may represent door openings.  The clear opening is
+    # applied as a restriction to every incident corridor edge.
+    has_door: bool = False
+    door_clear_width_m: float = 0.9
 
 
 @dataclass
