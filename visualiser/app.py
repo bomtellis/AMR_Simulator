@@ -360,19 +360,21 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.mouseDragged.connect(self.on_drag)
 
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(
-            [
-                "select_move",
-                "corridor_node",
-                "location",
-                "location_bbox",
-                "department",
-                "edge",
-                "lift",
-                "pan",
-                "delete",
-            ]
-        )
+        edit_modes = [
+            ("Select and move", "select_move", "Select, multi-select, drag and edit existing items."),
+            ("Add corridor node", "corridor_node", "Place a graph node used by corridor routes and door openings."),
+            ("Add location", "location", "Place a general simulation location."),
+            ("Draw location boundary", "location_bbox", "Draw or replace the usable boundary around a location."),
+            ("Add department location", "department", "Place a location associated with a department workflow."),
+            ("Connect corridor", "edge", "Create a corridor edge between graph nodes."),
+            ("Add lift", "lift", "Place or edit a lift access point."),
+            ("Pan view", "pan", "Move around the drawing without selecting assets."),
+            ("Delete items", "delete", "Delete the item clicked in the drawing."),
+        ]
+        for label, value, tooltip in edit_modes:
+            self.mode_combo.addItem(label, value)
+            self.mode_combo.setItemData(self.mode_combo.count() - 1, tooltip, Qt.ToolTipRole)
+        self.mode_combo.setToolTip("Choose what a mouse click does in the topology editor.")
         self.floor_spin = QSpinBox()
         self.floor_spin.setRange(0, 99)
         self.floor_spin.valueChanged.connect(self.on_floor_changed)
@@ -601,6 +603,14 @@ class AMRGraphEditor(QMainWindow):
         self.statusBar().addWidget(self.status_label, 1)
         self.statusBar().addPermanentWidget(self.file_label)
 
+    def _current_edit_mode(self):
+        return str(self.mode_combo.currentData() or "select_move")
+
+    def _set_edit_mode(self, value):
+        index = self.mode_combo.findData(str(value))
+        if index >= 0:
+            self.mode_combo.setCurrentIndex(index)
+
     def set_status(self, text):
         self.status_label.setText(text)
 
@@ -806,7 +816,7 @@ class AMRGraphEditor(QMainWindow):
         self.department_location_placement_callback = callback
         self.department_location_placement_return_dialog = return_dialog
 
-        self.mode_combo.setCurrentText("select_move")
+        self._set_edit_mode("select_move")
         self.set_status(
             f"Click the DXF/editor scene to place location {self.department_location_placement_name}"
         )
@@ -1400,7 +1410,7 @@ class AMRGraphEditor(QMainWindow):
             )
 
     def draw_temporary_location_bounding_box(self, floor):
-        if self.mode_combo.currentText() != "location_bbox":
+        if self._current_edit_mode() != "location_bbox":
             return
         if not self.bounding_box_location_name or not self.bounding_box_points:
             return
@@ -1450,7 +1460,7 @@ class AMRGraphEditor(QMainWindow):
         self.bounding_box_location_name = location_name
         existing = self.store.get_location_bounding_box_points(location_name)
         self.bounding_box_points = [dict(p) for p in existing] if keep_existing else []
-        self.mode_combo.setCurrentText("location_bbox")
+        self._set_edit_mode("location_bbox")
         self.show_location_bounds_check.setChecked(True)
         self.set_status(
             f"Drawing bounding box for {location_name}. Left-click points, right-click empty space to finish."
@@ -1471,7 +1481,7 @@ class AMRGraphEditor(QMainWindow):
         self.store.set_location_bounding_box(name, self.bounding_box_points)
         self.bounding_box_location_name = None
         self.bounding_box_points = []
-        self.mode_combo.setCurrentText("select_move")
+        self._set_edit_mode("select_move")
         self.set_status(f"Saved bounding box for {name}")
         self.refresh_canvas()
 
@@ -1630,9 +1640,9 @@ class AMRGraphEditor(QMainWindow):
             "Ctrl-click nodes/edges for multiple selection",
             f"Selected: {len(self.selected_point_names)} nodes, {len(self.selected_edge_keys)} corridors",
         ]
-        if self.mode_combo.currentText() == "department":
+        if self._current_edit_mode() == "department":
             lines.append("Click anywhere to add a department")
-        if self.mode_combo.currentText() == "location_bbox":
+        if self._current_edit_mode() == "location_bbox":
             if self.bounding_box_location_name:
                 lines.append(
                     f"Bounding: {self.bounding_box_location_name} ({len(self.bounding_box_points)} pts)"
@@ -1807,7 +1817,7 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
 
     def on_left_click(self, event, sx, sy):
-        mode = self.mode_combo.currentText()
+        mode = self._current_edit_mode()
         floor = self.floor_spin.value()
         raw_x, raw_y = self.scene_to_world(sx, sy)
         x, y = self.snap(raw_x, raw_y)
@@ -2137,7 +2147,7 @@ class AMRGraphEditor(QMainWindow):
         self.last_pan = None
 
     def on_right_click(self, event, sx, sy):
-        mode = self.mode_combo.currentText()
+        mode = self._current_edit_mode()
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)
@@ -2402,7 +2412,7 @@ class AMRGraphEditor(QMainWindow):
                 self.route_profile_selection_rect_item.setRect(rect)
 
             return
-        mode = self.mode_combo.currentText()
+        mode = self._current_edit_mode()
         if mode == "pan":
             current = event.position().toPoint()
             if self.last_pan is None:
@@ -2953,7 +2963,7 @@ class AMRGraphEditor(QMainWindow):
         self.route_profile_selection_rect_start = None
         self.route_profile_selection_rect_item = None
 
-        self.mode_combo.setCurrentText("select_move")
+        self._set_edit_mode("select_move")
         self.set_status(
             "Route profile graphical selection: click nodes, Ctrl-click to add/remove, "
             "Alt-drag for rectangle selection, Ctrl+Alt-drag to add to selection, "

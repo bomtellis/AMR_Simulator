@@ -784,6 +784,17 @@ class JsonStore:
                 normalised = self._normalise_corridor_resource(value)
                 if normalised and normalised not in corridor_edges:
                     corridor_edges.append(normalised)
+            shape = str(raw.get("profile_shape", "constant") or "constant").strip().lower()
+            if shape not in {"constant", "ramp_up", "ramp_down", "ramp_up_down"}:
+                shape = "constant"
+            peak_people = max(1, int(float(raw.get("people_per_trip", 1) or 1)))
+            minimum_people = max(
+                0,
+                min(
+                    peak_people,
+                    int(float(raw.get("minimum_people_per_interval", 0) or 0)),
+                ),
+            )
             clean.append({
                 "id": str(raw.get("id", f"PEOPLE-{index}") or f"PEOPLE-{index}"),
                 "enabled": bool(raw.get("enabled", True)),
@@ -791,9 +802,16 @@ class JsonStore:
                 "start_location": str(raw.get("start_location", "") or ""),
                 "end_location": str(raw.get("end_location", "") or ""),
                 "corridor_edges": corridor_edges,
-                "people_per_trip": max(1, int(float(raw.get("people_per_trip", 1) or 1))),
+                "people_per_trip": peak_people,
+                "minimum_people_per_interval": minimum_people,
+                "profile_shape": shape,
+                "timeframe_name": str(raw.get("timeframe_name", "") or "").strip(),
+                "timeframe_preset": str(raw.get("timeframe_preset", "custom") or "custom").strip().lower(),
                 "start_time": str(raw.get("start_time", "08:00") or "08:00"),
                 "end_time": str(raw.get("end_time", "18:00") or "18:00"),
+                "ramp_up_minutes": max(0.0, float(raw.get("ramp_up_minutes", 60.0) or 0.0)),
+                "ramp_down_minutes": max(0.0, float(raw.get("ramp_down_minutes", 60.0) or 0.0)),
+                "fit_profile_to_timeframe": bool(raw.get("fit_profile_to_timeframe", False)),
                 "interval_minutes": max(0.1, float(raw.get("interval_minutes", 15.0) or 15.0)),
                 "walking_speed_m_per_sec": max(0.1, float(raw.get("walking_speed_m_per_sec", 1.2) or 1.2)),
                 "days_active": list(raw.get("days_active", ["mon", "tue", "wed", "thu", "fri"]) or []),

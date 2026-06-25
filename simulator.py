@@ -5819,6 +5819,45 @@ class Simulation:
                 best = list(first["edges"]) + list(second["edges"])
         return best or []
 
+    @staticmethod
+    def _people_profile_count(profile: dict, minute_of_window: float, window_minutes: float) -> int:
+        """Return the people represented by one profile interval.
+
+        Legacy profiles remain constant.  Ramp profiles interpolate between the
+        configured minimum and peak counts within the daily timeframe.
+        """
+        peak = max(1, int(profile.get("people_per_trip", 1) or 1))
+        minimum = max(
+            0,
+            min(peak, int(profile.get("minimum_people_per_interval", 0) or 0)),
+        )
+        shape = str(profile.get("profile_shape", "constant") or "constant").strip().lower()
+        elapsed = max(0.0, float(minute_of_window))
+        total = max(0.1, float(window_minutes))
+        remaining = max(0.0, total - elapsed)
+        ramp_up = max(0.0, float(profile.get("ramp_up_minutes", 0.0) or 0.0))
+        ramp_down = max(0.0, float(profile.get("ramp_down_minutes", 0.0) or 0.0))
+        if bool(profile.get("fit_profile_to_timeframe", False)):
+            if shape == "ramp_up":
+                ramp_up, ramp_down = total, 0.0
+            elif shape == "ramp_down":
+                ramp_up, ramp_down = 0.0, total
+            elif shape == "ramp_up_down":
+                ramp_up = ramp_down = total / 2.0
+
+        if shape == "ramp_up":
+            factor = 1.0 if ramp_up <= 0.0 else min(1.0, elapsed / ramp_up)
+        elif shape == "ramp_down":
+            factor = 1.0 if ramp_down <= 0.0 else min(1.0, remaining / ramp_down)
+        elif shape == "ramp_up_down":
+            up_factor = 1.0 if ramp_up <= 0.0 else min(1.0, elapsed / ramp_up)
+            down_factor = 1.0 if ramp_down <= 0.0 else min(1.0, remaining / ramp_down)
+            factor = min(up_factor, down_factor)
+        else:
+            factor = 1.0
+
+        return max(0, int(round(minimum + (peak - minimum) * max(0.0, min(1.0, factor)))))
+
     def _init_people_movements(self, raw_movements) -> None:
         self.people_movements = []
         if not isinstance(raw_movements, list):
@@ -5891,12 +5930,27 @@ class Simulation:
             if not edges:
                 continue
 
+            peak_people = max(1, int(float(raw.get("people_per_trip", 1) or 1)))
+            profile_shape = str(raw.get("profile_shape", "constant") or "constant").strip().lower()
+            if profile_shape not in {"constant", "ramp_up", "ramp_down", "ramp_up_down"}:
+                profile_shape = "constant"
             profile = {
                 "id": profile_id,
                 "group_type": group_type,
-                "people_per_trip": max(
-                    1, int(float(raw.get("people_per_trip", 1) or 1))
+                "people_per_trip": peak_people,
+                "minimum_people_per_interval": max(
+                    0,
+                    min(
+                        peak_people,
+                        int(float(raw.get("minimum_people_per_interval", 0) or 0)),
+                    ),
                 ),
+                "profile_shape": profile_shape,
+                "timeframe_name": str(raw.get("timeframe_name", "") or "").strip(),
+                "timeframe_preset": str(raw.get("timeframe_preset", "custom") or "custom").strip().lower(),
+                "ramp_up_minutes": max(0.0, float(raw.get("ramp_up_minutes", 60.0) or 0.0)),
+                "ramp_down_minutes": max(0.0, float(raw.get("ramp_down_minutes", 60.0) or 0.0)),
+                "fit_profile_to_timeframe": bool(raw.get("fit_profile_to_timeframe", False)),
                 "walking_speed_m_per_sec": max(
                     0.1,
                     float(raw.get("walking_speed_m_per_sec", 1.2) or 1.2),
@@ -5937,10 +5991,28 @@ class Simulation:
                     continue
                 day_start_sec = (day_dt - self.clock.start_datetime).total_seconds()
                 window_end = end_min if end_min > start_min else end_min + 24 * 60
+                window_minutes = max(0.1, float(window_end - start_min))
+                profile_span_minutes = window_minutes
+                if bool(profile.get("fit_profile_to_timeframe", False)):
+                    # The end of a timeframe is exclusive. Fit the ramp to the
+                    # first and last generated intervals so the configured peak
+                    # or quiet value is actually represented by a movement.
+                    profile_span_minutes = max(
+                        0.1,
+                        window_minutes - float(profile["interval_minutes"]),
+                    )
                 departure_min = float(start_min)
                 while departure_min < float(window_end) - 1e-9:
+                    profile_count = self._people_profile_count(
+                        profile,
+                        departure_min - float(start_min),
+                        profile_span_minutes,
+                    )
                     departure_time = day_start_sec + departure_min * 60.0
                     sequential_time = departure_time
+                    if profile_count <= 0:
+                        departure_min += profile["interval_minutes"]
+                        continue
                     for edge in edges:
                         duration = (
                             float(edge.get("distance_m", 0.0))
@@ -5956,7 +6028,7 @@ class Simulation:
                             {
                                 "start": reservation_start,
                                 "end": reservation_start + duration,
-                                "count": profile["people_per_trip"],
+                                "count": profile_count,
                                 "speed_factor": profile["amr_speed_factor"],
                                 "group_type": profile["group_type"],
                                 "movement_id": profile["id"],
@@ -12151,8 +12223,8 @@ class RuntimeInputThread(threading.Thread):
                 distance_m=0.0,
                 start_time=task.release_time,
                 end_time=task.release_time,
-                start_node=pickup_location_name,
-                end_node=dropoff_location_name,
+                start_node=record.pickup_location,
+                end_node=record.dropoff_location,
                 start_x=getattr(pickup, "x", None),
                 start_y=getattr(pickup, "y", None),
                 start_floor=getattr(pickup, "floor", None),
