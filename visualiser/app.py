@@ -81,6 +81,7 @@ from advanced_dialogs import (
     TaskPlannerDialog,
 )
 from models import JsonStore
+from ui_theme import install_application_theme, polish_dialog as _polish_dialog
 
 
 def _load_dxf_floor_process(args):
@@ -168,6 +169,7 @@ class DXFLoadingDialog(QDialog):
 
         self.detail_label = QLabel("0 / 0")
         layout.addWidget(self.detail_label)
+        _polish_dialog(self)
 
     def update_progress(self, current, total, message, failed_count=0):
         total = max(1, int(total))
@@ -3040,6 +3042,7 @@ class AMRGraphEditor(QMainWindow):
 
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
+    install_application_theme(app)
     window = AMRGraphEditor()
     window.show()
     return app.exec()

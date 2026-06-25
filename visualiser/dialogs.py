@@ -52,6 +52,8 @@ from PySide6.QtWidgets import (
 )
 
 
+from ui_theme import polish_dialog as _polish_dialog
+
 STAFF_MOVEMENT_POLICIES = [
     ("First available", "available_first"),
     ("Batch same location", "batch_same_location"),
@@ -409,6 +411,7 @@ class ScheduledTimesDialog(QDialog):
         layout.addWidget(buttons)
 
         self.refresh()
+        _polish_dialog(self)
 
     def add_time(self):
         value = self.time_edit.time().toString("HH:mm")
@@ -566,6 +569,7 @@ class StaffWeeklyHoursDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     def accept(self):
         hours = {}
@@ -643,27 +647,39 @@ class GlobalStaffConfigDialog(QDialog):
         )
         layout.addWidget(self.spread_check)
 
-        travel_form = QFormLayout()
-        self.walking_speed_edit = QLineEdit(
-            str(self.config.get("walking_speed_m_per_sec", 1.2))
+        travel_box = QGroupBox("Travel and handling assumptions")
+        travel_form = QFormLayout(travel_box)
+        self.walking_speed_edit = _double_input(
+            self.config.get("walking_speed_m_per_sec", 1.2),
+            minimum=0.1,
+            maximum=10.0,
+            decimals=2,
+            suffix=" m/s",
+            step=0.1,
+            tooltip="Average staff walking speed used when moving between task locations.",
         )
-        self.walking_speed_edit.setValidator(QDoubleValidator(0.1, 10.0, 2, self))
-        self.lift_wait_edit = QLineEdit(
-            str(self.config.get("lift_wait_seconds", 30.0))
+        self.lift_wait_edit = _double_input(
+            self.config.get("lift_wait_seconds", 30.0),
+            minimum=0.0,
+            maximum=3600.0,
+            decimals=1,
+            suffix=" s",
+            step=5.0,
+            tooltip="Additional allowance applied when staff change floors using a lift.",
         )
-        self.lift_wait_edit.setValidator(QDoubleValidator(0.0, 3600.0, 1, self))
-        self.default_handling_edit = QLineEdit(
-            str(self.config.get("default_handling_minutes", 15.0))
+        self.default_handling_edit = _double_input(
+            self.config.get("default_handling_minutes", 15.0),
+            minimum=0.0,
+            maximum=1440.0,
+            decimals=1,
+            suffix=" min",
+            step=1.0,
+            tooltip="Default time reserved for staff to receive, exchange or handle a delivered payload.",
         )
-        self.default_handling_edit.setValidator(
-            QDoubleValidator(0.0, 1440.0, 2, self)
-        )
-        travel_form.addRow("Walking speed (m/s)", self.walking_speed_edit)
-        travel_form.addRow("Lift wait allowance (seconds)", self.lift_wait_edit)
-        travel_form.addRow(
-            "Default payload handling (minutes)", self.default_handling_edit
-        )
-        layout.addLayout(travel_form)
+        travel_form.addRow("Walking speed", self.walking_speed_edit)
+        travel_form.addRow("Lift wait allowance", self.lift_wait_edit)
+        travel_form.addRow("Default payload handling", self.default_handling_edit)
+        layout.addWidget(travel_box)
 
         patterns = self.config.get("shift_patterns", {}) or {}
         fixed = patterns.get("none", {}) or {}
@@ -704,6 +720,7 @@ class GlobalStaffConfigDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     @staticmethod
     def _normalise(config):
@@ -803,11 +820,9 @@ class GlobalStaffConfigDialog(QDialog):
         self.result = {
             "enabled": self.enabled_check.isChecked(),
             "spread_timeframe_tasks": self.spread_check.isChecked(),
-            "walking_speed_m_per_sec": float(self.walking_speed_edit.text() or 1.2),
-            "lift_wait_seconds": float(self.lift_wait_edit.text() or 30.0),
-            "default_handling_minutes": float(
-                self.default_handling_edit.text() or 15.0
-            ),
+            "walking_speed_m_per_sec": float(self.walking_speed_edit.value()),
+            "lift_wait_seconds": float(self.lift_wait_edit.value()),
+            "default_handling_minutes": float(self.default_handling_edit.value()),
             "shift_patterns": {
                 "none": {
                     "display_name": "Fixed working hours",
@@ -1236,6 +1251,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.refresh_dropoff_summary()
         self.refresh_schedule_summary()
         self.refresh_staff_working_hours_summary()
+        _polish_dialog(self)
 
     def edit_staff_working_hours(self):
         dialog = StaffWeeklyHoursDialog(
@@ -1829,6 +1845,7 @@ class ConfiguredGroupSelectDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     def accept(self):
         item = self.list_widget.currentItem()
@@ -2253,6 +2270,7 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self._refresh_schedule_summary()
         self._refresh_staff_working_hours_summary()
+        _polish_dialog(self)
 
     def edit_staff_working_hours(self):
         dialog = StaffWeeklyHoursDialog(
@@ -4237,6 +4255,7 @@ class PointEditorDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     def _update_location_controls(self):
         enabled = bool(self.wash_cycle_check.isChecked())
@@ -4326,6 +4345,7 @@ class EdgeConnectionsDialog(QDialog):
         close_btn.clicked.connect(self.accept)
 
         self._refresh_table()
+        _polish_dialog(self)
 
     def _refresh_table(self):
         self.table.setRowCount(0)
@@ -4590,6 +4610,7 @@ class LiftEditorDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     def _floor_height_m(self):
         parent = self.parent()
@@ -4757,6 +4778,7 @@ class LiftListDialog(QDialog):
         layout.addLayout(buttons)
 
         self.refresh()
+        _polish_dialog(self)
 
     def refresh(self):
         self.table.setRowCount(0)
@@ -5001,6 +5023,7 @@ class AMRPayloadSlotDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     def accept(self):
         name = self.name_edit.text().strip()
@@ -5182,6 +5205,7 @@ class AMREditorDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self._refresh_slots_table()
+        _polish_dialog(self)
 
     def _update_charge_summary(self):
         rate = float(self.charge_rate_edit.value())
@@ -5440,6 +5464,7 @@ class PayloadTrackedItemDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.refresh_source_location_summary()
+        _polish_dialog(self)
 
     def pick_source_locations(self):
         picker = MultiSelectPicker(
@@ -5636,6 +5661,7 @@ class PayloadEditorDialog(QDialog):
         layout.addWidget(buttons)
         self._refresh_items_table()
         self._update_contents_enabled()
+        _polish_dialog(self)
 
     def _normalise_tracked_items(self, value):
         result = []
@@ -5849,6 +5875,7 @@ class PayloadListDialog(QDialog):
         row.addWidget(save_btn)
 
         self._refresh_table()
+        _polish_dialog(self)
 
     def _items_summary(self, payload):
         items = payload.get("items", {})
@@ -6011,6 +6038,7 @@ class AMRListDialog(QDialog):
         row.addWidget(save_btn)
 
         self._refresh_table()
+        _polish_dialog(self)
 
     def _suggest_next_amr_id(self):
         nums = []
@@ -6120,6 +6148,7 @@ class TableListEditor(QMainWindow):
 
         self._refresh_table()
         self.show()
+        _polish_dialog(self)
 
     @staticmethod
     def stringify(value: Any) -> str:
@@ -6205,6 +6234,7 @@ class RouteProfilesEditor(QDialog):
         )
         self.on_save = on_save
         self.profiles = profiles
+        _polish_dialog(self)
 
 
 
@@ -6274,6 +6304,7 @@ class PeopleMovementEditorDialog(QDialog):
         self._update_route_mode()
         self._update_shape_controls()
         self._update_preview()
+        _polish_dialog(self)
 
     @staticmethod
     def _time_from_text(value, fallback):
@@ -6769,6 +6800,7 @@ class PeopleMovementListDialog(QDialog):
         buttons.rejected.connect(self.reject)
         row.addWidget(buttons)
         self.refresh()
+        _polish_dialog(self)
 
     @staticmethod
     def _shape_label(value):
@@ -7087,6 +7119,7 @@ class ScenarioEventDialog(QDialog):
         self._match_initial_preset()
         self._update_resource_summary()
         self._update_effect_summary()
+        _polish_dialog(self)
 
     @staticmethod
     def _time_from_text(value, fallback):
@@ -7359,6 +7392,7 @@ class ScenarioTestingDialog(QDialog):
         self.scenario_combo.currentIndexChanged.connect(self._scenario_changed)
         self.enabled_check.toggled.connect(self._update_enabled_state)
         self._refresh_scenarios()
+        _polish_dialog(self)
 
     def _refresh_scenarios(self):
         current = str(self.config.get("active_scenario", "Normal operation"))
@@ -7707,6 +7741,7 @@ class CorridorSettingsDialog(QDialog):
         self._select_initial_rows()
         self._update_edge_selection_summary()
         self._update_node_selection_summary()
+        _polish_dialog(self)
 
     @staticmethod
     def edge_label(edge):
@@ -8320,6 +8355,7 @@ class SimulationSettingsDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     @staticmethod
     def _datetime_from_text(value, fallback):
@@ -8395,22 +8431,35 @@ class WasteStreamEditorDialog(QDialog):
         self.payload_combo.addItems([""] + list(payload_names))
         self.payload_combo.setCurrentText(self.seed.get("payload", ""))
 
-        self.container_capacity_edit = QLineEdit(
-            str(self.seed.get("container_capacity_m3", 0.24))
+        self.container_capacity_edit = _double_input(
+            self.seed.get("container_capacity_m3", 0.24),
+            minimum=0.001,
+            maximum=1000.0,
+            decimals=3,
+            suffix=" m³",
+            step=0.01,
+            tooltip="Usable internal volume of one waste container.",
         )
-        self.full_threshold_edit = QLineEdit(
-            str(self.seed.get("full_threshold_fraction", 0.8))
+        self.full_threshold_edit = _double_input(
+            float(self.seed.get("full_threshold_fraction", 0.8) or 0.8) * 100.0,
+            minimum=0.1,
+            maximum=100.0,
+            decimals=1,
+            suffix=" %",
+            step=1.0,
+            tooltip="Container fill level at which the simulator treats it as full.",
         )
 
         form.addRow("Waste stream name", self.name_edit)
         form.addRow("Container payload", self.payload_combo)
-        form.addRow("Container capacity m3", self.container_capacity_edit)
+        form.addRow("Container capacity", self.container_capacity_edit)
         form.addRow("Full threshold", self.full_threshold_edit)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     def accept(self):
         try:
@@ -8422,13 +8471,8 @@ class WasteStreamEditorDialog(QDialog):
             if not payload:
                 raise ValueError("Container payload is required")
 
-            container_capacity = float(self.container_capacity_edit.text())
-            if container_capacity <= 0:
-                raise ValueError("Container capacity must be greater than 0")
-
-            threshold = float(self.full_threshold_edit.text())
-            if not (0.0 < threshold <= 1.0):
-                raise ValueError("Full threshold must be between 0 and 1")
+            container_capacity = float(self.container_capacity_edit.value())
+            threshold = float(self.full_threshold_edit.value()) / 100.0
 
             self.result = {
                 "name": name,
@@ -8491,6 +8535,7 @@ class WasteStreamListDialog(QDialog):
         save_btn.clicked.connect(self.save_items)
 
         self._refresh_table()
+        _polish_dialog(self)
 
     def _refresh_table(self):
         self.table.setRowCount(0)
@@ -8600,17 +8645,44 @@ class MassCollectionEditorDialog(QDialog):
         payload_row.addWidget(payload_btn)
         payload_row.addWidget(clear_payload_btn)
 
-        self.scheduled_times_edit = QLineEdit(
-            ", ".join(self.seed.get("scheduled_times", []))
+        self.scheduled_times = sorted(set(self.seed.get("scheduled_times", [])))
+        schedule_widget = QWidget()
+        schedule_row = QHBoxLayout(schedule_widget)
+        schedule_row.setContentsMargins(0, 0, 0, 0)
+        self.scheduled_times_summary = QLabel()
+        self.scheduled_times_summary.setWordWrap(True)
+        edit_schedule_btn = QPushButton("Edit times...")
+        clear_schedule_btn = QPushButton("Clear")
+        edit_schedule_btn.clicked.connect(self.edit_scheduled_times)
+        clear_schedule_btn.clicked.connect(self.clear_scheduled_times)
+        schedule_row.addWidget(self.scheduled_times_summary, 1)
+        schedule_row.addWidget(edit_schedule_btn)
+        schedule_row.addWidget(clear_schedule_btn)
+
+        self.capacity_fraction_edit = _double_input(
+            float(self.seed.get("capacity_trigger_fraction", 0.0) or 0.0) * 100.0,
+            minimum=0.0,
+            maximum=100.0,
+            decimals=1,
+            suffix=" %",
+            step=1.0,
+            tooltip="Optional percentage of configured spaces that triggers a collection. Set to 0% to disable.",
         )
-        self.capacity_fraction_edit = QLineEdit(
-            str(self.seed.get("capacity_trigger_fraction", 0.0))
+        self.capacity_count_edit = _integer_input(
+            self.seed.get("capacity_trigger_count", 0),
+            minimum=0,
+            maximum=1_000_000,
+            suffix=" bin(s)",
+            tooltip="Optional fixed number of full bins that triggers a collection. Set to 0 to disable.",
         )
-        self.capacity_count_edit = QLineEdit(
-            str(self.seed.get("capacity_trigger_count", 0))
-        )
-        self.interval_edit = QLineEdit(
-            str(self.seed.get("capacity_check_interval_minutes", 15.0))
+        self.interval_edit = _double_input(
+            self.seed.get("capacity_check_interval_minutes", 15.0),
+            minimum=0.1,
+            maximum=100_000.0,
+            decimals=1,
+            suffix=" min",
+            step=1.0,
+            tooltip="How often the simulator checks the capacity trigger.",
         )
         self.replace_check = QCheckBox(
             "Replace collected used/full bins with empty equivalents"
@@ -8642,10 +8714,10 @@ class MassCollectionEditorDialog(QDialog):
         form.addRow("Bin store location", self.location_combo)
         form.addRow("Payload types", payload_row)
         form.addRow("Days active", days_widget)
-        form.addRow("Scheduled times HH:MM comma separated", self.scheduled_times_edit)
-        form.addRow("Capacity trigger fraction", self.capacity_fraction_edit)
-        form.addRow("Capacity trigger count", self.capacity_count_edit)
-        form.addRow("Capacity check interval minutes", self.interval_edit)
+        form.addRow("Scheduled collection times", schedule_widget)
+        form.addRow("Capacity trigger", self.capacity_fraction_edit)
+        form.addRow("Full-bin trigger", self.capacity_count_edit)
+        form.addRow("Capacity check interval", self.interval_edit)
         form.addRow("Exchange", self.replace_check)
         form.addRow("Notes", self.notes_edit)
 
@@ -8662,6 +8734,28 @@ class MassCollectionEditorDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.refresh_payload_summary()
+        self.refresh_scheduled_times_summary()
+        _polish_dialog(self)
+
+    def edit_scheduled_times(self):
+        dialog = ScheduledTimesDialog(self, self.scheduled_times)
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.scheduled_times = list(dialog.result)
+            self.refresh_scheduled_times_summary()
+
+    def clear_scheduled_times(self):
+        self.scheduled_times = []
+        self.refresh_scheduled_times_summary()
+
+    def refresh_scheduled_times_summary(self):
+        if not self.scheduled_times:
+            self.scheduled_times_summary.setText("No fixed times; capacity triggers only")
+        elif len(self.scheduled_times) <= 5:
+            self.scheduled_times_summary.setText(", ".join(self.scheduled_times))
+        else:
+            self.scheduled_times_summary.setText(
+                f"{len(self.scheduled_times)} times · {self.scheduled_times[0]} to {self.scheduled_times[-1]}"
+            )
 
     def pick_payloads(self):
         picker = MultiSelectPicker(
@@ -8688,20 +8782,7 @@ class MassCollectionEditorDialog(QDialog):
             self.payload_summary.setText(f"{len(self.selected_payloads)} selected")
 
     def _parse_times(self):
-        result = []
-        for raw in self.scheduled_times_edit.text().split(","):
-            text = raw.strip()
-            if not text:
-                continue
-            parts = text.split(":")
-            if len(parts) < 2:
-                raise ValueError("Scheduled times must use HH:MM format")
-            hour = int(parts[0])
-            minute = int(parts[1])
-            if not (0 <= hour <= 23 and 0 <= minute <= 59):
-                raise ValueError("Scheduled times must be valid 24-hour HH:MM values")
-            result.append(f"{hour:02d}:{minute:02d}")
-        return sorted(set(result))
+        return sorted(set(self.scheduled_times))
 
     def accept(self):
         try:
@@ -8716,15 +8797,9 @@ class MassCollectionEditorDialog(QDialog):
             ]
             if not days:
                 raise ValueError("Select at least one active day")
-            capacity_fraction = float(self.capacity_fraction_edit.text() or 0.0)
-            if capacity_fraction < 0.0 or capacity_fraction > 1.0:
-                raise ValueError("Capacity trigger fraction must be between 0 and 1")
-            capacity_count = int(float(self.capacity_count_edit.text() or 0))
-            if capacity_count < 0:
-                raise ValueError("Capacity trigger count cannot be negative")
-            interval = float(self.interval_edit.text() or 15.0)
-            if interval <= 0:
-                raise ValueError("Capacity check interval must be greater than 0")
+            capacity_fraction = float(self.capacity_fraction_edit.value()) / 100.0
+            capacity_count = int(self.capacity_count_edit.value())
+            interval = float(self.interval_edit.value())
             self.result = {
                 "id": collection_id,
                 "enabled": self.enabled_check.isChecked(),
@@ -8788,6 +8863,7 @@ class MassCollectionListDialog(QDialog):
         del_btn.clicked.connect(self.delete_item)
         save_btn.clicked.connect(self.save_items)
         self._refresh_table()
+        _polish_dialog(self)
 
     def _next_id(self):
         existing = {str(x.get("id", "")) for x in self.items}
@@ -8926,6 +9002,7 @@ class DepartmentWasteStreamSettingsDialog(QDialog):
         layout.addWidget(buttons)
 
         self.refresh()
+        _polish_dialog(self)
 
     def refresh(self):
         self.table.setRowCount(0)
@@ -9103,6 +9180,7 @@ class DepartmentWasteStreamItemDialog(QDialog):
 
         self.refresh_schedule_summary()
         self.update_field_state()
+        _polish_dialog(self)
 
     def edit_times(self):
         dialog = ScheduledTimesDialog(self, self.scheduled_times)
@@ -9358,6 +9436,7 @@ class DepartmentEditorDialog(QDialog):
         self._refresh_all_category_location_summaries()
         self._refresh_waste_summary()
         self._refresh_operating_hours_label()
+        _polish_dialog(self)
 
     def _parse_hhmm_minutes_for_operating_hours(
         self, value, field_name, allow_blank=False
@@ -10026,6 +10105,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
 
         self._initial_partial_streams = set()
         self._refresh_table()
+        _polish_dialog(self)
 
     def _stream_names_for_department(self, dept):
         names = set()
@@ -10525,6 +10605,7 @@ class TaskCategoryCommonLocationWizard(QDialog):
         self.category_combo.currentIndexChanged.connect(self.refresh_department_table)
         self.refresh_department_table()
         self.refresh_location_summary()
+        _polish_dialog(self)
 
     def _department_id(self, dept):
         return str(dept.get("id", "") or dept.get("name", "")).strip()
@@ -10876,6 +10957,7 @@ class TaskCategorySharedBinGroupWizard(QDialog):
 
         self.refresh_stream_summary()
         self.refresh_preview()
+        _polish_dialog(self)
 
     def _department_id(self, dept):
         return str(dept.get("id", "") or dept.get("name", "")).strip()
@@ -11283,6 +11365,7 @@ class DepartmentListDialog(QDialog):
         save_btn.clicked.connect(self.save_items)
 
         self._refresh_table()
+        _polish_dialog(self)
 
     def _refresh_table(self):
         self.table.clear()
@@ -12363,11 +12446,29 @@ class ArrayInventorySpacesDialog(QDialog):
         self.kind_combo.addItems(["Payload", "AMR"])
         self.name_combo = QComboBox()
 
-        self.count_edit = QLineEdit("4")
-        self.columns_edit = QLineEdit("4")
-        self.spacing_x_edit = QLineEdit("0.100")
-        self.spacing_y_edit = QLineEdit("0.100")
-        self.rotation_edit = QLineEdit("0.0")
+        self.count_edit = _integer_input(
+            4, minimum=1, maximum=100_000, suffix=" space(s)",
+            tooltip="Total number of inventory spaces to create.",
+        )
+        self.columns_edit = _integer_input(
+            4, minimum=1, maximum=10_000, suffix=" column(s)",
+            tooltip="Number of columns used when Grid alignment is selected.",
+        )
+        self.spacing_x_edit = _double_input(
+            0.1, minimum=0.0, maximum=1000.0, decimals=3,
+            suffix=" m", step=0.05,
+            tooltip="Clear horizontal gap between adjacent spaces.",
+        )
+        self.spacing_y_edit = _double_input(
+            0.1, minimum=0.0, maximum=1000.0, decimals=3,
+            suffix=" m", step=0.05,
+            tooltip="Clear vertical gap between adjacent spaces.",
+        )
+        self.rotation_edit = _double_input(
+            0.0, minimum=-360.0, maximum=360.0, decimals=1,
+            suffix="°", step=5.0,
+            tooltip="Rotation applied to every space in the array.",
+        )
 
         self.alignment_combo = QComboBox()
         self.alignment_combo.addItems(["Horizontal", "Vertical", "Grid"])
@@ -12403,6 +12504,7 @@ class ArrayInventorySpacesDialog(QDialog):
         self._refresh_names()
         if default_name:
             self.name_combo.setCurrentText(str(default_name))
+        _polish_dialog(self)
 
     def _refresh_names(self):
         current = self.name_combo.currentText().strip() if hasattr(self, "name_combo") else ""
@@ -12426,12 +12528,12 @@ class ArrayInventorySpacesDialog(QDialog):
             name = self.name_combo.currentText().strip()
             if not name:
                 raise ValueError("Select a payload or AMR type.")
-            count = max(1, int(float(self.count_edit.text() or 1)))
+            count = int(self.count_edit.value())
             alignment = self.alignment_combo.currentText().strip().lower()
-            columns = max(1, int(float(self.columns_edit.text() or count))) if alignment == "grid" else count
-            spacing_x = max(0.0, float(self.spacing_x_edit.text() or 0.0))
-            spacing_y = max(0.0, float(self.spacing_y_edit.text() or 0.0))
-            rotation = float(self.rotation_edit.text() or 0.0)
+            columns = int(self.columns_edit.value()) if alignment == "grid" else count
+            spacing_x = float(self.spacing_x_edit.value())
+            spacing_y = float(self.spacing_y_edit.value())
+            rotation = float(self.rotation_edit.value())
             self.result = {
                 "kind": kind,
                 "name": name,
@@ -12491,7 +12593,9 @@ class InventorySpacesDialog(QDialog):
         self.drag_spaces_start_world = None
         self.drag_spaces_start_slots = {}
 
-        layout = QHBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        layout = QHBoxLayout()
+        root_layout.addLayout(layout, 1)
 
         left = QVBoxLayout()
         layout.addLayout(left, 0)
@@ -12639,6 +12743,7 @@ class InventorySpacesDialog(QDialog):
 
         self.refresh_list()
         self.refresh_scene()
+        _polish_dialog(self)
 
     def _sync_space_list_selection(self):
         rows = set()

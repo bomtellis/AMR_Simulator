@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from functools import partial
 
 
-from PySide6.QtCore import QDate, QPoint, Qt, Signal
+from PySide6.QtCore import QDate, QDateTime, QPoint, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QBrush
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDateTimeEdit,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -43,6 +44,34 @@ from PySide6.QtWidgets import (
     QToolButton,
 )
 
+
+from ui_theme import polish_dialog as _polish_dialog
+
+
+def _date_time_input(value=None):
+    edit = QDateTimeEdit()
+    edit.setCalendarPopup(True)
+    edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+    parsed = QDateTime.fromString(str(value or ""), Qt.ISODate)
+    if not parsed.isValid():
+        parsed = QDateTime.currentDateTime()
+    edit.setDateTime(parsed)
+    return edit
+
+
+def _integer_input(value=0, minimum=0, maximum=1_000_000_000, suffix=""):
+    edit = QSpinBox()
+    edit.setRange(int(minimum), int(maximum))
+    try:
+        numeric = int(float(value))
+    except Exception:
+        numeric = int(minimum)
+    edit.setValue(max(int(minimum), min(int(maximum), numeric)))
+    edit.setKeyboardTracking(False)
+    edit.setAccelerated(True)
+    if suffix:
+        edit.setSuffix(str(suffix))
+    return edit
 
 def ask_string(parent, title, prompt, text=""):
     value, ok = QInputDialog.getText(parent, title, prompt, text=text)
@@ -81,6 +110,7 @@ class MultiSelectPicker(QDialog):
 
         layout = QVBoxLayout(self)
         self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText("Search available items...")
         self.filter_edit.textChanged.connect(self.refresh)
         layout.addWidget(self.filter_edit)
 
@@ -96,6 +126,9 @@ class MultiSelectPicker(QDialog):
             btn.clicked.connect(handler)
             tools.addWidget(btn)
         tools.addStretch(1)
+        self.selection_summary = QLabel()
+        self.selection_summary.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        tools.addWidget(self.selection_summary)
 
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -111,6 +144,7 @@ class MultiSelectPicker(QDialog):
         layout.addWidget(buttons)
 
         self.refresh()
+        _polish_dialog(self)
 
     def refresh(self):
         self._sync_visible_state()
@@ -163,6 +197,7 @@ class MultiSelectPicker(QDialog):
 
                 chk = QCheckBox(item)
                 chk.setChecked(checked)
+                chk.toggled.connect(self._update_selection_summary)
                 self.checkboxes[item] = chk
 
                 row = QWidget()
@@ -174,6 +209,22 @@ class MultiSelectPicker(QDialog):
                 self.visible.append(item)
 
         self.container_layout.addStretch(1)
+        self._update_selection_summary()
+
+    def _update_selection_summary(self):
+        selected = set(self.selected)
+        for name, check in self.checkboxes.items():
+            try:
+                if check.isChecked():
+                    selected.add(name)
+                else:
+                    selected.discard(name)
+            except RuntimeError:
+                continue
+        visible_selected = sum(1 for name in self.visible if name in selected)
+        self.selection_summary.setText(
+            f"{len(selected)} selected" + (f" · {visible_selected} visible" if self.filter_edit.text().strip() else "")
+        )
 
     def _set_items(self, items, value):
         for name in items:
@@ -188,6 +239,7 @@ class MultiSelectPicker(QDialog):
                     chk.setChecked(value)
                 except RuntimeError:
                     pass
+        self._update_selection_summary()
 
     def select_all(self):
         self._set_items(self.options, True)
@@ -255,7 +307,9 @@ class RouteProfilesEditorV2(QDialog):
         self.allowed_lifts = []
         self.allowed_nodes = []
 
-        layout = QHBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        layout = QHBoxLayout()
+        root_layout.addLayout(layout, 1)
         splitter = QSplitter()
         layout.addWidget(splitter)
 
@@ -334,6 +388,7 @@ class RouteProfilesEditorV2(QDialog):
             self.profile_list.addItem(name)
         if self.profiles:
             self.profile_list.setCurrentRow(0)
+        _polish_dialog(self)
 
     def summarize(self, values):
         if not values:
@@ -530,11 +585,17 @@ class TaskFormDialog(QDialog):
         self.payload_combo = QComboBox()
         self.payload_combo.addItems(self.payload_names)
         self.payload_combo.setCurrentText(self.seed.get("payload", ""))
-        self.release_edit = QLineEdit(
+        self.release_edit = _date_time_input(
             self.seed.get("release_datetime", "2026-01-01T08:00:00")
         )
-        self.target_edit = QLineEdit(str(self.seed.get("target_time", 300)))
-        self.priority_edit = QLineEdit(str(self.seed.get("priority", 10)))
+        self.target_edit = _integer_input(
+            self.seed.get("target_time", 300), minimum=0, maximum=31_536_000, suffix=" s"
+        )
+        self.target_edit.setToolTip("Target journey or completion allowance in seconds.")
+        self.priority_edit = _integer_input(
+            self.seed.get("priority", 10), minimum=0, maximum=999_999
+        )
+        self.priority_edit.setToolTip("Lower or higher values are interpreted using the existing simulator priority rules.")
         self.labels_edit = QLineEdit(", ".join(self.seed.get("labels", [""])))
         self.route_profile_combo = QComboBox()
         self.route_profile_combo.addItems(self.profile_names)
@@ -544,10 +605,10 @@ class TaskFormDialog(QDialog):
         form.addRow("Pickup", pickup_row)
         form.addRow("Dropoff", dropoff_row)
         form.addRow("Payload", self.payload_combo)
-        form.addRow("Release datetime", self.release_edit)
-        form.addRow("Target time", self.target_edit)
+        form.addRow("Release date and time", self.release_edit)
+        form.addRow("Target allowance", self.target_edit)
         form.addRow("Priority", self.priority_edit)
-        form.addRow("Labels comma separated", self.labels_edit)
+        form.addRow("Labels (comma-separated)", self.labels_edit)
         form.addRow("Route profile", self.route_profile_combo)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -555,6 +616,7 @@ class TaskFormDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.resize(560, 360)
+        _polish_dialog(self)
 
     def _pick_single_location(self, title, current_text):
         picker = MultiSelectPicker(
@@ -593,9 +655,9 @@ class TaskFormDialog(QDialog):
                 "pickup": self.pickup_edit.text().strip(),
                 "dropoff": self.dropoff_edit.text().strip(),
                 "payload": self.payload_combo.currentText().strip(),
-                "release_datetime": self.release_edit.text().strip(),
-                "target_time": int(self.target_edit.text()),
-                "priority": int(self.priority_edit.text()),
+                "release_datetime": self.release_edit.dateTime().toString("yyyy-MM-dd'T'HH:mm:ss"),
+                "target_time": int(self.target_edit.value()),
+                "priority": int(self.priority_edit.value()),
                 "labels": [x.strip() for x in self.labels_edit.text().split(",")],
                 "route_profile": self.route_profile_combo.currentText().strip(),
                 "manual_task": True,
@@ -644,9 +706,9 @@ class BulkOneToManyTaskDialog(QDialog):
 
         self.payload_combo = QComboBox()
         self.payload_combo.addItems(self.payload_names)
-        self.release_edit = QLineEdit("2026-01-01T08:00:00")
-        self.target_edit = QLineEdit("300")
-        self.priority_edit = QLineEdit("10")
+        self.release_edit = _date_time_input("2026-01-01T08:00:00")
+        self.target_edit = _integer_input(300, minimum=0, maximum=31_536_000, suffix=" s")
+        self.priority_edit = _integer_input(10, minimum=0, maximum=999_999)
         self.labels_edit = QLineEdit("")
         self.route_combo = QComboBox()
         self.route_combo.addItems(self.profile_names)
@@ -655,16 +717,17 @@ class BulkOneToManyTaskDialog(QDialog):
         form.addRow("Pickup", self.pickup_combo)
         form.addRow("Dropoffs", dropoff_row)
         form.addRow("Payload", self.payload_combo)
-        form.addRow("Release datetime", self.release_edit)
-        form.addRow("Target time", self.target_edit)
+        form.addRow("Release date and time", self.release_edit)
+        form.addRow("Target allowance", self.target_edit)
         form.addRow("Priority", self.priority_edit)
-        form.addRow("Labels comma separated", self.labels_edit)
+        form.addRow("Labels (comma-separated)", self.labels_edit)
         form.addRow("Route profile", self.route_combo)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        _polish_dialog(self)
 
     def _pick_dropoffs(self):
         picker = MultiSelectPicker(
@@ -705,9 +768,9 @@ class BulkOneToManyTaskDialog(QDialog):
                 "pickup": self.pickup_combo.currentText().strip(),
                 "dropoffs": list(self.selected_dropoffs),
                 "payload": self.payload_combo.currentText().strip(),
-                "release_datetime": self.release_edit.text().strip(),
-                "target_time": int(self.target_edit.text()),
-                "priority": int(self.priority_edit.text()),
+                "release_datetime": self.release_edit.dateTime().toString("yyyy-MM-dd'T'HH:mm:ss"),
+                "target_time": int(self.target_edit.value()),
+                "priority": int(self.priority_edit.value()),
                 "labels": labels,
                 "route_profile": self.route_combo.currentText().strip(),
                 "manual_task": True,
@@ -767,6 +830,7 @@ class MultiDaySelectDialog(QDialog):
         footer.addWidget(buttons)
 
         self.refresh()
+        _polish_dialog(self)
 
     def prev_month(self):
         if self.display_month == 1:
@@ -935,6 +999,7 @@ class TaskPlannerDialog(QMainWindow):
 
         self.refresh_matrix()
         self.show()
+        _polish_dialog(self)
 
     def _make_vline(self):
         line = QFrame()
@@ -1495,26 +1560,26 @@ class EditMultipleTasksDialog(QDialog):
         form = QFormLayout()
         layout.addLayout(form)
 
-        self.release_check = QCheckBox("Update release datetime")
-        self.release_edit = QLineEdit(str(self.seed.get("release_datetime", "")))
+        self.release_check = QCheckBox("Update release date and time")
+        self.release_edit = _date_time_input(self.seed.get("release_datetime", ""))
         self.release_edit.setEnabled(False)
         self.release_check.toggled.connect(self.release_edit.setEnabled)
         release_row = QHBoxLayout()
         release_row.addWidget(self.release_check)
         release_row.addWidget(self.release_edit, 1)
-        form.addRow("Release datetime", release_row)
+        form.addRow("Release date and time", release_row)
 
-        self.target_check = QCheckBox("Update target time")
-        self.target_edit = QLineEdit(str(self.seed.get("target_time", "")))
+        self.target_check = QCheckBox("Update target allowance")
+        self.target_edit = _integer_input(self.seed.get("target_time", 0), minimum=0, maximum=31_536_000, suffix=" s")
         self.target_edit.setEnabled(False)
         self.target_check.toggled.connect(self.target_edit.setEnabled)
         target_row = QHBoxLayout()
         target_row.addWidget(self.target_check)
         target_row.addWidget(self.target_edit, 1)
-        form.addRow("Target time", target_row)
+        form.addRow("Target allowance", target_row)
 
         self.priority_check = QCheckBox("Update priority")
-        self.priority_edit = QLineEdit(str(self.seed.get("priority", "")))
+        self.priority_edit = _integer_input(self.seed.get("priority", 0), minimum=0, maximum=999_999)
         self.priority_edit.setEnabled(False)
         self.priority_check.toggled.connect(self.priority_edit.setEnabled)
         priority_row = QHBoxLayout()
@@ -1529,7 +1594,7 @@ class EditMultipleTasksDialog(QDialog):
         labels_row = QHBoxLayout()
         labels_row.addWidget(self.labels_check)
         labels_row.addWidget(self.labels_edit, 1)
-        form.addRow("Labels comma separated", labels_row)
+        form.addRow("Labels (comma-separated)", labels_row)
 
         self.route_profile_check = QCheckBox("Update route profile")
         self.route_profile_combo = QComboBox()
@@ -1547,19 +1612,17 @@ class EditMultipleTasksDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.resize(560, 260)
+        _polish_dialog(self)
 
     def accept(self):
         try:
             updates = {}
             if self.release_check.isChecked():
-                value = self.release_edit.text().strip()
-                if not value:
-                    raise ValueError("Release datetime is required when enabled")
-                updates["release_datetime"] = value
+                updates["release_datetime"] = self.release_edit.dateTime().toString("yyyy-MM-dd'T'HH:mm:ss")
             if self.target_check.isChecked():
-                updates["target_time"] = int(self.target_edit.text())
+                updates["target_time"] = int(self.target_edit.value())
             if self.priority_check.isChecked():
-                updates["priority"] = int(self.priority_edit.text())
+                updates["priority"] = int(self.priority_edit.value())
             if self.labels_check.isChecked():
                 text = self.labels_edit.text().strip()
                 updates["labels"] = [x.strip() for x in text.split(",")] if text else []
@@ -1649,6 +1712,7 @@ class TaskEditorWindow(QMainWindow):
 
         self._refresh_table()
         self.show()
+        _polish_dialog(self)
 
     def _insert_tree_item(self, item):
         row = self.table.rowCount()
