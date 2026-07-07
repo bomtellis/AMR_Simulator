@@ -242,6 +242,18 @@ class Simulation:
         self.route_feasibility_cache_max_entries = max(
             0,
             int(sim_cfg.get("route_feasibility_cache_max_entries", 50000) or 0),
+        self.local_obstacle_bbox_cache: Dict[
+            Tuple[str, str], Tuple[Tuple[float, float, float, float], ...]
+        ] = {}
+        self.local_manoeuvre_waypoint_cache: Dict[
+            Tuple, Tuple[Tuple[float, float], ...]
+        ] = {}
+        self.local_manoeuvre_waypoint_cache_max_entries = max(
+            0,
+            int(
+                sim_cfg.get("local_manoeuvre_waypoint_cache_max_entries", 10000)
+                or 0
+            ),
         )
         self.generated_release_stagger_sec = max(
             0.0,
@@ -2980,10 +2992,16 @@ class Simulation:
         self, location_name: str, exclude_space_name: str = ""
     ) -> List[Tuple[float, float, float, float]]:
         """Return expanded bboxes for payload/AMR spaces to avoid locally."""
-        bboxes: List[Tuple[float, float, float, float]] = []
+        location_name = str(location_name or "").strip()
         exclude_space_name = str(exclude_space_name or "").strip()
+        cache_key = (location_name, exclude_space_name)
+        cached = self.local_obstacle_bbox_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+
+        bboxes: List[Tuple[float, float, float, float]] = []
         for space in self.inventory_spaces_by_location.get(
-            str(location_name or "").strip(), []
+            location_name, []
         ):
             if (
                 exclude_space_name
@@ -2995,7 +3013,28 @@ class Simulation:
             )
             if bbox is not None:
                 bboxes.append(bbox)
+        self.local_obstacle_bbox_cache[cache_key] = tuple(bboxes)
         return bboxes
+
+    def _local_manoeuvre_waypoint_cache_get(self, cache_key: Tuple):
+        cached = self.local_manoeuvre_waypoint_cache.get(cache_key)
+        if cached is None:
+            return None
+        return [tuple(point) for point in cached]
+
+    def _local_manoeuvre_waypoint_cache_set(
+        self, cache_key: Tuple, waypoints: List[Tuple[float, float]]
+    ) -> None:
+        max_entries = int(
+            getattr(self, "local_manoeuvre_waypoint_cache_max_entries", 0) or 0
+        )
+        if max_entries <= 0:
+            return
+        if len(self.local_manoeuvre_waypoint_cache) >= max_entries:
+            self.local_manoeuvre_waypoint_cache.clear()
+        self.local_manoeuvre_waypoint_cache[cache_key] = tuple(
+            (float(x), float(y)) for x, y in waypoints
+        )
 
     def _clear_local_segment(
         self,
@@ -3283,20 +3322,32 @@ class Simulation:
         end = (float(target.x), float(target.y))
         target_heading_deg = self._inventory_space_rotation_deg(target_space)
         radius = self._amr_vehicle_turning_radius_m(amr)
-        obstacles = self._local_obstacle_bboxes(
-            location_name, str(target_space.get("name", "") or "")
-        )
-
-        waypoints = self._local_manoeuvre_waypoints(start, end, obstacles)
-        waypoints = self._insert_vehicle_alignment_waypoint(
-            waypoints, target_heading_deg, radius, obstacles
-        )
+        space_name = str(target_space.get("name", "") or "")
         initial_heading_deg = float(
             getattr(amr, "rotation_deg", target_heading_deg) or target_heading_deg
         )
-        waypoints = self._smooth_vehicle_waypoints(
-            waypoints, initial_heading_deg, target_heading_deg, radius
+        cache_key = (
+            str(location_name or "").strip(),
+            space_name.strip(),
+            start[0],
+            start[1],
+            end[0],
+            end[1],
+            float(initial_heading_deg),
+            float(target_heading_deg),
+            float(radius),
         )
+        waypoints = self._local_manoeuvre_waypoint_cache_get(cache_key)
+        if waypoints is None:
+            obstacles = self._local_obstacle_bboxes(location_name, space_name)
+            waypoints = self._local_manoeuvre_waypoints(start, end, obstacles)
+            waypoints = self._insert_vehicle_alignment_waypoint(
+                waypoints, target_heading_deg, radius, obstacles
+            )
+            waypoints = self._smooth_vehicle_waypoints(
+                waypoints, initial_heading_deg, target_heading_deg, radius
+            )
+            self._local_manoeuvre_waypoint_cache_set(cache_key, waypoints)
 
         segments: List[dict] = []
         total_duration = 0.0
