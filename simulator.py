@@ -240,6 +240,23 @@ class Simulation:
         self.route_cache: Dict[Tuple, Optional[dict]] = {}
         self.amr_inventory_space_acceptance_cache: Dict[Tuple, bool] = {}
         self.corridor_lane_capacity_cache: Dict[Tuple, Tuple[int, float, float]] = {}
+        self.route_feasibility_cache: Dict[Tuple, bool] = {}
+        self.route_feasibility_cache_max_entries = max(
+            0,
+            int(sim_cfg.get("route_feasibility_cache_max_entries", 50000) or 0),
+        self.local_obstacle_bbox_cache: Dict[
+            Tuple[str, str], Tuple[Tuple[float, float, float, float], ...]
+        ] = {}
+        self.local_manoeuvre_waypoint_cache: Dict[
+            Tuple, Tuple[Tuple[float, float], ...]
+        ] = {}
+        self.local_manoeuvre_waypoint_cache_max_entries = max(
+            0,
+            int(
+                sim_cfg.get("local_manoeuvre_waypoint_cache_max_entries", 10000)
+                or 0
+            ),
+        )
         self.generated_release_stagger_sec = max(
             0.0,
             float(
@@ -2977,10 +2994,16 @@ class Simulation:
         self, location_name: str, exclude_space_name: str = ""
     ) -> List[Tuple[float, float, float, float]]:
         """Return expanded bboxes for payload/AMR spaces to avoid locally."""
-        bboxes: List[Tuple[float, float, float, float]] = []
+        location_name = str(location_name or "").strip()
         exclude_space_name = str(exclude_space_name or "").strip()
+        cache_key = (location_name, exclude_space_name)
+        cached = self.local_obstacle_bbox_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+
+        bboxes: List[Tuple[float, float, float, float]] = []
         for space in self.inventory_spaces_by_location.get(
-            str(location_name or "").strip(), []
+            location_name, []
         ):
             if (
                 exclude_space_name
@@ -2992,7 +3015,28 @@ class Simulation:
             )
             if bbox is not None:
                 bboxes.append(bbox)
+        self.local_obstacle_bbox_cache[cache_key] = tuple(bboxes)
         return bboxes
+
+    def _local_manoeuvre_waypoint_cache_get(self, cache_key: Tuple):
+        cached = self.local_manoeuvre_waypoint_cache.get(cache_key)
+        if cached is None:
+            return None
+        return [tuple(point) for point in cached]
+
+    def _local_manoeuvre_waypoint_cache_set(
+        self, cache_key: Tuple, waypoints: List[Tuple[float, float]]
+    ) -> None:
+        max_entries = int(
+            getattr(self, "local_manoeuvre_waypoint_cache_max_entries", 0) or 0
+        )
+        if max_entries <= 0:
+            return
+        if len(self.local_manoeuvre_waypoint_cache) >= max_entries:
+            self.local_manoeuvre_waypoint_cache.clear()
+        self.local_manoeuvre_waypoint_cache[cache_key] = tuple(
+            (float(x), float(y)) for x, y in waypoints
+        )
 
     def _clear_local_segment(
         self,
@@ -3280,20 +3324,32 @@ class Simulation:
         end = (float(target.x), float(target.y))
         target_heading_deg = self._inventory_space_rotation_deg(target_space)
         radius = self._amr_vehicle_turning_radius_m(amr)
-        obstacles = self._local_obstacle_bboxes(
-            location_name, str(target_space.get("name", "") or "")
-        )
-
-        waypoints = self._local_manoeuvre_waypoints(start, end, obstacles)
-        waypoints = self._insert_vehicle_alignment_waypoint(
-            waypoints, target_heading_deg, radius, obstacles
-        )
+        space_name = str(target_space.get("name", "") or "")
         initial_heading_deg = float(
             getattr(amr, "rotation_deg", target_heading_deg) or target_heading_deg
         )
-        waypoints = self._smooth_vehicle_waypoints(
-            waypoints, initial_heading_deg, target_heading_deg, radius
+        cache_key = (
+            str(location_name or "").strip(),
+            space_name.strip(),
+            start[0],
+            start[1],
+            end[0],
+            end[1],
+            float(initial_heading_deg),
+            float(target_heading_deg),
+            float(radius),
         )
+        waypoints = self._local_manoeuvre_waypoint_cache_get(cache_key)
+        if waypoints is None:
+            obstacles = self._local_obstacle_bboxes(location_name, space_name)
+            waypoints = self._local_manoeuvre_waypoints(start, end, obstacles)
+            waypoints = self._insert_vehicle_alignment_waypoint(
+                waypoints, target_heading_deg, radius, obstacles
+            )
+            waypoints = self._smooth_vehicle_waypoints(
+                waypoints, initial_heading_deg, target_heading_deg, radius
+            )
+            self._local_manoeuvre_waypoint_cache_set(cache_key, waypoints)
 
         segments: List[dict] = []
         total_duration = 0.0
@@ -8894,9 +8950,17 @@ class Simulation:
         anything, so it is safe to use when deciding whether a pending task is
         impossible and should be failed.
         """
+        cache_key = self._route_feasibility_cache_key(
+            amr, from_loc, to_loc, payload, rules
+        )
+        if cache_key is not None:
+            cached = self.route_feasibility_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
         try:
             if from_loc.floor == to_loc.floor:
-                return (
+                result = (
                     self._shortest_path_same_floor(
                         from_loc.floor,
                         from_loc.name,
@@ -8905,8 +8969,10 @@ class Simulation:
                     )
                     is not None
                 )
+                self._route_feasibility_cache_set(cache_key, result)
+                return result
 
-            return (
+            result = (
                 self._nearest_compatible_lift_plan(
                     self.current_time,
                     amr,
@@ -8917,8 +8983,79 @@ class Simulation:
                 )
                 is not None
             )
+            self._route_feasibility_cache_set(cache_key, result)
+            return result
         except Exception:
+            self._route_feasibility_cache_set(cache_key, False)
             return False
+
+    def _route_feasibility_cache_key(
+        self,
+        amr: AMR,
+        from_loc: Location,
+        to_loc: Location,
+        payload: PayloadType,
+        rules: Optional[dict] = None,
+    ) -> Optional[Tuple]:
+        max_entries = int(
+            getattr(self, "route_feasibility_cache_max_entries", 0) or 0
+        )
+        if max_entries <= 0:
+            return None
+        rules = rules or self._empty_route_rules()
+        lift_state = ()
+        if from_loc.floor != to_loc.floor:
+            lift_state = tuple(
+                (
+                    lift.id,
+                    float(getattr(lift, "health_percent", 100.0) or 0.0),
+                    float(getattr(lift, "failed_until", 0.0) or 0.0),
+                    self._lift_health_speed_factor(lift) > 0.0,
+                    (
+                        float(
+                            self._scenario_event_state(
+                                "lift", lift.id, self.current_time
+                            ).get("availability_percent", 100.0)
+                        )
+                        if self.scenario_mode
+                        else 100.0
+                    ),
+                )
+                for lift in self.lifts
+                if lift.can_serve(from_loc.floor, to_loc.floor)
+                and self._lift_allowed(lift, rules)
+            )
+        return (
+            from_loc.name,
+            to_loc.name,
+            int(from_loc.floor),
+            int(to_loc.floor),
+            str(getattr(amr, "id", "") or ""),
+            float(getattr(amr, "length_m", 0.0) or 0.0),
+            float(getattr(amr, "width_m", 0.0) or 0.0),
+            float(getattr(amr, "height_m", 0.0) or 0.0),
+            str(getattr(payload, "name", "") or ""),
+            float(getattr(payload, "weight_kg", 0.0) or 0.0),
+            float(getattr(payload, "length_m", 0.0) or 0.0),
+            float(getattr(payload, "width_m", 0.0) or 0.0),
+            float(getattr(payload, "height_m", 0.0) or 0.0),
+            self._rules_cache_key(rules),
+            lift_state,
+        )
+
+    def _route_feasibility_cache_set(
+        self, cache_key: Optional[Tuple], result: bool
+    ) -> None:
+        if cache_key is None:
+            return
+        max_entries = int(
+            getattr(self, "route_feasibility_cache_max_entries", 0) or 0
+        )
+        if max_entries <= 0:
+            return
+        if len(self.route_feasibility_cache) >= max_entries:
+            self.route_feasibility_cache.clear()
+        self.route_feasibility_cache[cache_key] = bool(result)
 
     def _released_task_terminal_failure_reason(self, task: Task) -> str:
         """Return a failure reason only for tasks that cannot ever run.
