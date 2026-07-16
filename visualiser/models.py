@@ -1250,9 +1250,24 @@ class JsonStore:
                     "points": points,
                     "payload_slots": payload_slots,
                 }
-                if bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr":
+                slot_amr_type = ""
+                for slot in payload_slots:
+                    if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
+                        slot_amr_type = str(slot.get("amr_type", "") or "").strip()
+                        break
+                is_amr_space = (
+                    bool(space.get("stores_amr", False))
+                    or str(space.get("space_type", "") or "").strip().lower() == "amr"
+                    or bool(str(space.get("amr_type", "") or "").strip())
+                    or bool(slot_amr_type)
+                )
+                if is_amr_space:
                     clean_space["space_type"] = "amr"
                     clean_space["stores_amr"] = True
+                    amr_type = str(space.get("amr_type", "") or "").strip() or slot_amr_type
+                    if amr_type:
+                        clean_space["amr_type"] = amr_type
+                    clean_space["has_charger"] = bool(space.get("has_charger", False))
                 for runtime_key in ("amr_id", "occupied", "reserved_by_amr", "timestamp"):
                     if runtime_key in space:
                         clean_space[runtime_key] = space.get(runtime_key)
@@ -1999,7 +2014,9 @@ class JsonStore:
             except Exception:
                 required = 1
             compatible = 0
+            charger_equipped = 0
             compatible_by_location = {}
+            charger_equipped_by_location = {}
             configured_slots_by_location = {}
             for location in charge_location_dicts:
                 location_name = str(location.get("name", "") or "").strip()
@@ -2019,15 +2036,20 @@ class JsonStore:
                     if self._inventory_space_accepts_amr_type(location, space, amr_type):
                         compatible += 1
                         compatible_by_location[location_name] = compatible_by_location.get(location_name, 0) + 1
-            if compatible < required:
+                        if bool(space.get("has_charger", False)):
+                            charger_equipped += 1
+                            charger_equipped_by_location[location_name] = (
+                                charger_equipped_by_location.get(location_name, 0) + 1
+                            )
+            if charger_equipped < required:
                 detail_parts = [
-                    f"{name}: {compatible_by_location.get(name, 0)} compatible / {configured_slots_by_location.get(name, 0)} AMR slot(s)"
+                    f"{name}: {charger_equipped_by_location.get(name, 0)} charger-equipped compatible / {compatible_by_location.get(name, 0)} compatible / {configured_slots_by_location.get(name, 0)} AMR slot(s)"
                     for name in charge_locations
                 ]
                 detail = "; ".join(detail_parts) if detail_parts else "no configured charging locations"
                 errors.append(
-                    f"AMR type {amr_id} requires {required} compatible charging inventory space(s), "
-                    f"but only {compatible} found at configured charging location(s). {detail}."
+                    f"AMR type {amr_id} requires {required} compatible charger-equipped AMR space(s), "
+                    f"but only {charger_equipped} found at configured charging location(s). {detail}."
                 )
         return errors
 

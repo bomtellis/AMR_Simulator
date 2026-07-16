@@ -5,7 +5,9 @@ import csv
 from bisect import bisect_right
 import json
 import math
+import multiprocessing as mp
 import os
+import queue
 import re
 import shutil
 import sys
@@ -30,6 +32,7 @@ from PySide6.QtGui import (
     QSurfaceFormat,
     QFontDatabase,
     QPixmap,
+    QWindow,
 )
 from PySide6.QtCore import QPointF, QTimer, Qt, QRectF, QRect, QObject, Signal, QThread
 from PySide6.QtWidgets import (
@@ -73,6 +76,8 @@ from PySide6.QtWidgets import (
     QListWidget,
     QFrame,
     QLineEdit,
+    QDockWidget,
+    QToolBar,
 )
 
 try:
@@ -2197,6 +2202,194 @@ class AmrTimelineWidget(QWidget):
             parent.on_timeline_seek(new_time)
 
 
+class AuxiliaryTimelineWindow(QMainWindow):
+    """Timeline window rendered entirely inside the auxiliary GUI process."""
+
+    def __init__(self, event_queue):
+        super().__init__()
+        self._event_queue = event_queue
+        self.setWindowTitle("AMR Timeline")
+        self.resize(1400, 420)
+
+        root = QWidget(self)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(4, 4, 4, 4)
+        self.timeline_widget = AmrTimelineWidget(self)
+        self.timeline_scroll = QScrollArea(self)
+        self.timeline_scroll.setWidgetResizable(False)
+        self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.timeline_scroll.setWidget(self.timeline_widget)
+        self.timeline_scroll.horizontalScrollBar().valueChanged.connect(
+            self.timeline_widget.update
+        )
+        self.timeline_scroll.verticalScrollBar().valueChanged.connect(
+            self.timeline_widget.update
+        )
+        layout.addWidget(self.timeline_scroll, 1)
+        self.setCentralWidget(root)
+
+    def _send_event(self, message: dict) -> None:
+        try:
+            self._event_queue.put_nowait(message)
+        except Exception:
+            pass
+
+    def on_timeline_seek(self, new_time: datetime):
+        self.timeline_widget.current_time = new_time
+        self.timeline_widget.update()
+        self._send_event({"type": "timeline_seek", "time": new_time})
+
+    def set_timeline_data(self, message: dict) -> None:
+        self.timeline_widget.set_data(
+            message.get("timeline_data", []),
+            message.get("start_time"),
+            message.get("end_time"),
+            message.get("current_time"),
+        )
+
+    def set_current_time(self, value: Optional[datetime]) -> None:
+        self.timeline_widget.current_time = value
+        self.timeline_widget.update()
+
+    def center_on_time(self, value: Optional[datetime]) -> None:
+        if value is None:
+            return
+        x = self.timeline_widget._time_to_x(value)
+        bar = self.timeline_scroll.horizontalScrollBar()
+        bar.setValue(
+            max(0, int(x - (self.timeline_scroll.viewport().width() / 2)))
+        )
+        self.timeline_widget.update()
+
+    def set_zoom_preset(self, text: str) -> None:
+        text = str(text or "").strip()
+        if text == "Fit":
+            total_seconds = self.timeline_widget._timeline_seconds()
+            visible_width = max(
+                300,
+                self.timeline_scroll.viewport().width()
+                - self.timeline_widget.left_pad
+                - self.timeline_widget.right_pad,
+            )
+            seconds = (
+                total_seconds / visible_width
+                if total_seconds > 0
+                else self.timeline_widget.default_seconds_per_pixel
+            )
+        else:
+            mapping = {
+                "15 min": 15 * 60,
+                "30 min": 30 * 60,
+                "1 hour": 60 * 60,
+                "3 hours": 3 * 60 * 60,
+                "6 hours": 6 * 60 * 60,
+                "12 hours": 12 * 60 * 60,
+                "1 day": 24 * 60 * 60,
+            }
+            window_seconds = mapping.get(text)
+            if window_seconds is None:
+                return
+            visible_width = max(
+                300,
+                self.timeline_scroll.viewport().width()
+                - self.timeline_widget.left_pad
+                - self.timeline_widget.right_pad,
+            )
+            seconds = window_seconds / visible_width
+        self.timeline_widget.set_zoom_seconds_per_pixel(seconds)
+        self.center_on_time(self.timeline_widget.current_time)
+
+    def closeEvent(self, event):
+        self._send_event({"type": "timeline_visible", "visible": False})
+        super().closeEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._send_event(
+            {
+                "type": "timeline_visible",
+                "visible": True,
+                "window_id": int(self.winId()),
+            }
+        )
+
+
+def run_auxiliary_gui_process(command_queue, event_queue) -> None:
+    """Run timeline and lift-monitor drawing in an independent Qt process."""
+    app = QApplication([])
+    configure_application_font(app)
+    timeline_window = AuxiliaryTimelineWindow(event_queue)
+    timeline_window.show()
+    lift_dialog = None
+    latest_lift_states: List[dict] = []
+
+    def send_event(message: dict) -> None:
+        try:
+            event_queue.put_nowait(message)
+        except Exception:
+            pass
+
+    def lift_closed(*_args) -> None:
+        send_event({"type": "lift_visible", "visible": False})
+
+    def process_commands() -> None:
+        nonlocal lift_dialog, latest_lift_states
+        for _index in range(200):
+            try:
+                message = command_queue.get_nowait()
+            except queue.Empty:
+                break
+            except Exception:
+                app.quit()
+                return
+
+            message_type = str(message.get("type", "") or "")
+            if message_type == "shutdown":
+                app.quit()
+                return
+            if message_type == "timeline_data":
+                timeline_window.set_timeline_data(message)
+            elif message_type == "timeline_time":
+                timeline_window.set_current_time(message.get("time"))
+            elif message_type == "timeline_center":
+                timeline_window.center_on_time(message.get("time"))
+            elif message_type == "timeline_zoom":
+                timeline_window.set_zoom_preset(message.get("preset", ""))
+            elif message_type == "timeline_zoom_factor":
+                timeline_window.timeline_widget.zoom_by_factor(
+                    message.get("factor", 1.0), message.get("anchor_time")
+                )
+            elif message_type == "show_timeline":
+                timeline_window.show()
+                send_event(
+                    {
+                        "type": "timeline_window_id",
+                        "window_id": int(timeline_window.winId()),
+                    }
+                )
+            elif message_type == "lift_states":
+                latest_lift_states = list(message.get("states", []) or [])
+                if lift_dialog is not None and lift_dialog.isVisible():
+                    lift_dialog.update_states(latest_lift_states)
+            elif message_type == "show_lift":
+                if lift_dialog is None:
+                    lift_dialog = LiftMonitorDialog()
+                    lift_dialog.finished.connect(lift_closed)
+                lift_dialog.set_lifts(latest_lift_states)
+                lift_dialog.show()
+                lift_dialog.raise_()
+                lift_dialog.activateWindow()
+                send_event({"type": "lift_visible", "visible": True})
+
+    command_timer = QTimer()
+    command_timer.setInterval(25)
+    command_timer.timeout.connect(process_commands)
+    command_timer.start()
+    app.exec()
+    send_event({"type": "process_stopped"})
+
+
 class LocationInventoryPayloadDialog(QDialog):
     columns = [
         ("space", "Inventory space", 180),
@@ -2312,6 +2505,11 @@ class SimulationVisualizer(QMainWindow):
         self._lift_monitor_state_cache_value = None
         self._last_lift_monitor_update_wall_time = 0.0
         self._lift_monitor_update_interval_sec = 0.25
+        self._last_timeline_playhead_update_wall_time = 0.0
+        self._timeline_playhead_update_interval_sec = 0.10
+        self._lift_monitor_timeline_update_interval_sec = 0.50
+        self._last_graph_update_wall_time = 0.0
+        self._lift_monitor_graph_update_interval_sec = 0.25
 
         self.current_json_path: Optional[str] = None
         self.current_dxf_path: Optional[str] = None
@@ -2324,7 +2522,19 @@ class SimulationVisualizer(QMainWindow):
         self._inventory_cache_max_entries = 6000
         self._room_payload_cache_key = None
         self._brush_texture_cache: Dict[Tuple[str, int], QBrush] = {}
-        self.lift_monitor_dialog: Optional[LiftMonitorDialog] = None
+        self._aux_gui_process = None
+        self._aux_gui_command_queue = None
+        self._aux_gui_event_queue = None
+        self._aux_lift_monitor_visible = False
+        self._aux_timeline_visible = False
+        self._aux_timeline_window_id = 0
+        self._aux_timeline_foreign_window = None
+        self._aux_timeline_container = None
+        self._timeline_docked_min_height = 130
+        self._timeline_floating_min_size = (700, 280)
+        self._aux_gui_event_timer = QTimer(self)
+        self._aux_gui_event_timer.setInterval(50)
+        self._aux_gui_event_timer.timeout.connect(self._poll_aux_gui_events)
         self.amr_payload_monitor_dialog: Optional[AmrPayloadMonitorDialog] = None
         self.play_timer = QTimer(self)
         self.play_timer.timeout.connect(self._tick)
@@ -2413,12 +2623,51 @@ class SimulationVisualizer(QMainWindow):
         self.ensure_dxf_floor_loaded(floor)
 
     def _build_ui(self):
+        self.project_ribbon = QToolBar("Project and navigation", self)
+        self.project_ribbon.setObjectName("projectNavigationRibbon")
+        self.project_ribbon.setMovable(True)
+        self.project_ribbon.setFloatable(True)
+        self.project_ribbon.setAllowedAreas(
+            Qt.TopToolBarArea
+            | Qt.BottomToolBarArea
+            | Qt.LeftToolBarArea
+            | Qt.RightToolBarArea
+        )
+        self.project_ribbon.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.addToolBar(Qt.TopToolBarArea, self.project_ribbon)
+
+        def add_ribbon_action(text, callback, tooltip=""):
+            action = self.project_ribbon.addAction(text)
+            action.triggered.connect(callback)
+            if tooltip:
+                action.setToolTip(tooltip)
+                action.setStatusTip(tooltip)
+            return action
+
+        add_ribbon_action("Open JSON", self.open_json, "Load an AMR layout JSON model.")
+        add_ribbon_action("Open DXF", self.open_dxf, "Load a DXF drawing for the current floor.")
+        add_ribbon_action(
+            "Reload DXF",
+            self.reload_current_floor_dxf,
+            "Reload the current floor's DXF drawing.",
+        )
+        self.project_ribbon.addSeparator()
+        add_ribbon_action("Open Simulation", self.open_csv, "Load a simulation results CSV.")
+        self.project_ribbon.addSeparator()
+        add_ribbon_action("Jump to Task", self.open_task_jump_dialog)
+        add_ribbon_action(
+            "Tasks by Location / Department",
+            self.open_tasks_by_location_department_dialog,
+        )
+
         root = QWidget()
         self.setCentralWidget(root)
         layout = QHBoxLayout(root)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         side = QWidget()
-        side.setFixedWidth(340)
+        side.setMinimumWidth(250)
+        side.setMaximumWidth(480)
         side_layout = QVBoxLayout(side)
 
         self.graphics_scene = QGraphicsScene(self)
@@ -2452,15 +2701,7 @@ class SimulationVisualizer(QMainWindow):
             side_layout.addWidget(btn)
             return btn
 
-        add_btn("Open Layout JSON", self.open_json)
-        add_btn("Open DXF", self.open_dxf)
-        add_btn("Reload Current Floor DXF", self.reload_current_floor_dxf)
-        add_btn("Open Simulation CSV", self.open_csv)
-        add_btn("Jump to Task", self.open_task_jump_dialog)
-        add_btn(
-            "Tasks by Location / Department",
-            self.open_tasks_by_location_department_dialog,
-        )
+        add_btn("Timeline", self.open_timeline_window)
         add_btn("Lift Monitor", self.open_lift_monitor_dialog)
         add_btn("AMR Payload Monitor", self.open_amr_payload_monitor_dialog)
         add_btn("Fit View", self.fit_view)
@@ -2565,9 +2806,10 @@ class SimulationVisualizer(QMainWindow):
         self.event_box = None
 
         self.timeline_panel = QWidget()
-        timeline_panel_layout = QVBoxLayout(self.timeline_panel)
-        timeline_panel_layout.setContentsMargins(0, 0, 0, 0)
-        timeline_panel_layout.setSpacing(4)
+        self.timeline_panel.setMinimumHeight(0)
+        self.timeline_panel_layout = QVBoxLayout(self.timeline_panel)
+        self.timeline_panel_layout.setContentsMargins(0, 0, 0, 0)
+        self.timeline_panel_layout.setSpacing(4)
 
         timeline_controls = QHBoxLayout()
         timeline_controls.setContentsMargins(6, 4, 6, 0)
@@ -2634,32 +2876,41 @@ class SimulationVisualizer(QMainWindow):
         timeline_controls.addWidget(QLabel("Zoom"))
         timeline_controls.addWidget(self.timeline_zoom_combo)
 
-        self.timeline_widget = AmrTimelineWidget(self)
-
-        self.timeline_scroll = QScrollArea()
-        self.timeline_scroll.setWidgetResizable(False)
-        self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.timeline_scroll.setWidget(self.timeline_widget)
-        self.timeline_scroll.horizontalScrollBar().valueChanged.connect(
-            self.timeline_widget.update
+        self.timeline_process_note = QLabel(
+            "Connecting to the separate timeline GUI process..."
         )
-        self.timeline_scroll.verticalScrollBar().valueChanged.connect(
-            self.timeline_widget.update
-        )
+        self.timeline_process_note.setAlignment(Qt.AlignCenter)
+        self.timeline_process_note.setWordWrap(True)
 
-        timeline_panel_layout.addLayout(timeline_controls)
-        timeline_panel_layout.addWidget(self.timeline_scroll, 1)
+        self.timeline_panel_layout.addLayout(timeline_controls)
+        self.timeline_panel_layout.addWidget(self.timeline_process_note, 1)
 
-        self.main_splitter = QSplitter(Qt.Vertical)
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.addWidget(side)
         self.main_splitter.addWidget(self.view)
-        self.main_splitter.addWidget(self.timeline_panel)
-        self.main_splitter.setStretchFactor(0, 5)
+        self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
-        self.main_splitter.setSizes([760, 220])
-
-        layout.addWidget(side)
+        self.main_splitter.setSizes([320, 1280])
         layout.addWidget(self.main_splitter, 1)
+
+        self.timeline_dock = QDockWidget("Timeline", self)
+        self.timeline_dock.setObjectName("timelineDock")
+        self.timeline_dock.setAllowedAreas(
+            Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea
+        )
+        self.timeline_dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+        self.timeline_dock.setMinimumHeight(self._timeline_docked_min_height)
+        self.timeline_dock.topLevelChanged.connect(
+            self._on_timeline_dock_top_level_changed
+        )
+        self.timeline_dock.setWidget(self.timeline_panel)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
+        self.resizeDocks([self.timeline_dock], [260], Qt.Vertical)
 
     def _location_by_name(self, location_name):
         for location in self.layout_model.data.get("locations", []):
@@ -3101,9 +3352,159 @@ class SimulationVisualizer(QMainWindow):
         self._lift_monitor_state_cache_key = None
         self._lift_monitor_state_cache_value = None
         self._last_play_tick_wall_time = None
+        self._last_timeline_playhead_update_wall_time = 0.0
+        self._last_graph_update_wall_time = 0.0
         self._room_payload_cache_key = None
         if hasattr(self, "sim_log") and self.sim_log is not None:
             self.sim_log.reset_playback_cursor()
+
+    def _ensure_aux_gui_process(self) -> bool:
+        process = self._aux_gui_process
+        if process is not None and process.is_alive():
+            return True
+
+        try:
+            context = mp.get_context("spawn")
+            self._aux_gui_command_queue = context.Queue()
+            self._aux_gui_event_queue = context.Queue()
+            self._aux_gui_process = context.Process(
+                target=run_auxiliary_gui_process,
+                args=(self._aux_gui_command_queue, self._aux_gui_event_queue),
+                name="AMR timeline and lift GUI",
+                daemon=True,
+            )
+            self._aux_gui_process.start()
+            self._aux_gui_event_timer.start()
+            return True
+        except Exception as exc:
+            self.status_label.setText(
+                f"Could not start timeline/lift GUI process: {exc}"
+            )
+            self._aux_gui_process = None
+            return False
+
+    def _send_aux_gui_command(self, message: dict) -> bool:
+        if not self._ensure_aux_gui_process():
+            return False
+        try:
+            self._aux_gui_command_queue.put_nowait(message)
+            return True
+        except Exception:
+            return False
+
+    def _attach_aux_timeline_window(self, window_id) -> None:
+        try:
+            native_id = int(window_id or 0)
+        except Exception:
+            native_id = 0
+        if native_id <= 0 or native_id == self._aux_timeline_window_id:
+            return
+
+        foreign_window = QWindow.fromWinId(native_id)
+        if foreign_window is None:
+            self.timeline_process_note.setText(
+                "The timeline process is running, but its window could not be docked."
+            )
+            return
+
+        old_container = self._aux_timeline_container
+        self._aux_timeline_foreign_window = foreign_window
+        self._aux_timeline_container = QWidget.createWindowContainer(
+            foreign_window, self.timeline_panel
+        )
+        # Keep the canvas small enough that the dock separator can be dragged
+        # down to the compact docked minimum.
+        self._aux_timeline_container.setMinimumHeight(70)
+        self.timeline_panel_layout.addWidget(self._aux_timeline_container, 1)
+        self.timeline_process_note.hide()
+        self._aux_timeline_window_id = native_id
+        if old_container is not None:
+            old_container.deleteLater()
+
+    def _detach_aux_timeline_window(self) -> None:
+        if self._aux_timeline_container is not None:
+            self._aux_timeline_container.deleteLater()
+        self._aux_timeline_container = None
+        self._aux_timeline_foreign_window = None
+        self._aux_timeline_window_id = 0
+        if hasattr(self, "timeline_process_note"):
+            self.timeline_process_note.setText(
+                "Connecting to the separate timeline GUI process..."
+            )
+            self.timeline_process_note.show()
+
+    def _on_timeline_dock_top_level_changed(self, floating: bool) -> None:
+        if floating:
+            minimum_width, minimum_height = self._timeline_floating_min_size
+            self.timeline_dock.setMinimumSize(minimum_width, minimum_height)
+        else:
+            self.timeline_dock.setMinimumWidth(0)
+            self.timeline_dock.setMinimumHeight(self._timeline_docked_min_height)
+
+    def _poll_aux_gui_events(self) -> None:
+        process = self._aux_gui_process
+        if process is not None and not process.is_alive():
+            self._aux_gui_event_timer.stop()
+            self._detach_aux_timeline_window()
+            self._aux_gui_process = None
+            self._aux_lift_monitor_visible = False
+            self._aux_timeline_visible = False
+            return
+
+        event_queue = self._aux_gui_event_queue
+        if event_queue is None:
+            return
+        latest_seek = None
+        for _index in range(200):
+            try:
+                message = event_queue.get_nowait()
+            except queue.Empty:
+                break
+            except Exception:
+                break
+            message_type = str(message.get("type", "") or "")
+            if message_type == "timeline_seek":
+                latest_seek = message.get("time")
+            elif message_type == "timeline_visible":
+                self._aux_timeline_visible = bool(message.get("visible", False))
+                self._attach_aux_timeline_window(message.get("window_id"))
+            elif message_type == "timeline_window_id":
+                self._attach_aux_timeline_window(message.get("window_id"))
+            elif message_type == "lift_visible":
+                visible = bool(message.get("visible", False))
+                self._aux_lift_monitor_visible = visible
+                if not visible:
+                    self._last_timeline_playhead_update_wall_time = 0.0
+                    self._last_graph_update_wall_time = 0.0
+            elif message_type == "process_stopped":
+                self._aux_lift_monitor_visible = False
+                self._aux_timeline_visible = False
+        if isinstance(latest_seek, datetime):
+            self.on_timeline_seek(latest_seek)
+
+    def open_timeline_window(self):
+        if hasattr(self, "timeline_dock"):
+            self.timeline_dock.show()
+            self.timeline_dock.raise_()
+        self._send_aux_gui_command({"type": "show_timeline"})
+        self.refresh_timeline()
+
+    def _shutdown_aux_gui_process(self) -> None:
+        process = self._aux_gui_process
+        if process is None:
+            return
+        try:
+            if process.is_alive() and self._aux_gui_command_queue is not None:
+                self._aux_gui_command_queue.put_nowait({"type": "shutdown"})
+            process.join(timeout=1.5)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=0.5)
+        except Exception:
+            pass
+        self._detach_aux_timeline_window()
+        self._aux_gui_process = None
+        self._aux_gui_event_timer.stop()
 
     def _current_event_index(self) -> int:
         if not self.current_time or not self.sim_log.events:
@@ -5362,15 +5763,45 @@ class SimulationVisualizer(QMainWindow):
         return lifts
 
     def _clear_lift_monitor_dialog_reference(self, *_args):
-        self.lift_monitor_dialog = None
+        self._aux_lift_monitor_visible = False
+        self._last_timeline_playhead_update_wall_time = 0.0
+        self._last_graph_update_wall_time = 0.0
+
+    def _lift_monitor_is_visible(self) -> bool:
+        return bool(self._aux_lift_monitor_visible)
+
+    def _timeline_playhead_update_due(self, now: Optional[float] = None) -> bool:
+        now = time.monotonic() if now is None else float(now)
+        interval = (
+            self._lift_monitor_timeline_update_interval_sec
+            if self._lift_monitor_is_visible()
+            else self._timeline_playhead_update_interval_sec
+        )
+        if (
+            now - self._last_timeline_playhead_update_wall_time
+            < interval
+        ):
+            return False
+        self._last_timeline_playhead_update_wall_time = now
+        return True
+
+    def _graph_update_due(self, now: Optional[float] = None) -> bool:
+        if not self.is_playing or not self._lift_monitor_is_visible():
+            return True
+        now = time.monotonic() if now is None else float(now)
+        if (
+            now - self._last_graph_update_wall_time
+            < self._lift_monitor_graph_update_interval_sec
+        ):
+            return False
+        self._last_graph_update_wall_time = now
+        return True
 
     def _clear_amr_payload_monitor_dialog_reference(self, *_args):
         self.amr_payload_monitor_dialog = None
 
     def update_lift_monitor_dialog(self, force: bool = False):
-        if self.lift_monitor_dialog is None:
-            return
-        if not self.lift_monitor_dialog.isVisible():
+        if not self._aux_lift_monitor_visible:
             return
 
         # The lift monitor used to rebuild from the whole event history every
@@ -5388,7 +5819,9 @@ class SimulationVisualizer(QMainWindow):
         self._last_lift_monitor_update_wall_time = now
 
         lift_states = self.build_lift_monitor_state()
-        self.lift_monitor_dialog.update_states(lift_states)
+        self._send_aux_gui_command(
+            {"type": "lift_states", "states": lift_states}
+        )
         if hasattr(self, "lift_dialog") and self.lift_dialog.isVisible():
             self.lift_dialog.update_from_time(self.current_time)
 
@@ -5400,19 +5833,13 @@ class SimulationVisualizer(QMainWindow):
             )
             return
 
-        # Reuse if already open
-        if self.lift_monitor_dialog and self.lift_monitor_dialog.isVisible():
-            self.lift_monitor_dialog.raise_()
-            self.lift_monitor_dialog.activateWindow()
-            return
-
-        self.lift_monitor_dialog = LiftMonitorDialog(self)
-        self.lift_monitor_dialog.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.lift_monitor_dialog.destroyed.connect(
-            self._clear_lift_monitor_dialog_reference
+        self._aux_lift_monitor_visible = True
+        self._send_aux_gui_command(
+            {"type": "lift_states", "states": lift_states}
         )
-        self.lift_monitor_dialog.set_lifts(lift_states)
-        self.lift_monitor_dialog.show()
+        self._send_aux_gui_command({"type": "show_lift"})
+        self._last_timeline_playhead_update_wall_time = 0.0
+        self._last_graph_update_wall_time = 0.0
 
     def _configured_amr_slot_summary_by_base_id(self) -> Dict[str, str]:
         summaries: Dict[str, str] = {}
@@ -7121,14 +7548,9 @@ class SimulationVisualizer(QMainWindow):
             self.event_box.append(line)
 
     def _scroll_timeline_to_time(self, value: Optional[datetime]):
-        if value is None or not hasattr(self, "timeline_widget"):
+        if value is None:
             return
-        self.refresh_timeline()
-        x = self.timeline_widget._time_to_x(value)
-        bar = self.timeline_scroll.horizontalScrollBar()
-        target = int(x - (self.timeline_scroll.viewport().width() / 2))
-        bar.setValue(max(0, min(bar.maximum(), target)))
-        self.timeline_widget.update()
+        self._send_aux_gui_command({"type": "timeline_center", "time": value})
 
     def _clamp_to_sim_range(self, value: datetime) -> datetime:
         if self.sim_log.start_time and value < self.sim_log.start_time:
@@ -7175,56 +7597,19 @@ class SimulationVisualizer(QMainWindow):
         self.view.viewport().update()
 
     def zoom_timeline(self, factor: float):
-        if not hasattr(self, "timeline_widget"):
-            return
         anchor = self.current_time or self.sim_log.start_time
-        self.timeline_widget.zoom_by_factor(factor, anchor)
+        self._send_aux_gui_command(
+            {
+                "type": "timeline_zoom_factor",
+                "factor": float(factor),
+                "anchor_time": anchor,
+            }
+        )
 
     def on_timeline_zoom_changed(self, text: str):
-        if not hasattr(self, "timeline_widget"):
-            return
-        text = str(text or "").strip().lower()
-        seconds = None
-        if text == "fit":
-            total_seconds = 0.0
-            if self.sim_log.start_time and self.sim_log.end_time:
-                total_seconds = max(
-                    1.0,
-                    (self.sim_log.end_time - self.sim_log.start_time).total_seconds(),
-                )
-            visible_width = max(
-                300,
-                self.timeline_scroll.viewport().width()
-                - self.timeline_widget.left_pad
-                - self.timeline_widget.right_pad,
-            )
-            seconds = (
-                total_seconds / visible_width
-                if total_seconds > 0
-                else self.timeline_widget.default_seconds_per_pixel
-            )
-        else:
-            mapping = {
-                "15 min": 15 * 60,
-                "30 min": 30 * 60,
-                "1 hour": 60 * 60,
-                "3 hours": 3 * 60 * 60,
-                "6 hours": 6 * 60 * 60,
-                "12 hours": 12 * 60 * 60,
-                "1 day": 24 * 60 * 60,
-            }
-            window_seconds = mapping.get(text)
-            if window_seconds:
-                visible_width = max(
-                    300,
-                    self.timeline_scroll.viewport().width()
-                    - self.timeline_widget.left_pad
-                    - self.timeline_widget.right_pad,
-                )
-                seconds = window_seconds / visible_width
-        if seconds is not None:
-            self.timeline_widget.set_zoom_seconds_per_pixel(seconds)
-            self._scroll_timeline_to_time(self.current_time or self.sim_log.start_time)
+        self._send_aux_gui_command(
+            {"type": "timeline_zoom", "preset": str(text or "")}
+        )
 
     def update_time_display(self):
         if not self.current_time:
@@ -7253,12 +7638,13 @@ class SimulationVisualizer(QMainWindow):
         self.time_label.setText(
             f"Current: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}\nStart: {start}\nEnd: {end}"
         )
-        # Do not rebuild the full AMR timeline on every playback tick.  The
-        # blocks only change when the CSV/layout changes; during playback only
-        # the playhead needs repainting.
-        if hasattr(self, "timeline_widget"):
-            self.timeline_widget.current_time = self.current_time
-            self.timeline_widget.update()
+        # The blocks only change when the CSV/layout changes. Throttle even the
+        # inexpensive playhead repaint during playback, with a lower rate while
+        # the lift monitor has priority for UI updates.
+        if not self.is_playing or self._timeline_playhead_update_due():
+            self._send_aux_gui_command(
+                {"type": "timeline_time", "time": self.current_time}
+            )
         self.update_lift_monitor_dialog()
         self.update_amr_payload_monitor_dialog()
 
@@ -7305,8 +7691,8 @@ class SimulationVisualizer(QMainWindow):
             self._last_play_tick_wall_time = None
             self.play_timer.stop()
         self.update_time_display()
-        self.refresh_dynamic_scene()
-        self.view.viewport().update()
+        if self._graph_update_due(now):
+            self.refresh_dynamic_scene()
 
     def step_seconds(self, seconds: int):
         if not self.current_time:
@@ -8439,24 +8825,28 @@ class SimulationVisualizer(QMainWindow):
         return start_time, end_time
 
     def refresh_timeline(self):
-        if not hasattr(self, "timeline_widget"):
-            return
-
         timeline_data = self.build_amr_timeline_data() if self.sim_log.events else []
         start_time, end_time = self._timeline_display_range(timeline_data)
-        self.timeline_widget.set_data(
-            timeline_data,
-            start_time,
-            end_time,
-            self.current_time,
+        self._send_aux_gui_command(
+            {
+                "type": "timeline_data",
+                "timeline_data": timeline_data,
+                "start_time": start_time,
+                "end_time": end_time,
+                "current_time": self.current_time,
+            }
         )
 
     def on_timeline_seek(self, new_time: datetime):
         self.current_time = new_time
         self.update_time_display()
         self.refresh_dynamic_scene()
-        self.refresh_timeline()
         self.view.viewport().update()
+
+    def closeEvent(self, event):
+        self.play_timer.stop()
+        self._shutdown_aux_gui_process()
+        super().closeEvent(event)
 
 
 def configure_application_font(app: QApplication) -> None:
@@ -8489,6 +8879,7 @@ def _parse_visualiser_args(argv: List[str]):
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    mp.freeze_support()
     args = _parse_visualiser_args(sys.argv[1:] if argv is None else argv)
     if QOpenGLWidget is not None:
         default_format = QSurfaceFormat()

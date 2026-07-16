@@ -345,7 +345,9 @@ def _polish_item_views(root: QWidget) -> None:
         if table.columnCount() > 0 and table.horizontalHeader().sectionResizeMode(0) == QHeaderView.Fixed:
             table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
     for tree in root.findChildren(QTreeWidget):
-        tree.setUniformRowHeights(True)
+        tree.setUniformRowHeights(
+            not bool(tree.property("amrVariableRowHeights"))
+        )
         tree.header().setHighlightSections(False)
     for listing in root.findChildren(QListWidget):
         listing.setSpacing(max(1, listing.spacing()))

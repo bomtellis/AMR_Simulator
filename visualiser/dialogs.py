@@ -5,10 +5,11 @@ from typing import Any, List, Optional
 
 from advanced_dialogs import MultiSelectPicker
 
-from PySide6.QtCore import Qt, QPointF, QRectF, QTime, QDateTime
+from PySide6.QtCore import Qt, QPointF, QRectF, QSize, QTime, QDateTime
 from PySide6.QtGui import QColor, QBrush, QPen, QPolygonF, QPainter, QPainterPath, QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -4346,6 +4347,10 @@ class EdgeConnectionsDialog(QDialog):
 
         self._refresh_table()
         _polish_dialog(self)
+        # This tree uses spanned floor headings above department rows. Uniform
+        # row heights can cache the heading as a one-pixel template and hide all
+        # children, so allow each row to retain its explicit readable height.
+        self.table.setUniformRowHeights(False)
 
     def _refresh_table(self):
         self.table.setRowCount(0)
@@ -10050,7 +10055,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             "leave it partially ticked to make no assignment/settings change. "
             "For checked streams, the generation settings below are applied to every "
             "selected department at the same time. Deleted/orphaned streams are shown "
-            "so they can be unchecked and removed."
+            "so they can be unchecked and removed. If selected departments use different "
+            "shared bin groups, those groups are preserved unless you edit that field."
         )
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
@@ -10176,6 +10182,23 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                     return normalised
         return {"name": stream_name, **self.DEFAULT_STREAM_SETTINGS}
 
+    def _shared_groups_for_stream(self, stream_name):
+        groups = set()
+        for dept in self.departments:
+            for item in dept.get("waste_streams", []) or []:
+                normalised = self._normalise_stream_item(item)
+                if not normalised or normalised.get("name") != stream_name:
+                    continue
+                groups.add(
+                    str(normalised.get("shared_container_group", "") or "").strip()
+                )
+        return groups
+
+    def _mark_shared_group_edited(self, stream_name):
+        widgets = self._row_widgets.get(stream_name)
+        if widgets is not None:
+            widgets["shared_group_edited"] = True
+
     def _make_number_edit(self, value):
         edit = QLineEdit(str(value))
         edit.setMinimumWidth(90)
@@ -10283,7 +10306,19 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                     or ""
                 )
             )
-            shared_group_edit.setPlaceholderText("Optional shared bin ID")
+            shared_groups = self._shared_groups_for_stream(stream_name)
+            shared_group_mixed = len(shared_groups) > 1
+            if shared_group_mixed:
+                shared_group_edit.clear()
+                shared_group_edit.setPlaceholderText(
+                    "Mixed groups - unchanged unless edited"
+                )
+                shared_group_edit.setToolTip(
+                    "Selected departments currently use different shared bin groups: "
+                    + ", ".join(sorted(group or "(not shared)" for group in shared_groups))
+                )
+            else:
+                shared_group_edit.setPlaceholderText("Optional shared bin ID")
 
             scheduled_times = list(seed.get("scheduled_times", []) or [])
             schedule_label = QLabel()
@@ -10310,6 +10345,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                 "clear_times_btn": clear_times_btn,
                 "initial_container_check": initial_container_check,
                 "shared_group_edit": shared_group_edit,
+                "shared_group_mixed": shared_group_mixed,
+                "shared_group_edited": False,
             }
 
             edit_times_btn.clicked.connect(
@@ -10324,6 +10361,9 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             )
             mode_combo.currentTextChanged.connect(
                 lambda _value, name=stream_name: self._update_stream_field_state(name)
+            )
+            shared_group_edit.textEdited.connect(
+                lambda _value, name=stream_name: self._mark_shared_group_edited(name)
             )
 
             self.table.setItemWidget(item, 4, mode_combo)
@@ -10443,7 +10483,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
 
     def _settings_for_stream(self, stream_name):
         widgets = self._row_widgets.get(stream_name, {})
-        return {
+        settings = {
             "generation_mode": widgets["mode_combo"].currentText().strip(),
             "frequency_per_day": float(widgets["frequency_edit"].text() or 0.0),
             "volume_per_event_m3": float(widgets["volume_edit"].text() or 0.0),
@@ -10451,9 +10491,16 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             "base_daily_volume_m3": float(widgets["base_daily_edit"].text() or 0.0),
             "scheduled_times": list(widgets.get("scheduled_times", []) or []),
             "initial_container_present": widgets["initial_container_check"].isChecked(),
-            "shared_container": bool(widgets["shared_group_edit"].text().strip()),
-            "shared_container_group": widgets["shared_group_edit"].text().strip(),
         }
+        # A blank field represents multiple existing values until the user edits
+        # it.  Omitting these keys lets each department retain its own auto group.
+        if not widgets.get("shared_group_mixed", False) or widgets.get(
+            "shared_group_edited", False
+        ):
+            shared_group = widgets["shared_group_edit"].text().strip()
+            settings["shared_container"] = bool(shared_group)
+            settings["shared_container_group"] = shared_group
+        return settings
 
     def accept(self):
         add_streams = []
@@ -10847,9 +10894,9 @@ class TaskCategorySharedBinGroupWizard(QDialog):
 
         intro = QLabel(
             "Find departments that already share the same assigned task-category "
-            "location, then write a matching shared bin group onto their assigned "
-            "waste streams. This does not change the existing category location "
-            "assignments."
+            "location, then write a matching shared bin group for each assigned "
+            "waste stream. Different waste streams receive different physical-bin "
+            "group IDs. This does not change the existing category location assignments."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -10927,7 +10974,7 @@ class TaskCategorySharedBinGroupWizard(QDialog):
             [
                 "Use",
                 "Shared location",
-                "Shared bin group",
+                "Shared bin groups",
                 "Departments",
                 "Floors",
                 "Streams updated",
@@ -11041,9 +11088,12 @@ class TaskCategorySharedBinGroupWizard(QDialog):
             text = text.replace("--", "-")
         return text.strip("-") or "GROUP"
 
-    def _group_id_for_location(self, location_name):
+    def _group_id_for_location(self, location_name, stream_name=""):
         prefix = self.group_prefix_edit.text().strip() or "SHARED-BIN"
-        return f"{prefix}-{self._safe_group_suffix(location_name)}"
+        group_id = f"{prefix}-{self._safe_group_suffix(location_name)}"
+        if str(stream_name or "").strip():
+            group_id += f"-{self._safe_group_suffix(stream_name)}"
+        return group_id
 
     def pick_waste_streams(self):
         if not self.waste_stream_names:
@@ -11154,10 +11204,16 @@ class TaskCategorySharedBinGroupWizard(QDialog):
                     else:
                         stream_update_count += 1
 
+            group_ids = {
+                stream_name: self._group_id_for_location(
+                    location_name, stream_name
+                )
+                for stream_name in sorted(selected_streams)
+            }
             groups.append(
                 {
                     "location": location_name,
-                    "group_id": self._group_id_for_location(location_name),
+                    "group_ids": group_ids,
                     "department_indexes": unique_indexes,
                     "stream_update_count": stream_update_count,
                     "skipped_existing_count": skipped_existing_count,
@@ -11189,11 +11245,15 @@ class TaskCategorySharedBinGroupWizard(QDialog):
                 )
                 floors.add(str(dept.get("floor", "")))
 
+            group_ids = list(group.get("group_ids", {}).values())
+            group_text = ", ".join(group_ids[:3])
+            if len(group_ids) > 3:
+                group_text += f", +{len(group_ids) - 3}"
             item = QTreeWidgetItem(
                 [
                     "",
                     group["location"],
-                    group["group_id"],
+                    group_text,
                     ", ".join(dept_names[:6])
                     + (f", +{len(dept_names) - 6}" if len(dept_names) > 6 else ""),
                     ", ".join(sorted(floors)),
@@ -11306,6 +11366,7 @@ class DepartmentListDialog(QDialog):
         layout = QVBoxLayout(self)
 
         self.table = QTreeWidget()
+        self.table.setProperty("amrVariableRowHeights", True)
         self.table.setColumnCount(10)
         self.table.setHeaderLabels(
             [
@@ -11385,8 +11446,11 @@ class DepartmentListDialog(QDialog):
                 [f"Floor {floor}", "", "", "", "", "", "", "", "", ""]
             )
             floor_item.setFirstColumnSpanned(True)
-            floor_item.setExpanded(True)
+            floor_item.setSizeHint(0, QSize(0, 26))
             self.table.addTopLevelItem(floor_item)
+            # Expansion only takes effect reliably once the item belongs to the
+            # tree. Calling it before addTopLevelItem left every floor collapsed.
+            floor_item.setExpanded(True)
 
             grouped[floor].sort(
                 key=lambda pair: (
@@ -11445,6 +11509,7 @@ class DepartmentListDialog(QDialog):
                 )
 
                 child.setData(0, Qt.UserRole, idx)
+                child.setSizeHint(0, QSize(0, 26))
                 floor_item.addChild(child)
                 self._tree_item_to_index[id(child)] = idx
 
@@ -11603,8 +11668,14 @@ class DepartmentListDialog(QDialog):
         departments_touched = set()
 
         for group in groups:
-            group_id = str(group.get("group_id", "")).strip()
-            if not group_id:
+            group_ids = {
+                str(name).strip(): str(group_id).strip()
+                for name, group_id in (group.get("group_ids", {}) or {}).items()
+                if str(name).strip() and str(group_id).strip()
+            }
+            # Compatibility with results produced by an older open dialog.
+            legacy_group_id = str(group.get("group_id", "")).strip()
+            if not group_ids and not legacy_group_id:
                 continue
 
             for index in group.get("department_indexes", []) or []:
@@ -11629,6 +11700,11 @@ class DepartmentListDialog(QDialog):
                 for stream_name in selected_streams:
                     stream = streams_by_name.get(stream_name)
                     if stream is None:
+                        missing_stream_count += 1
+                        continue
+
+                    group_id = group_ids.get(stream_name, legacy_group_id)
+                    if not group_id:
                         missing_stream_count += 1
                         continue
 
@@ -12696,6 +12772,7 @@ class InventorySpacesDialog(QDialog):
         amr_tools = QHBoxLayout()
         self.amr_space_combo = QComboBox()
         self.amr_space_combo.addItems([""] + self._amr_type_names())
+        self.amr_space_combo.currentTextChanged.connect(lambda _text: self._update_bulk_controls())
         add_amr_space_btn = QPushButton("Add AMR space")
         add_amr_space_btn.setToolTip("Create an inventory space sized to the selected AMR so this location can store / park AMRs.")
         add_amr_space_btn.clicked.connect(self.add_amr_space)
@@ -12709,16 +12786,30 @@ class InventorySpacesDialog(QDialog):
         right.addLayout(amr_tools)
 
         capacity_tools = QHBoxLayout()
-        self.charger_check = QCheckBox("Selected AMR space contains a charger")
+        self.charger_check = QCheckBox("Selected AMR space(s) contain chargers")
         self.charger_check.setToolTip(
             "Only AMR spaces with this enabled can recharge an AMR. Other AMR spaces remain parking/stowage bays."
         )
+        self.charger_check.setTristate(True)
+        self.charger_check.stateChanged.connect(self._apply_charger_state_to_selected_spaces)
+        self.bulk_charger_on_btn = QPushButton("Set chargers")
+        self.bulk_charger_off_btn = QPushButton("Clear chargers")
+        self.bulk_amr_btn = QPushButton("Mark as AMR")
+        self.bulk_charger_on_btn.setToolTip("Apply charger enabled to all selected compatible AMR spaces.")
+        self.bulk_charger_off_btn.setToolTip("Apply charger disabled to all selected AMR spaces.")
+        self.bulk_amr_btn.setToolTip("Mark all selected inventory spaces as AMR spaces using the selected AMR type.")
+        self.bulk_charger_on_btn.clicked.connect(lambda: self.apply_bulk_space_flags(has_charger=True))
+        self.bulk_charger_off_btn.clicked.connect(lambda: self.apply_bulk_space_flags(has_charger=False))
+        self.bulk_amr_btn.clicked.connect(self.apply_selected_spaces_as_amr)
         auto_arrange_btn = QPushButton("Auto arrange payload capacity...")
         auto_arrange_btn.setToolTip(
             "Create the requested number of payload spaces while reserving AMR approach and movement clearance."
         )
         auto_arrange_btn.clicked.connect(self.auto_arrange_payload_capacity)
         capacity_tools.addWidget(self.charger_check)
+        capacity_tools.addWidget(self.bulk_charger_on_btn)
+        capacity_tools.addWidget(self.bulk_charger_off_btn)
+        capacity_tools.addWidget(self.bulk_amr_btn)
         capacity_tools.addStretch(1)
         capacity_tools.addWidget(auto_arrange_btn)
         right.addLayout(capacity_tools)
@@ -12747,14 +12838,22 @@ class InventorySpacesDialog(QDialog):
 
     def _sync_space_list_selection(self):
         rows = set()
-        for item in self.space_list.selectedItems():
-            row = self.space_list.row(item)
-            if row >= 0:
-                rows.add(row)
+        selection = self.space_list.selectionModel()
+        if selection is not None:
+            for index in selection.selectedIndexes():
+                row = index.row()
+                if row >= 0:
+                    rows.add(row)
+        if not rows:
+            for item in self.space_list.selectedItems():
+                row = self.space_list.row(item)
+                if row >= 0:
+                    rows.add(row)
         if rows:
             self.selected_space_indices = rows
         elif self.selected_space_index is not None:
             self.selected_space_indices = {self.selected_space_index}
+        self._update_bulk_controls()
         self.refresh_scene()
 
     def _set_space_selection(self, indices, current_index=None):
@@ -12776,6 +12875,224 @@ class InventorySpacesDialog(QDialog):
         ):
             self.space_list.setCurrentRow(self.selected_space_index)
         self.space_list.blockSignals(False)
+        self._update_bulk_controls()
+
+    def _space_is_amr_space(self, space):
+        if not isinstance(space, dict):
+            return False
+        if bool(space.get("stores_amr", False)):
+            return True
+        if str(space.get("space_type", "") or "").strip().lower() == "amr":
+            return True
+        if str(space.get("amr_type", "") or "").strip():
+            return True
+        for slot in space.get("payload_slots", []) or []:
+            if not isinstance(slot, dict):
+                continue
+            if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
+                return True
+            if str(slot.get("amr_type", "") or "").strip():
+                return True
+        return False
+
+    def _selected_space_rows(self):
+        rows = set(self.selected_space_indices or set())
+        selection = self.space_list.selectionModel() if hasattr(self, "space_list") else None
+        if selection is not None:
+            for index in selection.selectedIndexes():
+                row = index.row()
+                if row >= 0:
+                    rows.add(row)
+        if not rows and self.selected_space_index is not None:
+            rows.add(self.selected_space_index)
+        return sorted(
+            row for row in {int(r) for r in rows if r is not None}
+            if 0 <= row < len(self.spaces)
+        )
+
+    def _update_bulk_controls(self):
+        rows = self._selected_space_rows()
+        has_rows = bool(rows)
+        has_amr = any(self._space_is_amr_space(self.spaces[row]) for row in rows)
+        if hasattr(self, "bulk_charger_on_btn"):
+            self.bulk_charger_on_btn.setEnabled(has_amr)
+            self.bulk_charger_off_btn.setEnabled(has_amr)
+            self.bulk_amr_btn.setEnabled(has_rows and bool(self.amr_space_combo.currentText().strip()))
+        if hasattr(self, "charger_check"):
+            self._refresh_charger_check_state()
+
+    def _refresh_charger_check_state(self):
+        rows = [
+            row for row in self._selected_space_rows()
+            if self._space_is_amr_space(self.spaces[row])
+        ]
+        self.charger_check.blockSignals(True)
+        self.charger_check.setEnabled(bool(rows))
+        if not rows:
+            self.charger_check.setCheckState(Qt.Unchecked)
+        else:
+            checked = sum(
+                1 for row in rows if bool(self.spaces[row].get("has_charger", False))
+            )
+            if checked == 0:
+                self.charger_check.setCheckState(Qt.Unchecked)
+            elif checked == len(rows):
+                self.charger_check.setCheckState(Qt.Checked)
+            else:
+                self.charger_check.setCheckState(Qt.PartiallyChecked)
+        self.charger_check.blockSignals(False)
+
+    def _check_state_value(self, state):
+        value = getattr(state, "value", state)
+        try:
+            return int(value)
+        except Exception:
+            return 0
+
+    def _sync_list_label_for_space(self, index):
+        item = self.space_list.item(index)
+        if item is None or not (0 <= int(index) < len(self.spaces)):
+            return
+        space = self.spaces[int(index)]
+        label = space.get("name", "Inventory space")
+        if self._space_is_amr_space(space):
+            label = f"{label} [charger]" if bool(space.get("has_charger", False)) else f"{label} [AMR]"
+        item.setText(label)
+
+    def _set_space_amr_type(self, space, amr_type):
+        amr_type = str(amr_type or "").strip()
+        if not amr_type:
+            return False
+        slots = space.setdefault("payload_slots", [])
+        previous_rotation = 0.0
+        if slots:
+            previous_rotation = float(slots[0].get("rotation_deg", 0.0) or 0.0)
+        space["space_type"] = "amr"
+        space["stores_amr"] = True
+        space["amr_type"] = amr_type
+        if slots:
+            slot = slots[0]
+            slot.clear()
+        else:
+            slot = {}
+            slots.append(slot)
+        slot.update(
+            {
+                "slot_type": "amr",
+                "amr_type": amr_type,
+                "rotation_deg": previous_rotation,
+            }
+        )
+        points_abs = self.store.inventory_space_points_absolute(
+            self.location_name, space
+        )
+        if points_abs:
+            cx = sum(float(p["x"]) for p in points_abs) / len(points_abs)
+            cy = sum(float(p["y"]) for p in points_abs) / len(points_abs)
+        else:
+            cx = float(self.location.get("x", 0.0))
+            cy = float(self.location.get("y", 0.0))
+        self._set_slot_center_absolute(slot, cx, cy)
+        self._sync_space_from_payload_dict(space)
+        return True
+
+    def _ensure_amr_space_metadata(self, space):
+        if not self._space_is_amr_space(space):
+            return False
+        amr_type = str(space.get("amr_type", "") or "").strip()
+        for slot in space.get("payload_slots", []) or []:
+            if not isinstance(slot, dict):
+                continue
+            if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
+                amr_type = amr_type or str(slot.get("amr_type", "") or "").strip()
+                break
+            if str(slot.get("amr_type", "") or "").strip():
+                amr_type = amr_type or str(slot.get("amr_type", "") or "").strip()
+                break
+        space["space_type"] = "amr"
+        space["stores_amr"] = True
+        if amr_type:
+            space["amr_type"] = amr_type
+        return True
+
+    def _sync_space_from_payload_dict(self, space):
+        slots = space.setdefault("payload_slots", [])
+        if not slots:
+            return False
+        points = self._slot_polygon_points(slots[0])
+        if len(points) < 3:
+            return False
+        lx = float(self.location.get("x", 0.0))
+        ly = float(self.location.get("y", 0.0))
+        space["points"] = [
+            {"dx": round(float(p["x"]) - lx, 3), "dy": round(float(p["y"]) - ly, 3)}
+            for p in points
+        ]
+        return True
+
+    def _apply_charger_state_to_selected_spaces(self, state):
+        state_value = self._check_state_value(state)
+        if state_value == 1:
+            return
+        rows = [
+            row for row in self._selected_space_rows()
+            if self._space_is_amr_space(self.spaces[row])
+        ]
+        if not rows:
+            return
+        enabled = state_value == 2
+        for row in rows:
+            self._ensure_amr_space_metadata(self.spaces[row])
+            self.spaces[row]["has_charger"] = enabled
+            self._sync_list_label_for_space(row)
+        self.refresh_scene()
+        action = "enabled" if enabled else "disabled"
+        self.status_label.setText(
+            f"Charger flag {action} on {len(rows)} selected AMR space(s)."
+        )
+
+    def apply_bulk_space_flags(self, has_charger=None):
+        rows = self._selected_space_rows()
+        if self.selected_space_index is not None:
+            self._commit_current_space(show_errors=False)
+        changed = 0
+        for row in rows:
+            space = self.spaces[row]
+            if has_charger is not None:
+                if not self._space_is_amr_space(space):
+                    continue
+                self._ensure_amr_space_metadata(space)
+                space["has_charger"] = bool(has_charger)
+                changed += 1
+            self._sync_list_label_for_space(row)
+        if self.selected_space_index is not None:
+            self.select_space(self.selected_space_index)
+        self._set_space_selection(rows, current_index=self.selected_space_index)
+        self.refresh_scene()
+        if has_charger is not None:
+            state = "enabled" if has_charger else "disabled"
+            self.status_label.setText(f"Charger flag {state} on {changed} selected AMR space(s).")
+
+    def apply_selected_spaces_as_amr(self):
+        amr_type = self.amr_space_combo.currentText().strip()
+        if not amr_type:
+            QMessageBox.information(self, "AMR spaces", "Select an AMR type first.")
+            return
+        rows = self._selected_space_rows()
+        if not rows:
+            return
+        if self.selected_space_index is not None:
+            self._commit_current_space(show_errors=False)
+        changed = 0
+        for row in rows:
+            if self._set_space_amr_type(self.spaces[row], amr_type):
+                changed += 1
+            self._sync_list_label_for_space(row)
+        current = self.selected_space_index if self.selected_space_index in rows else rows[0]
+        self._set_space_selection(rows, current_index=current)
+        self.select_space(current)
+        self.refresh_scene()
+        self.status_label.setText(f"Marked {changed} selected space(s) as {amr_type} AMR spaces.")
 
     def _space_payload_slot(self, index):
         if not (0 <= int(index) < len(self.spaces)):
@@ -12994,8 +13311,12 @@ class InventorySpacesDialog(QDialog):
             updated_space["space_type"] = "amr"
             updated_space["stores_amr"] = True
             updated_space["amr_type"] = str(existing_space.get("amr_type", "") or (slots_copy[0].get("amr_type", "") if slots_copy else ""))
-            updated_space["has_charger"] = bool(self.charger_check.isChecked())
+            if self._check_state_value(self.charger_check.checkState()) == 1:
+                updated_space["has_charger"] = bool(existing_space.get("has_charger", False))
+            else:
+                updated_space["has_charger"] = bool(self.charger_check.isChecked())
         self.spaces[self.selected_space_index] = updated_space
+        self._sync_list_label_for_space(self.selected_space_index)
         return True
 
     def _slot_polygon_points(self, slot):
@@ -13737,8 +14058,12 @@ class InventorySpacesDialog(QDialog):
         self.space_list.blockSignals(True)
         self.space_list.clear()
         for space in self.spaces:
-            self.space_list.addItem(space.get("name", "Inventory space"))
+            label = space.get("name", "Inventory space")
+            if self._space_is_amr_space(space):
+                label = f"{label} [charger]" if bool(space.get("has_charger", False)) else f"{label} [AMR]"
+            self.space_list.addItem(label)
         self.space_list.blockSignals(False)
+        self._update_bulk_controls()
 
     def select_space(self, row):
         previous_index = self.selected_space_index
@@ -13748,16 +14073,33 @@ class InventorySpacesDialog(QDialog):
         if row < 0 or row >= len(self.spaces):
             return
 
+        previous_selection = set(self.selected_space_indices or set())
         self.selected_space_index = row
-        if not self.selected_space_indices or row not in self.selected_space_indices:
+        additive = bool(
+            QApplication.keyboardModifiers() & (Qt.ControlModifier | Qt.ShiftModifier)
+        )
+        selected_rows = {
+            index.row()
+            for index in self.space_list.selectionModel().selectedIndexes()
+        } if self.space_list.selectionModel() is not None else set()
+        if additive and previous_selection:
+            merged = set(previous_selection)
+            merged.add(row)
+            merged.update(index for index in selected_rows if 0 <= index < len(self.spaces))
+            self.selected_space_indices = merged
+        elif selected_rows:
+            self.selected_space_indices = {
+                index for index in selected_rows if 0 <= index < len(self.spaces)
+            }
+        elif previous_selection and row in previous_selection:
+            self.selected_space_indices = previous_selection
+        elif not self.selected_space_indices or row not in self.selected_space_indices:
             self.selected_space_indices = {row}
         space = self.spaces[row]
         self.name_edit.setText(space.get("name", ""))
 
         slots = space.setdefault("payload_slots", [])
-        is_amr_space = bool(space.get("stores_amr", False)) or str(space.get("space_type", "")).lower() == "amr"
-        if slots and str(slots[0].get("slot_type", "")).lower() == "amr":
-            is_amr_space = True
+        is_amr_space = self._space_is_amr_space(space)
         self.charger_check.blockSignals(True)
         self.charger_check.setChecked(bool(space.get("has_charger", False)))
         self.charger_check.setEnabled(is_amr_space)
@@ -13780,6 +14122,7 @@ class InventorySpacesDialog(QDialog):
             self._refresh_rotation_field()
 
         self.refresh_scene()
+        self._update_bulk_controls()
 
     def new_space(self):
         QMessageBox.information(

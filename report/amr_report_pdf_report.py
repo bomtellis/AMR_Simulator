@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import copy
 import io
+import math
 import re
 import tempfile
 from xml.sax.saxutils import escape
@@ -60,9 +61,11 @@ REPORT_SECTIONS = [
     ("amr_utilisation", "AMR utilisation and recharge"),
     ("payload_summary", "Payload summary"),
     ("pending_tasks", "Pending tasks"),
+    ("task_sla", "Task SLA performance"),
     ("failed_delivery", "Failed delivery analysis"),
     ("lift_usage", "Lift usage and waits"),
     ("lift_usage_profile", "Lift usage profile"),
+    ("lift_wait_profiles", "Lift wait time profiles"),
     ("generated_tasks", "Generated task category summary"),
     ("staff_handling", "Category staff handling"),
     ("staff_timetable", "Staff handling timetable"),
@@ -88,12 +91,14 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "amr_utilisation": "landscape",
     "lift_usage": "landscape",
     "lift_usage_profile": "a3_landscape",
+    "lift_wait_profiles": "a3_landscape",
     "payload_summary": "standard",
     "location_space": "a3_landscape",
     "peak_occupancy": "a3_landscape",
     "failed_delivery": "a3_landscape",
     "location_recommendations": "a3_landscape",
     "pending_tasks": "a3_landscape",
+    "task_sla": "a3_landscape",
     "task_detail": "a3_landscape",
     "heatmaps": "a0_landscape",
 }
@@ -472,14 +477,38 @@ def contrasting_text_colour(hex_colour: str) -> Color:
     return colors.black if brightness > 150 else colors.white
 
 
-class LiftUsageProfileChart(Flowable):
-    """A3-friendly line chart showing lift trips by 30-minute time-of-day bucket."""
+def fmt_wait_duration(value) -> str:
+    """Format wait durations without hiding positive sub-second values."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return fmt_duration(value)
+    if 0 < seconds < 1:
+        return f"{seconds:.3f} s"
+    return fmt_duration(seconds)
 
-    def __init__(self, profile_df: pd.DataFrame, width: float, height: float):
+
+class LiftUsageProfileChart(Flowable):
+    """A3-friendly line chart showing one metric per lift and time bucket."""
+
+    def __init__(
+        self,
+        profile_df: pd.DataFrame,
+        width: float,
+        height: float,
+        value_column: str = "trips",
+        y_axis_label: str = "Trips per 30 minute interval",
+        empty_message: str = "No lift usage profile data was available.",
+        integer_ticks: bool = True,
+    ):
         super().__init__()
         self.profile_df = profile_df.copy() if profile_df is not None else pd.DataFrame()
         self.width = float(width)
         self.height = float(height)
+        self.value_column = str(value_column or "trips")
+        self.y_axis_label = str(y_axis_label or "")
+        self.empty_message = str(empty_message or "No lift profile data was available.")
+        self.integer_ticks = bool(integer_ticks)
 
     def wrap(self, availWidth, availHeight):
         self.width = min(self.width, availWidth)
@@ -502,17 +531,19 @@ class LiftUsageProfileChart(Flowable):
         if df.empty:
             c.setFillColor(colors.HexColor("#666666"))
             c.setFont("Helvetica", 10)
-            c.drawString(x0, y0 + plot_h / 2, "No lift usage profile data was available.")
+            c.drawString(x0, y0 + plot_h / 2, self.empty_message)
             c.restoreState()
             return
 
         df["interval_start_min"] = pd.to_numeric(df.get("interval_start_min"), errors="coerce")
-        df["trips"] = pd.to_numeric(df.get("trips"), errors="coerce").fillna(0)
+        df[self.value_column] = pd.to_numeric(
+            df.get(self.value_column), errors="coerce"
+        ).fillna(0)
         df = df[df["interval_start_min"].notna()].copy()
         if df.empty:
             c.setFillColor(colors.HexColor("#666666"))
             c.setFont("Helvetica", 10)
-            c.drawString(x0, y0 + plot_h / 2, "No lift usage profile data was available.")
+            c.drawString(x0, y0 + plot_h / 2, self.empty_message)
             c.restoreState()
             return
 
@@ -522,9 +553,18 @@ class LiftUsageProfileChart(Flowable):
             c.restoreState()
             return
 
-        max_y = int(max(1, df["trips"].max()))
-        tick_count = min(6, max_y + 1)
-        y_ticks = sorted(set(int(round(i * max_y / max(1, tick_count - 1))) for i in range(tick_count)))
+        max_y = max(1.0, float(df[self.value_column].max()))
+        tick_count = 6
+        if self.integer_ticks:
+            max_y = float(max(1, int(math.ceil(max_y))))
+            y_ticks = sorted(
+                set(
+                    int(round(i * max_y / max(1, tick_count - 1)))
+                    for i in range(tick_count)
+                )
+            )
+        else:
+            y_ticks = [i * max_y / max(1, tick_count - 1) for i in range(tick_count)]
         if y_ticks[0] != 0:
             y_ticks.insert(0, 0)
 
@@ -543,7 +583,8 @@ class LiftUsageProfileChart(Flowable):
             c.setStrokeColor(colors.HexColor("#E6EEF8"))
             c.line(x0, y, x0 + plot_w, y)
             c.setFillColor(colors.HexColor("#666666"))
-            c.drawRightString(x0 - 3 * mm, y - 2, str(tick))
+            tick_label = str(int(tick)) if self.integer_ticks else fmt_duration(tick)
+            c.drawRightString(x0 - 3 * mm, y - 2, tick_label)
 
         c.setStrokeColor(colors.HexColor("#17365D"))
         c.setLineWidth(0.8)
@@ -568,7 +609,7 @@ class LiftUsageProfileChart(Flowable):
         c.saveState()
         c.translate(x0 - 14 * mm, y0 + plot_h / 2)
         c.rotate(90)
-        c.drawCentredString(0, 0, "Trips per 30 minute interval")
+        c.drawCentredString(0, 0, self.y_axis_label)
         c.restoreState()
 
         palette = [
@@ -579,7 +620,11 @@ class LiftUsageProfileChart(Flowable):
             sub = df[df["lift_id"].astype(str) == lift_id].set_index("interval_start_min")
             points = []
             for minute in intervals:
-                value = sub["trips"].get(minute, 0) if "trips" in sub.columns else 0
+                value = (
+                    sub[self.value_column].get(minute, 0)
+                    if self.value_column in sub.columns
+                    else 0
+                )
                 points.append((x_pos(minute), y_pos(value)))
             if len(points) < 2:
                 continue
@@ -849,11 +894,31 @@ def compute_floor_extents(floor_df: pd.DataFrame) -> tuple[float, float, float, 
     return xmin, xmax, ymin, ymax
 
 
-def get_dxf_extents(dxf_path: str) -> tuple[float, float, float, float]:
-    import ezdxf
-    from ezdxf import bbox
+DXF_UNIT_TO_METRES = {
+    0: None,  # Unitless
+    1: 0.0254,  # Inches
+    2: 0.3048,  # Feet
+    4: 0.001,  # Millimetres
+    5: 0.01,  # Centimetres
+    6: 1.0,  # Metres
+    7: 1000.0,  # Kilometres
+    10: 0.9144,  # Yards
+    14: 0.1,  # Decimetres
+    21: 1200.0 / 3937.0,  # US survey feet
+}
 
-    doc = ezdxf.readfile(dxf_path)
+
+def get_dxf_unit_scale(doc) -> float:
+    """Return the drawing-unit-to-metre scale used by the live map viewer."""
+    try:
+        insunits = int(doc.header.get("$INSUNITS", 0) or 0)
+    except Exception:
+        insunits = 0
+    scale = DXF_UNIT_TO_METRES.get(insunits)
+    return 1.0 if scale is None else float(scale)
+
+
+def _get_raw_dxf_extents(doc) -> tuple[float, float, float, float]:
     msp = doc.modelspace()
 
     # --- Attempt 1: bbox (fast)
@@ -906,6 +971,21 @@ def get_dxf_extents(dxf_path: str) -> tuple[float, float, float, float]:
     return 0.0, 100.0, 0.0, 100.0
 
 
+def get_dxf_extents(dxf_path: str) -> tuple[float, float, float, float]:
+    """Return DXF extents in metres so they align with simulation coordinates."""
+    import ezdxf
+
+    doc = ezdxf.readfile(dxf_path)
+    unit_scale = get_dxf_unit_scale(doc)
+    xmin, xmax, ymin, ymax = _get_raw_dxf_extents(doc)
+    return (
+        xmin * unit_scale,
+        xmax * unit_scale,
+        ymin * unit_scale,
+        ymax * unit_scale,
+    )
+
+
 def get_cached_dxf_svg_path(dxf_path: str) -> Path:
     dxf_file = Path(dxf_path)
     cache_dir = Path(tempfile.gettempdir()) / "amr_report_dxf_cache"
@@ -922,10 +1002,10 @@ def render_dxf_to_svg(
     if ezdxf is None or layout is None or SVGBackend is None or Frontend is None or RenderContext is None:
         raise RuntimeError("ezdxf is required to render DXF drawings. Use --omit-drawings to skip drawing overlays.")
 
-    xmin, xmax, ymin, ymax = get_dxf_extents(dxf_path)
-
     doc = ezdxf.readfile(dxf_path)
     msp = doc.modelspace()
+    unit_scale = get_dxf_unit_scale(doc)
+    raw_xmin, raw_xmax, raw_ymin, raw_ymax = _get_raw_dxf_extents(doc)
 
     backend = SVGBackend()
     ctx = RenderContext(doc)
@@ -939,8 +1019,8 @@ def render_dxf_to_svg(
     # Draw the whole layout so the backend builds its render box properly
     Frontend(ctx, backend).draw_layout(msp, finalize=True)
 
-    data_w = max(xmax - xmin, 1.0)
-    data_h = max(ymax - ymin, 1.0)
+    data_w = max(raw_xmax - raw_xmin, 1.0)
+    data_h = max(raw_ymax - raw_ymin, 1.0)
 
     page = layout.Page(
         data_w,
@@ -961,7 +1041,7 @@ def render_dxf_to_svg(
 <svg xmlns="http://www.w3.org/2000/svg"
      width="{data_w}mm"
      height="{data_h}mm"
-     viewBox="{xmin} {ymin} {data_w} {data_h}">
+     viewBox="{raw_xmin} {raw_ymin} {data_w} {data_h}">
 </svg>
 """
 
@@ -1021,7 +1101,12 @@ def render_dxf_to_svg(
     )
 
     Path(output_path).write_text(svg_string, encoding="utf-8")
-    return xmin, xmax, ymin, ymax
+    return (
+        raw_xmin * unit_scale,
+        raw_xmax * unit_scale,
+        raw_ymin * unit_scale,
+        raw_ymax * unit_scale,
+    )
 
 
 def load_svg_as_drawing(svg_path: str):
@@ -1909,6 +1994,86 @@ def build_report(
 
     # --- END Lift usage profile graph ---
 
+    # --- START Lift wait time profiles ---
+
+    story.section("lift_wait_profiles")
+    story += [
+        Paragraph("Lift wait time profiles", styles["Section"]),
+        Paragraph(
+            "Wait statistics use positive AMR lift-wait events. The profile shows "
+            "the mean wait in each 30-minute time-of-day interval, aggregated across "
+            "all simulation days. Lifts without a recorded wait remain visible with zero values.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    lift_wait_summary_df = results.get(
+        "lift_wait_summary", pd.DataFrame()
+    ).copy()
+    if lift_wait_summary_df.empty:
+        story.append(
+            Paragraph(
+                "No lift usage or lift wait events were available for wait statistics.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        for column in (
+            "minimum_wait_s",
+            "mean_wait_s",
+            "maximum_wait_s",
+            "total_wait_s",
+        ):
+            lift_wait_summary_df[column] = lift_wait_summary_df[column].map(
+                fmt_wait_duration
+            )
+        lift_wait_summary_df = lift_wait_summary_df.rename(
+            columns={
+                "lift_id": "Lift",
+                "wait_events": "Wait events",
+                "minimum_wait_s": "Minimum wait",
+                "mean_wait_s": "Mean wait",
+                "maximum_wait_s": "Maximum wait",
+                "total_wait_s": "Total wait",
+            }
+        )
+        story.append(
+            table_from_df(
+                lift_wait_summary_df,
+                [30 * mm, 25 * mm, 34 * mm, 34 * mm, 34 * mm, 34 * mm],
+                styles,
+                right_align=[1],
+            )
+        )
+        story.append(Spacer(1, 10))
+
+    lift_wait_profile_df = results.get(
+        "lift_wait_profile", pd.DataFrame()
+    ).copy()
+    if lift_wait_profile_df.empty:
+        story.append(
+            Paragraph(
+                "No lift wait profile data was available.", styles["BodyText"]
+            )
+        )
+    else:
+        a3_width, _a3_height = landscape(A3)
+        chart_width = a3_width - doc.leftMargin - doc.rightMargin
+        story.append(
+            LiftUsageProfileChart(
+                lift_wait_profile_df,
+                chart_width,
+                145 * mm,
+                value_column="mean_wait_s",
+                y_axis_label="Mean lift wait per 30 minute interval",
+                empty_message="No lift wait profile data was available.",
+                integer_ticks=False,
+            )
+        )
+
+    # --- END Lift wait time profiles ---
+
     # --- START Lift wait Summary ---
 
     schedule_story += [
@@ -2386,6 +2551,163 @@ def build_report(
         )
 
     # --- END Pending tasks ---
+
+    # --- START Task SLA performance ---
+
+    story.section("task_sla")
+    story += [
+        Paragraph("Task SLA performance", styles["Section"]),
+        Paragraph(
+            "Only tasks with a positive target_time are included. The SLA clock starts "
+            "when the task is released and stops when delivery completes. Compliance is "
+            "therefore measured against release time plus the configured target duration. "
+            "Failed and still-pending tasks are retained as not delivered.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    sla_overview_df = results.get("task_sla_overview", pd.DataFrame()).copy()
+    sla_summary_df = results.get("task_sla_summary", pd.DataFrame()).copy()
+    sla_detail_df = results.get("task_sla_detail", pd.DataFrame()).copy()
+
+    if sla_overview_df.empty:
+        story.append(
+            Paragraph(
+                "No tasks with a defined positive SLA target were identified in the simulation event log.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        sla_overview_df["compliance_pct"] = sla_overview_df["compliance_pct"].map(
+            lambda value: f"{float(value):.1f}%"
+        )
+        sla_overview_df = sla_overview_df.rename(
+            columns={
+                "eligible_tasks": "SLA tasks",
+                "met_sla": "Met SLA",
+                "delivered_late": "Delivered late",
+                "not_delivered": "Not delivered",
+                "compliance_pct": "Compliance",
+            }
+        )
+        story.append(
+            table_from_df(
+                sla_overview_df,
+                [28 * mm, 28 * mm, 34 * mm, 34 * mm, 30 * mm],
+                styles,
+                right_align=[0, 1, 2, 3, 4],
+            )
+        )
+
+        story += [Spacer(1, 10), Paragraph("SLA bands", styles["Heading3"])]
+        for column in ("mean_lateness_s", "maximum_lateness_s"):
+            sla_summary_df[column] = sla_summary_df[column].map(
+                lambda value: (
+                    fmt_wait_duration(value) if not pd.isna(value) else "-"
+                )
+            )
+        sla_summary_df["percentage_pct"] = sla_summary_df["percentage_pct"].map(
+            lambda value: f"{float(value):.1f}%"
+        )
+        sla_summary_df = sla_summary_df.rename(
+            columns={
+                "sla_band": "SLA band",
+                "tasks": "Tasks",
+                "percentage_pct": "% of SLA tasks",
+                "mean_lateness_s": "Mean lateness",
+                "maximum_lateness_s": "Maximum lateness",
+            }
+        )
+        story.append(
+            table_from_df(
+                sla_summary_df,
+                [65 * mm, 20 * mm, 30 * mm, 34 * mm, 38 * mm],
+                styles,
+                right_align=[1, 2],
+            )
+        )
+
+        story += [
+            Spacer(1, 12),
+            Paragraph("Missed and undelivered SLA tasks", styles["Heading3"]),
+        ]
+        if sla_detail_df.empty:
+            story.append(
+                Paragraph(
+                    "Every task with a defined SLA target met its deadline.",
+                    styles["BodyText"],
+                )
+            )
+        else:
+            has_dt = pd.api.types.is_datetime64_any_dtype(
+                sla_detail_df["release"]
+            ) or any(
+                hasattr(value, "strftime")
+                for value in sla_detail_df["release"].dropna().tolist()
+            )
+            for column in ("release", "finish"):
+                sla_detail_df[column] = sla_detail_df[column].map(
+                    lambda value: fmt_ts(value, has_dt) if not pd.isna(value) else "-"
+                )
+            for column in (
+                "target_s",
+                "actual_release_to_delivery_s",
+                "lateness_s",
+            ):
+                sla_detail_df[column] = sla_detail_df[column].map(
+                    lambda value: (
+                        fmt_wait_duration(value) if not pd.isna(value) else "-"
+                    )
+                )
+            sla_detail_df = sla_detail_df.rename(
+                columns={
+                    "sla_band": "SLA band",
+                    "task_id": "Task",
+                    "amr": "AMR",
+                    "origin": "From",
+                    "destination": "To",
+                    "release": "Released",
+                    "finish": "Delivered / last seen",
+                    "target_s": "Target",
+                    "actual_release_to_delivery_s": "Actual",
+                    "lateness_s": "Late by",
+                }
+            )
+            sla_detail_df = sla_detail_df[
+                [
+                    "SLA band",
+                    "Task",
+                    "AMR",
+                    "From",
+                    "To",
+                    "Released",
+                    "Delivered / last seen",
+                    "Target",
+                    "Actual",
+                    "Late by",
+                ]
+            ]
+            story.append(
+                table_from_df(
+                    sla_detail_df,
+                    [
+                        48 * mm,
+                        30 * mm,
+                        18 * mm,
+                        28 * mm,
+                        28 * mm,
+                        31 * mm,
+                        36 * mm,
+                        24 * mm,
+                        24 * mm,
+                        24 * mm,
+                    ],
+                    styles,
+                )
+            )
+
+    # --- END Task SLA performance ---
 
     report_progress(9, 11, "Adding AMR sections")
 

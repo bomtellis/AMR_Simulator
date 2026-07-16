@@ -21,6 +21,7 @@ COLUMN_ALIASES = {
         "clock_time",
     ],
     "seconds": [
+        "sim_time_sec",
         "sim_time_s",
         "sim_time_seconds",
         "current_time",
@@ -44,6 +45,17 @@ COLUMN_ALIASES = {
         "task_duration_sec",
     ],
     "wait": ["wait_time_sec", "wait_seconds", "waiting_s", "queue_s"],
+    "task_release": [
+        "task_release_time_sec",
+        "release_time_sec",
+        "release_time",
+    ],
+    "task_target": [
+        "task_target_time_sec",
+        "target_time_sec",
+        "target_time",
+        "sla_target_sec",
+    ],
     "lift": ["lift", "lift_id", "elevator", "elevator_id"],
     "from": [
         "from_location",
@@ -1120,6 +1132,263 @@ def build_lift_usage_profile(
     counts["lift_id"] = counts["_profile_lift_id"].map(safe_text)
     counts["trips"] = pd.to_numeric(counts["trips"], errors="coerce").fillna(0).astype(int)
     return counts[columns].sort_values(["interval_start_min", "lift_id"], key=lambda col: col.map(natural_key) if col.name == "lift_id" else col).reset_index(drop=True)
+
+
+def build_lift_wait_profile(
+    lift_wait_rows: pd.DataFrame,
+    ctx: Context,
+    interval_minutes: int = 30,
+    lift_ids: Optional[Iterable[str]] = None,
+) -> pd.DataFrame:
+    """Return each lift's time-of-day wait profile.
+
+    Positive AMR lift waits are aggregated across simulation days into fixed
+    clock-time buckets. Lifts with no waits are retained as zero-value series so
+    the report shows the whole used lift fleet, not only congested lifts.
+    """
+    columns = [
+        "interval",
+        "interval_start_min",
+        "lift_id",
+        "wait_events",
+        "mean_wait_s",
+        "max_wait_s",
+    ]
+    interval_minutes = max(1, int(interval_minutes or 30))
+    bucket_count = int(math.ceil((24 * 60) / interval_minutes))
+    buckets = list(range(bucket_count))
+    all_lift_ids = {
+        safe_text(value) for value in (lift_ids or []) if safe_text(value)
+    }
+
+    rows = lift_wait_rows.copy() if lift_wait_rows is not None else pd.DataFrame()
+    if not rows.empty and "_lift_id" in rows.columns:
+        all_lift_ids.update(
+            safe_text(value) for value in rows["_lift_id"].dropna() if safe_text(value)
+        )
+    ordered_lift_ids = sorted(all_lift_ids, key=natural_key)
+    if not ordered_lift_ids:
+        return pd.DataFrame(columns=columns)
+
+    if (
+        rows.empty
+        or "_lift_id" not in rows.columns
+        or "lift_wait_s" not in rows.columns
+        or ctx.time_col not in rows.columns
+    ):
+        aggregated = pd.DataFrame(
+            columns=[
+                "_profile_bucket",
+                "_profile_lift_id",
+                "wait_events",
+                "mean_wait_s",
+                "max_wait_s",
+            ]
+        )
+    else:
+        rows = rows[rows["_lift_id"].notna()].copy()
+        rows["lift_wait_s"] = pd.to_numeric(rows["lift_wait_s"], errors="coerce")
+        rows = rows[rows["lift_wait_s"].notna() & (rows["lift_wait_s"] > 0)].copy()
+        if ctx.has_datetime:
+            event_time = pd.to_datetime(rows[ctx.time_col], errors="coerce")
+            minute_of_day = event_time.dt.hour * 60 + event_time.dt.minute
+        else:
+            event_seconds = pd.to_numeric(rows[ctx.time_col], errors="coerce")
+            minute_of_day = ((event_seconds % 86400) // 60).astype("float")
+        rows = rows.assign(
+            _profile_lift_id=rows["_lift_id"].map(safe_text),
+            _profile_minute=minute_of_day,
+        )
+        rows = rows[rows["_profile_minute"].notna()].copy()
+        rows["_profile_bucket"] = (
+            rows["_profile_minute"].astype(float) // interval_minutes
+        ).astype(int).clip(lower=0, upper=bucket_count - 1)
+        aggregated = (
+            rows.groupby(["_profile_bucket", "_profile_lift_id"], dropna=False)
+            .agg(
+                wait_events=("lift_wait_s", "count"),
+                mean_wait_s=("lift_wait_s", "mean"),
+                max_wait_s=("lift_wait_s", "max"),
+            )
+            .reset_index()
+        )
+
+    index = pd.MultiIndex.from_product(
+        [buckets, ordered_lift_ids],
+        names=["_profile_bucket", "_profile_lift_id"],
+    )
+    aggregated = (
+        aggregated.set_index(["_profile_bucket", "_profile_lift_id"])
+        .reindex(index, fill_value=0)
+        .reset_index()
+    )
+    aggregated["interval_start_min"] = aggregated["_profile_bucket"] * interval_minutes
+    aggregated["interval"] = aggregated["interval_start_min"].map(
+        lambda minute: f"{int(minute // 60):02d}:{int(minute % 60):02d}"
+    )
+    aggregated["lift_id"] = aggregated["_profile_lift_id"].map(safe_text)
+    aggregated["wait_events"] = (
+        pd.to_numeric(aggregated["wait_events"], errors="coerce").fillna(0).astype(int)
+    )
+    for column in ("mean_wait_s", "max_wait_s"):
+        aggregated[column] = pd.to_numeric(
+            aggregated[column], errors="coerce"
+        ).fillna(0.0)
+    return aggregated[columns].sort_values(
+        ["interval_start_min", "lift_id"],
+        key=lambda col: col.map(natural_key) if col.name == "lift_id" else col,
+    ).reset_index(drop=True)
+
+
+SLA_BANDS = [
+    "Meets SLA",
+    "Missed by up to 1 minute",
+    "Missed by 1-5 minutes",
+    "Missed by 5-10 minutes",
+    "Missed by 10-30 minutes",
+    "Missed by 30-60 minutes",
+    "Missed by over 1 hour",
+    "Not delivered - failed",
+    "Not delivered - pending",
+]
+
+
+def _sla_band(outcome: str, lateness_s: Optional[float]) -> str:
+    outcome = str(outcome or "").strip().lower()
+    if outcome == "failed":
+        return "Not delivered - failed"
+    if outcome != "completed" or lateness_s is None or pd.isna(lateness_s):
+        return "Not delivered - pending"
+    lateness_s = float(lateness_s)
+    if lateness_s <= 0:
+        return "Meets SLA"
+    if lateness_s <= 60:
+        return "Missed by up to 1 minute"
+    if lateness_s <= 5 * 60:
+        return "Missed by 1-5 minutes"
+    if lateness_s <= 10 * 60:
+        return "Missed by 5-10 minutes"
+    if lateness_s <= 30 * 60:
+        return "Missed by 10-30 minutes"
+    if lateness_s <= 60 * 60:
+        return "Missed by 30-60 minutes"
+    return "Missed by over 1 hour"
+
+
+def build_task_sla_tables(
+    tasks: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Build SLA overview, band summary and missed-task detail tables."""
+    summary_columns = [
+        "sla_band",
+        "tasks",
+        "percentage_pct",
+        "mean_lateness_s",
+        "maximum_lateness_s",
+    ]
+    detail_columns = [
+        "sla_band",
+        "task_id",
+        "amr",
+        "origin",
+        "destination",
+        "release",
+        "finish",
+        "target_s",
+        "actual_release_to_delivery_s",
+        "lateness_s",
+        "outcome",
+    ]
+    overview_columns = [
+        "eligible_tasks",
+        "met_sla",
+        "delivered_late",
+        "not_delivered",
+        "compliance_pct",
+    ]
+    if tasks is None or tasks.empty or "target_s" not in tasks.columns:
+        return (
+            pd.DataFrame(columns=overview_columns),
+            pd.DataFrame(columns=summary_columns),
+            pd.DataFrame(columns=detail_columns),
+        )
+
+    eligible = tasks.copy()
+    eligible["target_s"] = pd.to_numeric(eligible["target_s"], errors="coerce")
+    eligible = eligible[eligible["target_s"].notna() & (eligible["target_s"] > 0)].copy()
+    if eligible.empty:
+        return (
+            pd.DataFrame(columns=overview_columns),
+            pd.DataFrame(columns=summary_columns),
+            pd.DataFrame(columns=detail_columns),
+        )
+
+    eligible["lateness_s"] = pd.to_numeric(
+        eligible.get("sla_lateness_s"), errors="coerce"
+    )
+    eligible["actual_release_to_delivery_s"] = pd.to_numeric(
+        eligible.get("sla_elapsed_s"), errors="coerce"
+    )
+    eligible["sla_band"] = eligible.apply(
+        lambda row: _sla_band(row.get("outcome", ""), row.get("lateness_s")),
+        axis=1,
+    )
+
+    total = len(eligible)
+    band_order = {name: index for index, name in enumerate(SLA_BANDS)}
+    summary_rows = []
+    for band in SLA_BANDS:
+        band_rows = eligible[eligible["sla_band"] == band]
+        lateness = pd.to_numeric(band_rows["lateness_s"], errors="coerce").dropna()
+        positive_lateness = lateness[lateness > 0]
+        summary_rows.append(
+            {
+                "sla_band": band,
+                "tasks": int(len(band_rows)),
+                "percentage_pct": round(len(band_rows) / total * 100, 1),
+                "mean_lateness_s": (
+                    float(positive_lateness.mean())
+                    if not positive_lateness.empty
+                    else 0.0 if band == "Meets SLA" else None
+                ),
+                "maximum_lateness_s": (
+                    float(positive_lateness.max())
+                    if not positive_lateness.empty
+                    else 0.0 if band == "Meets SLA" else None
+                ),
+            }
+        )
+    summary = pd.DataFrame(summary_rows, columns=summary_columns)
+
+    met_sla = int((eligible["sla_band"] == "Meets SLA").sum())
+    delivered_late = int(
+        eligible["sla_band"].str.startswith("Missed by ", na=False).sum()
+    )
+    not_delivered = total - met_sla - delivered_late
+    overview = pd.DataFrame(
+        [
+            {
+                "eligible_tasks": total,
+                "met_sla": met_sla,
+                "delivered_late": delivered_late,
+                "not_delivered": not_delivered,
+                "compliance_pct": round(met_sla / total * 100, 1),
+            }
+        ],
+        columns=overview_columns,
+    )
+
+    detail = eligible[eligible["sla_band"] != "Meets SLA"].copy()
+    for column in detail_columns:
+        if column not in detail.columns:
+            detail[column] = None
+    detail["_sla_order"] = detail["sla_band"].map(band_order).fillna(len(band_order))
+    detail = detail.sort_values(
+        ["_sla_order", "lateness_s", "task_id"],
+        ascending=[True, False, True],
+        na_position="last",
+    )
+    return overview, summary, detail[detail_columns].reset_index(drop=True)
 
 def extract_lift_and_floor(value) -> Tuple[Optional[str], Optional[int]]:
     if value is None or pd.isna(value):
@@ -3739,6 +4008,7 @@ def analyse(
 
     task_rows: List[dict] = []
     active_intervals: List[Tuple[float, float]] = []
+    task_target_col = ctx.cols.get("task_target")
 
     raw_task_ids = [str(x).strip() for x in df[task_col].dropna().tolist() if str(x).strip()]
     single_task_ids = {task_id for task_id in raw_task_ids if "," not in task_id}
@@ -3757,7 +4027,12 @@ def analyse(
         first = g.iloc[0]
         last = g.iloc[-1]
         start_row = g[g["_event_text"].str.contains(ASSIGN_PATTERNS, na=False)].head(1)
-        end_row = g[g["_event_text"].str.contains(COMPLETE_PATTERNS, na=False)].tail(1)
+        completion_mask = g["_event_text"].str.contains(
+            COMPLETE_PATTERNS, na=False
+        ) & ~g["_event_text"].str.contains(
+            r"task_release|task released", case=False, na=False
+        )
+        end_row = g[completion_mask].tail(1)
         fail_row = g[g["_event_text"].str.contains(FAIL_PATTERNS, na=False)].tail(1)
         start = (
             start_row.iloc[0][ctx.time_col]
@@ -3791,6 +4066,37 @@ def analyse(
             end = multi_stop_leg_override.get("finish", end)
             duration_s = multi_stop_leg_override.get("duration_s", duration_s)
             wait_s = multi_stop_leg_override.get("wait_s", wait_s)
+
+        target_s = None
+        if task_target_col and task_target_col in g.columns:
+            target_values = pd.to_numeric(
+                g[task_target_col], errors="coerce"
+            ).dropna()
+            positive_targets = target_values[target_values > 0]
+            if not positive_targets.empty:
+                target_s = float(positive_targets.iloc[0])
+
+        release_event_rows = g[
+            g["_event_text"].str.contains(
+                r"task_released|task released|task_generated|waste_task_generated|return_task_generated",
+                case=False,
+                na=False,
+            )
+        ]
+        release = (
+            release_event_rows.iloc[0][ctx.time_col]
+            if not release_event_rows.empty
+            else None
+        )
+        if release is None or pd.isna(release):
+            release = first[ctx.time_col]
+
+        sla_elapsed_s = None
+        sla_lateness_s = None
+        if outcome == "completed" and target_s is not None:
+            sla_elapsed_s = time_delta_seconds(release, end, ctx.has_datetime)
+            if sla_elapsed_s is not None:
+                sla_lateness_s = float(sla_elapsed_s) - float(target_s)
 
         payload = (
             primary_payload_name(g[payload_col].dropna().iloc[0])
@@ -3867,6 +4173,10 @@ def analyse(
                 "pending_reason": pending_reason,
                 "start": start,
                 "finish": end,
+                "release": release,
+                "target_s": target_s,
+                "sla_elapsed_s": sla_elapsed_s,
+                "sla_lateness_s": sla_lateness_s,
                 "duration_s": duration_s,
                 "wait_s": wait_s,
                 "origin": safe_text(origin),
@@ -3888,6 +4198,9 @@ def analyse(
     # How many tasks did each AMR complete
 
     tasks = pd.DataFrame(task_rows)
+    task_sla_overview, task_sla_summary, task_sla_detail = build_task_sla_tables(
+        tasks
+    )
     completed = tasks[tasks["outcome"] == "completed"].copy()
     failed = tasks[tasks["outcome"] == "failed"].copy()
     pending_tasks = tasks[tasks["outcome"] == "incomplete"].copy()
@@ -4305,6 +4618,72 @@ def analyse(
     ).fillna(0)
 
     lift_wait_rows = lift_wait_rows[lift_wait_rows["lift_wait_s"] > 0].copy()
+
+    reported_lift_ids = (
+        lift_summary["lift_id"].dropna().map(safe_text).tolist()
+        if "lift_id" in lift_summary.columns
+        else []
+    )
+    lift_wait_profile = build_lift_wait_profile(
+        lift_wait_rows,
+        ctx,
+        interval_minutes=30,
+        lift_ids=reported_lift_ids,
+    )
+
+    if lift_wait_rows.empty:
+        wait_statistics = pd.DataFrame(
+            columns=[
+                "lift_id",
+                "wait_events",
+                "minimum_wait_s",
+                "mean_wait_s",
+                "maximum_wait_s",
+                "total_wait_s",
+            ]
+        )
+    else:
+        wait_statistics = (
+            lift_wait_rows.groupby("_lift_id", dropna=False)["lift_wait_s"]
+            .agg(
+                wait_events="count",
+                minimum_wait_s="min",
+                mean_wait_s="mean",
+                maximum_wait_s="max",
+                total_wait_s="sum",
+            )
+            .reset_index()
+            .rename(columns={"_lift_id": "lift_id"})
+        )
+        wait_statistics["lift_id"] = wait_statistics["lift_id"].map(safe_text)
+
+    summary_lift_ids = sorted(
+        set(reported_lift_ids)
+        | set(wait_statistics.get("lift_id", pd.Series(dtype=str)).dropna().map(safe_text)),
+        key=natural_key,
+    )
+    lift_wait_summary = pd.DataFrame(
+        {"lift_id": pd.Series(summary_lift_ids, dtype=str)}
+    ).merge(
+        wait_statistics,
+        on="lift_id",
+        how="left",
+    )
+    if not lift_wait_summary.empty:
+        lift_wait_summary["wait_events"] = (
+            pd.to_numeric(lift_wait_summary["wait_events"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+        for column in (
+            "minimum_wait_s",
+            "mean_wait_s",
+            "maximum_wait_s",
+            "total_wait_s",
+        ):
+            lift_wait_summary[column] = pd.to_numeric(
+                lift_wait_summary[column], errors="coerce"
+            ).fillna(0.0)
 
     if lift_wait_rows.empty:
         lift_wait_schedule = pd.DataFrame(
@@ -4803,8 +5182,13 @@ def analyse(
         "utilisation_summary": amr_utilisation,
         "lift_summary": lift_summary,
         "lift_usage_profile": lift_usage_profile,
+        "lift_wait_summary": lift_wait_summary,
+        "lift_wait_profile": lift_wait_profile,
         "tasks": tasks.sort_values(["amr", "start", "task_id"]).reset_index(drop=True),
         "pending_tasks": pending_tasks.reset_index(drop=True),
+        "task_sla_overview": task_sla_overview,
+        "task_sla_summary": task_sla_summary,
+        "task_sla_detail": task_sla_detail,
         "methodology": methodology,
         "payload_schedule": payload_schedule,
         "location_space_utilisation": location_space_utilisation,
