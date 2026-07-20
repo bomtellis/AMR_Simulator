@@ -188,3 +188,83 @@ AMRs are the robots that move around a facility to transport goods.
     },
 ]
 ```
+
+## Department drop-off zones
+
+A department category can associate its normal pickup/drop-off locations with one
+or more intermediate drop-off zones. The normal locations remain the final human
+destinations; the AMR stages the payload at a zone, department staff complete the
+last leg, and return the configured empty/equivalent payload to that zone for the
+AMR return journey.
+
+```json
+{
+  "id": "D1",
+  "name": "Ward 1",
+  "task_generation_locations": {
+    "catering": {
+      "pickup_dropoff_locations": ["Ward-1A"],
+      "dropoff_zone_locations": ["Ward-1-Drop-Zone"]
+    }
+  }
+}
+```
+
+Drop-off zones are ordinary placed locations. Configure their existing
+`inventory_spaces` as **Flexible payload spaces** to let different payload types
+use any space whose maximum length, width and height they fit. Payloads may rotate
+90 degrees in plan. The simulator assigns the smallest available compatible space
+first, preserving larger spaces for larger payloads. New and existing department
+drop-off-zone spaces default to flexible; other inventory spaces can opt in from
+the Inventory Spaces editor. Multiple spaces provide the zone's simultaneous
+holding capacity.
+
+In the Department editor, use **New drop-off zone → Create and assign** to name
+and place a zone, then assign that one location to any number of selected task
+categories in the same operation.
+
+For a generated delivery using a zone:
+
+- `Task.dropoff` and `Task.dropoff_zone` are the AMR staging location.
+- `Task.final_destination` is the associated department location.
+- staff and a return task are enabled automatically;
+- `return_payload` selects the empty/equivalent type, falling back to the outbound
+  payload type when it is blank;
+- `staff_collection_delay_minutes` adds a configurable response delay between AMR
+  drop-off and staff collection;
+- staff handling occurs within the configured `return_delay_minutes` window at
+  the final destination. The longer of `staff_handling_minutes` and
+  `return_delay_minutes` determines the destination dwell, matching the original
+  direct-delivery return timing; calculated walking time from the zone and back
+  remains additional;
+- `dropoff_zone_capacity_policy` can either wait for a compatible free space or
+  allow temporary overflow. This setting is category-wide: all departments in
+  the category use the same policy, and legacy department override values are
+  ignored. Overflow applies only when the payload fits a configured zone space,
+  keeps generated tasks from failing during a temporary occupancy peak, and
+  remains visible in zone utilisation/shortfall reporting.
+
+Global staff settings provide the walking speed, lift allowance and default
+payload-handling time used by every drop-off-zone handoff. A category/department
+handling value of `0` uses that global default. The global short-exchange threshold
+can hold the delivering AMR at the zone until the returned payload is ready,
+preventing it from accepting intervening work during a quick exchange.
+
+Tracked exchange deliveries leave the newly delivered full payload at the final
+destination and bring the previous empty/equivalent payload back to the zone as a
+different physical instance. This supports Linen-style full-for-empty swaps while
+keeping destination and zone populations stable across repeated visits.
+
+The simulation visualiser shows this handoff when **Show drop-off-zone staff
+handoffs** is enabled: the assigned person carries the delivered payload to the
+final destination, handles it there, and returns the configured empty/equivalent
+payload to the zone. Exchange tasks additionally show the person manoeuvring the
+full/empty payload swap, while a held AMR remains visible at the zone. Right-click
+a location and select **Payloads → Find maximum
+space utilisation** to inspect its peak occupied-space count, peak timestamp, and
+the utilisation history of every configured space. The PDF report includes a **Drop-off zone peak occupancy**
+section with each zone's maximum occupied spaces and the true simultaneous
+maximum across all configured zones.
+
+Static tasks can opt into the same workflow by supplying both `dropoff_zone` and
+`final_destination`; the simulator routes their AMR leg to `dropoff_zone`.

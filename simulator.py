@@ -68,6 +68,14 @@ def _nested_get_bool(config: dict, keys, default: bool = False) -> bool:
     return bool(default)
 
 
+def _config_string_list(value) -> List[str]:
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, (list, tuple, set)):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
 def _config_contains_enabled_bool_key(config, key_names) -> bool:
     """Recursively find any enabled boolean flag by key name.
 
@@ -204,6 +212,16 @@ class Simulation:
             )
         except Exception:
             self.staff_default_handling_minutes = 15.0
+        try:
+            self.amr_hold_for_exchange_max_minutes = max(
+                0.0,
+                float(
+                    staff_cfg.get("amr_hold_for_exchange_max_minutes", 20.0)
+                    or 0.0
+                ),
+            )
+        except Exception:
+            self.amr_hold_for_exchange_max_minutes = 20.0
         self._staff_travel_cache: Dict[Tuple[str, str], Tuple[float, float, str]] = {}
 
         # Congestion setup
@@ -466,6 +484,22 @@ class Simulation:
         # defines at least one valid inventory space. Locations with no
         # inventory_spaces, an empty inventory_spaces list, or no valid spaces keep
         # the previous unlimited-storage behaviour.
+        self.dropoff_zone_location_names = {
+            str(zone_name).strip()
+            for department in config.get("departments", []) or []
+            if isinstance(department, dict)
+            for category_locations in (
+                department.get("task_generation_locations", {}) or {}
+            ).values()
+            if isinstance(category_locations, dict)
+            for zone_name in _config_string_list(
+                category_locations.get(
+                    "dropoff_zone_locations",
+                    category_locations.get("drop_off_zone_locations", []),
+                )
+            )
+            if str(zone_name).strip()
+        }
         self.inventory_spaces_by_location: Dict[str, List[dict]] = {}
         self._init_inventory_spaces(config.get("locations", []))
 
@@ -703,6 +737,15 @@ class Simulation:
             )
             task_data.pop("release_datetime", None)
             task = Task(**task_data)
+            if (
+                str(getattr(task, "dropoff_zone", "") or "").strip()
+                and str(getattr(task, "final_destination", "") or "").strip()
+            ):
+                task.dropoff = str(task.dropoff_zone).strip()
+                task.requires_staff = True
+                task.return_enabled = True
+                if not str(getattr(task, "return_payload", "") or "").strip():
+                    task.return_payload = str(task.payload or "").strip()
             self._prepare_task_payload_instance(task)
             initial_tasks.append(task)
 
@@ -1713,8 +1756,10 @@ class Simulation:
             return False
         if self._location_has_payload_inventory_spaces(task.dropoff):
             if self._find_free_inventory_space(
-                task.dropoff, payload
-            ) is None and not self._task_can_exchange_with_store_empty(task, payload):
+                task.dropoff, payload, task=task
+            ) is None and not self._task_allows_dropoff_zone_overflow(
+                task, payload
+            ) and not self._task_can_exchange_with_store_empty(task, payload):
                 self._set_task_pending_reason(
                     task, self._inventory_pending_reason(task.dropoff, payload)
                 )
@@ -1899,8 +1944,10 @@ class Simulation:
                     return None
                 if self._location_has_payload_inventory_spaces(task.dropoff):
                     if self._find_free_inventory_space(
-                        task.dropoff, payload
-                    ) is None and not self._task_can_exchange_with_store_empty(
+                        task.dropoff, payload, task=task
+                    ) is None and not self._task_allows_dropoff_zone_overflow(
+                        task, payload
+                    ) and not self._task_can_exchange_with_store_empty(
                         task, payload
                     ):
                         self._set_task_pending_reason(
@@ -2177,6 +2224,7 @@ class Simulation:
                                 target_location.name
                             )
                             and reserved_space is None
+                            and not self._task_allows_dropoff_zone_overflow(task, payload)
                             and not self._task_can_exchange_with_store_empty(
                                 task, payload
                             )
@@ -2847,6 +2895,14 @@ class Simulation:
 
     def _init_inventory_spaces(self, location_dicts: List[dict]) -> None:
         self.inventory_spaces_by_location = {}
+        payload_height_by_name = {
+            str(payload.get("name", "") or "").strip(): float(
+                payload.get("height_m", 0.0) or 0.0
+            )
+            for payload in self.config.get("payloads", []) or []
+            if isinstance(payload, dict)
+            and str(payload.get("name", "") or "").strip()
+        }
 
         for loc in location_dicts:
             location_name = str(loc.get("name", "")).strip()
@@ -2879,12 +2935,23 @@ class Simulation:
                     or point_width
                     or 0.0
                 )
+                template_heights = [
+                    payload_height_by_name.get(
+                        str(slot.get("payload", "") or "").strip(), 0.0
+                    )
+                    for slot in raw_space.get("payload_slots", []) or []
+                    if isinstance(slot, dict)
+                ]
+                inferred_height = max(
+                    (height for height in template_heights if height > 0.0),
+                    default=999999.0,
+                )
                 height_m = float(
                     raw_space.get(
                         "height_m",
-                        raw_space.get("height", 999999.0),
+                        raw_space.get("height", inferred_height),
                     )
-                    or 999999.0
+                    or inferred_height
                 )
 
                 name = str(raw_space.get("name", "")).strip() or f"Space {index}"
@@ -2915,6 +2982,20 @@ class Simulation:
                         "length_m": length_m,
                         "width_m": width_m,
                         "height_m": height_m,
+                        "flexible": _bool_from_config(
+                            raw_space.get(
+                                "flexible",
+                                raw_space.get(
+                                    "flexible_payloads",
+                                    location_name
+                                    in getattr(
+                                        self, "dropoff_zone_location_names", set()
+                                    ),
+                                ),
+                            ),
+                            location_name
+                            in getattr(self, "dropoff_zone_location_names", set()),
+                        ),
                         "occupied": occupied,
                         "payload": str(raw_space.get("payload", "")).strip(),
                         "payload_instance_id": str(
@@ -4204,7 +4285,11 @@ class Simulation:
         if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
             return False
         allowed_payloads = self._inventory_space_allowed_payloads(space)
-        if allowed_payloads and getattr(payload, "name", "") not in allowed_payloads:
+        if (
+            not bool(space.get("flexible", False))
+            and allowed_payloads
+            and getattr(payload, "name", "") not in allowed_payloads
+        ):
             return False
         length_m = float(space.get("length_m", 0.0) or 0.0)
         width_m = float(space.get("width_m", 0.0) or 0.0)
@@ -4219,6 +4304,32 @@ class Simulation:
             payload.length_m <= width_m + eps and payload.width_m <= length_m + eps
         )
         return (fits_normal or fits_rotated) and payload.height_m <= height_m + eps
+
+    def _inventory_space_fit_score(
+        self, space: dict, payload: PayloadType
+    ) -> Tuple[float, float, float]:
+        """Rank compatible spaces from tightest dimensional fit to largest."""
+        length_m = float(space.get("length_m", 0.0) or 0.0)
+        width_m = float(space.get("width_m", 0.0) or 0.0)
+        height_m = float(space.get("height_m", 999999.0) or 999999.0)
+        orientations = []
+        if payload.length_m <= length_m + 1e-6 and payload.width_m <= width_m + 1e-6:
+            orientations.append(
+                (length_m - payload.length_m) + (width_m - payload.width_m)
+            )
+        if payload.length_m <= width_m + 1e-6 and payload.width_m <= length_m + 1e-6:
+            orientations.append(
+                (width_m - payload.length_m) + (length_m - payload.width_m)
+            )
+        planar_slack = min(orientations or [float("inf")])
+        height_slack = max(0.0, height_m - float(payload.height_m))
+        if height_m >= 999998.0:
+            height_slack = 0.0
+        return (
+            planar_slack + height_slack,
+            max(0.0, length_m) * max(0.0, width_m),
+            max(length_m, width_m, height_m if height_m < 999998.0 else 0.0),
+        )
 
     def _inventory_space_allowed_payloads(self, space: dict) -> set:
         allowed = set()
@@ -4313,7 +4424,10 @@ class Simulation:
     ) -> Optional[dict]:
         task_id = str(getattr(task, "id", "") or "").strip() if task is not None else ""
         self._clear_stale_payload_inventory_reservations(location_name)
-        for space in self.inventory_spaces_by_location.get(location_name, []):
+        candidates = []
+        for index, space in enumerate(
+            self.inventory_spaces_by_location.get(location_name, [])
+        ):
             if bool(space.get("occupied", False)):
                 continue
             reserved_by = str(space.get("reserved_by_task", "") or "").strip()
@@ -4321,8 +4435,40 @@ class Simulation:
                 continue
             if not self._inventory_space_can_fit_payload(space, payload):
                 continue
-            return space
-        return None
+            candidates.append(
+                (self._inventory_space_fit_score(space, payload), index, space)
+            )
+        if not candidates:
+            return None
+        return min(candidates, key=lambda item: (item[0], item[1]))[2]
+
+    def _task_allows_dropoff_zone_overflow(
+        self, task: Optional[Task], payload: Optional[PayloadType] = None
+    ) -> bool:
+        """Whether a staff-assisted generated delivery may use logical overflow."""
+        if task is None:
+            return False
+        zone = str(getattr(task, "dropoff_zone", "") or "").strip()
+        final_destination = str(
+            getattr(task, "final_destination", "") or ""
+        ).strip()
+        if not zone or zone != str(getattr(task, "dropoff", "") or "").strip():
+            return False
+        if not final_destination or not bool(getattr(task, "requires_staff", False)):
+            return False
+        policy = str(
+            getattr(task, "dropoff_zone_capacity_policy", "wait_for_space") or ""
+        ).strip().lower()
+        if policy != "allow_temporary_overflow":
+            return False
+        if payload is None:
+            return True
+        # Overflow relaxes simultaneous bay occupancy only. It must not hide a
+        # configuration where the payload cannot physically fit any zone bay.
+        return any(
+            self._inventory_space_can_fit_payload(space, payload)
+            for space in self.inventory_spaces_by_location.get(zone, [])
+        )
 
     def _inventory_pending_reason(
         self, location_name: str, payload: PayloadType
@@ -4439,6 +4585,12 @@ class Simulation:
             )
 
         if target_space is None:
+            if self._task_allows_dropoff_zone_overflow(task, payload):
+                self._clear_inventory_space_reservation_for_task(task)
+                task.assigned_inventory_space = ""
+                self._set_task_pending_reason(task, "")
+                self._record_location_storage_peak(task.dropoff)
+                return True
             self._set_task_pending_reason(
                 task, self._inventory_pending_reason(task.dropoff, payload)
             )
@@ -4714,6 +4866,16 @@ class Simulation:
             "working_hours": dict(
                 getattr(task, "staff_working_hours", {}) or {}
             ),
+        }
+
+    @staticmethod
+    def _task_is_staff_payload_exchange(task: Optional[Task]) -> bool:
+        if task is None or bool(getattr(task, "is_return_task", False)):
+            return False
+        exchange_mode = str(getattr(task, "exchange_mode", "") or "").strip().lower()
+        return bool(getattr(task, "tracked_item_exchange", False)) or exchange_mode in {
+            "full_exchange",
+            "replace_empty",
         }
 
     @staticmethod
@@ -5224,20 +5386,125 @@ class Simulation:
             )
         start = float(assignment.get("start_time", 0.0) or 0.0)
         finish = float(assignment.get("finish_time", start) or start)
+        final_destination = str(
+            getattr(task, "final_destination", "") or ""
+        ).strip()
+        dropoff_zone = str(
+            getattr(task, "dropoff_zone", "") or ""
+        ).strip()
+        if (
+            final_destination
+            and dropoff_zone
+            and final_destination in self.locations
+            and dropoff_zone in self.locations
+            and final_destination != dropoff_zone
+        ):
+            zone_to_final_sec, zone_to_final_m, zone_lift_id = (
+                self._staff_travel_between_locations(
+                    dropoff_zone, final_destination
+                )
+            )
+            outbound_finish = min(finish, start + zone_to_final_sec)
+            inbound_start = max(outbound_finish, finish - zone_to_final_sec)
+            final_loc = self.locations.get(final_destination)
+            return_payload_name = self._payload_log_name(
+                getattr(task, "return_payload", "")
+                or getattr(task, "payload", "")
+            )
+            outbound_payload_name = self._payload_log_name(
+                getattr(task, "payload", "")
+            )
+            for leg_start, leg_finish, leg_from, leg_to, leg_payload, leg_status in (
+                (
+                    start,
+                    outbound_finish,
+                    dropoff_zone,
+                    final_destination,
+                    outbound_payload_name,
+                    "staff_payload_delivery",
+                ),
+                (
+                    inbound_start,
+                    finish,
+                    final_destination,
+                    dropoff_zone,
+                    return_payload_name,
+                    "staff_payload_return",
+                ),
+            ):
+                from_loc = self.locations.get(leg_from)
+                to_loc = self.locations.get(leg_to)
+                self.log_step(
+                    event_time=leg_start,
+                    event_type="staff_payload_transport",
+                    task_id=str(getattr(task, "id", "") or ""),
+                    details=(
+                        f"{assignment['person_id']} transports {leg_payload} "
+                        f"from {leg_from} to {leg_to}"
+                    ),
+                    from_location=leg_from,
+                    to_location=leg_to,
+                    payload_name=leg_payload,
+                    payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
+                    duration_sec=max(0.0, leg_finish - leg_start),
+                    distance_m=zone_to_final_m,
+                    start_time=leg_start,
+                    end_time=leg_finish,
+                    start_node=leg_from,
+                    end_node=leg_to,
+                    start_x=getattr(from_loc, "x", None),
+                    start_y=getattr(from_loc, "y", None),
+                    start_floor=getattr(from_loc, "floor", None),
+                    end_x=getattr(to_loc, "x", None),
+                    end_y=getattr(to_loc, "y", None),
+                    end_floor=getattr(to_loc, "floor", None),
+                    lift_id=zone_lift_id,
+                    status=leg_status,
+                    task_source=getattr(task, "task_source", ""),
+                    department_id=getattr(task, "department_id", ""),
+                    container_type=getattr(task, "container_type", ""),
+                    person_resource=f"{category_key}_payload_transport",
+                    person_id=str(assignment["person_id"]),
+                    people_required=int(assignment.get("people_required", 0) or 0),
+                    staff_on_shift_people_required=int(assignment.get("staff_on_shift_people_required", 0) or 0),
+                    staff_shift_pattern=str(assignment.get("staff_shift_pattern", "") or ""),
+                    staff_shift_team=str(assignment.get("staff_shift_team", "") or ""),
+                    staff_shift_multiplier=float(assignment.get("staff_shift_multiplier", 1.0) or 1.0),
+                    staff_initial_on_shift_people=int(assignment.get("staff_initial_on_shift_people", 0) or 0),
+                    staff_initial_rostered_people=int(assignment.get("staff_initial_rostered_people", 0) or 0),
+                )
+            # The handling record belongs to the real department destination;
+            # the assignment itself still finishes at the zone, so subsequent
+            # staff routing starts from the correct place.
+            location_name = final_destination
+            location = final_loc
+            start = outbound_finish
+            finish = inbound_start
+        is_exchange = self._task_is_staff_payload_exchange(task)
+        handling_event_type = (
+            "staff_payload_exchange" if is_exchange else "staff_payload_handling"
+        )
+        handling_status = "payload_exchange" if is_exchange else "handling"
+        handling_payload = (
+            getattr(task, "return_payload", "") or getattr(task, "payload", "")
+            if is_exchange
+            else getattr(task, "payload", "")
+        )
         self.log_step(
             event_time=start,
-            event_type="staff_payload_handling",
+            event_type=handling_event_type,
             task_id=str(getattr(task, "id", "") or ""),
             amr_id="",
             details=(
-                f"{assignment['person_id']} handling {resource_name} payload "
+                f"{assignment['person_id']} "
+                f"{'exchanging' if is_exchange else 'handling'} {resource_name} payload "
                 f"until {self.clock.format_sim_time(finish)}"
             ),
             from_location=location_name,
             to_location=location_name,
-            payload_name=self._payload_log_name(getattr(task, "payload", "")),
+            payload_name=self._payload_log_name(handling_payload),
             payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
-            duration_sec=float(assignment.get("duration_sec", max(0.0, finish - start)) or 0.0),
+            duration_sec=max(0.0, finish - start),
             staff_wait_for_travel_sec=float(
                 assignment.get("staff_wait_for_travel_sec", 0.0) or 0.0
             ),
@@ -5251,7 +5518,7 @@ class Simulation:
             end_x=getattr(location, "x", None),
             end_y=getattr(location, "y", None),
             end_floor=getattr(location, "floor", None),
-            status="handling",
+            status=handling_status,
             task_source=getattr(task, "task_source", ""),
             department_id=getattr(task, "department_id", ""),
             container_type=getattr(task, "container_type", ""),
@@ -5277,9 +5544,52 @@ class Simulation:
         delay_sec = (
             max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
         )
-        handling_duration_sec = self._staff_handling_duration_sec(task, delay_sec)
+        final_destination = str(
+            getattr(task, "final_destination", "") or ""
+        ).strip()
+        dropoff_zone = str(
+            getattr(task, "dropoff_zone", "") or ""
+        ).strip()
+        uses_dropoff_zone = bool(
+            final_destination
+            and dropoff_zone
+            and final_destination in self.locations
+            and dropoff_zone in self.locations
+            and final_destination != dropoff_zone
+        )
+        if uses_dropoff_zone:
+            zone_travel_sec, _distance, _lift_id = (
+                self._staff_travel_between_locations(
+                    dropoff_zone, final_destination
+                )
+            )
+            # The staff resource covers the whole hand-off cycle: collect from
+            # the zone, deliver, wait/handle at destination, and bring the
+            # configured return payload back. Preserve the timing of the original
+            # direct-delivery return: handling occurs inside the return-delay
+            # window instead of being added to it. For example, 15 minutes of
+            # handling with a 45-minute return delay gives a 45-minute destination
+            # dwell, not 60 minutes. Walking time remains additional because the
+            # person must still reach the final destination and return to the zone.
+            destination_dwell_sec = max(
+                self._staff_handling_duration_sec(task, 0.0),
+                delay_sec,
+            )
+            handling_duration_sec = (
+                (2.0 * zone_travel_sec)
+                + destination_dwell_sec
+            )
+        else:
+            handling_duration_sec = self._staff_handling_duration_sec(task, delay_sec)
+        collection_delay_sec = max(
+            0.0,
+            float(
+                getattr(task, "staff_collection_delay_minutes", 0.0) or 0.0
+            )
+            * 60.0,
+        )
         staff_assignment = self._assign_staff_for_handling(
-            task, finish_time, handling_duration_sec
+            task, finish_time + collection_delay_sec, handling_duration_sec
         )
         self._log_staff_handling_assignment(task, staff_assignment)
         if not return_enabled:
@@ -5292,7 +5602,7 @@ class Simulation:
             return
 
         self.synthetic_task_counter += 1
-        return_release_time = finish_time + delay_sec
+        return_release_time = finish_time + (0.0 if uses_dropoff_zone else delay_sec)
         if staff_assignment is not None:
             return_release_time = max(
                 return_release_time, float(staff_assignment.get("finish_time", finish_time) or finish_time)
@@ -5442,6 +5752,79 @@ class Simulation:
         if return_task.locked_amr_id:
             self._remove_pending_idle_return_tasks_for_amr(return_task.locked_amr_id)
 
+        exchange_hold_duration = max(0.0, return_release_time - finish_time)
+        hold_limit_sec = max(
+            0.0, float(self.amr_hold_for_exchange_max_minutes or 0.0) * 60.0
+        )
+        hold_for_exchange = bool(
+            uses_dropoff_zone
+            and self._task_is_staff_payload_exchange(task)
+            and return_task.locked_amr_id
+            and hold_limit_sec > 0.0
+            and exchange_hold_duration <= hold_limit_sec + 1e-9
+        )
+        if hold_for_exchange:
+            held_amr = self.amrs_by_id.get(return_task.locked_amr_id)
+            if held_amr is not None:
+                held_amr.available_time = max(
+                    float(getattr(held_amr, "available_time", 0.0) or 0.0),
+                    return_release_time,
+                )
+                held_amr.exchange_hold_until = return_release_time
+                held_amr.exchange_hold_return_task_id = return_task.id
+                zone_location = self.locations.get(dropoff_zone)
+                self.log_step(
+                    event_time=finish_time,
+                    event_type="amr_exchange_hold",
+                    task_id=str(getattr(task, "id", "") or ""),
+                    amr_id=str(getattr(held_amr, "id", "") or ""),
+                    details=(
+                        f"AMR held at {dropoff_zone} for short payload exchange; "
+                        f"return {return_task.id} ready at "
+                        f"{self.clock.format_sim_time(return_release_time)}"
+                    ),
+                    from_location=dropoff_zone,
+                    to_location=dropoff_zone,
+                    duration_sec=exchange_hold_duration,
+                    wait_time_sec=exchange_hold_duration,
+                    start_time=finish_time,
+                    end_time=return_release_time,
+                    start_node=dropoff_zone,
+                    end_node=dropoff_zone,
+                    start_x=getattr(zone_location, "x", None),
+                    start_y=getattr(zone_location, "y", None),
+                    start_floor=getattr(zone_location, "floor", None),
+                    end_x=getattr(zone_location, "x", None),
+                    end_y=getattr(zone_location, "y", None),
+                    end_floor=getattr(zone_location, "floor", None),
+                    segment_type="wait_for_exchange",
+                    status="waiting_for_exchange",
+                    task_source=getattr(task, "task_source", ""),
+                    department_id=getattr(task, "department_id", ""),
+                )
+
+        if uses_dropoff_zone:
+            handoff_payload = {
+                "task": task,
+                "return_task": return_task,
+                "staff_assignment": staff_assignment or {},
+            }
+            if return_task.release_time <= max(self.current_time, finish_time) + 1e-9:
+                self._complete_dropoff_zone_handoff(
+                    task,
+                    return_task,
+                    staff_assignment or {},
+                    return_task.release_time,
+                )
+            else:
+                # This is inserted before the same-time task release so the
+                # empty/equivalent physical payload is back at the zone first.
+                self.push_event(
+                    return_task.release_time,
+                    "dropoff_zone_handoff_complete",
+                    handoff_payload,
+                )
+
         # If the bin is ready to return immediately, put the physical-bin return
         # straight into the pending queue.  Pushing a same-time task_release event
         # leaves the pending queue briefly empty, which lets the idle-return
@@ -5527,6 +5910,209 @@ class Simulation:
                 else 0
             ),
         )
+
+    def _complete_dropoff_zone_handoff(
+        self,
+        task: Task,
+        return_task: Task,
+        staff_assignment: dict,
+        event_time: float,
+    ) -> None:
+        """Replace the staged delivery with its staff-returned empty payload."""
+        zone = str(getattr(task, "dropoff_zone", "") or task.dropoff or "").strip()
+        final_destination = str(
+            getattr(task, "final_destination", "") or ""
+        ).strip()
+        outbound_payload = normalise_payload_name(getattr(task, "payload", ""))
+        outbound_id = str(getattr(task, "payload_instance_id", "") or "").strip()
+        return_payload = normalise_payload_name(getattr(return_task, "payload", ""))
+        return_id = str(
+            getattr(return_task, "payload_instance_id", "") or ""
+        ).strip()
+        if not zone or not final_destination or not return_payload:
+            return
+
+        travel_sec, _distance, _lift_id = self._staff_travel_between_locations(
+            zone, final_destination
+        )
+        assignment_start = float(
+            (staff_assignment or {}).get("start_time", event_time) or event_time
+        )
+        delivered_time = min(float(event_time), assignment_start + travel_sec)
+        returned_time = float(event_time)
+        return_departure_time = max(
+            delivered_time,
+            returned_time - travel_sec,
+        )
+
+        removed = None
+        returned_empty_record = None
+        is_exchange = self._task_is_staff_payload_exchange(task)
+        if outbound_id and outbound_payload:
+            removed = self.payload_instance_store.pickup(
+                zone,
+                payload_name=outbound_payload,
+                instance_id=outbound_id,
+            )
+            if removed is not None:
+                self._remove_payload_record_from_inventory(zone, outbound_id)
+                self._log_payload_location_event(
+                    "location_payload_exit", zone, outbound_payload, outbound_id,
+                    task=task, event_time=assignment_start,
+                )
+                self._log_payload_location_event(
+                    "location_payload_enter", final_destination, outbound_payload,
+                    outbound_id, task=task, event_time=delivered_time,
+                )
+                if is_exchange:
+                    # Exchange deliveries leave the newly delivered full payload
+                    # at the final destination and collect the previous empty
+                    # equivalent. With unlimited destination storage, the first
+                    # visit is allowed an implicit empty payload; later visits
+                    # replace the physical instance left by the previous cycle.
+                    for candidate in self.payload_instance_store.records_at(
+                        final_destination
+                    ):
+                        candidate_id = str(
+                            getattr(candidate, "instance_id", "") or ""
+                        ).strip()
+                        if candidate_id == outbound_id:
+                            continue
+                        if normalise_payload_name(
+                            getattr(candidate, "payload", "")
+                        ) != return_payload:
+                            continue
+                        if self.payload_instance_store.is_reserved(candidate_id):
+                            continue
+                        returned_empty_record = self.payload_instance_store.pickup(
+                            final_destination,
+                            payload_name=return_payload,
+                            instance_id=candidate_id,
+                        )
+                        if returned_empty_record is not None:
+                            self._remove_payload_record_from_inventory(
+                                final_destination, candidate_id
+                            )
+                            break
+                self.payload_instance_store.store(
+                    final_destination,
+                    outbound_payload,
+                    outbound_id,
+                    source_task_id=str(getattr(task, "id", "") or ""),
+                    metadata={
+                        **dict(getattr(removed, "metadata", {}) or {}),
+                        "container_state": "full" if is_exchange else "",
+                    },
+                )
+                self._record_location_storage_peak(final_destination)
+                if is_exchange:
+                    if returned_empty_record is None:
+                        implicit_empty_id = self.payload_instance_store.make_instance_id(
+                            return_payload, f"{task.id}-implicit-empty-exchange"
+                        )
+                        self.payload_instance_store.store(
+                            final_destination,
+                            return_payload,
+                            implicit_empty_id,
+                            source_task_id=str(getattr(task, "id", "") or ""),
+                            metadata={"container_state": "empty"},
+                        )
+                        returned_empty_record = self.payload_instance_store.pickup(
+                            final_destination,
+                            payload_name=return_payload,
+                            instance_id=implicit_empty_id,
+                        )
+                    if returned_empty_record is not None:
+                        return_id = str(
+                            getattr(returned_empty_record, "instance_id", "") or ""
+                        ).strip()
+                        self._log_payload_location_event(
+                            "location_payload_exit",
+                            final_destination,
+                            return_payload,
+                            return_id,
+                            task=return_task,
+                            event_time=return_departure_time,
+                        )
+                else:
+                    self.payload_instance_store.pickup(
+                        final_destination,
+                        payload_name=outbound_payload,
+                        instance_id=outbound_id,
+                    )
+                    self._log_payload_location_event(
+                        "location_payload_exit", final_destination, outbound_payload,
+                        outbound_id, task=task, event_time=return_departure_time,
+                    )
+
+        if not return_id:
+            if outbound_id and outbound_payload == return_payload:
+                return_id = outbound_id
+            else:
+                return_id = self.payload_instance_store.make_instance_id(
+                    return_payload, f"{task.id}-zone-empty-return"
+                )
+        return_task.payload_instance_id = return_id
+        return_task.requires_existing_payload_instance = True
+        return_task.creates_new_payload_instance = False
+
+        metadata = dict(
+            getattr(returned_empty_record if is_exchange else removed, "metadata", {})
+            or {}
+        )
+        metadata.update(
+            {
+                "task_source": "dropoff_zone_staff_return",
+                "department_id": str(getattr(task, "department_id", "") or ""),
+                "container_type": return_payload,
+                "container_state": "empty",
+                "final_destination": final_destination,
+            }
+        )
+        self.payload_instance_store.store(
+            zone,
+            return_payload,
+            return_id,
+            source_task_id=str(getattr(task, "id", "") or ""),
+            metadata=metadata,
+        )
+
+        payload_obj = self.payloads.get(return_payload)
+        target_space = None
+        assigned_name = str(
+            getattr(task, "assigned_inventory_space", "") or ""
+        ).strip()
+        if payload_obj is not None and self._location_has_payload_inventory_spaces(zone):
+            for space in self.inventory_spaces_by_location.get(zone, []):
+                if assigned_name and str(space.get("name", "") or "") != assigned_name:
+                    continue
+                if (
+                    not bool(space.get("occupied", False))
+                    and self._inventory_space_can_fit_payload(space, payload_obj)
+                ):
+                    target_space = space
+                    break
+            if target_space is None:
+                target_space = self._find_free_inventory_space(zone, payload_obj)
+            if target_space is not None:
+                target_space["occupied"] = True
+                target_space["payload"] = return_payload
+                target_space["payload_instance_id"] = return_id
+                target_space["task_id"] = str(getattr(return_task, "id", "") or "")
+                target_space["reserved_by_task"] = ""
+
+        self._log_payload_location_event(
+            "location_payload_enter",
+            zone,
+            return_payload,
+            return_id,
+            task=return_task,
+            event_time=returned_time,
+            inventory_space=str((target_space or {}).get("name", "") or ""),
+        )
+        self._record_location_storage_peak(zone)
+        self._record_location_storage_peak(final_destination)
+        self._record_payload_population_snapshot()
 
     def _notify_task_generation_state(self, task: Task, state: str) -> None:
         manager = getattr(self, "task_generation_manager", None)
@@ -5907,6 +6493,7 @@ class Simulation:
                 ),
             ),
         )
+
         at_zero = max(
             0.05,
             min(1.0, float(getattr(lift, "health_speed_penalty_at_zero", 0.5) or 0.5)),
@@ -8556,9 +9143,13 @@ class Simulation:
             task.payload_orientation = payload_orientation or "lengthways"
 
             if self._location_has_payload_inventory_spaces(task.dropoff):
-                free_space = self._find_free_inventory_space(task.dropoff, payload)
-                if free_space is None and not self._task_can_exchange_with_store_empty(
-                    task, payload
+                free_space = self._find_free_inventory_space(
+                    task.dropoff, payload, task=task
+                )
+                if (
+                    free_space is None
+                    and not self._task_allows_dropoff_zone_overflow(task, payload)
+                    and not self._task_can_exchange_with_store_empty(task, payload)
                 ):
                     self._set_task_pending_reason(
                         task,
@@ -8964,6 +9555,7 @@ class Simulation:
                     if (
                         self._location_has_payload_inventory_spaces(dropoff_loc.name)
                         and reserved_space is None
+                        and not self._task_allows_dropoff_zone_overflow(task, payload)
                         and not self._task_can_exchange_with_store_empty(task, payload)
                     ):
                         self._set_task_pending_reason(
@@ -9212,6 +9804,15 @@ class Simulation:
         locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
         if locked_amr_id and str(getattr(amr, "id", "") or "").strip() != locked_amr_id:
             return False
+        exchange_hold_until = float(
+            getattr(amr, "exchange_hold_until", 0.0) or 0.0
+        )
+        if exchange_hold_until > self.current_time + 1e-9:
+            held_return_task_id = str(
+                getattr(amr, "exchange_hold_return_task_id", "") or ""
+            ).strip()
+            if str(getattr(task, "id", "") or "").strip() != held_return_task_id:
+                return False
         return True
 
     def _select_best_assignment(self) -> Optional[Tuple[AMR, Task, dict]]:
@@ -9299,8 +9900,10 @@ class Simulation:
             ):
                 payload = payload_for_inventory
                 if self._find_free_inventory_space(
-                    task.dropoff, payload
-                ) is None and not self._task_can_exchange_with_store_empty(
+                    task.dropoff, payload, task=task
+                ) is None and not self._task_allows_dropoff_zone_overflow(
+                    task, payload
+                ) and not self._task_can_exchange_with_store_empty(
                     task, payload
                 ):
                     self._set_task_pending_reason(
@@ -9544,8 +10147,10 @@ class Simulation:
             if compatible_space_count <= 0:
                 return self._inventory_pending_reason(dropoff_name, payload)
             if self._find_free_inventory_space(
-                dropoff_name, payload
-            ) is None and not self._task_can_exchange_with_store_empty(task, payload):
+                dropoff_name, payload, task=task
+            ) is None and not self._task_allows_dropoff_zone_overflow(
+                task, payload
+            ) and not self._task_can_exchange_with_store_empty(task, payload):
                 return self._inventory_pending_reason(dropoff_name, payload)
 
         if not self._pickup_instance_available(task):
@@ -10601,7 +11206,15 @@ class Simulation:
         return released_tasks
 
     def _handle_event(self, event: Event):
-        if event.event_type == "task_release":
+        if event.event_type == "dropoff_zone_handoff_complete":
+            self._complete_dropoff_zone_handoff(
+                event.payload["task"],
+                event.payload["return_task"],
+                event.payload.get("staff_assignment", {}) or {},
+                event.time,
+            )
+            self._try_assign_tasks(event.time)
+        elif event.event_type == "task_release":
             self._queue_same_time_task_releases(event)
             self._try_assign_tasks(event.time)
         elif event.event_type == "assignment_continue":
@@ -10640,6 +11253,7 @@ class Simulation:
                         and not str(
                             getattr(task, "assigned_inventory_space", "") or ""
                         ).strip()
+                        and not self._task_allows_dropoff_zone_overflow(task, payload_obj)
                     ):
                         reason = self._inventory_pending_reason(
                             task.dropoff, payload_obj
@@ -10786,6 +11400,10 @@ class Simulation:
                     "task_id": task.id,
                     "pickup": task.pickup,
                     "dropoff": task.dropoff,
+                    "dropoff_zone": str(getattr(task, "dropoff_zone", "") or ""),
+                    "final_destination": str(
+                        getattr(task, "final_destination", "") or task.dropoff or ""
+                    ),
                     "payload": (
                         "" if self.scenario_mode and not self.scenario_enhanced_logging
                         else self._payload_log_name(task.payload)
@@ -10904,6 +11522,7 @@ class Simulation:
                             and not str(
                                 getattr(task, "assigned_inventory_space", "") or ""
                             ).strip()
+                            and not self._task_allows_dropoff_zone_overflow(task, payload_obj)
                         ):
                             self._fail_task(
                                 task,
@@ -10982,6 +11601,10 @@ class Simulation:
                         "task_id": task.id,
                         "pickup": task.pickup,
                         "dropoff": task.dropoff,
+                        "dropoff_zone": str(getattr(task, "dropoff_zone", "") or ""),
+                        "final_destination": str(
+                            getattr(task, "final_destination", "") or task.dropoff or ""
+                        ),
                         "payload": ("" if self.scenario_mode and not self.scenario_enhanced_logging else self._payload_log_name(task.payload)),
                         "payload_instance_id": ("" if self.scenario_mode and not self.scenario_enhanced_logging else getattr(task, "payload_instance_id", "")),
                         "amr_id": event.payload["amr_id"],

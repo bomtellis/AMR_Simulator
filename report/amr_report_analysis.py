@@ -1895,15 +1895,41 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
 
     location_to_department: Dict[str, str] = {}
     location_to_category: Dict[str, str] = {}
+    dropoff_zone_departments: Dict[str, set] = {}
+    dropoff_zone_categories: Dict[str, set] = {}
+    payload_height_by_name = {
+        str(payload.get("name", "") or "").strip(): _to_float(
+            payload.get("height_m"), 0.0
+        )
+        for payload in data.get("payloads", []) or []
+        if isinstance(payload, dict)
+        and str(payload.get("name", "") or "").strip()
+    }
     for dept in data.get("departments", []):
         dept_name = str(dept.get("name") or dept.get("id") or "-").strip() or "-"
         task_locations = dept.get("task_generation_locations", {}) or {}
         for category, cfg in task_locations.items():
-            for loc_name in (cfg or {}).get("pickup_dropoff_locations", []) or []:
+            cfg = cfg if isinstance(cfg, dict) else {
+                "pickup_dropoff_locations": cfg
+            }
+            category_name = str(category).title()
+            for loc_name in cfg.get("pickup_dropoff_locations", []) or []:
                 if not loc_name:
                     continue
                 location_to_department[str(loc_name)] = dept_name
-                location_to_category[str(loc_name)] = str(category).title()
+                location_to_category[str(loc_name)] = category_name
+            zone_locations = cfg.get(
+                "dropoff_zone_locations",
+                cfg.get("drop_off_zone_locations", []),
+            )
+            if isinstance(zone_locations, str):
+                zone_locations = [zone_locations]
+            for loc_name in zone_locations or []:
+                zone_name = str(loc_name or "").strip()
+                if not zone_name:
+                    continue
+                dropoff_zone_departments.setdefault(zone_name, set()).add(dept_name)
+                dropoff_zone_categories.setdefault(zone_name, set()).add(category_name)
 
     rows: List[dict] = []
     for loc in data.get("locations", []):
@@ -1916,19 +1942,88 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
         spaces = loc.get("inventory_spaces", None)
         spaces_list = spaces if isinstance(spaces, list) else []
         explicit_spaces = spaces is not None
+        space_definitions = []
+        for space in spaces_list:
+            if not isinstance(space, dict):
+                continue
+            is_amr_space = (
+                bool(space.get("stores_amr", False))
+                or str(space.get("space_type", "") or "").strip().lower() == "amr"
+                or bool(str(space.get("amr_type", "") or "").strip())
+                or any(
+                    isinstance(slot, dict)
+                    and (
+                        str(slot.get("slot_type", "") or "").strip().lower()
+                        == "amr"
+                        or bool(str(slot.get("amr_type", "") or "").strip())
+                    )
+                    for slot in space.get("payload_slots", []) or []
+                )
+            )
+            if is_amr_space:
+                continue
+            point_length, point_width = polygon_dimensions(
+                space.get("points", []) or []
+            )
+            allowed_payloads = sorted(
+                {
+                    str(slot.get("payload", "") or "").strip()
+                    for slot in space.get("payload_slots", []) or []
+                    if isinstance(slot, dict)
+                    and str(slot.get("payload", "") or "").strip()
+                }
+            )
+            inferred_height = max(
+                (
+                    payload_height_by_name.get(payload_name, 0.0)
+                    for payload_name in allowed_payloads
+                    if payload_height_by_name.get(payload_name, 0.0) > 0.0
+                ),
+                default=999999.0,
+            )
+            space_definitions.append(
+                {
+                    "name": str(space.get("name", "") or "").strip(),
+                    "length_m": _to_float(
+                        space.get("length_m", point_length), point_length
+                    ),
+                    "width_m": _to_float(
+                        space.get("width_m", point_width), point_width
+                    ),
+                    "height_m": _to_float(
+                        space.get("height_m", inferred_height), inferred_height
+                    ),
+                    "flexible": _to_bool(
+                        space.get("flexible"), name in dropoff_zone_categories
+                    ),
+                    "allowed_payloads": allowed_payloads,
+                }
+            )
         inventory_area = sum(
             polygon_area((space or {}).get("points", []) or []) for space in spaces_list
         )
         rows.append(
             {
                 "location": name,
-                "department": location_to_department.get(name, "-"),
-                "category": location_to_category.get(name, "-"),
+                "department": location_to_department.get(name)
+                or ", ".join(sorted(dropoff_zone_departments.get(name, set())))
+                or "-",
+                "category": location_to_category.get(name)
+                or ", ".join(sorted(dropoff_zone_categories.get(name, set())))
+                or "-",
+                "is_dropoff_zone": name in dropoff_zone_categories,
+                "dropoff_zone_departments": ", ".join(
+                    sorted(dropoff_zone_departments.get(name, set()))
+                ),
+                "dropoff_zone_categories": ", ".join(
+                    sorted(dropoff_zone_categories.get(name, set()))
+                ),
                 "floor": loc.get("floor", "-"),
                 "length_m": round(length, 2),
                 "width_m": round(width, 2),
                 "area_m2": round(area, 2),
                 "inventory_spaces_current": len(spaces_list),
+                "inventory_space_definitions": space_definitions,
                 "inventory_area_m2": round(inventory_area, 2),
                 "inventory_spaces_defined": explicit_spaces,
             }
@@ -2475,43 +2570,65 @@ def build_location_peak_occupancy(
             if volume > float(item.get("peak_volume_m3", 0.0)):
                 item["peak_volume_m3"] = volume
 
-        for _, row in movement_rows.iterrows():
-            location = row["_report_location"]
-            payload_name = row["_report_payload"]
-            area, volume = payload_lookup.get(payload_name, (0.0, 0.0))
-            synthetic_counter += 1
-            key = _instance_key(row, location, payload_name, synthetic_counter)
-            event = str(row.get("_event_text", "") or "").lower()
-            live = states.setdefault(location, {})
-            if event.endswith("enter"):
-                # A physical payload instance can only occupy one location at a
-                # time.  Some logs record the arrival more reliably than the
-                # departure, so clear the same instance from any previous
-                # location before adding it here.
-                previous_location = instance_locations.get(key)
-                if previous_location and previous_location != location:
-                    previous_live = states.get(previous_location, {})
-                    if key in previous_live:
-                        previous_live.pop(key, None)
-                        snapshot(previous_location)
-                live[key] = (payload_name, area, volume)
-                instance_locations[key] = location
-            elif event.endswith("exit"):
-                # Prefer exact instance removal, but fall back to the first matching
-                # payload at that location so legacy rows without instance IDs still
-                # form a useful occupancy timeline.
-                removed_key = ""
-                if key in live:
-                    live.pop(key, None)
-                    removed_key = key
-                else:
-                    match = next((k for k, v in live.items() if v[0] == payload_name), None)
-                    if match is not None:
-                        live.pop(match, None)
-                        removed_key = match
-                if removed_key:
-                    instance_locations.pop(removed_key, None)
-            snapshot(location)
+        for _, timestamp_rows in movement_rows.groupby(
+            ctx.time_col, sort=False, dropna=False
+        ):
+            affected_locations = set()
+            for _, row in timestamp_rows.iterrows():
+                location = row["_report_location"]
+                affected_locations.add(location)
+                payload_name = row["_report_payload"]
+                area, volume = payload_lookup.get(payload_name, (0.0, 0.0))
+                synthetic_counter += 1
+                key = _instance_key(row, location, payload_name, synthetic_counter)
+                raw_instance = str(
+                    row.get("payload_instance_id", "") or ""
+                ).strip()
+                has_explicit_instance = (
+                    bool(raw_instance)
+                    and raw_instance.lower() not in {"-", "nan", "none", "null"}
+                )
+                event = str(row.get("_event_text", "") or "").lower()
+                live = states.setdefault(location, {})
+                if event.endswith("enter"):
+                    # A physical payload instance can only occupy one location at a
+                    # time.  Some logs record the arrival more reliably than the
+                    # departure, so clear the same instance from any previous
+                    # location before adding it here.
+                    previous_location = instance_locations.get(key)
+                    if previous_location and previous_location != location:
+                        previous_live = states.get(previous_location, {})
+                        if key in previous_live:
+                            previous_live.pop(key, None)
+                            affected_locations.add(previous_location)
+                    live[key] = (payload_name, area, volume)
+                    instance_locations[key] = location
+                elif event.endswith("exit"):
+                    # Prefer exact instance removal, but fall back to the first
+                    # matching payload at that location for legacy rows without IDs.
+                    removed_key = ""
+                    if key in live:
+                        live.pop(key, None)
+                        removed_key = key
+                    elif not has_explicit_instance:
+                        match = next(
+                            (k for k, v in live.items() if v[0] == payload_name),
+                            None,
+                        )
+                        if match is not None:
+                            live.pop(match, None)
+                            removed_key = match
+                    if (
+                        removed_key
+                        and instance_locations.get(removed_key) == location
+                    ):
+                        instance_locations.pop(removed_key, None)
+
+            # All rows sharing a timestamp describe one stable simulation state.
+            # Sampling between an enter and exit at the same time creates a false
+            # one-row concurrency spike (for example 11 instead of 10 at D39).
+            for location in affected_locations:
+                snapshot(location)
 
         for location in list(states):
             snapshot(location)
@@ -2551,6 +2668,342 @@ def build_location_peak_occupancy(
     peak["department"] = peak["department"].fillna("-")
     peak["category"] = peak["category"].fillna("-")
     return peak[columns].sort_values(["department", "category", "location"]).reset_index(drop=True)
+
+
+def build_dropoff_zone_peak_occupancy(
+    df: pd.DataFrame,
+    ctx: Context,
+    location_catalog: Optional[pd.DataFrame],
+    location_peak_occupancy: pd.DataFrame,
+    payload_dimensions: Optional[pd.DataFrame] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Return drop-off-zone-specific capacity peaks and a network summary."""
+    detail_columns = [
+        "department",
+        "category",
+        "location",
+        "configured_spaces",
+        "peak_occupied_spaces",
+        "free_spaces_at_peak",
+        "space_shortfall_at_peak",
+        "peak_occupancy_pct",
+        "peak_area_used_m2",
+        "peak_volume_m3",
+    ]
+    summary_columns = ["metric", "value"]
+    if (
+        location_catalog is None
+        or location_catalog.empty
+        or "is_dropoff_zone" not in location_catalog.columns
+    ):
+        return (
+            pd.DataFrame(columns=detail_columns),
+            pd.DataFrame(columns=summary_columns),
+        )
+
+    zone_catalog = location_catalog[
+        location_catalog["is_dropoff_zone"].fillna(False).astype(bool)
+    ].copy()
+    if zone_catalog.empty:
+        return (
+            pd.DataFrame(columns=detail_columns),
+            pd.DataFrame(columns=summary_columns),
+        )
+
+    zone_catalog = zone_catalog.drop_duplicates("location", keep="last")
+    zone_names = {
+        str(value or "").strip()
+        for value in zone_catalog["location"].tolist()
+        if str(value or "").strip()
+    }
+    peak = (
+        location_peak_occupancy.copy()
+        if location_peak_occupancy is not None
+        else pd.DataFrame()
+    )
+    peak_keep = [
+        column
+        for column in (
+            "location",
+            "peak_payload_count",
+            "peak_area_used_m2",
+            "peak_volume_m3",
+        )
+        if column in peak.columns
+    ]
+    if "location" not in peak_keep:
+        peak = pd.DataFrame(columns=["location"])
+    else:
+        peak = peak[peak_keep].drop_duplicates("location", keep="last")
+
+    zone_columns = [
+        column
+        for column in (
+            "location",
+            "department",
+            "category",
+            "inventory_spaces_current",
+            "inventory_space_definitions",
+        )
+        if column in zone_catalog.columns
+    ]
+    detail = zone_catalog[zone_columns].merge(peak, on="location", how="left")
+    for column in (
+        "inventory_spaces_current",
+        "peak_payload_count",
+        "peak_area_used_m2",
+        "peak_volume_m3",
+    ):
+        if column not in detail.columns:
+            detail[column] = 0
+        detail[column] = pd.to_numeric(detail[column], errors="coerce").fillna(0)
+
+    detail["configured_spaces"] = detail["inventory_spaces_current"].astype(int)
+    detail["peak_occupied_spaces"] = detail["peak_payload_count"].astype(int)
+    detail["free_spaces_at_peak"] = (
+        detail["configured_spaces"] - detail["peak_occupied_spaces"]
+    ).clip(lower=0).astype(int)
+    detail["space_shortfall_at_peak"] = (
+        detail["peak_occupied_spaces"] - detail["configured_spaces"]
+    ).clip(lower=0).astype(int)
+    detail["peak_occupancy_pct"] = (
+        detail["peak_occupied_spaces"]
+        .div(detail["configured_spaces"].where(detail["configured_spaces"] > 0))
+        .mul(100.0)
+        .fillna(0.0)
+        .round(1)
+    )
+    detail["peak_area_used_m2"] = detail["peak_area_used_m2"].round(2)
+    detail["peak_volume_m3"] = detail["peak_volume_m3"].round(2)
+    if "department" not in detail.columns:
+        detail["department"] = "-"
+    if "category" not in detail.columns:
+        detail["category"] = "-"
+    detail = detail[detail_columns].sort_values(
+        ["department", "category", "location"],
+        key=lambda col: col.map(natural_key),
+    ).reset_index(drop=True)
+
+    # Reconstruct the true simultaneous count across all zones. Summing each
+    # location's independent peak would overstate demand when peaks occur at
+    # different times.
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    movement_rows = df[
+        event_text.str.fullmatch(
+            r"location_payload_(enter|exit)", case=False, na=False
+        )
+    ].copy()
+    location_source = next(
+        (
+            column
+            for column in ("to_location", "end_node", "from_location")
+            if column in movement_rows.columns
+        ),
+        None,
+    )
+    network_peak = 0
+    network_peak_time = None
+    payload_dimension_lookup = {}
+    if payload_dimensions is not None and not payload_dimensions.empty:
+        for _, payload_row in payload_dimensions.iterrows():
+            payload_name = str(payload_row.get("payload", "") or "").strip()
+            if payload_name:
+                payload_dimension_lookup[payload_name] = (
+                    _to_float(payload_row.get("payload_length_m"), 0.0),
+                    _to_float(payload_row.get("payload_width_m"), 0.0),
+                    _to_float(payload_row.get("payload_height_m"), 0.0),
+                )
+    zone_space_definitions = {
+        str(row.get("location", "") or "").strip(): list(
+            row.get("inventory_space_definitions", []) or []
+        )
+        for _, row in zone_catalog.iterrows()
+    }
+    zone_configured_counts = {
+        str(row.get("location", "") or "").strip(): int(
+            _to_float(row.get("inventory_spaces_current"), 0.0)
+        )
+        for _, row in zone_catalog.iterrows()
+    }
+    zone_dimensional_peaks: Dict[str, dict] = {}
+
+    def space_accepts_payload(space: dict, payload_name: str) -> bool:
+        dimensions = payload_dimension_lookup.get(payload_name)
+        allowed = {
+            str(value or "").strip()
+            for value in space.get("allowed_payloads", []) or []
+            if str(value or "").strip()
+        }
+        if not bool(space.get("flexible", False)) and allowed and payload_name not in allowed:
+            return False
+        if dimensions is None:
+            return True
+        payload_length, payload_width, payload_height = dimensions
+        length_m = _to_float(space.get("length_m"), 0.0)
+        width_m = _to_float(space.get("width_m"), 0.0)
+        height_m = _to_float(space.get("height_m"), 999999.0)
+        eps = 1e-6
+        fits_normal = (
+            payload_length <= length_m + eps and payload_width <= width_m + eps
+        )
+        fits_rotated = (
+            payload_length <= width_m + eps and payload_width <= length_m + eps
+        )
+        return (fits_normal or fits_rotated) and payload_height <= height_m + eps
+
+    def maximum_compatible_assignments(zone: str, payload_names: List[str]) -> int:
+        spaces = zone_space_definitions.get(zone, [])
+        if not spaces or not payload_dimension_lookup:
+            return min(
+                len(payload_names), zone_configured_counts.get(zone, len(spaces))
+            )
+        matched_payload_by_space: Dict[int, int] = {}
+
+        def assign(payload_index: int, visited: set) -> bool:
+            payload_name = payload_names[payload_index]
+            compatible_space_indexes = [
+                index
+                for index, space in enumerate(spaces)
+                if space_accepts_payload(space, payload_name)
+            ]
+            compatible_space_indexes.sort(
+                key=lambda index: (
+                    _to_float(spaces[index].get("length_m"), 0.0)
+                    * _to_float(spaces[index].get("width_m"), 0.0),
+                    index,
+                )
+            )
+            for space_index in compatible_space_indexes:
+                if space_index in visited:
+                    continue
+                visited.add(space_index)
+                previous_payload_index = matched_payload_by_space.get(space_index)
+                if previous_payload_index is None or assign(
+                    previous_payload_index, visited
+                ):
+                    matched_payload_by_space[space_index] = payload_index
+                    return True
+            return False
+
+        return sum(
+            1
+            for payload_index in range(len(payload_names))
+            if assign(payload_index, set())
+        )
+    if location_source is not None and not movement_rows.empty:
+        movement_rows["_zone_location"] = movement_rows[location_source].map(
+            lambda value: str(value or "").strip()
+        )
+        movement_rows = movement_rows[
+            movement_rows["_zone_location"].isin(zone_names)
+        ].sort_values(ctx.time_col, kind="stable")
+        live_by_zone: Dict[str, Dict[str, str]] = {
+            zone_name: {} for zone_name in zone_names
+        }
+        instance_zone: Dict[str, str] = {}
+        synthetic_counter = 0
+
+        def clean_value(value) -> str:
+            text = str(value or "").strip()
+            return "" if text.lower() in {"", "-", "nan", "none", "null"} else text
+
+        for timestamp, timestamp_rows in movement_rows.groupby(
+            ctx.time_col, sort=False, dropna=False
+        ):
+            for _, row in timestamp_rows.iterrows():
+                zone = str(row.get("_zone_location", "") or "").strip()
+                payload = clean_value(row.get("payload", ""))
+                instance = clean_value(row.get("payload_instance_id", ""))
+                task_id = clean_value(row.get("task_id", ""))
+                if instance:
+                    key = f"instance:{instance}"
+                elif task_id:
+                    key = f"task:{task_id}:{payload}"
+                else:
+                    synthetic_counter += 1
+                    key = f"synthetic:{synthetic_counter}:{payload}"
+                event_name = str(row.get("_event_text", "") or "").lower()
+                live = live_by_zone.setdefault(zone, {})
+                if event_name.endswith("enter"):
+                    previous_zone = instance_zone.get(key)
+                    if previous_zone and previous_zone != zone:
+                        live_by_zone.setdefault(previous_zone, {}).pop(key, None)
+                    live[key] = payload
+                    instance_zone[key] = zone
+                else:
+                    removed_key = key if key in live else ""
+                    if not removed_key and not instance:
+                        removed_key = next(
+                            (
+                                existing_key
+                                for existing_key, existing_payload in live.items()
+                                if payload and existing_payload == payload
+                            ),
+                            "",
+                        )
+                    if removed_key:
+                        live.pop(removed_key, None)
+                        instance_zone.pop(removed_key, None)
+
+            occupied = sum(len(live) for live in live_by_zone.values())
+            if occupied > network_peak:
+                network_peak = occupied
+                network_peak_time = timestamp
+
+            for zone, live in live_by_zone.items():
+                payload_names = list(live.values())
+                matched = maximum_compatible_assignments(zone, payload_names)
+                state = {
+                    "payload_count": len(payload_names),
+                    "matched_spaces": matched,
+                    "shortfall": max(0, len(payload_names) - matched),
+                    "free_spaces": max(
+                        0, zone_configured_counts.get(zone, 0) - matched
+                    ),
+                }
+                previous = zone_dimensional_peaks.get(zone)
+                if previous is None or (
+                    state["payload_count"], state["shortfall"]
+                ) > (
+                    previous["payload_count"], previous["shortfall"]
+                ):
+                    zone_dimensional_peaks[zone] = state
+
+    if zone_dimensional_peaks:
+        for index, row in detail.iterrows():
+            state = zone_dimensional_peaks.get(str(row["location"]), {})
+            if not state:
+                continue
+            detail.at[index, "free_spaces_at_peak"] = int(
+                state.get("free_spaces", row["free_spaces_at_peak"])
+            )
+            detail.at[index, "space_shortfall_at_peak"] = int(
+                state.get("shortfall", row["space_shortfall_at_peak"])
+            )
+
+    configured_spaces = int(detail["configured_spaces"].sum())
+    single_zone_peak = int(detail["peak_occupied_spaces"].max() or 0)
+    summary_rows = [
+        {
+            "metric": "Maximum occupied spaces across all drop-off zones",
+            "value": network_peak,
+        },
+        {
+            "metric": "Time of simultaneous maximum",
+            "value": (
+                fmt_ts(network_peak_time, ctx.has_datetime)
+                if network_peak_time is not None and not pd.isna(network_peak_time)
+                else "Not available"
+            ),
+        },
+        {
+            "metric": "Highest occupied-space count at one drop-off zone",
+            "value": single_zone_peak,
+        },
+        {"metric": "Configured drop-off zones", "value": len(detail)},
+        {"metric": "Configured flexible spaces across zones", "value": configured_spaces},
+    ]
+    return detail, pd.DataFrame(summary_rows, columns=summary_columns)
 
 
 def apply_peak_occupancy_to_location_outputs(
@@ -5000,6 +5453,16 @@ def analyse(
         df, ctx, location_catalog, payload_dimensions
     )
     (
+        dropoff_zone_peak_occupancy,
+        dropoff_zone_occupancy_summary,
+    ) = build_dropoff_zone_peak_occupancy(
+        df,
+        ctx,
+        location_catalog,
+        location_peak_occupancy,
+        payload_dimensions,
+    )
+    (
         location_space_utilisation,
         location_recommendations,
     ) = apply_peak_occupancy_to_location_outputs(
@@ -5195,6 +5658,8 @@ def analyse(
         "failed_delivery_summary": failed_delivery_summary,
         "location_recommendations": location_recommendations,
         "location_peak_occupancy": location_peak_occupancy,
+        "dropoff_zone_peak_occupancy": dropoff_zone_peak_occupancy,
+        "dropoff_zone_occupancy_summary": dropoff_zone_occupancy_summary,
         "failed_payload_sizes": failed_payload_sizes,
         "lift_wait_schedule": lift_wait_schedule,
         "recharge_summary": recharge_summary,

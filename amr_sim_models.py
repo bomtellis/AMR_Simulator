@@ -78,6 +78,14 @@ class Task:
     payload_instance_id: str = ""
     is_return_task: bool = False
 
+    # Optional department drop-off-zone hand-off. ``dropoff`` remains the AMR
+    # destination, while ``final_destination`` is the department location served
+    # by a person after the AMR has staged the payload at ``dropoff_zone``.
+    # Keeping the two locations explicit avoids treating staff movement as an
+    # AMR leg and preserves backwards compatibility for direct deliveries.
+    dropoff_zone: str = ""
+    final_destination: str = ""
+
     # Tracked item exchange metadata. These fields are populated by automatic
     # task generation when a payload has track_items enabled. They are kept on
     # the Task object so verbose logging, completed task reporting and future
@@ -101,6 +109,13 @@ class Task:
     staff_movement_policy: str = "batch_same_location"
     staff_shift_pattern: str = "none"
     staff_handling_minutes: float = 0.0
+    # Extra response time allowed between the AMR staging the payload and a
+    # person collecting it from the drop-off zone.
+    staff_collection_delay_minutes: float = 0.0
+    # ``allow_temporary_overflow`` lets a generated staff hand-off complete
+    # even when every configured zone bay is occupied. The payload remains
+    # logically present and is included in zone utilisation/shortfall reports.
+    dropoff_zone_capacity_policy: str = "wait_for_space"
     staff_use_custom_working_hours: bool = False
     staff_working_hours: Dict[str, dict] = field(default_factory=dict)
     staff_shift_start_time: str = ""

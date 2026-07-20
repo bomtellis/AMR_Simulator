@@ -13,6 +13,22 @@ LOGISTICS_TASK_GENERATION_CATEGORIES = [
 ]
 
 
+def polygon_dimensions_from_points(points) -> Tuple[float, float]:
+    xs = []
+    ys = []
+    for point in points or []:
+        if not isinstance(point, dict):
+            continue
+        try:
+            xs.append(float(point.get("dx", point.get("x", 0.0)) or 0.0))
+            ys.append(float(point.get("dy", point.get("y", 0.0)) or 0.0))
+        except (TypeError, ValueError):
+            continue
+    if not xs or not ys:
+        return 0.0, 0.0
+    return abs(max(xs) - min(xs)), abs(max(ys) - min(ys))
+
+
 def _parse_hhmm_to_minutes(value, default=None):
     text = str(value or "").strip()
     if not text:
@@ -140,6 +156,8 @@ def default_task_generation_category(label: str) -> dict:
         "staff_movement_policy": "batch_same_location",
         "staff_shift_pattern": "none",
         "staff_handling_minutes": 15.0,
+        "staff_collection_delay_minutes": 0.0,
+        "dropoff_zone_capacity_policy": "allow_temporary_overflow",
         "staff_use_custom_working_hours": False,
         "staff_working_hours": {},
         "reusable_return_pool_enabled": False,
@@ -169,6 +187,7 @@ def default_staff_task_generation_config() -> dict:
         "walking_speed_m_per_sec": 1.2,
         "lift_wait_seconds": 30.0,
         "default_handling_minutes": 15.0,
+        "amr_hold_for_exchange_max_minutes": 20.0,
         "shift_patterns": {
             # ``none`` is the existing category value for a non-rotating team.
             # It now uses these global fixed hours without changing legacy JSON.
@@ -215,6 +234,7 @@ def normalise_staff_task_generation_config(value: Optional[dict]) -> dict:
         ("walking_speed_m_per_sec", 0.1),
         ("lift_wait_seconds", 0.0),
         ("default_handling_minutes", 0.0),
+        ("amr_hold_for_exchange_max_minutes", 0.0),
     ):
         try:
             result[field_name] = max(
@@ -430,6 +450,25 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
             )
         except Exception:
             category["staff_handling_minutes"] = 15.0
+        try:
+            category["staff_collection_delay_minutes"] = max(
+                0.0,
+                float(category.get("staff_collection_delay_minutes", 0.0) or 0.0),
+            )
+        except Exception:
+            category["staff_collection_delay_minutes"] = 0.0
+        capacity_policy = str(
+            category.get(
+                "dropoff_zone_capacity_policy", "allow_temporary_overflow"
+            )
+            or ""
+        ).strip().lower()
+        if capacity_policy not in {
+            "wait_for_space",
+            "allow_temporary_overflow",
+        }:
+            capacity_policy = "allow_temporary_overflow"
+        category["dropoff_zone_capacity_policy"] = capacity_policy
         category["staff_use_custom_working_hours"] = bool(
             category.get("staff_use_custom_working_hours", False)
         )
@@ -590,6 +629,24 @@ class JsonStore:
             dept["hours_operated_per_day"] = calculated_operating_hours_per_day(dept)
             dept.setdefault("days_active", ["mon", "tue", "wed", "thu", "fri"])
             dept.setdefault("waste_streams", [])
+            category_locations = dept.get("task_generation_locations", {}) or {}
+            if isinstance(category_locations, dict):
+                for key, raw_entry in list(category_locations.items()):
+                    if not isinstance(raw_entry, dict):
+                        continue
+                    zones = raw_entry.get(
+                        "dropoff_zone_locations",
+                        raw_entry.get("drop_off_zone_locations", []),
+                    )
+                    if isinstance(zones, str):
+                        zones = [zones]
+                    raw_entry["dropoff_zone_locations"] = list(
+                        dict.fromkeys(
+                            str(value).strip()
+                            for value in (zones or [])
+                            if str(value).strip()
+                        )
+                    )
 
     def ensure_mass_collection_defaults(self) -> None:
         clean = []
@@ -711,6 +768,29 @@ class JsonStore:
             ] or ["lengthways"]
 
     def ensure_location_defaults(self) -> None:
+        payload_by_name = {
+            str(payload.get("name", "") or "").strip(): payload
+            for payload in self.data.get("payloads", []) or []
+            if isinstance(payload, dict)
+            and str(payload.get("name", "") or "").strip()
+        }
+        dropoff_zone_names = {
+            str(zone_name).strip()
+            for department in self.data.get("departments", []) or []
+            if isinstance(department, dict)
+            for category_locations in (
+                department.get("task_generation_locations", {}) or {}
+            ).values()
+            if isinstance(category_locations, dict)
+            for zone_name in (
+                category_locations.get(
+                    "dropoff_zone_locations",
+                    category_locations.get("drop_off_zone_locations", []),
+                )
+                or []
+            )
+            if str(zone_name).strip()
+        }
         for location in self.data.setdefault("locations", []):
             location.setdefault("wash_cycle_required", False)
             location.setdefault("wash_cycle_duration_sec", 300.0)
@@ -726,6 +806,41 @@ class JsonStore:
                         is_amr = True
                 if is_amr:
                     space.setdefault("has_charger", False)
+                else:
+                    point_length, point_width = polygon_dimensions_from_points(
+                        space.get("points", []) or []
+                    )
+                    space.setdefault("length_m", round(point_length, 3))
+                    space.setdefault("width_m", round(point_width, 3))
+                    template_heights = [
+                        float(
+                            payload_by_name.get(
+                                str(slot.get("payload", "") or "").strip(), {}
+                            ).get("height_m", 0.0)
+                            or 0.0
+                        )
+                        for slot in space.get("payload_slots", []) or []
+                        if isinstance(slot, dict)
+                    ]
+                    space.setdefault(
+                        "height_m",
+                        round(
+                            max(
+                                (
+                                    height
+                                    for height in template_heights
+                                    if height > 0.0
+                                ),
+                                default=999999.0,
+                            ),
+                            3,
+                        ),
+                    )
+                    space.setdefault(
+                        "flexible",
+                        str(location.get("name", "") or "").strip()
+                        in dropoff_zone_names,
+                    )
 
     def ensure_corridor_defaults(self) -> None:
         building = self.data.setdefault("building", {})
@@ -1245,10 +1360,31 @@ class JsonStore:
                 payload_slots.append(clean_slot)
 
             if len(points) >= 3:
+                point_length = abs(
+                    max(float(point.get("dx", 0.0)) for point in points)
+                    - min(float(point.get("dx", 0.0)) for point in points)
+                )
+                point_width = abs(
+                    max(float(point.get("dy", 0.0)) for point in points)
+                    - min(float(point.get("dy", 0.0)) for point in points)
+                )
                 clean_space = {
                     "name": name,
                     "points": points,
                     "payload_slots": payload_slots,
+                    "length_m": round(
+                        float(space.get("length_m", point_length) or point_length),
+                        3,
+                    ),
+                    "width_m": round(
+                        float(space.get("width_m", point_width) or point_width),
+                        3,
+                    ),
+                    "height_m": round(
+                        float(space.get("height_m", 999999.0) or 999999.0),
+                        3,
+                    ),
+                    "flexible": bool(space.get("flexible", False)),
                 }
                 slot_amr_type = ""
                 for slot in payload_slots:
@@ -1385,11 +1521,31 @@ class JsonStore:
                 waste_cfg["pickup_location"] = new_name
             if waste_cfg.get("dropoff_location") == old_name:
                 waste_cfg["dropoff_location"] = new_name
+            category_locations = item.get("task_generation_locations", {}) or {}
+            if isinstance(category_locations, dict):
+                for entry in category_locations.values():
+                    if not isinstance(entry, dict):
+                        continue
+                    for key in (
+                        "pickup_dropoff_locations",
+                        "dropoff_zone_locations",
+                        "drop_off_zone_locations",
+                        "locations",
+                    ):
+                        if isinstance(entry.get(key), list):
+                            entry[key] = [
+                                new_name if str(value) == old_name else value
+                                for value in entry[key]
+                            ]
         for task in self.data.get("tasks", []):
             if task.get("pickup") == old_name:
                 task["pickup"] = new_name
             if task.get("dropoff") == old_name:
                 task["dropoff"] = new_name
+            if task.get("dropoff_zone") == old_name:
+                task["dropoff_zone"] = new_name
+            if task.get("final_destination") == old_name:
+                task["final_destination"] = new_name
         for profile in self.data.get("route_profiles", {}).values():
             profile["allowed_nodes"] = [
                 new_name if x == old_name else x
@@ -1460,6 +1616,8 @@ class JsonStore:
         if isinstance(entry, dict):
             for key in (
                 "pickup_dropoff_locations",
+                "dropoff_zone_locations",
+                "drop_off_zone_locations",
                 "locations",
                 "pickup_locations",
                 "dropoff_locations",
@@ -1508,6 +1666,8 @@ class JsonStore:
                     if isinstance(entry, dict):
                         for key in (
                             "pickup_dropoff_locations",
+                            "dropoff_zone_locations",
+                            "drop_off_zone_locations",
                             "locations",
                             "pickup_locations",
                             "dropoff_locations",
@@ -2165,6 +2325,23 @@ class JsonStore:
                 str(dept.get("name", "")).strip() or str(dept.get("id", "")).strip()
             )
             waste = dept.get("waste", {}) or {}
+
+            category_locations = dept.get("task_generation_locations", {}) or {}
+            if isinstance(category_locations, dict):
+                for category_key, entry in category_locations.items():
+                    if not isinstance(entry, dict):
+                        continue
+                    zones = entry.get(
+                        "dropoff_zone_locations",
+                        entry.get("drop_off_zone_locations", []),
+                    )
+                    if isinstance(zones, str):
+                        zones = [zones]
+                    for loc in zones or []:
+                        if loc not in location_names:
+                            errors.append(
+                                f"Department {dept_name} {category_key} has unknown drop-off zone location: {loc}"
+                            )
 
             for loc in dept.get("waste_pickup_locations", []):
                 if loc not in location_names:

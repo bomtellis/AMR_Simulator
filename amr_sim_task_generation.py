@@ -215,6 +215,12 @@ def _normalise_global_staff_config(value: Optional[dict]) -> dict:
         "default_handling_minutes": max(
             0.0, _as_float(source.get("default_handling_minutes", 15.0), 15.0)
         ),
+        "amr_hold_for_exchange_max_minutes": max(
+            0.0,
+            _as_float(
+                source.get("amr_hold_for_exchange_max_minutes", 20.0), 20.0
+            ),
+        ),
         "shift_patterns": clean_patterns,
     }
 
@@ -585,6 +591,15 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         merged.pop("departments", None)
         if isinstance(override, dict):
             merged.update(override)
+        # Zone capacity is an operating rule for the payload category, not an
+        # individual department. Old projects may still contain stale values in
+        # department overrides; deliberately restore the category-wide value.
+        merged["dropoff_zone_capacity_policy"] = str(
+            (category or {}).get(
+                "dropoff_zone_capacity_policy", "allow_temporary_overflow"
+            )
+            or "allow_temporary_overflow"
+        ).strip().lower()
         return merged
 
     def _department_id(self, dept: dict) -> str:
@@ -599,6 +614,24 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         category_locations = dept.get("task_generation_locations", {}) or {}
         entry = category_locations.get(category_key, {}) or {}
         values = entry.get("pickup_dropoff_locations", [])
+        return _unique_clean(values)
+
+    def _department_dropoff_zone_locations(
+        self, dept: dict, category_key: str
+    ) -> List[str]:
+        """Return AMR staging zones associated with a department/category.
+
+        Department category locations remain the human-facing final destinations.
+        The optional zone list uses the same association structure but redirects
+        the AMR leg to an intermediate location.
+        """
+        category_locations = dept.get("task_generation_locations", {}) or {}
+        entry = category_locations.get(category_key, {}) or {}
+        if not isinstance(entry, dict):
+            return []
+        values = entry.get(
+            "dropoff_zone_locations", entry.get("drop_off_zone_locations", [])
+        )
         return _unique_clean(values)
 
     def _dropoff_locations_from_cfg(self, cfg: dict) -> List[str]:
@@ -700,6 +733,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             return
 
         dept_locations = self._department_category_locations(dept, category_key_text)
+        dropoff_zone_locations = self._department_dropoff_zone_locations(
+            dept, category_key_text
+        )
         role = _clean_text(cfg.get("department_location_role", "dropoff")) or "dropoff"
 
         pickup_locations = self._pickup_locations_from_cfg(cfg)
@@ -708,7 +744,14 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         if role == "pickup" and dept_locations:
             pickup_locations = dept_locations
         elif role != "pickup" and dept_locations:
-            dropoff_locations = dept_locations
+            if dropoff_zone_locations:
+                # The AMR stages at the zone. A department person completes the
+                # final leg and returns the configured empty/equivalent payload.
+                dropoff_locations = dropoff_zone_locations
+                cfg["requires_staff"] = True
+                cfg["return_enabled"] = True
+            else:
+                dropoff_locations = dept_locations
         department_location_role = role if dept_locations else ""
 
         suffix = _clean_text(instance_suffix)
@@ -764,6 +807,12 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 "cfg": cfg,
                 "pickup_locations": pickup_locations,
                 "dropoff_locations": dropoff_locations,
+                "final_destination_locations": (
+                    dept_locations if role != "pickup" and dropoff_zone_locations else []
+                ),
+                "dropoff_zone_locations": (
+                    dropoff_zone_locations if role != "pickup" else []
+                ),
                 "department_location_role": department_location_role,
             }
         )
@@ -1280,6 +1329,19 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             staff_handling_minutes=max(
                 0.0, _as_float(cfg.get("staff_handling_minutes", 0.0), 0.0)
             ),
+            staff_collection_delay_minutes=max(
+                0.0,
+                _as_float(cfg.get("staff_collection_delay_minutes", 0.0), 0.0),
+            ),
+            dropoff_zone_capacity_policy=(
+                _clean_text(
+                    cfg.get(
+                        "dropoff_zone_capacity_policy",
+                        "allow_temporary_overflow",
+                    )
+                ).lower()
+                or "allow_temporary_overflow"
+            ),
             staff_use_custom_working_hours=_as_bool(
                 cfg.get("staff_use_custom_working_hours", False), False
             ),
@@ -1287,6 +1349,20 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 cfg.get("staff_working_hours", {})
             ),
         )
+        resolved_final = _clean_text(
+            (instance.get("_resolved_final_destination_by_pair", {}) or {}).get(
+                (pickup, dropoff), ""
+            )
+        )
+        if resolved_final and resolved_final in self.locations:
+            task.dropoff_zone = dropoff
+            task.final_destination = resolved_final
+            task.requires_staff = True
+            if task.dropoff_zone_capacity_policy not in {
+                "wait_for_space",
+                "allow_temporary_overflow",
+            }:
+                task.dropoff_zone_capacity_policy = "allow_temporary_overflow"
         if bool(getattr(task, "requires_staff", False)):
             pattern_key, pattern = self._staff_shift_definition(cfg)
             task.staff_shift_pattern = pattern_key
@@ -1298,8 +1374,10 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             task.staff_timeframe_spacing_enabled = _as_bool(
                 self.staff_config.get("spread_timeframe_tasks", True), True
             )
-        if bool(cfg.get("return_enabled", False)):
+        if bool(cfg.get("return_enabled", False)) or bool(task.dropoff_zone):
             return_payload = _clean_text(cfg.get("return_payload", ""))
+            if not return_payload and task.dropoff_zone:
+                return_payload = payload_name
             if return_payload in self.payloads:
                 task.return_enabled = True
                 task.return_payload = return_payload
@@ -1340,6 +1418,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     def _record_for_task(
         self, task: Task, instance: dict, event_type: str, details: str
     ) -> GeneratedTaskRecord:
+        if str(getattr(task, "dropoff_zone", "") or "").strip():
+            details = (
+                f"{details}; AMR drop-off zone={task.dropoff_zone}; "
+                f"final destination={task.final_destination}"
+            )
         return GeneratedTaskRecord(
             task=task,
             event_type=event_type,
@@ -1422,7 +1505,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         ]
 
     def _pick_pairs(
-        self, instance: dict, occurrence_index: int = 0
+        self, instance: dict, occurrence_index: Optional[int] = None
     ) -> List[Tuple[str, str]]:
         pickups = [
             x for x in instance.get("pickup_locations", []) if x in self.locations
@@ -1433,17 +1516,37 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         if not pickups or not dropoffs:
             return []
         role = _clean_text(instance.get("department_location_role", ""))
-        occurrence_index = max(0, int(occurrence_index or 0))
+        if occurrence_index is None:
+            occurrence_index = max(
+                0, int(instance.get("_location_occurrence_index", 0) or 0)
+            )
+            instance["_location_occurrence_index"] = occurrence_index + 1
+        else:
+            occurrence_index = max(0, int(occurrence_index or 0))
+        final_destinations = [
+            x
+            for x in instance.get("final_destination_locations", [])
+            if x in self.locations
+        ]
+        resolved_final = ""
+        if final_destinations:
+            resolved_final = final_destinations[
+                occurrence_index % len(final_destinations)
+            ]
         if role == "pickup" and len(pickups) > 1:
             pickups = [pickups[occurrence_index % len(pickups)]]
         elif role and role != "pickup" and len(dropoffs) > 1:
             dropoffs = [dropoffs[occurrence_index % len(dropoffs)]]
 
         pairs: List[Tuple[str, str]] = []
+        resolved_by_pair = {}
         for pickup in pickups:
             for dropoff in dropoffs:
                 if pickup != dropoff:
                     pairs.append((pickup, dropoff))
+                    if resolved_final and resolved_final != dropoff:
+                        resolved_by_pair[(pickup, dropoff)] = resolved_final
+        instance["_resolved_final_destination_by_pair"] = resolved_by_pair
         return pairs
 
     def _is_waste_instance(self, instance: dict) -> bool:

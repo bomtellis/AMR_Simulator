@@ -71,6 +71,7 @@ REPORT_SECTIONS = [
     ("staff_timetable", "Staff handling timetable"),
     ("location_space", "Location space utilisation"),
     ("peak_occupancy", "Peak location occupancy"),
+    ("dropoff_zone_occupancy", "Drop-off zone peak occupancy"),
     ("location_recommendations", "Location storage recommendations"),
     ("task_detail", "Task detail grouped by AMR"),
     ("heatmaps", "Congestion heatmaps"),
@@ -95,6 +96,7 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "payload_summary": "standard",
     "location_space": "a3_landscape",
     "peak_occupancy": "a3_landscape",
+    "dropoff_zone_occupancy": "a3_landscape",
     "failed_delivery": "a3_landscape",
     "location_recommendations": "a3_landscape",
     "pending_tasks": "a3_landscape",
@@ -2320,6 +2322,110 @@ def build_report(
         )
 
     # --- END Peak location occupancy ---
+
+    # --- START Drop-off zone peak occupancy ---
+
+    story.section("dropoff_zone_occupancy")
+    story += [
+        PageBreak(),
+        Paragraph("Drop-off zone peak occupancy", styles["Section"]),
+        Paragraph(
+            "This section includes only locations assigned as department drop-off zones. "
+            "It reports the maximum number of flexible payload spaces occupied at any "
+            "time in each zone and the true simultaneous maximum across all zones. "
+            "The simultaneous total is reconstructed from payload enter/exit events; it "
+            "does not add together per-zone peaks that occurred at different times.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    zone_summary_df = results.get(
+        "dropoff_zone_occupancy_summary", pd.DataFrame()
+    ).copy()
+    zone_peak_df = results.get(
+        "dropoff_zone_peak_occupancy", pd.DataFrame()
+    ).copy()
+    if zone_peak_df.empty:
+        story.append(
+            Paragraph(
+                "No configured department drop-off zones were found. Provide the "
+                "simulation JSON and assign drop-off-zone locations to department "
+                "task categories to populate this section.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        if not zone_summary_df.empty:
+            zone_summary_df = zone_summary_df.rename(
+                columns={"metric": "Metric", "value": "Value"}
+            )
+            story += [
+                Paragraph("Drop-off zone network maximum", styles["Heading3"]),
+                table_from_df(
+                    zone_summary_df,
+                    [95 * mm, 55 * mm],
+                    styles,
+                    right_align=[1],
+                ),
+                Spacer(1, 10),
+                Paragraph("Peak by drop-off zone", styles["Heading3"]),
+            ]
+
+        zone_peak_df = zone_peak_df.rename(
+            columns={
+                "department": "Department",
+                "category": "Assigned categories",
+                "location": "Drop-off zone",
+                "configured_spaces": "Configured spaces",
+                "peak_occupied_spaces": "Max occupied spaces",
+                "free_spaces_at_peak": "Free at peak",
+                "space_shortfall_at_peak": "Shortfall at peak",
+                "peak_occupancy_pct": "Peak occupancy %",
+                "peak_area_used_m2": "Peak area used m2",
+                "peak_volume_m3": "Peak volume m3",
+            }
+        )
+        zone_peak_df = zone_peak_df[
+            [
+                column
+                for column in (
+                    "Department",
+                    "Assigned categories",
+                    "Drop-off zone",
+                    "Configured spaces",
+                    "Max occupied spaces",
+                    "Free at peak",
+                    "Shortfall at peak",
+                    "Peak occupancy %",
+                    "Peak area used m2",
+                    "Peak volume m3",
+                )
+                if column in zone_peak_df.columns
+            ]
+        ]
+        zone_widths = {
+            "Department": 32 * mm,
+            "Assigned categories": 38 * mm,
+            "Drop-off zone": 40 * mm,
+            "Configured spaces": 23 * mm,
+            "Max occupied spaces": 27 * mm,
+            "Free at peak": 20 * mm,
+            "Shortfall at peak": 23 * mm,
+            "Peak occupancy %": 23 * mm,
+            "Peak area used m2": 23 * mm,
+            "Peak volume m3": 23 * mm,
+        }
+        story.append(
+            table_from_df(
+                zone_peak_df,
+                [zone_widths.get(column, 22 * mm) for column in zone_peak_df.columns],
+                styles,
+                right_align=list(range(3, len(zone_peak_df.columns))),
+            )
+        )
+
+    # --- END Drop-off zone peak occupancy ---
 
     # --- START Failed delivery analysis ---
 
