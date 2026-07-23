@@ -11,7 +11,7 @@ class SimulationClock:
 
     def format_sim_time(self, seconds: float) -> str:
         return self.sim_seconds_to_datetime(seconds).isoformat(
-            sep=" ", timespec="seconds"
+            sep=" ", timespec="milliseconds"
         )
 
 

@@ -3,13 +3,42 @@ import io
 import unittest
 from datetime import datetime
 
-from amr_sim_models import Location, PayloadType
+from amr_sim_models import Location, PayloadType, Task
 from amr_sim_task_generation import TaskGenerationManager
 from amr_sim_time_utils import SimulationClock
 from simulator import Simulation
 
 
 class DropoffZoneTests(unittest.TestCase):
+    def test_payload_action_times_use_load_unload_completion_not_route_finish(self):
+        times = Simulation._payload_action_times(
+            [
+                {"type": "pickup", "duration": 10},
+                {"type": "travel", "duration": 20},
+                {"type": "dropoff", "duration": 5},
+                {"type": "wash_cycle", "duration": 30},
+            ],
+            100.0,
+        )
+
+        self.assertEqual(110.0, times["pickup"][""])
+        self.assertEqual(135.0, times["dropoff"][""])
+
+    def test_multi_stop_payload_action_times_are_recorded_per_task(self):
+        times = Simulation._payload_action_times(
+            [
+                {"type": "pickup", "duration": 5, "task_ids": ["T1", "T2"]},
+                {"type": "travel", "duration": 10},
+                {"type": "dropoff", "duration": 4, "task_ids": ["T1"]},
+                {"type": "travel", "duration": 6},
+                {"type": "dropoff", "duration": 4, "task_ids": ["T2"]},
+            ],
+            50.0,
+            multi_stop=True,
+        )
+
+        self.assertEqual({"T1": 69.0, "T2": 79.0}, times["dropoff"])
+
     def test_flexible_space_accepts_any_payload_that_fits_dimensions(self):
         config = self._config()
         zone = next(
@@ -119,6 +148,73 @@ class DropoffZoneTests(unittest.TestCase):
         self.assertTrue(task.return_enabled)
         self.assertEqual("Empty Trolley", task.return_payload)
         self.assertEqual("allow_temporary_overflow", task.dropoff_zone_capacity_policy)
+
+    def test_tracked_item_usage_is_shared_between_department_containers(self):
+        config = self._config()
+        config["departments"][0]["days_active"] = ["mon", "tue", "wed"]
+        config["departments"][0]["task_generation_locations"]["stores"][
+            "pickup_dropoff_locations"
+        ] = ["Ward", "Ward 2"]
+        category = config["task_generation"]["categories"]["stores"]["departments"][
+            "D1"
+        ]
+        category.update(
+            {
+                "generation_mode": "threshold",
+                "scheduled_times": [],
+                "tracked_item_exchange": True,
+                "exchange_mode": "top_up_only",
+            }
+        )
+        locations = {
+            name: Location(name, 0, float(index), 0.0)
+            for index, name in enumerate(("Store", "Zone", "Ward", "Ward 2"))
+        }
+        payloads = {
+            "Trolley": PayloadType(
+                "Trolley",
+                20.0,
+                1.0,
+                0.6,
+                1.2,
+                track_items=True,
+                items={
+                    "Supply": {
+                        "max": 10,
+                        "top_up_threshold": 2,
+                        "consumption_per_day": 10,
+                        "exchange_payload": "Trolley",
+                        "source_location": "Store",
+                    }
+                },
+            ),
+            "Empty Trolley": PayloadType(
+                "Empty Trolley", 10.0, 1.0, 0.6, 1.2
+            ),
+        }
+        manager = TaskGenerationManager(
+            config,
+            SimulationClock(datetime(2026, 1, 5)),
+            locations,
+            payloads,
+        )
+
+        # The department consumes ten units/day in total. With two containers,
+        # each resource loses five units rather than ten.
+        self.assertEqual([], manager.update_until(86400.0))
+        runtime = manager.generators[0].item_runtime["stores:D1"]
+        self.assertEqual(
+            {"Ward": {"Supply": 5.0}, "Ward 2": {"Supply": 5.0}},
+            runtime["resource_quantities"],
+        )
+
+        records = manager.update_until(172800.0)
+
+        self.assertEqual(2, len(records))
+        self.assertEqual(
+            {"Ward", "Ward 2"},
+            {record.task.final_destination for record in records},
+        )
 
     def test_zone_capacity_policy_is_category_wide(self):
         config = self._config()
@@ -322,6 +418,202 @@ class DropoffZoneTests(unittest.TestCase):
         )
         self.assertEqual("Empty Trolley", staff_legs[1]["payload"])
         self.assertFalse(sim.payload_instance_store.records_at("Zone"))
+
+    def test_single_stop_rows_publish_onboard_payload_after_pickup(self):
+        sim = Simulation(self._config(), verbose=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim.run()
+
+        pickup_index = next(
+            index
+            for index, row in enumerate(sim.verbose_rows)
+            if row.get("event_type") == "segment_pickup"
+        )
+        pickup_row = sim.verbose_rows[pickup_index]
+        self.assertIn("Trolley", pickup_row["onboard_payloads"])
+        travel_row = next(
+            row
+            for row in sim.verbose_rows[pickup_index + 1:]
+            if row.get("event_type") == "segment_corridor"
+        )
+        self.assertIn("Trolley", travel_row["onboard_payloads"])
+
+    def test_department_team_handles_zone_handoff_outside_primary_hours(self):
+        config = self._config()
+        category = config["task_generation"]["categories"]["stores"]["departments"]["D1"]
+        category.update(
+            {
+                "requires_staff": True,
+                "staff_resource_name": "Stores team",
+                "staff_use_custom_working_hours": True,
+                "staff_working_hours": {
+                    "mon": {
+                        "enabled": True,
+                        "start_time": "06:00",
+                        "end_time": "14:00",
+                    }
+                },
+                "staff_department_fallback_enabled": True,
+                "staff_department_fallback_resource_name": "Ward team",
+            }
+        )
+
+        sim = Simulation(config, verbose=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim.run()
+
+        assignment = sim.staff_assignments[0]
+        self.assertTrue(assignment["department_staff_fallback"])
+        self.assertFalse(assignment["tracked_staff_resource"])
+        self.assertEqual("Ward team", assignment["resource_name"])
+        self.assertEqual("D1-team-untracked", assignment["person_id"])
+        self.assertEqual(
+            assignment["requested_start_time"], assignment["start_time"]
+        )
+        self.assertLess(assignment["start_time"], 6 * 60 * 60)
+        self.assertFalse(sim.staff_resource_pools)
+        self.assertEqual(2, len(sim.completed_task_records))
+        returned = sim.completed_task_records[1]
+        self.assertEqual(("Zone", "Store"), (returned["pickup"], returned["dropoff"]))
+
+    def test_primary_team_remains_tracked_during_its_working_hours(self):
+        config = self._config()
+        config["simulation"]["end_datetime"] = "2026-01-05T06:20:00"
+        category = config["task_generation"]["categories"]["stores"]["departments"]["D1"]
+        category.update(
+            {
+                "scheduled_times": ["06:01"],
+                "requires_staff": True,
+                "staff_resource_name": "Stores team",
+                "staff_use_custom_working_hours": True,
+                "staff_working_hours": {
+                    "mon": {
+                        "enabled": True,
+                        "start_time": "06:00",
+                        "end_time": "14:00",
+                    }
+                },
+                "staff_department_fallback_enabled": True,
+            }
+        )
+
+        sim = Simulation(config)
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim.run()
+
+        assignment = sim.staff_assignments[0]
+        self.assertFalse(assignment.get("department_staff_fallback", False))
+        self.assertEqual("Stores team", assignment["resource_name"])
+        self.assertTrue(sim.staff_resource_pools)
+
+    def test_movement_only_handoff_returns_previous_payload_without_dwell(self):
+        config = self._config()
+        trolley = next(
+            payload for payload in config["payloads"] if payload["name"] == "Trolley"
+        )
+        trolley["track_items"] = True
+        trolley["items"] = {
+            "Supply": {
+                "max": 10,
+                "top_up_threshold": 2,
+                "consumption_per_day": 1,
+                "exchange_payload": "Trolley",
+                "source_location": "Store",
+            }
+        }
+        category = config["task_generation"]["categories"]["stores"]["departments"]["D1"]
+        category.update(
+            {
+                "scheduled_times": ["00:01", "00:05"],
+                "tracked_item_exchange": True,
+                "exchange_mode": "full_exchange",
+                "return_payload": "Trolley",
+                "staff_handling_minutes": 15,
+                "staff_handoff_only": True,
+            }
+        )
+
+        sim = Simulation(config, verbose=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim.run()
+
+        # The two 10 m walking legs remain, but the configured 15-minute dwell
+        # is omitted for this movement-only exchange.
+        self.assertEqual([20.0, 20.0], [
+            assignment["duration_sec"] for assignment in sim.staff_assignments
+        ])
+        ward_records = sim.payload_instance_store.records_at("Ward")
+        self.assertEqual(1, len(ward_records))
+        outbound = [
+            row
+            for row in sim.completed_task_records
+            if row.get("pickup") == "Store" and row.get("dropoff") == "Zone"
+        ]
+        self.assertEqual(2, len(outbound))
+        self.assertTrue(
+            any(
+                row.get("event_type") == "location_payload_exit"
+                and row.get("from_location") == "Ward"
+                and row.get("payload_instance_id")
+                == outbound[0]["payload_instance_id"]
+                for row in sim.verbose_rows
+            )
+        )
+    def test_staff_handoff_uses_shortest_available_department_location(self):
+        config = self._config()
+        ward = next(item for item in config["locations"] if item["name"] == "Ward")
+        ward["inventory_spaces"] = [
+            {
+                "name": "Ward trolley position",
+                "length_m": 2,
+                "width_m": 2,
+                "height_m": 2,
+                "flexible": True,
+            }
+        ]
+        config["locations"].append(
+            {
+                "name": "Ward 2",
+                "floor": 0,
+                "x": 30,
+                "y": 0,
+                "inventory_spaces": [
+                    {
+                        "name": "Ward 2 trolley position",
+                        "length_m": 2,
+                        "width_m": 2,
+                        "height_m": 2,
+                        "flexible": True,
+                    }
+                ],
+            }
+        )
+        config["corridors"]["edges"].append(
+            {"from": "Zone", "to": "Ward 2", "bidirectional": True}
+        )
+        sim = Simulation(config)
+        task = Task(
+            id="HANDOFF",
+            pickup="Store",
+            dropoff="Zone",
+            payload="Trolley",
+            release_time=0.0,
+            dropoff_zone="Zone",
+            final_destination="Ward 2",
+            final_destination_candidates=["Ward 2", "Ward"],
+        )
+
+        self.assertEqual("Ward", sim._select_staff_final_destination(task))
+        sim.staff_destination_reservations.clear()
+        sim.inventory_spaces_by_location["Ward"][0].update(
+            {
+                "occupied": True,
+                "payload": "Trolley",
+                "payload_instance_id": "occupied",
+            }
+        )
+
+        self.assertEqual("Ward 2", sim._select_staff_final_destination(task))
 
     @staticmethod
     def _config():

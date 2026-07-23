@@ -18,7 +18,30 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from dxf_scene import DXFScene
+try:
+    from .dxf_scene import DXFScene
+except ImportError:  # Direct script execution from the visualiser directory.
+    from dxf_scene import DXFScene
+try:
+    from .staff_route_geometry import (
+        interpolate_staff_route,
+        person_position_behind_payload,
+        shortest_staff_route_points,
+    )
+    from .playback_state import (
+        onboard_snapshot_is_authoritative,
+        row_completes_payload_transport,
+    )
+except ImportError:  # Direct script execution from the visualiser directory.
+    from staff_route_geometry import (
+        interpolate_staff_route,
+        person_position_behind_payload,
+        shortest_staff_route_points,
+    )
+    from playback_state import (
+        onboard_snapshot_is_authoritative,
+        row_completes_payload_transport,
+    )
 
 from PySide6.QtGui import (
     QBrush,
@@ -106,6 +129,7 @@ class LayoutModel:
         self.task_end_time: Optional[datetime] = None
         self.simulation_start_time: Optional[datetime] = None
         self.simulation_end_time: Optional[datetime] = None
+        self._staff_route_cache: Dict[Tuple[str, str, str], List[dict]] = {}
 
     @staticmethod
     def _parse_datetime(value: str) -> Optional[datetime]:
@@ -169,6 +193,7 @@ class LayoutModel:
 
     def _rebuild_points(self):
         self.points = {}
+        self._staff_route_cache.clear()
         for item in self.data.get("locations", []):
             self.points[item["name"]] = {**item, "kind": "location"}
         for item in self.data.get("corridors", {}).get("nodes", []):
@@ -182,6 +207,26 @@ class LayoutModel:
                     "y": pos["y"],
                     "kind": "lift_node",
                 }
+
+    def staff_route_points(
+        self, start_name: str, end_name: str, preferred_lift_id: str = ""
+    ) -> List[dict]:
+        key = (
+            str(start_name or "").strip(),
+            str(end_name or "").strip(),
+            str(preferred_lift_id or "").strip(),
+        )
+        cached = self._staff_route_cache.get(key)
+        if cached is None:
+            cached = shortest_staff_route_points(
+                self.data,
+                self.points,
+                key[0],
+                key[1],
+                key[2],
+            )
+            self._staff_route_cache[key] = cached
+        return cached
 
     def edges_for_floor(self, floor: int) -> List[dict]:
         edges = []
@@ -6301,7 +6346,9 @@ class SimulationVisualizer(QMainWindow):
 
             # Authoritative state from the latest patched simulator.
             parsed_onboard = self._parse_onboard_payloads_from_row(row)
-            if parsed_onboard is not None:
+            if parsed_onboard is not None and onboard_snapshot_is_authoritative(
+                row, parsed_onboard
+            ):
                 amr_payloads = {}
                 for item in parsed_onboard:
                     item = dict(item)
@@ -6322,12 +6369,7 @@ class SimulationVisualizer(QMainWindow):
                     amr_payloads[item["task_id"]] = item
                 continue
 
-            if grouped_records and (
-                "dropoff" in text
-                or "drop_off" in text
-                or "unload" in text
-                or "complete" in text
-            ):
+            if grouped_records and row_completes_payload_transport(row):
                 for item in grouped_records:
                     amr_payloads.pop(item["task_id"], None)
                 continue
@@ -6353,12 +6395,7 @@ class SimulationVisualizer(QMainWindow):
                     ).strip(),
                     "updated": event.start_time,
                 }
-            elif (
-                "dropoff" in text
-                or "drop_off" in text
-                or "unload" in text
-                or "complete" in text
-            ):
+            elif row_completes_payload_transport(row):
                 amr_payloads.pop(task_id, None)
 
         amr_ids = sorted(set(amr_states.keys()) | set(last_seen.keys()))
@@ -6386,6 +6423,22 @@ class SimulationVisualizer(QMainWindow):
                 slots_text = str(len(payload_records))
 
             updated = last_seen.get(amr_id) or state.get("timestamp")
+            monitor_status = state.get("status") or state.get("event_type") or "-"
+            state_end = state.get("end_time")
+            segment_name = str(state.get("segment_type", "") or "").strip().lower()
+            if (
+                str(monitor_status).strip().lower() == "completed"
+                and isinstance(state_end, datetime)
+                and self.current_time < state_end
+            ):
+                monitor_status = {
+                    "pickup": "loading",
+                    "dropoff": "unloading",
+                    "corridor": "in transit",
+                    "local_manoeuvre": "manoeuvring",
+                    "lift_loaded": "in lift",
+                    "lift_travel": "in lift",
+                }.get(segment_name, "in progress")
             rows.append(
                 {
                     "amr_id": amr_id,
@@ -6393,7 +6446,7 @@ class SimulationVisualizer(QMainWindow):
                     "payload_count": len(payload_records),
                     "slots": slots_text,
                     "task_ids": task_text or (state.get("task_id") or "-"),
-                    "status": state.get("status") or state.get("event_type") or "-",
+                    "status": monitor_status,
                     "segment_type": state.get("segment_type") or "-",
                     "from_location": state.get("from_location")
                     or state.get("start_node")
@@ -7950,6 +8003,7 @@ class SimulationVisualizer(QMainWindow):
                     ),
                     "occupied_at_peak": "Yes" if space_name in spaces_at_peak else "No",
                 }
+
             )
 
         summary = {
@@ -8251,15 +8305,8 @@ class SimulationVisualizer(QMainWindow):
         visible_world = self._visible_world_rect(margin_m=6.0)
         states = self.sim_log.active_person_states_at(self.current_time)
         for person_id, state in states.items():
-            if state.get("floor") is None or int(state["floor"]) != int(floor):
-                continue
             x = self._float_or_none(state.get("x"))
             y = self._float_or_none(state.get("y"))
-            if x is None or y is None or not self._point_in_world_rect(
-                x, y, visible_world
-            ):
-                continue
-
             event_type = str(state.get("event_type", "") or "").strip().lower()
             status = str(state.get("status", "") or "").strip().lower()
             payload = str(state.get("payload", "") or "").strip()
@@ -8274,17 +8321,58 @@ class SimulationVisualizer(QMainWindow):
             dx = (end_x - start_x) if start_x is not None and end_x is not None else 1.0
             dy = (end_y - start_y) if start_y is not None and end_y is not None else 0.0
             heading_length = max(math.hypot(dx, dy), 0.001)
-            heading_deg = math.degrees(math.atan2(dy, dx))
+            heading_dx = dx / heading_length
+            heading_dy = dy / heading_length
+
+            # Staff transport rows aggregate a complete handoff leg. Rebuild its
+            # configured graph path and interpolate by travelled route distance
+            # so people and payloads follow corridor turns instead of cutting a
+            # straight line through rooms and walls.
+            if event_type in {"staff_travel", "staff_payload_transport"}:
+                route = self.layout_model.staff_route_points(
+                    state.get("from_location", ""),
+                    state.get("to_location", ""),
+                    str(row.get("lift_id", "") or "").strip(),
+                )
+                route_state = interpolate_staff_route(
+                    route,
+                    float(state.get("fraction", 0.0) or 0.0),
+                    float(
+                        (self.layout_model.data.get("building", {}) or {}).get(
+                            "floor_height_m", 4.0
+                        )
+                        or 4.0
+                    ),
+                )
+                if route_state is not None:
+                    x = float(route_state["x"])
+                    y = float(route_state["y"])
+                    state["floor"] = int(route_state["floor"])
+                    heading_dx = float(route_state["heading_dx"])
+                    heading_dy = float(route_state["heading_dy"])
+
+            if state.get("floor") is None or int(state["floor"]) != int(floor):
+                continue
+            if x is None or y is None or not self._point_in_world_rect(
+                x, y, visible_world
+            ):
+                continue
+
+            heading_deg = math.degrees(math.atan2(heading_dy, heading_dx))
 
             person_x = x
             person_y = y
             if carrying or manoeuvring:
-                _payload_length, payload_width = self._payload_dimensions_for_name(
+                payload_length, _payload_width = self._payload_dimensions_for_name(
                     payload
                 )
-                offset = max(0.45, (payload_width / 2.0) + 0.30)
-                person_x = x + ((-dy / heading_length) * offset)
-                person_y = y + ((dx / heading_length) * offset)
+                person_x, person_y = person_position_behind_payload(
+                    x,
+                    y,
+                    heading_dx,
+                    heading_dy,
+                    payload_length,
+                )
                 if manoeuvring:
                     payload_status = "Full / empty payload exchange"
                 else:

@@ -1066,6 +1066,16 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.staff_handling_minutes_edit = QLineEdit(
             str(self.base_category.get("staff_handling_minutes", 15.0))
         )
+        self.staff_handoff_only_check = QCheckBox(
+            "Movement-only handoff (no destination dwell)"
+        )
+        self.staff_handoff_only_check.setToolTip(
+            "Staff deliver the incoming payload and immediately transport the "
+            "return payload back to the drop-off zone."
+        )
+        self.staff_handoff_only_check.setChecked(
+            bool(self.base_category.get("staff_handoff_only", False))
+        )
         self.staff_collection_delay_edit = QLineEdit(
             str(self.base_category.get("staff_collection_delay_minutes", 0.0))
         )
@@ -1100,6 +1110,27 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             str(self.base_category.get("staff_resource_name", ""))
         )
         self.staff_resource_name_edit.setPlaceholderText("Optional, e.g. Stores team")
+        self.staff_department_fallback_check = QCheckBox(
+            "Use an untracked department team outside primary staff hours"
+        )
+        self.staff_department_fallback_check.setToolTip(
+            "When the primary team cannot complete a drop-off-zone hand-off in its "
+            "current working period, department staff move the payload between the "
+            "zone and department. They are not added to the central staff pool."
+        )
+        self.staff_department_fallback_check.setChecked(
+            bool(self.base_category.get("staff_department_fallback_enabled", False))
+        )
+        self.staff_department_fallback_resource_name_edit = QLineEdit(
+            str(
+                self.base_category.get(
+                    "staff_department_fallback_resource_name", "Department team"
+                )
+            )
+        )
+        self.staff_department_fallback_resource_name_edit.setPlaceholderText(
+            "Department team"
+        )
         policy = str(
             self.base_category.get("staff_movement_policy", "batch_same_location")
             or ""
@@ -1252,8 +1283,14 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Staff handling", self.requires_staff_check)
         form.addRow("Collection response delay (minutes)", self.staff_collection_delay_edit)
         form.addRow("Handling time (minutes)", self.staff_handling_minutes_edit)
+        form.addRow("Handoff timing", self.staff_handoff_only_check)
         form.addRow("Initial staff count", self.staff_initial_count_edit)
         form.addRow("Staff resource name", self.staff_resource_name_edit)
+        form.addRow("Out-of-hours fallback", self.staff_department_fallback_check)
+        form.addRow(
+            "Fallback resource name",
+            self.staff_department_fallback_resource_name_edit,
+        )
         form.addRow("Staff movement", self.staff_movement_policy_widget)
         form.addRow("Shift pattern", self.staff_shift_pattern_combo)
         form.addRow("Working hours by day", self.staff_hours_widget)
@@ -1288,6 +1325,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.mode_combo.currentTextChanged.connect(self.update_role_field_state)
         self.return_enabled_check.toggled.connect(self.update_role_field_state)
         self.requires_staff_check.toggled.connect(self.update_role_field_state)
+        self.staff_department_fallback_check.toggled.connect(
+            self.update_role_field_state
+        )
         self.reusable_return_pool_check.toggled.connect(self.update_role_field_state)
         self.tracked_item_exchange_check.toggled.connect(self.update_role_field_state)
         self.refresh_department_summary()
@@ -1404,16 +1444,27 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self._set_form_row_visible(self.requires_staff_check, show_generation)
         self._set_form_row_visible(self.staff_collection_delay_edit, staff_enabled)
         self._set_form_row_visible(self.staff_handling_minutes_edit, staff_enabled)
+        self._set_form_row_visible(self.staff_handoff_only_check, staff_enabled)
         self._set_form_row_visible(self.staff_initial_count_edit, staff_enabled)
         self._set_form_row_visible(self.staff_resource_name_edit, staff_enabled)
+        self._set_form_row_visible(self.staff_department_fallback_check, staff_enabled)
+        self._set_form_row_visible(
+            self.staff_department_fallback_resource_name_edit,
+            staff_enabled and self.staff_department_fallback_check.isChecked(),
+        )
         self._set_form_row_visible(self.staff_movement_policy_widget, staff_enabled)
         self._set_form_row_visible(self.staff_shift_pattern_combo, staff_enabled)
         self._set_form_row_visible(self.staff_hours_widget, staff_enabled)
         self.requires_staff_check.setEnabled(show_generation)
         self.staff_collection_delay_edit.setEnabled(staff_enabled)
         self.staff_handling_minutes_edit.setEnabled(staff_enabled)
+        self.staff_handoff_only_check.setEnabled(staff_enabled)
         self.staff_initial_count_edit.setEnabled(staff_enabled)
         self.staff_resource_name_edit.setEnabled(staff_enabled)
+        self.staff_department_fallback_check.setEnabled(staff_enabled)
+        self.staff_department_fallback_resource_name_edit.setEnabled(
+            staff_enabled and self.staff_department_fallback_check.isChecked()
+        )
         self.staff_movement_policy_widget.setEnabled(staff_enabled)
         self.staff_shift_pattern_combo.setEnabled(staff_enabled)
         self.staff_hours_widget.setEnabled(staff_enabled)
@@ -1787,8 +1838,16 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "staff_handling_minutes": max(
                     0.0, float(self.staff_handling_minutes_edit.text() or 0.0)
                 ),
+                "staff_handoff_only": self.staff_handoff_only_check.isChecked(),
                 "staff_initial_count": max(1, int(float(self.staff_initial_count_edit.text() or 1))),
                 "staff_resource_name": self.staff_resource_name_edit.text().strip(),
+                "staff_department_fallback_enabled": (
+                    self.staff_department_fallback_check.isChecked()
+                ),
+                "staff_department_fallback_resource_name": (
+                    self.staff_department_fallback_resource_name_edit.text().strip()
+                    or "Department team"
+                ),
                 "staff_movement_policy": self._selected_staff_movement_policy(),
                 "staff_shift_pattern": _selected_staff_shift_pattern_combo(
                     self.staff_shift_pattern_combo
@@ -2117,6 +2176,13 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.return_delay_edit = QLineEdit()
         self.staff_handling_minutes_edit = QLineEdit()
+        self.staff_handoff_only_check = QCheckBox(
+            "Movement-only handoff (no destination dwell)"
+        )
+        self.staff_handoff_only_check.setToolTip(
+            "Staff deliver the incoming payload and immediately transport the "
+            "return payload back to the drop-off zone."
+        )
         self.staff_collection_delay_edit = QLineEdit()
         self.dropoff_zone_capacity_policy_combo = QComboBox()
         self.dropoff_zone_capacity_policy_combo.addItem(
@@ -2137,6 +2203,18 @@ class TaskGenerationSettingsDialog(QDialog):
         self.staff_initial_count_edit = QLineEdit()
         self.staff_resource_name_edit = QLineEdit()
         self.staff_resource_name_edit.setPlaceholderText("Optional, e.g. Stores team")
+        self.staff_department_fallback_check = QCheckBox(
+            "Use an untracked department team outside primary staff hours"
+        )
+        self.staff_department_fallback_check.setToolTip(
+            "When the primary team cannot complete a drop-off-zone hand-off in its "
+            "current working period, department staff move the payload between the "
+            "zone and department. They are not added to the central staff pool."
+        )
+        self.staff_department_fallback_resource_name_edit = QLineEdit()
+        self.staff_department_fallback_resource_name_edit.setPlaceholderText(
+            "Department team"
+        )
         self.staff_movement_policy_widget = _make_staff_movement_policy_widget(
             self, "batch_same_location"
         )
@@ -2260,12 +2338,18 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Staff handling", self.requires_staff_check)
         form.addRow("Collection response delay (minutes)", self.staff_collection_delay_edit)
         form.addRow("Handling time (minutes)", self.staff_handling_minutes_edit)
+        form.addRow("Handoff timing", self.staff_handoff_only_check)
         form.addRow(
             "Category-wide drop-off-zone capacity",
             self.dropoff_zone_capacity_policy_combo,
         )
         form.addRow("Initial staff count", self.staff_initial_count_edit)
         form.addRow("Staff resource name", self.staff_resource_name_edit)
+        form.addRow("Out-of-hours fallback", self.staff_department_fallback_check)
+        form.addRow(
+            "Fallback resource name",
+            self.staff_department_fallback_resource_name_edit,
+        )
         form.addRow("Staff movement", self.staff_movement_policy_widget)
         form.addRow("Shift pattern", self.staff_shift_pattern_combo)
         form.addRow("Working hours by day", self.staff_hours_widget)
@@ -2317,6 +2401,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.mode_combo.currentTextChanged.connect(self._update_mode_field_state)
         self.return_enabled_check.toggled.connect(self._update_mode_field_state)
         self.requires_staff_check.toggled.connect(self._update_mode_field_state)
+        self.staff_department_fallback_check.toggled.connect(
+            self._update_mode_field_state
+        )
         self.reusable_return_pool_check.toggled.connect(self._update_mode_field_state)
         self.tracked_item_exchange_check.toggled.connect(self._update_mode_field_state)
 
@@ -2561,9 +2648,12 @@ class TaskGenerationSettingsDialog(QDialog):
             "requires_staff": False,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
+            "staff_handoff_only": False,
             "dropoff_zone_capacity_policy": "allow_temporary_overflow",
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_department_fallback_enabled": False,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
             "staff_use_custom_working_hours": False,
@@ -3487,9 +3577,12 @@ class TaskGenerationSettingsDialog(QDialog):
             "requires_staff": key == "stores",
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
+            "staff_handoff_only": False,
             "dropoff_zone_capacity_policy": "allow_temporary_overflow",
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_department_fallback_enabled": False,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": (
                 "minimise_movement" if key == "catering" else "batch_same_location"
             ),
@@ -3643,6 +3736,7 @@ class TaskGenerationSettingsDialog(QDialog):
             )
         except Exception:
             item["staff_handling_minutes"] = 15.0
+        item["staff_handoff_only"] = bool(item.get("staff_handoff_only", False))
         try:
             item["staff_collection_delay_minutes"] = max(
                 0.0,
@@ -3662,6 +3756,18 @@ class TaskGenerationSettingsDialog(QDialog):
         item["dropoff_zone_capacity_policy"] = capacity_policy
         item["staff_use_custom_working_hours"] = bool(
             item.get("staff_use_custom_working_hours", False)
+        )
+        item["staff_department_fallback_enabled"] = bool(
+            item.get("staff_department_fallback_enabled", False)
+        )
+        item["staff_department_fallback_resource_name"] = (
+            str(
+                item.get(
+                    "staff_department_fallback_resource_name", "Department team"
+                )
+                or "Department team"
+            ).strip()
+            or "Department team"
         )
         item["staff_working_hours"] = _normalise_staff_weekly_hours(
             item.get("staff_working_hours", {})
@@ -3754,9 +3860,12 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_delay_edit.setText("0")
         self.requires_staff_check.setChecked(False)
         self.staff_collection_delay_edit.setText("0")
+        self.staff_handoff_only_check.setChecked(False)
         self.dropoff_zone_capacity_policy_combo.setCurrentIndex(0)
         self.staff_initial_count_edit.setText("1")
         self.staff_resource_name_edit.setText("")
+        self.staff_department_fallback_check.setChecked(False)
+        self.staff_department_fallback_resource_name_edit.setText("Department team")
         self._set_staff_movement_policy("batch_same_location")
         _set_staff_shift_pattern_combo(self.staff_shift_pattern_combo, "none")
         self.reusable_return_pool_check.setChecked(False)
@@ -3845,6 +3954,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.staff_handling_minutes_edit.setText(
             str(item.get("staff_handling_minutes", 15.0))
         )
+        self.staff_handoff_only_check.setChecked(
+            bool(item.get("staff_handoff_only", False))
+        )
         capacity_policy = str(
             category.get("dropoff_zone_capacity_policy", "allow_temporary_overflow")
             or "allow_temporary_overflow"
@@ -3858,6 +3970,16 @@ class TaskGenerationSettingsDialog(QDialog):
         )
         self.staff_initial_count_edit.setText(str(item.get("staff_initial_count", 1)))
         self.staff_resource_name_edit.setText(str(item.get("staff_resource_name", "")))
+        self.staff_department_fallback_check.setChecked(
+            bool(item.get("staff_department_fallback_enabled", False))
+        )
+        self.staff_department_fallback_resource_name_edit.setText(
+            str(
+                item.get(
+                    "staff_department_fallback_resource_name", "Department team"
+                )
+            )
+        )
         self._set_staff_movement_policy(
             item.get("staff_movement_policy", "batch_same_location")
         )
@@ -3994,8 +4116,14 @@ class TaskGenerationSettingsDialog(QDialog):
         self._set_form_row_visible(self.requires_staff_check, show_generation)
         self._set_form_row_visible(self.staff_collection_delay_edit, staff_enabled)
         self._set_form_row_visible(self.staff_handling_minutes_edit, staff_enabled)
+        self._set_form_row_visible(self.staff_handoff_only_check, staff_enabled)
         self._set_form_row_visible(self.staff_initial_count_edit, staff_enabled)
         self._set_form_row_visible(self.staff_resource_name_edit, staff_enabled)
+        self._set_form_row_visible(self.staff_department_fallback_check, staff_enabled)
+        self._set_form_row_visible(
+            self.staff_department_fallback_resource_name_edit,
+            staff_enabled and self.staff_department_fallback_check.isChecked(),
+        )
         self._set_form_row_visible(self.staff_movement_policy_widget, staff_enabled)
         self._set_form_row_visible(self.staff_shift_pattern_combo, staff_enabled)
         self._set_form_row_visible(self.staff_hours_widget, staff_enabled)
@@ -4003,8 +4131,13 @@ class TaskGenerationSettingsDialog(QDialog):
         self.dropoff_zone_capacity_policy_combo.setEnabled(show_generation)
         self.staff_collection_delay_edit.setEnabled(staff_enabled)
         self.staff_handling_minutes_edit.setEnabled(staff_enabled)
+        self.staff_handoff_only_check.setEnabled(staff_enabled)
         self.staff_initial_count_edit.setEnabled(staff_enabled)
         self.staff_resource_name_edit.setEnabled(staff_enabled)
+        self.staff_department_fallback_check.setEnabled(staff_enabled)
+        self.staff_department_fallback_resource_name_edit.setEnabled(
+            staff_enabled and self.staff_department_fallback_check.isChecked()
+        )
         self.staff_movement_policy_widget.setEnabled(staff_enabled)
         self.staff_shift_pattern_combo.setEnabled(staff_enabled)
         self.staff_hours_widget.setEnabled(staff_enabled)
@@ -4136,8 +4269,16 @@ class TaskGenerationSettingsDialog(QDialog):
             "staff_handling_minutes": max(
                 0.0, self._float_from_edit(self.staff_handling_minutes_edit, 15.0)
             ),
+            "staff_handoff_only": self.staff_handoff_only_check.isChecked(),
             "staff_initial_count": max(1, self._int_from_edit(self.staff_initial_count_edit, 1)),
             "staff_resource_name": self.staff_resource_name_edit.text().strip(),
+            "staff_department_fallback_enabled": (
+                self.staff_department_fallback_check.isChecked()
+            ),
+            "staff_department_fallback_resource_name": (
+                self.staff_department_fallback_resource_name_edit.text().strip()
+                or "Department team"
+            ),
             "staff_movement_policy": self._selected_staff_movement_policy(),
             "staff_shift_pattern": _selected_staff_shift_pattern_combo(
                 self.staff_shift_pattern_combo

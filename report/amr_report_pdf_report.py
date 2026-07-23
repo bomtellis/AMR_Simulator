@@ -34,6 +34,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     BaseDocTemplate,
+    CondPageBreak,
     Flowable,
     Frame,
     NextPageTemplate,
@@ -2346,6 +2347,9 @@ def build_report(
     zone_peak_df = results.get(
         "dropoff_zone_peak_occupancy", pd.DataFrame()
     ).copy()
+    zone_peak_payloads_df = results.get(
+        "dropoff_zone_payloads_at_network_peak", pd.DataFrame()
+    ).copy()
     if zone_peak_df.empty:
         story.append(
             Paragraph(
@@ -2369,8 +2373,68 @@ def build_report(
                     right_align=[1],
                 ),
                 Spacer(1, 10),
-                Paragraph("Peak by drop-off zone", styles["Heading3"]),
             ]
+
+        if not zone_peak_payloads_df.empty:
+            maximum_time = str(
+                zone_peak_payloads_df.iloc[0].get("time_of_maximum", "") or ""
+            )
+            zone_peak_payloads_df = zone_peak_payloads_df.rename(
+                columns={
+                    "department": "Department",
+                    "location": "Drop-off zone",
+                    "inventory_space": "Inventory space",
+                    "payload": "Payload",
+                    "payload_instance_id": "Payload instance",
+                    "task_id": "Task",
+                    "dropped_at": "Dropped into zone",
+                }
+            )
+            zone_peak_payloads_df = zone_peak_payloads_df[
+                [
+                    column
+                    for column in (
+                        "Department",
+                        "Drop-off zone",
+                        "Inventory space",
+                        "Payload",
+                        "Payload instance",
+                        "Task",
+                        "Dropped into zone",
+                    )
+                    if column in zone_peak_payloads_df.columns
+                ]
+            ]
+            story += [
+                Paragraph(
+                    f"Payloads held at simultaneous maximum ({maximum_time})",
+                    styles["Heading3"],
+                ),
+                Paragraph(
+                    "These are the physical payloads occupying drop-off-zone "
+                    "inventory spaces at the instant the network-wide maximum occurred.",
+                    styles["BodyText"],
+                ),
+                Spacer(1, 5),
+                table_from_df(
+                    zone_peak_payloads_df,
+                    [
+                        34 * mm,
+                        38 * mm,
+                        38 * mm,
+                        38 * mm,
+                        42 * mm,
+                        34 * mm,
+                        42 * mm,
+                    ][: len(zone_peak_payloads_df.columns)],
+                    styles,
+                ),
+                Spacer(1, 10),
+            ]
+
+        # Keep the heading with at least the table header and first data row.
+        story.append(CondPageBreak(35 * mm))
+        story.append(Paragraph("Peak by drop-off zone", styles["Heading3"]))
 
         zone_peak_df = zone_peak_df.rename(
             columns={

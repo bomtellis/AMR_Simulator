@@ -85,6 +85,7 @@ class Task:
     # AMR leg and preserves backwards compatibility for direct deliveries.
     dropoff_zone: str = ""
     final_destination: str = ""
+    final_destination_candidates: List[str] = field(default_factory=list)
 
     # Tracked item exchange metadata. These fields are populated by automatic
     # task generation when a payload has track_items enabled. They are kept on
@@ -109,6 +110,9 @@ class Task:
     staff_movement_policy: str = "batch_same_location"
     staff_shift_pattern: str = "none"
     staff_handling_minutes: float = 0.0
+    # Movement-only handoffs perform the payload swap at the destination with
+    # no dwell between the outward and return staff transport legs.
+    staff_handoff_only: bool = False
     # Extra response time allowed between the AMR staging the payload and a
     # person collecting it from the drop-off zone.
     staff_collection_delay_minutes: float = 0.0
@@ -118,6 +122,12 @@ class Task:
     dropoff_zone_capacity_policy: str = "wait_for_space"
     staff_use_custom_working_hours: bool = False
     staff_working_hours: Dict[str, dict] = field(default_factory=dict)
+    # An untracked department team can complete a drop-off-zone hand-off when
+    # the primary category staff are outside their configured working hours.
+    # Unlike the primary team, this fallback has no shared pool, roster or
+    # movement history; it only models the zone <-> department payload legs.
+    staff_department_fallback_enabled: bool = False
+    staff_department_fallback_resource_name: str = "Department team"
     staff_shift_start_time: str = ""
     staff_shift_end_time: str = ""
     staff_shift_days_active: List[str] = field(default_factory=list)

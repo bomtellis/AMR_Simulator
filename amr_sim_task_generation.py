@@ -1008,6 +1008,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 bool(
                     _as_bool(cfg.get("staff_use_custom_working_hours", False), False)
                 ),
+                bool(
+                    _as_bool(
+                        cfg.get("staff_department_fallback_enabled", False), False
+                    )
+                ),
                 weekly_key,
                 _clean_text(cfg.get("timeframe_start", "")),
                 _clean_text(cfg.get("timeframe_end", "")),
@@ -1071,6 +1076,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             _clean_text(cfg.get("staff_resource_name", "")).lower(),
             _normalise_staff_shift_pattern(cfg.get("staff_shift_pattern", "none")),
             bool(_as_bool(cfg.get("staff_use_custom_working_hours", False), False)),
+            bool(
+                _as_bool(cfg.get("staff_department_fallback_enabled", False), False)
+            ),
             weekly_key,
             _clean_text(cfg.get("timeframe_start", "")),
             _clean_text(cfg.get("timeframe_end", "")),
@@ -1329,6 +1337,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             staff_handling_minutes=max(
                 0.0, _as_float(cfg.get("staff_handling_minutes", 0.0), 0.0)
             ),
+            staff_handoff_only=_as_bool(
+                cfg.get("staff_handoff_only", False), False
+            ),
             staff_collection_delay_minutes=max(
                 0.0,
                 _as_float(cfg.get("staff_collection_delay_minutes", 0.0), 0.0),
@@ -1348,6 +1359,18 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             staff_working_hours=_normalise_staff_weekly_hours(
                 cfg.get("staff_working_hours", {})
             ),
+            staff_department_fallback_enabled=_as_bool(
+                cfg.get("staff_department_fallback_enabled", False), False
+            ),
+            staff_department_fallback_resource_name=(
+                _clean_text(
+                    cfg.get(
+                        "staff_department_fallback_resource_name",
+                        "Department team",
+                    )
+                )
+                or "Department team"
+            ),
         )
         resolved_final = _clean_text(
             (instance.get("_resolved_final_destination_by_pair", {}) or {}).get(
@@ -1357,6 +1380,13 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         if resolved_final and resolved_final in self.locations:
             task.dropoff_zone = dropoff
             task.final_destination = resolved_final
+            task.final_destination_candidates = [
+                value
+                for value in instance.get("final_destination_locations", [])
+                if value in self.locations and value != dropoff
+            ]
+            if resolved_final not in task.final_destination_candidates:
+                task.final_destination_candidates.insert(0, resolved_final)
             task.requires_staff = True
             if task.dropoff_zone_capacity_policy not in {
                 "wait_for_space",
@@ -1960,24 +1990,63 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         items = _payload_tracked_items(payload)
         if not items:
             return []
+
+        # A department can hold the same consumable payload in several physical
+        # locations (for example, two clean-linen trolleys).  The configured
+        # consumption_per_day is department demand, so divide it between those
+        # resources and retain an independent stock balance for each one.
+        resource_locations = [
+            location
+            for location in instance.get("final_destination_locations", [])
+            if location in self.locations
+        ]
+        if not resource_locations:
+            role = _clean_text(instance.get("department_location_role", ""))
+            if role and role != "pickup":
+                resource_locations = [
+                    location
+                    for location in instance.get("dropoff_locations", [])
+                    if location in self.locations
+                ]
+        resource_locations = _unique_clean(resource_locations) or [""]
+
+        def full_quantities() -> Dict[str, float]:
+            return {
+                name: item["target_quantity"] for name, item in items.items()
+            }
+
         if not self._instance_is_active(instance, now):
-            self.item_runtime.setdefault(
-                instance["key"], {"last_update_time": now, "quantities": {}}
-            )["last_update_time"] = now
+            runtime = self.item_runtime.setdefault(
+                instance["key"],
+                {
+                    "last_update_time": now,
+                    "resource_quantities": {
+                        location: full_quantities()
+                        for location in resource_locations
+                    },
+                },
+            )
+            runtime["last_update_time"] = now
             return []
 
         runtime = self.item_runtime.setdefault(
             instance["key"],
             {
                 "last_update_time": 0.0,
-                "quantities": {
-                    name: item["target_quantity"] for name, item in items.items()
+                "resource_quantities": {
+                    location: full_quantities() for location in resource_locations
                 },
             },
         )
-        quantities = runtime.setdefault("quantities", {})
-        for name, item in items.items():
-            quantities.setdefault(name, item["target_quantity"])
+        resource_quantities = runtime.setdefault("resource_quantities", {})
+        legacy_quantities = runtime.pop("quantities", None)
+        for index, location in enumerate(resource_locations):
+            quantities = resource_quantities.setdefault(
+                location,
+                dict(legacy_quantities) if index == 0 and legacy_quantities else {},
+            )
+            for name, item in items.items():
+                quantities.setdefault(name, item["target_quantity"])
 
         last_time = _as_float(runtime.get("last_update_time", 0.0), 0.0)
         if now <= last_time:
@@ -1986,28 +2055,38 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         elapsed_days = (
             self._instance_active_elapsed_seconds(instance, last_time, now) / 86400.0
         )
-        triggered: Dict[str, dict] = {}
-        for name, item in items.items():
-            consumption = max(0.0, item.get("consumption_per_day", 0.0)) * elapsed_days
-            quantities[name] = max(
-                0.0,
-                _as_float(
-                    quantities.get(name, item["target_quantity"]),
-                    item["target_quantity"],
+        triggered_by_resource: Dict[str, Dict[str, dict]] = {}
+        resource_count = max(1, len(resource_locations))
+        for location in resource_locations:
+            quantities = resource_quantities[location]
+            triggered: Dict[str, dict] = {}
+            for name, item in items.items():
+                consumption = (
+                    max(0.0, item.get("consumption_per_day", 0.0))
+                    * elapsed_days
+                    / resource_count
                 )
-                - consumption,
-            )
-            if quantities[name] <= item["trigger_quantity"]:
-                triggered[name] = {
-                    **item,
-                    "current_quantity": round(quantities[name], 3),
-                    "target_quantity": item["target_quantity"],
-                }
-                # Assume an exchange/top-up request resets the local store to full.
-                quantities[name] = item["target_quantity"]
+                quantities[name] = max(
+                    0.0,
+                    _as_float(
+                        quantities.get(name, item["target_quantity"]),
+                        item["target_quantity"],
+                    )
+                    - consumption,
+                )
+                if quantities[name] <= item["trigger_quantity"]:
+                    triggered[name] = {
+                        **item,
+                        "current_quantity": round(quantities[name], 3),
+                        "target_quantity": item["target_quantity"],
+                    }
+                    # Assume an exchange/top-up request resets this resource to full.
+                    quantities[name] = item["target_quantity"]
+            if triggered:
+                triggered_by_resource[location] = triggered
 
         runtime["last_update_time"] = now
-        if not triggered:
+        if not triggered_by_resource:
             return []
 
         records: List[GeneratedTaskRecord] = []
@@ -2015,45 +2094,60 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             _clean_text(cfg.get("exchange_mode", "top_up_only")) or "top_up_only"
         )
 
-        for pickup, dropoff in self._pick_pairs(instance):
-            task_payload = payload_name
-            source_locations = {
-                _clean_text(item.get("source_location"))
-                for item in triggered.values()
-                if _clean_text(item.get("source_location"))
-            }
-            exchange_payloads = {
-                _clean_text(item.get("exchange_payload"))
-                for item in triggered.values()
-                if _clean_text(item.get("exchange_payload"))
-            }
-            task_pickup = (
-                next(iter(source_locations)) if len(source_locations) == 1 else pickup
+        final_destinations = list(instance.get("final_destination_locations", []))
+        for resource_location, triggered in triggered_by_resource.items():
+            occurrence_index = (
+                final_destinations.index(resource_location)
+                if resource_location in final_destinations
+                else resource_locations.index(resource_location)
             )
-            if len(exchange_payloads) == 1:
-                task_payload = next(iter(exchange_payloads))
-
-            task = self._base_task(
-                instance,
-                task_pickup,
-                dropoff,
-                task_payload,
-                now,
-                "tracked_item_exchange",
-            )
-            if task is None:
-                continue
-            task.tracked_item_exchange = True
-            task.exchange_mode = exchange_mode
-            task.tracked_item_source_payload = payload_name
-            task.tracked_items = triggered
-            records.extend(
-                self._records_for_outbound(
-                    task,
-                    instance,
-                    f"Generated tracked item exchange for {', '.join(sorted(triggered.keys()))}",
+            for pickup, dropoff in self._pick_pairs(instance, occurrence_index):
+                task_payload = payload_name
+                source_locations = {
+                    _clean_text(item.get("source_location"))
+                    for item in triggered.values()
+                    if _clean_text(item.get("source_location"))
+                }
+                exchange_payloads = {
+                    _clean_text(item.get("exchange_payload"))
+                    for item in triggered.values()
+                    if _clean_text(item.get("exchange_payload"))
+                }
+                task_pickup = (
+                    next(iter(source_locations))
+                    if len(source_locations) == 1
+                    else pickup
                 )
-            )
+                if len(exchange_payloads) == 1:
+                    task_payload = next(iter(exchange_payloads))
+
+                task = self._base_task(
+                    instance,
+                    task_pickup,
+                    dropoff,
+                    task_payload,
+                    now,
+                    "tracked_item_exchange",
+                )
+                if task is None:
+                    continue
+                task.tracked_item_exchange = True
+                task.exchange_mode = exchange_mode
+                task.tracked_item_source_payload = payload_name
+                task.tracked_items = triggered
+                records.extend(
+                    self._records_for_outbound(
+                        task,
+                        instance,
+                        "Generated tracked item exchange for "
+                        f"{', '.join(sorted(triggered.keys()))}"
+                        + (
+                            f" at {resource_location}"
+                            if resource_location
+                            else ""
+                        ),
+                    )
+                )
 
         return records
 

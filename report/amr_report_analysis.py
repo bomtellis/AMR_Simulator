@@ -145,6 +145,23 @@ def parse_time_column(df: pd.DataFrame) -> Tuple[pd.DataFrame, Context]:
     if cols["timestamp"]:
         df["_event_time"] = pd.to_datetime(df[cols["timestamp"]], errors="coerce")
         if df["_event_time"].notna().any():
+            # Older simulator CSVs formatted datetimes to whole seconds even
+            # though sim_time_sec retained millisecond precision. Reconstruct
+            # the exact datetimes from the common simulation epoch when both
+            # columns are available.
+            if cols["seconds"]:
+                seconds = pd.to_numeric(df[cols["seconds"]], errors="coerce")
+                valid = df["_event_time"].notna() & seconds.notna()
+                if valid.any():
+                    epochs = (
+                        df.loc[valid, "_event_time"]
+                        - pd.to_timedelta(seconds.loc[valid], unit="s")
+                    ).dt.ceil("s")
+                    if not epochs.empty:
+                        epoch = epochs.mode().iloc[0]
+                        df.loc[valid, "_event_time"] = epoch + pd.to_timedelta(
+                            seconds.loc[valid], unit="s"
+                        )
             return df, Context(cols=cols, has_datetime=True, time_col="_event_time")
     if cols["seconds"]:
         df["_event_time"] = pd.to_numeric(df[cols["seconds"]], errors="coerce")
@@ -155,12 +172,11 @@ def parse_time_column(df: pd.DataFrame) -> Tuple[pd.DataFrame, Context]:
 def fmt_ts(value, has_datetime: bool) -> str:
     if pd.isna(value):
         return "-"
-    return (
-        # pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S")
-        pd.Timestamp(value).strftime("%d/%m/%Y %H:%M:%S")
-        if has_datetime
-        else f"{float(value):,.1f}s"
-    )
+    if not has_datetime:
+        return f"{float(value):,.3f}s".replace(".000s", "s")
+    timestamp = pd.Timestamp(value)
+    formatted = timestamp.strftime("%d/%m/%Y %H:%M:%S.%f")
+    return formatted.rstrip("0").rstrip(".")
 
 
 def fmt_duration(seconds: Optional[float]) -> str:
@@ -3006,6 +3022,163 @@ def build_dropoff_zone_peak_occupancy(
     return detail, pd.DataFrame(summary_rows, columns=summary_columns)
 
 
+def build_dropoff_zone_payloads_at_network_peak(
+    df: pd.DataFrame,
+    ctx: Context,
+    location_catalog: Optional[pd.DataFrame],
+) -> pd.DataFrame:
+    """List the physical payloads occupying drop-off zones at network peak."""
+    columns = [
+        "time_of_maximum",
+        "department",
+        "category",
+        "location",
+        "inventory_space",
+        "payload",
+        "payload_instance_id",
+        "task_id",
+        "dropped_at",
+    ]
+    if (
+        location_catalog is None
+        or location_catalog.empty
+        or "is_dropoff_zone" not in location_catalog.columns
+    ):
+        return pd.DataFrame(columns=columns)
+
+    zone_catalog = location_catalog[
+        location_catalog["is_dropoff_zone"].fillna(False).astype(bool)
+    ].drop_duplicates("location", keep="last")
+    if zone_catalog.empty:
+        return pd.DataFrame(columns=columns)
+    zone_names = {
+        str(value or "").strip()
+        for value in zone_catalog["location"].tolist()
+        if str(value or "").strip()
+    }
+
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    movement_rows = df[
+        event_text.str.fullmatch(
+            r"location_payload_(enter|exit)", case=False, na=False
+        )
+    ].copy()
+    if movement_rows.empty:
+        return pd.DataFrame(columns=columns)
+    location_source = next(
+        (
+            name
+            for name in ("to_location", "end_node", "from_location")
+            if name in movement_rows.columns
+        ),
+        None,
+    )
+    if location_source is None:
+        return pd.DataFrame(columns=columns)
+
+    def clean_value(value) -> str:
+        text = str(value or "").strip()
+        return "" if text.lower() in {"", "-", "nan", "none", "null"} else text
+
+    movement_rows["_zone_location"] = movement_rows[location_source].map(
+        clean_value
+    )
+    movement_rows = movement_rows[
+        movement_rows["_zone_location"].isin(zone_names)
+    ].sort_values(ctx.time_col, kind="stable")
+    live_by_zone: Dict[str, Dict[str, dict]] = {
+        zone_name: {} for zone_name in zone_names
+    }
+    instance_zone: Dict[str, str] = {}
+    synthetic_counter = 0
+    peak_count = 0
+    peak_time = None
+    peak_records: List[dict] = []
+
+    for timestamp, timestamp_rows in movement_rows.groupby(
+        ctx.time_col, sort=False, dropna=False
+    ):
+        for _, row in timestamp_rows.iterrows():
+            zone = clean_value(row.get("_zone_location", ""))
+            payload = clean_value(row.get("payload", ""))
+            instance = clean_value(row.get("payload_instance_id", ""))
+            task_id = clean_value(row.get("task_id", ""))
+            if instance:
+                key = f"instance:{instance}"
+            elif task_id:
+                key = f"task:{task_id}:{payload}"
+            else:
+                synthetic_counter += 1
+                key = f"synthetic:{synthetic_counter}:{payload}"
+            event_name = clean_value(row.get("_event_text", "")).lower()
+            live = live_by_zone.setdefault(zone, {})
+            if event_name.endswith("enter"):
+                previous_zone = instance_zone.get(key)
+                if previous_zone and previous_zone != zone:
+                    live_by_zone.setdefault(previous_zone, {}).pop(key, None)
+                live[key] = {
+                    "location": zone,
+                    "inventory_space": clean_value(row.get("inventory_space", "")),
+                    "payload": payload,
+                    "payload_instance_id": instance,
+                    "task_id": task_id,
+                    "dropped_at": timestamp,
+                }
+                instance_zone[key] = zone
+            else:
+                removed_key = key if key in live else ""
+                if not removed_key and not instance:
+                    removed_key = next(
+                        (
+                            existing_key
+                            for existing_key, record in live.items()
+                            if payload and record.get("payload") == payload
+                        ),
+                        "",
+                    )
+                if removed_key:
+                    live.pop(removed_key, None)
+                    instance_zone.pop(removed_key, None)
+
+        occupied = sum(len(live) for live in live_by_zone.values())
+        if occupied > peak_count:
+            peak_count = occupied
+            peak_time = timestamp
+            peak_records = [
+                dict(record)
+                for zone_live in live_by_zone.values()
+                for record in zone_live.values()
+            ]
+
+    if not peak_records:
+        return pd.DataFrame(columns=columns)
+
+    metadata = zone_catalog.set_index("location")
+    rows = []
+    for record in peak_records:
+        zone = record["location"]
+        zone_meta = metadata.loc[zone] if zone in metadata.index else {}
+        department = str(zone_meta.get("department", "-") or "-")
+        category = str(zone_meta.get("category", "-") or "-")
+        rows.append(
+            {
+                "time_of_maximum": fmt_ts(peak_time, ctx.has_datetime),
+                "department": department,
+                "category": category,
+                "location": zone,
+                "inventory_space": record["inventory_space"] or "Unassigned / overflow",
+                "payload": record["payload"] or "-",
+                "payload_instance_id": record["payload_instance_id"] or "-",
+                "task_id": record["task_id"] or "-",
+                "dropped_at": fmt_ts(record["dropped_at"], ctx.has_datetime),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns).sort_values(
+        ["location", "inventory_space", "payload_instance_id"],
+        key=lambda col: col.map(natural_key),
+    ).reset_index(drop=True)
+
+
 def apply_peak_occupancy_to_location_outputs(
     location_space_utilisation: pd.DataFrame,
     location_recommendations: pd.DataFrame,
@@ -5462,6 +5635,9 @@ def analyse(
         location_peak_occupancy,
         payload_dimensions,
     )
+    dropoff_zone_payloads_at_network_peak = (
+        build_dropoff_zone_payloads_at_network_peak(df, ctx, location_catalog)
+    )
     (
         location_space_utilisation,
         location_recommendations,
@@ -5660,6 +5836,7 @@ def analyse(
         "location_peak_occupancy": location_peak_occupancy,
         "dropoff_zone_peak_occupancy": dropoff_zone_peak_occupancy,
         "dropoff_zone_occupancy_summary": dropoff_zone_occupancy_summary,
+        "dropoff_zone_payloads_at_network_peak": dropoff_zone_payloads_at_network_peak,
         "failed_payload_sizes": failed_payload_sizes,
         "lift_wait_schedule": lift_wait_schedule,
         "recharge_summary": recharge_summary,

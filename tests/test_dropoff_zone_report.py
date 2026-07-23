@@ -8,12 +8,99 @@ import pandas as pd
 from report.amr_report_analysis import (
     Context,
     build_dropoff_zone_peak_occupancy,
+    build_dropoff_zone_payloads_at_network_peak,
     build_location_peak_occupancy,
     load_location_catalog,
+    parse_time_column,
 )
 
 
 class DropoffZoneReportTests(unittest.TestCase):
+    def test_exact_datetime_is_recovered_from_legacy_fractional_sim_seconds(self):
+        raw = pd.DataFrame(
+            [
+                {
+                    "sim_datetime": "2026-01-01 08:00:00",
+                    "sim_time_sec": 0.0,
+                },
+                {
+                    "sim_datetime": "2026-01-01 08:00:12",
+                    "sim_time_sec": 12.5,
+                },
+            ]
+        )
+
+        parsed, _ = parse_time_column(raw)
+
+        self.assertEqual(
+            pd.Timestamp("2026-01-01 08:00:12.500"),
+            parsed.iloc[1]["_event_time"],
+        )
+
+    def test_payload_table_captures_exact_state_at_network_peak(self):
+        events = pd.DataFrame(
+            [
+                {
+                    "_event_time": pd.Timestamp("2026-01-01 08:00:12.500"),
+                    "_event_text": "location_payload_enter",
+                    "to_location": "Zone A",
+                    "inventory_space": "Bay 1",
+                    "payload": "Trolley",
+                    "payload_instance_id": "P1",
+                    "task_id": "T1",
+                },
+                {
+                    "_event_time": pd.Timestamp("2026-01-01 08:01:03.250"),
+                    "_event_text": "location_payload_enter",
+                    "to_location": "Zone B",
+                    "inventory_space": "Bay 2",
+                    "payload": "Cage",
+                    "payload_instance_id": "P2",
+                    "task_id": "T2",
+                },
+                {
+                    "_event_time": pd.Timestamp("2026-01-01 08:02:00"),
+                    "_event_text": "location_payload_exit",
+                    "to_location": "Zone A",
+                    "payload": "Trolley",
+                    "payload_instance_id": "P1",
+                    "task_id": "T3",
+                },
+            ]
+        )
+        catalog = pd.DataFrame(
+            [
+                {
+                    "location": "Zone A",
+                    "department": "Ward A",
+                    "category": "Stores",
+                    "is_dropoff_zone": True,
+                },
+                {
+                    "location": "Zone B",
+                    "department": "Ward B",
+                    "category": "Catering",
+                    "is_dropoff_zone": True,
+                },
+            ]
+        )
+        ctx = Context(cols={}, has_datetime=True, time_col="_event_time")
+
+        payloads = build_dropoff_zone_payloads_at_network_peak(
+            events, ctx, catalog
+        )
+
+        self.assertEqual(["P1", "P2"], payloads["payload_instance_id"].tolist())
+        self.assertEqual(["Bay 1", "Bay 2"], payloads["inventory_space"].tolist())
+        self.assertEqual(
+            ["01/01/2026 08:00:12.5", "01/01/2026 08:01:03.25"],
+            payloads["dropped_at"].tolist(),
+        )
+        self.assertEqual(
+            ["01/01/2026 08:01:03.25", "01/01/2026 08:01:03.25"],
+            payloads["time_of_maximum"].tolist(),
+        )
+
     def test_catalog_marks_locations_assigned_as_dropoff_zones(self):
         config = {
             "departments": [

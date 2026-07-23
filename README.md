@@ -250,10 +250,32 @@ handling value of `0` uses that global default. The global short-exchange thresh
 can hold the delivering AMR at the zone until the returned payload is ready,
 preventing it from accepting intervening work during a quick exchange.
 
+Set `staff_department_fallback_enabled` on a category or department override to
+let an untracked department team complete the zone-to-department-to-zone handoff
+when the primary staff team cannot finish it within its current working period.
+`staff_department_fallback_resource_name` controls the label used in event logs.
+Fallback assignments are auditable but do not enter the primary staff pool,
+consume central staffing capacity, retain movement history, or delay another
+department fallback. Once the return payload reaches the zone, its AMR return
+task is released and collection is autonomous.
+
+`staff_handoff_only` removes destination dwell for movement-only workflows such
+as Linen: the person delivers the incoming trolley, takes the previous return
+trolley immediately, and places it in the zone for autonomous AMR collection.
+Where a department category has several destination locations, the simulator
+orders them by staff graph-route distance from the zone and selects the nearest
+available location; an occupied or reserved location causes it to try the next
+candidate.
+
 Tracked exchange deliveries leave the newly delivered full payload at the final
 destination and bring the previous empty/equivalent payload back to the zone as a
 different physical instance. This supports Linen-style full-for-empty swaps while
 keeping destination and zone populations stable across repeated visits.
+When the same tracked payload is assigned to several department destination
+locations, `consumption_per_day` remains the department's total demand. The
+simulator divides that demand evenly between the physical resources, tracks each
+container's balance independently, and targets replenishment at the resource that
+reaches its threshold.
 
 The simulation visualiser shows this handoff when **Show drop-off-zone staff
 handoffs** is enabled: the assigned person carries the delivered payload to the

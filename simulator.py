@@ -190,6 +190,7 @@ class Simulation:
         self._payload_population_rows_written = False
         self.staff_resource_pools: Dict[str, dict] = {}
         self.staff_assignments: List[dict] = []
+        self.staff_destination_reservations: Dict[str, str] = {}
         task_generation_cfg = config.get("task_generation", {}) or {}
         staff_cfg = task_generation_cfg.get(
             "staff_config", task_generation_cfg.get("staff", {})
@@ -2439,7 +2440,9 @@ class Simulation:
             )
         return f"Existing payload {payload_name} is not available at pickup location {task.pickup}"
 
-    def _pickup_payload_instance_for_task(self, task: Task) -> None:
+    def _pickup_payload_instance_for_task(
+        self, task: Task, event_time: Optional[float] = None
+    ) -> None:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
         if not payload_name:
             return
@@ -2514,6 +2517,7 @@ class Simulation:
             payload_name,
             instance_id,
             task=task,
+            event_time=event_time,
         )
         self._record_location_storage_peak(getattr(task, "pickup", ""))
         self._record_payload_population_snapshot()
@@ -2543,7 +2547,9 @@ class Simulation:
         # Older seeded records did not carry a state; treat them as empty/available.
         return state in {"", "empty", "available"}
 
-    def _store_payload_instance_for_task(self, task: Task) -> None:
+    def _store_payload_instance_for_task(
+        self, task: Task, event_time: Optional[float] = None
+    ) -> None:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
         if not payload_name:
@@ -2592,6 +2598,7 @@ class Simulation:
             payload_name,
             instance_id,
             task=task,
+            event_time=event_time,
             inventory_space=str(getattr(task, "assigned_inventory_space", "") or ""),
         )
         self._record_payload_population_snapshot()
@@ -4866,6 +4873,17 @@ class Simulation:
             "working_hours": dict(
                 getattr(task, "staff_working_hours", {}) or {}
             ),
+            "department_fallback_enabled": bool(
+                getattr(task, "staff_department_fallback_enabled", False)
+            ),
+            "department_fallback_resource_name": str(
+                getattr(
+                    task,
+                    "staff_department_fallback_resource_name",
+                    "Department team",
+                )
+                or "Department team"
+            ).strip(),
         }
 
     @staticmethod
@@ -4999,6 +5017,86 @@ class Simulation:
             "working_hours_fallback": True,
         }
 
+    def _primary_staff_can_handle_at(
+        self,
+        task: Task,
+        requested_start: float,
+        handling_duration_sec: float,
+    ) -> bool:
+        """Return whether the primary team can finish a hand-off if begun now."""
+        requested = max(0.0, float(requested_start or 0.0))
+        finish = requested + max(0.0, float(handling_duration_sec or 0.0))
+        reference_dt = self.clock.sim_seconds_to_datetime(requested)
+        day_start = reference_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        # The previous day is needed for overnight primary-team shifts.
+        for offset in (-1, 0):
+            day_dt = day_start + __import__("datetime").timedelta(days=offset)
+            period = self._staff_work_period_for_day(task, day_dt)
+            if period is None:
+                continue
+            period_start, period_end = period
+            if requested >= period_start - 1e-9 and finish <= period_end + 1e-9:
+                return True
+        return False
+
+    def _assign_department_staff_fallback(
+        self,
+        task: Task,
+        requested_start: float,
+        handling_duration_sec: float,
+        staff_cfg: dict,
+    ) -> dict:
+        """Create an immediate, unpooled department hand-off assignment."""
+        department_id = str(getattr(task, "department_id", "") or "").strip()
+        resource_name = str(
+            staff_cfg.get("department_fallback_resource_name", "Department team")
+            or "Department team"
+        ).strip()
+        start = max(0.0, float(requested_start or 0.0))
+        duration = max(0.0, float(handling_duration_sec or 0.0))
+        category_key = str(staff_cfg.get("category_key", "staff") or "staff")
+        fallback_category_key = f"{category_key}_department_fallback"
+        person_id = f"{department_id or 'department'}-team-untracked"
+        assignment = {
+            "task_id": str(getattr(task, "id", "") or ""),
+            "category_key": fallback_category_key,
+            "resource_name": resource_name,
+            "person_id": person_id,
+            "person_index": 0,
+            "requested_start_time": round(start, 3),
+            "start_time": round(start, 3),
+            "finish_time": round(start + duration, 3),
+            "duration_sec": round(duration, 3),
+            "location": str(getattr(task, "dropoff", "") or "").strip(),
+            "payload": self._payload_log_name(getattr(task, "payload", "")),
+            # The department team is deliberately not capacity-planned as part
+            # of the central logistics staffing requirement.
+            "people_required": 0,
+            "staff_on_shift_people_required": 0,
+            "staff_shift_pattern": "department_fallback",
+            "staff_shift_team": "department",
+            "staff_shift_multiplier": 1.0,
+            "staff_initial_on_shift_people": 0,
+            "staff_initial_rostered_people": 0,
+            "added_person": False,
+            "shared_location_batch": False,
+            "travel_from_location": "",
+            "travel_to_location": str(getattr(task, "dropoff", "") or "").strip(),
+            "travel_duration_sec": 0.0,
+            "travel_distance_m": 0.0,
+            "travel_lift_id": "",
+            "travel_start_time": round(start, 3),
+            "travel_finish_time": round(start, 3),
+            "staff_wait_for_travel_sec": 0.0,
+            "working_hours_fallback": False,
+            "department_staff_fallback": True,
+            "tracked_staff_resource": False,
+        }
+        # Retain the assignment for audit/logging, but do not put it in a staff
+        # resource pool or allow it to affect another task's availability.
+        self.staff_assignments.append(assignment)
+        return assignment
+
     def _staff_node_coordinates(self, node_name: str, floor: int) -> Optional[Tuple[float, float]]:
         location = self.locations.get(str(node_name or ""))
         if location is not None and int(location.floor) == int(floor):
@@ -5115,6 +5213,47 @@ class Simulation:
             return float(return_delay_sec)
         return max(0.0, float(self.staff_default_handling_minutes or 0.0) * 60.0)
 
+    def _select_staff_final_destination(self, task: Task) -> str:
+        """Choose the shortest currently available department handoff location."""
+        zone = str(getattr(task, "dropoff_zone", "") or "").strip()
+        current = str(getattr(task, "final_destination", "") or "").strip()
+        candidates = []
+        for value in list(
+            getattr(task, "final_destination_candidates", []) or []
+        ) + [current]:
+            name = str(value or "").strip()
+            if name and name in self.locations and name != zone and name not in candidates:
+                candidates.append(name)
+        if not zone or not candidates:
+            return current
+
+        ordered = sorted(
+            candidates,
+            key=lambda name: (
+                self._staff_travel_between_locations(zone, name)[0],
+                name,
+            ),
+        )
+        task_id = str(getattr(task, "id", "") or "").strip()
+        payload = self._payload_for_task(task)
+
+        def is_available(name: str) -> bool:
+            reserved_by = str(
+                self.staff_destination_reservations.get(name, "") or ""
+            ).strip()
+            if reserved_by and reserved_by != task_id:
+                return False
+            if self._location_has_payload_inventory_spaces(name):
+                return bool(payload is not None and self._find_free_inventory_space(name, payload, task=task))
+            # Locations without configured bays have one logical fallback
+            # position in the inventory viewer.
+            return not bool(self.payload_instance_store.records_at(name))
+
+        selected = next((name for name in ordered if is_available(name)), ordered[0])
+        self.staff_destination_reservations[selected] = task_id
+        task.final_destination = selected
+        return selected
+
     def _assign_staff_for_handling(
         self,
         task: Task,
@@ -5129,6 +5268,18 @@ class Simulation:
             return None
 
         requested_start = max(0.0, float(start_time or 0.0))
+        uses_dropoff_zone = bool(
+            str(getattr(task, "dropoff_zone", "") or "").strip()
+            and str(getattr(task, "final_destination", "") or "").strip()
+        )
+        if (
+            uses_dropoff_zone
+            and bool(staff_cfg.get("department_fallback_enabled", False))
+            and not self._primary_staff_can_handle_at(task, requested_start, duration)
+        ):
+            return self._assign_department_staff_fallback(
+                task, requested_start, duration, staff_cfg
+            )
         pool = self._staff_pool_for_category(
             staff_cfg["category_key"],
             staff_cfg["initial_count"],
@@ -5434,6 +5585,14 @@ class Simulation:
             ):
                 from_loc = self.locations.get(leg_from)
                 to_loc = self.locations.get(leg_to)
+                leg_payload_instance_id = str(
+                    getattr(task, "payload_instance_id", "") or ""
+                )
+                if leg_status == "staff_payload_return":
+                    leg_payload_instance_id = str(
+                        getattr(task, "staff_return_payload_instance_id", "")
+                        or leg_payload_instance_id
+                    )
                 self.log_step(
                     event_time=leg_start,
                     event_type="staff_payload_transport",
@@ -5445,7 +5604,7 @@ class Simulation:
                     from_location=leg_from,
                     to_location=leg_to,
                     payload_name=leg_payload,
-                    payload_instance_id=str(getattr(task, "payload_instance_id", "") or ""),
+                    payload_instance_id=leg_payload_instance_id,
                     duration_sec=max(0.0, leg_finish - leg_start),
                     distance_m=zone_to_final_m,
                     start_time=leg_start,
@@ -5544,9 +5703,7 @@ class Simulation:
         delay_sec = (
             max(0.0, float(getattr(task, "return_delay_minutes", 0.0) or 0.0)) * 60.0
         )
-        final_destination = str(
-            getattr(task, "final_destination", "") or ""
-        ).strip()
+        final_destination = self._select_staff_final_destination(task)
         dropoff_zone = str(
             getattr(task, "dropoff_zone", "") or ""
         ).strip()
@@ -5571,9 +5728,13 @@ class Simulation:
             # handling with a 45-minute return delay gives a 45-minute destination
             # dwell, not 60 minutes. Walking time remains additional because the
             # person must still reach the final destination and return to the zone.
-            destination_dwell_sec = max(
-                self._staff_handling_duration_sec(task, 0.0),
-                delay_sec,
+            destination_dwell_sec = (
+                0.0
+                if bool(getattr(task, "staff_handoff_only", False))
+                else max(
+                    self._staff_handling_duration_sec(task, 0.0),
+                    delay_sec,
+                )
             )
             handling_duration_sec = (
                 (2.0 * zone_travel_sec)
@@ -5588,6 +5749,30 @@ class Simulation:
             )
             * 60.0,
         )
+        if uses_dropoff_zone and self._task_is_staff_payload_exchange(task):
+            return_payload_for_staff = normalise_payload_name(
+                getattr(task, "return_payload", "")
+                or getattr(task, "payload", "")
+            )
+            outbound_id = str(
+                getattr(task, "payload_instance_id", "") or ""
+            ).strip()
+            for candidate in self.payload_instance_store.records_at(
+                final_destination
+            ):
+                candidate_id = str(
+                    getattr(candidate, "instance_id", "") or ""
+                ).strip()
+                if candidate_id == outbound_id:
+                    continue
+                if normalise_payload_name(
+                    getattr(candidate, "payload", "")
+                ) != return_payload_for_staff:
+                    continue
+                if self.payload_instance_store.is_reserved(candidate_id):
+                    continue
+                task.staff_return_payload_instance_id = candidate_id
+                break
         staff_assignment = self._assign_staff_for_handling(
             task, finish_time + collection_delay_sec, handling_duration_sec
         )
@@ -5960,19 +6145,27 @@ class Simulation:
                     "location_payload_exit", zone, outbound_payload, outbound_id,
                     task=task, event_time=assignment_start,
                 )
-                self._log_payload_location_event(
-                    "location_payload_enter", final_destination, outbound_payload,
-                    outbound_id, task=task, event_time=delivered_time,
-                )
                 if is_exchange:
                     # Exchange deliveries leave the newly delivered full payload
                     # at the final destination and collect the previous empty
                     # equivalent. With unlimited destination storage, the first
                     # visit is allowed an implicit empty payload; later visits
                     # replace the physical instance left by the previous cycle.
-                    for candidate in self.payload_instance_store.records_at(
-                        final_destination
-                    ):
+                    preferred_return_id = str(
+                        getattr(task, "staff_return_payload_instance_id", "") or ""
+                    ).strip()
+                    candidates = list(
+                        self.payload_instance_store.records_at(final_destination)
+                    )
+                    candidates.sort(
+                        key=lambda candidate: (
+                            0
+                            if str(getattr(candidate, "instance_id", "") or "").strip()
+                            == preferred_return_id
+                            else 1
+                        )
+                    )
+                    for candidate in candidates:
                         candidate_id = str(
                             getattr(candidate, "instance_id", "") or ""
                         ).strip()
@@ -6003,6 +6196,37 @@ class Simulation:
                         **dict(getattr(removed, "metadata", {}) or {}),
                         "container_state": "full" if is_exchange else "",
                     },
+                )
+                final_target_space = None
+                outbound_payload_obj = self.payloads.get(outbound_payload)
+                if (
+                    is_exchange
+                    and outbound_payload_obj is not None
+                    and self._location_has_payload_inventory_spaces(
+                        final_destination
+                    )
+                ):
+                    final_target_space = self._find_free_inventory_space(
+                        final_destination, outbound_payload_obj, task=task
+                    )
+                    if final_target_space is not None:
+                        final_target_space["occupied"] = True
+                        final_target_space["payload"] = outbound_payload
+                        final_target_space["payload_instance_id"] = outbound_id
+                        final_target_space["task_id"] = str(
+                            getattr(task, "id", "") or ""
+                        )
+                        final_target_space["reserved_by_task"] = ""
+                self._log_payload_location_event(
+                    "location_payload_enter",
+                    final_destination,
+                    outbound_payload,
+                    outbound_id,
+                    task=task,
+                    event_time=delivered_time,
+                    inventory_space=str(
+                        (final_target_space or {}).get("name", "") or ""
+                    ),
                 )
                 self._record_location_storage_peak(final_destination)
                 if is_exchange:
@@ -6113,6 +6337,9 @@ class Simulation:
         self._record_location_storage_peak(zone)
         self._record_location_storage_peak(final_destination)
         self._record_payload_population_snapshot()
+        task_id = str(getattr(task, "id", "") or "").strip()
+        if self.staff_destination_reservations.get(final_destination) == task_id:
+            self.staff_destination_reservations.pop(final_destination, None)
 
     def _notify_task_generation_state(self, task: Task, state: str) -> None:
         manager = getattr(self, "task_generation_manager", None)
@@ -9749,6 +9976,52 @@ class Simulation:
         self.route_estimate_cache.clear()
         self.lift_plan_estimate_cache.clear()
 
+    @staticmethod
+    def _payload_action_times(
+        segments: List[dict], start_time: float, *, multi_stop: bool = False
+    ) -> Dict[str, Dict[str, float]]:
+        """Return exact pickup/drop-off completion times from a route timeline.
+
+        Payload inventory changes when the load/unload action finishes, which can
+        be earlier than the overall route completion (notably for multi-stop
+        routes and routes followed by a wash cycle).
+        """
+        action_times: Dict[str, Dict[str, float]] = {
+            "pickup": {},
+            "dropoff": {},
+        }
+        timestamp = float(start_time)
+        for segment in segments or []:
+            segment_type = str(segment.get("type", "") or "").strip().lower()
+            duration = max(0.0, float(segment.get("duration", 0.0) or 0.0))
+            if not multi_stop:
+                embedded_wait = max(
+                    0.0, float(segment.get("wait_time", 0.0) or 0.0)
+                )
+                if embedded_wait:
+                    timestamp += embedded_wait
+                if segment_type.startswith("wait_"):
+                    timestamp += duration
+                    continue
+            timestamp += duration
+            if segment_type not in action_times:
+                continue
+
+            raw_task_ids = segment.get("task_ids")
+            if isinstance(raw_task_ids, list):
+                task_ids = [str(value).strip() for value in raw_task_ids]
+            else:
+                task_ids = [
+                    value.strip()
+                    for value in str(segment.get("task_id", "") or "").split(",")
+                ]
+            task_ids = [value for value in task_ids if value]
+            if not task_ids and not multi_stop:
+                task_ids = [""]
+            for task_id in task_ids:
+                action_times[segment_type][task_id] = timestamp
+        return action_times
+
     def _estimate_task_for_amr_cached(
         self, amr: AMR, task: Task, reserve: bool = False
     ):
@@ -10495,6 +10768,10 @@ class Simulation:
 
                 self._log_multi_stop_segments(amr, tasks, committed, start_time)
 
+                payload_action_times = self._payload_action_times(
+                    committed["segments"], start_time, multi_stop=True
+                )
+
                 self._invalidate_route_estimate_cache()
 
                 self.push_event(
@@ -10516,6 +10793,8 @@ class Simulation:
                         "lift_empty_sec_total": committed["lift_empty_sec_total"],
                         "lift_loaded_sec_total": committed["lift_loaded_sec_total"],
                         "slot_assignments": committed.get("slot_assignments", {}),
+                        "payload_pickup_times": payload_action_times["pickup"],
+                        "payload_dropoff_times": payload_action_times["dropoff"],
                     },
                 )
                 processed_this_tick += max(1, len(tasks))
@@ -10661,6 +10940,30 @@ class Simulation:
                     else ""
                 )
 
+                def single_onboard_records(is_onboard: bool) -> List[dict]:
+                    if not is_onboard or not segment_payload_name:
+                        return []
+                    return [
+                        {
+                            "task_id": str(task.id),
+                            "payload": self._payload_log_name(task.payload),
+                            "payload_instance_id": str(
+                                getattr(task, "payload_instance_id", "") or ""
+                            ),
+                            "pickup": str(task.pickup),
+                            "dropoff": str(task.dropoff),
+                            "slot_name": str(
+                                committed.get("payload_slot", "") or ""
+                            ),
+                        }
+                    ]
+
+                onboard_before = single_onboard_records(carrying_payload)
+                onboard_after = single_onboard_records(
+                    (carrying_payload or segment_type == "pickup")
+                    and segment_type != "dropoff"
+                )
+
                 explicit_wait = duration if segment_type.startswith("wait_") else 0.0
 
                 if wait_time > 0:
@@ -10691,6 +10994,7 @@ class Simulation:
                         end_floor=segment_start_floor,
                         status="waiting",
                         energy_kwh=segment.get("energy_kwh", 0.0),
+                        onboard_payloads=onboard_before,
                     )
                     segment_start_time += wait_time
 
@@ -10722,6 +11026,7 @@ class Simulation:
                         end_floor=segment_end_floor,
                         status="waiting",
                         energy_kwh=segment.get("energy_kwh", 0.0),
+                        onboard_payloads=onboard_before,
                     )
 
                 if explicit_wait > 0:
@@ -10768,6 +11073,7 @@ class Simulation:
                     end_floor=segment_end_floor,
                     status="completed",
                     energy_kwh=segment.get("energy_kwh", 0.0),
+                    onboard_payloads=onboard_after,
                     amr_rotation_start_deg=segment.get("amr_rotation_start_deg", None),
                     amr_rotation_end_deg=segment.get("amr_rotation_end_deg", None),
                     amr_rotation_deg=segment.get("amr_rotation_deg", None),
@@ -10780,6 +11086,10 @@ class Simulation:
                     carrying_payload = False
 
             self._invalidate_route_estimate_cache()
+
+            payload_action_times = self._payload_action_times(
+                committed["segments"], start_time
+            )
 
             self.push_event(
                 finish_time,
@@ -10801,6 +11111,12 @@ class Simulation:
                     "end_location": committed.get("end_location", task.dropoff),
                     "payload_orientation": committed.get("payload_orientation", getattr(task, "payload_orientation", "")),
                     "payload_slot": committed.get("payload_slot", ""),
+                    "payload_pickup_time": payload_action_times["pickup"].get(
+                        "", finish_time
+                    ),
+                    "payload_dropoff_time": payload_action_times["dropoff"].get(
+                        "", finish_time
+                    ),
                 },
             )
             processed_this_tick += 1
@@ -11222,10 +11538,18 @@ class Simulation:
             self._try_assign_tasks(event.time)
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]
+            payload_pickup_time = float(
+                event.payload.get("payload_pickup_time", event.payload["finish_time"])
+            )
+            payload_dropoff_time = float(
+                event.payload.get("payload_dropoff_time", event.payload["finish_time"])
+            )
             payload_obj = self._payload_for_task(task)
             if payload_obj is not None and not is_empty_payload_name(task.payload):
                 try:
-                    self._pickup_payload_instance_for_task(task)
+                    self._pickup_payload_instance_for_task(
+                        task, event_time=payload_pickup_time
+                    )
                 except RuntimeError as exc:
                     self._fail_task(task, str(exc), now=event.payload["finish_time"])
                     return
@@ -11261,7 +11585,9 @@ class Simulation:
                         self._fail_task(task, reason, now=event.payload["finish_time"])
                         return
                 if not skip_dropoff_payload_store:
-                    self._store_payload_instance_for_task(task)
+                    self._store_payload_instance_for_task(
+                        task, event_time=payload_dropoff_time
+                    )
                     if not self._occupy_inventory_space_for_completed_task(
                         task, payload_obj
                     ):
@@ -11419,6 +11745,9 @@ class Simulation:
                     "finish_datetime": self.clock.format_sim_time(
                         event.payload["finish_time"]
                     ),
+                    "payload_dropoff_datetime": self.clock.format_sim_time(
+                        payload_dropoff_time
+                    ),
                     "duration_hms": format_duration(event.payload["duration"]),
                     "target_duration_hms": (
                         format_duration(event.payload["target_time"])
@@ -11494,10 +11823,22 @@ class Simulation:
         elif event.event_type == "multi_stop_complete":
             tasks: List[Task] = event.payload["tasks"]
             for task in tasks:
+                payload_pickup_time = float(
+                    (event.payload.get("payload_pickup_times", {}) or {}).get(
+                        str(task.id), event.payload["finish_time"]
+                    )
+                )
+                payload_dropoff_time = float(
+                    (event.payload.get("payload_dropoff_times", {}) or {}).get(
+                        str(task.id), event.payload["finish_time"]
+                    )
+                )
                 payload_obj = self._payload_for_task(task)
                 if payload_obj is not None and not is_empty_payload_name(task.payload):
                     try:
-                        self._pickup_payload_instance_for_task(task)
+                        self._pickup_payload_instance_for_task(
+                            task, event_time=payload_pickup_time
+                        )
                     except RuntimeError as exc:
                         self._fail_task(
                             task, str(exc), now=event.payload["finish_time"]
@@ -11533,7 +11874,9 @@ class Simulation:
                             )
                             continue
                     if not skip_dropoff_payload_store:
-                        self._store_payload_instance_for_task(task)
+                        self._store_payload_instance_for_task(
+                            task, event_time=payload_dropoff_time
+                        )
                         if not self._occupy_inventory_space_for_completed_task(
                             task, payload_obj
                         ):
@@ -11613,6 +11956,9 @@ class Simulation:
                         ),
                         "finish_datetime": self.clock.format_sim_time(
                             event.payload["finish_time"]
+                        ),
+                        "payload_dropoff_datetime": self.clock.format_sim_time(
+                            payload_dropoff_time
                         ),
                         "duration_hms": format_duration(event.payload["duration"]),
                         "target_duration_hms": (
