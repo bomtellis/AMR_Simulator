@@ -545,6 +545,7 @@ DEFAULT_JSON = {
         "scenarios": [],
     },
     "floor_dxf_files": [],
+    "floor_pdf_underlays": [],
     "tasks": [],
     "task_generation": default_task_generation_config(),
     "route_profiles": {
@@ -1084,6 +1085,37 @@ class JsonStore:
         self.data["floor_dxf_files"] = [
             entry
             for entry in self.data.get("floor_dxf_files", [])
+            if int(entry.get("floor", -(10**9))) != int(floor)
+        ]
+
+    def floor_pdf_underlay(self, floor: int) -> Optional[dict]:
+        for entry in self.data.get("floor_pdf_underlays", []):
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    return deepcopy(entry)
+            except Exception:
+                continue
+        return None
+
+    def set_floor_pdf_underlay(self, floor: int, mapping: dict) -> None:
+        entries = self.data.setdefault("floor_pdf_underlays", [])
+        payload = deepcopy(mapping)
+        payload["floor"] = int(floor)
+        for entry in entries:
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    entry.clear()
+                    entry.update(payload)
+                    return
+            except Exception:
+                continue
+        entries.append(payload)
+        entries.sort(key=lambda item: int(item.get("floor", 0)))
+
+    def clear_floor_pdf_underlay(self, floor: int) -> None:
+        self.data["floor_pdf_underlays"] = [
+            entry
+            for entry in self.data.get("floor_pdf_underlays", [])
             if int(entry.get("floor", -(10**9))) != int(floor)
         ]
 
@@ -2430,6 +2462,46 @@ class JsonStore:
             if floor in seen_floors:
                 errors.append(f"Duplicate DXF mapping for floor {floor}")
             seen_floors.add(floor)
+
+        seen_pdf_floors = set()
+        for entry in self.data.get("floor_pdf_underlays", []):
+            if not isinstance(entry, dict):
+                errors.append(f"Invalid floor_pdf_underlays entry: {entry}")
+                continue
+            try:
+                floor = int(entry.get("floor"))
+            except Exception:
+                errors.append(
+                    f"PDF underlay mapping has invalid floor: {entry.get('floor')}"
+                )
+                continue
+            filepath = str(entry.get("filepath") or "").strip()
+            if not filepath:
+                errors.append(
+                    f"PDF underlay mapping for floor {floor} has empty filepath"
+                )
+            for key, label in (
+                ("paper_width_mm", "paper width"),
+                ("paper_height_mm", "paper height"),
+                ("scale_denominator", "drawing scale"),
+            ):
+                try:
+                    if float(entry.get(key, 0.0)) <= 0:
+                        raise ValueError
+                except Exception:
+                    errors.append(
+                        f"PDF underlay mapping for floor {floor} has invalid {label}"
+                    )
+            try:
+                if int(entry.get("page", 1)) < 1:
+                    raise ValueError
+            except Exception:
+                errors.append(
+                    f"PDF underlay mapping for floor {floor} has invalid page"
+                )
+            if floor in seen_pdf_floors:
+                errors.append(f"Duplicate PDF underlay mapping for floor {floor}")
+            seen_pdf_floors.add(floor)
 
         errors.extend(self._amr_charge_space_validation_errors())
         errors.extend(self._graph_access_validation_errors())

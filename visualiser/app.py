@@ -54,6 +54,13 @@ from PySide6.QtWidgets import (
 )
 
 from dxf_scene import DXFScene
+from pdf_underlay import (
+    MovablePdfUnderlayItem,
+    PdfUnderlayDialog,
+    normalise_pdf_underlay,
+    render_pdf_page,
+    underlay_world_bounds,
+)
 from dialogs import (
     EdgeConnectionsDialog,
     LiftEditorDialog,
@@ -293,6 +300,8 @@ class AMRGraphEditor(QMainWindow):
         self._loading_batch_floors = set()
         self._loading_batch_failed = set()
         self._loading_batch_active = False
+        self._pdf_pixmap_cache = {}
+        self._pdf_render_errors = {}
 
         self.route_profile_selection_active = False
         self.route_profile_allowed_point_names = set()
@@ -371,6 +380,11 @@ class AMRGraphEditor(QMainWindow):
             ("Add department location", "department", "Place a location associated with a department workflow."),
             ("Connect corridor", "edge", "Create a corridor edge between graph nodes."),
             ("Add lift", "lift", "Place or edit a lift access point."),
+            (
+                "Align PDF underlay",
+                "pdf_underlay_align",
+                "Drag the current floor's PDF underlay to align its lower-left point.",
+            ),
             ("Pan view", "pan", "Move around the drawing without selecting assets."),
             ("Delete items", "delete", "Delete the item clicked in the drawing."),
         ]
@@ -378,6 +392,7 @@ class AMRGraphEditor(QMainWindow):
             self.mode_combo.addItem(label, value)
             self.mode_combo.setItemData(self.mode_combo.count() - 1, tooltip, Qt.ToolTipRole)
         self.mode_combo.setToolTip("Choose what a mouse click does in the topology editor.")
+        self.mode_combo.currentIndexChanged.connect(self.refresh_canvas)
         self.floor_spin = QSpinBox()
         self.floor_spin.setRange(0, 99)
         self.floor_spin.valueChanged.connect(self.on_floor_changed)
@@ -389,6 +404,8 @@ class AMRGraphEditor(QMainWindow):
         self.bidirectional_check.setChecked(True)
         self.show_dxf_check = QCheckBox("Show DXF")
         self.show_dxf_check.setChecked(True)
+        self.show_pdf_check = QCheckBox("Show PDF underlay")
+        self.show_pdf_check.setChecked(True)
         self.show_labels_check = QCheckBox("Show labels")
         self.show_labels_check.setChecked(True)
         self.show_location_bounds_check = QCheckBox("Show location bounding boxes")
@@ -396,6 +413,7 @@ class AMRGraphEditor(QMainWindow):
         self.show_charging_spaces_check = QCheckBox("Show charging spaces")
         self.show_charging_spaces_check.setChecked(True)
         self.show_dxf_check.toggled.connect(self.refresh_canvas)
+        self.show_pdf_check.toggled.connect(self.refresh_canvas)
         self.show_labels_check.toggled.connect(self.refresh_canvas)
         self.show_location_bounds_check.toggled.connect(self.refresh_canvas)
         self.show_charging_spaces_check.toggled.connect(self.refresh_canvas)
@@ -474,6 +492,9 @@ class AMRGraphEditor(QMainWindow):
             [
                 button("Map DXF to floor", self.load_dxf),
                 button("Clear floor DXF", self.clear_floor_dxf),
+                button("Import PDF underlay", self.load_pdf_underlay),
+                button("PDF settings", self.edit_pdf_underlay),
+                button("Clear floor PDF", self.clear_floor_pdf_underlay),
                 button("Fit view", self.fit_view),
             ],
             columns=3,
@@ -500,6 +521,7 @@ class AMRGraphEditor(QMainWindow):
             view,
             "Display",
             [
+                self.show_pdf_check,
                 self.show_dxf_check,
                 self.show_labels_check,
                 self.show_location_bounds_check,
@@ -938,6 +960,90 @@ class AMRGraphEditor(QMainWindow):
             active_floor=self.floor_spin.value(), force_reload=False
         )
 
+    def floor_pdf_underlay_entries(self):
+        return self.store.data.setdefault("floor_pdf_underlays", [])
+
+    def get_floor_pdf_underlay(self, floor):
+        for entry in self.floor_pdf_underlay_entries():
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    return normalise_pdf_underlay(entry)
+            except Exception:
+                continue
+        return None
+
+    def set_floor_pdf_underlay(self, floor, mapping):
+        payload = normalise_pdf_underlay({**mapping, "floor": int(floor)})
+        entries = self.floor_pdf_underlay_entries()
+        for entry in entries:
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    entry.clear()
+                    entry.update(payload)
+                    return
+            except Exception:
+                continue
+        entries.append(payload)
+        entries.sort(key=lambda item: int(item.get("floor", 0)))
+
+    def clear_floor_pdf_underlay_mapping(self, floor):
+        self.store.data["floor_pdf_underlays"] = [
+            entry
+            for entry in self.floor_pdf_underlay_entries()
+            if int(entry.get("floor", -(10**9))) != int(floor)
+        ]
+
+    def _pdf_pixmap(self, mapping):
+        key = (mapping["filepath"], int(mapping["page"]))
+        cached = self._pdf_pixmap_cache.get(key)
+        if cached is not None:
+            return cached
+        pixmap, page_count = render_pdf_page(
+            mapping["filepath"], mapping["page"]
+        )
+        self._pdf_pixmap_cache[key] = (pixmap, page_count)
+        self._pdf_render_errors.pop(key, None)
+        return pixmap, page_count
+
+    def _pdf_underlay_moved(self, floor, x_m, y_m):
+        mapping = self.get_floor_pdf_underlay(floor)
+        if mapping is None:
+            return
+        mapping["x_m"] = round(float(x_m), 4)
+        mapping["y_m"] = round(float(y_m), 4)
+        self.set_floor_pdf_underlay(floor, mapping)
+        self.set_status(
+            f"PDF underlay aligned at ({mapping['x_m']:.3f}, "
+            f"{mapping['y_m']:.3f}) m on floor {floor}"
+        )
+
+    def draw_pdf_underlay(self, floor):
+        mapping = self.get_floor_pdf_underlay(floor)
+        if mapping is None or not mapping["filepath"]:
+            return
+        key = (mapping["filepath"], int(mapping["page"]))
+        try:
+            pixmap, _page_count = self._pdf_pixmap(mapping)
+        except Exception as exc:
+            message = str(exc)
+            if self._pdf_render_errors.get(key) != message:
+                self._pdf_render_errors[key] = message
+                self.set_status(
+                    f"Could not load PDF underlay {Path(mapping['filepath']).name}: "
+                    f"{message}"
+                )
+            return
+        movable = self._current_edit_mode() == "pdf_underlay_align"
+        item = MovablePdfUnderlayItem(
+            pixmap,
+            mapping,
+            movable=movable,
+            moved_callback=lambda x, y, target_floor=int(floor): (
+                self._pdf_underlay_moved(target_floor, x, y)
+            ),
+        )
+        self.scene.addItem(item)
+
     def floor_dxf_entries(self):
         return self.store.data.setdefault("floor_dxf_files", [])
 
@@ -1225,6 +1331,10 @@ class AMRGraphEditor(QMainWindow):
         if self.dxf_scene.bounds and self.loaded_dxf_floor == int(floor):
             bounds.append(self.dxf_scene.bounds)
 
+        pdf_mapping = self.get_floor_pdf_underlay(floor)
+        if pdf_mapping and pdf_mapping.get("filepath"):
+            bounds.append(underlay_world_bounds(pdf_mapping))
+
         floor_points = self.store.points_for_floor(floor)
         if floor_points:
             xs = [float(p["x"]) for p in floor_points.values()]
@@ -1287,6 +1397,8 @@ class AMRGraphEditor(QMainWindow):
         rect = self._scene_rect_for_floor(floor, padding=8.0)
         if rect is not None:
             self.scene.setSceneRect(rect.adjusted(-40, -40, 40, 40))
+        if self.show_pdf_check.isChecked():
+            self.draw_pdf_underlay(floor)
         if (
             self.show_dxf_check.isChecked()
             and self.loaded_dxf_floor == int(floor)
@@ -1629,6 +1741,12 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         mapped_path = self.get_floor_dxf_path(floor)
         dxf_name = Path(mapped_path).name if mapped_path else "None"
+        pdf_mapping = self.get_floor_pdf_underlay(floor)
+        pdf_name = (
+            Path(pdf_mapping["filepath"]).name
+            if pdf_mapping and pdf_mapping.get("filepath")
+            else "None"
+        )
         lines = [
             "Legend",
             "Green circle = location",
@@ -1638,6 +1756,7 @@ class AMRGraphEditor(QMainWindow):
             "Teal diamond = department",
             "Red diamond = lift node",
             f"Mode: {self.mode_combo.currentText()} | Floor: {floor}",
+            f"PDF: {pdf_name}",
             f"DXF: {dxf_name}",
             "Double-click a point to edit",
             "Ctrl-click nodes/edges for multiple selection",
@@ -1645,6 +1764,8 @@ class AMRGraphEditor(QMainWindow):
         ]
         if self._current_edit_mode() == "department":
             lines.append("Click anywhere to add a department")
+        if self._current_edit_mode() == "pdf_underlay_align":
+            lines.append("Drag the PDF to align its lower-left paper corner")
         if self._current_edit_mode() == "location_bbox":
             if self.bounding_box_location_name:
                 lines.append(
@@ -1850,6 +1971,8 @@ class AMRGraphEditor(QMainWindow):
 
         if mode == "pan":
             self.last_pan = event.position().toPoint()
+            return
+        if mode == "pdf_underlay_align":
             return
 
         picked = self.find_nearest_point_name(raw_x, raw_y, floor)
@@ -2176,6 +2299,8 @@ class AMRGraphEditor(QMainWindow):
                 self._cancel_route_profile_graphical_selection()
 
             return
+        if mode == "pdf_underlay_align":
+            return
 
         if mode == "select_move":
             if picked and picked not in self.selected_point_names:
@@ -2416,6 +2541,8 @@ class AMRGraphEditor(QMainWindow):
 
             return
         mode = self._current_edit_mode()
+        if mode == "pdf_underlay_align":
+            return
         if mode == "pan":
             current = event.position().toPoint()
             if self.last_pan is None:
@@ -2712,6 +2839,90 @@ class AMRGraphEditor(QMainWindow):
                 "Corridor widths, door openings, lane behaviour and people occupancy updated"
             )
             self.refresh_canvas()
+
+    def load_pdf_underlay(self):
+        floor = self.floor_spin.value()
+        existing = self.get_floor_pdf_underlay(floor)
+        initialdir = ""
+        if existing and existing.get("filepath"):
+            initialdir = str(Path(existing["filepath"]).expanduser().parent)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select PDF underlay", initialdir, "PDF files (*.pdf)"
+        )
+        if not path:
+            return
+        initial = {
+            **(existing or {}),
+            "floor": floor,
+            "filepath": path,
+            "page": 1,
+        }
+        try:
+            _pixmap, page_count = self._pdf_pixmap(normalise_pdf_underlay(initial))
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Could not import PDF",
+                f"{Path(path).name} could not be rendered.\n\n{exc}",
+            )
+            self.set_status("PDF underlay import failed")
+            return
+        dialog = PdfUnderlayDialog(self, initial, page_count=page_count)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        mapping = dialog.mapping(floor, path)
+        self.set_floor_pdf_underlay(floor, mapping)
+        self._set_edit_mode("pdf_underlay_align")
+        self.refresh_canvas()
+        self.fit_view()
+        width_m = mapping["paper_width_mm"] * mapping["scale_denominator"] / 1000.0
+        height_m = mapping["paper_height_mm"] * mapping["scale_denominator"] / 1000.0
+        self.set_status(
+            f"Imported {Path(path).name} on floor {floor} at "
+            f"{width_m:.3f} x {height_m:.3f} m; drag it to align"
+        )
+
+    def edit_pdf_underlay(self):
+        floor = self.floor_spin.value()
+        mapping = self.get_floor_pdf_underlay(floor)
+        if mapping is None:
+            self.set_status(f"No PDF underlay mapped to floor {floor}")
+            return
+        try:
+            _pixmap, page_count = self._pdf_pixmap(mapping)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Could not open PDF settings",
+                f"{Path(mapping['filepath']).name} could not be rendered.\n\n{exc}",
+            )
+            return
+        dialog = PdfUnderlayDialog(self, mapping, page_count=page_count)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        updated = dialog.mapping(floor, mapping["filepath"])
+        self.set_floor_pdf_underlay(floor, updated)
+        self.refresh_canvas()
+        self.set_status(f"Updated PDF underlay settings for floor {floor}")
+
+    def clear_floor_pdf_underlay(self):
+        floor = self.floor_spin.value()
+        mapping = self.get_floor_pdf_underlay(floor)
+        if mapping is None:
+            self.set_status(f"No PDF underlay mapped to floor {floor}")
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Clear floor PDF underlay",
+                f"Remove the PDF underlay mapping for floor {floor}?",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        self.clear_floor_pdf_underlay_mapping(floor)
+        self.set_status(f"Removed PDF underlay from floor {floor}")
+        self.refresh_canvas()
 
     def load_dxf(self):
         floor = self.floor_spin.value()
