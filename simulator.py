@@ -329,6 +329,27 @@ class Simulation:
             1.0, float(sim_cfg.get("idle_return_check_interval_sec", 60.0) or 60.0)
         )
         self._next_idle_return_check_time = 0.0
+        self.enable_opportunity_charging = _bool_from_config(
+            sim_cfg.get("enable_opportunity_charging", False),
+            False,
+        )
+        self.opportunity_charging_idle_period_sec = max(
+            0.0,
+            float(
+                sim_cfg.get("opportunity_charging_idle_period_sec", 900.0)
+                or 0.0
+            ),
+        )
+        self.opportunity_charging_check_interval_sec = max(
+            1.0,
+            float(
+                sim_cfg.get(
+                    "opportunity_charging_check_interval_sec",
+                    self.idle_return_check_interval_sec,
+                )
+                or self.idle_return_check_interval_sec
+            ),
+        )
         default_route_workers = max(1, min(8, os.cpu_count() or 1))
         self.routing_worker_threads = max(
             1,
@@ -781,6 +802,14 @@ class Simulation:
 
         if getattr(self.task_generation_manager, "generators", []):
             self.push_event(0.0, "generator_tick", {})
+        if self.enable_opportunity_charging:
+            first_opportunity_check = self.opportunity_charging_idle_period_sec
+            if first_opportunity_check <= self.task_generation_horizon_sec:
+                self.push_event(
+                    first_opportunity_check,
+                    "opportunity_charge_tick",
+                    {},
+                )
 
     def _normalise_mass_collection_configs(self, raw_configs) -> List[dict]:
         """Normalise third-party mass collection/empty-bin rotation settings.
@@ -4293,7 +4322,7 @@ class Simulation:
             return False
         allowed_payloads = self._inventory_space_allowed_payloads(space)
         if (
-            not bool(space.get("flexible", False))
+            not self._inventory_space_is_flexible(space)
             and allowed_payloads
             and getattr(payload, "name", "") not in allowed_payloads
         ):
@@ -4311,6 +4340,21 @@ class Simulation:
             payload.length_m <= width_m + eps and payload.width_m <= length_m + eps
         )
         return (fits_normal or fits_rotated) and payload.height_m <= height_m + eps
+
+    @staticmethod
+    def _inventory_space_is_flexible(space: dict) -> bool:
+        """Return whether payload compatibility is dimensional rather than typed.
+
+        ``payload_slots`` remains useful as the editor template for drawing the
+        footprint, but it must not restrict a flexible space to that payload
+        type. Keep the legacy ``flexible_payloads`` key working as well.
+        """
+        if not isinstance(space, dict):
+            return False
+        return _bool_from_config(
+            space.get("flexible", space.get("flexible_payloads", False)),
+            False,
+        )
 
     def _inventory_space_fit_score(
         self, space: dict, payload: PayloadType
@@ -4657,6 +4701,20 @@ class Simulation:
             space["reserved_by_task"] = ""
             self._record_location_storage_peak(task.pickup)
             return
+
+    def _process_payload_pickup(
+        self, task: Task, payload: Optional[PayloadType], event_time: float
+    ) -> None:
+        """Apply physical pickup state once, at the route's pickup completion."""
+        if bool(getattr(task, "payload_pickup_processed", False)):
+            return
+        if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
+            task.payload_pickup_processed = True
+            return
+        self._pickup_payload_instance_for_task(task, event_time=event_time)
+        self._free_inventory_space_for_pickup(task, payload)
+        self._consume_store_empty_for_exchange(task, payload)
+        task.payload_pickup_processed = True
 
     def _set_task_pending_reason(self, task: Optional[Task], reason: str) -> None:
         if task is None:
@@ -5878,6 +5936,16 @@ class Simulation:
         return_task.generator_waits_for_return = bool(
             getattr(task, "generator_waits_for_return", False)
         )
+        return_task.release_next_after_return_pickup = bool(
+            getattr(task, "release_next_after_return_pickup", False)
+        )
+        return_task.generator_release_spacing_key = str(
+            getattr(task, "generator_release_spacing_key", "") or ""
+        )
+        return_task.generator_scheduled_release_time = float(
+            getattr(task, "generator_scheduled_release_time", task.release_time)
+            or task.release_time
+        )
         return_task.returns_same_payload_instance = bool(
             getattr(task, "return_same_payload_instance", False)
         )
@@ -6341,10 +6409,19 @@ class Simulation:
         if self.staff_destination_reservations.get(final_destination) == task_id:
             self.staff_destination_reservations.pop(final_destination, None)
 
-    def _notify_task_generation_state(self, task: Task, state: str) -> None:
+    def _notify_task_generation_state(
+        self, task: Task, state: str, event_time: Optional[float] = None
+    ) -> None:
         manager = getattr(self, "task_generation_manager", None)
         if manager is not None:
-            manager.task_state_changed(task, state)
+            released_records = manager.task_state_changed(task, state) or []
+            for record in released_records:
+                self._schedule_generated_task_record(
+                    record,
+                    release_time_override=(
+                        self.current_time if event_time is None else event_time
+                    ),
+                )
 
     def _release_payload_instance_reservation_for_task(self, task: Task) -> None:
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
@@ -6366,13 +6443,38 @@ class Simulation:
         self.failed_task_ids.add(task_id)
         self._release_payload_instance_reservation_for_task(task)
         self._notify_task_generation_state(task, "failed")
-        self.failed_tasks.append({"task_id": task.id, "reason": reason})
         event_time = self.current_time if now is None else now
+        final_destination = str(
+            getattr(task, "final_destination", "") or task.dropoff or ""
+        ).strip()
+        dropoff_zone = str(getattr(task, "dropoff_zone", "") or "").strip()
+        failure_details = reason
+        if final_destination:
+            failure_details += f"; final_destination={final_destination}"
+        if dropoff_zone:
+            failure_details += f"; dropoff_zone={dropoff_zone}"
+        self._record_failed_task(
+            task.id,
+            reason,
+            event_time=event_time,
+            pickup=str(getattr(task, "pickup", "") or ""),
+            dropoff=str(getattr(task, "dropoff", "") or ""),
+            final_destination=final_destination,
+            dropoff_zone=dropoff_zone,
+            payload=self._payload_log_name(getattr(task, "payload", "")),
+            payload_instance_id=str(
+                getattr(task, "payload_instance_id", "") or ""
+            ),
+            task_source=str(getattr(task, "task_source", "") or ""),
+            department_id=str(getattr(task, "department_id", "") or ""),
+            waste_stream=str(getattr(task, "waste_stream", "") or ""),
+            container_type=str(getattr(task, "container_type", "") or ""),
+        )
         self.log_step(
             event_time=event_time,
             event_type="task_failed",
             task_id=task.id,
-            details=reason,
+            details=failure_details,
             from_location=task.pickup,
             to_location=task.dropoff,
             payload_name=self._payload_log_name(task.payload),
@@ -6387,6 +6489,30 @@ class Simulation:
             container_type=getattr(task, "container_type", ""),
             pending_reason=reason,
         )
+
+    def _record_failed_task(
+        self,
+        task_id: str,
+        reason: str,
+        event_time: Optional[float] = None,
+        **details,
+    ) -> dict:
+        """Append one failure with the simulation datetime at which it occurred."""
+        try:
+            failure_time = float(
+                self.current_time if event_time is None else event_time
+            )
+        except (TypeError, ValueError):
+            failure_time = float(self.current_time)
+        record = {
+            "sim_time_sec": round(failure_time, 3),
+            "sim_datetime": self.clock.format_sim_time(failure_time),
+            "task_id": str(task_id or ""),
+            "reason": str(reason or "Task failed").strip(),
+        }
+        record.update(details)
+        self.failed_tasks.append(record)
+        return record
 
     def _rules_cache_key(
         self, rules: Optional[dict]
@@ -9187,7 +9313,12 @@ class Simulation:
             },
         )
 
-    def _schedule_charge_cycle(self, amr: AMR, now: float) -> bool:
+    def _schedule_charge_cycle(
+        self,
+        amr: AMR,
+        now: float,
+        charge_reason: str = "reserve_threshold",
+    ) -> bool:
         if getattr(amr, "is_charging", False):
             return True
 
@@ -9195,13 +9326,10 @@ class Simulation:
         self._free_amr_inventory_space(amr)
         plan = self._plan_return_to_charge(amr, current_loc, now, reserve=True)
         if plan is None:
-            self.failed_tasks.append(
-                {
-                    "sim_time_sec": now,
-                    "sim_datetime": self.clock.format_sim_time(now),
-                    "task_id": f"CHARGE-{amr.id}",
-                    "reason": self._charge_plan_failure_reason(amr, current_loc),
-                }
+            self._record_failed_task(
+                f"CHARGE-{amr.id}",
+                self._charge_plan_failure_reason(amr, current_loc),
+                event_time=now,
             )
             return False
 
@@ -9215,6 +9343,7 @@ class Simulation:
             "start_time": charge_start,
             "end_time": charge_finish,
             "duration_sec": charge_duration,
+            "reason": str(charge_reason or "reserve_threshold"),
         })
 
         amr.is_charging = True
@@ -9236,6 +9365,7 @@ class Simulation:
                     "charge_location", plan.get("end_location", amr.location_name)
                 ),
                 "amr_inventory_space": plan.get("amr_inventory_space", ""),
+                "charge_reason": str(charge_reason or "reserve_threshold"),
             },
         )
 
@@ -9249,9 +9379,80 @@ class Simulation:
                     "charge_location", plan.get("end_location", amr.location_name)
                 ),
                 "amr_inventory_space": plan.get("amr_inventory_space", ""),
+                "charge_reason": str(charge_reason or "reserve_threshold"),
             },
         )
         return True
+
+    def _schedule_opportunity_charge(self, now: float) -> bool:
+        """Admit at most one sufficiently idle AMR to charge on each check."""
+        if not self.enable_opportunity_charging:
+            return False
+        if any(
+            not self._pending_task_removed(task)
+            and float(getattr(task, "release_time", 0.0) or 0.0) <= now + 1e-9
+            for _priority, _release, _counter, task in self.pending_tasks
+        ):
+            return False
+        if any(
+            event.event_type == "task_release"
+            and float(event.time) <= now + 1e-9
+            for event in self.events
+        ):
+            return False
+
+        eligible = []
+        for amr in self.amrs:
+            if getattr(amr, "is_charging", False):
+                continue
+            available_time = float(getattr(amr, "available_time", 0.0) or 0.0)
+            if available_time > now + 1e-9:
+                continue
+            idle_sec = max(0.0, now - available_time)
+            if idle_sec + 1e-9 < self.opportunity_charging_idle_period_sec:
+                continue
+            if float(getattr(amr, "battery_soc_percent", 100.0) or 100.0) >= 99.999:
+                continue
+            if float(getattr(amr, "exchange_hold_until", 0.0) or 0.0) > now + 1e-9:
+                continue
+            eligible.append(
+                (
+                    available_time,
+                    float(getattr(amr, "battery_soc_percent", 100.0) or 100.0),
+                    str(getattr(amr, "id", "") or ""),
+                    amr,
+                    idle_sec,
+                )
+            )
+
+        eligible.sort(key=lambda item: (item[0], item[1], item[2]))
+        for _available, _soc, _amr_id, amr, idle_sec in eligible:
+            if self._schedule_charge_cycle(
+                amr,
+                now,
+                charge_reason="opportunity_idle",
+            ):
+                self.log_step(
+                    event_time=now,
+                    event_type="opportunity_charge_scheduled",
+                    amr_id=amr.id,
+                    details=(
+                        f"{amr.id} scheduled for opportunity charging after "
+                        f"{idle_sec:.1f} seconds inactive"
+                    ),
+                    from_location=amr.location_name,
+                    to_location=str(
+                        getattr(amr, "target_charge_location", "")
+                        or amr.location_name
+                    ),
+                    start_time=now,
+                    end_time=now,
+                    status="scheduled",
+                    battery_soc_before=amr.battery_soc_percent,
+                    is_charging=True,
+                )
+                return True
+        return False
 
     def _schedule_recharge_for_amr(self, amr: AMR, now: float):
         current_loc = self.locations[amr.location_name]
@@ -9264,13 +9465,10 @@ class Simulation:
         )
 
         if charge_plan is None:
-            self.failed_tasks.append(
-                {
-                    "sim_time_sec": now,
-                    "sim_datetime": self.clock.format_sim_time(now),
-                    "task_id": f"RECHARGE-{amr.id}",
-                    "reason": self._charge_plan_failure_reason(amr, current_loc),
-                }
+            self._record_failed_task(
+                f"RECHARGE-{amr.id}",
+                self._charge_plan_failure_reason(amr, current_loc),
+                event_time=now,
             )
             return
 
@@ -10397,18 +10595,41 @@ class Simulation:
         if payload is None:
             return f"Payload '{payload_name}' does not exist"
 
-        compatible_amrs = [
+        payload_compatible_amrs = [
             amr
             for amr in self.amrs
-            if self._task_allowed_for_amr(task, amr)
-            and self._amr_can_carry_payload(amr, payload)
+            if self._amr_can_carry_payload(amr, payload)
         ]
-        if not compatible_amrs:
+        if not payload_compatible_amrs:
             return (
                 f"No AMR has sufficient payload capacity/dimensions for "
                 f"{payload.name} ({payload.weight_kg}kg, "
                 f"{payload.length_m}m x {payload.width_m}m x {payload.height_m}m)"
             )
+
+        locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
+        if locked_amr_id:
+            locked_amr = self.amrs_by_id.get(locked_amr_id)
+            if locked_amr is None:
+                return f"Locked AMR '{locked_amr_id}' does not exist"
+            if locked_amr not in payload_compatible_amrs:
+                return (
+                    f"Locked AMR {locked_amr_id} has insufficient payload "
+                    f"capacity/dimensions for {payload.name} ({payload.weight_kg}kg, "
+                    f"{payload.length_m}m x {payload.width_m}m x {payload.height_m}m)"
+                )
+
+        compatible_amrs = [
+            amr
+            for amr in payload_compatible_amrs
+            if self._task_allowed_for_amr(task, amr)
+        ]
+        if not compatible_amrs:
+            # AMR locks and exchange holds are temporary scheduling constraints.
+            # In particular, several outbound tasks can already be queued on an
+            # AMR when their later return holds are created.  A newer hold must
+            # not make an earlier locked return look physically incompatible.
+            return ""
 
         if self._location_has_payload_inventory_spaces(dropoff_name):
             spaces = self.inventory_spaces_by_location.get(dropoff_name, [])
@@ -10666,19 +10887,6 @@ class Simulation:
 
             choice = self._select_best_assignment()
             if choice is None:
-                range_charge_scheduled = False
-                for candidate_amr in self.amrs:
-                    if getattr(candidate_amr, "is_charging", False):
-                        continue
-                    if float(getattr(candidate_amr, "available_time", 0.0) or 0.0) > self.current_time:
-                        continue
-                    if float(getattr(candidate_amr, "battery_soc_percent", 100.0) or 100.0) >= 99.999:
-                        continue
-                    if self._schedule_charge_cycle(candidate_amr, self.current_time):
-                        range_charge_scheduled = True
-                if range_charge_scheduled:
-                    continue
-
                 # If the scheduler cannot find any assignment, fail one released
                 # task that is terminally impossible.  This prevents invalid
                 # locations, missing payloads, impossible route restrictions,
@@ -11090,6 +11298,27 @@ class Simulation:
             payload_action_times = self._payload_action_times(
                 committed["segments"], start_time
             )
+            payload_pickup_time = payload_action_times["pickup"].get(
+                "", finish_time
+            )
+            if (
+                bool(getattr(task, "is_return_task", False))
+                and bool(
+                    getattr(task, "release_next_after_return_pickup", False)
+                )
+                and str(
+                    getattr(task, "generator_release_spacing_key", "") or ""
+                ).strip()
+            ):
+                self.push_event(
+                    payload_pickup_time,
+                    "return_payload_pickup",
+                    {
+                        "task": task,
+                        "amr_id": amr.id,
+                        "pickup_time": payload_pickup_time,
+                    },
+                )
 
             self.push_event(
                 finish_time,
@@ -11111,9 +11340,7 @@ class Simulation:
                     "end_location": committed.get("end_location", task.dropoff),
                     "payload_orientation": committed.get("payload_orientation", getattr(task, "payload_orientation", "")),
                     "payload_slot": committed.get("payload_slot", ""),
-                    "payload_pickup_time": payload_action_times["pickup"].get(
-                        "", finish_time
-                    ),
+                    "payload_pickup_time": payload_pickup_time,
                     "payload_dropoff_time": payload_action_times["dropoff"].get(
                         "", finish_time
                     ),
@@ -11360,6 +11587,160 @@ class Simulation:
                 index * self.generated_release_stagger_sec
             )
 
+    def _log_generated_task_record(self, record) -> None:
+        task = record.task
+        pickup_location_name = str(
+            getattr(task, "pickup", record.pickup_location)
+            or record.pickup_location
+        )
+        dropoff_location_name = str(
+            getattr(task, "dropoff", record.dropoff_location)
+            or record.dropoff_location
+        )
+        pickup = self.locations.get(pickup_location_name)
+        dropoff = self.locations.get(dropoff_location_name)
+
+        self.log_step(
+            event_time=task.release_time,
+            event_type=record.event_type,
+            task_id=task.id,
+            details=record.details,
+            from_location=pickup_location_name,
+            to_location=dropoff_location_name,
+            payload_name=self._payload_log_name(record.payload_name),
+            payload_instance_id=getattr(task, "payload_instance_id", ""),
+            duration_sec=0.0,
+            wait_time_sec=0.0,
+            distance_m=0.0,
+            start_time=task.release_time,
+            end_time=task.release_time,
+            start_node=pickup_location_name,
+            end_node=dropoff_location_name,
+            start_x=getattr(pickup, "x", None),
+            start_y=getattr(pickup, "y", None),
+            start_floor=getattr(pickup, "floor", None),
+            end_x=getattr(dropoff, "x", None),
+            end_y=getattr(dropoff, "y", None),
+            end_floor=getattr(dropoff, "floor", None),
+            status="generated",
+            energy_kwh=0.0,
+            task_source=record.task_source,
+            department_id=record.department_id,
+            waste_stream=record.waste_stream,
+            waste_volume_m3=record.waste_volume_m3,
+            container_type=record.container_type,
+            **self._task_tracking_log_kwargs(task),
+        )
+
+    @staticmethod
+    def _task_release_spacing_zone(task: Task) -> str:
+        spacing_key = str(
+            getattr(task, "generator_release_spacing_key", "") or ""
+        ).strip()
+        return spacing_key.split(":", 1)[1] if spacing_key.startswith("dropoff:") else spacing_key
+
+    def _schedule_generated_task_record(
+        self, record, release_time_override: Optional[float] = None
+    ) -> None:
+        task = record.task
+        if bool(getattr(record, "released_from_deferral", False)):
+            scheduled_release = float(
+                getattr(task, "generator_scheduled_release_time", task.release_time)
+                or task.release_time
+            )
+            actual_release = max(
+                scheduled_release,
+                float(
+                    self.current_time
+                    if release_time_override is None
+                    else release_time_override
+                ),
+            )
+            task.release_time = actual_release
+            delay_sec = max(0.0, actual_release - scheduled_release)
+            zone = self._task_release_spacing_zone(task)
+            blocking_outbound = str(
+                getattr(task, "generator_deferred_by_task_id", "") or ""
+            ).strip()
+            blocking_return = str(
+                getattr(task, "generator_deferred_by_return_task_id", "") or ""
+            ).strip()
+            details = (
+                "Deferred release completed; "
+                f"shared_dropoff_zone={zone}; "
+                f"blocking_outbound_task_id={blocking_outbound}; "
+                f"blocking_return_task_id={blocking_return}"
+            )
+            self.log_step(
+                event_time=actual_release,
+                event_type="task_deferred_released",
+                task_id=task.id,
+                details=details,
+                from_location=task.pickup,
+                to_location=task.dropoff,
+                payload_name=self._payload_log_name(task.payload),
+                duration_sec=delay_sec,
+                wait_time_sec=delay_sec,
+                task_release_time_sec=actual_release,
+                start_time=scheduled_release,
+                end_time=actual_release,
+                start_node=task.pickup,
+                end_node=task.dropoff,
+                status="released_after_return_pickup",
+                task_source=getattr(task, "task_source", ""),
+                department_id=getattr(task, "department_id", ""),
+                container_type=getattr(task, "container_type", ""),
+                pending_reason=(
+                    f"Waited for {blocking_return or blocking_outbound} "
+                    f"to clear {zone}"
+                ),
+                **self._task_tracking_log_kwargs(task),
+            )
+            self.schedule_task_release(task)
+            return
+
+        self._mark_generated_waste_task_requires_existing_container(task)
+        self._stagger_generated_task_release(task)
+        if bool(getattr(task, "release_next_after_return_pickup", False)):
+            task.generator_scheduled_release_time = float(task.release_time)
+        self._log_generated_task_record(record)
+
+        if bool(getattr(record, "deferred", False)):
+            zone = self._task_release_spacing_zone(task)
+            blocking_outbound = str(
+                getattr(task, "generator_deferred_by_task_id", "") or ""
+            ).strip()
+            self.log_step(
+                event_time=task.release_time,
+                event_type="task_release_deferred",
+                task_id=task.id,
+                details=(
+                    "Scheduled release deferred until the preceding return "
+                    f"collects from the shared inventory space; "
+                    f"shared_dropoff_zone={zone}; "
+                    f"blocking_outbound_task_id={blocking_outbound}"
+                ),
+                from_location=task.pickup,
+                to_location=task.dropoff,
+                payload_name=self._payload_log_name(task.payload),
+                task_release_time_sec=task.release_time,
+                start_time=task.release_time,
+                end_time=task.release_time,
+                start_node=task.pickup,
+                end_node=task.dropoff,
+                status="deferred_waiting_for_return_pickup",
+                task_source=getattr(task, "task_source", ""),
+                department_id=getattr(task, "department_id", ""),
+                container_type=getattr(task, "container_type", ""),
+                pending_reason=(
+                    f"Waiting for task {blocking_outbound} return pickup at {zone}"
+                ),
+                **self._task_tracking_log_kwargs(task),
+            )
+            return
+
+        self.schedule_task_release(task)
+
     def _update_task_generators_until(self, now: float):
         if not getattr(self, "task_generation_manager", None):
             return
@@ -11367,56 +11748,7 @@ class Simulation:
             return
 
         for record in self.task_generation_manager.update_until(now):
-            task = record.task
-            self._mark_generated_waste_task_requires_existing_container(task)
-            self._stagger_generated_task_release(task)
-            self.schedule_task_release(task)
-
-            # The simulator may adjust the task pickup for shared physical
-            # containers so that the task collects the actual seeded bin location
-            # rather than the contributing department that triggered the threshold.
-            pickup_location_name = str(
-                getattr(task, "pickup", record.pickup_location)
-                or record.pickup_location
-            )
-            dropoff_location_name = str(
-                getattr(task, "dropoff", record.dropoff_location)
-                or record.dropoff_location
-            )
-            pickup = self.locations.get(pickup_location_name)
-            dropoff = self.locations.get(dropoff_location_name)
-
-            self.log_step(
-                event_time=task.release_time,
-                event_type=record.event_type,
-                task_id=task.id,
-                details=record.details,
-                from_location=pickup_location_name,
-                to_location=dropoff_location_name,
-                payload_name=self._payload_log_name(record.payload_name),
-                payload_instance_id=getattr(task, "payload_instance_id", ""),
-                duration_sec=0.0,
-                wait_time_sec=0.0,
-                distance_m=0.0,
-                start_time=task.release_time,
-                end_time=task.release_time,
-                start_node=pickup_location_name,
-                end_node=dropoff_location_name,
-                start_x=getattr(pickup, "x", None),
-                start_y=getattr(pickup, "y", None),
-                start_floor=getattr(pickup, "floor", None),
-                end_x=getattr(dropoff, "x", None),
-                end_y=getattr(dropoff, "y", None),
-                end_floor=getattr(dropoff, "floor", None),
-                status="generated",
-                energy_kwh=0.0,
-                task_source=record.task_source,
-                department_id=record.department_id,
-                waste_stream=record.waste_stream,
-                waste_volume_m3=record.waste_volume_m3,
-                container_type=record.container_type,
-                **self._task_tracking_log_kwargs(task),
-            )
+            self._schedule_generated_task_record(record)
 
     def _prune_historical_reservations(self, now: float) -> None:
         if now < self._next_reservation_prune_time:
@@ -11536,8 +11868,48 @@ class Simulation:
         elif event.event_type == "assignment_continue":
             self._assignment_continue_scheduled = False
             self._try_assign_tasks(event.time)
+        elif event.event_type == "return_payload_pickup":
+            task: Task = event.payload["task"]
+            if str(getattr(task, "id", "") or "").strip() in self.failed_task_ids:
+                return
+            payload_obj = self._payload_for_task(task)
+            try:
+                self._process_payload_pickup(task, payload_obj, event.time)
+            except RuntimeError as exc:
+                self._fail_task(task, str(exc), now=event.time)
+                return
+            zone = self._task_release_spacing_zone(task) or task.pickup
+            self.log_step(
+                event_time=event.time,
+                event_type="return_payload_picked_up",
+                task_id=task.id,
+                amr_id=str(event.payload.get("amr_id", "") or ""),
+                details=(
+                    "Return collected its payload from the shared inventory "
+                    f"space at {zone}; deferred release queue may advance"
+                ),
+                from_location=task.pickup,
+                to_location=task.dropoff,
+                payload_name=self._payload_log_name(task.payload),
+                payload_instance_id=getattr(task, "payload_instance_id", ""),
+                start_time=event.time,
+                end_time=event.time,
+                start_node=task.pickup,
+                end_node=task.pickup,
+                status="inventory_space_cleared",
+                task_source=getattr(task, "task_source", ""),
+                department_id=getattr(task, "department_id", ""),
+                container_type=getattr(task, "container_type", ""),
+                **self._task_tracking_log_kwargs(task),
+            )
+            self._notify_task_generation_state(
+                task, "return_payload_picked_up", event_time=event.time
+            )
+            self._try_assign_tasks(event.time)
         elif event.event_type == "task_complete":
             task: Task = event.payload["task"]
+            if str(getattr(task, "id", "") or "").strip() in self.failed_task_ids:
+                return
             payload_pickup_time = float(
                 event.payload.get("payload_pickup_time", event.payload["finish_time"])
             )
@@ -11547,14 +11919,12 @@ class Simulation:
             payload_obj = self._payload_for_task(task)
             if payload_obj is not None and not is_empty_payload_name(task.payload):
                 try:
-                    self._pickup_payload_instance_for_task(
-                        task, event_time=payload_pickup_time
+                    self._process_payload_pickup(
+                        task, payload_obj, payload_pickup_time
                     )
                 except RuntimeError as exc:
                     self._fail_task(task, str(exc), now=event.payload["finish_time"])
                     return
-                self._free_inventory_space_for_pickup(task, payload_obj)
-                self._consume_store_empty_for_exchange(task, payload_obj)
                 skip_dropoff_payload_store = bool(
                     getattr(task, "return_same_payload_instance", False)
                     and self._location_has_inventory_mass_collection_rotation(
@@ -11836,15 +12206,14 @@ class Simulation:
                 payload_obj = self._payload_for_task(task)
                 if payload_obj is not None and not is_empty_payload_name(task.payload):
                     try:
-                        self._pickup_payload_instance_for_task(
-                            task, event_time=payload_pickup_time
+                        self._process_payload_pickup(
+                            task, payload_obj, payload_pickup_time
                         )
                     except RuntimeError as exc:
                         self._fail_task(
                             task, str(exc), now=event.payload["finish_time"]
                         )
                         continue
-                    self._free_inventory_space_for_pickup(task, payload_obj)
                     skip_dropoff_payload_store = bool(
                         getattr(task, "return_same_payload_instance", False)
                         and self._location_has_inventory_mass_collection_rotation(
@@ -12052,6 +12421,15 @@ class Simulation:
                 self.push_event(next_tick, "generator_tick", {})
             self._try_assign_tasks(event.time)
 
+        elif event.event_type == "opportunity_charge_tick":
+            next_tick = (
+                event.time + self.opportunity_charging_check_interval_sec
+            )
+            if next_tick <= self.task_generation_horizon_sec:
+                self.push_event(next_tick, "opportunity_charge_tick", {})
+            self._try_assign_tasks(event.time)
+            self._schedule_opportunity_charge(event.time)
+
         elif event.event_type == "charge_cycle_start":
             amr = self.amrs_by_id[event.payload["amr_id"]]
             charge_location_name = str(
@@ -12141,15 +12519,22 @@ class Simulation:
                 amr, amr.location_name, require_charger=True
             )
             if occupied_charger is None and self._location_has_any_amr_inventory_spaces(amr.location_name):
-                self.failed_tasks.append({
-                    "task_id": f"CHARGE-{amr.id}",
-                    "reason": f"No charger-equipped AMR space available at {amr.location_name}",
-                })
+                self._record_failed_task(
+                    f"CHARGE-{amr.id}",
+                    f"No charger-equipped AMR space available at {amr.location_name}",
+                    event_time=event.payload["charge_start"],
+                    dropoff=amr.location_name,
+                )
             charge_display_loc = self._amr_display_location(amr, amr.location_name)
             self.log_step(
                 event_time=event.payload["charge_start"],
                 event_type="segment_charge",
                 amr_id=amr.id,
+                details=(
+                    "Opportunity charging after inactivity"
+                    if event.payload.get("charge_reason") == "opportunity_idle"
+                    else "Recharge required by battery reserve"
+                ),
                 from_location=charge_location_name,
                 to_location=charge_location_name,
                 duration_sec=event.payload["charge_duration"],
@@ -12191,7 +12576,10 @@ class Simulation:
                 event_time=event.time,
                 event_type="charge_cycle_complete",
                 amr_id=amr.id,
-                details=f"{amr.id} fully charged",
+                details=(
+                    f"{amr.id} fully charged; "
+                    f"reason={event.payload.get('charge_reason', 'reserve_threshold')}"
+                ),
                 from_location=charge_location_name,
                 to_location=charge_location_name,
                 start_time=event.time,

@@ -1063,6 +1063,22 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.return_delay_edit = QLineEdit(
             str(self.base_category.get("return_delay_minutes", 0))
         )
+        self.release_next_after_return_pickup_check = QCheckBox(
+            "Release the next task after the preceding return clears the shared space"
+        )
+        self.release_next_after_return_pickup_check.setToolTip(
+            "For lower-priority workflows sharing a drop-off zone, hold each "
+            "later generated task until the preceding return has collected its "
+            "payload from the zone inventory space. Categories without this "
+            "option remain unaffected and can retain priority."
+        )
+        self.release_next_after_return_pickup_check.setChecked(
+            bool(
+                self.base_category.get(
+                    "release_next_after_return_pickup", False
+                )
+            )
+        )
         self.staff_handling_minutes_edit = QLineEdit(
             str(self.base_category.get("staff_handling_minutes", 15.0))
         )
@@ -1280,6 +1296,10 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow(
+            "Shared-zone release spacing",
+            self.release_next_after_return_pickup_check,
+        )
         form.addRow("Staff handling", self.requires_staff_check)
         form.addRow("Collection response delay (minutes)", self.staff_collection_delay_edit)
         form.addRow("Handling time (minutes)", self.staff_handling_minutes_edit)
@@ -1441,6 +1461,10 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
 
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
+        self._set_form_row_visible(
+            self.release_next_after_return_pickup_check,
+            return_enabled or show_generation,
+        )
         self._set_form_row_visible(self.requires_staff_check, show_generation)
         self._set_form_row_visible(self.staff_collection_delay_edit, staff_enabled)
         self._set_form_row_visible(self.staff_handling_minutes_edit, staff_enabled)
@@ -1831,6 +1855,9 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "return_enabled": self.return_enabled_check.isChecked(),
                 "return_payload": self.return_payload_combo.currentText().strip(),
                 "return_delay_minutes": float(self.return_delay_edit.text() or 0),
+                "release_next_after_return_pickup": (
+                    self.release_next_after_return_pickup_check.isChecked()
+                ),
                 "requires_staff": self.requires_staff_check.isChecked(),
                 "staff_collection_delay_minutes": max(
                     0.0, float(self.staff_collection_delay_edit.text() or 0.0)
@@ -2175,6 +2202,15 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_payload_combo.addItems([""] + self.payload_names)
 
         self.return_delay_edit = QLineEdit()
+        self.release_next_after_return_pickup_check = QCheckBox(
+            "Release the next task after the preceding return clears the shared space"
+        )
+        self.release_next_after_return_pickup_check.setToolTip(
+            "Use for lower-priority categories that share a drop-off zone. "
+            "The next generated task waits until the preceding return collects "
+            "its payload from the zone inventory space. Unchecked priority "
+            "categories continue to release normally."
+        )
         self.staff_handling_minutes_edit = QLineEdit()
         self.staff_handoff_only_check = QCheckBox(
             "Movement-only handoff (no destination dwell)"
@@ -2335,6 +2371,10 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow(
+            "Shared-zone release spacing",
+            self.release_next_after_return_pickup_check,
+        )
         form.addRow("Staff handling", self.requires_staff_check)
         form.addRow("Collection response delay (minutes)", self.staff_collection_delay_edit)
         form.addRow("Handling time (minutes)", self.staff_handling_minutes_edit)
@@ -2645,6 +2685,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_enabled": False,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": False,
             "requires_staff": False,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
@@ -3574,6 +3615,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "payload": "",
             "return_enabled": key in {"catering", "linen", "waste", "ssd"},
             "return_payload": "",
+            "release_next_after_return_pickup": False,
             "requires_staff": key == "stores",
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
@@ -3673,6 +3715,9 @@ class TaskGenerationSettingsDialog(QDialog):
             item["requires_staff"] = bool(
                 item.get("requires_staff", item.get("staff_required", False))
             )
+            item["release_next_after_return_pickup"] = bool(
+                item.get("release_next_after_return_pickup", False)
+            )
             try:
                 item["staff_initial_count"] = max(
                     1, int(float(item.get("staff_initial_count", 1) or 1))
@@ -3695,6 +3740,9 @@ class TaskGenerationSettingsDialog(QDialog):
             item.update(incoming)
             item["requires_staff"] = bool(
                 item.get("requires_staff", item.get("staff_required", False))
+            )
+            item["release_next_after_return_pickup"] = bool(
+                item.get("release_next_after_return_pickup", False)
             )
             try:
                 item["staff_initial_count"] = max(
@@ -3858,6 +3906,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(False)
         self.return_payload_combo.setCurrentText("")
         self.return_delay_edit.setText("0")
+        self.release_next_after_return_pickup_check.setChecked(False)
         self.requires_staff_check.setChecked(False)
         self.staff_collection_delay_edit.setText("0")
         self.staff_handoff_only_check.setChecked(False)
@@ -3948,6 +3997,9 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
         self.return_payload_combo.setCurrentText(str(item.get("return_payload", "")))
         self.return_delay_edit.setText(str(item.get("return_delay_minutes", 0)))
+        self.release_next_after_return_pickup_check.setChecked(
+            bool(item.get("release_next_after_return_pickup", False))
+        )
         self.staff_collection_delay_edit.setText(
             str(item.get("staff_collection_delay_minutes", 0.0))
         )
@@ -4113,6 +4165,10 @@ class TaskGenerationSettingsDialog(QDialog):
         )
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
+        self._set_form_row_visible(
+            self.release_next_after_return_pickup_check,
+            return_enabled or show_generation,
+        )
         self._set_form_row_visible(self.requires_staff_check, show_generation)
         self._set_form_row_visible(self.staff_collection_delay_edit, staff_enabled)
         self._set_form_row_visible(self.staff_handling_minutes_edit, staff_enabled)
@@ -4262,6 +4318,9 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_enabled": self.return_enabled_check.isChecked(),
             "return_payload": self.return_payload_combo.currentText().strip(),
             "return_delay_minutes": self._float_from_edit(self.return_delay_edit, 0.0),
+            "release_next_after_return_pickup": (
+                self.release_next_after_return_pickup_check.isChecked()
+            ),
             "requires_staff": self.requires_staff_check.isChecked(),
             "staff_collection_delay_minutes": max(
                 0.0, self._float_from_edit(self.staff_collection_delay_edit, 0.0)
@@ -8595,6 +8654,65 @@ class SimulationSettingsDialog(QDialog):
         )
         performance_layout.addStretch(1)
 
+        charging_page = QWidget()
+        tabs.addTab(charging_page, "Charging")
+        charging_layout = QVBoxLayout(charging_page)
+        opportunity_box = QGroupBox("Opportunity charging")
+        opportunity_form = QFormLayout(opportunity_box)
+        self.enable_opportunity_charging_check = QCheckBox(
+            "Recharge an AMR when it has remained inactive"
+        )
+        self.enable_opportunity_charging_check.setChecked(
+            bool(simulation.get("enable_opportunity_charging", False))
+        )
+        self.enable_opportunity_charging_check.setToolTip(
+            "Uses otherwise idle time to recharge AMRs that are below full charge. "
+            "Released work takes priority over starting a new opportunity charge."
+        )
+        self.opportunity_charging_idle_minutes_spin = QDoubleSpinBox()
+        self.opportunity_charging_idle_minutes_spin.setRange(0.1, 10080.0)
+        self.opportunity_charging_idle_minutes_spin.setDecimals(1)
+        self.opportunity_charging_idle_minutes_spin.setSingleStep(1.0)
+        self.opportunity_charging_idle_minutes_spin.setSuffix(" min")
+        self.opportunity_charging_idle_minutes_spin.setValue(
+            max(
+                0.1,
+                float(
+                    simulation.get(
+                        "opportunity_charging_idle_period_sec", 900.0
+                    )
+                    or 900.0
+                )
+                / 60.0,
+            )
+        )
+        self.opportunity_charging_idle_minutes_spin.setToolTip(
+            "An AMR must have no work for this long before it becomes eligible. "
+            "One eligible AMR is admitted per scheduler check to avoid synchronized fleet charging."
+        )
+        self.opportunity_charging_idle_minutes_spin.setEnabled(
+            self.enable_opportunity_charging_check.isChecked()
+        )
+        self.enable_opportunity_charging_check.toggled.connect(
+            self.opportunity_charging_idle_minutes_spin.setEnabled
+        )
+        opportunity_form.addRow(
+            "Charging policy", self.enable_opportunity_charging_check
+        )
+        opportunity_form.addRow(
+            "Inactive before charging",
+            self.opportunity_charging_idle_minutes_spin,
+        )
+        charging_layout.addWidget(opportunity_box)
+        charging_layout.addWidget(
+            _dialog_intro(
+                "Opportunity charging is optional and does not replace the AMR type's "
+                "battery reserve threshold. AMRs below their reserve still recharge "
+                "when required to protect route feasibility."
+            )
+        )
+        charging_layout.addStretch(1)
+
         initial_page = QWidget()
         tabs.addTab(initial_page, "Initial conditions")
         initial_layout = QVBoxLayout(initial_page)
@@ -8660,6 +8778,8 @@ class SimulationSettingsDialog(QDialog):
         result.setdefault("max_single_candidate_tasks", 8)
         result.setdefault("max_assignments_per_tick", 25)
         result.setdefault("assignment_continue_delay_sec", 0.001)
+        result.setdefault("enable_opportunity_charging", False)
+        result.setdefault("opportunity_charging_idle_period_sec", 900.0)
         result.setdefault("seed_waste_stream_containers_at_start", False)
         result.setdefault("disable_inventory_spaces", False)
         return result
@@ -8690,6 +8810,10 @@ class SimulationSettingsDialog(QDialog):
                 "max_single_candidate_tasks": int(self.max_single_candidate_tasks_spin.value()),
                 "max_assignments_per_tick": int(self.max_assignments_per_tick_spin.value()),
                 "assignment_continue_delay_sec": float(self.assignment_continue_delay_spin.value()),
+                "enable_opportunity_charging": self.enable_opportunity_charging_check.isChecked(),
+                "opportunity_charging_idle_period_sec": float(
+                    self.opportunity_charging_idle_minutes_spin.value() * 60.0
+                ),
                 "seed_waste_stream_containers_at_start": self.seed_waste_containers_check.isChecked(),
                 "disable_inventory_spaces": self.disable_inventory_spaces_check.isChecked(),
             }
@@ -9548,8 +9672,34 @@ class DepartmentWasteStreamItemDialog(QDialog):
             QMessageBox.critical(self, "Invalid waste stream settings", str(exc))
 
 
+def collect_department_dropoff_zone_names(departments):
+    """Return every zone already assigned to any department category."""
+    names = set()
+    for department in departments or []:
+        if not isinstance(department, dict):
+            continue
+        category_locations = department.get("task_generation_locations", {}) or {}
+        if not isinstance(category_locations, dict):
+            continue
+        for entry in category_locations.values():
+            if not isinstance(entry, dict):
+                continue
+            raw_names = entry.get(
+                "dropoff_zone_locations",
+                entry.get("drop_off_zone_locations", []),
+            )
+            if isinstance(raw_names, str):
+                raw_names = [raw_names]
+            names.update(
+                str(value or "").strip()
+                for value in (raw_names or [])
+                if str(value or "").strip()
+            )
+    return sorted(names)
+
+
 class DepartmentDropoffZoneCreationDialog(QDialog):
-    """Collect a new zone name and the department categories that will use it."""
+    """Select or create a zone and choose the department categories that use it."""
 
     def __init__(
         self,
@@ -9557,9 +9707,10 @@ class DepartmentDropoffZoneCreationDialog(QDialog):
         task_generation_categories,
         suggested_name="",
         existing_location_names=None,
+        existing_dropoff_zone_names=None,
     ):
         super().__init__(parent)
-        self.setWindowTitle("Create department drop-off zone")
+        self.setWindowTitle("Assign department drop-off zone")
         self.resize(480, 380)
         self.result = None
         self.existing_location_names = {
@@ -9567,21 +9718,34 @@ class DepartmentDropoffZoneCreationDialog(QDialog):
             for value in (existing_location_names or [])
             if str(value or "").strip()
         }
+        self.existing_dropoff_zone_names = sorted(
+            {
+                str(value or "").strip()
+                for value in (existing_dropoff_zone_names or [])
+                if str(value or "").strip()
+            }
+        )
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
         layout.addLayout(form)
 
+        self.zone_choice_combo = QComboBox()
+        self.zone_choice_combo.addItem("Create a new drop-off zone", "")
+        for zone_name in self.existing_dropoff_zone_names:
+            self.zone_choice_combo.addItem(zone_name, zone_name)
+        form.addRow("Drop-off zone", self.zone_choice_combo)
+
         self.name_edit = QLineEdit(str(suggested_name or "").strip())
         self.name_edit.setPlaceholderText("e.g. D1-DROP-ZONE")
-        form.addRow("Zone location name", self.name_edit)
+        form.addRow("New zone location name", self.name_edit)
 
-        help_label = QLabel(
-            "Choose every task category that should stage its deliveries at this "
-            "zone. After Create, click the editor scene to place the location."
+        self.help_label = QLabel(
+            "Select an existing drop-off zone or create a new one, then choose every "
+            "task category that should stage its deliveries there."
         )
-        help_label.setWordWrap(True)
-        layout.addWidget(help_label)
+        self.help_label.setWordWrap(True)
+        layout.addWidget(self.help_label)
 
         self.category_checks = {}
         category_widget = QWidget()
@@ -9592,7 +9756,7 @@ class DepartmentDropoffZoneCreationDialog(QDialog):
             if not category_key or category_key in self.category_checks:
                 continue
             check = QCheckBox(str(category_label or category_key))
-            check.setToolTip(f"Assign the new zone to category '{category_key}'")
+            check.setToolTip(f"Assign the selected zone to category '{category_key}'")
             self.category_checks[category_key] = check
             category_layout.addWidget(check)
         category_layout.addStretch(1)
@@ -9617,14 +9781,38 @@ class DepartmentDropoffZoneCreationDialog(QDialog):
         layout.addLayout(category_actions)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Ok).setText("Create and place")
+        self.accept_button = buttons.button(QDialogButtonBox.Ok)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        self.zone_choice_combo.currentIndexChanged.connect(
+            self._refresh_zone_choice
+        )
+        self._refresh_zone_choice()
         self.name_edit.selectAll()
         self.name_edit.setFocus()
         _polish_dialog(self)
+
+    def selected_existing_zone_name(self):
+        return str(self.zone_choice_combo.currentData() or "").strip()
+
+    def _refresh_zone_choice(self):
+        creating = not bool(self.selected_existing_zone_name())
+        self.name_edit.setEnabled(creating)
+        self.accept_button.setText(
+            "Create and place" if creating else "Assign selected zone"
+        )
+        if creating:
+            self.help_label.setText(
+                "Choose every task category that should stage its deliveries at the "
+                "new zone. After Create, click the editor scene to place it."
+            )
+        else:
+            self.help_label.setText(
+                "Choose every task category that should use the selected existing "
+                "drop-off zone."
+            )
 
     def selected_category_keys(self):
         return [
@@ -9638,11 +9826,15 @@ class DepartmentDropoffZoneCreationDialog(QDialog):
             check.setChecked(bool(checked))
 
     def accept(self):
-        zone_name = self.name_edit.text().strip()
+        existing_zone_name = self.selected_existing_zone_name()
+        creating = not bool(existing_zone_name)
+        zone_name = (
+            self.name_edit.text().strip() if creating else existing_zone_name
+        )
         if not zone_name:
             QMessageBox.critical(self, "Missing zone name", "Enter a zone name.")
             return
-        if zone_name in self.existing_location_names:
+        if creating and zone_name in self.existing_location_names:
             QMessageBox.critical(
                 self,
                 "Duplicate zone name",
@@ -9662,6 +9854,7 @@ class DepartmentDropoffZoneCreationDialog(QDialog):
         self.result = {
             "name": zone_name,
             "category_keys": category_keys,
+            "create_new": creating,
         }
         super().accept()
 
@@ -9689,6 +9882,7 @@ class DepartmentEditorDialog(QDialog):
         default_x=0.0,
         default_y=0.0,
         task_generation_categories=None,
+        existing_dropoff_zone_names=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Department")
@@ -9701,6 +9895,19 @@ class DepartmentEditorDialog(QDialog):
         self.category_location_selections = self._normalise_task_generation_locations()
         self.category_dropoff_zone_selections = (
             self._normalise_task_generation_dropoff_zones()
+        )
+        self.existing_dropoff_zone_names = sorted(
+            {
+                str(value or "").strip()
+                for value in (existing_dropoff_zone_names or [])
+                if str(value or "").strip()
+            }
+            | {
+                str(value or "").strip()
+                for values in self.category_dropoff_zone_selections.values()
+                for value in values
+                if str(value or "").strip()
+            }
         )
         self.category_location_summaries = {}
         self.category_dropoff_zone_summaries = {}
@@ -9847,17 +10054,18 @@ class DepartmentEditorDialog(QDialog):
 
         create_zone_row = QHBoxLayout()
         create_zone_help = QLabel(
-            "Create one staged-delivery location and assign it to several categories."
+            "Select or create one staged-delivery location and assign it to several categories."
         )
         create_zone_help.setWordWrap(True)
-        create_zone_btn = QPushButton("Create and assign...")
+        create_zone_btn = QPushButton("Select or create...")
         create_zone_btn.setToolTip(
-            "Choose a name and categories, then place the new drop-off zone on the scene."
+            "Reuse an existing drop-off zone or create a new one, then assign it to "
+            "several categories."
         )
         create_zone_btn.clicked.connect(self._create_and_assign_dropoff_zone)
         create_zone_row.addWidget(create_zone_help, 1)
         create_zone_row.addWidget(create_zone_btn)
-        form.addRow("New drop-off zone", create_zone_row)
+        form.addRow("Shared drop-off zone", create_zone_row)
 
         form.addRow("X", self.x_edit)
         form.addRow("Y", self.y_edit)
@@ -9955,14 +10163,6 @@ class DepartmentEditorDialog(QDialog):
         return f"{base_name}_{counter}"
 
     def _create_and_assign_dropoff_zone(self):
-        parent = self._editor_window_for_department_placement()
-        if parent is None:
-            QMessageBox.critical(
-                self,
-                "Placement unavailable",
-                "The editor does not support graphical drop-off-zone placement.",
-            )
-            return
         if not self.task_generation_categories:
             QMessageBox.information(
                 self,
@@ -9976,6 +10176,7 @@ class DepartmentEditorDialog(QDialog):
             self.task_generation_categories,
             suggested_name=self._suggest_dropoff_zone_name(),
             existing_location_names=self.location_names,
+            existing_dropoff_zone_names=self.existing_dropoff_zone_names,
         )
         if dialog.exec() != QDialog.Accepted or not dialog.result:
             return
@@ -9987,6 +10188,19 @@ class DepartmentEditorDialog(QDialog):
             if str(value or "").strip()
         ]
         if not zone_name or not category_keys:
+            return
+
+        if not bool(dialog.result.get("create_new", True)):
+            self._assign_dropoff_zone_to_categories(zone_name, category_keys)
+            return
+
+        parent = self._editor_window_for_department_placement()
+        if parent is None:
+            QMessageBox.critical(
+                self,
+                "Placement unavailable",
+                "The editor does not support graphical drop-off-zone placement.",
+            )
             return
 
         self.pending_dropoff_zone_creation = {
@@ -10017,6 +10231,26 @@ class DepartmentEditorDialog(QDialog):
             self.activateWindow()
             return
 
+        self._assign_dropoff_zone_to_categories(location_name, category_keys)
+
+        if location_name not in self.location_names:
+            self.location_names.append(location_name)
+            self.location_names = sorted(set(self.location_names))
+
+        if location_name not in self.existing_dropoff_zone_names:
+            self.existing_dropoff_zone_names.append(location_name)
+            self.existing_dropoff_zone_names.sort()
+
+        location_payload = dict(location_payload or {})
+        location_payload["dropoff_zone_categories"] = list(category_keys)
+        self.category_pending_locations[location_name] = location_payload
+        self._register_placed_dropoff_zone(category_keys, location_payload)
+
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def _assign_dropoff_zone_to_categories(self, location_name, category_keys):
         for category_key in category_keys:
             selected = self.category_dropoff_zone_selections.setdefault(
                 category_key, []
@@ -10026,21 +10260,8 @@ class DepartmentEditorDialog(QDialog):
                 {str(x).strip() for x in selected if str(x).strip()}
             )
 
-        if location_name not in self.location_names:
-            self.location_names.append(location_name)
-            self.location_names = sorted(set(self.location_names))
-
-        location_payload = dict(location_payload or {})
-        location_payload["dropoff_zone_categories"] = list(category_keys)
-        self.category_pending_locations[location_name] = location_payload
-        self._register_placed_dropoff_zone(category_keys, location_payload)
-
         for category_key in category_keys:
             self._refresh_dropoff_zone_summary(category_key)
-
-        self.show()
-        self.raise_()
-        self.activateWindow()
 
     def _place_category_location(self, category_key):
         parent = self._editor_window_for_department_placement()
@@ -12122,6 +12343,9 @@ class DepartmentListDialog(QDialog):
         self._refresh_table()
         _polish_dialog(self)
 
+    def _existing_dropoff_zone_names(self):
+        return collect_department_dropoff_zone_names(self.items)
+
     def _refresh_table(self):
         self.table.clear()
         self._tree_item_to_index = {}
@@ -13149,6 +13373,7 @@ class DepartmentListDialog(QDialog):
             default_department_id=self.suggest_department_id(),
             group_resolver=self.group_resolver,
             task_generation_categories=self.task_generation_categories,
+            existing_dropoff_zone_names=self._existing_dropoff_zone_names(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             new_id = str(dialog.result.get("id", "")).strip()
@@ -13187,6 +13412,7 @@ class DepartmentListDialog(QDialog):
             default_x=float(self.items[row].get("x", 0.0)),
             default_y=float(self.items[row].get("y", 0.0)),
             task_generation_categories=self.task_generation_categories,
+            existing_dropoff_zone_names=self._existing_dropoff_zone_names(),
         )
 
         if dialog.exec() == QDialog.Accepted and dialog.result:
@@ -13429,6 +13655,212 @@ class ArrayInventorySpacesDialog(QDialog):
             QMessageBox.critical(self, "Invalid array settings", str(exc))
 
 
+class LocationSpacesManagerDialog(QDialog):
+    """Central entry point for inventory-space management across all locations."""
+
+    columns = [
+        ("name", "Location / drop-off zone", 230),
+        ("floor", "Floor", 65),
+        ("role", "Role", 110),
+        ("total", "Spaces", 70),
+        ("payload", "Payload", 75),
+        ("flexible", "Flexible", 75),
+        ("amr", "AMR", 65),
+        ("chargers", "Chargers", 75),
+        ("heights", "Max height(s) m", 145),
+    ]
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Locations & Inventory Spaces")
+        self.resize(1050, 600)
+        self.editor = parent
+        self.store = parent.store
+        self._rows = []
+
+        layout = QVBoxLayout(self)
+
+        self.summary_label = QLabel()
+        self.summary_label.setWordWrap(True)
+        layout.addWidget(self.summary_label)
+
+        hint = QLabel(
+            "Double-click a location, or select it and choose Edit spaces, to "
+            "manage its payload and AMR spaces. The space editor supports maximum "
+            "height, flexible capacity and charger settings."
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for column, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(column, width)
+        self.table.doubleClicked.connect(self.edit_selected_location)
+        layout.addWidget(self.table, 1)
+
+        button_row = QHBoxLayout()
+        edit_btn = QPushButton("Edit spaces")
+        refresh_btn = QPushButton("Refresh")
+        close_btn = QPushButton("Close")
+        edit_btn.clicked.connect(self.edit_selected_location)
+        refresh_btn.clicked.connect(self.refresh_table)
+        close_btn.clicked.connect(self.accept)
+        button_row.addWidget(edit_btn)
+        button_row.addWidget(refresh_btn)
+        button_row.addStretch(1)
+        button_row.addWidget(close_btn)
+        layout.addLayout(button_row)
+
+        self.refresh_table()
+        _polish_dialog(self)
+
+    @staticmethod
+    def _space_is_amr_space(space):
+        if not isinstance(space, dict):
+            return False
+        if bool(space.get("stores_amr", False)):
+            return True
+        if str(space.get("space_type", "") or "").strip().lower() == "amr":
+            return True
+        if str(space.get("amr_type", "") or "").strip():
+            return True
+        return any(
+            isinstance(slot, dict)
+            and (
+                str(slot.get("slot_type", "") or "").strip().lower() == "amr"
+                or bool(str(slot.get("amr_type", "") or "").strip())
+            )
+            for slot in (space.get("payload_slots", []) or [])
+        )
+
+    @staticmethod
+    def _height_summary(spaces):
+        heights = set()
+        for space in spaces:
+            try:
+                height = float(space.get("height_m", space.get("height", 0.0)) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if height <= 0.0 or height >= 999998.0:
+                heights.add("Unlimited")
+            else:
+                heights.add(f"{height:g}")
+        if not heights:
+            return "-"
+        values = sorted(heights, key=lambda value: (value == "Unlimited", value))
+        if len(values) <= 3:
+            return ", ".join(values)
+        return f"{values[0]} – {values[-1]} ({len(values)} values)"
+
+    def _location_rows(self):
+        dropoff_zones = set(
+            collect_department_dropoff_zone_names(
+                self.store.data.get("departments", [])
+            )
+        )
+        rows = []
+        for location in self.store.data.get("locations", []) or []:
+            if not isinstance(location, dict):
+                continue
+            name = str(location.get("name", "") or "").strip()
+            if not name:
+                continue
+            spaces = [
+                space
+                for space in (location.get("inventory_spaces", []) or [])
+                if isinstance(space, dict)
+            ]
+            amr_spaces = [
+                space for space in spaces if self._space_is_amr_space(space)
+            ]
+            payload_spaces = [
+                space for space in spaces if not self._space_is_amr_space(space)
+            ]
+            rows.append(
+                {
+                    "name": name,
+                    "floor": int(location.get("floor", 0) or 0),
+                    "role": "Drop-off zone" if name in dropoff_zones else "Location",
+                    "total": len(spaces),
+                    "payload": len(payload_spaces),
+                    "flexible": sum(
+                        1 for space in payload_spaces if bool(space.get("flexible", False))
+                    ),
+                    "amr": len(amr_spaces),
+                    "chargers": sum(
+                        1 for space in amr_spaces if bool(space.get("has_charger", False))
+                    ),
+                    "heights": self._height_summary(spaces),
+                }
+            )
+        return sorted(rows, key=lambda row: (row["floor"], row["name"].lower()))
+
+    def refresh_table(self):
+        selected_name = self.selected_location_name()
+        self._rows = self._location_rows()
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(0)
+        for row_data in self._rows:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            for column, (key, _heading, _width) in enumerate(self.columns):
+                item = QTableWidgetItem(str(row_data.get(key, "")))
+                item.setData(Qt.UserRole, row_data["name"])
+                if key in {"floor", "total", "payload", "flexible", "amr", "chargers"}:
+                    item.setData(Qt.DisplayRole, int(row_data.get(key, 0) or 0))
+                    item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, column, item)
+        self.table.setSortingEnabled(True)
+        selected_row = next(
+            (
+                row
+                for row in range(self.table.rowCount())
+                if str(self.table.item(row, 0).data(Qt.UserRole) or "") == selected_name
+            ),
+            -1,
+        )
+        if selected_row < 0 and self.table.rowCount():
+            selected_row = 0
+        if selected_row >= 0:
+            self.table.selectRow(selected_row)
+
+        zone_count = sum(1 for row in self._rows if row["role"] == "Drop-off zone")
+        space_count = sum(int(row["total"]) for row in self._rows)
+        self.summary_label.setText(
+            f"{len(self._rows)} location(s), including {zone_count} drop-off "
+            f"zone(s) • {space_count} inventory space(s)"
+        )
+
+    def selected_location_name(self):
+        row = self.table.currentRow() if hasattr(self, "table") else -1
+        if row < 0:
+            return ""
+        item = self.table.item(row, 0)
+        return str(item.data(Qt.UserRole) or item.text() or "").strip() if item else ""
+
+    def edit_selected_location(self, *_args):
+        location_name = self.selected_location_name()
+        if not location_name:
+            return
+        dialog = InventorySpacesDialog(self.editor, location_name)
+        if dialog.exec() == QDialog.Accepted:
+            self.refresh_table()
+            if hasattr(self.editor, "set_status"):
+                self.editor.set_status(
+                    f"Updated inventory spaces for {location_name}"
+                )
+            if hasattr(self.editor, "refresh_canvas"):
+                self.editor.refresh_canvas()
+
+
 class InventorySpacesDialog(QDialog):
     def __init__(self, parent, location_name):
         super().__init__(parent)
@@ -13531,10 +13963,22 @@ class InventorySpacesDialog(QDialog):
         self.width_edit = QLineEdit("0.000")
         self.height_edit = QLineEdit("0.000")
         self.lock_size_check = QCheckBox("Lock size")
+        apply_height_btn = QPushButton("Apply height to selected")
 
         self.length_edit.setReadOnly(True)
         self.width_edit.setReadOnly(True)
-        self.height_edit.setReadOnly(True)
+        self.height_edit.setReadOnly(False)
+        height_validator = QDoubleValidator(0.001, 999999.0, 3, self.height_edit)
+        height_validator.setNotation(QDoubleValidator.StandardNotation)
+        self.height_edit.setValidator(height_validator)
+        self.height_edit.setToolTip(
+            "Maximum clear height for this space in metres. This can be set "
+            "independently for fixed, flexible and AMR spaces."
+        )
+        apply_height_btn.setToolTip(
+            "Set the entered maximum height on every selected inventory space."
+        )
+        apply_height_btn.clicked.connect(self.apply_height_to_selected_spaces)
         self.length_edit.editingFinished.connect(self._apply_size_from_fields)
         self.width_edit.editingFinished.connect(self._apply_size_from_fields)
 
@@ -13544,6 +13988,7 @@ class InventorySpacesDialog(QDialog):
         size_row.addWidget(self.width_edit)
         size_row.addWidget(QLabel("Max height"))
         size_row.addWidget(self.height_edit)
+        size_row.addWidget(apply_height_btn)
         size_row.addWidget(self.lock_size_check)
 
         right.addLayout(size_row)
@@ -13813,7 +14258,9 @@ class InventorySpacesDialog(QDialog):
         )
         self.length_edit.setReadOnly(not enabled)
         self.width_edit.setReadOnly(not enabled)
-        self.height_edit.setReadOnly(not enabled)
+        # Height is an independent clearance constraint for every space. Length
+        # and width follow the payload footprint unless the space is flexible.
+        self.height_edit.setReadOnly(False)
         self.lock_size_check.setEnabled(enabled)
 
     def _set_space_amr_type(self, space, amr_type):
@@ -13929,6 +14376,36 @@ class InventorySpacesDialog(QDialog):
         if has_charger is not None:
             state = "enabled" if has_charger else "disabled"
             self.status_label.setText(f"Charger flag {state} on {changed} selected AMR space(s).")
+
+    def apply_height_to_selected_spaces(self):
+        rows = self._selected_space_rows()
+        if not rows:
+            return
+        try:
+            height_m = float(self.height_edit.text())
+        except (TypeError, ValueError):
+            height_m = 0.0
+        if height_m <= 0.0:
+            QMessageBox.information(
+                self,
+                "Maximum height",
+                "Enter a maximum height greater than zero.",
+            )
+            return
+        height_m = round(height_m, 3)
+        for row in rows:
+            self.spaces[row]["height_m"] = height_m
+        current = (
+            self.selected_space_index
+            if self.selected_space_index in rows
+            else rows[0]
+        )
+        self.selected_space_index = current
+        self._set_space_selection(rows, current_index=current)
+        self.height_edit.setText(f"{height_m:.3f}")
+        self.status_label.setText(
+            f"Set maximum height to {height_m:.3f} m on {len(rows)} selected space(s)."
+        )
 
     def apply_selected_spaces_as_amr(self):
         amr_type = self.amr_space_combo.currentText().strip()

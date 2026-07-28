@@ -68,6 +68,7 @@ REPORT_SECTIONS = [
     ("lift_usage_profile", "Lift usage profile"),
     ("lift_wait_profiles", "Lift wait time profiles"),
     ("generated_tasks", "Generated task category summary"),
+    ("deferred_releases", "Deferred task releases"),
     ("staff_handling", "Category staff handling"),
     ("staff_timetable", "Staff handling timetable"),
     ("location_space", "Location space utilisation"),
@@ -85,6 +86,7 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "front_summary": "standard",
     "scenario_impact": "landscape",
     "generated_tasks": "landscape",
+    "deferred_releases": "a3_landscape",
     "staff_handling": "standard",
     "staff_timetable": "a3_landscape",
     "method": "standard",
@@ -1467,6 +1469,122 @@ def build_report(
                 [30 * mm, 14 * mm, 32 * mm, 32 * mm, 48 * mm, 48 * mm, 34 * mm, 24 * mm],
                 styles,
                 right_align=[1],
+            )
+        )
+
+    deferred_summary_df = results.get(
+        "deferred_release_summary", pd.DataFrame()
+    ).copy()
+    deferred_detail_df = results.get(
+        "deferred_release_detail", pd.DataFrame()
+    ).copy()
+    story.section("deferred_releases")
+    story += [
+        Paragraph("Deferred task releases", styles["Section"]),
+        Paragraph(
+            "This section shows how the optional shared-zone workflow changed "
+            "job release times. Lower-priority tasks using the option wait until "
+            "the preceding return has collected its payload and freed the "
+            "drop-off-zone inventory space; unchecked priority categories "
+            "continue to release normally.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+    if deferred_detail_df.empty:
+        story.append(
+            Paragraph(
+                "No jobs were deferred pending a return inventory-space pickup.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        total_jobs = int(len(deferred_detail_df))
+        total_delay = float(
+            pd.to_numeric(
+                deferred_detail_df.get("delay_s", 0.0), errors="coerce"
+            )
+            .fillna(0.0)
+            .sum()
+        )
+        average_delay = total_delay / total_jobs if total_jobs else 0.0
+        maximum_delay = float(
+            pd.to_numeric(
+                deferred_detail_df.get("delay_s", 0.0), errors="coerce"
+            )
+            .fillna(0.0)
+            .max()
+        )
+        story += [
+            Paragraph(
+                f"<b>{total_jobs}</b> deferred job(s); total workflow deferral "
+                f"<b>{escape(fmt_duration(total_delay))}</b>, average "
+                f"<b>{escape(fmt_duration(average_delay))}</b>, maximum "
+                f"<b>{escape(fmt_duration(maximum_delay))}</b>.",
+                styles["BodyText"],
+            ),
+            Spacer(1, 8),
+        ]
+
+        if not deferred_summary_df.empty:
+            for column in (
+                "total_delay_s",
+                "average_delay_s",
+                "maximum_delay_s",
+            ):
+                if column in deferred_summary_df.columns:
+                    deferred_summary_df[column] = deferred_summary_df[column].map(
+                        fmt_duration
+                    )
+            deferred_summary_df = deferred_summary_df.rename(
+                columns={
+                    "category": "Category",
+                    "dropoff_zone": "Shared drop-off zone",
+                    "deferred_jobs": "Deferred jobs",
+                    "total_delay_s": "Total delay",
+                    "average_delay_s": "Average delay",
+                    "maximum_delay_s": "Maximum delay",
+                }
+            )
+            story.append(
+                table_from_df(
+                    deferred_summary_df,
+                    [42 * mm, 58 * mm, 28 * mm, 35 * mm, 35 * mm, 35 * mm],
+                    styles,
+                    right_align=[2],
+                )
+            )
+            story.append(Spacer(1, 10))
+
+        deferred_detail_df["delay_s"] = deferred_detail_df["delay_s"].map(
+            fmt_duration
+        )
+        deferred_detail_df = deferred_detail_df.rename(
+            columns={
+                "category": "Category",
+                "department": "Department",
+                "dropoff_zone": "Shared zone",
+                "task_id": "Deferred job",
+                "scheduled_release": "Scheduled release",
+                "actual_release": "Actual release",
+                "blocking_return_task_id": "Return that cleared space",
+                "delay_s": "Deferral",
+            }
+        )
+        story.append(
+            table_from_df(
+                deferred_detail_df,
+                [
+                    32 * mm,
+                    25 * mm,
+                    38 * mm,
+                    52 * mm,
+                    42 * mm,
+                    42 * mm,
+                    62 * mm,
+                    28 * mm,
+                ],
+                styles,
             )
         )
 

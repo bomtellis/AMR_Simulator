@@ -87,6 +87,97 @@ class DropoffZoneTests(unittest.TestCase):
             sim._inventory_space_can_fit_payload(space, sim.payloads["Too tall"])
         )
 
+    def test_flexible_space_is_reused_by_multiple_compatible_payload_types(self):
+        config = self._config()
+        zone = next(
+            location
+            for location in config["locations"]
+            if location["name"] == "Zone"
+        )
+        zone["inventory_spaces"] = [
+            {
+                "name": "Shared flexible bay",
+                "length_m": 1.3,
+                "width_m": 0.8,
+                "height_m": 1.5,
+                "flexible": True,
+                # This is a drawing/template payload, not a type restriction.
+                "payload_slots": [{"payload": "Trolley"}],
+            }
+        ]
+        config["payloads"].extend(
+            [
+                {
+                    "name": "Compact cart",
+                    "weight_kg": 8,
+                    "length_m": 0.5,
+                    "width_m": 0.4,
+                    "height_m": 1.0,
+                },
+                {
+                    "name": "Rotated cart",
+                    "weight_kg": 12,
+                    "length_m": 0.75,
+                    "width_m": 1.2,
+                    "height_m": 1.4,
+                },
+            ]
+        )
+
+        sim = Simulation(config)
+        space = sim.inventory_spaces_by_location["Zone"][0]
+
+        for index, payload_name in enumerate(
+            ("Trolley", "Compact cart", "Rotated cart"),
+            start=1,
+        ):
+            payload = sim.payloads[payload_name]
+            delivery = Task(
+                id=f"DELIVERY-{index}",
+                pickup="Store",
+                dropoff="Zone",
+                payload=payload_name,
+            )
+            self.assertIs(
+                space,
+                sim._reserve_inventory_space_for_task(delivery, payload),
+            )
+            self.assertTrue(
+                sim._occupy_inventory_space_for_completed_task(delivery, payload)
+            )
+            self.assertEqual(payload_name, space["payload"])
+
+            collection = Task(
+                id=f"COLLECTION-{index}",
+                pickup="Zone",
+                dropoff="Store",
+                payload=payload_name,
+            )
+            sim._free_inventory_space_for_pickup(collection, payload)
+            self.assertFalse(space["occupied"])
+
+    def test_failed_task_terminal_summary_includes_failure_datetime(self):
+        sim = Simulation(self._config())
+        task = Task(
+            id="FAILED-1",
+            pickup="Store",
+            dropoff="Zone",
+            payload="Trolley",
+        )
+
+        sim._fail_task(task, "Test failure", now=3661.25)
+
+        failure = sim.failed_tasks[0]
+        self.assertEqual(3661.25, failure["sim_time_sec"])
+        self.assertEqual(
+            "2026-01-05 01:01:01.250",
+            failure["sim_datetime"],
+        )
+        terminal = io.StringIO()
+        with contextlib.redirect_stdout(terminal):
+            sim.print_short_summary()
+        self.assertIn("2026-01-05 01:01:01.250", terminal.getvalue())
+
     def test_flexible_assignment_uses_smallest_space_that_fits(self):
         config = self._config()
         zone = next(
@@ -356,6 +447,85 @@ class DropoffZoneTests(unittest.TestCase):
                 and row.get("status") == "waiting_for_exchange"
                 for row in sim.verbose_rows
             )
+        )
+        self.assertFalse(sim.failed_task_ids)
+
+    def test_locked_return_waits_when_a_later_exchange_hold_uses_same_amr(self):
+        sim = Simulation(self._config())
+        amr = sim.amrs[0]
+        return_task = Task(
+            id="RETURN-EARLIER",
+            pickup="Zone",
+            dropoff="Store",
+            payload="Trolley",
+            release_time=100.0,
+        )
+        return_task.is_return_task = True
+        return_task.locked_amr_id = amr.id
+
+        # This reproduces the ltn11.csv collision: a later queued delivery has
+        # overwritten the AMR's scalar hold metadata before this return releases.
+        amr.available_time = 300.0
+        amr.exchange_hold_until = 300.0
+        amr.exchange_hold_return_task_id = "RETURN-LATER"
+        sim.current_time = 100.0
+
+        self.assertTrue(sim._amr_can_carry_payload(amr, sim.payloads["Trolley"]))
+        self.assertFalse(sim._task_allowed_for_amr(return_task, amr))
+        self.assertEqual(
+            "", sim._released_task_terminal_failure_reason(return_task)
+        )
+
+        sim.current_time = 300.0
+        self.assertTrue(sim._task_allowed_for_amr(return_task, amr))
+
+    def test_shared_zone_task_release_waits_for_preceding_return_pickup(self):
+        config = self._config()
+        config["simulation"]["end_datetime"] = "2026-01-05T00:30:00"
+        category = config["task_generation"]["categories"]["stores"]["departments"][
+            "D1"
+        ]
+        category["scheduled_times"] = ["00:01", "00:02"]
+        category["release_next_after_return_pickup"] = True
+
+        sim = Simulation(config, verbose=True)
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim.run()
+
+        deferred = [
+            row
+            for row in sim.verbose_rows
+            if row.get("event_type") == "task_deferred_released"
+        ]
+        self.assertEqual(1, len(deferred))
+        deferred_row = deferred[0]
+        self.assertGreater(float(deferred_row["wait_time_sec"]), 0.0)
+        self.assertAlmostEqual(
+            120.0,
+            float(deferred_row["sim_time_sec"])
+            - float(deferred_row["wait_time_sec"]),
+            places=3,
+        )
+
+        blocking_return = next(
+            row
+            for row in sim.verbose_rows
+            if row.get("event_type") == "return_payload_picked_up"
+            and row.get("task_id") in str(deferred_row.get("details", ""))
+        )
+        self.assertEqual(
+            float(blocking_return["sim_time_sec"]),
+            float(deferred_row["sim_time_sec"]),
+        )
+        actual_release = next(
+            row
+            for row in sim.verbose_rows
+            if row.get("event_type") == "task_released"
+            and row.get("task_id") == deferred_row.get("task_id")
+        )
+        self.assertEqual(
+            float(deferred_row["sim_time_sec"]),
+            float(actual_release["sim_time_sec"]),
         )
         self.assertFalse(sim.failed_task_ids)
 

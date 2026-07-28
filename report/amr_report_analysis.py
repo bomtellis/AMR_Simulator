@@ -2010,7 +2010,11 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
                         space.get("height_m", inferred_height), inferred_height
                     ),
                     "flexible": _to_bool(
-                        space.get("flexible"), name in dropoff_zone_categories
+                        space.get(
+                            "flexible",
+                            space.get("flexible_payloads"),
+                        ),
+                        name in dropoff_zone_categories,
                     ),
                     "allowed_payloads": allowed_payloads,
                 }
@@ -3500,6 +3504,125 @@ def build_generated_task_category_summary(
     return pd.DataFrame(rows, columns=columns).sort_values("category").reset_index(drop=True)
 
 
+def build_deferred_release_analysis(
+    df: pd.DataFrame,
+    ctx: Context,
+    metadata: Optional[dict] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Summarise jobs released after a preceding shared-zone return pickup."""
+    detail_columns = [
+        "category",
+        "department",
+        "dropoff_zone",
+        "task_id",
+        "scheduled_release",
+        "actual_release",
+        "blocking_return_task_id",
+        "delay_s",
+    ]
+    summary_columns = [
+        "category",
+        "dropoff_zone",
+        "deferred_jobs",
+        "total_delay_s",
+        "average_delay_s",
+        "maximum_delay_s",
+    ]
+    if df is None or df.empty:
+        return (
+            pd.DataFrame(columns=summary_columns),
+            pd.DataFrame(columns=detail_columns),
+        )
+
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    released = df[
+        event_text.str.fullmatch("task_deferred_released", case=False, na=False)
+    ].copy()
+    if released.empty:
+        return (
+            pd.DataFrame(columns=summary_columns),
+            pd.DataFrame(columns=detail_columns),
+        )
+
+    metadata = metadata or {}
+    labels = {
+        str(key).strip().lower(): str(value).strip()
+        for key, value in (metadata.get("category_labels", {}) or {}).items()
+        if str(key).strip()
+    }
+    task_col = ctx.cols.get("task")
+    to_col = ctx.cols.get("to")
+    rows = []
+    for _, row in released.iterrows():
+        details = str(row.get("details", "") or "")
+
+        def detail_value(name: str) -> str:
+            match = re.search(
+                rf"(?:^|;\s*){re.escape(name)}=([^;]*)", details, re.I
+            )
+            return match.group(1).strip() if match else ""
+
+        delay_value = pd.to_numeric(
+            row.get("_wait_s", row.get("_duration_s", 0.0)), errors="coerce"
+        )
+        delay_s = 0.0 if pd.isna(delay_value) else float(delay_value)
+        actual_release = row.get(ctx.time_col)
+        if ctx.has_datetime:
+            scheduled_release = (
+                pd.Timestamp(actual_release) - pd.to_timedelta(delay_s, unit="s")
+                if pd.notna(actual_release)
+                else pd.NaT
+            )
+        else:
+            scheduled_release = (
+                float(actual_release) - delay_s if pd.notna(actual_release) else pd.NA
+            )
+
+        zone = detail_value("shared_dropoff_zone")
+        if not zone and to_col:
+            zone = str(row.get(to_col, "") or "").strip()
+        rows.append(
+            {
+                "category": _task_generation_category_from_row(row, labels),
+                "department": str(row.get("department_id", "") or "-").strip()
+                or "-",
+                "dropoff_zone": zone or "-",
+                "task_id": (
+                    str(row.get(task_col, "") or "").strip() if task_col else ""
+                ),
+                "scheduled_release": scheduled_release,
+                "actual_release": actual_release,
+                "blocking_return_task_id": detail_value(
+                    "blocking_return_task_id"
+                )
+                or "-",
+                "delay_s": round(delay_s, 3),
+            }
+        )
+
+    detail = pd.DataFrame(rows, columns=detail_columns)
+    detail = detail.sort_values(
+        ["actual_release", "category", "department", "task_id"]
+    ).reset_index(drop=True)
+    summary = (
+        detail.groupby(["category", "dropoff_zone"], dropna=False)
+        .agg(
+            deferred_jobs=("task_id", "count"),
+            total_delay_s=("delay_s", "sum"),
+            average_delay_s=("delay_s", "mean"),
+            maximum_delay_s=("delay_s", "max"),
+        )
+        .reset_index()
+    )
+    for column in ("total_delay_s", "average_delay_s", "maximum_delay_s"):
+        summary[column] = summary[column].round(3)
+    for column in ("scheduled_release", "actual_release"):
+        detail[column] = detail[column].map(
+            lambda value: fmt_ts(value, ctx.has_datetime)
+        )
+    return summary[summary_columns], detail[detail_columns]
+
+
 def _return_source_task_id(task_id: str) -> str:
     text = str(task_id or "").strip()
     if text.startswith("RETURN_GEN_"):
@@ -4580,6 +4703,9 @@ def analyse(
     )
     task_generation_summary = build_generated_task_category_summary(
         df, ctx, task_generation_metadata
+    )
+    deferred_release_summary, deferred_release_detail = (
+        build_deferred_release_analysis(df, ctx, task_generation_metadata)
     )
     ward_collection_rows: List[dict] = []
     payload_handling_timetable = build_payload_handling_timetable(
@@ -5812,6 +5938,8 @@ def analyse(
         "summary": summary,
         "scenario_impact": scenario_impact,
         "task_generation_summary": task_generation_summary,
+        "deferred_release_summary": deferred_release_summary,
+        "deferred_release_detail": deferred_release_detail,
         "payload_handling_timetable": payload_handling_timetable,
         "linen_ward_collection": linen_ward_collection,
         "staff_hours_summary": staff_hours_summary,

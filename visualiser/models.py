@@ -150,6 +150,7 @@ def default_task_generation_category(label: str) -> dict:
         "exchange_mode": "top_up_only",
         "return_enabled": False,
         "return_payload": "",
+        "release_next_after_return_pickup": False,
         "requires_staff": False,
         "staff_initial_count": 1,
         "staff_resource_name": "",
@@ -511,6 +512,8 @@ DEFAULT_JSON = {
         "max_single_candidate_tasks": 8,
         "max_assignments_per_tick": 25,
         "assignment_continue_delay_sec": 0.001,
+        "enable_opportunity_charging": False,
+        "opportunity_charging_idle_period_sec": 900.0,
         "seed_waste_stream_containers_at_start": False,
         "disable_inventory_spaces": False,
         "scenario_mode": False,
@@ -611,6 +614,16 @@ class JsonStore:
         simulation.setdefault(
             "assignment_continue_delay_sec",
             default_simulation.get("assignment_continue_delay_sec", 0.001),
+        )
+        simulation.setdefault(
+            "enable_opportunity_charging",
+            default_simulation.get("enable_opportunity_charging", False),
+        )
+        simulation.setdefault(
+            "opportunity_charging_idle_period_sec",
+            default_simulation.get(
+                "opportunity_charging_idle_period_sec", 900.0
+            ),
         )
         simulation.setdefault(
             "seed_waste_stream_containers_at_start",

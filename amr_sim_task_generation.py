@@ -35,6 +35,8 @@ class GeneratedTaskRecord:
     waste_stream: str = ""
     waste_volume_m3: float = 0.0
     container_type: str = ""
+    deferred: bool = False
+    released_from_deferral: bool = False
 
 
 class BaseTaskGenerator:
@@ -45,9 +47,11 @@ class BaseTaskGenerator:
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         return []
 
-    def task_state_changed(self, task: Task, state: str) -> None:
+    def task_state_changed(
+        self, task: Task, state: str
+    ) -> List[GeneratedTaskRecord]:
         """Receive completion/failure notifications for generated tasks."""
-        return None
+        return []
 
 
 def _clean_text(value) -> str:
@@ -497,6 +501,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self.scheduled_emitted = set()
         self.runtime: Dict[str, dict] = {}
         self.item_runtime: Dict[str, dict] = {}
+        self.release_spacing_active: Dict[str, str] = {}
+        self.deferred_release_queues: Dict[str, List[GeneratedTaskRecord]] = {}
         self.instances = self._build_instances()
         self._prepare_instance_runtime_fields()
         self._timeframe_group_members = self._build_timeframe_group_members()
@@ -1371,6 +1377,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 )
                 or "Department team"
             ),
+            release_next_after_return_pickup=_as_bool(
+                cfg.get("release_next_after_return_pickup", False), False
+            ),
         )
         resolved_final = _clean_text(
             (instance.get("_resolved_final_destination_by_pair", {}) or {}).get(
@@ -1420,6 +1429,10 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 task.return_priority = _as_int(
                     cfg.get("return_priority", cfg.get("priority", 100)), 100
                 )
+        if task.release_next_after_return_pickup and task.return_enabled:
+            task.generator_release_spacing_key = f"dropoff:{task.dropoff}"
+            task.generator_collection_task_id = task.id
+            task.generator_scheduled_release_time = float(task.release_time)
 
         # Waste-only runtime metadata.  These are deliberately attached as
         # dynamic attributes so amr_sim_models.Task remains backwards-compatible.
@@ -1525,14 +1538,50 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     ) -> List[GeneratedTaskRecord]:
         if outbound is None:
             return []
-        return [
-            self._record_for_task(
-                outbound,
-                instance,
-                "task_generated",
-                reason,
-            )
-        ]
+        record = self._record_for_task(
+            outbound,
+            instance,
+            "task_generated",
+            reason,
+        )
+        spacing_key = _clean_text(
+            getattr(outbound, "generator_release_spacing_key", "")
+        )
+        if not spacing_key:
+            return [record]
+
+        active_task_id = _clean_text(self.release_spacing_active.get(spacing_key, ""))
+        if not active_task_id:
+            self.release_spacing_active[spacing_key] = outbound.id
+            return [record]
+
+        outbound.generator_deferred_by_task_id = active_task_id
+        record.deferred = True
+        self.deferred_release_queues.setdefault(spacing_key, []).append(record)
+        return [record]
+
+    def _release_next_deferred_record(
+        self, spacing_key: str, blocking_return_task_id: str
+    ) -> List[GeneratedTaskRecord]:
+        spacing_key = _clean_text(spacing_key)
+        if not spacing_key:
+            return []
+        queue = self.deferred_release_queues.get(spacing_key, [])
+        if not queue:
+            self.release_spacing_active.pop(spacing_key, None)
+            self.deferred_release_queues.pop(spacing_key, None)
+            return []
+
+        record = queue.pop(0)
+        if not queue:
+            self.deferred_release_queues.pop(spacing_key, None)
+        record.deferred = False
+        record.released_from_deferral = True
+        record.task.generator_deferred_by_return_task_id = _clean_text(
+            blocking_return_task_id
+        )
+        self.release_spacing_active[spacing_key] = record.task.id
+        return [record]
 
     def _pick_pairs(
         self, instance: dict, occurrence_index: Optional[int] = None
@@ -2151,20 +2200,50 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         return records
 
-    def task_state_changed(self, task: Task, state: str) -> None:
-        """Release a physical-container generation group after its cycle ends."""
-        volume_key = _clean_text(getattr(task, "generator_volume_key", ""))
-        if not volume_key:
-            return
-        runtime = self.runtime.get(volume_key)
-        if not runtime:
-            return
-
+    def task_state_changed(
+        self, task: Task, state: str
+    ) -> List[GeneratedTaskRecord]:
+        """Release generation locks and any task waiting on a return pickup."""
+        state = _clean_text(state).lower()
+        spacing_key = _clean_text(
+            getattr(task, "generator_release_spacing_key", "")
+        )
         collection_id = _clean_text(
             getattr(task, "generator_collection_task_id", "")
         ) or _clean_text(getattr(task, "id", ""))
+        released: List[GeneratedTaskRecord] = []
+
+        if (
+            state == "return_payload_picked_up"
+            and bool(getattr(task, "is_return_task", False))
+            and spacing_key
+            and self.release_spacing_active.get(spacing_key) == collection_id
+        ):
+            released.extend(
+                self._release_next_deferred_record(spacing_key, task.id)
+            )
+        elif (
+            state == "failed"
+            and not bool(getattr(task, "is_return_task", False))
+            and not bool(getattr(task, "payload_instance_picked_up", False))
+            and spacing_key
+            and self.release_spacing_active.get(spacing_key) == collection_id
+        ):
+            # A delivery that failed before pickup never occupied the shared
+            # zone, so it must not hold the lower-priority release queue.
+            released.extend(
+                self._release_next_deferred_record(spacing_key, "")
+            )
+
+        # Existing physical-container generation group handling.
+        volume_key = _clean_text(getattr(task, "generator_volume_key", ""))
+        if not volume_key:
+            return released
+        runtime = self.runtime.get(volume_key)
+        if not runtime:
+            return released
+
         outstanding = runtime.setdefault("outstanding_collection_task_ids", set())
-        state = _clean_text(state).lower()
 
         if state == "failed":
             # A failed return, or a failure after the physical container was
@@ -2173,7 +2252,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if bool(getattr(task, "is_return_task", False)) or bool(
                 getattr(task, "payload_instance_picked_up", False)
             ):
-                return
+                return released
 
             threshold = _as_float(
                 getattr(task, "generator_threshold_volume_m3", 0.0), 0.0
@@ -2183,17 +2262,18 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     _as_float(runtime.get("volume", 0.0), 0.0) + threshold
                 )
             outstanding.discard(collection_id)
-            return
+            return released
 
         if state != "completed":
-            return
+            return released
 
         if bool(getattr(task, "is_return_task", False)):
             outstanding.discard(collection_id)
-            return
+            return released
 
         if not bool(getattr(task, "generator_waits_for_return", False)):
             outstanding.discard(collection_id)
+        return released
 
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         generated: List[GeneratedTaskRecord] = []
@@ -2553,7 +2633,11 @@ class TaskGenerationManager:
             generated.extend(generator.update_until(now))
         return generated
 
-    def task_state_changed(self, task: Task, state: str) -> None:
+    def task_state_changed(
+        self, task: Task, state: str
+    ) -> List[GeneratedTaskRecord]:
         """Forward task completion/failure state to every runtime generator."""
+        released: List[GeneratedTaskRecord] = []
         for generator in self.generators:
-            generator.task_state_changed(task, state)
+            released.extend(generator.task_state_changed(task, state) or [])
+        return released

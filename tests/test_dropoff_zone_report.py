@@ -7,6 +7,7 @@ import pandas as pd
 
 from report.amr_report_analysis import (
     Context,
+    build_deferred_release_analysis,
     build_dropoff_zone_peak_occupancy,
     build_dropoff_zone_payloads_at_network_peak,
     build_location_peak_occupancy,
@@ -16,6 +17,50 @@ from report.amr_report_analysis import (
 
 
 class DropoffZoneReportTests(unittest.TestCase):
+    def test_deferred_release_report_shows_scheduled_and_actual_times(self):
+        events = pd.DataFrame(
+            [
+                {
+                    "_event_time": pd.Timestamp("2026-01-01 08:12:30"),
+                    "_event_text": "task_deferred_released",
+                    "_wait_s": 150.0,
+                    "task_id": "GEN_STORES_D2_00002",
+                    "department_id": "D2",
+                    "to_location": "Shared Zone",
+                    "details": (
+                        "Deferred release completed; "
+                        "shared_dropoff_zone=Shared Zone; "
+                        "blocking_outbound_task_id=GEN_STORES_D1_00001; "
+                        "blocking_return_task_id=RETURN-GEN_STORES_D1_00001-1"
+                    ),
+                }
+            ]
+        )
+        ctx = Context(
+            cols={"task": "task_id", "to": "to_location"},
+            has_datetime=True,
+            time_col="_event_time",
+        )
+
+        summary, detail = build_deferred_release_analysis(
+            events,
+            ctx,
+            {"category_labels": {"stores": "Stores"}},
+        )
+
+        self.assertEqual(1, int(summary.iloc[0]["deferred_jobs"]))
+        self.assertEqual(150.0, float(summary.iloc[0]["maximum_delay_s"]))
+        self.assertEqual(
+            "01/01/2026 08:10:00", detail.iloc[0]["scheduled_release"]
+        )
+        self.assertEqual(
+            "01/01/2026 08:12:30", detail.iloc[0]["actual_release"]
+        )
+        self.assertEqual(
+            "RETURN-GEN_STORES_D1_00001-1",
+            detail.iloc[0]["blocking_return_task_id"],
+        )
+
     def test_exact_datetime_is_recovered_from_legacy_fractional_sim_seconds(self):
         raw = pd.DataFrame(
             [

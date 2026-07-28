@@ -484,6 +484,130 @@ class SimulationLog:
         idx = self.location_event_index_at(location_name, current_time)
         return events[:idx]
 
+    @staticmethod
+    def _detail_metadata(details: str, *labels: str) -> str:
+        text = str(details or "")
+        for label in labels:
+            match = re.search(
+                rf"(?:^|;)\s*{re.escape(label)}\s*=\s*([^;]+)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                return match.group(1).strip()
+        return ""
+
+    @staticmethod
+    def _format_event_datetime(value: Optional[datetime]) -> str:
+        if value is None:
+            return "-"
+        if value.microsecond:
+            return value.isoformat(sep=" ", timespec="milliseconds")
+        return value.isoformat(sep=" ", timespec="seconds")
+
+    def failed_task_rows(self) -> List[dict]:
+        """Return failure rows enriched with each task's true final destination."""
+        metadata_by_task: Dict[str, dict] = {}
+        for event in self.events:
+            row = event.row
+            task_id = str(row.get("task_id", "") or "").strip()
+            if not task_id:
+                continue
+            details = str(row.get("details", "") or "")
+            final_destination = (
+                str(row.get("final_destination", "") or "").strip()
+                or self._detail_metadata(
+                    details, "final destination", "final_destination"
+                )
+            )
+            dropoff_zone = (
+                str(row.get("dropoff_zone", "") or "").strip()
+                or self._detail_metadata(
+                    details, "AMR drop-off zone", "dropoff_zone"
+                )
+            )
+            if final_destination or dropoff_zone:
+                metadata = metadata_by_task.setdefault(task_id, {})
+                if final_destination:
+                    metadata["final_destination"] = final_destination
+                if dropoff_zone:
+                    metadata["dropoff_zone"] = dropoff_zone
+
+        rows: List[dict] = []
+        for event in self.events:
+            row = event.row
+            if str(row.get("event_type", "") or "").strip().lower() != "task_failed":
+                continue
+
+            task_id = str(row.get("task_id", "") or "").strip()
+            metadata = metadata_by_task.get(task_id, {})
+            details = str(row.get("details", "") or "").strip()
+            task_source = str(row.get("task_source", "") or "").strip()
+            pickup = str(row.get("from_location", "") or "").strip()
+            amr_destination = str(row.get("to_location", "") or "").strip()
+            final_destination = str(
+                row.get("final_destination", "")
+                or metadata.get("final_destination", "")
+                or ""
+            ).strip()
+            dropoff_zone = str(
+                row.get("dropoff_zone", "")
+                or metadata.get("dropoff_zone", "")
+                or ""
+            ).strip()
+
+            # Return tasks travel from the ward/drop-off zone back to the
+            # service location. Older CSVs predate explicit destination fields.
+            if not final_destination:
+                final_destination = amr_destination
+            if not dropoff_zone:
+                if task_source.lower().endswith("_return"):
+                    dropoff_zone = pickup
+                elif amr_destination != final_destination:
+                    dropoff_zone = amr_destination
+
+            failure_time = (
+                self._parse_datetime(str(row.get("sim_datetime", "") or ""))
+                or event.start_time
+            )
+            reason = str(
+                row.get("pending_reason", "")
+                or row.get("failure_reason", "")
+                or details
+                or row.get("status", "")
+                or "Task failed"
+            ).strip()
+
+            rows.append(
+                {
+                    "failure_time": failure_time,
+                    "failure_time_display": self._format_event_datetime(failure_time),
+                    "task_id": task_id or "-",
+                    "payload": str(row.get("payload", "") or "-").strip() or "-",
+                    "final_destination": final_destination or "-",
+                    "dropoff_zone": dropoff_zone or "-",
+                    "pickup": pickup or "-",
+                    "amr_destination": amr_destination or "-",
+                    "department_id": str(
+                        row.get("department_id", "") or "-"
+                    ).strip()
+                    or "-",
+                    "amr_id": str(row.get("amr_id", "") or "-").strip() or "-",
+                    "task_source": task_source or "-",
+                    "reason": reason,
+                    "inspection_location": final_destination or amr_destination or pickup,
+                    "raw": row,
+                }
+            )
+
+        rows.sort(
+            key=lambda item: (
+                item.get("failure_time") or datetime.min,
+                str(item.get("task_id", "")),
+            )
+        )
+        return rows
+
     def _event_lift_keys(self, row: dict) -> set:
         """Return lift ids referenced by a CSV row for fast lift monitor rebuilds."""
         keys = set()
@@ -2618,6 +2742,117 @@ def run_auxiliary_gui_process(command_queue, event_queue) -> None:
     send_event({"type": "process_stopped"})
 
 
+class FailedTasksDialog(QDialog):
+    columns = [
+        ("failure_time_display", "Failed at", 185),
+        ("task_id", "Task", 230),
+        ("payload", "Payload", 160),
+        ("final_destination", "Final destination", 180),
+        ("dropoff_zone", "AMR drop-off zone", 180),
+        ("pickup", "Pickup", 170),
+        ("department_id", "Department", 105),
+        ("amr_id", "AMR", 90),
+        ("reason", "Failure reason", 430),
+    ]
+
+    def __init__(self, parent, rows: List[dict]):
+        super().__init__(parent)
+        self.setWindowTitle("Failed tasks")
+        self.resize(1600, 720)
+        self.rows = list(rows or [])
+        self.selected_failure = None
+
+        layout = QVBoxLayout(self)
+
+        summary = QLabel(
+            f"Failed tasks: {len(self.rows)}. Select a row and choose "
+            "View at destination, or double-click it."
+        )
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter"))
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText(
+            "Task, payload, destination, drop-off zone, department or reason"
+        )
+        self.filter_edit.textChanged.connect(self._apply_filter)
+        filter_row.addWidget(self.filter_edit, 1)
+        layout.addLayout(filter_row)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        self.table.itemSelectionChanged.connect(self._update_view_button)
+        self.table.cellDoubleClicked.connect(self._view_row)
+        for index, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(index, width)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.table, 1)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.view_button = QPushButton("View at destination")
+        self.view_button.setEnabled(False)
+        self.view_button.clicked.connect(self._view_selected)
+        buttons.addWidget(self.view_button)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.reject)
+        buttons.addWidget(close_button)
+        layout.addLayout(buttons)
+
+        self._populate_table()
+
+    def _populate_table(self):
+        self.table.setSortingEnabled(False)
+        for record in self.rows:
+            row_index = self.table.rowCount()
+            self.table.insertRow(row_index)
+            for column_index, (key, _heading, _width) in enumerate(self.columns):
+                item = QTableWidgetItem(str(record.get(key, "-") or "-"))
+                item.setToolTip(str(record.get("reason", "") or ""))
+                if column_index == 0:
+                    item.setData(Qt.UserRole, record)
+                self.table.setItem(row_index, column_index, item)
+        self.table.setSortingEnabled(True)
+
+    def _record_for_row(self, row_index: int) -> Optional[dict]:
+        item = self.table.item(row_index, 0)
+        return item.data(Qt.UserRole) if item is not None else None
+
+    def _update_view_button(self):
+        self.view_button.setEnabled(bool(self.table.selectionModel().selectedRows()))
+
+    def _apply_filter(self, text: str):
+        needle = str(text or "").strip().lower()
+        for row_index in range(self.table.rowCount()):
+            record = self._record_for_row(row_index) or {}
+            haystack = " ".join(
+                str(record.get(key, "") or "")
+                for key, _heading, _width in self.columns
+            ).lower()
+            self.table.setRowHidden(row_index, bool(needle and needle not in haystack))
+
+    def _view_row(self, row_index: int, _column_index: int):
+        record = self._record_for_row(row_index)
+        if record is None:
+            return
+        self.selected_failure = record
+        self.accept()
+
+    def _view_selected(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        self._view_row(selected_rows[0].row(), 0)
+
+
 class LocationInventoryPayloadDialog(QDialog):
     columns = [
         ("space", "Inventory space", 180),
@@ -2884,6 +3119,11 @@ class SimulationVisualizer(QMainWindow):
         self.project_ribbon.addSeparator()
         add_ribbon_action("Jump to Task", self.open_task_jump_dialog)
         add_ribbon_action(
+            "Failed Tasks",
+            self.open_failed_tasks_dialog,
+            "Browse failures and jump to the exact failure time and final destination.",
+        )
+        add_ribbon_action(
             "Tasks by Location / Department",
             self.open_tasks_by_location_department_dialog,
         )
@@ -2930,6 +3170,7 @@ class SimulationVisualizer(QMainWindow):
             return btn
 
         add_btn("Timeline", self.open_timeline_window)
+        add_btn("Failed Tasks", self.open_failed_tasks_dialog)
         add_btn("Lift Monitor", self.open_lift_monitor_dialog)
         add_btn("AMR Payload Monitor", self.open_amr_payload_monitor_dialog)
         add_btn("Fit View", self.fit_view)
@@ -5146,8 +5387,9 @@ class SimulationVisualizer(QMainWindow):
         payload_name = str(payload_name or "").strip()
         if not payload_name:
             return True
-        flexible = bool(space.get("flexible", False)) or self._location_is_dropoff_zone(
-            location_name
+        flexible = self._bool_from_config_value(
+            space.get("flexible", space.get("flexible_payloads")),
+            self._location_is_dropoff_zone(location_name),
         )
         allowed_payloads = {
             str(slot.get("payload", "") or "").strip()
@@ -9396,6 +9638,86 @@ class SimulationVisualizer(QMainWindow):
             key=lambda r: (str(r.get("start_sort_time", "")), str(r.get("task_id", "")))
         )
         return rows
+
+    def navigate_to_failed_task(self, failure: dict) -> str:
+        """Seek to a failure and focus the best available destination node."""
+        failure_time = failure.get("failure_time")
+        if failure_time is None:
+            return ""
+
+        if self.is_playing:
+            self.is_playing = False
+            self.play_timer.stop()
+            self.play_btn.setText("Play")
+            self._last_play_tick_wall_time = None
+
+        self.current_time = failure_time
+        self._invalidate_runtime_caches()
+        self.update_time_display()
+        self.refresh_dynamic_scene()
+        self._scroll_timeline_to_time(self.current_time)
+
+        requested_location = str(
+            failure.get("inspection_location", "")
+            or failure.get("final_destination", "")
+            or ""
+        ).strip()
+        fallback_location = str(failure.get("amr_destination", "") or "").strip()
+        focus_location = requested_location
+        point = self.layout_model.points.get(focus_location, {})
+        if not point and fallback_location:
+            focus_location = fallback_location
+            point = self.layout_model.points.get(focus_location, {})
+
+        if point:
+            try:
+                self.set_floor(int(point.get("floor", self.current_floor())))
+                sx, sy = self.world_to_scene(
+                    point.get("x", 0.0), point.get("y", 0.0)
+                )
+                self.view.centerOn(sx, sy)
+            except (TypeError, ValueError):
+                pass
+
+        task_id = str(failure.get("task_id", "") or "").strip()
+        timestamp = self.sim_log._format_event_datetime(failure_time)
+        if point:
+            self.set_status(
+                f"Failed task {task_id}: {timestamp} at {focus_location}"
+            )
+        else:
+            self.set_status(
+                f"Failed task {task_id}: {timestamp}; destination "
+                f"{requested_location or '-'} is not present in the loaded layout"
+            )
+        self.view.viewport().update()
+        return focus_location if point else ""
+
+    def open_failed_tasks_dialog(self):
+        if not self.sim_log.events:
+            QMessageBox.information(
+                self,
+                "No simulation loaded",
+                "Load a simulation CSV first.",
+            )
+            return
+
+        failures = self.sim_log.failed_task_rows()
+        if not failures:
+            QMessageBox.information(
+                self,
+                "No failed tasks",
+                "No task_failed rows were found in the simulation log.",
+            )
+            return
+
+        dialog = FailedTasksDialog(self, failures)
+        if dialog.exec() != QDialog.Accepted or not dialog.selected_failure:
+            return
+
+        focus_location = self.navigate_to_failed_task(dialog.selected_failure)
+        if focus_location:
+            self.show_location_inventory_payloads(focus_location)
 
     def open_tasks_by_location_department_dialog(self):
         if not self.layout_model.data and not self.sim_log.events:

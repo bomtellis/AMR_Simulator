@@ -242,7 +242,11 @@ For a generated delivery using a zone:
   the category use the same policy, and legacy department override values are
   ignored. Overflow applies only when the payload fits a configured zone space,
   keeps generated tasks from failing during a temporary occupancy peak, and
-  remains visible in zone utilisation/shortfall reporting.
+  remains visible in zone utilisation/shortfall reporting;
+- `release_next_after_return_pickup` optionally serialises lower-priority
+  workflows that share a drop-off zone. The next checked task is held until the
+  preceding return collects its payload and frees the zone inventory space.
+  Unchecked priority categories continue to release normally.
 
 Global staff settings provide the walking speed, lift allowance and default
 payload-handling time used by every drop-off-zone handoff. A category/department

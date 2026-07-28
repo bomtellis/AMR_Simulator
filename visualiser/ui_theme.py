@@ -162,6 +162,7 @@ INTRODUCTIONS = {
     "Auto shared bin groups from category locations": "Create shared waste-bin groups from existing department category locations. The preview shows which departments will be grouped together.",
     "Departments": "Manage departments, their graph locations and task-generation settings. Use search and multi-selection for bulk operations.",
     "Create inventory space array": "Create several evenly spaced inventory positions inside the selected location. Check the preview values before applying the array.",
+    "Locations & Inventory Spaces": "Review every location and drop-off zone in one place. Double-click a row to manage its payload spaces, flexible dimensions, AMR bays and chargers.",
     "Route Profiles": "Define which lifts, graph nodes and corridor edges a route profile may use. Use the graphical selector for complex routes.",
     "Task": "Create or edit one manual transport task. Select graph locations rather than typing names to avoid invalid references.",
     "Create One-to-Many Tasks": "Create one task per selected destination using the same pickup, payload, release time and route profile.",

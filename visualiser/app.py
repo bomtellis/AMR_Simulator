@@ -74,6 +74,7 @@ from dialogs import (
     DepartmentListDialog,
     AMRListDialog,
     AMREditorDialog,
+    LocationSpacesManagerDialog,
     InventorySpacesDialog,
     TaskGenerationSettingsDialog,
     PayloadListDialog,
@@ -81,6 +82,7 @@ from dialogs import (
     PeopleMovementListDialog,
     ScenarioTestingDialog,
     CorridorSettingsDialog,
+    collect_department_dropoff_zone_names,
 )
 from advanced_dialogs import (
     MultiSelectPicker,
@@ -584,6 +586,7 @@ class AMRGraphEditor(QMainWindow):
             [
                 button("AMRs", self.manage_amrs),
                 button("Payloads", self.manage_payloads),
+                button("Locations & spaces", self.manage_location_spaces),
                 button("Charging locations", self.manage_charging_locations),
                 button("Lifts", self.manage_lifts),
             ],
@@ -934,6 +937,11 @@ class AMRGraphEditor(QMainWindow):
             pairs.append((str(key), label, suffix))
 
         return sorted(pairs, key=lambda x: x[1].lower())
+
+    def department_dropoff_zone_names(self):
+        return collect_department_dropoff_zone_names(
+            self.store.data.get("departments", [])
+        )
 
     def create_department_generated_locations(self, department_result):
         created = 0
@@ -1830,6 +1838,7 @@ class AMRGraphEditor(QMainWindow):
             default_y=point["y"],
             group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
             task_generation_categories=self.task_generation_category_pairs(),
+            existing_dropoff_zone_names=self.department_dropoff_zone_names(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             if dialog.result["name"] in self.store.names_in_use():
@@ -1860,6 +1869,7 @@ class AMRGraphEditor(QMainWindow):
             default_y=y,
             group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
             task_generation_categories=self.task_generation_category_pairs(),
+            existing_dropoff_zone_names=self.department_dropoff_zone_names(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             dept_name = str(dialog.result.get("name", "")).strip()
@@ -1904,6 +1914,7 @@ class AMRGraphEditor(QMainWindow):
             default_y=float(dept.get("y", 0.0)),
             group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
             task_generation_categories=self.task_generation_category_pairs(),
+            existing_dropoff_zone_names=self.department_dropoff_zone_names(),
         )
         if dialog.exec() == QDialog.Accepted and dialog.result:
             for other in self.store.data.get("departments", []):
@@ -3213,6 +3224,10 @@ class AMRGraphEditor(QMainWindow):
             group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
             task_generation_categories=self.task_generation_category_pairs(),
         )
+        dialog.exec()
+
+    def manage_location_spaces(self):
+        dialog = LocationSpacesManagerDialog(self)
         dialog.exec()
 
     def _save_departments(self, items):

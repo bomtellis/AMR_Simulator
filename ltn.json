@@ -2,7 +2,7 @@
   "simulation": {
     "start_datetime": "2026-01-01T05:00:00",
     "tick_rate": 1000.0,
-    "end_datetime": "2026-01-08T05:00:00",
+    "end_datetime": "2026-01-03T05:00:00",
     "generated_task_release_stagger_sec": 10.0,
     "precompute_static_routes": true,
     "route_precompute_max_pairs": 100000,
@@ -14,7 +14,9 @@
     "reservation_history_retention_sec": 600.0,
     "idle_return_check_interval_sec": 60.0,
     "seed_waste_stream_containers_at_start": true,
-    "disable_inventory_spaces": false
+    "disable_inventory_spaces": false,
+    "enable_opportunity_charging": true,
+    "opportunity_charging_idle_period_sec": 600.0
   },
   "building": {
     "load_unload_time_sec": 20.0,
@@ -2985,8 +2987,8 @@
     {
       "name": "D41-STORES",
       "floor": 5,
-      "x": 83.101,
-      "y": -82.577,
+      "x": 43.421,
+      "y": -90.32,
       "bounding_box": [
         {
           "dx": -1.945,
@@ -3192,26 +3194,8 @@
     {
       "name": "D43-STORES",
       "floor": 5,
-      "x": 144.741,
-      "y": -144.244,
-      "bounding_box": [
-        {
-          "dx": -0.691,
-          "dy": 1.905
-        },
-        {
-          "dx": 0.802,
-          "dy": 1.932
-        },
-        {
-          "dx": 0.812,
-          "dy": -1.906
-        },
-        {
-          "dx": -0.682,
-          "dy": -1.906
-        }
-      ],
+      "x": 139.626,
+      "y": -183.465,
       "wash_cycle_required": false,
       "wash_cycle_duration_sec": 300.0,
       "wash_location": "",
@@ -3490,8 +3474,8 @@
     {
       "name": "D35-STORES",
       "floor": 4,
-      "x": 83.048,
-      "y": -82.612,
+      "x": 43.675,
+      "y": -89.994,
       "bounding_box": [
         {
           "dx": -1.895,
@@ -3846,8 +3830,8 @@
     {
       "name": "D37-STORES",
       "floor": 4,
-      "x": 145.961,
-      "y": -82.586,
+      "x": 140.75,
+      "y": -50.17,
       "bounding_box": [
         {
           "dx": -1.923,
@@ -4838,8 +4822,8 @@
     {
       "name": "D29-STORES",
       "floor": 3,
-      "x": 83.0,
-      "y": -83.0,
+      "x": 43.538,
+      "y": -90.099,
       "bounding_box": [
         {
           "dx": -1.847,
@@ -5202,8 +5186,8 @@
     {
       "name": "D31-STORES",
       "floor": 3,
-      "x": 145.883,
-      "y": -82.617,
+      "x": 136.865,
+      "y": -41.913,
       "bounding_box": [
         {
           "dx": -1.85,
@@ -11284,165 +11268,99 @@
           "name": "Burlodge Trolley space 1",
           "points": [
             {
-              "dx": -2.965,
-              "dy": -0.609
+              "dx": -1.636,
+              "dy": -0.214
             },
             {
-              "dx": -1.765,
-              "dy": -0.609
+              "dx": -0.436,
+              "dy": -0.214
             },
             {
-              "dx": -1.765,
-              "dy": 0.191
+              "dx": -0.436,
+              "dy": 0.586
             },
             {
-              "dx": -2.965,
-              "dy": 0.191
+              "dx": -1.636,
+              "dy": 0.586
             }
           ],
           "payload_slots": [
             {
               "rotation_deg": 0.0,
               "payload": "Burlodge Trolley",
-              "dx": -2.365,
-              "dy": -0.209
+              "dx": -1.036,
+              "dy": 0.186
             }
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 1.6,
           "flexible": true
         },
         {
           "name": "Burlodge Trolley space 2",
           "points": [
             {
-              "dx": -1.614,
-              "dy": -0.609
+              "dx": -0.18,
+              "dy": -0.234
             },
             {
-              "dx": -0.414,
-              "dy": -0.609
+              "dx": 1.02,
+              "dy": -0.234
             },
             {
-              "dx": -0.414,
-              "dy": 0.191
+              "dx": 1.02,
+              "dy": 0.566
             },
             {
-              "dx": -1.614,
-              "dy": 0.191
+              "dx": -0.18,
+              "dy": 0.566
             }
           ],
           "payload_slots": [
             {
               "rotation_deg": 0.0,
               "payload": "Burlodge Trolley",
-              "dx": -1.014,
-              "dy": -0.209
+              "dx": 0.42,
+              "dy": 0.166
             }
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
-          "flexible": true
-        },
-        {
-          "name": "Linen Trolley space 1",
-          "points": [
-            {
-              "dx": -0.25,
-              "dy": -0.583
-            },
-            {
-              "dx": 0.95,
-              "dy": -0.583
-            },
-            {
-              "dx": 0.95,
-              "dy": 0.167
-            },
-            {
-              "dx": -0.25,
-              "dy": 0.167
-            }
-          ],
-          "payload_slots": [
-            {
-              "rotation_deg": 0.0,
-              "payload": "Linen Trolley",
-              "dx": 0.35,
-              "dy": -0.208
-            }
-          ],
-          "length_m": 1.2,
-          "width_m": 0.75,
           "height_m": 1.6,
           "flexible": true
         },
         {
-          "name": "Goods Cage space 1",
+          "name": "Burlodge Trolley space 3",
           "points": [
             {
-              "dx": 1.151,
-              "dy": -0.596
+              "dx": 1.294,
+              "dy": -0.234
             },
             {
-              "dx": 2.001,
-              "dy": -0.596
+              "dx": 2.494,
+              "dy": -0.234
             },
             {
-              "dx": 2.001,
-              "dy": 0.204
+              "dx": 2.494,
+              "dy": 0.566
             },
             {
-              "dx": 1.151,
-              "dy": 0.204
+              "dx": 1.294,
+              "dy": 0.566
             }
           ],
           "payload_slots": [
             {
               "rotation_deg": 0.0,
-              "payload": "Goods Cage",
-              "dx": 1.576,
-              "dy": -0.196
+              "payload": "Burlodge Trolley",
+              "dx": 1.894,
+              "dy": 0.166
             }
           ],
-          "length_m": 0.85,
+          "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.545,
-          "flexible": true
-        },
-        {
-          "name": "Goods Cage space 2",
-          "points": [
-            {
-              "dx": 2.178,
-              "dy": -0.609
-            },
-            {
-              "dx": 3.028,
-              "dy": -0.609
-            },
-            {
-              "dx": 3.028,
-              "dy": 0.191
-            },
-            {
-              "dx": 2.178,
-              "dy": 0.191
-            }
-          ],
-          "payload_slots": [
-            {
-              "rotation_deg": 0.0,
-              "payload": "Goods Cage",
-              "dx": 2.603,
-              "dy": -0.209
-            }
-          ],
-          "length_m": 0.85,
-          "width_m": 0.8,
-          "height_m": 1.545,
+          "height_m": 1.6,
           "flexible": true
         }
       ]
@@ -11476,138 +11394,963 @@
       "people_area_type": "none",
       "inventory_spaces": [
         {
-          "name": "Burlodge Trolley space 1",
-          "points": [
-            {
-              "dx": -2.599,
-              "dy": -0.664
-            },
-            {
-              "dx": -1.399,
-              "dy": -0.664
-            },
-            {
-              "dx": -1.399,
-              "dy": 0.136
-            },
-            {
-              "dx": -2.599,
-              "dy": 0.136
-            }
-          ],
-          "payload_slots": [
-            {
-              "rotation_deg": 0.0,
-              "payload": "Burlodge Trolley",
-              "dx": -1.999,
-              "dy": -0.264
-            }
-          ],
-          "length_m": 1.2,
-          "width_m": 0.8,
-          "height_m": 1.5,
-          "flexible": true
-        },
-        {
           "name": "Burlodge Trolley space 2",
           "points": [
             {
-              "dx": -1.21,
-              "dy": -0.653
+              "dx": -1.512,
+              "dy": -0.258
             },
             {
-              "dx": -0.01,
-              "dy": -0.653
+              "dx": -0.312,
+              "dy": -0.258
             },
             {
-              "dx": -0.01,
-              "dy": 0.147
+              "dx": -0.312,
+              "dy": 0.542
             },
             {
-              "dx": -1.21,
-              "dy": 0.147
+              "dx": -1.512,
+              "dy": 0.542
             }
           ],
           "payload_slots": [
             {
               "rotation_deg": 0.0,
               "payload": "Burlodge Trolley",
-              "dx": -0.61,
-              "dy": -0.253
+              "dx": -0.912,
+              "dy": 0.142
             }
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 2.0,
           "flexible": true
         },
         {
           "name": "Burlodge Trolley space 3",
           "points": [
             {
-              "dx": 0.168,
-              "dy": -0.653
+              "dx": -0.134,
+              "dy": -0.258
             },
             {
-              "dx": 1.368,
-              "dy": -0.653
+              "dx": 1.066,
+              "dy": -0.258
             },
             {
-              "dx": 1.368,
-              "dy": 0.147
+              "dx": 1.066,
+              "dy": 0.542
             },
             {
-              "dx": 0.168,
-              "dy": 0.147
+              "dx": -0.134,
+              "dy": 0.542
             }
           ],
           "payload_slots": [
             {
               "rotation_deg": 0.0,
               "payload": "Burlodge Trolley",
-              "dx": 0.768,
-              "dy": -0.253
+              "dx": 0.466,
+              "dy": 0.142
             }
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 2.0,
           "flexible": true
         },
         {
           "name": "Burlodge Trolley space 4",
           "points": [
             {
-              "dx": 1.568,
-              "dy": -0.653
+              "dx": 1.266,
+              "dy": -0.258
             },
             {
-              "dx": 2.768,
-              "dy": -0.653
+              "dx": 2.466,
+              "dy": -0.258
             },
             {
-              "dx": 2.768,
-              "dy": 0.147
+              "dx": 2.466,
+              "dy": 0.542
             },
             {
-              "dx": 1.568,
-              "dy": 0.147
+              "dx": 1.266,
+              "dy": 0.542
             }
           ],
           "payload_slots": [
             {
               "rotation_deg": 0.0,
               "payload": "Burlodge Trolley",
-              "dx": 2.168,
-              "dy": -0.253
+              "dx": 1.866,
+              "dy": 0.142
             }
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 2.0,
           "flexible": true
         }
       ]
+    },
+    {
+      "name": "D41-DROP-ZONE",
+      "floor": 5,
+      "x": 84.235,
+      "y": -80.023,
+      "bounding_box": [
+        {
+          "dx": -1.697,
+          "dy": 2.611
+        },
+        {
+          "dx": 0.932,
+          "dy": 2.625
+        },
+        {
+          "dx": 0.961,
+          "dy": -3.041
+        },
+        {
+          "dx": -1.682,
+          "dy": -3.041
+        }
+      ],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": [
+        {
+          "name": "Burlodge Trolley space 1",
+          "points": [
+            {
+              "dx": -0.056,
+              "dy": -1.899
+            },
+            {
+              "dx": -0.056,
+              "dy": -0.699
+            },
+            {
+              "dx": -0.856,
+              "dy": -0.699
+            },
+            {
+              "dx": -0.856,
+              "dy": -1.899
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.456,
+              "dy": -1.299
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 2",
+          "points": [
+            {
+              "dx": -0.056,
+              "dy": -0.399
+            },
+            {
+              "dx": -0.056,
+              "dy": 0.801
+            },
+            {
+              "dx": -0.856,
+              "dy": 0.801
+            },
+            {
+              "dx": -0.856,
+              "dy": -0.399
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.456,
+              "dy": 0.201
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 3",
+          "points": [
+            {
+              "dx": -0.056,
+              "dy": 1.101
+            },
+            {
+              "dx": -0.056,
+              "dy": 2.301
+            },
+            {
+              "dx": -0.856,
+              "dy": 2.301
+            },
+            {
+              "dx": -0.856,
+              "dy": 1.101
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.456,
+              "dy": 1.701
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        }
+      ]
+    },
+    {
+      "name": "D43-DROP-ZONE",
+      "floor": 5,
+      "x": 146.798,
+      "y": -142.683,
+      "bounding_box": [
+        {
+          "dx": -2.808,
+          "dy": -1.623
+        },
+        {
+          "dx": 2.825,
+          "dy": -1.623
+        },
+        {
+          "dx": 2.849,
+          "dy": 0.421
+        },
+        {
+          "dx": -2.713,
+          "dy": 0.421
+        }
+      ],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": [
+        {
+          "name": "Burlodge Trolley space 1",
+          "points": [
+            {
+              "dx": -1.586,
+              "dy": -1.044
+            },
+            {
+              "dx": -0.386,
+              "dy": -1.044
+            },
+            {
+              "dx": -0.386,
+              "dy": -0.244
+            },
+            {
+              "dx": -1.586,
+              "dy": -0.244
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.986,
+              "dy": -0.644
+            }
+          ],
+          "length_m": 1.2,
+          "width_m": 0.8,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 2",
+          "points": [
+            {
+              "dx": -0.086,
+              "dy": -1.044
+            },
+            {
+              "dx": 1.114,
+              "dy": -1.044
+            },
+            {
+              "dx": 1.114,
+              "dy": -0.244
+            },
+            {
+              "dx": -0.086,
+              "dy": -0.244
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Burlodge Trolley",
+              "dx": 0.514,
+              "dy": -0.644
+            }
+          ],
+          "length_m": 1.2,
+          "width_m": 0.8,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 3",
+          "points": [
+            {
+              "dx": 1.332,
+              "dy": -1.047
+            },
+            {
+              "dx": 2.532,
+              "dy": -1.047
+            },
+            {
+              "dx": 2.532,
+              "dy": -0.247
+            },
+            {
+              "dx": 1.332,
+              "dy": -0.247
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Burlodge Trolley",
+              "dx": 1.932,
+              "dy": -0.647
+            }
+          ],
+          "length_m": 1.2,
+          "width_m": 0.8,
+          "height_m": 2.0,
+          "flexible": true
+        }
+      ]
+    },
+    {
+      "name": "D38-DROP-ZONE",
+      "floor": 4,
+      "x": 145.247,
+      "y": -79.982,
+      "bounding_box": [
+        {
+          "dx": -0.807,
+          "dy": 2.804
+        },
+        {
+          "dx": 1.081,
+          "dy": 2.788
+        },
+        {
+          "dx": 1.048,
+          "dy": -3.073
+        },
+        {
+          "dx": -0.988,
+          "dy": -3.008
+        }
+      ],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": [
+        {
+          "name": "Burlodge Trolley space 1",
+          "points": [
+            {
+              "dx": 0.451,
+              "dy": 1.294
+            },
+            {
+              "dx": 0.451,
+              "dy": 2.494
+            },
+            {
+              "dx": -0.349,
+              "dy": 2.494
+            },
+            {
+              "dx": -0.349,
+              "dy": 1.294
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": 0.051,
+              "dy": 1.894
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 2",
+          "points": [
+            {
+              "dx": 0.454,
+              "dy": -0.263
+            },
+            {
+              "dx": 0.454,
+              "dy": 0.937
+            },
+            {
+              "dx": -0.346,
+              "dy": 0.937
+            },
+            {
+              "dx": -0.346,
+              "dy": -0.263
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": 0.054,
+              "dy": 0.337
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 3",
+          "points": [
+            {
+              "dx": 0.484,
+              "dy": -1.768
+            },
+            {
+              "dx": 0.484,
+              "dy": -0.568
+            },
+            {
+              "dx": -0.316,
+              "dy": -0.568
+            },
+            {
+              "dx": -0.316,
+              "dy": -1.768
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": 0.084,
+              "dy": -1.168
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        }
+      ]
+    },
+    {
+      "name": "D38-STORES",
+      "floor": 4,
+      "x": 185.237,
+      "y": -87.078,
+      "bounding_box": [],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": []
+    },
+    {
+      "name": "D42-STORES",
+      "floor": 5,
+      "x": 90.0,
+      "y": -42.0,
+      "bounding_box": [],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": []
+    },
+    {
+      "name": "D40-STORES",
+      "floor": 4,
+      "x": 139.201,
+      "y": -183.411,
+      "bounding_box": [],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": []
+    },
+    {
+      "name": "D35-DROP-ZONE",
+      "floor": 4,
+      "x": 83.921,
+      "y": -80.221,
+      "bounding_box": [
+        {
+          "dx": -1.36,
+          "dy": 2.829
+        },
+        {
+          "dx": 1.318,
+          "dy": 2.829
+        },
+        {
+          "dx": 1.339,
+          "dy": -2.755
+        },
+        {
+          "dx": -1.277,
+          "dy": -2.838
+        }
+      ],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": [
+        {
+          "name": "Burlodge Trolley space 1",
+          "points": [
+            {
+              "dx": 0.204,
+              "dy": -1.638
+            },
+            {
+              "dx": 0.204,
+              "dy": -0.438
+            },
+            {
+              "dx": -0.596,
+              "dy": -0.438
+            },
+            {
+              "dx": -0.596,
+              "dy": -1.638
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.196,
+              "dy": -1.038
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 2",
+          "points": [
+            {
+              "dx": 0.204,
+              "dy": -0.138
+            },
+            {
+              "dx": 0.204,
+              "dy": 1.062
+            },
+            {
+              "dx": -0.596,
+              "dy": 1.062
+            },
+            {
+              "dx": -0.596,
+              "dy": -0.138
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.196,
+              "dy": 0.462
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 3",
+          "points": [
+            {
+              "dx": 0.204,
+              "dy": 1.362
+            },
+            {
+              "dx": 0.204,
+              "dy": 2.562
+            },
+            {
+              "dx": -0.596,
+              "dy": 2.562
+            },
+            {
+              "dx": -0.596,
+              "dy": 1.362
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.196,
+              "dy": 1.962
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        }
+      ]
+    },
+    {
+      "name": "D36-STORES",
+      "floor": 4,
+      "x": 90.084,
+      "y": -41.829,
+      "bounding_box": [],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": []
+    },
+    {
+      "name": "D34-STORES",
+      "floor": 3,
+      "x": 140.388,
+      "y": -183.68,
+      "bounding_box": [],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": []
+    },
+    {
+      "name": "D32-STORES",
+      "floor": 3,
+      "x": 184.874,
+      "y": -88.086,
+      "bounding_box": [],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": []
+    },
+    {
+      "name": "D32-DROP-ZONE",
+      "floor": 3,
+      "x": 145.236,
+      "y": -79.996,
+      "bounding_box": [
+        {
+          "dx": -0.801,
+          "dy": 2.831
+        },
+        {
+          "dx": 1.072,
+          "dy": 2.847
+        },
+        {
+          "dx": 1.104,
+          "dy": -3.078
+        },
+        {
+          "dx": -0.849,
+          "dy": -3.046
+        }
+      ],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": [
+        {
+          "name": "Burlodge Trolley space 1",
+          "points": [
+            {
+              "dx": 0.56,
+              "dy": -1.544
+            },
+            {
+              "dx": 0.56,
+              "dy": -0.344
+            },
+            {
+              "dx": -0.24,
+              "dy": -0.344
+            },
+            {
+              "dx": -0.24,
+              "dy": -1.544
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": 0.16,
+              "dy": -0.944
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 2",
+          "points": [
+            {
+              "dx": 0.568,
+              "dy": -0.085
+            },
+            {
+              "dx": 0.568,
+              "dy": 1.115
+            },
+            {
+              "dx": -0.232,
+              "dy": 1.115
+            },
+            {
+              "dx": -0.232,
+              "dy": -0.085
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": 0.168,
+              "dy": 0.515
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 3",
+          "points": [
+            {
+              "dx": 0.552,
+              "dy": 1.296
+            },
+            {
+              "dx": 0.552,
+              "dy": 2.496
+            },
+            {
+              "dx": -0.248,
+              "dy": 2.496
+            },
+            {
+              "dx": -0.248,
+              "dy": 1.296
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": 0.152,
+              "dy": 1.896
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        }
+      ]
+    },
+    {
+      "name": "D29-DROP-ZONE",
+      "floor": 3,
+      "x": 83.931,
+      "y": -79.981,
+      "bounding_box": [
+        {
+          "dx": -1.404,
+          "dy": 2.535
+        },
+        {
+          "dx": 1.275,
+          "dy": 2.61
+        },
+        {
+          "dx": 1.425,
+          "dy": -3.222
+        },
+        {
+          "dx": -1.504,
+          "dy": -3.097
+        }
+      ],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": [
+        {
+          "name": "Burlodge Trolley space 1",
+          "points": [
+            {
+              "dx": 0.182,
+              "dy": -1.937
+            },
+            {
+              "dx": 0.182,
+              "dy": -0.737
+            },
+            {
+              "dx": -0.618,
+              "dy": -0.737
+            },
+            {
+              "dx": -0.618,
+              "dy": -1.937
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.218,
+              "dy": -1.337
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 2",
+          "points": [
+            {
+              "dx": 0.157,
+              "dy": -0.545
+            },
+            {
+              "dx": 0.157,
+              "dy": 0.655
+            },
+            {
+              "dx": -0.643,
+              "dy": 0.655
+            },
+            {
+              "dx": -0.643,
+              "dy": -0.545
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.243,
+              "dy": 0.055
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        },
+        {
+          "name": "Burlodge Trolley space 3",
+          "points": [
+            {
+              "dx": 0.148,
+              "dy": 0.859
+            },
+            {
+              "dx": 0.148,
+              "dy": 2.059
+            },
+            {
+              "dx": -0.652,
+              "dy": 2.059
+            },
+            {
+              "dx": -0.652,
+              "dy": 0.859
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 90.0,
+              "payload": "Burlodge Trolley",
+              "dx": -0.252,
+              "dy": 1.459
+            }
+          ],
+          "length_m": 0.8,
+          "width_m": 1.2,
+          "height_m": 2.0,
+          "flexible": true
+        }
+      ]
+    },
+    {
+      "name": "D30-STORES",
+      "floor": 3,
+      "x": 90.05,
+      "y": -41.964,
+      "bounding_box": [],
+      "wash_cycle_required": false,
+      "wash_cycle_duration_sec": 300.0,
+      "wash_location": "",
+      "people_area_type": "none",
+      "inventory_spaces": []
     }
   ],
   "corridors": {
@@ -15595,6 +16338,166 @@
         "y": -140.883,
         "has_door": false,
         "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C5-55",
+        "floor": 5,
+        "x": 43.18,
+        "y": -93.385,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C5-56",
+        "floor": 5,
+        "x": 86.483,
+        "y": -80.052,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C5-57",
+        "floor": 5,
+        "x": 142.69,
+        "y": -183.512,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C5-58",
+        "floor": 5,
+        "x": 146.99,
+        "y": -140.892,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C5-59",
+        "floor": 5,
+        "x": 142.268,
+        "y": -140.773,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C4-95",
+        "floor": 4,
+        "x": 142.791,
+        "y": -50.256,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C4-96",
+        "floor": 4,
+        "x": 43.396,
+        "y": -93.411,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C4-97",
+        "floor": 4,
+        "x": 142.712,
+        "y": -79.955,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C4-98",
+        "floor": 4,
+        "x": 185.237,
+        "y": -84.768,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C5-60",
+        "floor": 5,
+        "x": 86.578,
+        "y": -41.97,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C4-99",
+        "floor": 4,
+        "x": 142.805,
+        "y": -183.229,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C4-100",
+        "floor": 4,
+        "x": 86.547,
+        "y": -80.084,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C4-101",
+        "floor": 4,
+        "x": 86.422,
+        "y": -41.733,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C3-95",
+        "floor": 3,
+        "x": 142.818,
+        "y": -183.618,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C3-96",
+        "floor": 3,
+        "x": 133.687,
+        "y": -41.753,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C3-97",
+        "floor": 3,
+        "x": 142.759,
+        "y": -79.758,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C3-98",
+        "floor": 3,
+        "x": 43.498,
+        "y": -93.324,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C3-99",
+        "floor": 3,
+        "x": 86.482,
+        "y": -80.024,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C3-100",
+        "floor": 3,
+        "x": 86.527,
+        "y": -41.796,
+        "has_door": false,
+        "door_clear_width_m": 0.9
+      },
+      {
+        "name": "C3-101",
+        "floor": 3,
+        "x": 185,
+        "y": -85,
+        "has_door": false,
+        "door_clear_width_m": 0.9
       }
     ],
     "edges": [
@@ -16975,22 +17878,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C3-16",
-        "to": "C3-17",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-17",
-        "to": "C3-16",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C3-19",
         "to": "C3-18",
         "bidirectional": true,
@@ -17071,22 +17958,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C4-17",
-        "to": "C4-16",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-16",
-        "to": "C4-17",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C4-6",
         "to": "C4-16",
         "bidirectional": true,
@@ -17113,22 +17984,6 @@
       {
         "from": "C4-5",
         "to": "C4-16",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-19",
-        "to": "C4-18",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-18",
-        "to": "C4-19",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -17225,22 +18080,6 @@
       {
         "from": "C5-6",
         "to": "C5-11",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C5-14",
-        "to": "C5-13",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C5-13",
-        "to": "C5-14",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -19535,22 +20374,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C5-21",
-        "to": "C5-17",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C5-17",
-        "to": "C5-21",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C5-17",
         "to": "C5-18",
         "bidirectional": true,
@@ -19727,22 +20550,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C5-6",
-        "to": "D41-STORES",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D41-STORES",
-        "to": "C5-6",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C5-9",
         "to": "D41-WASTE",
         "bidirectional": true,
@@ -19753,22 +20560,6 @@
       {
         "from": "D41-WASTE",
         "to": "C5-9",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C5-26",
-        "to": "C5-31",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C5-31",
-        "to": "C5-26",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -20271,22 +21062,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C5-49",
-        "to": "C5-45",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C5-45",
-        "to": "C5-49",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C5-45",
         "to": "C5-46",
         "bidirectional": true,
@@ -20447,22 +21222,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C5-7",
-        "to": "D43-STORES",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D43-STORES",
-        "to": "C5-7",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C5-1",
         "to": "C5-53",
         "bidirectional": true,
@@ -20473,22 +21232,6 @@
       {
         "from": "C5-53",
         "to": "C5-1",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C5-52",
-        "to": "C5-7",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C5-7",
-        "to": "C5-52",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -20537,22 +21280,6 @@
       {
         "from": "D43-WASTE",
         "to": "C5-53",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-6",
-        "to": "D35-STORES",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D35-STORES",
-        "to": "C4-6",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -20697,22 +21424,6 @@
       {
         "from": "C4-34",
         "to": "C4-33",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-34",
-        "to": "C4-27",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-27",
-        "to": "C4-34",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -20975,22 +21686,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C4-42",
-        "to": "C4-37",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-37",
-        "to": "C4-42",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C4-37",
         "to": "C4-36",
         "bidirectional": true,
@@ -21153,22 +21848,6 @@
       {
         "from": "C4-49",
         "to": "C4-19",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-49",
-        "to": "C4-51",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-51",
-        "to": "C4-49",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -21673,22 +22352,6 @@
       {
         "from": "D37-WASTE",
         "to": "C4-12",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-9",
-        "to": "D37-STORES",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D37-STORES",
-        "to": "C4-9",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -22343,22 +23006,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C4-92",
-        "to": "C4-85",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C4-85",
-        "to": "C4-92",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C4-85",
         "to": "C4-84",
         "bidirectional": true,
@@ -22655,22 +23302,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C3-32",
-        "to": "C3-27",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-27",
-        "to": "C3-32",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C3-27",
         "to": "C3-26",
         "bidirectional": true,
@@ -22849,22 +23480,6 @@
       {
         "from": "D29-PHARMACY",
         "to": "C3-28",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-6",
-        "to": "D29-STORES",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D29-STORES",
-        "to": "C3-6",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -23143,22 +23758,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C3-42",
-        "to": "C3-36",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-36",
-        "to": "C3-42",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C3-36",
         "to": "C3-35",
         "bidirectional": true,
@@ -23367,22 +23966,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C3-53",
-        "to": "C3-54",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-54",
-        "to": "C3-53",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C3-3",
         "to": "C3-54",
         "bidirectional": true,
@@ -23505,22 +24088,6 @@
       {
         "from": "C3-63",
         "to": "C3-62",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-63",
-        "to": "C3-56",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-56",
-        "to": "C3-63",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -23681,22 +24248,6 @@
       {
         "from": "D31-WASTE",
         "to": "C3-12",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-8",
-        "to": "D31-STORES",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D31-STORES",
-        "to": "C3-8",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -24385,22 +24936,6 @@
       {
         "from": "C3-92",
         "to": "C3-91",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-92",
-        "to": "C3-85",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C3-85",
-        "to": "C3-92",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -27509,6 +28044,902 @@
         "width_m": 2.4,
         "people_area_type": "none",
         "people_profile_ids": []
+      },
+      {
+        "from": "C5-17",
+        "to": "C5-55",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-55",
+        "to": "C5-17",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-55",
+        "to": "C5-21",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-21",
+        "to": "C5-55",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-55",
+        "to": "D41-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D41-STORES",
+        "to": "C5-55",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-13",
+        "to": "C5-56",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-56",
+        "to": "C5-13",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-56",
+        "to": "C5-14",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-14",
+        "to": "C5-56",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-56",
+        "to": "D41-DROP-ZONE",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D41-DROP-ZONE",
+        "to": "C5-56",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-49",
+        "to": "C5-57",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-57",
+        "to": "C5-49",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-57",
+        "to": "C5-45",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-45",
+        "to": "C5-57",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-57",
+        "to": "D43-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D43-STORES",
+        "to": "C5-57",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-7",
+        "to": "C5-59",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-59",
+        "to": "C5-7",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-59",
+        "to": "C5-52",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-52",
+        "to": "C5-59",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-59",
+        "to": "C5-58",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-58",
+        "to": "C5-59",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-58",
+        "to": "D43-DROP-ZONE",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D43-DROP-ZONE",
+        "to": "C5-58",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-49",
+        "to": "C4-95",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-95",
+        "to": "C4-49",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-95",
+        "to": "C4-51",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-51",
+        "to": "C4-95",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-95",
+        "to": "D37-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D37-STORES",
+        "to": "C4-95",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-34",
+        "to": "C4-96",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-96",
+        "to": "C4-34",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-96",
+        "to": "C4-27",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-27",
+        "to": "C4-96",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-96",
+        "to": "D35-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D35-STORES",
+        "to": "C4-96",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-18",
+        "to": "C4-97",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-97",
+        "to": "C4-18",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-97",
+        "to": "C4-19",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-19",
+        "to": "C4-97",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-97",
+        "to": "D38-DROP-ZONE",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D38-DROP-ZONE",
+        "to": "C4-97",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-65",
+        "to": "C4-98",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-98",
+        "to": "C4-65",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-98",
+        "to": "D38-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D38-STORES",
+        "to": "C4-98",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-31",
+        "to": "C5-60",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-60",
+        "to": "C5-31",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-60",
+        "to": "C5-26",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-26",
+        "to": "C5-60",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C5-60",
+        "to": "D42-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D42-STORES",
+        "to": "C5-60",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-92",
+        "to": "C4-99",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-99",
+        "to": "C4-92",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-99",
+        "to": "D40-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D40-STORES",
+        "to": "C4-99",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-99",
+        "to": "C4-85",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-85",
+        "to": "C4-99",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-16",
+        "to": "C4-100",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-100",
+        "to": "C4-16",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-100",
+        "to": "C4-17",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-17",
+        "to": "C4-100",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-100",
+        "to": "D35-DROP-ZONE",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D35-DROP-ZONE",
+        "to": "C4-100",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-37",
+        "to": "C4-101",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-101",
+        "to": "C4-37",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-101",
+        "to": "C4-42",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-42",
+        "to": "C4-101",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C4-101",
+        "to": "D36-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D36-STORES",
+        "to": "C4-101",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-92",
+        "to": "C3-95",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-95",
+        "to": "C3-92",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-95",
+        "to": "C3-85",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-85",
+        "to": "C3-95",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-95",
+        "to": "D34-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D34-STORES",
+        "to": "C3-95",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-56",
+        "to": "C3-96",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-96",
+        "to": "C3-56",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-96",
+        "to": "C3-63",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-63",
+        "to": "C3-96",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-96",
+        "to": "D31-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D31-STORES",
+        "to": "C3-96",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-54",
+        "to": "C3-97",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-97",
+        "to": "C3-54",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-97",
+        "to": "C3-53",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-53",
+        "to": "C3-97",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-97",
+        "to": "D32-DROP-ZONE",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D32-DROP-ZONE",
+        "to": "C3-97",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-32",
+        "to": "C3-98",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-98",
+        "to": "C3-32",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-98",
+        "to": "C3-27",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-27",
+        "to": "C3-98",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-98",
+        "to": "D29-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D29-STORES",
+        "to": "C3-98",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-16",
+        "to": "C3-99",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-99",
+        "to": "C3-16",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-99",
+        "to": "C3-17",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-17",
+        "to": "C3-99",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-99",
+        "to": "D29-DROP-ZONE",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D29-DROP-ZONE",
+        "to": "C3-99",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-42",
+        "to": "C3-100",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-100",
+        "to": "C3-42",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-100",
+        "to": "C3-36",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-36",
+        "to": "C3-100",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-100",
+        "to": "D30-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D30-STORES",
+        "to": "C3-100",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-65",
+        "to": "C3-101",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-101",
+        "to": "C3-65",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "C3-101",
+        "to": "D32-STORES",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
+      },
+      {
+        "from": "D32-STORES",
+        "to": "C3-101",
+        "bidirectional": true,
+        "width_m": 2.4,
+        "people_area_type": "none",
+        "people_profile_ids": []
       }
     ],
     "auto_connect": false
@@ -30427,7 +31858,7 @@
       "id": "D16",
       "name": "Ante-natal",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -30778,7 +32209,7 @@
       "id": "D19",
       "name": "Birthing Suite",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -31368,7 +32799,7 @@
       "id": "D24",
       "name": "Urology Outpatients",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -31933,11 +33364,13 @@
       "id": "D29",
       "name": "Paediatric Inpatients",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -31991,54 +33424,60 @@
             "D29-CATERING",
             "D29-CATERING_2"
           ],
+          "dropoff_zone_locations": [
+            "D29-DROP-ZONE"
+          ],
           "locations": [
             "D29-CATERING",
             "D29-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D29-LINEN",
             "D29-LINEN_2"
           ],
+          "dropoff_zone_locations": [
+            "D29-DROP-ZONE"
+          ],
           "locations": [
             "D29-LINEN",
             "D29-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D29-PHARMACY"
           ],
+          "dropoff_zone_locations": [],
           "locations": [
             "D29-PHARMACY"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
             "D29-STORES"
           ],
+          "dropoff_zone_locations": [
+            "D29-DROP-ZONE"
+          ],
           "locations": [
             "D29-STORES"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D29-WASTE"
           ],
+          "dropoff_zone_locations": [],
           "locations": [
             "D29-WASTE"
-          ],
-          "dropoff_zone_locations": []
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -32050,19 +33489,19 @@
         "waste": "-WASTE"
       },
       "x": 39.472,
-      "y": -89.019,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -89.019
     },
     {
       "id": "D30",
       "name": "Maternity Inpatients",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -32116,51 +33555,39 @@
             "D30-CATERING",
             "D30-CATERING_2"
           ],
-          "locations": [
-            "D30-CATERING",
-            "D30-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D29-DROP-ZONE"
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D30-LINEN",
             "D30-LINEN_2"
           ],
-          "locations": [
-            "D30-LINEN",
-            "D30-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D29-DROP-ZONE"
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
-            "D30-PHARMACY"
-          ],
-          "locations": [
             "D30-PHARMACY"
           ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D29-STORES"
+            "D30-STORES"
           ],
-          "locations": [
-            "D29-STORES"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D29-DROP-ZONE"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D29-WASTE"
-          ],
-          "locations": [
             "D29-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -32175,19 +33602,19 @@
         "waste": "-WASTE"
       },
       "x": 90.821,
-      "y": -33.985,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -33.985
     },
     {
       "id": "D31",
       "name": "Adult Inpatients 1",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -32241,51 +33668,39 @@
             "D31-CATERING",
             "D31-CATERING_2"
           ],
-          "locations": [
-            "D31-CATERING",
-            "D31-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D32-DROP-ZONE"
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D31-LINEN",
             "D31-LINEN_2"
           ],
-          "locations": [
-            "D31-LINEN",
-            "D31-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D32-DROP-ZONE"
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
-            "D31-PHARMACY"
-          ],
-          "locations": [
             "D31-PHARMACY"
           ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
             "D31-STORES"
           ],
-          "locations": [
-            "D31-STORES"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D32-DROP-ZONE"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D31-WASTE"
-          ],
-          "locations": [
             "D31-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -32300,19 +33715,19 @@
         "waste": "-WASTE"
       },
       "x": 138.66,
-      "y": -36.765,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -36.765
     },
     {
       "id": "D32",
       "name": "Adult Inpatients 2",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -32366,54 +33781,62 @@
             "D32-CATERING",
             "D32-CATERING_2"
           ],
+          "dropoff_zone_locations": [
+            "D32-DROP-ZONE"
+          ],
           "locations": [
             "D32-CATERING",
             "D32-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D32-LINEN",
             "D32-LINEN_2"
           ],
+          "dropoff_zone_locations": [
+            "D32-DROP-ZONE"
+          ],
           "locations": [
             "D32-LINEN",
             "D32-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D32-PHARMACY"
           ],
+          "dropoff_zone_locations": [],
           "locations": [
             "D32-PHARMACY"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D31-STORES"
+            "D31-STORES",
+            "D32-STORES"
+          ],
+          "dropoff_zone_locations": [
+            "D32-DROP-ZONE"
           ],
           "locations": [
-            "D31-STORES"
-          ],
-          "dropoff_zone_locations": []
+            "D31-STORES",
+            "D32-STORES"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D31-WASTE"
           ],
+          "dropoff_zone_locations": [],
           "locations": [
             "D31-WASTE"
-          ],
-          "dropoff_zone_locations": []
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -32424,20 +33847,20 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 186.955,
-      "y": -88.929,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "x": 186.614,
+      "y": -88.889
     },
     {
       "id": "D33",
       "name": "Adult Inpatients 3",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -32491,20 +33914,12 @@
             "D33-CATERING",
             "D33-CATERING_2"
           ],
-          "locations": [
-            "D33-CATERING",
-            "D33-CATERING_2"
-          ],
           "dropoff_zone_locations": [
             "D33-DROP-ZONE"
           ]
         },
         "linen": {
           "pickup_dropoff_locations": [
-            "D33-LINEN",
-            "D33-LINEN_2"
-          ],
-          "locations": [
             "D33-LINEN",
             "D33-LINEN_2"
           ],
@@ -32516,21 +33931,14 @@
           "pickup_dropoff_locations": [
             "D33-PHARMACY"
           ],
-          "locations": [
-            "D33-PHARMACY"
-          ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D33-STORES"
-          ],
-          "locations": [
             "D33-STORES"
           ],
           "dropoff_zone_locations": [
@@ -32539,9 +33947,6 @@
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D33-WASTE"
-          ],
-          "locations": [
             "D33-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -32556,19 +33961,19 @@
         "waste": "-WASTE"
       },
       "x": 188.242,
-      "y": -137.482,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -137.482
     },
     {
       "id": "D34",
       "name": "Adult Inpatients 4",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -32622,51 +34027,40 @@
             "D34-CATERING",
             "D34-CATERING_2"
           ],
-          "locations": [
-            "D34-CATERING",
-            "D34-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D33-DROP-ZONE"
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D34-LINEN",
             "D34-LINEN_2"
           ],
-          "locations": [
-            "D34-LINEN",
-            "D34-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D33-DROP-ZONE"
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
-            "D34-PHARMACY"
-          ],
-          "locations": [
             "D34-PHARMACY"
           ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D33-STORES"
+            "D33-STORES",
+            "D34-STORES"
           ],
-          "locations": [
-            "D33-STORES"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D33-DROP-ZONE"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D33-WASTE"
-          ],
-          "locations": [
             "D33-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -32681,19 +34075,19 @@
         "waste": "-WASTE"
       },
       "x": 138.52,
-      "y": -182.79,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -182.79
     },
     {
       "id": "D35",
       "name": "Respiratory Inpatients",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -32747,50 +34141,56 @@
             "D35-CATERING",
             "D35-CATERING_2"
           ],
+          "dropoff_zone_locations": [
+            "D35-DROP-ZONE"
+          ],
           "locations": [
             "D35-CATERING",
             "D35-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D35-LINEN",
             "D35-LINEN_2"
           ],
+          "dropoff_zone_locations": [
+            "D35-DROP-ZONE"
+          ],
           "locations": [
             "D35-LINEN",
             "D35-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
             "D35-STORES"
           ],
+          "dropoff_zone_locations": [
+            "D35-DROP-ZONE"
+          ],
           "locations": [
             "D35-STORES"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D35-WASTE"
           ],
+          "dropoff_zone_locations": [],
           "locations": [
             "D35-WASTE"
-          ],
-          "dropoff_zone_locations": []
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -32802,15 +34202,13 @@
         "waste": "-WASTE"
       },
       "x": 39.791,
-      "y": -88.914,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -88.914
     },
     {
       "id": "D36",
       "name": "Cardic Inpatients",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -32870,51 +34268,39 @@
             "D36-CATERING",
             "D36-CATERING_2"
           ],
-          "locations": [
-            "D36-CATERING",
-            "D36-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D35-DROP-ZONE"
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D36-LINEN",
             "D36-LINEN_2"
           ],
-          "locations": [
-            "D36-LINEN",
-            "D36-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D35-DROP-ZONE"
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
-            "D36-PHARMACY"
-          ],
-          "locations": [
             "D36-PHARMACY"
           ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D35-STORES"
+            "D36-STORES"
           ],
-          "locations": [
-            "D35-STORES"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D35-DROP-ZONE"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D35-WASTE"
-          ],
-          "locations": [
             "D35-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -32935,11 +34321,13 @@
       "id": "D37",
       "name": "Adult Inpatients 5",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -32993,51 +34381,39 @@
             "D37-CATERING",
             "D37-CATERING_2"
           ],
-          "locations": [
-            "D37-CATERING",
-            "D37-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D38-DROP-ZONE"
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D37-LINEN",
             "D37-LINEN_2"
           ],
-          "locations": [
-            "D37-LINEN",
-            "D37-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D38-DROP-ZONE"
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
-            "D37-PHARMACY"
-          ],
-          "locations": [
             "D37-PHARMACY"
           ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
             "D37-STORES"
           ],
-          "locations": [
-            "D37-STORES"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D38-DROP-ZONE"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D37-WASTE"
-          ],
-          "locations": [
             "D37-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -33052,19 +34428,19 @@
         "waste": "-WASTE"
       },
       "x": 137.871,
-      "y": -32.326,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -32.326
     },
     {
       "id": "D38",
       "name": "Elective Orthopaedic Inpatients",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -33117,50 +34493,40 @@
           "pickup_dropoff_locations": [
             "D38-CATERING"
           ],
-          "locations": [
-            "D38-CATERING"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D38-DROP-ZONE"
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D38-LINEN",
             "D38-LINEN_2"
           ],
-          "locations": [
-            "D38-LINEN",
-            "D38-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D38-DROP-ZONE"
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
-            "D38-PHARMACY"
-          ],
-          "locations": [
             "D38-PHARMACY"
           ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D37-STORES"
+            "D37-STORES",
+            "D38-STORES"
           ],
-          "locations": [
-            "D37-STORES"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D38-DROP-ZONE"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D37-WASTE"
-          ],
-          "locations": [
             "D37-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -33175,9 +34541,7 @@
         "waste": "-WASTE"
       },
       "x": 186.0,
-      "y": -89.0,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -89.0
     },
     {
       "id": "D39",
@@ -33245,10 +34609,6 @@
           ],
           "dropoff_zone_locations": [
             "D39-DROP-ZONE"
-          ],
-          "locations": [
-            "D39-CATERING",
-            "D39-CATERING_2"
           ]
         },
         "linen": {
@@ -33258,25 +34618,17 @@
           ],
           "dropoff_zone_locations": [
             "D39-DROP-ZONE"
-          ],
-          "locations": [
-            "D39-LINEN",
-            "D39-LINEN_2"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D39-PHARMACY"
           ],
-          "dropoff_zone_locations": [],
-          "locations": [
-            "D39-PHARMACY"
-          ]
+          "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": [],
-          "locations": []
+          "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -33284,19 +34636,13 @@
           ],
           "dropoff_zone_locations": [
             "D39-DROP-ZONE"
-          ],
-          "locations": [
-            "D39-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D39-WASTE"
           ],
-          "dropoff_zone_locations": [],
-          "locations": [
-            "D39-WASTE"
-          ]
+          "dropoff_zone_locations": []
         }
       },
       "task_generation_location_suffixes": {
@@ -33399,7 +34745,7 @@
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D39-STORES"
+            "D40-STORES"
           ],
           "dropoff_zone_locations": [
             "D39-DROP-ZONE"
@@ -33420,18 +34766,20 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 137.795,
-      "y": -186.752
+      "x": 137.772,
+      "y": -186.881
     },
     {
       "id": "D41",
       "name": "Adult Inpatients 8",
       "floor": 5,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -33485,51 +34833,39 @@
             "D41-CATERING",
             "D41-CATERING_2"
           ],
-          "locations": [
-            "D41-CATERING",
-            "D41-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D41-DROP-ZONE"
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D41-LINEN",
             "D41-LINEN_2"
           ],
-          "locations": [
-            "D41-LINEN",
-            "D41-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D41-DROP-ZONE"
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
-            "D41-PHARMACY"
-          ],
-          "locations": [
             "D41-PHARMACY"
           ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
             "D41-STORES"
           ],
-          "locations": [
-            "D41-STORES"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D41-DROP-ZONE"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D41-WASTE"
-          ],
-          "locations": [
             "D41-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -33544,15 +34880,13 @@
         "waste": "-WASTE"
       },
       "x": 39.877,
-      "y": -89.122,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "y": -89.122
     },
     {
       "id": "D42",
       "name": "Stroke Inpatients",
       "floor": 5,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -33610,51 +34944,39 @@
             "D42-CATERING",
             "D42-CATERING_2"
           ],
-          "locations": [
-            "D42-CATERING",
-            "D42-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D41-DROP-ZONE"
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D42-LINEN",
             "D42-LINEN_2"
           ],
-          "locations": [
-            "D42-LINEN",
-            "D42-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D41-DROP-ZONE"
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
-            "D42-PHARMACY"
-          ],
-          "locations": [
             "D42-PHARMACY"
           ],
           "dropoff_zone_locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
           "dropoff_zone_locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
-            "D41-STORES"
+            "D42-STORES"
           ],
-          "locations": [
-            "D41-STORES"
-          ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [
+            "D41-DROP-ZONE"
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
-            "D41-WASTE"
-          ],
-          "locations": [
             "D41-WASTE"
           ],
           "dropoff_zone_locations": []
@@ -33675,11 +34997,13 @@
       "id": "D43",
       "name": "Adult Inpatients 9",
       "floor": 5,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 32,
       "patient_turnover": 0.0,
       "staff_count": 0,
       "hours_operated_per_day": 24.0,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00",
       "days_active": [
         "mon",
         "tue",
@@ -33733,54 +35057,60 @@
             "D43-CATERING",
             "D43-CATERING_2"
           ],
+          "dropoff_zone_locations": [
+            "D43-DROP-ZONE"
+          ],
           "locations": [
             "D43-CATERING",
             "D43-CATERING_2"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "linen": {
           "pickup_dropoff_locations": [
             "D43-LINEN",
             "D43-LINEN_2"
           ],
+          "dropoff_zone_locations": [
+            "D43-DROP-ZONE"
+          ],
           "locations": [
             "D43-LINEN",
             "D43-LINEN_2"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D43-PHARMACY"
           ],
+          "dropoff_zone_locations": [],
           "locations": [
             "D43-PHARMACY"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
             "D43-STORES"
           ],
+          "dropoff_zone_locations": [
+            "D43-DROP-ZONE"
+          ],
           "locations": [
             "D43-STORES"
-          ],
-          "dropoff_zone_locations": []
+          ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D43-WASTE"
           ],
+          "dropoff_zone_locations": [],
           "locations": [
             "D43-WASTE"
-          ],
-          "dropoff_zone_locations": []
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -33791,10 +35121,8 @@
         "stores": "-STORES",
         "waste": "-WASTE"
       },
-      "x": 139,
-      "y": -186,
-      "operating_start_time": "00:00",
-      "operating_end_time": "24:00"
+      "x": 139.0,
+      "y": -186.0
     },
     {
       "id": "D44",
@@ -34438,6 +35766,7 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "release_next_after_return_pickup": false,
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
@@ -34538,6 +35867,7 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": false,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
@@ -36577,6 +37907,7 @@
         "exchange_mode": "top_up_only",
         "return_enabled": false,
         "return_payload": "",
+        "release_next_after_return_pickup": false,
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
@@ -40241,6 +41572,7 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "Linen Trolley",
+        "release_next_after_return_pickup": false,
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
@@ -40340,6 +41672,7 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": false,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
@@ -40607,9 +41940,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -40699,9 +42033,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -40791,9 +42126,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -40883,9 +42219,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -40975,9 +42312,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41067,9 +42405,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41159,9 +42498,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41251,9 +42591,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41343,9 +42684,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41435,9 +42777,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41527,9 +42870,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41619,9 +42963,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41711,9 +43056,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41803,9 +43149,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41895,9 +43242,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -41987,9 +43335,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -42079,9 +43428,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -42171,9 +43521,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -42263,9 +43614,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -42355,9 +43707,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -42447,9 +43800,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -42539,9 +43893,10 @@
             "return_enabled": true,
             "return_payload": "Linen Trolley",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": true,
             "requires_staff": true,
-            "staff_collection_delay_minutes": 0.0,
-            "staff_handling_minutes": 15.0,
+            "staff_collection_delay_minutes": 2.0,
+            "staff_handling_minutes": 3.0,
             "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Linen Team",
@@ -42659,9 +44014,10 @@
               "return_enabled": true,
               "return_payload": "Linen Trolley",
               "return_delay_minutes": 0.0,
+              "release_next_after_return_pickup": true,
               "requires_staff": true,
-              "staff_collection_delay_minutes": 0.0,
-              "staff_handling_minutes": 15.0,
+              "staff_collection_delay_minutes": 2.0,
+              "staff_handling_minutes": 3.0,
               "staff_handoff_only": false,
               "staff_initial_count": 1,
               "staff_resource_name": "Linen Team",
@@ -42939,6 +44295,7 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "release_next_after_return_pickup": false,
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
@@ -45289,6 +46646,7 @@
         "exchange_mode": "top_up_only",
         "return_enabled": false,
         "return_payload": "",
+        "release_next_after_return_pickup": false,
         "requires_staff": true,
         "staff_initial_count": 1,
         "staff_resource_name": "",
@@ -45379,12 +46737,15 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 60.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "allow_temporary_overflow",
+            "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -49666,6 +51027,7 @@
         "exchange_mode": "top_up_only",
         "return_enabled": true,
         "return_payload": "",
+        "release_next_after_return_pickup": false,
         "requires_staff": false,
         "staff_initial_count": 1,
         "staff_resource_name": "",
@@ -49873,5 +51235,6 @@
     "active_scenario": "Normal operation",
     "enhanced_logging": false,
     "scenarios": []
-  }
+  },
+  "floor_pdf_underlays": []
 }
