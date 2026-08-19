@@ -48,6 +48,14 @@ def parse_args():
         default=None,
     )
     parser.add_argument(
+        "--lift-cohorts-csv",
+        help=(
+            "Path for the 5-minute and hourly per-lift cohort CSV. "
+            "Defaults to <output PDF stem>_lift_cohorts.csv."
+        ),
+        default=None,
+    )
+    parser.add_argument(
         "--report-sections",
         help=(
             "Comma-separated report section IDs to include, in output order. "

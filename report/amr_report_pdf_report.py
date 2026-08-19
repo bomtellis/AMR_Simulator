@@ -66,6 +66,7 @@ REPORT_SECTIONS = [
     ("failed_delivery", "Failed delivery analysis"),
     ("lift_usage", "Lift usage and waits"),
     ("lift_usage_profile", "Lift usage profile"),
+    ("lift_trip_cohorts", "Lift trip cohorts"),
     ("lift_wait_profiles", "Lift wait time profiles"),
     ("generated_tasks", "Generated task category summary"),
     ("deferred_releases", "Deferred task releases"),
@@ -95,6 +96,7 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "amr_utilisation": "landscape",
     "lift_usage": "landscape",
     "lift_usage_profile": "a3_landscape",
+    "lift_trip_cohorts": "a3_landscape",
     "lift_wait_profiles": "a3_landscape",
     "payload_summary": "standard",
     "location_space": "a3_landscape",
@@ -448,6 +450,64 @@ def table_from_df(
             style.add("ALIGN", (idx, 1), (idx, -1), "RIGHT")
     tbl.setStyle(style)
     return tbl
+
+
+def lift_trip_cohort_matrix(cohort_df: pd.DataFrame) -> pd.DataFrame:
+    """Pivot a long lift cohort result into a report-friendly trip matrix."""
+    if (
+        cohort_df is None
+        or cohort_df.empty
+        or not {
+            "cohort_date",
+            "cohort_start",
+            "interval",
+            "interval_start_min",
+            "lift_id",
+            "trips",
+        }.issubset(
+            cohort_df.columns
+        )
+    ):
+        return pd.DataFrame()
+
+    rows = cohort_df.copy()
+    rows["interval_start_min"] = pd.to_numeric(
+        rows["interval_start_min"], errors="coerce"
+    )
+    rows["trips"] = pd.to_numeric(rows["trips"], errors="coerce").fillna(0)
+    rows = rows[rows["interval_start_min"].notna()].copy()
+    if rows.empty:
+        return pd.DataFrame()
+
+    lift_ids = sorted(
+        rows["lift_id"].dropna().astype(str).unique().tolist(), key=natural_key
+    )
+    matrix = rows.pivot_table(
+        index=[
+            "cohort_start",
+            "cohort_date",
+            "interval_start_min",
+            "interval",
+        ],
+        columns="lift_id",
+        values="trips",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+    for lift_id in lift_ids:
+        if lift_id not in matrix.columns:
+            matrix[lift_id] = 0
+    matrix = matrix.sort_values("cohort_start")
+    matrix = matrix[["cohort_date", "interval"] + lift_ids]
+    for lift_id in lift_ids:
+        matrix[lift_id] = (
+            pd.to_numeric(matrix[lift_id], errors="coerce").fillna(0).astype(int)
+        )
+    matrix["Total"] = matrix[lift_ids].sum(axis=1).astype(int)
+    matrix = matrix[matrix["Total"] > 0].copy()
+    return matrix.rename(
+        columns={"cohort_date": "Date", "interval": "Time"}
+    ).reset_index(drop=True)
 
 
 CATEGORY_PALETTE = [
@@ -2114,6 +2174,71 @@ def build_report(
         story.append(LiftUsageProfileChart(lift_profile_df, chart_width, chart_height))
 
     # --- END Lift usage profile graph ---
+
+    # --- START Lift trip cohorts ---
+
+    story.section("lift_trip_cohorts")
+    story += [
+        Paragraph("Lift trip cohorts", styles["Section"]),
+        Paragraph(
+            "Lift transfer and reposition trips are grouped into chronological "
+            "date-and-time cohorts. Each cell is the total number of trips made "
+            "by that lift in the cohort. The tables show cohorts containing at "
+            "least one movement; the companion CSV retains the complete timeline, "
+            "including zero-movement cohorts, and also separates transfer and "
+            "reposition trips and includes travel-time totals.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    hourly_matrix = lift_trip_cohort_matrix(
+        results.get("lift_trip_cohorts_hourly", pd.DataFrame())
+    )
+    five_minute_matrix = lift_trip_cohort_matrix(
+        results.get("lift_trip_cohorts_5min", pd.DataFrame())
+    )
+    if hourly_matrix.empty and five_minute_matrix.empty:
+        story.append(
+            Paragraph(
+                "No lift_transfer or lift_reposition segments were available for "
+                "lift trip cohorts.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        if not hourly_matrix.empty:
+            story += [
+                Paragraph("Hourly trips per lift", styles["Heading3"]),
+                table_from_df(
+                    hourly_matrix,
+                    [28 * mm, 24 * mm]
+                    + [20 * mm] * max(0, len(hourly_matrix.columns) - 2),
+                    styles,
+                    right_align=list(range(1, len(hourly_matrix.columns))),
+                ),
+            ]
+        if not five_minute_matrix.empty:
+            if not hourly_matrix.empty:
+                story.append(PageBreak())
+            story += [
+                Paragraph("5-minute trips per lift", styles["Heading3"]),
+                Paragraph(
+                    "The calendar date is retained so the same clock time on "
+                    "different simulation days is never combined.",
+                    styles["BodyText"],
+                ),
+                Spacer(1, 6),
+                table_from_df(
+                    five_minute_matrix,
+                    [28 * mm, 24 * mm]
+                    + [20 * mm] * max(0, len(five_minute_matrix.columns) - 2),
+                    styles,
+                    right_align=list(range(1, len(five_minute_matrix.columns))),
+                ),
+            ]
+
+    # --- END Lift trip cohorts ---
 
     # --- START Lift wait time profiles ---
 

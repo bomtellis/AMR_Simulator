@@ -700,6 +700,7 @@ class LauncherWindow(QMainWindow):
                 "charger_estimate_csv": str(run_dir / "charger_estimate.csv"),
                 "scenario_impact_csv": str(run_dir / "scenario_impact.csv"),
                 "report_pdf": str(run_dir / "simulation_report.pdf"),
+                "lift_cohorts_csv": str(run_dir / "lift_cohorts.csv"),
             },
         }
         write_manifest(run_dir, manifest)
@@ -793,6 +794,9 @@ class LauncherWindow(QMainWindow):
         csv_path = Path(outputs.get("steps_csv", run_dir / "simulation_steps.csv"))
         failed_csv = Path(outputs.get("failed_tasks_csv", run_dir / "failed_tasks.csv"))
         report_pdf = Path(outputs.get("report_pdf", run_dir / "simulation_report.pdf"))
+        lift_cohorts_csv = Path(
+            outputs.get("lift_cohorts_csv", run_dir / "lift_cohorts.csv")
+        )
         config_json = run_dir / "config.json"
         if not csv_path.exists():
             QMessageBox.warning(self, "Missing CSV", f"Simulation CSV not found:\n{csv_path}")
@@ -805,6 +809,8 @@ class LauncherWindow(QMainWindow):
             str(report_pdf),
             "--config-json",
             str(config_json),
+            "--lift-cohorts-csv",
+            str(lift_cohorts_csv),
         ]
         if failed_csv.exists():
             args.extend(["--failed-tasks-csv", str(failed_csv)])

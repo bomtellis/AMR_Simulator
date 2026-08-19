@@ -54,6 +54,12 @@ from PySide6.QtWidgets import (
 )
 
 from dxf_scene import DXFScene
+from dxf_export import (
+    DXF_UNIT_SPECS,
+    all_floor_output_paths,
+    export_all_floors_to_dxf,
+    export_floor_to_dxf,
+)
 from pdf_underlay import (
     MovablePdfUnderlayItem,
     PdfUnderlayDialog,
@@ -484,9 +490,19 @@ class AMRGraphEditor(QMainWindow):
             [
                 button("Open JSON", self.open_json),
                 button("Save JSON", self.save_json),
+                button(
+                    "Export floor DXF",
+                    self.export_current_floor_dxf,
+                    "Export the editable geometry on the current floor in your chosen units. Background DXF/PDF artwork is excluded.",
+                ),
+                button(
+                    "Export all floors DXF",
+                    self.export_all_floors_dxf,
+                    "Export every configured floor to a separate, sequentially numbered DXF file. Background DXF/PDF artwork is excluded.",
+                ),
                 button("Validate", self.validate_json),
             ],
-            columns=3,
+            columns=5,
         )
         add_group(
             home,
@@ -2723,6 +2739,138 @@ class AMRGraphEditor(QMainWindow):
         self.current_json_path = path
         self.set_status(f"Saved {Path(path).name}")
         self.refresh_canvas()
+
+    def _ask_dxf_units(self):
+        units, accepted = QInputDialog.getItem(
+            self,
+            "DXF units",
+            "Choose the units for the exported DXF:",
+            list(DXF_UNIT_SPECS),
+            0,
+            False,
+        )
+        return str(units) if accepted else None
+
+    def export_current_floor_dxf(self):
+        floor = int(self.floor_spin.value())
+        units = self._ask_dxf_units()
+        if units is None:
+            return
+        if self.current_json_path:
+            json_path = Path(self.current_json_path)
+            suggested_path = json_path.with_name(f"{json_path.stem}_floor_{floor}.dxf")
+        else:
+            suggested_path = Path(f"amr_layout_floor_{floor}.dxf")
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            f"Export floor {floor} to DXF",
+            str(suggested_path),
+            "DXF files (*.dxf)",
+        )
+        if not path:
+            return
+        if not Path(path).suffix:
+            path = f"{path}.dxf"
+
+        try:
+            counts = export_floor_to_dxf(
+                self.store.data,
+                floor,
+                path,
+                units=units,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "DXF export failed",
+                f"Could not export floor {floor} to DXF.\n\n{exc}",
+            )
+            self.set_status(f"DXF export failed for floor {floor}")
+            return
+
+        self.set_status(
+            f"Exported floor {floor} to {Path(path).name} "
+            f"({counts['total']} editable item(s), backgrounds excluded)"
+        )
+        QMessageBox.information(
+            self,
+            "DXF export complete",
+            f"Exported floor {floor} to:\n{path}\n\n"
+            "The mapped DXF/PDF background was excluded. Editor geometry uses "
+            f"the same world coordinates, converted to {units.lower()}.",
+        )
+
+    def export_all_floors_dxf(self):
+        units = self._ask_dxf_units()
+        if units is None:
+            return
+
+        if self.current_json_path:
+            json_path = Path(self.current_json_path)
+            suggested_path = json_path.with_name(f"{json_path.stem}_floors.dxf")
+        else:
+            suggested_path = Path("amr_layout_floors.dxf")
+        base_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export all floors to separate DXF files",
+            str(suggested_path),
+            "DXF files (*.dxf)",
+        )
+        if not base_path:
+            return
+
+        try:
+            planned_outputs = all_floor_output_paths(self.store.data, base_path)
+        except Exception as exc:
+            QMessageBox.warning(self, "Nothing to export", str(exc))
+            return
+        existing_outputs = [
+            output_path
+            for _sequence, _floor, output_path in planned_outputs
+            if output_path.exists()
+        ]
+        if existing_outputs:
+            answer = QMessageBox.question(
+                self,
+                "Replace existing DXF files?",
+                f"{len(existing_outputs)} sequential export file(s) already exist "
+                "and will be replaced. Continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+
+        try:
+            results = export_all_floors_to_dxf(
+                self.store.data,
+                base_path,
+                units=units,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "DXF export failed",
+                f"Could not export all floors to DXF.\n\n{exc}",
+            )
+            self.set_status("All-floor DXF export failed")
+            return
+
+        first_path = results[0]["path"]
+        last_path = results[-1]["path"]
+        self.set_status(
+            f"Exported {len(results)} floors as sequential DXF files "
+            f"({units.lower()}, backgrounds excluded)"
+        )
+        QMessageBox.information(
+            self,
+            "DXF export complete",
+            f"Exported {len(results)} floor(s) as separate DXF files.\n\n"
+            f"First: {first_path.name}\nLast: {last_path.name}\n"
+            f"Folder: {first_path.parent}\nUnits: {units}\n\n"
+            "Mapped DXF/PDF backgrounds were excluded.",
+        )
 
     def manage_simulation_settings(self):
         dialog = SimulationSettingsDialog(

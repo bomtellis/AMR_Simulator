@@ -110,6 +110,46 @@ def export_failed_tasks_csv(source_csv: Path, output_csv: Path) -> None:
     out_df.to_csv(output_csv, index=False)
 
 
+def export_lift_cohorts_csv(results: dict, output_csv: Path) -> None:
+    """Write 5-minute and hourly per-lift cohorts to one analysis-ready CSV."""
+    columns = [
+        "cohort",
+        "cohort_date",
+        "cohort_start",
+        "cohort_end",
+        "interval",
+        "interval_end",
+        "interval_start_min",
+        "interval_minutes",
+        "lift_id",
+        "transfer_trips",
+        "reposition_trips",
+        "trips",
+        "travel_time_s",
+        "avg_trip_s",
+    ]
+    frames = []
+    for cohort, key in (
+        ("5-minute", "lift_trip_cohorts_5min"),
+        ("hourly", "lift_trip_cohorts_hourly"),
+    ):
+        frame = results.get(key, pd.DataFrame()).copy()
+        if frame.empty:
+            continue
+        frame.insert(0, "cohort", cohort)
+        frames.append(frame)
+
+    output = (
+        pd.concat(frames, ignore_index=True)
+        if frames
+        else pd.DataFrame(columns=columns)
+    )
+    output = output.reindex(columns=columns)
+    output_csv = Path(output_csv)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    output.to_csv(output_csv, index=False)
+
+
 def print_progress(current: int, total: int, message: str = "") -> None:
     total = max(total, 1)
     current = max(0, min(current, total))
@@ -232,6 +272,7 @@ def generate_report_from_paths(
     heatmap_workers: int = None,
     include_drawings: bool = True,
     failed_tasks_csv: Path = None,
+    lift_cohorts_csv: Path = None,
     report_sections=None,
     progress_callback=None,
 ) -> None:
@@ -291,6 +332,10 @@ def generate_report_from_paths(
     if failed_tasks_csv:
         export_failed_tasks_csv(csv_path, Path(failed_tasks_csv))
         emit_progress(30, 100, f"Failed-task CSV written to {failed_tasks_csv}")
+
+    if lift_cohorts_csv:
+        export_lift_cohorts_csv(results, Path(lift_cohorts_csv))
+        emit_progress(32, 100, f"Lift cohort CSV written to {lift_cohorts_csv}")
 
     emit_progress(35, 100, "Building PDF report")
 
@@ -359,6 +404,15 @@ def launch_report_generator_dialog(args=None) -> None:
             self.failed_csv_edit = QLineEdit(
                 str(getattr(seed_args, "failed_tasks_csv", "") or "")
             )
+            lift_cohorts_seed = str(
+                getattr(seed_args, "lift_cohorts_csv", "") or ""
+            )
+            if not lift_cohorts_seed and output_seed:
+                output_path = Path(output_seed)
+                lift_cohorts_seed = str(
+                    output_path.with_name(output_path.stem + "_lift_cohorts.csv")
+                )
+            self.lift_cohorts_csv_edit = QLineEdit(lift_cohorts_seed)
 
             self._add_file_row(
                 form,
@@ -389,6 +443,14 @@ def launch_report_generator_dialog(args=None) -> None:
                 "Failed-task CSV",
                 self.failed_csv_edit,
                 "Failed-task CSV",
+                "CSV files (*.csv);;All files (*)",
+                save=True,
+            )
+            self._add_file_row(
+                form,
+                "Lift cohort CSV",
+                self.lift_cohorts_csv_edit,
+                "Lift cohort CSV",
                 "CSV files (*.csv);;All files (*)",
                 save=True,
             )
@@ -471,6 +533,9 @@ def launch_report_generator_dialog(args=None) -> None:
             layout.addLayout(actions)
 
             self.csv_edit.textChanged.connect(self._maybe_default_output_path)
+            self.output_edit.textChanged.connect(
+                self._maybe_default_lift_cohorts_path
+            )
 
         def _add_file_row(self, form, label, line_edit, title, filters, save=False):
             row = QHBoxLayout()
@@ -500,6 +565,17 @@ def launch_report_generator_dialog(args=None) -> None:
                 return
             csv_path = Path(csv_text)
             self.output_edit.setText(str(csv_path.with_name(csv_path.stem + "_report.pdf")))
+
+        def _maybe_default_lift_cohorts_path(self):
+            if self.lift_cohorts_csv_edit.text().strip():
+                return
+            output_text = self.output_edit.text().strip()
+            if not output_text:
+                return
+            output_path = Path(output_text)
+            self.lift_cohorts_csv_edit.setText(
+                str(output_path.with_name(output_path.stem + "_lift_cohorts.csv"))
+            )
 
         def _move_section(self, delta: int):
             row = self.section_list.currentRow()
@@ -536,6 +612,7 @@ def launch_report_generator_dialog(args=None) -> None:
             output_path = Path(output_text) if output_text else None
             json_text = self.json_edit.text().strip()
             failed_text = self.failed_csv_edit.text().strip()
+            lift_cohorts_text = self.lift_cohorts_csv_edit.text().strip()
 
             if not csv_path.exists():
                 QMessageBox.warning(self, "Missing CSV", "Select an existing simulation CSV.")
@@ -574,6 +651,9 @@ def launch_report_generator_dialog(args=None) -> None:
                     ),
                     include_drawings=self.include_drawings_check.isChecked(),
                     failed_tasks_csv=Path(failed_text) if failed_text else None,
+                    lift_cohorts_csv=(
+                        Path(lift_cohorts_text) if lift_cohorts_text else None
+                    ),
                     report_sections=self.selected_sections(),
                     progress_callback=on_progress,
                 )
@@ -623,6 +703,12 @@ def main() -> None:
     if args.select_report_sections:
         report_sections = select_report_sections_dialog(report_sections)
 
+    lift_cohorts_csv = (
+        Path(args.lift_cohorts_csv)
+        if args.lift_cohorts_csv
+        else out_path.with_name(out_path.stem + "_lift_cohorts.csv")
+    )
+
     generate_report_from_paths(
         csv_path=csv_path,
         out_path=out_path,
@@ -632,6 +718,7 @@ def main() -> None:
         heatmap_workers=args.heatmap_workers,
         include_drawings=not args.omit_drawings,
         failed_tasks_csv=Path(args.failed_tasks_csv) if args.failed_tasks_csv else None,
+        lift_cohorts_csv=lift_cohorts_csv,
         report_sections=report_sections,
     )
 

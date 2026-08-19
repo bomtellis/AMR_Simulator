@@ -1083,6 +1083,42 @@ def build_lift_usage_profile(
     pattern rather than one very long date-time axis.
     """
     columns = ["interval", "interval_start_min", "lift_id", "trips"]
+    cohort = build_lift_trip_cohorts(
+        lift_rows, ctx, interval_minutes, include_date=False
+    )
+    if cohort.empty:
+        return pd.DataFrame(columns=columns)
+    return cohort[columns].copy()
+
+
+def build_lift_trip_cohorts(
+    lift_rows: pd.DataFrame,
+    ctx: Context,
+    interval_minutes: int,
+    include_date: bool = True,
+) -> pd.DataFrame:
+    """Return per-lift trip and travel totals in fixed cohorts.
+
+    Dated cohorts keep each simulation date separate. The existing 30-minute
+    time-of-day profile opts out explicitly so its historic daily-profile
+    behaviour remains unchanged. Every date/bucket/lift combination is retained,
+    including zero-trip buckets, so CSV timelines and PDF pivots stay complete.
+    """
+    columns = [
+        "cohort_date",
+        "cohort_start",
+        "cohort_end",
+        "interval",
+        "interval_end",
+        "interval_start_min",
+        "interval_minutes",
+        "lift_id",
+        "transfer_trips",
+        "reposition_trips",
+        "trips",
+        "travel_time_s",
+        "avg_trip_s",
+    ]
     if (
         lift_rows is None
         or lift_rows.empty
@@ -1106,34 +1142,74 @@ def build_lift_usage_profile(
     if ctx.has_datetime:
         event_time = pd.to_datetime(rows[ctx.time_col], errors="coerce")
         minute_of_day = event_time.dt.hour * 60 + event_time.dt.minute
+        cohort_day = event_time.dt.normalize()
     else:
         event_seconds = pd.to_numeric(rows[ctx.time_col], errors="coerce")
         minute_of_day = ((event_seconds % 86400) // 60).astype("float")
+        cohort_day = (event_seconds // 86400).astype("float")
 
     rows = rows.assign(
         _profile_lift_id=rows["_lift_id"].map(safe_text),
         _profile_minute=minute_of_day,
+        _profile_day=cohort_day,
     )
-    rows = rows[rows["_profile_minute"].notna()].copy()
+    rows = rows[
+        rows["_profile_minute"].notna() & rows["_profile_day"].notna()
+    ].copy()
     if rows.empty:
         return pd.DataFrame(columns=columns)
+
+    if include_date:
+        if ctx.has_datetime:
+            day_keys = pd.date_range(
+                rows["_profile_day"].min(),
+                rows["_profile_day"].max(),
+                freq="D",
+            ).tolist()
+        else:
+            first_day = int(rows["_profile_day"].min())
+            final_day = int(rows["_profile_day"].max())
+            day_keys = list(range(first_day, final_day + 1))
+            rows["_profile_day"] = rows["_profile_day"].astype(int)
+    else:
+        rows["_profile_day"] = 0
+        day_keys = [0]
 
     rows["_profile_bucket"] = (
         rows["_profile_minute"].astype(float) // interval_minutes
     ).astype(int).clip(lower=0, upper=bucket_count - 1)
+    segment_text = rows.get(
+        "_segment_text", pd.Series("", index=rows.index, dtype=str)
+    ).fillna("").astype(str).str.strip().str.lower()
+    rows["_transfer_trip"] = segment_text.eq("lift_transfer").astype(int)
+    rows["_reposition_trip"] = segment_text.eq("lift_reposition").astype(int)
+    rows["_profile_travel_time_s"] = pd.to_numeric(
+        rows.get("lift_time_s", pd.Series(0.0, index=rows.index)),
+        errors="coerce",
+    ).fillna(0.0).clip(lower=0.0)
 
     counts = (
-        rows.groupby(["_profile_bucket", "_profile_lift_id"], dropna=False)
-        .size()
-        .rename("trips")
+        rows.groupby(
+            ["_profile_day", "_profile_bucket", "_profile_lift_id"],
+            dropna=False,
+        )
+        .agg(
+            transfer_trips=("_transfer_trip", "sum"),
+            reposition_trips=("_reposition_trip", "sum"),
+            trips=("_profile_lift_id", "size"),
+            travel_time_s=("_profile_travel_time_s", "sum"),
+        )
         .reset_index()
     )
 
     index = pd.MultiIndex.from_product(
-        [buckets, lift_ids], names=["_profile_bucket", "_profile_lift_id"]
+        [day_keys, buckets, lift_ids],
+        names=["_profile_day", "_profile_bucket", "_profile_lift_id"],
     )
     counts = (
-        counts.set_index(["_profile_bucket", "_profile_lift_id"])
+        counts.set_index(
+            ["_profile_day", "_profile_bucket", "_profile_lift_id"]
+        )
         .reindex(index, fill_value=0)
         .reset_index()
     )
@@ -1145,9 +1221,58 @@ def build_lift_usage_profile(
 
     counts["interval_start_min"] = counts["_profile_bucket"] * interval_minutes
     counts["interval"] = counts["interval_start_min"].map(_label)
+    counts["interval_end"] = (
+        counts["interval_start_min"] + interval_minutes
+    ).map(_label)
+    if include_date and ctx.has_datetime:
+        counts["cohort_start"] = pd.to_datetime(counts["_profile_day"]) + pd.to_timedelta(
+            counts["interval_start_min"], unit="m"
+        )
+        counts["cohort_end"] = counts["cohort_start"] + pd.to_timedelta(
+            interval_minutes, unit="m"
+        )
+        counts["cohort_date"] = counts["cohort_start"].dt.strftime("%Y-%m-%d")
+        counts["interval"] = counts["cohort_start"].dt.strftime("%H:%M")
+        counts["interval_end"] = counts["cohort_end"].dt.strftime("%H:%M")
+    elif include_date:
+        counts["cohort_date"] = counts["_profile_day"].map(
+            lambda day: f"Day {int(day) + 1}"
+        )
+        counts["cohort_start"] = counts.apply(
+            lambda row: f"{row['cohort_date']} {row['interval']}", axis=1
+        )
+        counts["cohort_end"] = counts.apply(
+            lambda row: (
+                f"Day {int(row['_profile_day']) + 2} 00:00"
+                if int(row["interval_start_min"]) + interval_minutes >= 24 * 60
+                else f"{row['cohort_date']} {row['interval_end']}"
+            ),
+            axis=1,
+        )
+    else:
+        counts["cohort_date"] = ""
+        counts["cohort_start"] = counts["interval"]
+        counts["cohort_end"] = counts["interval_end"]
+    counts["interval_minutes"] = interval_minutes
     counts["lift_id"] = counts["_profile_lift_id"].map(safe_text)
-    counts["trips"] = pd.to_numeric(counts["trips"], errors="coerce").fillna(0).astype(int)
-    return counts[columns].sort_values(["interval_start_min", "lift_id"], key=lambda col: col.map(natural_key) if col.name == "lift_id" else col).reset_index(drop=True)
+    for column in ("transfer_trips", "reposition_trips", "trips"):
+        counts[column] = (
+            pd.to_numeric(counts[column], errors="coerce").fillna(0).astype(int)
+        )
+    counts["travel_time_s"] = pd.to_numeric(
+        counts["travel_time_s"], errors="coerce"
+    ).fillna(0.0)
+    counts["avg_trip_s"] = (
+        counts["travel_time_s"]
+        .div(counts["trips"].where(counts["trips"].gt(0)))
+        .fillna(0.0)
+    )
+    return counts[columns].sort_values(
+        ["cohort_start", "lift_id"],
+        key=lambda col: col.map(natural_key)
+        if col.name in {"cohort_start", "lift_id"}
+        else col,
+    ).reset_index(drop=True)
 
 
 def build_lift_wait_profile(
@@ -5306,6 +5431,12 @@ def analyse(
         lift_rows["lift_time_s"].notna() & (lift_rows["lift_time_s"] >= 0)
     ].copy()
     lift_usage_profile = build_lift_usage_profile(lift_rows, ctx, interval_minutes=30)
+    lift_trip_cohorts_5min = build_lift_trip_cohorts(
+        lift_rows, ctx, interval_minutes=5
+    )
+    lift_trip_cohorts_hourly = build_lift_trip_cohorts(
+        lift_rows, ctx, interval_minutes=60
+    )
     lift_busy_intervals_by_lift, lift_busy_summary = build_lift_busy_intervals(
         lift_rows, ctx
     )
@@ -5949,6 +6080,8 @@ def analyse(
         "utilisation_summary": amr_utilisation,
         "lift_summary": lift_summary,
         "lift_usage_profile": lift_usage_profile,
+        "lift_trip_cohorts_5min": lift_trip_cohorts_5min,
+        "lift_trip_cohorts_hourly": lift_trip_cohorts_hourly,
         "lift_wait_summary": lift_wait_summary,
         "lift_wait_profile": lift_wait_profile,
         "tasks": tasks.sort_values(["amr", "start", "task_id"]).reset_index(drop=True),
