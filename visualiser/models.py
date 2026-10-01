@@ -506,6 +506,7 @@ DEFAULT_JSON = {
         "end_datetime": "2026-01-06T06:00:00",
         "tick_rate": 1000,
         "generated_task_release_stagger_sec": 0.25,
+        "max_task_deferral_minutes": 0.0,
         "precompute_static_routes": True,
         "route_precompute_max_pairs": 100000,
         "max_multi_stop_candidate_tasks": 8,
@@ -618,6 +619,10 @@ class JsonStore:
         simulation.setdefault(
             "enable_opportunity_charging",
             default_simulation.get("enable_opportunity_charging", False),
+        )
+        simulation.setdefault(
+            "max_task_deferral_minutes",
+            default_simulation.get("max_task_deferral_minutes", 0.0),
         )
         simulation.setdefault(
             "opportunity_charging_idle_period_sec",

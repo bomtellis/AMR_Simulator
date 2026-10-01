@@ -65,6 +65,7 @@ REPORT_SECTIONS = [
     ("task_sla", "Task SLA performance"),
     ("failed_delivery", "Failed delivery analysis"),
     ("lift_usage", "Lift usage and waits"),
+    ("journey_flows", "Journey origins, destinations and returns"),
     ("lift_usage_profile", "Lift usage profile"),
     ("lift_trip_cohorts", "Lift trip cohorts"),
     ("lift_wait_profiles", "Lift wait time profiles"),
@@ -95,6 +96,7 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "amr_fleet": "landscape",
     "amr_utilisation": "landscape",
     "lift_usage": "landscape",
+    "journey_flows": "a3_landscape",
     "lift_usage_profile": "a3_landscape",
     "lift_trip_cohorts": "a3_landscape",
     "lift_wait_profiles": "a3_landscape",
@@ -2174,6 +2176,41 @@ def build_report(
         story.append(LiftUsageProfileChart(lift_profile_df, chart_width, chart_height))
 
     # --- END Lift usage profile graph ---
+
+    story.section("journey_flows")
+    observation = results.get("journey_observation", {})
+    story += [
+        Paragraph("Journey origins, destinations and returns", styles["Section"]),
+        Paragraph(
+            f"Source: {escape(csv_path.name)}. Observation: "
+            f"{escape(str(observation.get('start', 'Unknown')))} to "
+            f"{escape(str(observation.get('finish', 'Unknown')))}.", styles["BodyText"]),
+        Paragraph(
+            "Each journey is a delivery, collection or recorded empty AMR return task. Origins and destinations use "
+            "the recorded request endpoints; no L00 start or finish is assumed. Numeric "
+            "floor 0 is shown as L00. Return rows use their own recorded pickup and drop-off, "
+            "which may include shared drop-off zones. Department lists describe the endpoint; "
+            "the requesting department is recorded separately in the journey CSV.", styles["BodyText"]),
+        Paragraph(
+            "Counts cover the source simulation and separate completed, failed and incomplete "
+            "requests. Task counts are not lift trip counts: multi-stop tasks may share an AMR. "
+            "The companion _journeys.csv includes locations, levels, departments, payloads, "
+            "assignment/completion times and parent task IDs for recorded returns. "
+            "_journey_flows.csv contains this summary. _lift_movements.csv records actual "
+            "lift transfers and empty lift repositioning with times, levels and task IDs. "
+            "Empty AMR travel can also appear in lift transfers. Unknown metadata remains "
+            "explicit; supply the simulation's matching JSON configuration for departments.", styles["BodyText"]),
+        Spacer(1, 8),
+    ]
+    flows = results.get("journey_flow_summary", pd.DataFrame()).copy()
+    if flows.empty:
+        story.append(Paragraph("No task request endpoints were available in the event log.", styles["BodyText"]))
+    else:
+        story.append(table_from_df(flows.rename(columns={
+            "journey_type": "Journey type", "origin_level": "From level",
+            "origin_department": "From department", "destination_level": "To level",
+            "destination_department": "To department", "outcome": "Outcome", "journeys": "Journeys",
+        }), [34*mm, 22*mm, 120*mm, 22*mm, 120*mm, 32*mm, 25*mm], styles, right_align=[6]))
 
     # --- START Lift trip cohorts ---
 

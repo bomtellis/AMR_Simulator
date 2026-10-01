@@ -4,6 +4,7 @@ import math
 from typing import Any, List, Optional
 
 from advanced_dialogs import MultiSelectPicker
+from inventory_spaces_manager import LocationSpacesManagerDialog
 
 from PySide6.QtCore import Qt, QPointF, QRectF, QSize, QTime, QDateTime
 from PySide6.QtGui import QColor, QBrush, QPen, QPolygonF, QPainter, QPainterPath, QDoubleValidator, QIntValidator
@@ -2434,6 +2435,10 @@ class TaskGenerationSettingsDialog(QDialog):
         layout.addWidget(help_label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        self.export_configuration_button = buttons.addButton(
+            "Export configuration...", QDialogButtonBox.ActionRole
+        )
+        self.export_configuration_button.clicked.connect(self.export_configuration)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
@@ -4441,18 +4446,59 @@ class TaskGenerationSettingsDialog(QDialog):
         if list_item is not None and not department_id:
             list_item.setText(display_name)
 
+    def _collect_configuration(self):
+        self._store_current_category()
+        self.config["enabled"] = self.global_enabled.isChecked()
+        self.config["staff_config"] = self._normalise_global_staff_config(
+            self.staff_config
+        )
+        waste = self.config["categories"].get("waste", {})
+        self.config["department_waste"] = {
+            "enabled": bool(waste.get("enabled", True)),
+            "priority": int(float(waste.get("priority", 60) or 0)),
+        }
+        return self.config
+
+    def export_configuration(self):
+        from pathlib import Path
+        from task_generation_export import (
+            configuration_rows, write_configuration_csv, write_configuration_pdf,
+        )
+
+        path, selected_filter = QFileDialog.getSaveFileName(
+            self, "Export task generation configuration", "task_generation_configuration",
+            "CSV files (*.csv);;PDF documents (*.pdf)",
+        )
+        if not path:
+            return
+        suffix = ".pdf" if selected_filter == "PDF documents (*.pdf)" else ".csv"
+        target = Path(path)
+        if target.suffix.lower() != suffix:
+            target = target.with_suffix(suffix)
+            if target.exists() and QMessageBox.question(
+                self, "Replace existing file?", f"{target} already exists. Replace it?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            ) != QMessageBox.Yes:
+                return
+        try:
+            rows = configuration_rows(self._collect_configuration(), self.departments)
+            # Render first so a PDF layout error cannot truncate an existing file.
+            if suffix == ".pdf":
+                import tempfile
+                with tempfile.TemporaryDirectory() as directory:
+                    temporary = Path(directory) / "configuration.pdf"
+                    write_configuration_pdf(temporary, rows)
+                    target.write_bytes(temporary.read_bytes())
+            else:
+                write_configuration_csv(target, rows)
+        except Exception as exc:
+            QMessageBox.critical(self, "Configuration export failed", str(exc))
+            return
+        QMessageBox.information(self, "Configuration exported", f"Configuration exported to:\n{target}")
+
     def accept(self):
         try:
-            self._store_current_category()
-            self.config["enabled"] = self.global_enabled.isChecked()
-            self.config["staff_config"] = self._normalise_global_staff_config(
-                self.staff_config
-            )
-            waste = self.config["categories"].get("waste", {})
-            self.config["department_waste"] = {
-                "enabled": bool(waste.get("enabled", True)),
-                "priority": int(float(waste.get("priority", 60) or 0)),
-            }
+            self._collect_configuration()
             self.on_save(self.config)
             super().accept()
         except Exception as exc:
@@ -5459,6 +5505,13 @@ class AMREditorDialog(QDialog):
         physical_form.addRow("Overall length", self.amr_length_edit)
         physical_form.addRow("Overall width", self.amr_width_edit)
         physical_form.addRow("Overall height", self.amr_height_edit)
+        self.amr_weight_edit = _double_input(
+            self.seed.get("weight_kg", self.seed.get("amr_weight_kg", self.seed.get("mass_kg"))) or 0.0,
+            minimum=0.0, maximum=1_000_000.0, decimals=3, suffix=" kg", step=1.0,
+            tooltip="Unloaded AMR self-weight for lift reports, excluding payload. Leave unspecified if unknown.",
+        )
+        self.amr_weight_edit.setSpecialValueText("Unspecified")
+        physical_form.addRow("Unloaded weight", self.amr_weight_edit)
         physical_form.addRow("Normal travel speed", self.speed_edit)
         physical_form.addRow("Travel motor power", self.motor_power_edit)
         general_layout.addWidget(physical_box)
@@ -5702,6 +5755,7 @@ class AMREditorDialog(QDialog):
                 "length_m": float(self.amr_length_edit.value()),
                 "width_m": float(self.amr_width_edit.value()),
                 "height_m": float(self.amr_height_edit.value()),
+                "weight_kg": float(self.amr_weight_edit.value()) or None,
                 "speed_m_per_sec": float(self.speed_edit.value()),
                 "motor_power_w": float(self.motor_power_edit.value()),
                 "battery_capacity_kwh": float(self.battery_capacity_edit.value()),
@@ -8588,6 +8642,19 @@ class SimulationSettingsDialog(QDialog):
         period_form.addRow("Ends", self.end_datetime_edit)
         period_form.addRow("Simulation rate", self.tick_rate_spin)
         period_form.addRow("Same-time task release spacing", self.generated_stagger_spin)
+        self.max_task_deferral_minutes_spin = QDoubleSpinBox()
+        self.max_task_deferral_minutes_spin.setRange(0, 525600)
+        self.max_task_deferral_minutes_spin.setDecimals(2)
+        self.max_task_deferral_minutes_spin.setSuffix(" min")
+        self.max_task_deferral_minutes_spin.setSpecialValueText("Unlimited")
+        self.max_task_deferral_minutes_spin.setValue(float(simulation.get("max_task_deferral_minutes", 0.0) or 0.0))
+        self.max_task_deferral_minutes_spin.setToolTip(
+            "Fail a service task if it has not been assigned to an AMR within this time "
+            "of its scheduled release. Includes waiting for a preceding return pickup "
+            "and waiting for assignment; release from deferral does not restart the timer. "
+            "Assigned journeys continue. Zero leaves the wait unlimited."
+        )
+        period_form.addRow("Maximum task deferral", self.max_task_deferral_minutes_spin)
         period_layout.addWidget(period_box)
         period_layout.addWidget(
             _dialog_intro(
@@ -8772,6 +8839,7 @@ class SimulationSettingsDialog(QDialog):
         result.setdefault("end_datetime", "2026-01-06T06:00:00")
         result.setdefault("tick_rate", 1000)
         result.setdefault("generated_task_release_stagger_sec", 0.25)
+        result.setdefault("max_task_deferral_minutes", 0.0)
         result.setdefault("precompute_static_routes", True)
         result.setdefault("route_precompute_max_pairs", 100000)
         result.setdefault("max_multi_stop_candidate_tasks", 8)
@@ -8804,6 +8872,7 @@ class SimulationSettingsDialog(QDialog):
                 else "",
                 "tick_rate": float(self.tick_rate_spin.value()),
                 "generated_task_release_stagger_sec": float(self.generated_stagger_spin.value()),
+                "max_task_deferral_minutes": float(self.max_task_deferral_minutes_spin.value()),
                 "precompute_static_routes": self.precompute_routes_check.isChecked(),
                 "route_precompute_max_pairs": int(self.route_precompute_max_pairs_spin.value()),
                 "max_multi_stop_candidate_tasks": int(self.max_multi_stop_candidate_tasks_spin.value()),
@@ -13653,212 +13722,6 @@ class ArrayInventorySpacesDialog(QDialog):
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid array settings", str(exc))
-
-
-class LocationSpacesManagerDialog(QDialog):
-    """Central entry point for inventory-space management across all locations."""
-
-    columns = [
-        ("name", "Location / drop-off zone", 230),
-        ("floor", "Floor", 65),
-        ("role", "Role", 110),
-        ("total", "Spaces", 70),
-        ("payload", "Payload", 75),
-        ("flexible", "Flexible", 75),
-        ("amr", "AMR", 65),
-        ("chargers", "Chargers", 75),
-        ("heights", "Max height(s) m", 145),
-    ]
-
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setWindowTitle("Locations & Inventory Spaces")
-        self.resize(1050, 600)
-        self.editor = parent
-        self.store = parent.store
-        self._rows = []
-
-        layout = QVBoxLayout(self)
-
-        self.summary_label = QLabel()
-        self.summary_label.setWordWrap(True)
-        layout.addWidget(self.summary_label)
-
-        hint = QLabel(
-            "Double-click a location, or select it and choose Edit spaces, to "
-            "manage its payload and AMR spaces. The space editor supports maximum "
-            "height, flexible capacity and charger settings."
-        )
-        hint.setWordWrap(True)
-        layout.addWidget(hint)
-
-        self.table = QTableWidget(0, len(self.columns))
-        self.table.setHorizontalHeaderLabels(
-            [heading for _key, heading, _width in self.columns]
-        )
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSortingEnabled(True)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        for column, (_key, _heading, width) in enumerate(self.columns):
-            self.table.setColumnWidth(column, width)
-        self.table.doubleClicked.connect(self.edit_selected_location)
-        layout.addWidget(self.table, 1)
-
-        button_row = QHBoxLayout()
-        edit_btn = QPushButton("Edit spaces")
-        refresh_btn = QPushButton("Refresh")
-        close_btn = QPushButton("Close")
-        edit_btn.clicked.connect(self.edit_selected_location)
-        refresh_btn.clicked.connect(self.refresh_table)
-        close_btn.clicked.connect(self.accept)
-        button_row.addWidget(edit_btn)
-        button_row.addWidget(refresh_btn)
-        button_row.addStretch(1)
-        button_row.addWidget(close_btn)
-        layout.addLayout(button_row)
-
-        self.refresh_table()
-        _polish_dialog(self)
-
-    @staticmethod
-    def _space_is_amr_space(space):
-        if not isinstance(space, dict):
-            return False
-        if bool(space.get("stores_amr", False)):
-            return True
-        if str(space.get("space_type", "") or "").strip().lower() == "amr":
-            return True
-        if str(space.get("amr_type", "") or "").strip():
-            return True
-        return any(
-            isinstance(slot, dict)
-            and (
-                str(slot.get("slot_type", "") or "").strip().lower() == "amr"
-                or bool(str(slot.get("amr_type", "") or "").strip())
-            )
-            for slot in (space.get("payload_slots", []) or [])
-        )
-
-    @staticmethod
-    def _height_summary(spaces):
-        heights = set()
-        for space in spaces:
-            try:
-                height = float(space.get("height_m", space.get("height", 0.0)) or 0.0)
-            except (TypeError, ValueError):
-                continue
-            if height <= 0.0 or height >= 999998.0:
-                heights.add("Unlimited")
-            else:
-                heights.add(f"{height:g}")
-        if not heights:
-            return "-"
-        values = sorted(heights, key=lambda value: (value == "Unlimited", value))
-        if len(values) <= 3:
-            return ", ".join(values)
-        return f"{values[0]} – {values[-1]} ({len(values)} values)"
-
-    def _location_rows(self):
-        dropoff_zones = set(
-            collect_department_dropoff_zone_names(
-                self.store.data.get("departments", [])
-            )
-        )
-        rows = []
-        for location in self.store.data.get("locations", []) or []:
-            if not isinstance(location, dict):
-                continue
-            name = str(location.get("name", "") or "").strip()
-            if not name:
-                continue
-            spaces = [
-                space
-                for space in (location.get("inventory_spaces", []) or [])
-                if isinstance(space, dict)
-            ]
-            amr_spaces = [
-                space for space in spaces if self._space_is_amr_space(space)
-            ]
-            payload_spaces = [
-                space for space in spaces if not self._space_is_amr_space(space)
-            ]
-            rows.append(
-                {
-                    "name": name,
-                    "floor": int(location.get("floor", 0) or 0),
-                    "role": "Drop-off zone" if name in dropoff_zones else "Location",
-                    "total": len(spaces),
-                    "payload": len(payload_spaces),
-                    "flexible": sum(
-                        1 for space in payload_spaces if bool(space.get("flexible", False))
-                    ),
-                    "amr": len(amr_spaces),
-                    "chargers": sum(
-                        1 for space in amr_spaces if bool(space.get("has_charger", False))
-                    ),
-                    "heights": self._height_summary(spaces),
-                }
-            )
-        return sorted(rows, key=lambda row: (row["floor"], row["name"].lower()))
-
-    def refresh_table(self):
-        selected_name = self.selected_location_name()
-        self._rows = self._location_rows()
-        self.table.setSortingEnabled(False)
-        self.table.setRowCount(0)
-        for row_data in self._rows:
-            row = self.table.rowCount()
-            self.table.insertRow(row)
-            for column, (key, _heading, _width) in enumerate(self.columns):
-                item = QTableWidgetItem(str(row_data.get(key, "")))
-                item.setData(Qt.UserRole, row_data["name"])
-                if key in {"floor", "total", "payload", "flexible", "amr", "chargers"}:
-                    item.setData(Qt.DisplayRole, int(row_data.get(key, 0) or 0))
-                    item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row, column, item)
-        self.table.setSortingEnabled(True)
-        selected_row = next(
-            (
-                row
-                for row in range(self.table.rowCount())
-                if str(self.table.item(row, 0).data(Qt.UserRole) or "") == selected_name
-            ),
-            -1,
-        )
-        if selected_row < 0 and self.table.rowCount():
-            selected_row = 0
-        if selected_row >= 0:
-            self.table.selectRow(selected_row)
-
-        zone_count = sum(1 for row in self._rows if row["role"] == "Drop-off zone")
-        space_count = sum(int(row["total"]) for row in self._rows)
-        self.summary_label.setText(
-            f"{len(self._rows)} location(s), including {zone_count} drop-off "
-            f"zone(s) • {space_count} inventory space(s)"
-        )
-
-    def selected_location_name(self):
-        row = self.table.currentRow() if hasattr(self, "table") else -1
-        if row < 0:
-            return ""
-        item = self.table.item(row, 0)
-        return str(item.data(Qt.UserRole) or item.text() or "").strip() if item else ""
-
-    def edit_selected_location(self, *_args):
-        location_name = self.selected_location_name()
-        if not location_name:
-            return
-        dialog = InventorySpacesDialog(self.editor, location_name)
-        if dialog.exec() == QDialog.Accepted:
-            self.refresh_table()
-            if hasattr(self.editor, "set_status"):
-                self.editor.set_status(
-                    f"Updated inventory spaces for {location_name}"
-                )
-            if hasattr(self.editor, "refresh_canvas"):
-                self.editor.refresh_canvas()
 
 
 class InventorySpacesDialog(QDialog):

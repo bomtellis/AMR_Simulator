@@ -18,6 +18,118 @@ The graph nodes and edges are ***explictly*** defined in the json file.
     Use --verbose-csv path_to_file.csv to name file
 ```
 
+## Limiting task deferral
+
+In **Simulation settings → Run period**, set **Maximum task deferral** in minutes
+and save the configuration. The JSON field is `simulation.max_task_deferral_minutes`;
+for example, `30` allows up to 30 minutes from a task's scheduled release to AMR
+assignment. `0` (the default, displayed as **Unlimited**) disables the limit.
+
+The timer includes both waiting for a preceding return pickup and waiting for an
+available AMR. Releasing a deferred task or retrying assignment does not restart
+it. A task still unassigned at the deadline fails and is removed from the waiting
+queue, with its waiting time and failure reason recorded in the existing failure
+logs and exports. Assigned journeys continue normally. Collection/return tasks
+have their own timer from their release time; automatic idle parking trips are
+excluded.
+
+## Managing inventory spaces across locations
+
+Open **Locations & Inventory Spaces** in the editor. The left list includes every
+location and drop-off zone; the right table edits its spaces and previews the layout.
+Changes remain in a draft while navigating. **Save all** updates the editor's
+configuration; **Cancel** discards the draft. Save the JSON normally to persist it to disk.
+
+- Select payload bays and choose **Detach payloads in scope** to remove their
+  payload template and make them flexible. Any payload fitting length, width and
+  height may use them, including a 90-degree turn. AMR/charger bays are skipped.
+- Edit flexible length/width, height, name and bay angle directly in the table.
+  **Attach payload to selected** restores a fixed template. Add, duplicate and
+  delete spaces here, or add AMR bays and toggle their charger checkbox.
+- Choose **Selected spaces**, **Current location**, **Selected locations**, or
+  **All locations**, then apply the length/width fields. Only flexible payload bays
+  are resized; detach fixed payload templates first. Centres and angles are kept.
+  Review the preview for clearance/overlap after resizing; bays are not repacked.
+- **Select similar locations** matches the current location's payload-space count
+  and bay orientations, allowing the displayed angle tolerance (default 5 degrees).
+  It ignores AMR bays, position, payload type and dimensions. Headings differing by
+  180 degrees match. The matching locations are selected and become the bulk scope.
+
+## Exporting journey flows for a lift engineer
+
+For lift travel alone, choose **Lift travel CSV** in the report dialog and tick
+**Export lift travel CSV only (skip PDF)**. The command-line equivalent is:
+
+```powershell
+python report/amr_report_main.py ltn_full_20260910.csv --lift-csv-only --lift-travel-csv output/lift_travel.csv
+```
+
+The CSV contains one row per lift transfer or empty lift reposition: lift ID,
+origin/destination levels, start/finish time, duration in seconds,
+travel distance in metres, direction, AMR and task IDs, and whether the AMR is
+onboard. For repositioning, the AMR/task identify the request served; the AMR is
+waiting rather than travelling. Lift node endpoints take precedence over the
+robot's logged floor, which can remain unchanged during repositioning. Missing
+endpoints are marked `Unknown`. Multiple tasks sharing a movement stay on one row.
+The `origin_location` and `destination_location` columns contain level labels only
+(for example, `L00` and `L02`), matching `origin_level` and `destination_level`.
+
+`payload_weight_kg` and `amr_weight_kg` are populated only on AMR-carrying lift
+transfers; empty lift reposition rows leave both blank. Supply `--config-json`
+(or select the matching JSON in the dialog) to resolve weights. Payload weight
+sums the actual onboard payload instances, so approach travel before pickup has
+zero payload weight even when the task names a future load. Unknown/suppressed
+loads remain blank. Explicit logged weights take precedence over configuration.
+
+Set each AMR type's **Unloaded weight** in its editor's physical settings. This
+saves `weight_kg` in its JSON entry; the report maps it to individual robots
+(for example, `AMR-C` to `AMR-C-1`, `AMR-C-2`, etc.). Payload capacity is not robot
+self-weight. Unspecified AMR weights remain blank. For a weighted CSV:
+
+```powershell
+python report/amr_report_main.py ltn_full_20260910.csv --config-json ltn.json --lift-csv-only --lift-travel-csv output/lift_travel.csv
+```
+
+Normal report generation also writes this CSV automatically. Set its output with
+`--lift-movements-csv` (alias `--lift-travel-csv`), or leave it blank to save
+`<report>_lift_movements.csv` beside the PDF. CSV-only mode does not need a JSON config.
+
+The report tool includes **Journey origins, destinations and returns** in the
+report section selector (`journey_flows` on the command line). For example:
+
+```powershell
+python report/amr_report_main.py ltn_full_20260910.csv --config-json ltn.json --output output/pdf/vertical_transport.pdf --report-sections journey_flows --omit-drawings
+```
+
+Every report run, including the report dialog, writes three CSVs beside its PDF:
+
+- `<report>_journeys.csv`: one row per recorded task request, with origin and
+  destination locations, levels and departments, payload, requesting department,
+  status, release/assignment/completion times and the parent task ID for identifiable
+  payload returns. Empty AMR return tasks are labelled separately.
+- `<report>_journey_flows.csv`: task counts by journey type, origin/destination
+  level and department, and outcome. Failed/incomplete requests remain separate.
+- `<report>_lift_movements.csv`: one row per logged lift transfer or empty lift
+  reposition, with lift, AMR, task IDs, start/finish times and levels. Multi-stop
+  tasks sharing a lift movement do not create extra movement rows.
+
+Use the matching simulation JSON for department and location metadata. Logged
+endpoint floors take precedence, with JSON floors as a fallback. Numeric floor 0
+is displayed as L00; missing metadata is `Unknown`. Shared endpoint departments
+are listed together; `task_department` identifies the requesting department.
+No L00 origin/destination or reverse route is assumed. Return pickups can differ
+from the original delivery endpoint because of staff transfers to drop-off zones.
+Assignment time is dispatch time, not payload pickup time. CSV times include dates
+when the source does, otherwise elapsed seconds. Counts span the entire source log.
+
+Journey counts represent tasks, not AMR or lift trips. Use lift movements for
+vertical transport demand, including empty AMR travel and lift repositioning;
+use task IDs to join to journey endpoints. Movements without task IDs (for example,
+some charging travel) cannot be linked to delivery tasks. A return's parent ID is
+blank when the log does not establish a link. Legacy logs without request events
+cannot supply a complete journey table. Department mappings reflect the supplied
+configuration, so use the configuration saved for the simulation run.
+
 ## Defining the simulation parameters
 ```
 "simulation": {
@@ -188,6 +300,50 @@ AMRs are the robots that move around a facility to transport goods.
     },
 ]
 ```
+
+## Department service review exports
+
+In the reporting dialog, select the simulation event CSV and matching configuration
+JSON, enable **Export category reviews**, and choose **PDF and Excel (.xlsx)**,
+**PDF only**, or **Excel (.xlsx) only**. Use **Reviews only** to skip the main report
+and lift exports. The review folder receives a separate file for every configured
+category, including a clearly empty review for inactive categories.
+
+```powershell
+python report/amr_report_main.py simulation_steps.csv --config-json hospital.json --department-review-only --department-review-dir department_reviews --department-review-formats both
+```
+
+Each category review includes a directory of configured departments, effective
+generation rules (including department groups and waste streams), Monday-Sunday
+delivery/collection counts, payload routes, and a timetable separating configured
+release/fill times from actual deliveries and collections. The PDF gives the
+category timetable with exact times and department IDs; Excel also provides a
+department-by-department timetable and the full generated-task audit. Excel's
+amber current-service and owner-comment fields are blank for department review.
+The **Difference** column calculates simulated total minus the entered current total.
+
+PDF export also writes `<category>_executive_summary.pdf`, a single portrait A4
+page with key service statements and a timeline of configuration schedules,
+generated tasks, actual deliveries and actual collections. The same executive
+page opens the full review. Up to eight calendar dates are shown individually;
+longer intervals overlay all events by weekday, explicitly labelled on the page.
+
+Counts use completed tasks with service times in the configuration's half-open
+simulation interval. Delivery time is the staff final arrival where logged,
+otherwise AMR drop-off completion. Collection time is AMR pickup completion at the
+department or shared zone. Return container deliveries count as deliveries; staff
+return legs and robot accommodation trips do not count again. Weekdays are calendar
+days; coverage hours make partial days explicit. Late/incomplete/unclassified
+tasks remain in the audit. The supplied configuration's hash is recorded because
+the log itself cannot establish that the supplied JSON matches the simulated run.
+
+PDF uses the reporting tool's existing ReportLab dependency. Excel export uses
+Node.js and `@oai/artifact-tool`; the bundled Codex runtime is detected automatically.
+For another installation, set `AMR_REPORT_NODE` to the Node executable and
+`AMR_REPORT_NODE_MODULES` to its `node_modules` directory containing that package.
+PDF-only exports do not require Node. The retained Analytics Dashboard reference
+in `report/assets/department_review_template.xlsx` supplies the workbook template;
+its synthetic marketing content is replaced with category service data.
 
 ## Department drop-off zones
 

@@ -297,6 +297,7 @@ class AMRGraphEditor(QMainWindow):
 
         self.store = JsonStore()
         self.current_json_path = None
+        self._drawings_enabled = True
         self.current_dxf_path = None
         self.loaded_dxf_floor = None
         self.dxf_scene = DXFScene()
@@ -489,6 +490,11 @@ class AMRGraphEditor(QMainWindow):
             "File",
             [
                 button("Open JSON", self.open_json),
+                button(
+                    "Open without drawings",
+                    lambda: self.open_json(load_drawings=False),
+                    "Open a configuration without loading DXF drawings or PDF backgrounds. Saved drawing paths are preserved.",
+                ),
                 button("Save JSON", self.save_json),
                 button(
                     "Export floor DXF",
@@ -502,7 +508,7 @@ class AMRGraphEditor(QMainWindow):
                 ),
                 button("Validate", self.validate_json),
             ],
-            columns=5,
+            columns=3,
         )
         add_group(
             home,
@@ -514,6 +520,7 @@ class AMRGraphEditor(QMainWindow):
                 button("PDF settings", self.edit_pdf_underlay),
                 button("Clear floor PDF", self.clear_floor_pdf_underlay),
                 button("Fit view", self.fit_view),
+                button("Load configured drawings", self.load_configured_drawings),
             ],
             columns=3,
         )
@@ -1042,6 +1049,8 @@ class AMRGraphEditor(QMainWindow):
         )
 
     def draw_pdf_underlay(self, floor):
+        if not self._drawings_enabled:
+            return
         mapping = self.get_floor_pdf_underlay(floor)
         if mapping is None or not mapping["filepath"]:
             return
@@ -1168,6 +1177,8 @@ class AMRGraphEditor(QMainWindow):
         self._update_loading_dialog()
 
     def _queue_all_floor_dxf_loads(self, active_floor=None, force_reload=False):
+        if not self._drawings_enabled:
+            return
         floors = self._all_mapped_floors()
         if not floors:
             return
@@ -1240,6 +1251,8 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def request_floor_dxf_load(self, floor, force_reload=False, prefetch=False):
+        if not self._drawings_enabled:
+            return False
         floor = int(floor)
         path = self.get_floor_dxf_path(floor)
 
@@ -1271,6 +1284,8 @@ class AMRGraphEditor(QMainWindow):
         return False
 
     def ensure_floor_dxf_loaded(self, floor, force_reload=False):
+        if not self._drawings_enabled:
+            return False
         floor = int(floor)
         path = self.get_floor_dxf_path(floor)
         if not path:
@@ -1299,6 +1314,8 @@ class AMRGraphEditor(QMainWindow):
 
     @Slot(int, str, object, object)
     def _on_dxf_loaded(self, floor, path, entities, bounds):
+        if not self._drawings_enabled or self.get_floor_dxf_path(floor) != path:
+            return
         floor = int(floor)
         self._dxf_loading_floors.discard(floor)
         self._loading_batch_failed.discard(floor)
@@ -1325,6 +1342,8 @@ class AMRGraphEditor(QMainWindow):
 
     @Slot(int, str, str)
     def _on_dxf_failed(self, floor, path, error):
+        if not self._drawings_enabled or self.get_floor_dxf_path(floor) != path:
+            return
         floor = int(floor)
         self._dxf_loading_floors.discard(floor)
         self._loading_batch_failed.add(floor)
@@ -1352,11 +1371,11 @@ class AMRGraphEditor(QMainWindow):
 
     def _content_bounds(self, floor):
         bounds = []
-        if self.dxf_scene.bounds and self.loaded_dxf_floor == int(floor):
+        if self._drawings_enabled and self.dxf_scene.bounds and self.loaded_dxf_floor == int(floor):
             bounds.append(self.dxf_scene.bounds)
 
         pdf_mapping = self.get_floor_pdf_underlay(floor)
-        if pdf_mapping and pdf_mapping.get("filepath"):
+        if self._drawings_enabled and pdf_mapping and pdf_mapping.get("filepath"):
             bounds.append(underlay_world_bounds(pdf_mapping))
 
         floor_points = self.store.points_for_floor(floor)
@@ -1396,7 +1415,7 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         ready = self.ensure_floor_dxf_loaded(floor)
         rect = self._scene_rect_for_floor(floor, padding=8.0)
-        if rect is None and not ready and self.get_floor_dxf_path(floor):
+        if self._drawings_enabled and rect is None and not ready and self.get_floor_dxf_path(floor):
             self._pending_fit_after_load = True
             return
         if (
@@ -1424,7 +1443,8 @@ class AMRGraphEditor(QMainWindow):
         if self.show_pdf_check.isChecked():
             self.draw_pdf_underlay(floor)
         if (
-            self.show_dxf_check.isChecked()
+            self._drawings_enabled
+            and self.show_dxf_check.isChecked()
             and self.loaded_dxf_floor == int(floor)
             and self.dxf_scene.entities
         ):
@@ -1786,6 +1806,8 @@ class AMRGraphEditor(QMainWindow):
             "Ctrl-click nodes/edges for multiple selection",
             f"Selected: {len(self.selected_point_names)} nodes, {len(self.selected_edge_keys)} corridors",
         ]
+        if not self._drawings_enabled:
+            lines.append("Drawings not loaded")
         if self._current_edit_mode() == "department":
             lines.append("Click anywhere to add a department")
         if self._current_edit_mode() == "pdf_underlay_align":
@@ -2653,7 +2675,7 @@ class AMRGraphEditor(QMainWindow):
             "\n".join(message_lines),
         )
 
-    def load_json_file(self, path: str) -> bool:
+    def load_json_file(self, path: str, *, load_drawings: bool = True) -> bool:
         try:
             store = JsonStore.from_file(path)
         except json.JSONDecodeError as exc:
@@ -2698,6 +2720,7 @@ class AMRGraphEditor(QMainWindow):
             ]
 
         self.store = store
+        self._drawings_enabled = load_drawings
         self.current_json_path = path
         self.selected_point_name = None
         self.selected_point_names.clear()
@@ -2705,8 +2728,10 @@ class AMRGraphEditor(QMainWindow):
         self.dragging_point_name = None
         self.drag_mode_active = False
         self._clear_dxf_cache()
+        self._pdf_pixmap_cache.clear()
+        self._pdf_render_errors.clear()
         current_floor = self.floor_spin.value()
-        self._pending_fit_after_load = bool(self.get_floor_dxf_path(current_floor))
+        self._pending_fit_after_load = load_drawings and bool(self.get_floor_dxf_path(current_floor))
         self._queue_all_floor_dxf_loads(active_floor=current_floor, force_reload=False)
         if validation_errors:
             self.set_status(
@@ -2714,18 +2739,27 @@ class AMRGraphEditor(QMainWindow):
             )
             self._show_config_validation_warning(path, validation_errors)
         else:
-            self.set_status(f"Opened {Path(path).name}")
+            suffix = " without drawings" if not load_drawings else ""
+            self.set_status(f"Opened {Path(path).name}{suffix}")
         self.refresh_canvas()
         self.fit_view()
         return True
 
-    def open_json(self):
+    def open_json(self, *, load_drawings=True):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open JSON", "", "JSON files (*.json)"
+            self, "Open JSON" if load_drawings else "Open configuration without drawings", "", "JSON files (*.json)"
         )
         if not path:
             return
-        self.load_json_file(path)
+        self.load_json_file(path, load_drawings=load_drawings)
+
+    def load_configured_drawings(self):
+        self._drawings_enabled = True
+        floor = self.floor_spin.value()
+        self._pending_fit_after_load = bool(self.get_floor_dxf_path(floor))
+        self._queue_all_floor_dxf_loads(active_floor=floor)
+        self.refresh_canvas()
+        self.fit_view()
 
     def save_json(self):
         path = self.current_json_path
@@ -3031,6 +3065,7 @@ class AMRGraphEditor(QMainWindow):
             return
         mapping = dialog.mapping(floor, path)
         self.set_floor_pdf_underlay(floor, mapping)
+        self._drawings_enabled = True
         self._set_edit_mode("pdf_underlay_align")
         self.refresh_canvas()
         self.fit_view()
@@ -3061,6 +3096,7 @@ class AMRGraphEditor(QMainWindow):
             return
         updated = dialog.mapping(floor, mapping["filepath"])
         self.set_floor_pdf_underlay(floor, updated)
+        self._drawings_enabled = True
         self.refresh_canvas()
         self.set_status(f"Updated PDF underlay settings for floor {floor}")
 
@@ -3098,6 +3134,7 @@ class AMRGraphEditor(QMainWindow):
         if not path:
             return
         self.set_floor_dxf_path(floor, path)
+        self._drawings_enabled = True
         self._dxf_cache.pop(int(floor), None)
         if self.loaded_dxf_floor == int(floor):
             self.dxf_scene.clear()

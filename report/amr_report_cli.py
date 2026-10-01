@@ -21,7 +21,7 @@ def parse_args():
     )
     parser.add_argument(
         "--config-json",
-        help="Path to simulator JSON config for payload weights",
+        help="Path to matching simulator JSON for levels, departments, payloads and resource parameters",
         default=None,
     )
     parser.add_argument(
@@ -63,6 +63,20 @@ def parse_args():
         ),
         default=None,
     )
+    parser.add_argument(
+        "--lift-movements-csv", "--lift-travel-csv",
+        help="Lift travel/destinations CSV path; defaults to <output PDF stem>_lift_movements.csv.",
+        default=None,
+    )
+    parser.add_argument(
+        "--lift-csv-only", action="store_true",
+        help="Export only lift travel/destinations CSV, without generating a PDF or other tables.",
+    )
+    parser.add_argument('--department-review-dir', help='Export separate department review files per category into this folder.')
+    parser.add_argument('--department-review-formats', choices=['both', 'pdf', 'xlsx'], default='both',
+                        help='Department review formats: PDF and Excel by default.')
+    parser.add_argument('--department-review-only', action='store_true',
+                        help='Export department reviews only, without the main report or lift CSVs.')
     parser.add_argument(
         "--select-report-sections",
         action="store_true",

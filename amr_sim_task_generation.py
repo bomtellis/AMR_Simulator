@@ -2213,6 +2213,16 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         ) or _clean_text(getattr(task, "id", ""))
         released: List[GeneratedTaskRecord] = []
 
+        if state == "failed" and spacing_key:
+            # A timed-out queued task must never be released when a preceding
+            # return eventually clears the zone. Keep the live blocker intact.
+            queue = self.deferred_release_queues.get(spacing_key, [])
+            kept = [record for record in queue if record.task.id != task.id]
+            if kept:
+                self.deferred_release_queues[spacing_key] = kept
+            else:
+                self.deferred_release_queues.pop(spacing_key, None)
+
         if (
             state == "return_payload_picked_up"
             and bool(getattr(task, "is_return_task", False))

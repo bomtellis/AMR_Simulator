@@ -296,6 +296,11 @@ class Simulation:
             ),
         )
         self._generated_release_stagger_counts: Dict[float, int] = defaultdict(int)
+        max_deferral_minutes = float(sim_cfg.get("max_task_deferral_minutes", 0.0) or 0.0)
+        if not math.isfinite(max_deferral_minutes) or max_deferral_minutes < 0:
+            raise ValueError("max_task_deferral_minutes must be a finite, non-negative number (0 = unlimited).")
+        self.max_task_deferral_sec = max_deferral_minutes * 60.0
+        self._task_deferrals: Dict[str, Tuple[Task, float, float]] = {}
         self.seed_waste_stream_containers_at_start = bool(
             sim_cfg.get(
                 "seed_waste_stream_containers_at_start",
@@ -6431,6 +6436,7 @@ class Simulation:
             )
 
     def _fail_task(self, task: Task, reason: str, now: Optional[float] = None) -> None:
+        self._task_deferrals.pop(task.id, None)
         reason = str(reason or "Task failed").strip()
         self._set_task_pending_reason(task, reason)
         self._remove_pending_task(task)
@@ -6442,7 +6448,7 @@ class Simulation:
 
         self.failed_task_ids.add(task_id)
         self._release_payload_instance_reservation_for_task(task)
-        self._notify_task_generation_state(task, "failed")
+        self._notify_task_generation_state(task, "failed", event_time=now)
         event_time = self.current_time if now is None else now
         final_destination = str(
             getattr(task, "final_destination", "") or task.dropoff or ""
@@ -7506,8 +7512,40 @@ class Simulation:
         # )
 
     def schedule_task_release(self, task: Task):
+        if task.id in self.failed_task_ids:
+            return
+        self._start_task_deferral_limit(task)
         self._prepare_task_payload_instance(task)
         self.push_event(task.release_time, "task_release", {"task": task})
+
+    def _start_task_deferral_limit(self, task: Task) -> None:
+        """One deadline from the original due release through AMR assignment."""
+        if (self.max_task_deferral_sec <= 0 or task.id in self._task_deferrals
+                or task.id in self.failed_task_ids or getattr(task, "is_idle_return", False)):
+            return
+        # The dataclass defaults the generator timestamp to zero even for
+        # ordinary tasks and returns, whose release may be much later.
+        start = float(task.release_time)
+        deadline = start + self.max_task_deferral_sec
+        self._task_deferrals[task.id] = (task, start, deadline)
+        self.push_event(deadline, "task_deferral_timeout", {"task": task})
+
+    def _expire_task_deferral(self, task: Task, now: float) -> bool:
+        entry = self._task_deferrals.get(task.id)
+        if entry is None or now < entry[2]:
+            return False
+        _task, start, _deadline = entry
+        previous_reason = str(getattr(task, "pending_reason", "") or "")
+        zone = self._task_release_spacing_zone(task)
+        reason = (f"Task deferral limit exceeded ({self.max_task_deferral_sec / 60:g} min); "
+                  f"waited {max(0.0, now - start):g} s from scheduled release {start:g} s "
+                  "without an AMR assignment")
+        if zone:
+            reason += f"; shared_dropoff_zone={zone}"
+        if previous_reason:
+            reason += f"; last_pending_reason={previous_reason}"
+        self._fail_task(task, reason, now=now)
+        return True
 
     def _log_task_released(self, task: Task, event_time: float) -> None:
         self.log_step(
@@ -8064,6 +8102,9 @@ class Simulation:
                 runtime["last_update_time"] = now
 
     def _queue_pending_task(self, task: Task):
+        if task.id in self.failed_task_ids:
+            return
+        self._start_task_deferral_limit(task)
         self.pending_task_counter += 1
         self._removed_pending_task_ids.discard(str(getattr(task, "id", "") or ""))
         heapq.heappush(
@@ -10823,6 +10864,13 @@ class Simulation:
 
     def _try_assign_tasks(self, now: float, force_idle_return: bool = False):
         self.current_time = max(self.current_time, now)
+        # Enforce the boundary before assignment, even if another event at the
+        # same timestamp was inserted ahead of the timeout event.
+        if self.max_task_deferral_sec > 0:
+            for _priority, _release, _counter, waiting_task in list(self.pending_tasks):
+                # Generator ticks can enqueue releases for earlier timestamps;
+                # use the event time, not the generator's look-back watermark.
+                self._expire_task_deferral(waiting_task, now)
         self._assignment_continue_scheduled = False
         self._purge_removed_pending_task_heads()
 
@@ -10931,6 +10979,7 @@ class Simulation:
                     continue
 
                 for multi_task in tasks:
+                    self._task_deferrals.pop(multi_task.id, None)
                     self._remove_pending_task(multi_task)
                     self._set_task_pending_reason(multi_task, "")
 
@@ -11030,6 +11079,7 @@ class Simulation:
                     return
                 continue
 
+            self._task_deferrals.pop(task.id, None)
             self._remove_pending_task(task)
             self._set_task_pending_reason(task, "")
             start_time = committed["task_start_time"]
@@ -11643,7 +11693,16 @@ class Simulation:
         self, record, release_time_override: Optional[float] = None
     ) -> None:
         task = record.task
+        if task.id in self.failed_task_ids:
+            return
         if bool(getattr(record, "released_from_deferral", False)):
+            now = self.current_time if release_time_override is None else release_time_override
+            deferral = self._task_deferrals.get(task.id)
+            if deferral is not None and now >= deferral[2]:
+                # Process overdue successors through the event loop rather than
+                # recursively failing a potentially long deferred queue.
+                self.push_event(now, "task_deferral_timeout", {"task": task})
+                return
             scheduled_release = float(
                 getattr(task, "generator_scheduled_release_time", task.release_time)
                 or task.release_time
@@ -11706,6 +11765,7 @@ class Simulation:
         self._log_generated_task_record(record)
 
         if bool(getattr(record, "deferred", False)):
+            self._start_task_deferral_limit(task)
             zone = self._task_release_spacing_zone(task)
             blocking_outbound = str(
                 getattr(task, "generator_deferred_by_task_id", "") or ""
@@ -11797,6 +11857,11 @@ class Simulation:
                         break
 
                     event = heapq.heappop(self.events)
+                    if (event.event_type == "task_deferral_timeout"
+                            and event.payload["task"].id not in self._task_deferrals):
+                        # Cancelled timers must not extend the simulation clock
+                        # after a task has been assigned or failed.
+                        continue
                     self._mark_task_activity_changed()
                     self.current_time = max(self.current_time, event.time)
                     self._prune_historical_reservations(self.current_time)
@@ -11826,7 +11891,7 @@ class Simulation:
         released_tasks: List[Task] = []
 
         task = event.payload.get("task")
-        if task is not None:
+        if task is not None and task.id not in self.failed_task_ids:
             self._queue_pending_task(task)
             self._log_task_released(task, event.time)
             released_tasks.append(task)
@@ -11839,7 +11904,7 @@ class Simulation:
                 and abs(float(next_event.time) - float(event.time)) <= 1e-9
             ):
                 next_task = next_event.payload.get("task")
-                if next_task is not None:
+                if next_task is not None and next_task.id not in self.failed_task_ids:
                     self._queue_pending_task(next_task)
                     self._log_task_released(next_task, next_event.time)
                     released_tasks.append(next_task)
@@ -11854,7 +11919,10 @@ class Simulation:
         return released_tasks
 
     def _handle_event(self, event: Event):
-        if event.event_type == "dropoff_zone_handoff_complete":
+        if event.event_type == "task_deferral_timeout":
+            if self._expire_task_deferral(event.payload["task"], event.time):
+                self._try_assign_tasks(event.time)
+        elif event.event_type == "dropoff_zone_handoff_complete":
             self._complete_dropoff_zone_handoff(
                 event.payload["task"],
                 event.payload["return_task"],
@@ -13744,6 +13812,8 @@ class Simulation:
             times.append(task.release_time)
 
         for event in self.events:
+            if event.event_type == "task_deferral_timeout" and event.payload["task"].id not in self._task_deferrals:
+                continue
             times.append(event.time)
 
         if self.completed_task_records:

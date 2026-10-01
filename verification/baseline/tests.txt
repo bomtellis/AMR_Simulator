@@ -1,0 +1,149 @@
+test_existing_zone_can_be_assigned_to_multiple_categories (test_department_dropoff_zone_dialog.DepartmentDropoffZoneDialogTests.test_existing_zone_can_be_assigned_to_multiple_categories) ... ok
+test_existing_zone_names_are_collected_from_all_departments (test_department_dropoff_zone_dialog.DepartmentDropoffZoneDialogTests.test_existing_zone_names_are_collected_from_all_departments) ... ok
+test_collection_category_empty_return_is_a_delivery (test_department_review.DepartmentReviewTests.test_collection_category_empty_return_is_a_delivery) ... ok
+test_completed_services_use_final_delivery_and_actual_return_pickup (test_department_review.DepartmentReviewTests.test_completed_services_use_final_delivery_and_actual_return_pickup) ... ok
+test_executive_page_contains_all_events_and_is_exactly_one_a4_page (test_department_review.DepartmentReviewTests.test_executive_page_contains_all_events_and_is_exactly_one_a4_page) ... ERROR
+test_group_override_replaces_department_schedule_and_not_release_stagger (test_department_review.DepartmentReviewTests.test_group_override_replaces_department_schedule_and_not_release_stagger) ... ok
+test_incomplete_and_end_boundary_are_not_counted_and_duplicate_completion_is_safe (test_department_review.DepartmentReviewTests.test_incomplete_and_end_boundary_are_not_counted_and_duplicate_completion_is_safe) ... ok
+test_long_period_executive_timeline_retains_every_event (test_department_review.DepartmentReviewTests.test_long_period_executive_timeline_retains_every_event) ... ok
+test_missing_verbose_events_are_rejected (test_department_review.DepartmentReviewTests.test_missing_verbose_events_are_rejected) ... ok
+test_pdf_only_cli_exports_separate_categories_without_main_report (test_department_review.DepartmentReviewTests.test_pdf_only_cli_exports_separate_categories_without_main_report) ... ok
+test_tracked_exchange_is_not_labelled_as_a_return (test_department_review.DepartmentReviewTests.test_tracked_exchange_is_not_labelled_as_a_return) ... ok
+test_catalog_marks_locations_assigned_as_dropoff_zones (test_dropoff_zone_report.DropoffZoneReportTests.test_catalog_marks_locations_assigned_as_dropoff_zones) ... ok
+test_deferred_release_report_shows_scheduled_and_actual_times (test_dropoff_zone_report.DropoffZoneReportTests.test_deferred_release_report_shows_scheduled_and_actual_times) ... ok
+test_dropoff_shortfall_respects_flexible_space_dimensions (test_dropoff_zone_report.DropoffZoneReportTests.test_dropoff_shortfall_respects_flexible_space_dimensions) ... ok
+test_exact_datetime_is_recovered_from_legacy_fractional_sim_seconds (test_dropoff_zone_report.DropoffZoneReportTests.test_exact_datetime_is_recovered_from_legacy_fractional_sim_seconds) ... ok
+test_payload_table_captures_exact_state_at_network_peak (test_dropoff_zone_report.DropoffZoneReportTests.test_payload_table_captures_exact_state_at_network_peak) ... ok
+test_same_timestamp_enter_and_exit_do_not_create_false_peak (test_dropoff_zone_report.DropoffZoneReportTests.test_same_timestamp_enter_and_exit_do_not_create_false_peak) ... ok
+test_stale_explicit_exit_does_not_remove_another_payload_instance (test_dropoff_zone_report.DropoffZoneReportTests.test_stale_explicit_exit_does_not_remove_another_payload_instance) ... ok
+test_true_simultaneous_peak_is_calculated_across_zones (test_dropoff_zone_report.DropoffZoneReportTests.test_true_simultaneous_peak_is_calculated_across_zones) ... ok
+test_department_team_handles_zone_handoff_outside_primary_hours (test_dropoff_zones.DropoffZoneTests.test_department_team_handles_zone_handoff_outside_primary_hours) ... ok
+test_department_zone_redirects_generated_amr_task (test_dropoff_zones.DropoffZoneTests.test_department_zone_redirects_generated_amr_task) ... ok
+test_failed_task_terminal_summary_includes_failure_datetime (test_dropoff_zones.DropoffZoneTests.test_failed_task_terminal_summary_includes_failure_datetime) ... ok
+test_flexible_assignment_uses_smallest_space_that_fits (test_dropoff_zones.DropoffZoneTests.test_flexible_assignment_uses_smallest_space_that_fits) ... ok
+test_flexible_space_accepts_any_payload_that_fits_dimensions (test_dropoff_zones.DropoffZoneTests.test_flexible_space_accepts_any_payload_that_fits_dimensions) ... ok
+test_flexible_space_is_reused_by_multiple_compatible_payload_types (test_dropoff_zones.DropoffZoneTests.test_flexible_space_is_reused_by_multiple_compatible_payload_types) ... ok
+test_full_zone_handoff_returns_payload_to_zone_then_source (test_dropoff_zones.DropoffZoneTests.test_full_zone_handoff_returns_payload_to_zone_then_source) ... ok
+test_global_staff_speed_and_handling_control_zone_movement (test_dropoff_zones.DropoffZoneTests.test_global_staff_speed_and_handling_control_zone_movement) ... ok
+test_locked_return_waits_when_a_later_exchange_hold_uses_same_amr (test_dropoff_zones.DropoffZoneTests.test_locked_return_waits_when_a_later_exchange_hold_uses_same_amr) ... ok
+test_movement_only_handoff_returns_previous_payload_without_dwell (test_dropoff_zones.DropoffZoneTests.test_movement_only_handoff_returns_previous_payload_without_dwell) ... ok
+test_multi_stop_payload_action_times_are_recorded_per_task (test_dropoff_zones.DropoffZoneTests.test_multi_stop_payload_action_times_are_recorded_per_task) ... ok
+test_payload_action_times_use_load_unload_completion_not_route_finish (test_dropoff_zones.DropoffZoneTests.test_payload_action_times_use_load_unload_completion_not_route_finish) ... ok
+test_primary_team_remains_tracked_during_its_working_hours (test_dropoff_zones.DropoffZoneTests.test_primary_team_remains_tracked_during_its_working_hours) ... ok
+test_shared_zone_task_release_waits_for_preceding_return_pickup (test_dropoff_zones.DropoffZoneTests.test_shared_zone_task_release_waits_for_preceding_return_pickup) ... ok
+test_single_stop_rows_publish_onboard_payload_after_pickup (test_dropoff_zones.DropoffZoneTests.test_single_stop_rows_publish_onboard_payload_after_pickup) ... ok
+test_staff_handoff_uses_shortest_available_department_location (test_dropoff_zones.DropoffZoneTests.test_staff_handoff_uses_shortest_available_department_location) ... ok
+test_tracked_exchange_leaves_full_payload_and_returns_empty_instance (test_dropoff_zones.DropoffZoneTests.test_tracked_exchange_leaves_full_payload_and_returns_empty_instance) ... ok
+test_tracked_item_usage_is_shared_between_department_containers (test_dropoff_zones.DropoffZoneTests.test_tracked_item_usage_is_shared_between_department_containers) ... ok
+test_zone_capacity_policy_is_category_wide (test_dropoff_zones.DropoffZoneTests.test_zone_capacity_policy_is_category_wide) ... ok
+test_zone_overflow_and_staff_collection_delay_are_configurable (test_dropoff_zones.DropoffZoneTests.test_zone_overflow_and_staff_collection_delay_are_configurable) ... ok
+test_zone_return_delay_includes_handling_instead_of_adding_it (test_dropoff_zones.DropoffZoneTests.test_zone_return_delay_includes_handling_instead_of_adding_it) ... ok
+test_all_floor_export_uses_sequential_numbered_files (test_dxf_export.DxfExportTests.test_all_floor_export_uses_sequential_numbered_files) ... ok
+test_exports_editor_geometry_in_world_coordinates_without_background (test_dxf_export.DxfExportTests.test_exports_editor_geometry_in_world_coordinates_without_background) ... C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\ezdxf\query.py:444: PyparsingDeprecationWarning: 'parseString' deprecated - use 'parse_string'
+  query_args = EntityQueryParser.parseString(query, parseAll=True)
+C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\pyparsing\util.py:466: PyparsingDeprecationWarning: 'parseAll' argument is deprecated, use 'parse_all'
+  return fn(self, *args, **kwargs)
+ok
+test_only_exports_requested_floor (test_dxf_export.DxfExportTests.test_only_exports_requested_floor) ... ok
+test_selected_units_scale_coordinates_and_header (test_dxf_export.DxfExportTests.test_selected_units_scale_coordinates_and_header) ... ok
+test_dropoff_space_defaults_to_flexible_and_dimensions_persist (test_flexible_inventory_model.FlexibleInventoryModelTests.test_dropoff_space_defaults_to_flexible_and_dimensions_persist) ... ok
+test_ltn_shared_drop_zone_spaces_fit_the_linen_trolley (test_flexible_inventory_model.FlexibleInventoryModelTests.test_ltn_shared_drop_zone_spaces_fit_the_linen_trolley) ... FAIL
+test_empty_return_is_distinct_from_payload_return (test_journey_flows.JourneyFlowTests.test_empty_return_is_distinct_from_payload_return) ... ok
+test_failed_and_pending_not_counted_as_completed (test_journey_flows.JourneyFlowTests.test_failed_and_pending_not_counted_as_completed) ... ok
+test_grouped_task_row_does_not_duplicate_demand (test_journey_flows.JourneyFlowTests.test_grouped_task_row_does_not_duplicate_demand) ... ok
+test_missing_config_keeps_logged_floors_and_unknown_departments (test_journey_flows.JourneyFlowTests.test_missing_config_keeps_logged_floors_and_unknown_departments) ... ok
+test_named_levels_and_empty_outputs (test_journey_flows.JourneyFlowTests.test_named_levels_and_empty_outputs) ... ok
+test_one_lift_movement_for_multiple_tasks_and_reposition (test_journey_flows.JourneyFlowTests.test_one_lift_movement_for_multiple_tasks_and_reposition) ... ok
+test_request_endpoints_survive_multi_stop_and_return_links (test_journey_flows.JourneyFlowTests.test_request_endpoints_survive_multi_stop_and_return_links) ... ok
+test_csv_only_cli_writes_custom_destination_without_pdf (test_lift_travel_export.LiftTravelExportTests.test_csv_only_cli_writes_custom_destination_without_pdf) ... ok
+test_empty_amr_approach_does_not_count_its_future_payload (test_lift_travel_export.LiftTravelExportTests.test_empty_amr_approach_does_not_count_its_future_payload) ... ok
+test_explicit_logged_weights_take_precedence (test_lift_travel_export.LiftTravelExportTests.test_explicit_logged_weights_take_precedence) ... ok
+test_missing_reposition_endpoints_are_explicitly_unknown (test_lift_travel_export.LiftTravelExportTests.test_missing_reposition_endpoints_are_explicitly_unknown) ... ok
+test_negative_floors_and_event_only_logs (test_lift_travel_export.LiftTravelExportTests.test_negative_floors_and_event_only_logs) ... ok
+test_no_lift_segments_returns_header_only_schema (test_lift_travel_export.LiftTravelExportTests.test_no_lift_segments_returns_header_only_schema) ... ok
+test_onboard_weights_use_config_instances_and_sum_distinct_payloads (test_lift_travel_export.LiftTravelExportTests.test_onboard_weights_use_config_instances_and_sum_distinct_payloads) ... ok
+test_real_lift_endpoints_override_waiting_robot_position (test_lift_travel_export.LiftTravelExportTests.test_real_lift_endpoints_override_waiting_robot_position) ... ok
+test_unknown_and_suppressed_loads_remain_blank (test_lift_travel_export.LiftTravelExportTests.test_unknown_and_suppressed_loads_remain_blank) ... ok
+test_empty_input_returns_export_columns (test_lift_trip_cohorts.LiftTripCohortTests.test_empty_input_returns_export_columns) ... ok
+test_existing_lift_usage_profile_keeps_its_public_shape (test_lift_trip_cohorts.LiftTripCohortTests.test_existing_lift_usage_profile_keeps_its_public_shape) ... ok
+test_five_minute_cohorts_count_each_lift_and_segment_type (test_lift_trip_cohorts.LiftTripCohortTests.test_five_minute_cohorts_count_each_lift_and_segment_type) ... ok
+test_hourly_cohorts_aggregate_five_minute_buckets (test_lift_trip_cohorts.LiftTripCohortTests.test_hourly_cohorts_aggregate_five_minute_buckets) ... ok
+test_add_duplicate_delete_and_amr_charger_persist (test_location_spaces_manager.LocationSpacesManagerTests.test_add_duplicate_delete_and_amr_charger_persist) ... ok
+test_bulk_scope_leaves_other_locations_and_chargers_unchanged (test_location_spaces_manager.LocationSpacesManagerTests.test_bulk_scope_leaves_other_locations_and_chargers_unchanged) ... ok
+test_cancel_discards_global_edits (test_location_spaces_manager.LocationSpacesManagerTests.test_cancel_discards_global_edits) ... ok
+test_detach_edit_navigate_and_save_preserve_geometry_and_amr (test_location_spaces_manager.LocationSpacesManagerTests.test_detach_edit_navigate_and_save_preserve_geometry_and_amr) ... ok
+test_detached_rotated_bay_accepts_other_payload_turned_ninety_degrees (test_location_spaces_manager.LocationSpacesManagerTests.test_detached_rotated_bay_accepts_other_payload_turned_ninety_degrees) ... ok
+test_height_can_be_changed_for_fixed_and_amr_spaces_in_bulk (test_location_spaces_manager.LocationSpacesManagerTests.test_height_can_be_changed_for_fixed_and_amr_spaces_in_bulk) ... ok
+test_invalid_dimensions_rejected_and_payload_can_be_reattached (test_location_spaces_manager.LocationSpacesManagerTests.test_invalid_dimensions_rejected_and_payload_can_be_reattached) ... ok
+test_manager_summarises_all_locations_and_dropoff_spaces (test_location_spaces_manager.LocationSpacesManagerTests.test_manager_summarises_all_locations_and_dropoff_spaces) ... ok
+test_similar_locations_match_count_orientation_and_selected_scope (test_location_spaces_manager.LocationSpacesManagerTests.test_similar_locations_match_count_orientation_and_selected_scope) ... ok
+test_similarity_wraparound_reordering_and_count_mismatch (test_location_spaces_manager.LocationSpacesManagerTests.test_similarity_wraparound_reordering_and_count_mismatch) ... ok
+test_open_button_and_cancel (test_open_without_drawings.OpenWithoutDrawingsTests.test_open_button_and_cancel) ... ok
+test_restore_and_normal_open_load_drawings (test_open_without_drawings.OpenWithoutDrawingsTests.test_restore_and_normal_open_load_drawings) ... ok
+test_skips_drawings_across_floors_refresh_and_late_callbacks (test_open_without_drawings.OpenWithoutDrawingsTests.test_skips_drawings_across_floors_refresh_and_late_callbacks) ... ok
+test_general_settings_persist_opportunity_charging (test_opportunity_charging.OpportunityChargingTests.test_general_settings_persist_opportunity_charging) ... ok
+test_idle_amrs_are_admitted_one_per_check (test_opportunity_charging.OpportunityChargingTests.test_idle_amrs_are_admitted_one_per_check) ... ok
+test_json_store_adds_disabled_backwards_compatible_defaults (test_opportunity_charging.OpportunityChargingTests.test_json_store_adds_disabled_backwards_compatible_defaults) ... ok
+test_unassignable_work_no_longer_charges_every_nonfull_amr (test_opportunity_charging.OpportunityChargingTests.test_unassignable_work_no_longer_charges_every_nonfull_amr) ... ok
+test_a1_at_one_to_one_hundred_uses_dxf_metres (test_pdf_underlay.PdfUnderlayGeometryTests.test_a1_at_one_to_one_hundred_uses_dxf_metres) ... ok
+test_normalisation_clamps_page_scale_and_opacity (test_pdf_underlay.PdfUnderlayGeometryTests.test_normalisation_clamps_page_scale_and_opacity) ... ok
+test_rotated_bounds_are_anchored_at_lower_left (test_pdf_underlay.PdfUnderlayGeometryTests.test_rotated_bounds_are_anchored_at_lower_left) ... ok
+test_invalid_mapping_is_reported (test_pdf_underlay.PdfUnderlayStoreTests.test_invalid_mapping_is_reported) ... ok
+test_mapping_is_floor_scoped_and_replaceable (test_pdf_underlay.PdfUnderlayStoreTests.test_mapping_is_floor_scoped_and_replaceable) ... ok
+test_person_is_positioned_behind_payload (test_staff_route_geometry.StaffRouteGeometryTests.test_person_is_positioned_behind_payload) ... ok
+test_route_follows_corridor_corner (test_staff_route_geometry.StaffRouteGeometryTests.test_route_follows_corridor_corner) ... ok
+test_assignment_at_exact_deadline_fails_even_with_earlier_wait_event (test_task_deferral.TaskDeferralTests.test_assignment_at_exact_deadline_fails_even_with_earlier_wait_event) ... ok
+test_assignment_cancels_timer_without_extending_simulation (test_task_deferral.TaskDeferralTests.test_assignment_cancels_timer_without_extending_simulation) ... ok
+test_busy_amr_task_fails_at_deadline_and_is_not_released_again (test_task_deferral.TaskDeferralTests.test_busy_amr_task_fails_at_deadline_and_is_not_released_again) ... ok
+test_idle_parking_excluded (test_task_deferral.TaskDeferralTests.test_idle_parking_excluded) ... ok
+test_invalid_limits_rejected (test_task_deferral.TaskDeferralTests.test_invalid_limits_rejected) ... ok
+test_queued_generated_timeout_does_not_resurrect_after_return_pickup (test_task_deferral.TaskDeferralTests.test_queued_generated_timeout_does_not_resurrect_after_return_pickup) ... ok
+test_released_from_deferral_keeps_original_deadline (test_task_deferral.TaskDeferralTests.test_released_from_deferral_keeps_original_deadline) ... ok
+test_return_timer_starts_at_own_release_not_outbound_schedule (test_task_deferral.TaskDeferralTests.test_return_timer_starts_at_own_release_not_outbound_schedule) ... ok
+test_unlimited_preserves_long_wait (test_task_deferral.TaskDeferralTests.test_unlimited_preserves_long_wait) ... ok
+test_setting_round_trip_and_unlimited_default (test_task_deferral_settings.TaskDeferralSettingsTests.test_setting_round_trip_and_unlimited_default) ... ok
+test_cancel_does_not_collect_or_save (test_task_generation_export.ConfigurationExportTests.test_cancel_does_not_collect_or_save) ... ok
+test_category_report_and_csv_round_trip (test_task_generation_export.ConfigurationExportTests.test_category_report_and_csv_round_trip) ... ok
+test_dialog_export_includes_live_settings_without_saving (test_task_generation_export.ConfigurationExportTests.test_dialog_export_includes_live_settings_without_saving) ... ok
+test_hide_inactive_settings_and_keep_waste_under_its_category (test_task_generation_export.ConfigurationExportTests.test_hide_inactive_settings_and_keep_waste_under_its_category) ... ok
+test_pdf_filter_controls_format_and_write_errors_are_reported (test_task_generation_export.ConfigurationExportTests.test_pdf_filter_controls_format_and_write_errors_are_reported) ... ok
+test_pdf_with_long_values_and_multiple_pages (test_task_generation_export.ConfigurationExportTests.test_pdf_with_long_values_and_multiple_pages) ... ERROR
+test_return_timing_uses_group_settings_and_category_defaults (test_task_generation_export.ConfigurationExportTests.test_return_timing_uses_group_settings_and_category_defaults) ... ok
+test_shared_groups_show_names_once_and_keep_separate_runs (test_task_generation_export.ConfigurationExportTests.test_shared_groups_show_names_once_and_keep_separate_runs) ... ok
+test_dialog_accepts_selected_failure_for_navigation (test_visualiser_failed_tasks.VisualiserFailedTaskTests.test_dialog_accepts_selected_failure_for_navigation) ... ok
+test_failure_uses_generated_task_final_destination_metadata (test_visualiser_failed_tasks.VisualiserFailedTaskTests.test_failure_uses_generated_task_final_destination_metadata) ... ok
+test_legacy_return_failure_uses_return_destination (test_visualiser_failed_tasks.VisualiserFailedTaskTests.test_legacy_return_failure_uses_return_destination) ... ok
+test_navigation_seeks_pauses_and_centres_destination (test_visualiser_failed_tasks.VisualiserFailedTaskTests.test_navigation_seeks_pauses_and_centres_destination) ... ok
+test_legacy_empty_corridor_snapshot_is_not_authoritative (test_visualiser_payload_monitor.VisualiserPayloadMonitorTests.test_legacy_empty_corridor_snapshot_is_not_authoritative) ... ok
+test_nonempty_and_multi_stop_snapshots_are_authoritative (test_visualiser_payload_monitor.VisualiserPayloadMonitorTests.test_nonempty_and_multi_stop_snapshots_are_authoritative) ... ok
+test_only_dropoff_or_task_complete_clears_payload (test_visualiser_payload_monitor.VisualiserPayloadMonitorTests.test_only_dropoff_or_task_complete_clears_payload) ... ok
+
+======================================================================
+ERROR: test_executive_page_contains_all_events_and_is_exactly_one_a4_page (test_department_review.DepartmentReviewTests.test_executive_page_contains_all_events_and_is_exactly_one_a4_page)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_department_review.py", line 121, in test_executive_page_contains_all_events_and_is_exactly_one_a4_page
+    from pypdf import PdfReader
+ModuleNotFoundError: No module named 'pypdf'
+
+======================================================================
+ERROR: test_pdf_with_long_values_and_multiple_pages (test_task_generation_export.ConfigurationExportTests.test_pdf_with_long_values_and_multiple_pages)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_task_generation_export.py", line 48, in test_pdf_with_long_values_and_multiple_pages
+    from pypdf import PdfReader
+ModuleNotFoundError: No module named 'pypdf'
+
+======================================================================
+FAIL: test_ltn_shared_drop_zone_spaces_fit_the_linen_trolley (test_flexible_inventory_model.FlexibleInventoryModelTests.test_ltn_shared_drop_zone_spaces_fit_the_linen_trolley)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_flexible_inventory_model.py", line 105, in test_ltn_shared_drop_zone_spaces_fit_the_linen_trolley
+    self.assertEqual(3, len(compatible_spaces))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 3 != 4
+
+----------------------------------------------------------------------
+Ran 115 tests in 3.282s
+
+FAILED (failures=1, errors=2)

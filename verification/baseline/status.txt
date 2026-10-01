@@ -1,0 +1,40 @@
+ M README.md
+ M amr_sim_task_generation.py
+ M ltn.json
+ M report/amr_report_analysis.py
+ M report/amr_report_cli.py
+ M report/amr_report_main.py
+ M report/amr_report_pdf_report.py
+ M simulator.py
+ M tests/test_location_spaces_manager.py
+ M visualiser/app.py
+ M visualiser/dialogs.py
+ M visualiser/models.py
+ M visualiser/ui_theme.py
+?? output/
+?? outputs/
+?? report/amr_department_executive.py
+?? report/amr_department_review.py
+?? report/amr_department_workbook.mjs
+?? report/assets/
+?? tests/test_department_review.py
+?? tests/test_journey_flows.py
+?? tests/test_lift_travel_export.py
+?? tests/test_open_without_drawings.py
+?? tests/test_task_deferral.py
+?? tests/test_task_deferral_settings.py
+?? tests/test_task_generation_export.py
+?? tmp/config_export_qa/
+?? tmp/pdfs/check0.png
+?? tmp/pdfs/check1.png
+?? tmp/pdfs/check2.png
+?? tmp/pdfs/check3.png
+?? tmp/pdfs/check4.png
+?? tmp/pdfs/check5.png
+?? tmp/pdfs/check6.png
+?? tmp/pdfs/check7.png
+?? tmp/pdfs/contract.txt
+?? tmp/pdfs/contract_pages.json
+?? verification/
+?? visualiser/inventory_spaces_manager.py
+?? visualiser/task_generation_export.py

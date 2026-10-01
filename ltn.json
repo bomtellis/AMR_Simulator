@@ -16,7 +16,8 @@
     "seed_waste_stream_containers_at_start": true,
     "disable_inventory_spaces": false,
     "enable_opportunity_charging": true,
-    "opportunity_charging_idle_period_sec": 600.0
+    "opportunity_charging_idle_period_sec": 600.0,
+    "max_task_deferral_minutes": 20.0
   },
   "building": {
     "load_unload_time_sec": 20.0,
@@ -1931,151 +1932,6 @@
       "inventory_spaces": []
     },
     {
-      "name": "D45-PHARMACY",
-      "floor": 0,
-      "x": 174.305,
-      "y": -205.989,
-      "bounding_box": [
-        {
-          "dx": -2.378,
-          "dy": 1.103
-        },
-        {
-          "dx": 2.526,
-          "dy": 1.025
-        },
-        {
-          "dx": 2.557,
-          "dy": -1.38
-        },
-        {
-          "dx": -2.409,
-          "dy": -1.333
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
-      "name": "D5-WASTE",
-      "floor": 0,
-      "x": 178.751,
-      "y": -153.903,
-      "bounding_box": [
-        {
-          "dx": -1.464,
-          "dy": 2.131
-        },
-        {
-          "dx": 1.32,
-          "dy": 2.156
-        },
-        {
-          "dx": 1.32,
-          "dy": -1.919
-        },
-        {
-          "dx": -1.515,
-          "dy": -1.894
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
-      "name": "D5-STORES",
-      "floor": 0,
-      "x": 174.635,
-      "y": -170.587,
-      "bounding_box": [
-        {
-          "dx": -2.689,
-          "dy": 1.122
-        },
-        {
-          "dx": 2.146,
-          "dy": 1.122
-        },
-        {
-          "dx": 2.171,
-          "dy": -1.005
-        },
-        {
-          "dx": -2.765,
-          "dy": -0.979
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
-      "name": "D5-PHARMACY",
-      "floor": 0,
-      "x": 174.595,
-      "y": -172.849,
-      "bounding_box": [
-        {
-          "dx": -2.649,
-          "dy": 1.055
-        },
-        {
-          "dx": 2.236,
-          "dy": 1.029
-        },
-        {
-          "dx": 2.186,
-          "dy": -1.325
-        },
-        {
-          "dx": -2.725,
-          "dy": -1.401
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
-      "name": "D45-STORES",
-      "floor": 0,
-      "x": 174.343,
-      "y": -208.566,
-      "bounding_box": [
-        {
-          "dx": -2.416,
-          "dy": 1.071
-        },
-        {
-          "dx": 2.441,
-          "dy": 1.056
-        },
-        {
-          "dx": 2.425,
-          "dy": -1.066
-        },
-        {
-          "dx": -2.479,
-          "dy": -1.066
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
       "name": "D6-WASTE",
       "floor": 0,
       "x": 185.257,
@@ -2662,7 +2518,7 @@
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 1.8,
           "flexible": true
         },
         {
@@ -2695,7 +2551,7 @@
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 1.8,
           "flexible": true
         },
         {
@@ -2728,7 +2584,7 @@
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 1.8,
           "flexible": true
         },
         {
@@ -2761,7 +2617,7 @@
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 1.8,
           "flexible": true
         }
       ],
@@ -6328,122 +6184,6 @@
         {
           "dx": -1.196,
           "dy": -2.005
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
-      "name": "D26-WASTE",
-      "floor": 1,
-      "x": 178.466,
-      "y": -153.854,
-      "bounding_box": [
-        {
-          "dx": -3.943,
-          "dy": 2.124
-        },
-        {
-          "dx": 1.598,
-          "dy": 2.091
-        },
-        {
-          "dx": 1.632,
-          "dy": -1.952
-        },
-        {
-          "dx": -3.965,
-          "dy": -1.986
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
-      "name": "D26-LINEN",
-      "floor": 1,
-      "x": 173.083,
-      "y": -157.318,
-      "bounding_box": [
-        {
-          "dx": -1.274,
-          "dy": 1.174
-        },
-        {
-          "dx": 1.102,
-          "dy": 1.196
-        },
-        {
-          "dx": 1.136,
-          "dy": -1.033
-        },
-        {
-          "dx": -1.24,
-          "dy": -1.078
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
-      "name": "D26-PHARMACY",
-      "floor": 1,
-      "x": 174.305,
-      "y": -172.963,
-      "bounding_box": [
-        {
-          "dx": -2.431,
-          "dy": 1.131
-        },
-        {
-          "dx": 2.503,
-          "dy": 1.117
-        },
-        {
-          "dx": 2.503,
-          "dy": -1.231
-        },
-        {
-          "dx": -2.417,
-          "dy": -1.245
-        }
-      ],
-      "wash_cycle_required": false,
-      "wash_cycle_duration_sec": 300.0,
-      "wash_location": "",
-      "people_area_type": "none",
-      "inventory_spaces": []
-    },
-    {
-      "name": "D25-PHARMACY",
-      "floor": 1,
-      "x": 173.987,
-      "y": -208.358,
-      "bounding_box": [
-        {
-          "dx": -2.078,
-          "dy": 0.875
-        },
-        {
-          "dx": 2.826,
-          "dy": 0.883
-        },
-        {
-          "dx": 2.826,
-          "dy": -1.288
-        },
-        {
-          "dx": -2.086,
-          "dy": -1.355
         }
       ],
       "wash_cycle_required": false,
@@ -10750,32 +10490,32 @@
           "name": "Goods Cage space 1",
           "points": [
             {
-              "dx": -0.128,
-              "dy": -2.517
+              "dx": -0.384,
+              "dy": 1.045
             },
             {
-              "dx": -0.128,
-              "dy": -1.667
+              "dx": 0.466,
+              "dy": 1.045
             },
             {
-              "dx": -0.928,
-              "dy": -1.667
+              "dx": 0.466,
+              "dy": 1.845
             },
             {
-              "dx": -0.928,
-              "dy": -2.517
+              "dx": -0.384,
+              "dy": 1.845
             }
           ],
           "payload_slots": [
             {
+              "rotation_deg": 0.0,
               "payload": "Goods Cage",
-              "rotation_deg": 90.0,
-              "dx": -0.528,
-              "dy": -2.092
+              "dx": 0.041,
+              "dy": 1.445
             }
           ],
-          "length_m": 0.8,
-          "width_m": 0.85,
+          "length_m": 0.85,
+          "width_m": 0.8,
           "height_m": 1.545,
           "flexible": false
         },
@@ -10783,32 +10523,65 @@
           "name": "Goods Cage space 2",
           "points": [
             {
-              "dx": 0.95,
-              "dy": -2.517
+              "dx": -0.344,
+              "dy": -0.198
             },
             {
-              "dx": 0.95,
-              "dy": -1.667
+              "dx": 0.506,
+              "dy": -0.198
             },
             {
-              "dx": 0.15,
-              "dy": -1.667
+              "dx": 0.506,
+              "dy": 0.602
             },
             {
-              "dx": 0.15,
-              "dy": -2.517
+              "dx": -0.344,
+              "dy": 0.602
             }
           ],
           "payload_slots": [
             {
+              "rotation_deg": 0.0,
               "payload": "Goods Cage",
-              "rotation_deg": 90.0,
-              "dx": 0.55,
-              "dy": -2.092
+              "dx": 0.081,
+              "dy": 0.202
             }
           ],
-          "length_m": 0.8,
-          "width_m": 0.85,
+          "length_m": 0.85,
+          "width_m": 0.8,
+          "height_m": 1.545,
+          "flexible": false
+        },
+        {
+          "name": "Goods Cage space 3",
+          "points": [
+            {
+              "dx": -0.337,
+              "dy": -1.363
+            },
+            {
+              "dx": 0.513,
+              "dy": -1.363
+            },
+            {
+              "dx": 0.513,
+              "dy": -0.563
+            },
+            {
+              "dx": -0.337,
+              "dy": -0.563
+            }
+          ],
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Goods Cage",
+              "dx": 0.088,
+              "dy": -0.963
+            }
+          ],
+          "length_m": 0.85,
+          "width_m": 0.8,
           "height_m": 1.545,
           "flexible": false
         }
@@ -11373,19 +11146,19 @@
           "points": [
             {
               "dx": -1.636,
-              "dy": -0.214
+              "dy": -0.414
             },
             {
               "dx": -0.436,
-              "dy": -0.214
+              "dy": -0.414
             },
             {
               "dx": -0.436,
-              "dy": 0.586
+              "dy": 0.786
             },
             {
               "dx": -1.636,
-              "dy": 0.586
+              "dy": 0.786
             }
           ],
           "payload_slots": [
@@ -11397,7 +11170,7 @@
             }
           ],
           "length_m": 1.2,
-          "width_m": 0.8,
+          "width_m": 1.2,
           "height_m": 1.6,
           "flexible": true
         },
@@ -11406,19 +11179,19 @@
           "points": [
             {
               "dx": -0.18,
-              "dy": -0.234
+              "dy": -0.434
             },
             {
               "dx": 1.02,
-              "dy": -0.234
+              "dy": -0.434
             },
             {
               "dx": 1.02,
-              "dy": 0.566
+              "dy": 0.766
             },
             {
               "dx": -0.18,
-              "dy": 0.566
+              "dy": 0.766
             }
           ],
           "payload_slots": [
@@ -11430,7 +11203,7 @@
             }
           ],
           "length_m": 1.2,
-          "width_m": 0.8,
+          "width_m": 1.2,
           "height_m": 1.6,
           "flexible": true
         },
@@ -11439,19 +11212,19 @@
           "points": [
             {
               "dx": 1.294,
-              "dy": -0.234
+              "dy": -0.434
             },
             {
               "dx": 2.494,
-              "dy": -0.234
+              "dy": -0.434
             },
             {
               "dx": 2.494,
-              "dy": 0.566
+              "dy": 0.766
             },
             {
               "dx": 1.294,
-              "dy": 0.566
+              "dy": 0.766
             }
           ],
           "payload_slots": [
@@ -11463,9 +11236,35 @@
             }
           ],
           "length_m": 1.2,
-          "width_m": 0.8,
+          "width_m": 1.2,
           "height_m": 1.6,
           "flexible": true
+        },
+        {
+          "name": "Flexible space 1",
+          "payload_slots": [],
+          "flexible": true,
+          "height_m": 999999.0,
+          "points": [
+            {
+              "dx": 2.494,
+              "dy": -0.6
+            },
+            {
+              "dx": 3.694,
+              "dy": -0.6
+            },
+            {
+              "dx": 3.694,
+              "dy": 0.6
+            },
+            {
+              "dx": 2.494,
+              "dy": 0.6
+            }
+          ],
+          "length_m": 1.2,
+          "width_m": 1.2
         }
       ]
     },
@@ -11630,31 +11429,24 @@
           "name": "Burlodge Trolley space 1",
           "points": [
             {
-              "dx": -0.056,
+              "dx": 0.144,
               "dy": -1.899
             },
             {
-              "dx": -0.056,
+              "dx": 0.144,
               "dy": -0.699
             },
             {
-              "dx": -0.856,
+              "dx": -1.056,
               "dy": -0.699
             },
             {
-              "dx": -0.856,
+              "dx": -1.056,
               "dy": -1.899
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.456,
-              "dy": -1.299
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -11663,31 +11455,24 @@
           "name": "Burlodge Trolley space 2",
           "points": [
             {
-              "dx": -0.056,
+              "dx": 0.144,
               "dy": -0.399
             },
             {
-              "dx": -0.056,
+              "dx": 0.144,
               "dy": 0.801
             },
             {
-              "dx": -0.856,
+              "dx": -1.056,
               "dy": 0.801
             },
             {
-              "dx": -0.856,
+              "dx": -1.056,
               "dy": -0.399
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.456,
-              "dy": 0.201
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -11696,31 +11481,24 @@
           "name": "Burlodge Trolley space 3",
           "points": [
             {
-              "dx": -0.056,
+              "dx": 0.144,
               "dy": 1.101
             },
             {
-              "dx": -0.056,
+              "dx": 0.144,
               "dy": 2.301
             },
             {
-              "dx": -0.856,
+              "dx": -1.056,
               "dy": 2.301
             },
             {
-              "dx": -0.856,
+              "dx": -1.056,
               "dy": 1.101
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.456,
-              "dy": 1.701
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -11888,31 +11666,24 @@
           "name": "Burlodge Trolley space 1",
           "points": [
             {
-              "dx": 0.451,
+              "dx": 0.651,
               "dy": 1.294
             },
             {
-              "dx": 0.451,
+              "dx": 0.651,
               "dy": 2.494
             },
             {
-              "dx": -0.349,
+              "dx": -0.549,
               "dy": 2.494
             },
             {
-              "dx": -0.349,
+              "dx": -0.549,
               "dy": 1.294
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": 0.051,
-              "dy": 1.894
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -11921,31 +11692,24 @@
           "name": "Burlodge Trolley space 2",
           "points": [
             {
-              "dx": 0.454,
+              "dx": 0.654,
               "dy": -0.263
             },
             {
-              "dx": 0.454,
+              "dx": 0.654,
               "dy": 0.937
             },
             {
-              "dx": -0.346,
+              "dx": -0.546,
               "dy": 0.937
             },
             {
-              "dx": -0.346,
+              "dx": -0.546,
               "dy": -0.263
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": 0.054,
-              "dy": 0.337
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -11954,31 +11718,24 @@
           "name": "Burlodge Trolley space 3",
           "points": [
             {
-              "dx": 0.484,
+              "dx": 0.684,
               "dy": -1.768
             },
             {
-              "dx": 0.484,
+              "dx": 0.684,
               "dy": -0.568
             },
             {
-              "dx": -0.316,
+              "dx": -0.516,
               "dy": -0.568
             },
             {
-              "dx": -0.316,
+              "dx": -0.516,
               "dy": -1.768
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": 0.084,
-              "dy": -1.168
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -12053,31 +11810,24 @@
           "name": "Burlodge Trolley space 1",
           "points": [
             {
-              "dx": 0.204,
+              "dx": 0.404,
               "dy": -1.638
             },
             {
-              "dx": 0.204,
+              "dx": 0.404,
               "dy": -0.438
             },
             {
-              "dx": -0.596,
+              "dx": -0.796,
               "dy": -0.438
             },
             {
-              "dx": -0.596,
+              "dx": -0.796,
               "dy": -1.638
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.196,
-              "dy": -1.038
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -12086,31 +11836,24 @@
           "name": "Burlodge Trolley space 2",
           "points": [
             {
-              "dx": 0.204,
+              "dx": 0.404,
               "dy": -0.138
             },
             {
-              "dx": 0.204,
+              "dx": 0.404,
               "dy": 1.062
             },
             {
-              "dx": -0.596,
+              "dx": -0.796,
               "dy": 1.062
             },
             {
-              "dx": -0.596,
+              "dx": -0.796,
               "dy": -0.138
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.196,
-              "dy": 0.462
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -12119,34 +11862,60 @@
           "name": "Burlodge Trolley space 3",
           "points": [
             {
-              "dx": 0.204,
+              "dx": 0.404,
               "dy": 1.362
             },
             {
-              "dx": 0.204,
+              "dx": 0.404,
               "dy": 2.562
             },
             {
-              "dx": -0.596,
+              "dx": -0.796,
               "dy": 2.562
             },
             {
-              "dx": -0.596,
+              "dx": -0.796,
               "dy": 1.362
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.196,
-              "dy": 1.962
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
+        },
+        {
+          "name": "Flexible space 1",
+          "payload_slots": [
+            {
+              "rotation_deg": 0.0,
+              "payload": "Linen Trolley",
+              "dx": 1.004,
+              "dy": 0.0
+            }
+          ],
+          "flexible": false,
+          "height_m": 999999.0,
+          "points": [
+            {
+              "dx": 0.404,
+              "dy": -0.375
+            },
+            {
+              "dx": 1.604,
+              "dy": -0.375
+            },
+            {
+              "dx": 1.604,
+              "dy": 0.375
+            },
+            {
+              "dx": 0.404,
+              "dy": 0.375
+            }
+          ],
+          "length_m": 1.2,
+          "width_m": 0.75
         }
       ]
     },
@@ -12218,31 +11987,24 @@
           "name": "Burlodge Trolley space 1",
           "points": [
             {
-              "dx": 0.56,
+              "dx": 0.76,
               "dy": -1.544
             },
             {
-              "dx": 0.56,
+              "dx": 0.76,
               "dy": -0.344
             },
             {
-              "dx": -0.24,
+              "dx": -0.44,
               "dy": -0.344
             },
             {
-              "dx": -0.24,
+              "dx": -0.44,
               "dy": -1.544
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": 0.16,
-              "dy": -0.944
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -12251,31 +12013,24 @@
           "name": "Burlodge Trolley space 2",
           "points": [
             {
-              "dx": 0.568,
+              "dx": 0.768,
               "dy": -0.085
             },
             {
-              "dx": 0.568,
+              "dx": 0.768,
               "dy": 1.115
             },
             {
-              "dx": -0.232,
+              "dx": -0.432,
               "dy": 1.115
             },
             {
-              "dx": -0.232,
+              "dx": -0.432,
               "dy": -0.085
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": 0.168,
-              "dy": 0.515
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -12284,31 +12039,24 @@
           "name": "Burlodge Trolley space 3",
           "points": [
             {
-              "dx": 0.552,
+              "dx": 0.752,
               "dy": 1.296
             },
             {
-              "dx": 0.552,
+              "dx": 0.752,
               "dy": 2.496
             },
             {
-              "dx": -0.248,
+              "dx": -0.448,
               "dy": 2.496
             },
             {
-              "dx": -0.248,
+              "dx": -0.448,
               "dy": 1.296
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": 0.152,
-              "dy": 1.896
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -12347,31 +12095,24 @@
           "name": "Burlodge Trolley space 1",
           "points": [
             {
-              "dx": 0.182,
+              "dx": 0.382,
               "dy": -1.937
             },
             {
-              "dx": 0.182,
+              "dx": 0.382,
               "dy": -0.737
             },
             {
-              "dx": -0.618,
+              "dx": -0.818,
               "dy": -0.737
             },
             {
-              "dx": -0.618,
+              "dx": -0.818,
               "dy": -1.937
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.218,
-              "dy": -1.337
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -12380,31 +12121,24 @@
           "name": "Burlodge Trolley space 2",
           "points": [
             {
-              "dx": 0.157,
+              "dx": 0.357,
               "dy": -0.545
             },
             {
-              "dx": 0.157,
+              "dx": 0.357,
               "dy": 0.655
             },
             {
-              "dx": -0.643,
+              "dx": -0.843,
               "dy": 0.655
             },
             {
-              "dx": -0.643,
+              "dx": -0.843,
               "dy": -0.545
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.243,
-              "dy": 0.055
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
@@ -12413,34 +12147,53 @@
           "name": "Burlodge Trolley space 3",
           "points": [
             {
-              "dx": 0.148,
+              "dx": 0.348,
               "dy": 0.859
             },
             {
-              "dx": 0.148,
+              "dx": 0.348,
               "dy": 2.059
             },
             {
-              "dx": -0.652,
+              "dx": -0.852,
               "dy": 2.059
             },
             {
-              "dx": -0.652,
+              "dx": -0.852,
               "dy": 0.859
             }
           ],
-          "payload_slots": [
-            {
-              "rotation_deg": 90.0,
-              "payload": "Burlodge Trolley",
-              "dx": -0.252,
-              "dy": 1.459
-            }
-          ],
-          "length_m": 0.8,
+          "payload_slots": [],
+          "length_m": 1.2,
           "width_m": 1.2,
           "height_m": 2.0,
           "flexible": true
+        },
+        {
+          "name": "Flexible space 1",
+          "payload_slots": [],
+          "flexible": true,
+          "height_m": 999999.0,
+          "points": [
+            {
+              "dx": 0.382,
+              "dy": -0.6
+            },
+            {
+              "dx": 1.582,
+              "dy": -0.6
+            },
+            {
+              "dx": 1.582,
+              "dy": 0.6
+            },
+            {
+              "dx": 0.382,
+              "dy": 0.6
+            }
+          ],
+          "length_m": 1.2,
+          "width_m": 1.2
         }
       ]
     },
@@ -12522,7 +12275,7 @@
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 1.8,
           "flexible": true
         },
         {
@@ -12555,7 +12308,7 @@
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 1.8,
           "flexible": true
         },
         {
@@ -12588,74 +12341,74 @@
           ],
           "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.5,
+          "height_m": 1.8,
           "flexible": true
         },
         {
           "name": "Burlodge Trolley space 5",
           "points": [
             {
-              "dx": 2.523,
-              "dy": 1.184
+              "dx": 2.182,
+              "dy": 1.875
             },
             {
-              "dx": 2.523,
-              "dy": -0.016
+              "dx": 3.382,
+              "dy": 1.875
             },
             {
-              "dx": 3.323,
-              "dy": -0.016
+              "dx": 3.382,
+              "dy": 2.675
             },
             {
-              "dx": 3.323,
-              "dy": 1.184
+              "dx": 2.182,
+              "dy": 2.675
             }
           ],
           "payload_slots": [
             {
-              "rotation_deg": 270.0,
+              "rotation_deg": 0.0,
               "payload": "Burlodge Trolley",
-              "dx": 2.923,
-              "dy": 0.584
+              "dx": 2.782,
+              "dy": 2.275
             }
           ],
-          "length_m": 0.8,
-          "width_m": 1.2,
-          "height_m": 1.5,
+          "length_m": 1.2,
+          "width_m": 0.8,
+          "height_m": 1.8,
           "flexible": true
         },
         {
           "name": "Goods Cage space 5",
           "points": [
             {
-              "dx": -1.392,
+              "dx": -1.567,
               "dy": -2.514
             },
             {
-              "dx": -0.542,
+              "dx": -0.367,
               "dy": -2.514
             },
             {
-              "dx": -0.542,
+              "dx": -0.367,
               "dy": -1.714
             },
             {
-              "dx": -1.392,
+              "dx": -1.567,
               "dy": -1.714
             }
           ],
           "payload_slots": [
             {
               "rotation_deg": 0.0,
-              "payload": "Goods Cage",
+              "payload": "Burlodge Trolley",
               "dx": -0.967,
               "dy": -2.114
             }
           ],
-          "length_m": 0.85,
+          "length_m": 1.2,
           "width_m": 0.8,
-          "height_m": 1.545,
-          "flexible": true
+          "height_m": 1.8,
+          "flexible": false
         },
         {
           "name": "Goods Cage space 6",
@@ -12687,7 +12440,7 @@
           ],
           "length_m": 0.85,
           "width_m": 0.8,
-          "height_m": 1.545,
+          "height_m": 1.8,
           "flexible": true
         },
         {
@@ -12720,7 +12473,7 @@
           ],
           "length_m": 0.85,
           "width_m": 0.8,
-          "height_m": 1.545,
+          "height_m": 1.8,
           "flexible": true
         },
         {
@@ -12753,7 +12506,7 @@
           ],
           "length_m": 0.85,
           "width_m": 0.8,
-          "height_m": 1.545,
+          "height_m": 1.8,
           "flexible": true
         }
       ]
@@ -12767,7 +12520,8 @@
       "wash_cycle_required": false,
       "wash_cycle_duration_sec": 300.0,
       "wash_location": "",
-      "people_area_type": "none"
+      "people_area_type": "none",
+      "inventory_spaces": []
     }
   ],
   "corridors": {
@@ -12997,14 +12751,6 @@
         "door_clear_width_m": 0.9
       },
       {
-        "name": "C0-18",
-        "floor": 0,
-        "x": 178.703,
-        "y": -150.01,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
         "name": "C0-17",
         "floor": 0,
         "x": 139.652,
@@ -13113,14 +12859,6 @@
         "floor": 1,
         "x": 143.407,
         "y": -85.152,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C1-32",
-        "floor": 1,
-        "x": 178.434,
-        "y": -150.018,
         "has_door": false,
         "door_clear_width_m": 0.9
       },
@@ -13701,14 +13439,6 @@
         "door_clear_width_m": 0.9
       },
       {
-        "name": "C1-40",
-        "floor": 1,
-        "x": 170.626,
-        "y": -149.962,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
         "name": "C2-21",
         "floor": 2,
         "x": 137.372,
@@ -14008,14 +13738,6 @@
         "name": "C0-50",
         "floor": 0,
         "x": 145,
-        "y": -150,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-51",
-        "floor": 0,
-        "x": 184,
         "y": -150,
         "has_door": false,
         "door_clear_width_m": 0.9
@@ -14321,86 +14043,6 @@
         "floor": 0,
         "x": 145.007,
         "y": -203.817,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-90",
-        "floor": 0,
-        "x": 183.823,
-        "y": -191.806,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-91",
-        "floor": 0,
-        "x": 177.945,
-        "y": -191.718,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-92",
-        "floor": 0,
-        "x": 184.086,
-        "y": -203.604,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-93",
-        "floor": 0,
-        "x": 170.664,
-        "y": -203.648,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-94",
-        "floor": 0,
-        "x": 170.752,
-        "y": -205.534,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-95",
-        "floor": 0,
-        "x": 170.796,
-        "y": -191.586,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-96",
-        "floor": 0,
-        "x": 170.664,
-        "y": -149.918,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-97",
-        "floor": 0,
-        "x": 170.667,
-        "y": -170.23,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-98",
-        "floor": 0,
-        "x": 170.746,
-        "y": -172.849,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C0-99",
-        "floor": 0,
-        "x": 170.696,
-        "y": -208.861,
         "has_door": false,
         "door_clear_width_m": 0.9
       },
@@ -16041,30 +15683,6 @@
         "floor": 1,
         "x": 205.408,
         "y": -131.454,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C1-53",
-        "floor": 1,
-        "x": 170.958,
-        "y": -157.521,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C1-54",
-        "floor": 1,
-        "x": 170.842,
-        "y": -173.466,
-        "has_door": false,
-        "door_clear_width_m": 0.9
-      },
-      {
-        "name": "C1-55",
-        "floor": 1,
-        "x": 170.64,
-        "y": -208.759,
         "has_door": false,
         "door_clear_width_m": 0.9
       },
@@ -17879,38 +17497,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C1-30",
-        "to": "C1-40",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-40",
-        "to": "C1-30",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-40",
-        "to": "C1-32",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-32",
-        "to": "C1-40",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C2-8",
         "to": "C2-21",
         "bidirectional": true,
@@ -18577,22 +18163,6 @@
       {
         "from": "C0-50",
         "to": "C0-16",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-18",
-        "to": "C0-51",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-51",
-        "to": "C0-18",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -19617,278 +19187,6 @@
       {
         "from": "C0-86",
         "to": "C0-89",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-50",
-        "to": "C0-96",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-96",
-        "to": "C0-50",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-96",
-        "to": "C0-18",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-18",
-        "to": "C0-96",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-95",
-        "to": "C0-91",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-91",
-        "to": "C0-95",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-91",
-        "to": "C0-90",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-90",
-        "to": "C0-91",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-90",
-        "to": "C0-92",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-92",
-        "to": "C0-90",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-92",
-        "to": "C0-93",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-93",
-        "to": "C0-92",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-95",
-        "to": "C0-93",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-93",
-        "to": "C0-95",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-93",
-        "to": "C0-94",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-94",
-        "to": "C0-93",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-94",
-        "to": "D45-PHARMACY",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D45-PHARMACY",
-        "to": "C0-94",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-96",
-        "to": "C0-97",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-97",
-        "to": "C0-96",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-97",
-        "to": "C0-98",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-98",
-        "to": "C0-97",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-98",
-        "to": "C0-95",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-95",
-        "to": "C0-98",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-97",
-        "to": "D5-STORES",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D5-STORES",
-        "to": "C0-97",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-98",
-        "to": "D5-PHARMACY",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D5-PHARMACY",
-        "to": "C0-98",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-94",
-        "to": "C0-99",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-99",
-        "to": "C0-94",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-99",
-        "to": "D45-STORES",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D45-STORES",
-        "to": "C0-99",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C0-18",
-        "to": "D5-WASTE",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D5-WASTE",
-        "to": "C0-18",
         "bidirectional": true,
         "width_m": 2.4,
         "people_area_type": "none",
@@ -25679,118 +24977,6 @@
         "people_profile_ids": []
       },
       {
-        "from": "C1-40",
-        "to": "C1-53",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-53",
-        "to": "C1-40",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-53",
-        "to": "C1-54",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-54",
-        "to": "C1-53",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-54",
-        "to": "C1-55",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-55",
-        "to": "C1-54",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-55",
-        "to": "D25-PHARMACY",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D25-PHARMACY",
-        "to": "C1-55",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-54",
-        "to": "D26-PHARMACY",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D26-PHARMACY",
-        "to": "C1-54",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-53",
-        "to": "D26-LINEN",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D26-LINEN",
-        "to": "C1-53",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "C1-32",
-        "to": "D26-WASTE",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
-        "from": "D26-WASTE",
-        "to": "C1-32",
-        "bidirectional": true,
-        "width_m": 2.4,
-        "people_area_type": "none",
-        "people_profile_ids": []
-      },
-      {
         "from": "C1-58",
         "to": "C1-57",
         "bidirectional": true,
@@ -29667,13 +28853,13 @@
       "length_m": 0.6,
       "width_m": 0.6,
       "height_m": 0.2,
+      "weight_kg": 80.0,
       "speed_m_per_sec": 1.2,
       "motor_power_w": 600.0,
       "battery_capacity_kwh": 10.0,
       "battery_charge_rate_kw": 3.0,
       "recharge_threshold_percent": 20.0,
-      "battery_soc_percent": 100.0,
-      "start_location": "AMR-CENTRE"
+      "battery_soc_percent": 100.0
     },
     {
       "id": "AMR-B",
@@ -29700,13 +28886,13 @@
       "length_m": 1.2,
       "width_m": 0.6,
       "height_m": 0.2,
+      "weight_kg": 990.0,
       "speed_m_per_sec": 1.2,
       "motor_power_w": 1000.0,
       "battery_capacity_kwh": 10.0,
       "battery_charge_rate_kw": 3.0,
       "recharge_threshold_percent": 20.0,
-      "battery_soc_percent": 100.0,
-      "start_location": "AMR-CENTRE"
+      "battery_soc_percent": 100.0
     },
     {
       "id": "AMR-C",
@@ -29733,13 +28919,13 @@
       "length_m": 1.2,
       "width_m": 0.6,
       "height_m": 0.2,
+      "weight_kg": 990.0,
       "speed_m_per_sec": 1.5,
       "motor_power_w": 1000.0,
       "battery_capacity_kwh": 20.0,
       "battery_charge_rate_kw": 3.0,
       "recharge_threshold_percent": 20.0,
-      "battery_soc_percent": 100.0,
-      "start_location": "AMR-CENTRE"
+      "battery_soc_percent": 100.0
     }
   ],
   "lifts": [
@@ -30177,7 +29363,6 @@
         "C0-15",
         "C0-16",
         "C0-17",
-        "C0-18",
         "C0-19",
         "C0-2",
         "C0-20",
@@ -30226,7 +29411,6 @@
         "C1-3",
         "C1-30",
         "C1-31",
-        "C1-32",
         "C1-33",
         "C1-34",
         "C1-4",
@@ -30359,10 +29543,6 @@
         [
           "C0-16",
           "C0-17"
-        ],
-        [
-          "C0-16",
-          "C0-18"
         ],
         [
           "C0-9",
@@ -30559,10 +29739,6 @@
         [
           "C1-30",
           "C1-31"
-        ],
-        [
-          "C1-30",
-          "C1-32"
         ],
         [
           "C1-29",
@@ -30918,6 +30094,9 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D1-CATERING"
           ]
         },
         "linen": {
@@ -30927,17 +30106,25 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D1-LINEN",
+            "D1-LINEN_2"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D1-PHARMACY"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D1-PHARMACY"
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -30945,13 +30132,19 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D1-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D1-WASTE"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D1-WASTE"
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -31028,23 +30221,29 @@
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D2-PHARMACY"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D2-PHARMACY"
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -31052,13 +30251,19 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D2-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D2-WASTE"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D2-WASTE"
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -31138,6 +30343,10 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D3-CATERING",
+            "D3-CATERING_2"
           ]
         },
         "linen": {
@@ -31147,17 +30356,25 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D3-LINEN",
+            "D3-LINEN_2"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D3-PHARMACY"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D3-PHARMACY"
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -31165,13 +30382,19 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D3-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D3-WASTE"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D3-WASTE"
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -31189,7 +30412,7 @@
       "id": "D4",
       "name": "OPD1",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -31297,121 +30520,10 @@
       "y": -155.963
     },
     {
-      "id": "D5",
-      "name": "OPD2",
-      "floor": 0,
-      "enabled": false,
-      "bed_count": 0,
-      "patient_turnover": 0.0,
-      "staff_count": 0,
-      "hours_operated_per_day": 10.0,
-      "operating_start_time": "07:00",
-      "operating_end_time": "17:00",
-      "days_active": [
-        "mon",
-        "tue",
-        "wed",
-        "thu",
-        "fri"
-      ],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "threshold",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D5-WASTE-CLINICAL"
-        },
-        {
-          "name": "Domestic",
-          "generation_mode": "threshold",
-          "frequency_per_day": 5.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D5-WASTE-DOMESTIC"
-        },
-        {
-          "name": "Linen",
-          "generation_mode": "threshold",
-          "frequency_per_day": 20.0,
-          "volume_per_event_m3": 0.007,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D5-WASTE-LINEN"
-        }
-      ],
-      "task_generation_locations": {
-        "catering": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D5-PHARMACY"
-          ],
-          "locations": [
-            "D5-PHARMACY"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D5-STORES"
-          ],
-          "locations": [
-            "D5-STORES"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D5-WASTE"
-          ],
-          "locations": [
-            "D5-WASTE"
-          ],
-          "dropoff_zone_locations": []
-        }
-      },
-      "task_generation_location_suffixes": {
-        "catering": "-CATERING",
-        "linen": "-LINEN",
-        "pharmacy": "-PHARMACY",
-        "ssd": "-SSD",
-        "stores": "-STORES",
-        "waste": "-WASTE"
-      },
-      "x": 171.0,
-      "y": -158.0
-    },
-    {
       "id": "D6",
       "name": "Mortuary",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -31481,7 +30593,7 @@
       "id": "D7",
       "name": "Pharmacy",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -31555,7 +30667,7 @@
       "id": "D8",
       "name": "Central Imaging",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -31635,7 +30747,7 @@
       "id": "D9",
       "name": "Resturant",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -31700,7 +30812,7 @@
       "id": "D10",
       "name": "Minor Injuries",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -31759,7 +30871,8 @@
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [
@@ -31767,17 +30880,24 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D10-LINEN"
           ]
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D10-PHARMACY"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D10-PHARMACY"
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -31785,13 +30905,19 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D10-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D14-WASTE"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D14-WASTE"
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -31868,21 +30994,25 @@
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -31890,13 +31020,19 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D11-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D14-WASTE"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D14-WASTE"
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -31973,23 +31109,29 @@
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D12-PHARMACY"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D12-PHARMACY"
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -31997,13 +31139,19 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D12-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D14-WASTE"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D14-WASTE"
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -32080,23 +31228,29 @@
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [
             "D13-PHARMACY"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D13-PHARMACY"
+          ]
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -32104,13 +31258,19 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D13-STORES"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D14-WASTE"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D14-WASTE"
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -32187,21 +31347,25 @@
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "linen": {
           "pickup_dropoff_locations": [],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
-          ]
+          ],
+          "locations": []
         },
         "pharmacy": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "ssd": {
           "pickup_dropoff_locations": [],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": []
         },
         "stores": {
           "pickup_dropoff_locations": [
@@ -32209,13 +31373,19 @@
           ],
           "dropoff_zone_locations": [
             "D3-DROP-ZONE"
+          ],
+          "locations": [
+            "D12-STORES_2"
           ]
         },
         "waste": {
           "pickup_dropoff_locations": [
             "D14-WASTE"
           ],
-          "dropoff_zone_locations": []
+          "dropoff_zone_locations": [],
+          "locations": [
+            "D14-WASTE"
+          ]
         }
       },
       "task_generation_location_suffixes": {
@@ -32233,7 +31403,7 @@
       "id": "D15",
       "name": "Essential Services Lab",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -32300,7 +31470,7 @@
       "id": "D16",
       "name": "Ante-natal",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -32417,7 +31587,7 @@
       "id": "D17",
       "name": "Ambulatory Care",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -32534,7 +31704,7 @@
       "id": "D18",
       "name": "Neonatal",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -32651,7 +31821,7 @@
       "id": "D19",
       "name": "Birthing Suite",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -32764,7 +31934,7 @@
       "id": "D20",
       "name": "Theatres",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -32895,7 +32065,7 @@
       "id": "D21",
       "name": "Intensive Care",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -33016,7 +32186,7 @@
       "id": "D22",
       "name": "Endoscopy",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -33128,7 +32298,7 @@
       "id": "D23",
       "name": "Gynae Outpatients",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -33241,7 +32411,7 @@
       "id": "D24",
       "name": "Urology Outpatients",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -33349,238 +32519,10 @@
       "y": -202.972
     },
     {
-      "id": "D25",
-      "name": "Breast Care",
-      "floor": 1,
-      "enabled": false,
-      "bed_count": 0,
-      "patient_turnover": 0.0,
-      "staff_count": 0,
-      "hours_operated_per_day": 14.0,
-      "operating_start_time": "06:00",
-      "operating_end_time": "20:00",
-      "days_active": [
-        "mon",
-        "tue",
-        "wed",
-        "thu",
-        "fri",
-        "sat",
-        "sun"
-      ],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "threshold",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D26-WASTE-CLINICAL"
-        },
-        {
-          "name": "Domestic",
-          "generation_mode": "threshold",
-          "frequency_per_day": 5.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D26-WASTE-DOMESTIC"
-        },
-        {
-          "name": "Linen",
-          "generation_mode": "threshold",
-          "frequency_per_day": 20.0,
-          "volume_per_event_m3": 0.007,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D26-WASTE-LINEN"
-        }
-      ],
-      "task_generation_locations": {
-        "catering": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D25-PHARMACY"
-          ],
-          "locations": [
-            "D25-PHARMACY"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D22-STORES"
-          ],
-          "locations": [
-            "D22-STORES"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D26-WASTE"
-          ],
-          "locations": [
-            "D26-WASTE"
-          ],
-          "dropoff_zone_locations": []
-        }
-      },
-      "task_generation_location_suffixes": {
-        "catering": "-CATERING",
-        "linen": "-LINEN",
-        "pharmacy": "-PHARMACY",
-        "ssd": "-SSD",
-        "stores": "-STORES",
-        "waste": "-WASTE"
-      },
-      "x": 178.0,
-      "y": -204.0
-    },
-    {
-      "id": "D26",
-      "name": "Cardiorespiratory",
-      "floor": 1,
-      "enabled": false,
-      "bed_count": 0,
-      "patient_turnover": 0.0,
-      "staff_count": 0,
-      "hours_operated_per_day": 12.0,
-      "operating_start_time": "07:00",
-      "operating_end_time": "19:00",
-      "days_active": [
-        "mon",
-        "tue",
-        "wed",
-        "thu",
-        "fri"
-      ],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "threshold",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D26-WASTE-CLINICAL"
-        },
-        {
-          "name": "Domestic",
-          "generation_mode": "threshold",
-          "frequency_per_day": 5.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D26-WASTE-DOMESTIC"
-        },
-        {
-          "name": "Linen",
-          "generation_mode": "threshold",
-          "frequency_per_day": 20.0,
-          "volume_per_event_m3": 0.007,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D26-WASTE-LINEN"
-        }
-      ],
-      "task_generation_locations": {
-        "catering": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": [
-            "D26-LINEN"
-          ],
-          "locations": [
-            "D26-LINEN"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D26-PHARMACY"
-          ],
-          "locations": [
-            "D26-PHARMACY"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D22-STORES"
-          ],
-          "locations": [
-            "D22-STORES"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D26-WASTE"
-          ],
-          "locations": [
-            "D26-WASTE"
-          ],
-          "dropoff_zone_locations": []
-        }
-      },
-      "task_generation_location_suffixes": {
-        "catering": "-CATERING",
-        "linen": "-LINEN",
-        "pharmacy": "-PHARMACY",
-        "ssd": "-SSD",
-        "stores": "-STORES",
-        "waste": "-WASTE"
-      },
-      "x": 178.073,
-      "y": -174.786
-    },
-    {
       "id": "D27",
       "name": "Minor ops Suite",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -33691,7 +32633,7 @@
       "id": "D28",
       "name": "Catering",
       "floor": 2,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -33806,7 +32748,7 @@
       "id": "D29",
       "name": "Paediatric Inpatients",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -33937,7 +32879,7 @@
       "id": "D30",
       "name": "Maternity Inpatients",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -34068,7 +33010,7 @@
       "id": "D31",
       "name": "Adult Inpatients 1",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -34199,7 +33141,7 @@
       "id": "D32",
       "name": "Adult Inpatients 2",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -34332,7 +33274,7 @@
       "id": "D33",
       "name": "Adult Inpatients 3",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -34463,7 +33405,7 @@
       "id": "D34",
       "name": "Adult Inpatients 4",
       "floor": 3,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -34596,7 +33538,7 @@
       "id": "D35",
       "name": "Respiratory Inpatients",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -34723,7 +33665,7 @@
       "id": "D36",
       "name": "Cardic Inpatients",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -34854,7 +33796,7 @@
       "id": "D37",
       "name": "Adult Inpatients 5",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -34985,7 +33927,7 @@
       "id": "D38",
       "name": "Elective Orthopaedic Inpatients",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -35116,7 +34058,7 @@
       "id": "D39",
       "name": "Adult Inpatients 6",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 32,
       "patient_turnover": 1.0,
       "staff_count": 12,
@@ -35247,7 +34189,7 @@
       "id": "D40",
       "name": "Adult Inpatients 7",
       "floor": 4,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 32,
       "patient_turnover": 1.0,
       "staff_count": 12,
@@ -35378,7 +34320,7 @@
       "id": "D41",
       "name": "Adult Inpatients 8",
       "floor": 5,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -35509,7 +34451,7 @@
       "id": "D42",
       "name": "Stroke Inpatients",
       "floor": 5,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -35638,7 +34580,7 @@
       "id": "D43",
       "name": "Adult Inpatients 9",
       "floor": 5,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 32,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -35769,7 +34711,7 @@
       "id": "D44",
       "name": "OPD3",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -35877,121 +34819,10 @@
       "y": -203.925
     },
     {
-      "id": "D45",
-      "name": "OPD4",
-      "floor": 0,
-      "enabled": false,
-      "bed_count": 0,
-      "patient_turnover": 0.0,
-      "staff_count": 0,
-      "hours_operated_per_day": 10.0,
-      "operating_start_time": "07:00",
-      "operating_end_time": "17:00",
-      "days_active": [
-        "mon",
-        "tue",
-        "wed",
-        "thu",
-        "fri"
-      ],
-      "waste_streams": [
-        {
-          "name": "Clinical",
-          "generation_mode": "threshold",
-          "frequency_per_day": 10.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D5-WASTE-CLINICAL"
-        },
-        {
-          "name": "Domestic",
-          "generation_mode": "threshold",
-          "frequency_per_day": 5.0,
-          "volume_per_event_m3": 0.08,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D5-WASTE-DOMESTIC"
-        },
-        {
-          "name": "Linen",
-          "generation_mode": "threshold",
-          "frequency_per_day": 20.0,
-          "volume_per_event_m3": 0.007,
-          "threshold_volume_m3": 0.0,
-          "base_daily_volume_m3": 0.0,
-          "scheduled_times": [],
-          "initial_container_present": true,
-          "shared_container": true,
-          "shared_container_group": "SHARED-BIN-D5-WASTE-LINEN"
-        }
-      ],
-      "task_generation_locations": {
-        "catering": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "linen": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "pharmacy": {
-          "pickup_dropoff_locations": [
-            "D45-PHARMACY"
-          ],
-          "locations": [
-            "D45-PHARMACY"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "ssd": {
-          "pickup_dropoff_locations": [],
-          "locations": [],
-          "dropoff_zone_locations": []
-        },
-        "stores": {
-          "pickup_dropoff_locations": [
-            "D45-STORES"
-          ],
-          "locations": [
-            "D45-STORES"
-          ],
-          "dropoff_zone_locations": []
-        },
-        "waste": {
-          "pickup_dropoff_locations": [
-            "D5-WASTE"
-          ],
-          "locations": [
-            "D5-WASTE"
-          ],
-          "dropoff_zone_locations": []
-        }
-      },
-      "task_generation_location_suffixes": {
-        "catering": "-CATERING",
-        "linen": "-LINEN",
-        "pharmacy": "-PHARMACY",
-        "ssd": "-SSD",
-        "stores": "-STORES",
-        "waste": "-WASTE"
-      },
-      "x": 177.0,
-      "y": -204.0
-    },
-    {
       "id": "D46",
       "name": "Surgical Ward",
       "floor": 1,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -36104,7 +34935,7 @@
       "id": "D47",
       "name": "Waste storage",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -36170,7 +35001,7 @@
       "id": "D48",
       "name": "Laundry",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -36271,7 +35102,7 @@
       "id": "D49",
       "name": "Receipts & Distribution",
       "floor": 0,
-      "enabled": false,
+      "enabled": true,
       "bed_count": 0,
       "patient_turnover": 0.0,
       "staff_count": 0,
@@ -36589,6 +35420,282 @@
             "payload_multiple": 1,
             "notes": ""
           },
+          "D14": {
+            "enabled": false,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "department_location_role": "dropoff",
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
+            "requires_staff": false,
+            "staff_collection_delay_minutes": 0.0,
+            "staff_handling_minutes": 15.0,
+            "staff_handoff_only": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
+            "notes": ""
+          },
+          "D12": {
+            "enabled": false,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "department_location_role": "dropoff",
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
+            "requires_staff": false,
+            "staff_collection_delay_minutes": 0.0,
+            "staff_handling_minutes": 15.0,
+            "staff_handoff_only": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
+            "notes": ""
+          },
+          "D13": {
+            "enabled": false,
+            "generation_mode": "scheduled",
+            "priority": 40,
+            "department_location_role": "dropoff",
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
+            "requires_staff": false,
+            "staff_collection_delay_minutes": 0.0,
+            "staff_handling_minutes": 15.0,
+            "staff_handoff_only": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
+            "staff_movement_policy": "minimise_movement",
+            "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [
+              "08:00",
+              "11:45",
+              "12:45",
+              "16:45",
+              "17:45"
+            ],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
+            "notes": ""
+          },
           "D1": {
             "enabled": true,
             "generation_mode": "scheduled",
@@ -36607,12 +35714,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -36703,12 +35813,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -36799,12 +35912,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -36895,12 +36011,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -36991,12 +36110,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37087,12 +36209,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37183,12 +36308,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37279,12 +36407,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37375,12 +36506,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37471,12 +36605,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37567,12 +36704,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37663,12 +36803,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37759,12 +36902,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37855,12 +37001,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -37951,12 +37100,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -38047,12 +37199,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -38143,12 +37298,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -38239,12 +37397,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -38335,12 +37496,15 @@
             "return_enabled": true,
             "return_payload": "Burlodge Trolley",
             "return_delay_minutes": 45.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 19,
             "staff_resource_name": "Host team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "minimise_movement",
             "staff_shift_pattern": "four_on_four_off_12h",
             "staff_use_custom_working_hours": false,
@@ -38456,12 +37620,15 @@
               "return_enabled": true,
               "return_payload": "Burlodge Trolley",
               "return_delay_minutes": 45.0,
+              "release_next_after_return_pickup": false,
               "requires_staff": true,
               "staff_collection_delay_minutes": 0.0,
               "staff_handling_minutes": 15.0,
-              "dropoff_zone_capacity_policy": "wait_for_space",
+              "staff_handoff_only": false,
               "staff_initial_count": 19,
               "staff_resource_name": "Host team",
+              "staff_department_fallback_enabled": false,
+              "staff_department_fallback_resource_name": "Department team",
               "staff_movement_policy": "minimise_movement",
               "staff_shift_pattern": "four_on_four_off_12h",
               "staff_use_custom_working_hours": false,
@@ -38656,12 +37823,15 @@
             "return_enabled": false,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": false,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "allow_temporary_overflow",
+            "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
             "staff_use_custom_working_hours": false,
@@ -39029,10 +38199,8 @@
             "enabled": true,
             "generation_mode": "timeframe",
             "priority": 50,
+            "department_location_role": "dropoff",
             "pickup_location": "D7-PHARMACY",
-            "pickup_locations": [
-              "D7-PHARMACY"
-            ],
             "dropoff_location": "D13-PHARMACY",
             "dropoff_locations": [
               "D13-PHARMACY"
@@ -39043,10 +38211,15 @@
             "return_enabled": false,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": false,
+            "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
+            "staff_handoff_only": false,
             "staff_initial_count": 8,
             "staff_resource_name": "Pharmacy Delivery Team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
             "staff_use_custom_working_hours": false,
@@ -39108,8 +38281,7 @@
             "timeframe_end": "17:00",
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
-            "notes": "",
-            "department_location_role": "dropoff"
+            "notes": ""
           },
           "D16": {
             "enabled": true,
@@ -39979,10 +39151,8 @@
             "pickup_locations": [
               "D7-PHARMACY"
             ],
-            "dropoff_location": "D25-PHARMACY",
-            "dropoff_locations": [
-              "D25-PHARMACY"
-            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
             "payload": "Pharmacy - Fluids",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
@@ -40065,10 +39235,8 @@
             "pickup_locations": [
               "D7-PHARMACY"
             ],
-            "dropoff_location": "D26-PHARMACY",
-            "dropoff_locations": [
-              "D26-PHARMACY"
-            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
             "payload": "Pharmacy - Fluids",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
@@ -41699,10 +40867,8 @@
             "pickup_locations": [
               "D7-PHARMACY"
             ],
-            "dropoff_location": "D45-PHARMACY",
-            "dropoff_locations": [
-              "D45-PHARMACY"
-            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
             "payload": "Pharmacy - Fluids",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
@@ -41871,10 +41037,8 @@
             "pickup_locations": [
               "D7-PHARMACY"
             ],
-            "dropoff_location": "D5-PHARMACY",
-            "dropoff_locations": [
-              "D5-PHARMACY"
-            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
             "payload": "Pharmacy - Fluids",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
@@ -41957,7 +41121,6 @@
               "D1",
               "D10",
               "D12",
-              "D13",
               "D16",
               "D17",
               "D18",
@@ -42085,7 +41248,6 @@
               "D1",
               "D10",
               "D12",
-              "D13",
               "D16",
               "D17",
               "D18",
@@ -42492,10 +41654,8 @@
             "pickup_locations": [
               "Linen Deliveries"
             ],
-            "dropoff_location": "D26-LINEN",
-            "dropoff_locations": [
-              "D26-LINEN"
-            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
             "payload": "Linen Trolley",
             "tracked_item_exchange": true,
             "exchange_mode": "top_up_only",
@@ -44617,6 +43777,94 @@
             "payload_multiple": 1,
             "notes": "Clean-linen trolley replenishment at 0.8 m\u00b3 threshold; depletion 0.64 m\u00b3/day, matching each department linen-waste rate.",
             "department_location_role": "dropoff"
+          },
+          "D13": {
+            "enabled": true,
+            "generation_mode": "threshold",
+            "priority": 55,
+            "department_location_role": "dropoff",
+            "pickup_location": "Linen Deliveries",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "Linen Trolley",
+            "tracked_item_exchange": true,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "Linen Trolley",
+            "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
+            "requires_staff": false,
+            "staff_collection_delay_minutes": 0.0,
+            "staff_handling_minutes": 15.0,
+            "staff_handoff_only": true,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
+            "staff_department_fallback_enabled": true,
+            "staff_department_fallback_resource_name": "Department team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
+            "reusable_return_pool_enabled": true,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 32.0,
+            "volume_per_event_m3": 0.02,
+            "threshold_volume_m3": 0.8,
+            "base_daily_volume_m3": 0.64,
+            "timeframe_start": "00:00",
+            "timeframe_end": "24:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
+            "notes": "Threshold-based clean-linen trolley exchange. Trolley contents deplete at the corresponding Linen waste-generation rate. Where one linen receiving area serves several departments sharing a waste location, their Linen waste rates are aggregated."
           }
         },
         "department_groups": [
@@ -45042,12 +44290,15 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": false,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "allow_temporary_overflow",
+            "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
             "staff_use_custom_working_hours": false,
@@ -45209,10 +44460,8 @@
             "enabled": true,
             "generation_mode": "threshold",
             "priority": 60,
+            "department_location_role": "pickup",
             "pickup_location": "D14-WASTE",
-            "pickup_locations": [
-              "D14-WASTE"
-            ],
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
               "D47-WASTE"
@@ -45223,6 +44472,55 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
+            "requires_staff": false,
+            "staff_collection_delay_minutes": 0.0,
+            "staff_handling_minutes": 15.0,
+            "staff_handoff_only": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
             "reusable_return_pool_enabled": false,
             "reusable_return_pool_multiplier": 2.0,
             "reusable_return_pool_max": 0,
@@ -45246,10 +44544,7 @@
             "timeframe_end": "",
             "timeframe_payload_multiple": 1,
             "payload_multiple": 1,
-            "notes": "",
-            "department_location_role": "pickup",
-            "staff_movement_policy": "batch_same_location",
-            "staff_shift_pattern": "none"
+            "notes": ""
           },
           "D11": {
             "enabled": true,
@@ -45531,10 +44826,8 @@
             "enabled": true,
             "generation_mode": "threshold",
             "priority": 60,
-            "pickup_location": "D5-WASTE",
-            "pickup_locations": [
-              "D5-WASTE"
-            ],
+            "pickup_location": "",
+            "pickup_locations": [],
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
               "D47-WASTE"
@@ -45623,10 +44916,8 @@
             "enabled": true,
             "generation_mode": "threshold",
             "priority": 60,
-            "pickup_location": "D5-WASTE",
-            "pickup_locations": [
-              "D5-WASTE"
-            ],
+            "pickup_location": "",
+            "pickup_locations": [],
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
               "D47-WASTE"
@@ -45991,10 +45282,8 @@
             "enabled": true,
             "generation_mode": "threshold",
             "priority": 60,
-            "pickup_location": "D26-WASTE",
-            "pickup_locations": [
-              "D26-WASTE"
-            ],
+            "pickup_location": "",
+            "pickup_locations": [],
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
               "D47-WASTE"
@@ -46037,10 +45326,8 @@
             "enabled": true,
             "generation_mode": "threshold",
             "priority": 60,
-            "pickup_location": "D26-WASTE",
-            "pickup_locations": [
-              "D26-WASTE"
-            ],
+            "pickup_location": "",
+            "pickup_locations": [],
             "dropoff_location": "D47-WASTE",
             "dropoff_locations": [
               "D47-WASTE"
@@ -47192,7 +46479,6 @@
               "D10",
               "D11",
               "D12",
-              "D13",
               "D14",
               "D15",
               "D16",
@@ -48720,10 +48006,8 @@
             "enabled": true,
             "generation_mode": "timeframe",
             "priority": 50,
+            "department_location_role": "dropoff",
             "pickup_location": "D49-STORES",
-            "pickup_locations": [
-              "D49-STORES"
-            ],
             "dropoff_location": "D13-STORES",
             "dropoff_locations": [
               "D13-STORES"
@@ -48734,12 +48018,15 @@
             "return_enabled": true,
             "return_payload": "Goods Cage",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": true,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "wait_for_space",
+            "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "Stores team",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
             "staff_use_custom_working_hours": false,
@@ -48797,8 +48084,7 @@
             "timeframe_end": "16:00",
             "timeframe_payload_multiple": 3,
             "payload_multiple": 3,
-            "notes": "Fortnightly delivery - Tuesday",
-            "department_location_role": "dropoff"
+            "notes": "Fortnightly delivery - Tuesday"
           },
           "D16": {
             "enabled": true,
@@ -49228,10 +48514,8 @@
             "pickup_locations": [
               "D49-STORES"
             ],
-            "dropoff_location": "D5-STORES",
-            "dropoff_locations": [
-              "D5-STORES"
-            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
             "payload": "Goods Cage",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
@@ -50739,10 +50023,8 @@
             "pickup_locations": [
               "D49-STORES"
             ],
-            "dropoff_location": "D45-STORES",
-            "dropoff_locations": [
-              "D45-STORES"
-            ],
+            "dropoff_location": "",
+            "dropoff_locations": [],
             "payload": "Goods Cage",
             "tracked_item_exchange": false,
             "exchange_mode": "top_up_only",
@@ -51390,8 +50672,7 @@
           {
             "id": "GROUP-7",
             "departments": [
-              "D11",
-              "D13"
+              "D11"
             ],
             "payload": {
               "enabled": true,
@@ -51774,12 +51055,101 @@
             "return_enabled": true,
             "return_payload": "",
             "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
             "requires_staff": false,
             "staff_collection_delay_minutes": 0.0,
             "staff_handling_minutes": 15.0,
-            "dropoff_zone_capacity_policy": "allow_temporary_overflow",
+            "staff_handoff_only": false,
             "staff_initial_count": 1,
             "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
+            "staff_movement_policy": "batch_same_location",
+            "staff_shift_pattern": "none",
+            "staff_use_custom_working_hours": false,
+            "staff_working_hours": {
+              "mon": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "tue": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "wed": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "thu": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "fri": {
+                "enabled": true,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sat": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              },
+              "sun": {
+                "enabled": false,
+                "start_time": "09:00",
+                "end_time": "17:00"
+              }
+            },
+            "reusable_return_pool_enabled": false,
+            "reusable_return_pool_multiplier": 2.0,
+            "reusable_return_pool_max": 0,
+            "route_profile": "",
+            "days_active": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri"
+            ],
+            "run_every_fortnight": false,
+            "scheduled_times": [],
+            "frequency_per_day": 0.0,
+            "volume_per_event_m3": 0.0,
+            "threshold_volume_m3": 0.0,
+            "base_daily_volume_m3": 0.0,
+            "timeframe_start": "09:00",
+            "timeframe_end": "17:00",
+            "timeframe_payload_multiple": 1,
+            "payload_multiple": 1,
+            "notes": ""
+          },
+          "D13": {
+            "enabled": false,
+            "generation_mode": "scheduled_threshold",
+            "priority": 35,
+            "department_location_role": "dropoff",
+            "pickup_location": "",
+            "dropoff_location": "",
+            "dropoff_locations": [],
+            "payload": "",
+            "tracked_item_exchange": false,
+            "exchange_mode": "top_up_only",
+            "return_enabled": true,
+            "return_payload": "",
+            "return_delay_minutes": 0.0,
+            "release_next_after_return_pickup": false,
+            "requires_staff": false,
+            "staff_collection_delay_minutes": 0.0,
+            "staff_handling_minutes": 15.0,
+            "staff_handoff_only": false,
+            "staff_initial_count": 1,
+            "staff_resource_name": "",
+            "staff_department_fallback_enabled": false,
+            "staff_department_fallback_resource_name": "Department team",
             "staff_movement_policy": "batch_same_location",
             "staff_shift_pattern": "none",
             "staff_use_custom_working_hours": false,

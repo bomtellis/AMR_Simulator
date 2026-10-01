@@ -1071,6 +1071,286 @@ def choose_task_endpoint(
 
 
 
+def _clean_text(value) -> str:
+    return _clean_payload_instance_id(value)
+
+
+def level_label(value) -> str:
+    """Keep named levels; format numeric simulator floors as L00, L01, L-01."""
+    text = _clean_text(value)
+    if not text:
+        return "Unknown"
+    try:
+        number = float(text)
+        if math.isfinite(number) and number.is_integer():
+            return f"L{int(number):02d}" if number >= 0 else f"L-{abs(int(number)):02d}"
+    except ValueError:
+        pass
+    return text
+
+
+def build_journey_flows(df, ctx, tasks, location_catalog=None, metadata=None):
+    """Task demand endpoints, independent of multi-stop leg overrides."""
+    columns = [
+        "task_id", "amr", "journey_type", "parent_task_id", "task_source",
+        "task_department", "payload", "payload_instance_id", "outcome",
+        "release_time", "assignment_time", "completion_time",
+        "origin_location", "origin_level", "origin_department",
+        "destination_location", "destination_level", "destination_department",
+        "cross_level", "endpoint_quality",
+    ]
+    group_columns = [
+        "journey_type", "origin_level", "origin_department",
+        "destination_level", "destination_department", "outcome",
+    ]
+    catalog = {} if location_catalog is None or location_catalog.empty else (
+        location_catalog.set_index("location").to_dict("index")
+    )
+    dept_names = (metadata or {}).get("department_names", {})
+    task_col = ctx.cols.get("task")
+    task_lookup = tasks.set_index("task_id").to_dict("index") if not tasks.empty else {}
+    rows = []
+    if not task_col:
+        return pd.DataFrame(columns=columns), pd.DataFrame(columns=group_columns + ["journeys"])
+    for task_id, events in df[df[task_col].notna()].groupby(task_col, sort=False):
+        task_id = str(task_id)
+        if task_id not in task_lookup or "," in task_id:
+            continue
+        events = events.sort_values(ctx.time_col, kind="stable")
+        event_names = events["_event_text"].astype(str).str.lower()
+        # Charging and other synthetic resource records are not delivery requests.
+        request = events[event_names.isin([
+            "task_generated", "waste_task_generated", "return_task_generated",
+            "task_released", "task_assigned", "multi_stop_task_assigned",
+        ])]
+        if request.empty:
+            continue
+
+        def first_value(name):
+            values = [_clean_text(v) for v in events.get(name, pd.Series(dtype=object))]
+            return next((v for v in values if v), "")
+
+        source = first_value("task_source")
+        is_return = source == "task_generation_return" or event_names.eq("return_task_generated").any()
+        empty_return = (not source and task_id.startswith("RETURN-" + str(task_lookup[task_id]["amr"]) + "-"))
+        parent = ""
+        if is_return:
+            for detail in events.get("details", pd.Series(dtype=object)):
+                match = re.fullmatch(r"Generated delayed return for (.+)", _clean_text(detail))
+                if match:
+                    parent = match.group(1)
+                    break
+            if not parent:
+                match = re.fullmatch(r"RETURN-(.+)-\d+", task_id)
+                if match and match.group(1) in task_lookup:
+                    parent = match.group(1)
+        task = task_lookup[task_id]
+        assigned = events[event_names.isin(["task_assigned", "multi_stop_task_assigned"])]
+        completed = events[event_names.isin(["task_complete", "task_completed", "multi_stop_task_complete"])]
+        failed = event_names.eq("task_failed").any()
+        outcome = "completed" if not completed.empty else "failed" if failed else "incomplete"
+        row = {
+            "task_id": task_id, "amr": task["amr"],
+            "journey_type": "Return" if is_return else "Empty AMR return" if empty_return else "Waste collection" if source == "department_waste" else "Delivery / other",
+            "parent_task_id": parent, "task_source": source,
+            "task_department": dept_names.get(first_value("department_id"), first_value("department_id")) or "Unknown",
+            "payload": task["payload"], "payload_instance_id": first_value("payload_instance_id"),
+            "outcome": outcome,
+            "release_time": fmt_ts(task["release"], ctx.has_datetime),
+            "assignment_time": fmt_ts(assigned.iloc[0][ctx.time_col], ctx.has_datetime) if not assigned.empty else "",
+            "completion_time": fmt_ts(completed.iloc[-1][ctx.time_col], ctx.has_datetime) if not completed.empty else "",
+        }
+        quality = []
+        for prefix, which, floor_key in (("origin", "from", "start_floor"), ("destination", "to", "end_floor")):
+            endpoint_col = ctx.cols.get(which)
+            endpoint = choose_task_endpoint(request, ctx, ctx.cols.get("from"), ctx.cols.get("to"), which)
+            endpoint = _clean_text(endpoint)
+            info = catalog.get(endpoint, {})
+            floor_col = ctx.cols.get(floor_key)
+            floor = None
+            if endpoint_col and floor_col:
+                matching = request[request[endpoint_col].map(_clean_text).eq(endpoint)]
+                floors = matching[floor_col].dropna()
+                if not floors.empty:
+                    floor = floors.iloc[0] if which == "from" else floors.iloc[-1]
+            if not _clean_text(floor):
+                floor = info.get("floor")
+            row[prefix + "_location"] = endpoint or "Unknown"
+            row[prefix + "_level"] = level_label(floor)
+            row[prefix + "_department"] = _clean_text(info.get("department")) or "Unknown"
+            if row[prefix + "_level"] == "Unknown" or row[prefix + "_department"] == "Unknown" or not endpoint:
+                quality.append(prefix + " metadata incomplete")
+        row["cross_level"] = ("Unknown" if "Unknown" in (row["origin_level"], row["destination_level"])
+                              else "Yes" if row["origin_level"] != row["destination_level"] else "No")
+        row["endpoint_quality"] = "; ".join(quality) or "Resolved"
+        rows.append(row)
+    detail = pd.DataFrame(rows, columns=columns)
+    summary = detail.groupby(group_columns, dropna=False).size().reset_index(name="journeys")
+    return detail, summary
+
+
+def _known_weight(value):
+    value = pd.to_numeric(value, errors="coerce")
+    return float(value) if pd.notna(value) and math.isfinite(float(value)) and value >= 0 else None
+
+
+def load_amr_weights(json_path: Path) -> Dict[str, float]:
+    """Read robot self-weight, distinct from payload capacity, for each instance."""
+    with open(json_path, encoding="utf-8") as source:
+        config = json.load(source)
+    weights = {}
+    for amr in config.get("amrs", []):
+        weight = next((value for key in ("weight_kg", "amr_weight_kg", "mass_kg")
+                       if (value := _known_weight(amr.get(key))) is not None), None)
+        name = str(amr.get("id", "")).strip()
+        if name and weight is not None:
+            weights[name] = weight
+            for number in range(1, int(amr.get("quantity", 1) or 1) + 1):
+                weights[f"{name}-{number}"] = weight
+    return weights
+
+
+def lift_payload_weight(event, ctx, payload_weights):
+    """Weigh the load actually onboard, including multiple copies of a payload."""
+    logged_weight = _known_weight(event.get("payload_weight_kg"))
+    if logged_weight is not None:
+        return logged_weight
+    raw_onboard = _clean_text(event.get("onboard_payloads"))
+    try:
+        onboard = json.loads(raw_onboard) if raw_onboard else None
+    except (ValueError, TypeError):
+        onboard = None
+    if isinstance(onboard, list):
+        # Reduced scenario logs can suppress all payload state. An empty array
+        # then means unavailable, rather than evidence of an unloaded robot.
+        scenario = str(event.get("scenario_mode", "")).strip().lower() in {"true", "1"}
+        if not onboard and scenario:
+            return None
+        total = 0.0
+        seen_instances = set()
+        for record in onboard:
+            if not isinstance(record, dict):
+                return None
+            instance = _clean_text(record.get("payload_instance_id"))
+            if instance and instance in seen_instances:
+                continue
+            if instance:
+                seen_instances.add(instance)
+            weight = _known_weight(record.get("payload_weight_kg", record.get("weight_kg")))
+            if weight is None:
+                names = split_payload_names(record.get("payload"))
+                if not names:
+                    continue
+                parts = [_known_weight(payload_weights.get(name)) for name in names]
+                if any(part is None for part in parts):
+                    return None
+                weight = sum(parts)
+            total += weight
+        return total
+    # Without an onboard snapshot, a task payload name alone does not establish
+    # that it was picked up yet. Leave that older log's load weight unknown.
+    return None
+
+
+def build_lift_movement_detail(lift_rows, ctx, payload_weights=None, amr_weights=None):
+    """One row per logged lift movement, including empty lift repositioning."""
+    columns = ["movement_id", "lift_id", "movement_type", "amr", "task_ids",
+               "start_time", "finish_time", "origin_level", "destination_level", "duration_s",
+               "origin_location", "destination_location", "travel_distance_m",
+               "amr_onboard", "direction", "endpoint_source", "payload_weight_kg", "amr_weight_kg"]
+    payload_weights = payload_weights or {}
+    amr_weights = amr_weights or {}
+    rows = []
+    if lift_rows.empty:
+        return pd.DataFrame(columns=columns)
+    for _, event in lift_rows.sort_values(ctx.time_col, kind="stable").iterrows():
+        start = event[ctx.time_col]
+        duration = float(event["lift_time_s"])
+        lift_id = _clean_text(event["_lift_id"])
+        reposition = str(event["_segment_text"]).lower() == "lift_reposition"
+        try:
+            details = json.loads(_clean_text(event.get("details")) or "{}")
+            details = details if isinstance(details, dict) else {}
+        except (ValueError, TypeError):
+            details = {}
+        floors, sources = [], []
+        for which, floor_key, node_key in (("from", "start_floor", "start_node"),
+                                           ("to", "end_floor", "end_node")):
+            # Reposition rows describe the waiting robot in the general columns.
+            # Even JSON from_floor/to_floor can be overwritten with its floor;
+            # the lift's own from/to node names retain the actual movement.
+            candidates = [details.get(which), event.get(node_key), event.get(ctx.cols.get(which))]
+            floor, source = None, "Unknown"
+            for candidate in candidates:
+                match = re.fullmatch(re.escape(lift_id) + r"-F(-?\d+)", _clean_text(candidate), re.I) if lift_id else None
+                if match:
+                    floor, source = int(match.group(1)), "lift node"
+                    break
+            if floor is None and not (reposition and "amr_wait_node" in details):
+                value = details.get(which + "_floor")
+                if _clean_text(value):
+                    floor, source = value, "segment floor"
+                elif not reposition:
+                    value = event.get(ctx.cols.get(floor_key))
+                    if _clean_text(value):
+                        floor, source = value, "event floor"
+            floors.append(floor)
+            sources.append(source)
+        numeric_floors = pd.to_numeric(pd.Series(floors), errors="coerce")
+        direction = "Unknown"
+        if numeric_floors.notna().all():
+            direction = "Up" if numeric_floors.iloc[1] > numeric_floors.iloc[0] else "Down" if numeric_floors.iloc[1] < numeric_floors.iloc[0] else "Same level"
+        distance = pd.to_numeric(details.get("vertical_distance_m", event.get(ctx.cols.get("distance"))), errors="coerce")
+        amr_id = _clean_text(event.get(ctx.cols.get("amr")))
+        payload_weight = amr_weight = None
+        if not reposition:
+            payload_weight = lift_payload_weight(event, ctx, payload_weights)
+            amr_weight = _known_weight(event.get("amr_weight_kg"))
+            if amr_weight is None:
+                amr_weight = _known_weight(amr_weights.get(amr_id))
+        rows.append({
+            "movement_id": len(rows) + 1, "lift_id": lift_id,
+            "movement_type": event["_segment_text"],
+            "amr": amr_id,
+            "task_ids": ",".join(_multi_stop_task_ids_from_row(event, ctx.cols.get("task"), "multi_stop_task_ids")),
+            "start_time": fmt_ts(start, ctx.has_datetime),
+            "finish_time": fmt_ts(add_seconds_to_event_time(start, duration, ctx.has_datetime), ctx.has_datetime),
+            "origin_level": level_label(floors[0]),
+            "destination_level": level_label(floors[1]),
+            "duration_s": duration,
+            "origin_location": level_label(floors[0]),
+            "destination_location": level_label(floors[1]),
+            "travel_distance_m": distance,
+            "amr_onboard": not reposition,
+            "direction": direction,
+            "endpoint_source": "; ".join(sources),
+            "payload_weight_kg": payload_weight,
+            "amr_weight_kg": amr_weight,
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def extract_lift_movements(csv_path: Path, config_json: Path = None) -> pd.DataFrame:
+    """Extract lift travel without running the full task/PDF analysis."""
+    frame, ctx = parse_time_column(pd.read_csv(csv_path, low_memory=False))
+    segment_col = ctx.cols.get("segment_type")
+    event_col = ctx.cols.get("event")
+    segments = frame[segment_col].fillna("").astype(str).str.lower() if segment_col else pd.Series("", index=frame.index)
+    if event_col:
+        segments = segments.where(segments.ne(""), frame[event_col].astype(str).str.lower().str.replace(r"^segment_", "", regex=True))
+    frame = frame[segments.isin(["lift_transfer", "lift_reposition"])].copy()
+    frame["_segment_text"] = segments.loc[frame.index]
+    frame = derive_lift_columns(frame, ctx.cols)
+    duration_col = ctx.cols.get("duration")
+    frame["lift_time_s"] = pd.to_numeric(frame[duration_col], errors="coerce") if duration_col else float("nan")
+    frame = frame[frame["_lift_id"].notna() & frame["lift_time_s"].ge(0) & frame[ctx.time_col].notna()]
+    return build_lift_movement_detail(
+        frame, ctx,
+        load_payload_weights(config_json) if config_json else {},
+        load_amr_weights(config_json) if config_json else {},
+    )
+
+
 def build_lift_usage_profile(
     lift_rows: pd.DataFrame,
     ctx: Context,
@@ -4785,6 +5065,7 @@ def analyse(
     location_catalog: Optional[pd.DataFrame] = None,
     payload_dimensions: Optional[pd.DataFrame] = None,
     task_generation_metadata: Optional[dict] = None,
+    amr_weights: Optional[Dict[str, float]] = None,
 ) -> Dict[str, pd.DataFrame]:
     payload_weights = payload_weights or {}
     raw = pd.read_csv(csv_path, low_memory=False)
@@ -5075,6 +5356,9 @@ def analyse(
     # How many tasks did each AMR complete
 
     tasks = pd.DataFrame(task_rows)
+    journey_detail, journey_flow_summary = build_journey_flows(
+        df, ctx, tasks, location_catalog, task_generation_metadata
+    )
     task_sla_overview, task_sla_summary, task_sla_detail = build_task_sla_tables(
         tasks
     )
@@ -5431,6 +5715,7 @@ def analyse(
         lift_rows["lift_time_s"].notna() & (lift_rows["lift_time_s"] >= 0)
     ].copy()
     lift_usage_profile = build_lift_usage_profile(lift_rows, ctx, interval_minutes=30)
+    lift_movement_detail = build_lift_movement_detail(lift_rows, ctx, payload_weights, amr_weights)
     lift_trip_cohorts_5min = build_lift_trip_cohorts(
         lift_rows, ctx, interval_minutes=5
     )
@@ -6067,6 +6352,10 @@ def analyse(
 
     return {
         "summary": summary,
+        "journey_observation": {
+            "start": fmt_ts(t0, ctx.has_datetime),
+            "finish": fmt_ts(t1, ctx.has_datetime),
+        },
         "scenario_impact": scenario_impact,
         "task_generation_summary": task_generation_summary,
         "deferred_release_summary": deferred_release_summary,
@@ -6080,6 +6369,9 @@ def analyse(
         "utilisation_summary": amr_utilisation,
         "lift_summary": lift_summary,
         "lift_usage_profile": lift_usage_profile,
+        "journey_detail": journey_detail,
+        "journey_flow_summary": journey_flow_summary,
+        "lift_movement_detail": lift_movement_detail,
         "lift_trip_cohorts_5min": lift_trip_cohorts_5min,
         "lift_trip_cohorts_hourly": lift_trip_cohorts_hourly,
         "lift_wait_summary": lift_wait_summary,
