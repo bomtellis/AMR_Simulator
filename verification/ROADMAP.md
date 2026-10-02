@@ -12,7 +12,7 @@ implementation; no national-body certification claim is made.
 | Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
 | Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
 | Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
-| Individual defect reproduction and changed-result explanations | D001–D021 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
+| Individual defect reproduction and changed-result explanations | D001–D024 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
 | LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
 | Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
 
@@ -91,6 +91,8 @@ D015/D016 now verify onboard per-leg restrictions and straight clearance in
 multi-stop routing. D017–D019 add distinct storage claims, rejected multi-stop
 commit rollback and temporary capacity waiting. Review STORAGE_RESERVATIONS_REVIEW.md.
 D020/D021 extend rollback to individual, idle-return and charging-route plans;
-see SINGLE_CHARGE_ROLLBACK_REVIEW.md. Next audit joint empty-bin exchange claims,
-charger travel reservations/energy and the wider generation-mode matrix. These
-are concrete next checks, not replacements for the full requirements above.
+see SINGLE_CHARGE_ROLLBACK_REVIEW.md. D022–D024 verify charging travel capacity,
+motor/lift energy and handled recharge events; see CHARGING_TRAVEL_REVIEW.md.
+Next audit joint empty-bin exchange claims, delivery/lift energy attribution and
+operational failure reconciliation, alongside the wider generation-mode matrix.
+These are concrete next checks, not replacements for the full requirements above.

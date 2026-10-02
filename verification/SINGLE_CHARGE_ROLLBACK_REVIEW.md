@@ -35,8 +35,8 @@ Ten tests in `tests/test_single_charge_atomicity.py` cover:
 - Successful single and charging plans retaining their records and reservations.
 - Idle-return rejection restoring its original destination and robot bay state.
 
-The independent charging reference starts empty with a 5 kWh battery and a 1 kW
-charger: **5 / 1 × 3600 = 18000 seconds** to charge, before travel. It verifies
+The independent charging reference starts empty with a 10 kWh battery and a 2 kW
+charger: **10 / 2 × 3600 = 18000 seconds** to charge, before travel. It verifies
 the retained charge interval and total charging time; it does not validate all
 energy or charger-queue behaviour.
 
@@ -57,8 +57,9 @@ examples. No new UI controls or project-format changes are introduced here.
 The guarantee covers serial route planning. Exceptions after a plan succeeds,
 while assignment events are being published, are outside this transaction. Bay
 cleanup during other estimation paths still needs a wider concurrency audit.
-Joint physical empty-bin exchange claims, charger travel reservations and charger
-travel-energy accounting are the next resource investigations. Geometric traffic,
+The subsequent [charging travel checkpoint](CHARGING_TRAVEL_REVIEW.md) verifies
+charger travel reservations and motor/lift energy. Joint physical empty-bin
+exchange claims remain open. Geometric traffic,
 the wider option audit and the other [roadmap](ROADMAP.md) gates remain open.
 
 The earlier unexplained background-preview process interruption is still recorded

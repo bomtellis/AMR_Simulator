@@ -18,6 +18,8 @@ from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
 from amr_route_reservations import RouteReservationTransaction
 
 from amr_sim_energy import (
+    energy_for_travel_kwh,
+    idle_move_power_w,
     requires_recharge_before_route,
     total_lift_energy_kwh,
     total_route_energy_kwh,
@@ -9248,6 +9250,11 @@ class Simulation:
             )
         if current_loc is None:
             return f"Current location for {amr_id} is not routable to a charge location"
+        if (self._select_charge_location_for_amr(amr, current_loc, self.current_time) is not None
+                and self._select_charge_location_for_amr(
+                    amr, current_loc, self.current_time, for_charging=True) is None):
+            return (f"Insufficient battery energy for {amr_id} to reach an available charger; "
+                    f"available={amr.battery_energy_kwh():.6g} kWh")
         names = ", ".join(charger_locations)
         return (
             f"No route from {current_loc.name} to compatible charger-equipped "
@@ -9255,7 +9262,7 @@ class Simulation:
         )
 
     def _select_charge_location_for_amr(
-        self, amr: AMR, current_loc: Location, now: float
+        self, amr: AMR, current_loc: Location, now: float, *, for_charging: bool = False
     ) -> Optional[Location]:
         candidates = self._charge_location_candidates()
         if not candidates:
@@ -9291,19 +9298,23 @@ class Simulation:
                 route = self._same_floor_segments(
                     amr, current_loc, charge_loc, start_time_value=now,
                     payload=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation="lengthways",
-                    collect_segments=False,
+                    collect_segments=for_charging,
                 )
                 if route is None:
                     continue
                 finish = now + route[1]
+                travel_segments = route[0]
             else:
                 plan = self._nearest_compatible_lift_plan(
                     now, amr, current_loc, charge_loc, dummy_payload,
-                    collect_segments=False,
+                    collect_segments=for_charging,
                 )
                 if plan is None:
                     continue
                 finish = plan["final_finish"]
+                travel_segments = plan['to_lift_segments'] + plan['from_lift_segments']
+            if for_charging and self._charge_motor_energy_kwh(amr, travel_segments) > amr.battery_energy_kwh() + 1e-12:
+                continue
             if finish < best_finish:
                 best_finish = finish
                 best_loc = charge_loc
@@ -9348,12 +9359,43 @@ class Simulation:
         reserve: bool = False,
     ) -> Optional[dict]:
         if not reserve:
-            return self._plan_return_to_charge_impl(amr, current_loc, current_time_value)
+            result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value)
+            return self._finalise_charge_travel(amr, result, current_time_value, reserve=False)
         with RouteReservationTransaction(self, amr, []) as transaction:
             self._free_amr_inventory_space(amr)
             result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value, reserve=True)
+            result = self._finalise_charge_travel(amr, result, current_time_value, reserve=True)
             transaction.committed = result is not None
             return result
+
+    @staticmethod
+    def _charge_motor_energy_kwh(amr: AMR, segments: List[dict]) -> float:
+        # Empty travel uses the existing 75% motor-power approximation. Explicit
+        # waits and vertical lift travel do not consume traction motor energy.
+        return energy_for_travel_kwh(idle_move_power_w(amr), sum(
+            float(segment.get('duration', 0)) for segment in segments
+            if segment.get('type') == 'corridor'))
+
+    def _finalise_charge_travel(self, amr, plan, start_time, *, reserve):
+        if plan is None:
+            return None
+        motor_energy = self._charge_motor_energy_kwh(amr, plan['segments'])
+        if motor_energy > amr.battery_energy_kwh() + 1e-12:
+            return None
+        for segment in plan['segments']:
+            if segment.get('type') == 'corridor':
+                segment['energy_kwh'] = self._charge_motor_energy_kwh(amr, [segment])
+                segment['energy_source'] = 'amr_battery'
+        plan['amr_energy_kwh'] = motor_energy
+        plan.setdefault('lift_energy_kwh', 0.0)
+        plan['energy_kwh'] = motor_energy + plan['lift_energy_kwh']
+        plan['battery_soc_before'] = amr.battery_soc_percent
+        plan['battery_soc_after'] = max(0.0, amr.battery_energy_kwh() - motor_energy) / max(amr.battery_capacity_kwh, 1e-9) * 100
+        if reserve:
+            self._reserve_corridor_segments(amr, plan['segments'], start_time)
+            amr.consume_energy(motor_energy)
+            self._record_committed_segment_impacts(plan['segments'])
+        return plan
 
     def _plan_return_to_charge_impl(
         self,
@@ -9363,7 +9405,7 @@ class Simulation:
         reserve: bool = False,
     ) -> Optional[dict]:
         charge_loc = self._select_charge_location_for_amr(
-            amr, current_loc, current_time_value
+            amr, current_loc, current_time_value, for_charging=True
         )
         if charge_loc is None:
             return None
@@ -9481,6 +9523,19 @@ class Simulation:
 
         transfer_segments.extend(plan["from_lift_segments"])
 
+        lift_energy = total_lift_energy_kwh(
+            lift=plan['lift'], payload=dummy_payload, floor_height_m=self.floor_height_m,
+            reposition_floor_delta=plan['reposition_to_floor'] - plan['reposition_from_floor'],
+            loaded_floor_delta=charge_loc.floor - current_loc.floor,
+            wait_time_sec=plan['wait_time'], door_time_sec=plan['lift'].door_time_sec,
+            boarding_time_sec=plan['lift'].boarding_time_sec)
+        # Attribute infrastructure energy once to the transfer record, including
+        # its repositioning/standby overhead, independently of AMR battery use.
+        for segment in transfer_segments:
+            if segment.get('type') == 'lift_transfer':
+                segment['energy_kwh'] = lift_energy
+                segment['energy_source'] = 'lift_supply'
+
         if reserve:
             self._reserve_lift_wait_node(plan, amr)
             self._reserve_lift_journey(plan, amr.id)
@@ -9495,6 +9550,7 @@ class Simulation:
         return {
             "segments": transfer_segments,
             "travel_sec": plan["final_finish"] - current_time_value,
+            "lift_energy_kwh": lift_energy,
             "distance_m": (
                 plan["to_lift_distance_m"]
                 + plan["vertical_distance_m"]
@@ -9747,51 +9803,8 @@ class Simulation:
         return False
 
     def _schedule_recharge_for_amr(self, amr: AMR, now: float):
-        current_loc = self.locations[amr.location_name]
-        charge_plan = self._plan_return_to_charge(
-            amr,
-            current_loc,
-            now,
-            reserve=True,
-        )
-
-        if charge_plan is None:
-            self._record_failed_task(
-                f"RECHARGE-{amr.id}",
-                self._charge_plan_failure_reason(amr, current_loc),
-                event_time=now,
-            )
-            return
-
-        charge_duration = amr.charge_duration_sec_to_full()
-        charge_start = charge_plan["finish_time"]
-        charge_finish = charge_start + charge_duration
-
-        amr.available_time = charge_finish
-        amr.total_busy_time += charge_plan["travel_sec"] + charge_duration
-        self._invalidate_route_estimate_cache()
-
-        self.push_event(
-            now,
-            "recharge_start",
-            {
-                "amr_id": amr.id,
-                "segments": charge_plan["segments"],
-                "start_time": now,
-                "arrival_time": charge_plan["finish_time"],
-                "charge_start": charge_start,
-                "charge_finish": charge_finish,
-            },
-        )
-
-        self.push_event(
-            charge_finish,
-            "recharge_complete",
-            {
-                "amr_id": amr.id,
-                "finish_time": charge_finish,
-            },
-        )
+        """Compatibility entry point using the handled charge-cycle events."""
+        return self._schedule_charge_cycle(amr, now, charge_reason="post_task")
 
     def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False):
         if not reserve:

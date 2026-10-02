@@ -1,0 +1,87 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T00:00:00",
+    "end_datetime": "2026-01-05T00:10:00",
+    "precompute_static_routes": false,
+    "enable_opportunity_charging": true,
+    "opportunity_charging_idle_period_sec": 60,
+    "opportunity_charging_check_interval_sec": 60
+  },
+  "building": {
+    "charge_location": "A",
+    "enable_idle_return": false,
+    "load_unload_time_sec": 2,
+    "edge_max_concurrency": 1,
+    "amr_spacing_m": 0,
+    "node_clearance_time_sec": 0,
+    "edge_slowdown_per_amr": 0
+  },
+  "locations": [
+    {
+      "name": "A",
+      "floor": 0,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "name": "B",
+      "floor": 0,
+      "x": 6,
+      "y": 8
+    }
+  ],
+  "corridors": {
+    "auto_connect": false,
+    "nodes": [],
+    "edges": [
+      {
+        "from": "A",
+        "to": "B",
+        "distance_m": 10,
+        "width_m": 0.8
+      }
+    ]
+  },
+  "payloads": [
+    {
+      "name": "Box",
+      "weight_kg": 10,
+      "length_m": 1.0,
+      "width_m": 0.7,
+      "height_m": 1,
+      "allowed_carry_orientations": [
+        "lengthways"
+      ]
+    }
+  ],
+  "amrs": [
+    {
+      "id": "R",
+      "quantity": 1,
+      "length_m": 1,
+      "width_m": 0.6,
+      "payload_capacity_kg": 100,
+      "payload_length_capacity_m": 2,
+      "payload_width_capacity_m": 2,
+      "payload_height_capacity_m": 2,
+      "speed_m_per_sec": 2,
+      "battery_capacity_kwh": 10,
+      "battery_charge_rate_kw": 2,
+      "recharge_threshold_percent": 1,
+      "motor_power_w": 960,
+      "battery_soc_percent": 50
+    }
+  ],
+  "lifts": [],
+  "tasks": [
+    {
+      "id": "DELIVERY",
+      "pickup": "A",
+      "dropoff": "B",
+      "payload": "Box"
+    }
+  ],
+  "task_generation": {
+    "enabled": false
+  }
+}

@@ -120,7 +120,7 @@ class SingleChargeAtomicityTests(unittest.TestCase):
         result = sim._estimate_task_for_amr(sim.amrs[0], task, reserve=True)
         self.assertIsNotNone(result)
         self.assertEqual('T1', sim.inventory_spaces_by_location['B'][0]['reserved_by_task'])
-        # 5 kWh at 1 kW takes 5 hours, independently of the route duration.
+        # 10 kWh at 2 kW takes 5 hours, independently of the route duration.
         self.assertEqual(18000, sim.charge_intervals[0]['duration_sec'])
         self.assertEqual(18000, sim.amrs[0].total_charge_time)
         self.assertGreater(sim.amrs[0].total_energy_used_kwh, 0)
