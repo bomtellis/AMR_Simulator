@@ -66,9 +66,10 @@ Input preservation and summary/event reconciliation pass; this run took about
 
 ## Remaining limits
 
-The transaction currently wraps serial multi-stop commits. Single-task commits,
-charging plans and joint claims on physical empty bins during exchanges still
-need their own failure-path audit. Capacity matching does not search future bay
+The subsequent [individual/charging checkpoint](SINGLE_CHARGE_ROLLBACK_REVIEW.md)
+extends the transaction to single-task, idle-return and charging-route plans.
+Joint claims on physical empty bins during exchanges still need their own
+failure-path audit. Capacity matching does not search future bay
 release times or every interleaved pickup/delivery order. Preliminary estimates
 still omit some local manoeuvring costs and need a separate accuracy audit.
 

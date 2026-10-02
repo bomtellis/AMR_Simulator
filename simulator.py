@@ -3890,6 +3890,7 @@ class Simulation:
             ):
                 return False
             # Stale occupancy marker.  Clear it so subsequent AMRs can use the bay.
+            self._remember_route_object(space)
             space["amr_id"] = ""
             if not str(space.get("payload", "") or "").strip():
                 space["occupied"] = False
@@ -3898,6 +3899,7 @@ class Simulation:
             # is no payload and no AMR id, this is stale state from a prior
             # stow/return and must not prevent a compatible AMR using the bay.
             if not str(space.get("payload", "") or "").strip():
+                self._remember_route_object(space)
                 space["occupied"] = False
 
         reserved_by = str(space.get("reserved_by_amr", "") or "").strip()
@@ -3927,6 +3929,7 @@ class Simulation:
             ):
                 return False
             # Stale reservation marker.
+            self._remember_route_object(space)
             space["reserved_by_amr"] = ""
 
         return True
@@ -4065,6 +4068,7 @@ class Simulation:
         if space is None:
             setattr(amr, "target_inventory_space_name", "")
             return None
+        self._remember_route_object(space)
         space["reserved_by_amr"] = str(getattr(amr, "id", "") or "").strip()
         setattr(amr, "target_inventory_space_name", str(space.get("name", "") or ""))
         setattr(amr, "target_charge_location", str(location_name or "").strip())
@@ -4077,6 +4081,7 @@ class Simulation:
         for spaces in self.inventory_spaces_by_location.values():
             for space in spaces:
                 if str(space.get("reserved_by_amr", "") or "").strip() == amr_id:
+                    self._remember_route_object(space)
                     space["reserved_by_amr"] = ""
 
     def _free_amr_inventory_space(
@@ -4088,6 +4093,7 @@ class Simulation:
         for spaces in self.inventory_spaces_by_location.values():
             for space in spaces:
                 if str(space.get("amr_id", "") or "").strip() == amr_id:
+                    self._remember_route_object(space)
                     space["amr_id"] = ""
                     if not str(space.get("payload", "") or "").strip():
                         space["occupied"] = False
@@ -4100,6 +4106,7 @@ class Simulation:
                         ).strip()
                     ):
                         continue
+                    self._remember_route_object(space)
                     space["reserved_by_amr"] = ""
         setattr(amr, "inventory_space_name", "")
         setattr(amr, "rotation_deg", 0.0)
@@ -9340,6 +9347,21 @@ class Simulation:
         current_time_value: float,
         reserve: bool = False,
     ) -> Optional[dict]:
+        if not reserve:
+            return self._plan_return_to_charge_impl(amr, current_loc, current_time_value)
+        with RouteReservationTransaction(self, amr, []) as transaction:
+            self._free_amr_inventory_space(amr)
+            result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value, reserve=True)
+            transaction.committed = result is not None
+            return result
+
+    def _plan_return_to_charge_impl(
+        self,
+        amr: AMR,
+        current_loc: Location,
+        current_time_value: float,
+        reserve: bool = False,
+    ) -> Optional[dict]:
         charge_loc = self._select_charge_location_for_amr(
             amr, current_loc, current_time_value
         )
@@ -9350,7 +9372,8 @@ class Simulation:
         # concurrently at different configured charging locations; a single
         # mutable global makes later events appear to use AMR-CENTRE or whichever
         # charger was selected most recently.
-        setattr(amr, "target_charge_location", charge_loc.name)
+        if reserve:
+            setattr(amr, "target_charge_location", charge_loc.name)
 
         reserved_charge_space = None
         if reserve:
@@ -9593,7 +9616,6 @@ class Simulation:
             return True
 
         current_loc = self.locations[amr.location_name]
-        self._free_amr_inventory_space(amr)
         plan = self._plan_return_to_charge(amr, current_loc, now, reserve=True)
         if plan is None:
             self._record_failed_task(
@@ -9726,7 +9748,6 @@ class Simulation:
 
     def _schedule_recharge_for_amr(self, amr: AMR, now: float):
         current_loc = self.locations[amr.location_name]
-        self._free_amr_inventory_space(amr)
         charge_plan = self._plan_return_to_charge(
             amr,
             current_loc,
@@ -9773,6 +9794,14 @@ class Simulation:
         )
 
     def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False):
+        if not reserve:
+            return self._estimate_task_for_amr_impl(amr, task, reserve=False)
+        with RouteReservationTransaction(self, amr, [task]) as transaction:
+            result = self._estimate_task_for_amr_impl(amr, task, reserve=True)
+            transaction.committed = result is not None
+            return result
+
+    def _estimate_task_for_amr_impl(self, amr: AMR, task: Task, reserve: bool = False):
         try:
             availability_time = max(self.current_time, float(getattr(amr, "available_time", 0.0) or 0.0), float(getattr(task, "release_time", 0.0) or 0.0))
             amr_scenario_state = self._scenario_event_state("amr", amr.id, availability_time)

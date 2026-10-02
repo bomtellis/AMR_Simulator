@@ -16,6 +16,7 @@ class RouteReservationTransaction:
         self.entries = {}
         self.dictionaries = {}
         self.attributes = {}
+        self.appended_lists = {}
         self.committed = False
 
     def remember_mapping(self, mapping, key):
@@ -33,16 +34,23 @@ class RouteReservationTransaction:
             if key not in self.attributes:
                 self.attributes[key] = (value, name, hasattr(value, name), deepcopy(getattr(value, name, None)))
 
+    def remember_appends(self, value):
+        """Remember the boundary of an append-only operational record list."""
+        self.appended_lists.setdefault(id(value), (value, len(value)))
+
     def __enter__(self):
         if getattr(self.simulation, '_route_reservation_transaction', None) is not None:
             raise RuntimeError('Route commits must be serial and cannot nest')
         self.simulation._route_reservation_transaction = self
-        self.remember_attributes(self.amr, ('battery_soc_percent', 'total_energy_used_kwh'))
+        self.remember_dict(vars(self.amr))
+        self.remember_appends(self.simulation.charge_intervals)
         self.remember_attributes(self.simulation, (
             'scenario_delay_sec', 'scenario_affected_segments', 'people_delay_sec',
             'people_affected_segments', 'wash_cycles_completed'))
         for task in self.tasks:
-            self.remember_attributes(task, ('assigned_inventory_space', 'payload_orientation'))
+            self.remember_attributes(task, (
+                'assigned_inventory_space', 'payload_orientation', 'wash_cycle_required',
+                'pickup', 'dropoff', 'target_charge_location', 'assigned_amr_inventory_space'))
         return self
 
     def __exit__(self, exc_type, _exc, _traceback):
@@ -62,5 +70,7 @@ class RouteReservationTransaction:
                 setattr(value, name, original)
             elif hasattr(value, name):
                 delattr(value, name)
+        for value, length in self.appended_lists.values():
+            del value[length:]
         self.simulation._invalidate_route_estimate_cache()
         return False

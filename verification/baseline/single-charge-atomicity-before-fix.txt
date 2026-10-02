@@ -1,0 +1,95 @@
+test_charge_estimate_does_not_change_target_or_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_charge_estimate_does_not_change_target_or_bay) ... FAIL
+test_charge_lift_exception_restores_claims_and_wear (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_charge_lift_exception_restores_claims_and_wear) ... FAIL
+test_charge_route_rejection_releases_new_claim_and_preserves_old_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_charge_route_rejection_releases_new_claim_and_preserves_old_bay) ... FAIL
+test_failed_charge_schedule_retains_occupied_departure_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_failed_charge_schedule_retains_occupied_departure_bay) ...
+  test_failed_charge_schedule_retains_occupied_departure_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_failed_charge_schedule_retains_occupied_departure_bay) (method='_schedule_charge_cycle') ... FAIL
+  test_failed_charge_schedule_retains_occupied_departure_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_failed_charge_schedule_retains_occupied_departure_bay) (method='_schedule_recharge_for_amr') ... FAIL
+test_late_single_failure_restores_lift_and_charge_state (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_late_single_failure_restores_lift_and_charge_state) ...
+  test_late_single_failure_restores_lift_and_charge_state (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_late_single_failure_restores_lift_and_charge_state) (lifts=False) ... FAIL
+  test_late_single_failure_restores_lift_and_charge_state (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_late_single_failure_restores_lift_and_charge_state) (lifts=True) ... FAIL
+test_unreachable_post_delivery_wash_rolls_back_single_route (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_unreachable_post_delivery_wash_rolls_back_single_route) ... FAIL
+
+======================================================================
+FAIL: test_charge_estimate_does_not_change_target_or_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_charge_estimate_does_not_change_target_or_bay)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_single_charge_atomicity.py", line 85, in test_charge_estimate_does_not_change_target_or_bay
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[2489 chars]n': 'A', 'home_charge_location': 'A', 'home_in[54 chars]: []} != {'res[2489 chars]n': 'B', 'home_charge_location': 'A', 'home_in[54 chars]: []}
+Diff is 6532 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_charge_lift_exception_restores_claims_and_wear (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_charge_lift_exception_restores_claims_and_wear)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_single_charge_atomicity.py", line 97, in test_charge_lift_exception_restores_claims_and_wear
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[314 chars]s': {}, 'inventory_spaces_by_location': {'A': [3873 chars]: []} != {'res[314 chars]s': {'L1': [(0.5, 1.5, 0, 1, 'R-1')]}, 'invent[3916 chars]: []}
+Diff is 11180 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_charge_route_rejection_releases_new_claim_and_preserves_old_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_charge_route_rejection_releases_new_claim_and_preserves_old_bay)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_single_charge_atomicity.py", line 79, in test_charge_route_rejection_releases_new_claim_and_preserves_old_bay
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[1024 chars]r': '', 'has_charger': True}]}}, 'lifts': [], [1519 chars]: []} != {'res[1024 chars]r': 'R-1', 'has_charger': True}]}}, 'lifts': [[1531 chars]: []}
+Diff is 6836 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_failed_charge_schedule_retains_occupied_departure_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_failed_charge_schedule_retains_occupied_departure_bay) (method='_schedule_charge_cycle')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_single_charge_atomicity.py", line 70, in test_failed_charge_schedule_retains_occupied_departure_bay
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[494 chars]ed': True, 'payload': '', 'payload_instance_id[2049 chars]: []} != {'res[494 chars]ed': False, 'payload': '', 'payload_instance_i[2038 chars]: []}
+Diff is 6926 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_failed_charge_schedule_retains_occupied_departure_bay (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_failed_charge_schedule_retains_occupied_departure_bay) (method='_schedule_recharge_for_amr')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_single_charge_atomicity.py", line 70, in test_failed_charge_schedule_retains_occupied_departure_bay
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[494 chars]ed': True, 'payload': '', 'payload_instance_id[2049 chars]: []} != {'res[494 chars]ed': False, 'payload': '', 'payload_instance_i[2038 chars]: []}
+Diff is 6926 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_late_single_failure_restores_lift_and_charge_state (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_late_single_failure_restores_lift_and_charge_state) (lifts=False)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_single_charge_atomicity.py", line 59, in test_late_single_failure_restores_lift_and_charge_state
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[44 chars]s': {}, 'location_reservation_max_duration': {[2110 chars]: []} != {'res[44 chars]s': {'A': [(18000.0, 18002.0)], 'B': [(18007.0[2674 chars].0}]}
+Diff is 9191 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_late_single_failure_restores_lift_and_charge_state (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_late_single_failure_restores_lift_and_charge_state) (lifts=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_single_charge_atomicity.py", line 59, in test_late_single_failure_restores_lift_and_charge_state
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[44 chars]s': {}, 'location_reservation_max_duration': {[3754 chars]: []} != {'res[44 chars]s': {'A': [(18000.0, 18002.0)], 'B': [(18004.0[4399 chars].0}]}
+Diff is 13576 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_unreachable_post_delivery_wash_rolls_back_single_route (tests.test_single_charge_atomicity.SingleChargeAtomicityTests.test_unreachable_post_delivery_wash_rolls_back_single_route)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_single_charge_atomicity.py", line 42, in test_unreachable_post_delivery_wash_rolls_back_single_route
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[44 chars]s': {}, 'location_reservation_max_duration': {[2118 chars]: []} != {'res[44 chars]s': {'A': [(0.0, 2.0)], 'B': [(7.0, 9.0)]}, 'l[2434 chars]: []}
+Diff is 7980 characters long. Set self.maxDiff to None to see it.
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.025s
+
+FAILED (failures=8)
