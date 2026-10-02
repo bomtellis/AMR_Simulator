@@ -159,7 +159,11 @@ Exports contain the frozen project configuration, so treat them as project data.
 
 ## Results investigation checkpoint
 
-The latest checkpoint is [Portable project storage](PROJECT_STORAGE_REVIEW.md):
+The latest checkpoint is [Recovery and unsaved work](RECOVERY_REVIEW.md):
+30-second recovery copies, Save / Discard / Cancel safeguards and recovery to a
+new unsaved document. Global undo/redo remains outstanding.
+
+[Portable project storage](PROJECT_STORAGE_REVIEW.md) provides
 compressed `.amrproj`, deduplicated drawings, atomic saves and revision restore.
 Use **Home → Save project as** and **Project revisions**. Results stay external;
 use **Export JSON** for the existing launcher and command-line tools.

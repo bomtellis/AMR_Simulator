@@ -6,6 +6,7 @@ import json
 import math
 import sys
 import tempfile
+import hashlib
 from pathlib import Path
 
 import os
@@ -21,6 +22,8 @@ from PySide6.QtCore import (
     QThread,
     Slot,
     QRectF,
+    QTimer,
+    QStandardPaths,
 )
 from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont, QPolygonF
 from PySide6.QtWidgets import (
@@ -361,6 +364,160 @@ class AMRGraphEditor(QMainWindow):
 
         self._build_ui()
         self.refresh_canvas()
+        self._saved_state = self._configuration_state()
+        self._source_disk_hash = None
+        self._recovery_store = None
+        self._recovery_last_state = None
+        self._recovery_status = "No recovery copy yet"
+        self._recovered_work = False
+        self._dirty_timer = QTimer(self)
+        self._dirty_timer.timeout.connect(self._update_unsaved_indicator)
+        self._dirty_timer.start(2000)
+        self._recovery_timer = QTimer(self)
+        self._recovery_timer.timeout.connect(self.capture_recovery)
+        self._recovery_timer.start(30000)
+        QTimer.singleShot(0, self._announce_recovery)
+
+    def _configuration_state(self):
+        # Comparison also works for malformed numeric input opened for repair.
+        # Persistent saves and recovery still reject non-finite JSON values.
+        return json.dumps(self.store.data, sort_keys=True, ensure_ascii=False)
+
+    def has_unsaved_changes(self):
+        try:
+            return self._configuration_state() != self._saved_state
+        except (TypeError, ValueError):
+            return True
+
+    def _get_recovery_store(self):
+        if self._recovery_store is None:
+            root = str(Path(__file__).resolve().parents[1])
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            from amr_recovery import RecoveryStore
+            folder = Path(QStandardPaths.writableLocation(QStandardPaths.GenericDataLocation)) / "AMR Simulator" / "recovery"
+            self._recovery_store = RecoveryStore(folder)
+        return self._recovery_store
+
+    def _announce_recovery(self):
+        try:
+            count = len(self._get_recovery_store().list_snapshots())
+            if count:
+                self.set_status(f"{count} recovery copy/copies available — Home → Recover unsaved work")
+        except Exception as exc:
+            self.set_status(f"Recovery folder unavailable: {exc}")
+
+    def _update_unsaved_indicator(self):
+        dirty = self.has_unsaved_changes()
+        self.setWindowTitle("AMR Simulation Graph Editor" + (" — Unsaved changes" if dirty else ""))
+        self.file_label.setText((self.current_json_path or "New file") + (" • Unsaved changes" if dirty else ""))
+        self.file_label.setToolTip(self._recovery_status)
+
+    def _discard_own_recovery(self):
+        if self._recovery_store is not None:
+            try:
+                self._recovery_store.discard()
+            except OSError as exc:
+                self.set_status(f"Saved work is safe, but an old recovery copy could not be removed: {exc}")
+        self._recovery_last_state = None
+
+    def _mark_saved(self):
+        self._saved_state = self._configuration_state()
+        if self.current_json_path:
+            self._source_disk_hash = hashlib.sha256(Path(self.current_json_path).read_bytes()).hexdigest()
+        else:
+            self._source_disk_hash = None
+        self._discard_own_recovery()
+        self._recovery_status = "No unsaved work awaiting recovery"
+        self._update_unsaved_indicator()
+
+    def capture_recovery(self):
+        # Avoid capturing a half-finished drag or modal editor operation.
+        if QApplication.activeModalWidget() is not None or self.dragging_point_name or self.drag_mode_active:
+            return False
+        if not self.has_unsaved_changes():
+            self._discard_own_recovery()
+            return False
+        try:
+            state = self._configuration_state()
+            if state == self._recovery_last_state:
+                return True
+            revision = self.project.revisions[-1]["id"] if self.project else None
+            body = self._get_recovery_store().capture(self.store.data, source_path=self.current_json_path,
+                source_hash=self._source_disk_hash, revision_id=revision)
+            self._recovery_last_state = state
+            self._recovery_status = f"Recovery copy: {body['captured_utc']}" + (
+                f"; {len(body['warnings'])} drawing(s) could not be copied" if body['warnings'] else "")
+            if body['warnings']:
+                self.set_status(self._recovery_status)
+            self._update_unsaved_indicator()
+            return True
+        except Exception as exc:
+            self._recovery_status = f"Recovery failed; save your work manually: {exc}"
+            self.set_status(self._recovery_status)
+            self.file_label.setToolTip(self._recovery_status)
+            return False
+
+    def _confirm_unsaved_changes(self):
+        if not self.has_unsaved_changes():
+            return True
+        choice = QMessageBox.warning(self, "Unsaved changes",
+            "Save your changes before continuing? Discard removes this editor's recovery copy.\n\n" + self._recovery_status,
+            QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel, QMessageBox.Cancel)
+        if choice == QMessageBox.Save:
+            return bool(self.save_json())
+        return choice == QMessageBox.Discard
+
+    def recover_unsaved_work(self):
+        recovery = self._get_recovery_store()
+        rows = recovery.list_snapshots()
+        if not rows:
+            QMessageBox.information(self, "Recovery", "No recovery copies are available.")
+            return
+        labels = [f"{i + 1}. {row['captured_utc'][:19]} UTC | {row['source']}" + (" — unreadable" if row['error'] else "")
+                  for i, row in enumerate(rows)]
+        selected, accepted = QInputDialog.getItem(self, "Recover unsaved work",
+            "Choose a copy. Recovery opens as unsaved work; save it to a new file.", labels, 0, False)
+        if not accepted:
+            return
+        self.load_recovery_snapshot(rows[labels.index(selected)]["path"])
+
+    def load_recovery_snapshot(self, path):
+        cache = tempfile.TemporaryDirectory(prefix="amr-recovered-")
+        try:
+            config, body = self._get_recovery_store().recover(path, cache.name)
+            # Stage valid inputs before asking to replace the current workspace.
+            staged = Path(cache.name) / "recovered.json"
+            staged.write_text(json.dumps(config, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+            if not self.load_json_file(str(staged), load_drawings=False):
+                cache.cleanup()
+                return False
+            if self._project_cache is None:
+                self._project_cache = []
+            self._project_cache.append(cache)
+            self.current_json_path = None
+            self._saved_state = None
+            self._source_disk_hash = None
+            self._recovered_work = True
+            self._update_unsaved_indicator()
+            self.capture_recovery()
+            message = "Recovered unsaved work. Save to a new file; the original remains unchanged. Drawings are available through Load configured drawings."
+            source = body.get("source_path")
+            if source and body.get("source_hash"):
+                try:
+                    if hashlib.sha256(Path(source).read_bytes()).hexdigest() != body['source_hash']:
+                        message += " The original file has changed since these edits began."
+                except OSError:
+                    message += " The original file is no longer available."
+            if body['warnings']:
+                message += "\n\n" + "\n".join(body['warnings'])
+            self.set_status(message)
+            QMessageBox.information(self, "Recovery opened", message)
+            return True
+        except Exception as exc:
+            cache.cleanup()
+            QMessageBox.critical(self, "Recovery failed", str(exc))
+            return False
 
     def _build_ui(self):
         central = QWidget(self)
@@ -503,6 +660,7 @@ class AMRGraphEditor(QMainWindow):
                 button("Save project as", lambda: self.save_project(save_as=True)),
                 button("Export JSON", self.export_project_json),
                 button("Project revisions", self.show_project_revisions),
+                button("Recover unsaved work", self.recover_unsaved_work),
                 button(
                     "Export floor DXF",
                     self.export_current_floor_dxf,
@@ -2684,7 +2842,9 @@ class AMRGraphEditor(QMainWindow):
             "\n".join(message_lines),
         )
 
-    def load_json_file(self, path: str, *, load_drawings: bool = True) -> bool:
+    def load_json_file(self, path: str, *, load_drawings: bool = True, check_unsaved: bool = True) -> bool:
+        if check_unsaved and not self._confirm_unsaved_changes():
+            return False
         project = None
         cache = None
         try:
@@ -2742,6 +2902,7 @@ class AMRGraphEditor(QMainWindow):
             ]
 
         self.store = store
+        self._recovered_work = False
         self.project = project
         # Retain previous drawing caches until shutdown: background workers may
         # still be reading files belonging to the previous open project.
@@ -2774,6 +2935,7 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Opened {Path(path).name}{suffix}")
         self.refresh_canvas()
         self.fit_view()
+        self._mark_saved()
         return True
 
     def open_json(self, *, load_drawings=True):
@@ -2801,15 +2963,27 @@ class AMRGraphEditor(QMainWindow):
                 self, "Save JSON", "", "JSON files (*.json)"
             )
         if not path:
-            return
+            return False
         try:
-            self.store.save(path)
+            if self.current_json_path and self._source_disk_hash is not None:
+                if hashlib.sha256(Path(path).read_bytes()).hexdigest() != self._source_disk_hash:
+                    raise ValueError("Configuration changed on disk. Save as a project or export to a new JSON file before reopening it.")
+            if self._recovered_work:
+                from amr_project import Project
+                Project().export_json(path, self.store.data)
+                # Recovery drawing caches are temporary; JSON needs durable copies.
+                self.store.data = json.loads(Path(path).read_text(encoding="utf-8"))
+                self._recovered_work = False
+            else:
+                self.store.save(path)
         except Exception as exc:
             QMessageBox.critical(self, "Save failed", str(exc))
-            return
+            return False
         self.current_json_path = path
         self.set_status(f"Saved {Path(path).name}")
         self.refresh_canvas()
+        self._mark_saved()
+        return True
 
     def save_project(self, *, save_as=False):
         root = str(Path(__file__).resolve().parents[1])
@@ -2840,6 +3014,8 @@ class AMRGraphEditor(QMainWindow):
             if hasattr(self, "project_history_panel"):
                 self.project_history_panel.refresh()
             self.refresh_canvas()
+            self._mark_saved()
+            self._recovered_work = False
             return True
         except Exception as exc:
             QMessageBox.critical(self, "Project save failed", f"The project was not saved.\n\n{exc}")
@@ -3530,6 +3706,12 @@ class AMRGraphEditor(QMainWindow):
         self.set_status("Route profiles updated")
 
     def closeEvent(self, event):
+        if not self._confirm_unsaved_changes():
+            event.ignore()
+            return
+        self._dirty_timer.stop()
+        self._recovery_timer.stop()
+        self._discard_own_recovery()
         try:
             self._dxf_thread.quit()
             self._dxf_thread.wait(2000)

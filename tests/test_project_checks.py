@@ -210,7 +210,8 @@ class ProjectChecksUiTests(unittest.TestCase):
             self.assertEqual(finding.target, editor.selected_point_name)
             self.assertIs(editor.checks_dock.widget(), editor.checks_panel)
         finally:
-            editor.close()
+            with patch.object(editor, "_confirm_unsaved_changes", return_value=True):
+                editor.close()
 
 
 class LauncherChecksTests(unittest.TestCase):

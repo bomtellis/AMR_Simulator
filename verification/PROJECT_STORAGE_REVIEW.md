@@ -71,7 +71,8 @@ in a 15,140,327-byte archive. Six drawing references shared five stored drawings
 Save took 1.877 s and open 0.316 s; the configuration roundtrip matched and source
 bytes were unchanged. These are single-machine measurements, not performance guarantees.
 
-Automatic crash recovery, unsaved-change prompts on close/open, global undo/redo,
+Recovery and unsaved-change prompts are now covered by the next
+[recovery checkpoint](RECOVERY_REVIEW.md). Global undo/redo,
 history pruning, project-to-run revision bindings, relinking results and a single
 simulation/review workflow remain outstanding. Revisions recover saved work;
 they do not recover edits lost before a save. All retained revisions contribute

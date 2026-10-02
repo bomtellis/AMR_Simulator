@@ -52,6 +52,6 @@ class ProjectHistoryPanel(QWidget):
             project = self.editor.project
             project.restore(self.revisions.currentData(), self.editor.store.data,
                             base_dir=Path(self.editor.current_json_path).parent)
-            self.editor.load_json_file(str(project.path), load_drawings=self.editor._drawings_enabled)
+            self.editor.load_json_file(str(project.path), load_drawings=self.editor._drawings_enabled, check_unsaved=False)
         except Exception as exc:
             QMessageBox.critical(self, "Restore failed", str(exc))
