@@ -1,5 +1,9 @@
 # Engineering verification — first review gate
 
+For current sequencing and completion criteria, use the
+[revised delivery plan](ROADMAP.md), reassessed from code and tests on 2 October 2026.
+Earlier checkpoint notes below are historical evidence, not the current work estimate.
+
 This gate establishes repeatable evidence and fixes defects reproduced by small
 reference cases. It does **not** complete the feature audit or certify the simulator.
 The next stage starts only after the user's review of this checkpoint.

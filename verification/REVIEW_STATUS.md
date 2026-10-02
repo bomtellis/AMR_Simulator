@@ -1,5 +1,9 @@
 # Stage 1 clash review — 2 October 2026
 
+Current sequencing is defined by the [revised delivery plan](ROADMAP.md), based on
+the source review and fresh 870-test run at `b4770ca`. The entries below retain
+checkpoint history; they do not replace the revised plan or establish overall completion.
+
 ## Later checkpoint — effective demand-rule provenance
 
 - Demand preview now records ordered category/group/department/waste assignments
