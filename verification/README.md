@@ -85,6 +85,7 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D005 | Two PDF tests could not import pypdf | Added pinned verification dependency. |
 | D006 | LTN regression assumed three bays after the project acquired a fourth | Assert the actual four named bays; no LTN data was changed. |
 | D007 | Fast assignment and charging estimates could still use a route rejected by door-width checks | Apply the same oriented robot/payload width to preliminary travel, energy and fast assignment queries. Three regression cases verify detour time, impossible passage and both charging-estimate legs. |
+| D008 | LTN has two exits for one clinical-waste instance before its next recorded entry | Open investigation. Results investigation links both records and marks transfer totals incomplete; underlying tracking behaviour has not been repaired or classified as physical payload loss. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation
@@ -155,3 +156,19 @@ limitations and the LTN evidence. To export without opening the editor:
 ```
 
 Exports contain the frozen project configuration, so treat them as project data.
+
+## Results investigation checkpoint
+
+Use **Home → Results investigation**, or **Investigate Results** in the launcher.
+Select the saved run folder or full event CSV. Task timelines distinguish recorded
+outcomes from planned route segments. Metric selection opens contributing events;
+missing evidence remains explicit, including partial payload-transfer coverage.
+
+New logs have stable event/journey identities and `.csv.run.json` evidence sidecars.
+Move the CSV and its sidecar together. Older logs remain readable with weaker,
+explicitly labelled evidence. See the [review guide](RESULTS_INVESTIGATION_REVIEW.md)
+for definitions, test results and the next user verification gate.
+
+```powershell
+.venv/Scripts/python.exe -m amr_results_investigation verification/latest/ltn-investigation --output verification/latest/investigation.json
+```

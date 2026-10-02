@@ -7,11 +7,14 @@ import math
 import os
 import threading
 import time
+import uuid
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
 
 from amr_sim_energy import (
     requires_recharge_before_route,
@@ -112,6 +115,18 @@ class Simulation:
     ):
         self.location_reservations = defaultdict(list)
         self.config = config
+        self.run_id = uuid.uuid4().hex
+        self._evidence_inputs = json.loads(json.dumps(config))
+        self._evidence_config_hash = config_hash(self._evidence_inputs)
+        self._evidence_software = software_snapshot() if verbose else None
+        self._evidence_run_status = 'incomplete'
+        self._evidence_sequence = 0
+        self._evidence_journey_sequence = 0
+        self._task_journeys = {}
+        self._task_provenance = {
+            str(task.get('id', '')): {'source_rule_id': f'static:{i}', 'source_rule_path': f'/tasks/{i}',
+                                    'route_profile': task.get('route_profile', '') or ('dirty' if 'dirty' in task.get('labels', []) else '')}
+            for i, task in enumerate(config.get('tasks', []))}
         sim_cfg = config.get("simulation", {})
         scenario_cfg = config.get("scenario_testing", {}) or {}
         self.scenario_mode = bool(scenario_cfg.get("enabled", False))
@@ -11038,6 +11053,7 @@ class Simulation:
                 amr.available_time = finish_time
                 amr.location_name = committed["end_location"]
                 amr.completed_tasks += len(tasks)
+                self._register_evidence_journey(tasks)
 
                 for multi_task in tasks:
                     self.log_step(
@@ -11146,6 +11162,7 @@ class Simulation:
             amr.available_time = finish_time
             amr.location_name = committed["end_location"]
             amr.completed_tasks += 1
+            self._register_evidence_journey([task])
 
             self.log_step(
                 event_time=start_time,
@@ -11686,6 +11703,10 @@ class Simulation:
 
     def _log_generated_task_record(self, record) -> None:
         task = record.task
+        self._task_provenance[task.id] = {
+            'source_rule_id': getattr(record, 'rule_id', ''),
+            'source_rule_path': getattr(record, 'rule_path', ''),
+            'route_profile': getattr(task, 'route_profile', '') or ('dirty' if 'dirty' in getattr(task, 'labels', []) else '')}
         pickup_location_name = str(
             getattr(task, "pickup", record.pickup_location)
             or record.pickup_location
@@ -11923,6 +11944,7 @@ class Simulation:
                 self.routing_executor.shutdown(wait=True, cancel_futures=False)
                 self.routing_executor = None
 
+        self._evidence_run_status = 'cancelled' if self.stop_requested else 'finished'
         self._print_progress_complete()
         self.print_short_summary()
         print()
@@ -12770,6 +12792,7 @@ class Simulation:
     @staticmethod
     def _verbose_fieldnames() -> List[str]:
         return [
+            'event_id', 'run_id', 'journey_id', 'source_rule_id', 'source_rule_path', 'route_profile',
             "amr_id",
             "task_id",
             "segment_type",
@@ -12875,6 +12898,7 @@ class Simulation:
     @staticmethod
     def _visualiser_fieldnames() -> List[str]:
         return [
+            'event_id', 'run_id', 'journey_id', 'source_rule_id', 'source_rule_path', 'route_profile',
             "amr_id",
             "task_id",
             "segment_type",
@@ -12944,11 +12968,23 @@ class Simulation:
             "charger_space",
         ]
 
+    def _register_evidence_journey(self, tasks) -> None:
+        self._evidence_journey_sequence += 1
+        journey_id = f'{self.run_id}:journey:{self._evidence_journey_sequence:08d}'
+        for task in tasks:
+            self._task_journeys[task.id] = journey_id
+
     def _append_verbose_row(self, row: dict) -> None:
         """Append a verbose row and stream a bounded chunk to disk when full."""
         if not self.verbose:
             return
         with self._verbose_write_lock:
+            self._evidence_sequence += 1
+            row = dict(row)
+            row['event_id'] = f'{self.run_id}:{self._evidence_sequence:012d}'
+            row['run_id'] = self.run_id
+            row['journey_id'] = self._task_journeys.get(str(row.get('task_id', '')).split(',')[0].strip(), '')
+            row.update(self._task_provenance.get(str(row.get('task_id', '')), {}))
             self.verbose_rows.append(row)
             if (
                 self.verbose_csv_path
@@ -13688,6 +13724,7 @@ class Simulation:
         self._append_location_space_recommendation_rows()
         self._flush_verbose_rows_to_csv()
         self._ensure_verbose_csv_header()
+        write_run_evidence(self, self.verbose_csv_path)
 
     def _row_is_visualiser_relevant(self, row: dict) -> bool:
         """Return True for verbose rows needed by the playback visualiser.
@@ -13777,6 +13814,7 @@ class Simulation:
                 for row in reader:
                     if self._row_is_visualiser_relevant(row):
                         writer.writerow(row)
+            write_run_evidence(self, output_path, kind='playback')
             return output_path
 
         # Backwards-compatible in-memory fallback for callers that enable
@@ -13789,6 +13827,7 @@ class Simulation:
                 for row in self.verbose_rows
                 if self._row_is_visualiser_relevant(row)
             )
+        write_run_evidence(self, output_path, kind='playback')
         return output_path
 
     def write_failed_tasks_csv(self, path: Optional[str] = None) -> str:

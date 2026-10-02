@@ -359,6 +359,9 @@ class LauncherWindow(QMainWindow):
         actions.addWidget(visualise, 0, 1)
         actions.addWidget(report, 1, 0)
         actions.addWidget(open_report, 1, 1)
+        investigate = QPushButton('Investigate Results')
+        investigate.clicked.connect(self.investigate_selected_run)
+        actions.addWidget(investigate, 2, 0, 1, 2)
         layout.addWidget(action_box)
 
         return page
@@ -774,6 +777,22 @@ class LauncherWindow(QMainWindow):
 
         self.tabs.setCurrentIndex(1)
         self.start_process(sys.executable, args, REPO_ROOT, finished)
+
+    def investigate_selected_run(self) -> None:
+        from PySide6.QtWidgets import QDockWidget
+        from visualiser.results_investigation_panel import ResultsInvestigationPanel
+        run_dir = self.selected_run_dir()
+        if not run_dir:
+            QMessageBox.warning(self, 'No run', 'Select a saved run first.')
+            return
+        if not hasattr(self, 'investigation_dock'):
+            self.investigation_dock = QDockWidget('Results investigation', self)
+            self.investigation_panel = ResultsInvestigationPanel(self.investigation_dock)
+            self.investigation_dock.setWidget(self.investigation_panel)
+            self.addDockWidget(Qt.BottomDockWidgetArea, self.investigation_dock)
+        self.investigation_dock.show()
+        self.investigation_dock.raise_()
+        self.investigation_panel.load(run_dir)
 
     def open_selected_run_folder(self) -> None:
         run_dir = self.selected_run_dir()

@@ -509,6 +509,7 @@ class AMRGraphEditor(QMainWindow):
                 ),
                 button("Project checks", self.validate_json),
                 button("Demand preview", self.show_demand_preview),
+                button("Results investigation", self.show_results_investigation),
             ],
             columns=3,
         )
@@ -3169,6 +3170,21 @@ class AMRGraphEditor(QMainWindow):
             self.loaded_dxf_floor = None
         self.set_status(f"Removed DXF mapping from floor {floor}")
         self.refresh_canvas()
+
+    def show_results_investigation(self):
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from results_investigation_panel import ResultsInvestigationPanel
+        if not hasattr(self, 'results_dock'):
+            self.results_dock = QDockWidget('Results investigation', self)
+            self.results_dock.setObjectName('resultsInvestigationDock')
+            self.results_panel = ResultsInvestigationPanel(self.results_dock)
+            self.results_dock.setWidget(self.results_panel)
+            self.addDockWidget(Qt.BottomDockWidgetArea, self.results_dock)
+        self.results_dock.show()
+        self.results_dock.raise_()
+        self.set_status('Results investigation opened. Select a saved run or event CSV.')
 
     def show_demand_preview(self):
         # The editor also runs directly from visualiser/amr_editor_main.py.
