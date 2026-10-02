@@ -272,6 +272,25 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
            'Paired exit and subsequent stored entry or service arrival for the same physical payload instance at different locations. Service handling does not imply inventory occupancy. Initial population is excluded.',
            known=complete_evidence and not payload_gaps)
     service_arrivals = [e for e in events if e['type'] == 'payload_service_arrival']
+    lifecycle = {e['payload_instance_id']: e for e in events
+                 if e['type'] == 'payload_instance_summary' and e['payload_instance_id']}
+    lifecycle_known = complete_evidence and 'payload_lifecycle_summary' in metadata.get('event_capabilities', [])
+    for state, title in [('planned', 'Planned container IDs, not issued'), ('stored', 'Containers stored at run end'),
+                         ('in_transit', 'Containers in transit at run end'), ('staged', 'Containers staged for return'),
+                         ('unconfirmed', 'Containers with unconfirmed arrival'), ('removed', 'Containers removed from the model')]:
+        records = [e for e in lifecycle.values() if e['row'].get('status') == state]
+        metric(f'payload_final_{state}', title, len(records), [e['id'] for e in records],
+               f'Distinct container identities whose recorded final lifecycle state is {state}. Missing lifecycle evidence is unknown, not zero.',
+               known=lifecycle_known)
+    issued = [e for e in lifecycle.values() if e['row'].get('status') in
+              {'stored', 'in_transit', 'staged', 'unconfirmed', 'removed'}]
+    metric('payload_issued', 'Physical containers issued during the run', len(issued), [e['id'] for e in issued],
+           'Distinct physically issued identities including initial stock and removed containers; excludes planned-only IDs. Not a simultaneous peak.',
+           known=lifecycle_known)
+    recovery = [e for e in events if e['type'] == 'payload_recovery_required']
+    if recovery:
+        findings.append('A failed task left a staged container awaiting recovery. No recovery movement or storage bay has been assumed.')
+
     metric('payload_service_arrivals', 'Payload service arrivals outside storage', len(service_arrivals),
            [e['id'] for e in service_arrivals],
            'Recorded arrivals for same-container servicing without occupying a storage bay. These are physical journey endpoints, not extra payload instances or stored stock.',

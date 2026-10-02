@@ -1320,6 +1320,7 @@ class Simulation:
         task.exchange_empty_payload_metadata = dict(
             getattr(removed, "metadata", {}) or {}
         )
+        self.payload_instance_store.transition(payload.name, removed.instance_id, 'staged', task.dropoff)
 
     def _remove_payload_record_from_inventory(
         self, location_name: str, instance_id: str
@@ -1409,6 +1410,7 @@ class Simulation:
             )
             if removed is None:
                 continue
+            self.payload_instance_store.transition(payload_name, instance_id, 'removed', location)
             self._remove_payload_record_from_inventory(location, instance_id)
             self._log_payload_location_event(
                 "location_payload_exit", location, payload_name, instance_id
@@ -2658,7 +2660,7 @@ class Simulation:
         if instance_id:
             task.payload_instance_id = instance_id
             task.payload_instance_picked_up = True
-            self.payload_instance_store._issued_instances.add(instance_id)
+            self.payload_instance_store.transition(payload_name, instance_id, 'in_transit', task.pickup)
             self.payload_instance_store.release_creation_claim(instance_id, task.id)
             self.payload_instance_store.release_reservation(
                 instance_id, str(getattr(task, "id", "") or "")
@@ -2766,6 +2768,8 @@ class Simulation:
         bin is emptied and returned. The physical arrival still ends a journey;
         omitting it produces two exits for that bin before its next stored entry.
         """
+        self.payload_instance_store.transition(task.payload, task.payload_instance_id, 'staged', task.dropoff)
+        self._record_payload_population_snapshot()
         location = self.locations.get(task.dropoff)
         self.log_step(
             event_time=event_time,
@@ -2796,11 +2800,10 @@ class Simulation:
         """Track peak simultaneous physical payload population by payload type.
 
         This is an asset-population metric. It is not the number of tasks and
-        not the number of movements. It counts the current live payload instance
-        records in the runtime store and stores the highest count observed for
-        each payload type.
+        not the number of movements. Stored, carried, staged and unresolved
+        issued instances count; planned IDs and removed objects do not.
         """
-        counts = self.payload_instance_store.counts_by_payload()
+        counts = self.payload_instance_store.active_counts()
 
         for payload_name, count in counts.items():
             payload_name = normalise_payload_name(payload_name)
@@ -2981,13 +2984,13 @@ class Simulation:
     def _append_payload_population_summary_rows(self) -> None:
         """Write one runtime payload-population row per payload type.
 
-        total_runtime_payloads is the peak simultaneous number of physical
-        instances of that payload that existed in the runtime store. It is the
-        number to use for asset/population sizing, not task count.
+        Peak includes stored, in-transit, staged and unconfirmed objects. Planned
+        identities and physically removed objects are excluded from active stock.
         """
         if self._payload_population_rows_written or not self.verbose:
             return
         self._payload_population_rows_written = True
+        self._evidence_event_capabilities.append('payload_lifecycle_summary')
         self._record_payload_population_snapshot()
 
         known_by_payload: Dict[str, set] = defaultdict(set)
@@ -2996,10 +2999,19 @@ class Simulation:
         ).values():
             payload_name = normalise_payload_name(getattr(record, "payload", ""))
             instance_id = str(getattr(record, "instance_id", "") or "").strip()
-            if payload_name and instance_id and not is_empty_payload_name(payload_name):
+            if payload_name and instance_id in self.payload_instance_store._issued_instances:
                 known_by_payload[payload_name].add(instance_id)
 
         event_time = float(getattr(self, "current_time", 0.0) or 0.0)
+        lifecycle = self.payload_instance_store.lifecycle_counts()
+        for record in self.payload_instance_store.known_records():
+            self._append_verbose_row({
+                'sim_time_sec': round(event_time, 3), 'sim_datetime': self.clock.format_sim_time(event_time),
+                'event_type': 'payload_instance_summary', 'task_id': '', 'payload': record.payload,
+                'payload_instance_id': record.instance_id, 'status': record.status,
+                'to_location': record.location if record.status in {'stored', 'staged'} else '',
+                'details': ('Recovery required; staged container remains at the recorded location.'
+                            if record.metadata.get('recovery_required') else f'Final lifecycle state: {record.status}')})
         for payload_name in sorted(
             set(known_by_payload) | set(self.payload_population_peak)
         ):
@@ -3027,6 +3039,9 @@ class Simulation:
                     ),
                     "payload_runtime_population": peak_count,
                     "payload_known_instances": known_count,
+                    "payload_population_basis": "physical_lifecycle_v1",
+                    **{f'payload_final_{state}': lifecycle.get(payload_name, {}).get(state, 0)
+                       for state in ('planned', 'stored', 'in_transit', 'staged', 'unconfirmed', 'removed')},
                     "payload_weight_kg": weight,
                 }
             )
@@ -6767,6 +6782,8 @@ class Simulation:
         if (bool(getattr(task, 'payload_pickup_processed', False))
                 and not bool(getattr(task, 'payload_dropoff_processed', False))
                 and not is_empty_payload_name(task.payload)):
+            self.payload_instance_store.transition(task.payload, task.payload_instance_id, 'unconfirmed')
+            self._record_payload_population_snapshot()
             self.log_step(
                 event_time=event_time, event_type='payload_arrival_unconfirmed',
                 task_id=task.id, payload_name=self._payload_log_name(task.payload),
@@ -6774,6 +6791,20 @@ class Simulation:
                 from_location=task.pickup, status='unresolved',
                 start_time=event_time, end_time=event_time,
                 details='Task failed after pickup; payload arrival is unconfirmed. No stock was restored or destination arrival invented.')
+
+        staged_ids = {str(getattr(task, 'exchange_empty_payload_instance_id', '') or '')}
+        if not getattr(task, 'payload_pickup_processed', False) and getattr(task, 'creates_new_payload_instance', False):
+            staged_ids.add(str(getattr(task, 'payload_instance_id', '') or ''))
+        if getattr(task, 'return_same_payload_instance', False) and getattr(task, 'payload_dropoff_processed', False):
+            staged_ids.add(str(getattr(task, 'payload_instance_id', '') or ''))
+        for instance_id in staged_ids:
+            record = self.payload_instance_store._known_instances.get(instance_id)
+            if record is not None and record.status == 'staged':
+                record.metadata['recovery_required'] = True
+                self.log_step(event_time=event_time, event_type='payload_recovery_required',
+                    task_id=task.id, payload_name=record.payload, payload_instance_id=instance_id,
+                    to_location=record.location, status='staged',
+                    details='Task failed with a staged container awaiting return. Container remains staged; no inventory bay or recovery movement was invented.')
 
     def _record_failed_task(
         self,
@@ -13108,6 +13139,13 @@ class Simulation:
             "payload_instance_id",
             "payload_runtime_population",
             "payload_known_instances",
+            "payload_population_basis",
+            "payload_final_planned",
+            "payload_final_stored",
+            "payload_final_in_transit",
+            "payload_final_staged",
+            "payload_final_unconfirmed",
+            "payload_final_removed",
             "payload_weight_kg",
             "payload_slot",
             "onboard_payloads",

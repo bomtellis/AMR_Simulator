@@ -2412,6 +2412,9 @@ def build_report(
         NextPageTemplate("standard"),
         PageBreak(),
         Paragraph("Payload summary", styles["Section"]),
+        Paragraph("Runtime payloads is the peak per payload type, including stored, carried, staged and unconfirmed containers. "
+                  "Issued instances includes physical containers later removed; planned-only IDs are excluded. "
+                  "A dash means the available log does not establish that value. Older storage-only population summaries are insufficient.", styles["BodyText"]),
     ]
 
     payload_df = results["payload_schedule"].copy()
@@ -2429,13 +2432,13 @@ def build_report(
                 "total_runtime_payloads": "Runtime payloads",
                 "unique_payloads_moved": "Unique transported",
                 "tasks": "Tasks using payload",
-                "known_payload_instances": "Known instances",
+                "known_payload_instances": "Issued instances",
                 "payload_weight_kg": "Payload kg",
             }
         )
         display_cols = [
             c
-            for c in ["Payload", "Runtime payloads", "Unique transported", "Tasks using payload", "Known instances", "Payload kg"]
+            for c in ["Payload", "Runtime payloads", "Unique transported", "Tasks using payload", "Issued instances", "Payload kg"]
             if c in payload_df.columns
         ]
         payload_df = payload_df[display_cols]

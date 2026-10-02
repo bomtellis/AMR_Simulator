@@ -1,0 +1,35 @@
+test_report_counts_two_tasks_using_one_transported_object (tests.test_payload_lifecycle.PayloadLifecycleTests.test_report_counts_two_tasks_using_one_transported_object) ... FAIL
+test_legacy_storage_peak_does_not_claim_physical_population (tests.test_payload_lifecycle.PayloadLifecycleTests.test_legacy_storage_peak_does_not_claim_physical_population) ... FAIL
+test_task_count_does_not_substitute_for_missing_identity_evidence (tests.test_payload_lifecycle.PayloadLifecycleTests.test_task_count_does_not_substitute_for_missing_identity_evidence) ... FAIL
+
+======================================================================
+FAIL: test_report_counts_two_tasks_using_one_transported_object (tests.test_payload_lifecycle.PayloadLifecycleTests.test_report_counts_two_tasks_using_one_transported_object)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_lifecycle.py", line 61, in test_report_counts_two_tasks_using_one_transported_object
+    self.assertEqual(2, row['tasks'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: 2 != np.int64(1)
+
+======================================================================
+FAIL: test_legacy_storage_peak_does_not_claim_physical_population (tests.test_payload_lifecycle.PayloadLifecycleTests.test_legacy_storage_peak_does_not_claim_physical_population)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_lifecycle.py", line 67, in test_legacy_storage_peak_does_not_claim_physical_population
+    self.assertTrue(pd.isna(row['total_runtime_payloads']))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_task_count_does_not_substitute_for_missing_identity_evidence (tests.test_payload_lifecycle.PayloadLifecycleTests.test_task_count_does_not_substitute_for_missing_identity_evidence)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_lifecycle.py", line 73, in test_task_count_does_not_substitute_for_missing_identity_evidence
+    self.assertTrue(pd.isna(row['unique_payloads_moved']))
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.016s
+
+FAILED (failures=3)
