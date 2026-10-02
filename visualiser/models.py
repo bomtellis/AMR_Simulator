@@ -1266,6 +1266,15 @@ class JsonStore:
             }
         )
 
+    def subdivide_corridors(self, cuts):
+        try:
+            from .corridor_editing import subdivide
+        except ImportError:
+            from corridor_editing import subdivide
+        updated, chains = subdivide(self.data, self.all_points(), cuts)
+        self.data = updated
+        return chains
+
     def add_location(self, name: str, floor: int, x: float, y: float) -> None:
         self.data["locations"].append(
             {

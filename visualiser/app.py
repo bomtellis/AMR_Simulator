@@ -809,6 +809,12 @@ class AMRGraphEditor(QMainWindow):
             [self.snap_check, self.bidirectional_check, self.chain_edges_check],
             columns=1,
         )
+        add_group(edit, "Corridor sections", [
+            button("Split at midpoint", lambda: self.subdivide_selected_corridors(2),
+                   "Insert one node per selected corridor. Retains attributes and references; Undo restores all changes."),
+            button("Subdivide selected…", self.subdivide_selected_corridors,
+                   "Divide each selected corridor into equal sections. Added sections can change traffic reservations."),
+        ], columns=1)
 
         view = create_page("View")
         add_group(
@@ -983,6 +989,48 @@ class AMRGraphEditor(QMainWindow):
         self.drag_mode_active = False
         self.set_status("Topology selection cleared")
         self.refresh_canvas()
+
+    def _apply_corridor_cuts(self, cuts):
+        try:
+            chains = self.store.subdivide_corridors(cuts)
+        except (ValueError, TypeError, KeyError) as exc:
+            QMessageBox.information(self, "Corridors were not changed", str(exc))
+            return False
+        self.selected_point_names = {name for chain in chains.values() for name in chain[1:-1]}
+        self.selected_point_name = next(iter(sorted(self.selected_point_names)), None)
+        self.selected_edge_keys = {self._physical_edge_key(a, b) for chain in chains.values() for a, b in zip(chain, chain[1:])}
+        self.selected_for_edge = None
+        self.set_status(f"Inserted {len(self.selected_point_names)} node(s) in {len(chains)} corridor(s). Undo restores the original routes and references.")
+        self.refresh_canvas()
+        return True
+
+    @undoable("Subdivide corridors")
+    def subdivide_selected_corridors(self, sections=None):
+        keys = set(self.selected_edge_keys)
+        if not keys:
+            self.set_status("Select one or more corridor edges before subdividing.")
+            return False
+        # QPushButton.clicked supplies a bool; it is not a section count.
+        if sections is None or isinstance(sections, bool):
+            sections, accepted = QInputDialog.getInt(self, "Subdivide selected corridors",
+                f"Sections per corridor ({len(keys)} selected).\nEach corridor gains sections minus one nodes. Widths, directions and route references are retained.\nTraffic reservation and people-occupancy timing may change with the new sections.",
+                2, 2, 100)
+            if not accepted:
+                return False
+        if type(sections) is not int or not 2 <= sections <= 100:
+            return False
+        return self._apply_corridor_cuts({key: [i / sections for i in range(1, sections)] for key in keys})
+
+    @undoable("Insert corridor node")
+    def split_corridor_at(self, key, x, y):
+        from corridor_editing import project_fraction
+        points = self.store.all_points()
+        try:
+            fraction = project_fraction(points[key[0]], points[key[1]], x, y)
+        except (ValueError, KeyError, TypeError) as exc:
+            QMessageBox.information(self, "Corridor was not changed", str(exc))
+            return False
+        return self._apply_corridor_cuts({key: [fraction]})
 
     def find_nearest_edge_key(self, x, y, floor, radius_world=0.45):
         points = self.store.all_points()
@@ -2310,7 +2358,9 @@ class AMRGraphEditor(QMainWindow):
         if mode == "pdf_underlay_align":
             return
 
-        picked = self.find_nearest_point_name(raw_x, raw_y, floor)
+        # Insertion needs a precise endpoint hit; the broad selection radius
+        # otherwise consumes every click on corridors shorter than six metres.
+        picked = self.find_nearest_point_name(raw_x, raw_y, floor, radius_world=0.45 if mode == "corridor_node" else 3.0)
         picked_edge = None if picked else self.find_nearest_edge_key(raw_x, raw_y, floor)
 
         if mode == "select_move":
@@ -2400,6 +2450,14 @@ class AMRGraphEditor(QMainWindow):
             return
 
         if mode == "corridor_node":
+            if picked:
+                self.selected_point_name = picked
+                self.set_status(f"Using existing point {picked}; no duplicate node was added.")
+                self.refresh_canvas()
+                return
+            if picked_edge is not None:
+                self.split_corridor_at(picked_edge, raw_x, raw_y)
+                return
             name = self.store.suggest_next_corridor_name(floor)
             self.store.add_corridor_node(name, floor, x, y)
             self.selected_point_name = name
@@ -2651,6 +2709,12 @@ class AMRGraphEditor(QMainWindow):
                 self.selected_point_name = None
             if self.selected_edge_keys or len(self.selected_point_names) > 1:
                 menu = QMenu(self)
+                if picked_edge is not None:
+                    menu.addAction("Insert node here", lambda: self.split_corridor_at(picked_edge, x, y))
+                if self.selected_edge_keys:
+                    menu.addAction("Split selected corridors at midpoint", lambda: self.subdivide_selected_corridors(2))
+                    menu.addAction("Subdivide selected corridors…", self.subdivide_selected_corridors)
+                    menu.addSeparator()
                 menu.addAction(
                     "Edit selected corridor widths / doors",
                     self.manage_corridor_settings,

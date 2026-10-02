@@ -38,8 +38,10 @@ implementation; no national-body certification claim is made.
   persistent run references/custom locations now survive reopening. Moved runs
   retain missing entries and relink by identity; Save As rebases paths. See
   PERSISTENT_RUN_LINKS_REVIEW.md. Broader project-tree integration remains open.
-- Finish continuous corridor drawing, snapping, automatic linking, edge splitting
-  and subdivision, preserving attributes and grouping each operation into undo.
+- Explicit corridor splitting and subdivision now preserve edge attributes,
+  routing/resource references and grouped undo; see CORRIDOR_EDITING_REVIEW.md.
+  Finish continuous corridor drawing, full snapping and automatic linking.
+  Added graph sections can change reservation and people-occupancy timing.
 - Complete shared accessible themes, font/colour controls, keyboard navigation,
   dialog consistency and bulk-edit previews. Route identification must combine
   labels and line patterns with colour.
