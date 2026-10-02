@@ -7076,6 +7076,10 @@ class SimulationVisualizer(QMainWindow):
             return "dropoff"
         if event_type == "location_payload_exit":
             return "pickup"
+        if event_type == "payload_service_arrival":
+            # A bin can arrive for servicing without entering inventory. Do not
+            # let the legacy substring matcher read "payload" as a load action.
+            return ""
 
         # Generated rows and assignment rows are task metadata, not physical
         # inventory movement.  Most generated rows also have no AMR id.

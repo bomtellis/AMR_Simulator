@@ -1,0 +1,150 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T00:00:00",
+    "end_datetime": "2026-01-05T00:10:00",
+    "precompute_static_routes": false,
+    "seed_waste_stream_containers_at_start": true
+  },
+  "building": {
+    "charge_location": "A",
+    "enable_idle_return": false,
+    "load_unload_time_sec": 2,
+    "edge_slowdown_per_amr": 0
+  },
+  "locations": [
+    {
+      "name": "A",
+      "floor": 0,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "name": "B",
+      "floor": 0,
+      "x": 6,
+      "y": 8,
+      "inventory_spaces": [
+        {
+          "name": "Finite bin bay",
+          "length_m": 2,
+          "width_m": 2,
+          "height_m": 2,
+          "flexible": true,
+          "payload_slots": [
+            {
+              "payload": "Box"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "corridors": {
+    "auto_connect": false,
+    "nodes": [
+      {
+        "name": "Door",
+        "floor": 0,
+        "x": 3,
+        "y": 4,
+        "has_door": true,
+        "door_clear_width_m": 0.8
+      }
+    ],
+    "edges": [
+      {
+        "from": "A",
+        "to": "Door",
+        "width_m": 3
+      },
+      {
+        "from": "Door",
+        "to": "B",
+        "width_m": 3
+      }
+    ]
+  },
+  "payloads": [
+    {
+      "name": "Box",
+      "weight_kg": 10,
+      "length_m": 1.0,
+      "width_m": 0.7,
+      "height_m": 1,
+      "allowed_carry_orientations": [
+        "lengthways"
+      ]
+    }
+  ],
+  "amrs": [
+    {
+      "id": "R",
+      "quantity": 1,
+      "length_m": 1,
+      "width_m": 0.6,
+      "payload_capacity_kg": 100,
+      "payload_length_capacity_m": 2,
+      "payload_width_capacity_m": 2,
+      "payload_height_capacity_m": 2,
+      "speed_m_per_sec": 2,
+      "battery_capacity_kwh": 10,
+      "battery_charge_rate_kw": 2,
+      "recharge_threshold_percent": 1
+    }
+  ],
+  "lifts": [],
+  "tasks": [],
+  "task_generation": {
+    "enabled": true,
+    "update_interval_sec": 60,
+    "categories": {
+      "service": {
+        "enabled": true,
+        "generation_mode": "scheduled",
+        "scheduled_times": [
+          "00:01"
+        ],
+        "pickup_location": "A",
+        "dropoff_location": "B",
+        "payload": "Box",
+        "waste_stream": "Clinical",
+        "staff_handling_minutes": 0,
+        "staff_collection_delay_minutes": 0
+      }
+    }
+  },
+  "mass_collections": [
+    {
+      "id": "Rotation",
+      "location": "B",
+      "payloads": [
+        "Box"
+      ],
+      "scheduled_times": [],
+      "capacity_trigger_count": 0
+    }
+  ],
+  "waste_streams": [
+    {
+      "name": "Clinical",
+      "payload": "Box",
+      "container_capacity_m3": 1,
+      "full_threshold_fraction": 1
+    }
+  ],
+  "departments": [
+    {
+      "id": "D",
+      "enabled": true,
+      "waste_pickup_locations": [
+        "A"
+      ],
+      "waste_streams": [
+        {
+          "name": "Clinical",
+          "initial_container_present": true
+        }
+      ]
+    }
+  ]
+}

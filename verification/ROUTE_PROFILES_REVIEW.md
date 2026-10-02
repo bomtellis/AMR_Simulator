@@ -92,7 +92,8 @@ by a valid group value, so the engine validates the effective task at scheduling
 - Preflight does not resolve all effective generated or runtime return settings.
   An invalid generated profile can therefore stop a run after earlier valid work;
   such a run must be treated as failed/partial evidence.
-- The separate LTN payload-tracking conflict D008 remains open.
+- The separate LTN payload-tracking conflict D008 was later resolved; see
+  `PAYLOAD_SERVICE_REVIEW.md` for the repair and its verified scope.
 - Route colour/pattern presentation, shared geometric trajectories and swept
   clearance remain future checkpoints.
 

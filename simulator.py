@@ -119,6 +119,7 @@ class Simulation:
         self._evidence_inputs = json.loads(json.dumps(config))
         self._evidence_config_hash = config_hash(self._evidence_inputs)
         self._evidence_software = software_snapshot() if verbose else None
+        self._evidence_event_capabilities = ['payload_service_arrivals']
         self._evidence_run_status = 'incomplete'
         self._evidence_sequence = 0
         self._evidence_journey_sequence = 0
@@ -2651,6 +2652,39 @@ class Simulation:
             inventory_space=str(getattr(task, "assigned_inventory_space", "") or ""),
         )
         self._record_payload_population_snapshot()
+
+    def _log_payload_service_arrival(self, task: Task, event_time: float) -> None:
+        """Record delivery for same-bin servicing without claiming a storage bay.
+
+        Finite rotation stores keep their exchange stock untouched when a seeded
+        bin is emptied and returned. The physical arrival still ends a journey;
+        omitting it produces two exits for that bin before its next stored entry.
+        """
+        location = self.locations.get(task.dropoff)
+        self.log_step(
+            event_time=event_time,
+            event_type="payload_service_arrival",
+            task_id=task.id,
+            details="Same-container service arrival; not stored in inventory; bin will return after handling",
+            from_location=task.dropoff,
+            to_location=task.dropoff,
+            payload_name=self._payload_log_name(task.payload),
+            payload_instance_id=getattr(task, "payload_instance_id", ""),
+            start_time=event_time,
+            end_time=event_time,
+            start_node=task.dropoff,
+            end_node=task.dropoff,
+            start_x=getattr(location, "x", None),
+            start_y=getattr(location, "y", None),
+            start_floor=getattr(location, "floor", None),
+            end_x=getattr(location, "x", None),
+            end_y=getattr(location, "y", None),
+            end_floor=getattr(location, "floor", None),
+            status="payload_handling",
+            task_source=getattr(task, "task_source", ""),
+            department_id=getattr(task, "department_id", ""),
+            waste_stream=getattr(task, "waste_stream", ""),
+        )
 
     def _record_payload_population_snapshot(self) -> None:
         """Track peak simultaneous physical payload population by payload type.
@@ -12125,6 +12159,8 @@ class Simulation:
                         )
                         self._fail_task(task, reason, now=event.payload["finish_time"])
                         return
+                else:
+                    self._log_payload_service_arrival(task, payload_dropoff_time)
             completed_amr = self.amrs_by_id.get(event.payload.get("amr_id"))
             completed_end_location_name = str(event.payload.get("end_location") or task.dropoff or "")
             completed_amr_loc = self.locations.get(completed_end_location_name)
@@ -12418,6 +12454,8 @@ class Simulation:
                                 now=event.payload["finish_time"],
                             )
                             continue
+                    else:
+                        self._log_payload_service_arrival(task, payload_dropoff_time)
 
                 final_location_name = str(
                     event.payload.get("end_location") or task.dropoff or ""
@@ -13138,7 +13176,7 @@ class Simulation:
         reduced_scenario_logging = self.scenario_mode and not self.scenario_enhanced_logging
         event_key = str(event_type or "").strip().lower()
         if reduced_scenario_logging and (
-            event_key in {"location_payload_enter", "location_payload_exit", "payload_population_summary"}
+            event_key in {"location_payload_enter", "location_payload_exit", "payload_service_arrival", "payload_population_summary"}
             or "payload_transition" in event_key
         ):
             return
@@ -13766,6 +13804,7 @@ class Simulation:
         if event_type in {
             "location_payload_enter",
             "location_payload_exit",
+            "payload_service_arrival",
             "mass_collection_visit",
             "task_generated",
             "return_task_generated",

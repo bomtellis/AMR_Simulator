@@ -1,5 +1,9 @@
 # Results investigation checkpoint — 2 October 2026
 
+Update: D008 below was subsequently resolved by the payload service checkpoint.
+See `PAYLOAD_SERVICE_REVIEW.md` for the new evidence; the old log is retained as
+the historical defect reproduction and is not repaired retrospectively.
+
 Open **Home → Results investigation** in the editor, or select a saved launcher
 run and choose **Investigate Results**. Open its full `simulation_steps.csv` or
 the run folder. Reading happens in the background. The workspace does not use

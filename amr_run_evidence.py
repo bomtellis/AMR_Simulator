@@ -36,6 +36,7 @@ def write_run_evidence(simulation, csv_path, *, kind='full'):
         'project_binding': getattr(simulation, '_evidence_project_binding', None),
         'log_sha256': file_hash(path), 'log_kind': kind,
         'logging_enabled': simulation.verbose,
+        'event_capabilities': list(getattr(simulation, '_evidence_event_capabilities', [])),
         'reduced_logging': bool(simulation.scenario_mode and not simulation.scenario_enhanced_logging),
         'run_status': simulation._evidence_run_status,
         'summary': {'completed_task_ids': sorted({r['task_id'] for r in simulation.completed_task_records}),

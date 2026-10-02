@@ -203,13 +203,13 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
                       'configured_request': configured.get(task_id),
                       'missing_evidence': [name for name, value in [('release', release), ('assignment', assignment), ('terminal outcome', terminal)] if not value]})
 
-    # Payload transport is a paired physical exit and later entry for the same
-    # instance, not a task count or the number of segment rows.
+    # A service arrival ends a physical transfer without occupying inventory.
+    # It must be recorded explicitly; never infer it from a planned segment.
     departures, payload_moves = {}, []
     payload_anomalies = []
     payload_gaps = False
     for e in events:
-        if e['type'] not in {'location_payload_exit', 'location_payload_enter'}:
+        if e['type'] not in {'location_payload_exit', 'location_payload_enter', 'payload_service_arrival'}:
             continue
         pid = e['payload_instance_id']
         if not pid or e['time_seconds'] is None:
@@ -220,7 +220,7 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
         if e['type'] == 'location_payload_exit':
             if pid in departures:
                 payload_gaps = True
-                payload_anomalies.append({'reason': f'{pid}: another exit was recorded before a subsequent entry.',
+                payload_anomalies.append({'reason': f'{pid}: another exit was recorded before a subsequent arrival.',
                                           'event_ids': [departures[pid]['id'], e['id']]})
             departures[pid] = e
         elif pid in departures:
@@ -269,10 +269,15 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
            [eid for t in tasks if t['outcome'] == 'outcome not recorded' for eid in t['event_ids']],
            'Observed or explicitly configured tasks lacking completion/failure evidence; not automatically classified as pending.')
     metric('payload_moves', 'Payload transfers between locations', len(payload_moves), [eid for m in payload_moves for eid in m['event_ids']],
-           'Paired exit and subsequent entry for the same physical payload instance at different locations. Initial population is excluded.',
+           'Paired exit and subsequent stored entry or service arrival for the same physical payload instance at different locations. Service handling does not imply inventory occupancy. Initial population is excluded.',
            known=complete_evidence and not payload_gaps)
-    metric('payload_unpaired_exits', 'Payload exits without a later entry', len(departures), [e['id'] for e in departures.values()],
-           'Recorded payload exits with no subsequent entry for the same instance in this log. Select to inspect evidence gaps; these are not automatically payload losses.')
+    service_arrivals = [e for e in events if e['type'] == 'payload_service_arrival']
+    metric('payload_service_arrivals', 'Payload service arrivals outside storage', len(service_arrivals),
+           [e['id'] for e in service_arrivals],
+           'Recorded arrivals for same-container servicing without occupying a storage bay. These are physical journey endpoints, not extra payload instances or stored stock.',
+           known=complete_evidence and 'payload_service_arrivals' in metadata.get('event_capabilities', []))
+    metric('payload_unpaired_exits', 'Payload exits without a later arrival', len(departures), [e['id'] for e in departures.values()],
+           'Recorded payload exits with no subsequent stored entry or service arrival for the same instance in this log. Select to inspect evidence gaps; these are not automatically payload losses.')
     metric('payload_tracking_conflicts', 'Payload tracking conflicts', len(payload_anomalies), [eid for a in payload_anomalies for eid in a['event_ids']],
            'Repeated exits before the next entry, or physical movement records missing an instance identifier/time. Select the contributing records to investigate; the reader does not repair them.')
     metric('journeys', 'Assigned AMR journeys', len(journeys), [eid for j in journeys.values() for eid in j['event_ids']],

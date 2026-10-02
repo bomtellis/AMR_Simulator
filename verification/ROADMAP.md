@@ -1,0 +1,89 @@
+# Dependable AMR application — completion ledger
+
+This retains the full agreed plan. A working foundation or passing narrow test
+does not close a whole requirement. Human review checkpoints accompany the
+implementation; no national-body certification claim is made.
+
+## 1. Verify and explain existing behaviour — gate OPEN
+
+| Requirement | Current evidence and remaining work |
+| --- | --- |
+| Reproducible baseline preserving local changes | Rollback commit `07a059a`; subsequent commits and source snapshots. The user's LTN edit remains separate. |
+| Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
+| Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
+| Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
+| Individual defect reproduction and changed-result explanations | D001–D012 recorded in README; D008 repaired with a reference cycle and LTN reconciliation; D012 preserves generator settings through the editor. Continue identifying defects rather than equating green tests with complete verification. |
+| LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
+| Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
+
+## 2. Make correctness visible — foundations delivered, completion OPEN
+
+| Workspace | Remaining requirements |
+| --- | --- |
+| Project checks | Complete reference/dimension/schedule/connectivity/profile/resource checks, check-specific staleness and navigation. Existing findings, warning acknowledgements and malformed-input blocking must cover all effective inputs. |
+| Demand preview | Complete searchable table/timetable filters, effective-rule provenance and inherited/override values for every supported mode; reconcile configured demand and explain all zero-work rules. Runtime-dependent totals must remain unknown where appropriate. |
+| Results investigation | Complete assignment/resource/route/failure explanations, task/payload/AMR/lift distinctions, all metric-to-record links, missing-evidence handling and large-log access. Existing frozen input/event IDs and legacy adapters are foundations. |
+
+## 3. Dependable editing and unified project — completion OPEN
+
+- Integrate all seven stages in one window: Project, Layout, Configuration,
+  Check, Simulate, Review and Report, with persistent project tree, central
+  workspace and contextual properties. Playback/report integration is unfinished.
+- Centralised state and undoable editing: snapshot undo/redo exists; finish
+  command coverage and frequent editing outside modal dialogs.
+- `.amrproj` compressed storage, deduplicated drawings, atomic saves, recovery,
+  revision comparison/restore and JSON export exist. Finish explicit migration
+  coverage, retention/cleanup and responsiveness for large projects.
+- Results stay external. Immutable run inputs/revision/software binding exists;
+  persistent run references and moved-result relinking across sessions remain.
+- Finish continuous corridor drawing, snapping, automatic linking, edge splitting
+  and subdivision, preserving attributes and grouping each operation into undo.
+- Complete shared accessible themes, font/colour controls, keyboard navigation,
+  dialog consistency and bulk-edit previews. Route identification must combine
+  labels and line patterns with colour.
+
+## 4. Verified geometric traffic — completion OPEN
+
+1. Straight door-width filtering exists; complete loaded swept-footprint passage
+   against modelled geometry, with drawings used only as underlays.
+2. Clean/dirty/shared access uses the existing **route profiles**. Shared sections
+   belong to each applicable profile; complete all interaction tests and explicit
+   empty-journey policy support. Do not add a competing classification system.
+3. Implement keep-right directional lanes, narrow-section reservations and
+   junction conflicts. Current width-based concurrent capacity is approximate.
+4. Implement radius-constrained turns and permitted pivots.
+5. Implement reversing and multi-point manoeuvres.
+
+All geometric stages require shared simulation/visualisation trajectories,
+explicit manoeuvring parameters, swept collision checks, distinct infeasible,
+deadlock and exhausted-search results, no silent straight-line fallback, and
+explicit legacy comparison/migration.
+
+## 5. Release discipline and learning — completion OPEN
+
+- Execute automated tests and clean-install checks for Windows releases;
+  configured CI is not evidence of an executed remote clean installation.
+- Complete normal/boundary/invalid/interaction reference coverage, payload
+  conservation, resource-capacity and consistent-task-outcome invariants.
+- Reconcile demand, event records and all report totals.
+- Measure repeatability, project size, save/load time and representative LTN
+  runtime, with reproducible inputs and acceptance thresholds.
+- Finish the engineering verification pack: requirements, independent
+  calculations, results, defects and limitations with traceable evidence.
+- Deliver contextual help, compact guided tutorial, LTN worked example and an
+  illustrated PDF user guide with editable source. Existing checkpoint guides
+  do not substitute for these deliverables.
+
+## Retained decisions
+
+Windows desktop first; PySide6 and existing command-line tools retained;
+engineering modellers as primary users; general engineering verification rather
+than certification; revision restore rather than a tamper-proof audit;
+simulation results outside the project file. The simulator is extended
+incrementally, not replaced wholesale.
+
+## Next source-review investigations
+
+Reproduce and assess generation coverage in a final partial update interval and
+per-task allow-list enforcement within multi-stop batches. These are concrete
+next checks, not replacements for the full requirements above.
