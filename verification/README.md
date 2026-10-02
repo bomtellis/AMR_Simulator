@@ -136,4 +136,22 @@ precedence, capacity contention and swept geometry are not proved by preflight.
 Existing reference simulation tests still supply those narrower verified claims.
 Drawing file availability is checked on recheck, not watched continuously.
 All checks become stale together; dependency-specific invalidation is deferred.
-Demand preview is the next implementation checkpoint, after user review.
+Demand preview is now available at the checkpoint described below.
+
+## Demand preview checkpoint
+
+Use **Home → Demand preview → Build preview**. Inspect the task table, hourly
+timetable and rule reconciliation; filter by department, category, payload, date
+or route profile. Selecting tasks and rules shows their origins, effective settings
+and precedence. Unknown runtime-dependent totals remain distinct from zero work.
+Edits invalidate the preview and disable export until it is rebuilt.
+
+Follow [the review guide](DEMAND_PREVIEW_REVIEW.md) before the Results investigation
+stage. It describes count definitions, the independent count checks, known
+limitations and the LTN evidence. To export without opening the editor:
+
+```powershell
+.venv/Scripts/python.exe -m amr_demand_preview --config ltn.json --output verification/latest/ltn-demand-preview.json
+```
+
+Exports contain the frozen project configuration, so treat them as project data.

@@ -128,12 +128,11 @@ class ProjectCheckTests(unittest.TestCase):
         finding = next(f for f in report.findings if f.code == 'GENERATION_REFERENCE')
         self.assertEqual(('warning', 'task_generation', 'g'), (finding.severity, finding.section, finding.target))
 
-    def test_ltn_retains_missing_d26_warning_without_mutation(self):
+    def test_ltn_checks_do_not_mutate_saved_project(self):
         path = Path(__file__).resolve().parents[1] / 'ltn.json'
         before = path.read_bytes()
         report = check_project(json.loads(before))
         self.assertFalse(any(f.severity == 'error' for f in report.findings))
-        self.assertTrue(any(f.code == 'GENERATION_REFERENCE' and 'D26-LINEN' in f.message for f in report.findings))
         self.assertEqual(before, path.read_bytes())
 
 

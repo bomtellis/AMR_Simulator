@@ -508,6 +508,7 @@ class AMRGraphEditor(QMainWindow):
                     "Export every configured floor to a separate, sequentially numbered DXF file. Background DXF/PDF artwork is excluded.",
                 ),
                 button("Project checks", self.validate_json),
+                button("Demand preview", self.show_demand_preview),
             ],
             columns=3,
         )
@@ -3168,6 +3169,22 @@ class AMRGraphEditor(QMainWindow):
             self.loaded_dxf_floor = None
         self.set_status(f"Removed DXF mapping from floor {floor}")
         self.refresh_canvas()
+
+    def show_demand_preview(self):
+        # The editor also runs directly from visualiser/amr_editor_main.py.
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from demand_preview_panel import DemandPreviewPanel
+        if not hasattr(self, 'demand_dock'):
+            self.demand_dock = QDockWidget('Demand preview', self)
+            self.demand_dock.setObjectName('demandPreviewDock')
+            self.demand_panel = DemandPreviewPanel(lambda: self.store.data, self.demand_dock)
+            self.demand_dock.setWidget(self.demand_panel)
+            self.addDockWidget(Qt.BottomDockWidgetArea, self.demand_dock)
+        self.demand_dock.show()
+        self.demand_dock.raise_()
+        self.set_status('Demand preview opened. Build a preview to inspect planned demand.')
 
     def validate_json(self):
         from project_checks_panel import ProjectChecksPanel

@@ -37,6 +37,8 @@ class GeneratedTaskRecord:
     container_type: str = ""
     deferred: bool = False
     released_from_deferral: bool = False
+    rule_id: str = ""
+    rule_path: str = ""
 
 
 class BaseTaskGenerator:
@@ -714,6 +716,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             grouped.append(
                 {
                     "id": group_id,
+                    "source_index": index,
                     "departments": departments,
                     "payload": dict(payload),
                 }
@@ -909,11 +912,29 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         categories = self.task_generation.get("categories", {}) or {}
         instances: List[dict] = []
 
+        def annotate(rows, category, category_path, override=None, override_path=''):
+            for instance in rows:
+                instance['rule_path'] = override_path or category_path
+                instance['category_path'] = category_path
+                sources = {key: (override_path if override and key in override else category_path if key in category else 'Generator default or derived value')
+                           for key in instance['cfg'] if key != 'department_groups'}
+                sources['dropoff_zone_capacity_policy'] = category_path + ' (category-wide policy)'
+                if instance.get('dropoff_zone_locations'):
+                    for key in ('requires_staff', 'return_enabled'):
+                        sources[key] = 'Department drop-off zone handoff'
+                if instance.get('waste_stream'):
+                    # Waste has additional stream and department layers; do not guess
+                    # a more specific source from matching values alone.
+                    sources = {key: 'Resolved waste stream settings; see precedence notes'
+                               for key in sources}
+                instance['field_sources'] = sources
+
         for category_key, category in categories.items():
             if not isinstance(category, dict):
                 continue
 
             category_key_text = str(category_key)
+            category_path = '/task_generation/categories/' + category_key_text.replace('~', '~0').replace('/', '~1')
             overrides = (
                 category.get("departments", {})
                 if isinstance(category.get("departments", {}), dict)
@@ -937,6 +958,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     dept = departments_by_id.get(dept_id)
                     if dept is None:
                         continue
+                    before = len(instances)
                     self._append_department_instance(
                         instances,
                         category_key_text,
@@ -945,6 +967,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         group["payload"],
                         f"group:{group['id']}",
                     )
+                    annotate(instances[before:], category, category_path, group['payload'],
+                             f"{category_path}/department_groups/{group['source_index']}/payload")
 
             for dept in self.departments:
                 dept_id = self._department_id(dept)
@@ -952,6 +976,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     continue
                 if dept_id in grouped_department_ids:
                     continue
+                before = len(instances)
                 self._append_department_instance(
                     instances,
                     category_key_text,
@@ -959,6 +984,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     dept,
                     overrides.get(dept_id, {}),
                 )
+                annotate(instances[before:], category, category_path, overrides.get(dept_id, {}),
+                         category_path + '/departments/' + dept_id.replace('~', '~0').replace('/', '~1'))
 
             # Category-level generation is only for a deliberately enabled
             # category default and only when there are no department overrides.
@@ -976,6 +1003,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         "dropoff_locations": self._dropoff_locations_from_cfg(category),
                     }
                 )
+                annotate(instances[-1:], category, category_path)
 
         return instances
 
@@ -1490,6 +1518,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 or 0.0
             ),
             container_type=task.payload,
+            rule_id=instance['key'],
+            rule_path=instance.get('rule_path', ''),
         )
 
     def _create_return_task(self, outbound: Task, instance: dict) -> Optional[Task]:
