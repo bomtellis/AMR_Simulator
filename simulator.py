@@ -1091,12 +1091,12 @@ class Simulation:
             return True
         return False
 
-    def _available_empty_container_record(self, location_name: str, payload_name: str):
+    def _available_empty_container_record(self, location_name: str, payload_name: str, reservation_owner: str = ""):
         payload_name = normalise_payload_name(payload_name)
         for record in self.payload_instance_store.records_at(location_name):
             if getattr(record, "payload", "") != payload_name:
                 continue
-            if self.payload_instance_store.is_reserved(record.instance_id):
+            if self.payload_instance_store.is_reserved(record.instance_id, excluding_owner=reservation_owner):
                 continue
             if self._record_is_available_empty_container(record):
                 return record
@@ -1192,9 +1192,38 @@ class Simulation:
         if not self._task_is_full_bin_dropoff_to_inventory_rotation(task, payload):
             return False
         return (
-            self._available_empty_container_record(task.dropoff, payload.name)
+            self._available_empty_container_record(task.dropoff, payload.name, task.id)
             is not None
         )
+
+    def _plan_exchange_empty_claims(self, tasks: List[Task], *, reserve: bool) -> bool:
+        """Assign distinct physical empty bins without moving them during planning."""
+        selected, used = [], set()
+        for task in tasks:
+            if (bool(getattr(task, 'return_same_payload_instance', False))
+                    or getattr(task, 'exchange_empty_payload_instance_id', '')
+                    or not self._task_is_full_bin_dropoff_to_inventory_rotation(task)):
+                continue
+            existing = str(getattr(task, 'reserved_exchange_empty_id', '') or '')
+            record = next((record for record in self.payload_instance_store.records_at(task.dropoff)
+                           if record.payload == normalise_payload_name(task.payload)
+                           and record.instance_id not in used
+                           and (not existing or record.instance_id == existing)
+                           and not self.payload_instance_store.is_reserved(record.instance_id, excluding_owner=task.id)
+                           and self._record_is_available_empty_container(record)), None)
+            if record is None:
+                self._set_task_pending_reason(task,
+                    f"No distinct empty {task.payload} available at {task.dropoff} for exchange")
+                return False
+            selected.append((task, record.instance_id))
+            used.add(record.instance_id)
+        if reserve:
+            for task, instance_id in selected:
+                self._remember_route_mapping(self.payload_instance_store._reservations, instance_id)
+                if not self.payload_instance_store.reserve_instance(instance_id, task.id):
+                    return False
+                task.reserved_exchange_empty_id = instance_id
+        return True
 
     def _consume_store_empty_for_exchange(
         self, task: Task, payload: PayloadType
@@ -1206,7 +1235,9 @@ class Simulation:
             return
         if str(getattr(task, "exchange_empty_payload_instance_id", "") or "").strip():
             return
-        record = self._available_empty_container_record(task.dropoff, payload.name)
+        reserved_id = str(getattr(task, 'reserved_exchange_empty_id', '') or '')
+        record = (self.payload_instance_store._records.get(reserved_id) if reserved_id else
+                  self._available_empty_container_record(task.dropoff, payload.name, task.id))
         if record is None:
             raise RuntimeError(
                 f"No '{payload.name}'s available at {task.dropoff} for exchange"
@@ -1215,6 +1246,7 @@ class Simulation:
             task.dropoff,
             payload_name=payload.name,
             instance_id=str(getattr(record, "instance_id", "") or ""),
+            reservation_owner=task.id,
         )
         if removed is None:
             raise RuntimeError(
@@ -1222,6 +1254,7 @@ class Simulation:
             )
         self._remove_payload_record_from_inventory(task.dropoff, removed.instance_id)
         task.exchange_empty_payload_instance_id = removed.instance_id
+        task.reserved_exchange_empty_id = ''
         task.exchange_empty_payload_metadata = dict(
             getattr(removed, "metadata", {}) or {}
         )
@@ -1975,6 +2008,8 @@ class Simulation:
                 return None
             slot_assignments = self._assign_tasks_to_amr_slots(amr, tasks)
             if slot_assignments is None:
+                return None
+            if not self._plan_exchange_empty_claims(tasks, reserve=reserve):
                 return None
             for task in tasks:
                 payload = self._payload_for_task(task)
@@ -4850,6 +4885,8 @@ class Simulation:
         if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
             task.payload_pickup_processed = True
             return
+        if not self._plan_exchange_empty_claims([task], reserve=True):
+            raise RuntimeError(task.pending_reason)
         self._pickup_payload_instance_for_task(task, event_time=event_time)
         self._free_inventory_space_for_pickup(task, payload)
         self._consume_store_empty_for_exchange(task, payload)
@@ -6563,6 +6600,10 @@ class Simulation:
                 )
 
     def _release_payload_instance_reservation_for_task(self, task: Task) -> None:
+        exchange_id = str(getattr(task, 'reserved_exchange_empty_id', '') or '')
+        if exchange_id:
+            self.payload_instance_store.release_reservation(exchange_id, task.id)
+            task.reserved_exchange_empty_id = ''
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
         if instance_id:
             self.payload_instance_store.release_reservation(
@@ -9861,6 +9902,9 @@ class Simulation:
 
             payload = self._payload_for_task(task)
             if payload is None:
+                return None
+
+            if not self._plan_exchange_empty_claims([task], reserve=reserve):
                 return None
 
             if not self._pickup_instance_available(task):

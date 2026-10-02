@@ -77,7 +77,8 @@ complete separation of operational failures from delivery outcomes, charging
 journey identities and all report-energy totals remain open. The transaction
 protects route planning, not later exceptions while publishing assignment events.
 
-The full [roadmap](ROADMAP.md) remains open, including joint empty-bin claims.
+The subsequent [exchange checkpoint](EXCHANGE_CLAIMS_REVIEW.md) verifies exclusive
+empty-bin claims. The full [roadmap](ROADMAP.md) remains open.
 The earlier unexplained preview-process interruption is still recorded in
 `baseline/multi-stop-verification-observation.txt`. Automated warning
 acknowledgement does not record human review.

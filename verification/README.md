@@ -104,6 +104,7 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D022 | Charging trips did not reserve corridor capacity, including lift approaches and exits | Reserve corridor and node intervals for committed charging travel. Two single-capacity reference trips now finish at 5 and 10 seconds instead of both at 5 seconds. See CHARGING_TRAVEL_REVIEW.md. |
 | D023 | Charging travel omitted motor/battery and lift-supply energy, allowing unreachable trips and understating recharge duration | Account for empty motor travel, record lift supply separately, select energy-reachable chargers and recharge from arrival energy. Explicit waits have zero traction consumption under the retained approximate model. |
 | D024 | Legacy recharge helper emitted events without handlers, leaving the battery unchanged | Delegate to the handled charge-cycle scheduler. An end-to-end reference verifies travel, charging records, completion and full battery. |
+| D025 | Multiple delivery plans could depend on one physical empty bin at a finite exchange store | Match distinct existing empty instances, reserve them on commitment, consume the owning task's claim, and release unconsumed claims on rejection or failure. Same-bin service retains separate exchange stock. See EXCHANGE_CLAIMS_REVIEW.md. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation

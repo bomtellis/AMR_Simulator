@@ -58,8 +58,8 @@ The guarantee covers serial route planning. Exceptions after a plan succeeds,
 while assignment events are being published, are outside this transaction. Bay
 cleanup during other estimation paths still needs a wider concurrency audit.
 The subsequent [charging travel checkpoint](CHARGING_TRAVEL_REVIEW.md) verifies
-charger travel reservations and motor/lift energy. Joint physical empty-bin
-exchange claims remain open. Geometric traffic,
+charger travel reservations and motor/lift energy. The [exchange checkpoint](EXCHANGE_CLAIMS_REVIEW.md)
+verifies distinct empty-bin claims; staging/recovery remains open. Geometric traffic,
 the wider option audit and the other [roadmap](ROADMAP.md) gates remain open.
 
 The earlier unexplained background-preview process interruption is still recorded
