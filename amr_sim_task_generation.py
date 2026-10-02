@@ -49,6 +49,12 @@ class BaseTaskGenerator:
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         return []
 
+    def scheduled_wake_times(self, horizon: float) -> List[float]:
+        return []
+
+    def update_schedules_until(self, now: float) -> List[GeneratedTaskRecord]:
+        return []
+
     def task_state_changed(
         self, task: Task, state: str
     ) -> List[GeneratedTaskRecord]:
@@ -509,6 +515,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self._prepare_instance_runtime_fields()
         self._timeframe_group_members = self._build_timeframe_group_members()
         self._timeframe_allocation_cache: Dict[tuple, Tuple[int, int]] = {}
+        self._schedule_calendars: Dict[str, dict] = {}
 
     def _next_task_id(self, category_key: str, department_id: str = "") -> str:
         self.task_counter += 1
@@ -587,7 +594,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         adjusted = _next_department_open_datetime(dept, release_dt)
         if adjusted is None:
             return None
-        return max(0.0, (adjusted - self.clock.start_datetime).total_seconds())
+        return (adjusted - self.clock.start_datetime).total_seconds()
 
     def _day_key_for_sim_time(self, sim_time_sec: float) -> str:
         return _day_key_for_datetime(self.clock.sim_seconds_to_datetime(sim_time_sec))
@@ -1708,8 +1715,14 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         return records
 
     def _timeframe_records(
-        self, instance: dict, now: float
+        self, instance: dict, now: float, *, wake_times: Optional[set] = None,
+        base_days: Optional[List[datetime]] = None,
     ) -> List[GeneratedTaskRecord]:
+        """Emit due slots, or collect their times without creating tasks.
+
+        Calendar planning uses the same staff/group allocation arithmetic as
+        emission. It must not consume slots, allocate IDs or alter inventories.
+        """
         cfg = instance["cfg"]
         mode = _clean_text(cfg.get("generation_mode", "scheduled")) or "scheduled"
         if mode not in TIMEFRAME_MODES:
@@ -1740,8 +1753,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         # Also check the previous day because a timeframe or staff shift can cross
         # midnight. Each individual payload is emitted only when its own spaced
         # release time has been reached.
-        for day_offset in (-1, 0):
-            base_day = day_start + timedelta(days=day_offset)
+        if base_days is None:
+            base_days = [day_start + timedelta(days=offset) for offset in (-1, 0)]
+        for base_day in base_days:
             timeframe_start_dt = base_day + timedelta(minutes=start_minutes)
             timeframe_end_dt = base_day + timedelta(minutes=end_minutes)
 
@@ -1804,6 +1818,10 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     if not self._instance_is_active(instance, release_time):
                         continue
 
+                    if wake_times is not None:
+                        wake_times.add(release_time)
+                        continue
+
                     pair_key = (pickup, dropoff)
                     schedule_key = schedule_key_base + pair_key + (index,)
                     if schedule_key in self.scheduled_emitted:
@@ -1859,6 +1877,62 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         return records
 
+    def _schedule_calendar(self, instance: dict, through: float) -> dict:
+        """Resolve nominal days to effective opening times without creating tasks.
+
+        Retaining the nominal date keeps a late-night service alive when its
+        department next opens on another day. Cache extension is chronological;
+        consumption uses an index, so old days need not be scanned at every tick.
+        """
+        first_day = self.clock.start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+        calendar = self._schedule_calendars.setdefault(
+            instance['key'], {'next_day': first_day, 'entries': [], 'index': 0})
+        final_day = self.clock.sim_seconds_to_datetime(through).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        cfg = instance['cfg']
+        times = _scheduled_times_from_cfg(cfg)
+        extended = False
+        while calendar['next_day'] <= final_day:
+            day = calendar['next_day']
+            calendar['next_day'] += timedelta(days=1)
+            for hhmm in times:
+                nominal = _datetime_for_day_and_hhmm(day, hhmm)
+                release = self._adjust_release_to_department_open(
+                    instance, (nominal - self.clock.start_datetime).total_seconds())
+                if release is None or release < 0 or not self._instance_is_active(instance, release):
+                    continue
+                calendar['entries'].append((release, nominal.date().isoformat(), hhmm))
+                extended = True
+        if extended:
+            calendar['entries'].sort()
+        return calendar
+
+    def scheduled_wake_times(self, horizon: float) -> List[float]:
+        times = set()
+        first_day = self.clock.start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
+        final_day = self.clock.sim_seconds_to_datetime(horizon).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        for instance in self.instances:
+            cfg = instance['cfg']
+            mode = _clean_text(cfg.get('generation_mode', 'scheduled')) or 'scheduled'
+            if mode in SCHEDULED_MODES and _clean_text(cfg.get('payload', '')) in self.payloads:
+                times.update(release for release, _day, _hhmm in
+                             self._schedule_calendar(instance, horizon)['entries']
+                             if 0 <= release <= horizon)
+            elif mode in TIMEFRAME_MODES:
+                day = first_day - timedelta(days=1)
+                while day <= final_day:
+                    self._timeframe_records(instance, horizon, wake_times=times, base_days=[day])
+                    day += timedelta(days=1)
+        return sorted(times)
+
+    def update_schedules_until(self, now: float) -> List[GeneratedTaskRecord]:
+        records = []
+        for instance in self.instances:
+            records.extend(self._timeframe_records(instance, now))
+            records.extend(self._schedule_records(instance, now))
+        return records
+
     def _schedule_records(
         self, instance: dict, now: float
     ) -> List[GeneratedTaskRecord]:
@@ -1871,26 +1945,16 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         if payload_name not in self.payloads:
             return []
 
-        current_dt = self.clock.sim_seconds_to_datetime(now)
-        day_start = current_dt.replace(hour=0, minute=0, second=0, microsecond=0)
         records: List[GeneratedTaskRecord] = []
-
-        for hhmm in _scheduled_times_from_cfg(cfg):
-            release_dt = _datetime_for_day_and_hhmm(day_start, hhmm)
-            original_release_time = (
-                release_dt - self.clock.start_datetime
-            ).total_seconds()
-            release_time = self._adjust_release_to_department_open(
-                instance, original_release_time
-            )
-            if release_time is None or release_time < 0 or release_time > now:
-                continue
-            if not self._instance_is_active(instance, release_time):
-                continue
-
+        calendar = self._schedule_calendar(instance, now)
+        while calendar['index'] < len(calendar['entries']):
+            release_time, nominal_day, hhmm = calendar['entries'][calendar['index']]
+            if release_time > now:
+                break
+            calendar['index'] += 1
             schedule_key = (
                 instance.get("schedule_key", instance["key"]),
-                release_dt.date().isoformat(),
+                nominal_day,
                 hhmm,
             )
             if schedule_key in self.scheduled_emitted:
@@ -2664,6 +2728,16 @@ class TaskGenerationManager:
         generated: List[GeneratedTaskRecord] = []
         for generator in self.generators:
             generated.extend(generator.update_until(now))
+        return generated
+
+    def scheduled_wake_times(self, horizon: float) -> List[float]:
+        return sorted({time for generator in self.generators
+                       for time in generator.scheduled_wake_times(horizon)})
+
+    def update_schedules_until(self, now: float) -> List[GeneratedTaskRecord]:
+        generated = []
+        for generator in self.generators:
+            generated.extend(generator.update_schedules_until(now))
         return generated
 
     def task_state_changed(

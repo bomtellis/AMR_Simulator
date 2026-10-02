@@ -85,8 +85,6 @@ def _independent_schedule_count(instance, start, end):
             except (ValueError, AttributeError):
                 return None
             release = day + timedelta(hours=hour, minutes=minute)
-            if dept:
-                release = max(start, release)
             if not start <= release <= end:
                 continue
             if cfg.get('days_active') and weekdays[release.weekday()] not in cfg['days_active']:
@@ -280,8 +278,8 @@ def build_demand_preview(config, *, end_datetime=None):
                        'count_mismatches': sum(r['count_difference'] not in (None, 0) for r in rules),
                        'reconciled_rule_records': sum(r['planned_records'] for r in rules)},
             'limitations': ['Returns, inventory-triggered work, legacy waste and mass collections are not fixed task totals.',
-                            'Legacy department scheduling catches up earlier start-day releases at time zero; category-only schedules retain their original times.',
-                            'Daily schedule sweeps expose planned times; runtime polling can affect actual release handling.',
+                            'Effective releases before simulation start are excluded; department opening hours may defer a schedule into the run.',
+                            'Scheduled and timeframe releases have exact calendar events. Resource waits, staff handoffs and configured staggering can delay actual assignment; accumulation remains polled.',
                             'Preview IDs are stable for these frozen inputs and are not simulation event IDs.',
                             'No routing, assignment, resource contention or completion is simulated.']}
 

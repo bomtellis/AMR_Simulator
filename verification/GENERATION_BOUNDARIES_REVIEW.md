@@ -1,8 +1,9 @@
 # Generation boundary review
 
-D013 fixes omitted demand in the final partial generation interval. D014 remains
-open: demand polling can delay assignment of work with an earlier scheduled time.
-These are separate claims; passing count tests does not prove timing correctness.
+D013 fixes omitted demand in the final partial generation interval. This document
+records that historical checkpoint. D014's later exact-time dispatch fix is
+documented in `SCHEDULED_DISPATCH_REVIEW.md`. Passing count tests alone does not
+prove timing correctness.
 
 ## Independent cases
 
@@ -26,13 +27,14 @@ The horizon limits demand creation; it does not stop already released tasks from
 finishing. No future poll is scheduled after the inclusive boundary, and an
 existing poll exactly at that boundary is not duplicated.
 
-## Timing limitation requiring further work
+## Timing limitation found at this checkpoint, subsequently fixed in D014
 
 Open `scenarios/generation-final-interval.json`, save a disposable project and
 run it. It should complete one task with 10 m of travel and 9 seconds of service:
-`2 + 10 / 2 + 2 = 9`. Its scheduled release is 00:01, but the current polling
-implementation discovers it at 00:10, starts it then, and finishes at 00:10:09.
-This late start is a recorded limitation, not the intended exact-time behaviour.
+`2 + 10 / 2 + 2 = 9`. With D013 alone its scheduled release was 00:01, but polling
+discovered it at 00:10 and it finished at 00:10:09. **With D014 it starts at 00:01
+and finishes at 00:01:09.** The original count-only tests remain, alongside the
+new exact-time acceptance tests.
 
 Before D013 this project silently generated zero tasks. For horizons that are
 exact multiples of the interval, D013 leaves the polling sequence unchanged.

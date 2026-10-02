@@ -84,8 +84,9 @@ incrementally, not replaced wholesale.
 
 ## Next source-review investigations
 
-Final partial-interval generation coverage is fixed in D013, with six boundary
-reference cases. Exact scheduled-time dispatch remains open as D014: recovered
-demand can still be assigned at a later polling update. Investigate cross-day
-coverage and per-task allow-list enforcement within multi-stop batches next.
-These are concrete next checks, not replacements for the full requirements above.
+Final partial-interval generation coverage is fixed in D013. D014 adds exact
+calendar dispatch for scheduled and timeframe releases, with 22 reference cases
+including overnight, department opening, staff spacing and physical-bin fills.
+Complete the wider generation-mode matrix and assess per-task allow-list
+enforcement within multi-stop batches next. These are concrete next checks,
+not replacements for the full requirements above.

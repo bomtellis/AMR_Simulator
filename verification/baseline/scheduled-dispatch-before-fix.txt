@@ -1,0 +1,199 @@
+test_closed_department_releases_at_opening_between_polls (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_closed_department_releases_at_opening_between_polls) ... FAIL
+test_closed_department_retains_schedule_shifted_to_next_day (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_closed_department_retains_schedule_shifted_to_next_day) ... FAIL
+test_daily_recurrence_across_midnight (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_daily_recurrence_across_midnight) ... FAIL
+test_disabled_category_groups_still_obey_global_disable (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_disabled_category_groups_still_obey_global_disable) ... ok
+test_explicit_wake_does_not_shift_or_add_consumption_polls (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_explicit_wake_does_not_shift_or_add_consumption_polls) ... FAIL
+test_horizon_inclusive_without_later_schedule (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_horizon_inclusive_without_later_schedule) ... ok
+test_last_minute_before_midnight_is_not_lost (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_last_minute_before_midnight_is_not_lost) ... FAIL
+test_off_grid_schedule_starts_at_release_and_finishes_nine_seconds_later (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_off_grid_schedule_starts_at_release_and_finishes_nine_seconds_later) ... FAIL
+test_poll_interval_does_not_change_uncontended_scheduled_start (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_poll_interval_does_not_change_uncontended_scheduled_start) ...
+  test_poll_interval_does_not_change_uncontended_scheduled_start (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_poll_interval_does_not_change_uncontended_scheduled_start) (interval=90.5) ... FAIL
+  test_poll_interval_does_not_change_uncontended_scheduled_start (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_poll_interval_does_not_change_uncontended_scheduled_start) (interval=900) ... FAIL
+  test_poll_interval_does_not_change_uncontended_scheduled_start (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_poll_interval_does_not_change_uncontended_scheduled_start) (interval=3600) ... FAIL
+test_schedule_before_simulation_start_is_not_replayed_at_zero (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_schedule_before_simulation_start_is_not_replayed_at_zero) ... FAIL
+test_weekday_and_fortnight_gates_are_preserved (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_weekday_and_fortnight_gates_are_preserved) ... FAIL
+
+======================================================================
+FAIL: test_closed_department_releases_at_opening_between_polls (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_closed_department_releases_at_opening_between_polls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 67, in test_closed_department_releases_at_opening_between_polls
+    self.assertEqual([180], self.starts(self.run_sim(config)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [180] != [240.0]
+
+First differing element 0:
+180
+240.0
+
+- [180]
++ [240.0]
+
+======================================================================
+FAIL: test_closed_department_retains_schedule_shifted_to_next_day (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_closed_department_retains_schedule_shifted_to_next_day)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 72, in test_closed_department_retains_schedule_shifted_to_next_day
+    self.assertEqual([32580], self.starts(self.run_sim(config)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [32580] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+32580
+
+- [32580]
++ []
+
+======================================================================
+FAIL: test_daily_recurrence_across_midnight (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_daily_recurrence_across_midnight)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 62, in test_daily_recurrence_across_midnight
+    self.assertEqual([60, 86460], self.starts(self.run_sim(config)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60, 86460] != [86500.0]
+
+First differing element 0:
+60
+86500.0
+
+First list contains 1 additional elements.
+First extra element 1:
+86460
+
+- [60, 86460]
++ [86500.0]
+
+======================================================================
+FAIL: test_explicit_wake_does_not_shift_or_add_consumption_polls (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_explicit_wake_does_not_shift_or_add_consumption_polls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 50, in test_explicit_wake_does_not_shift_or_add_consumption_polls
+    self.assertEqual([60, 960], self.starts(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60, 960] != [900.0, 1000.0]
+
+First differing element 0:
+60
+900.0
+
+- [60, 960]
++ [900.0, 1000.0]
+
+======================================================================
+FAIL: test_last_minute_before_midnight_is_not_lost (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_last_minute_before_midnight_is_not_lost)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 54, in test_last_minute_before_midnight_is_not_lost
+    self.assertEqual([60], self.starts(self.run_sim(config)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+60
+
+- [60]
++ []
+
+======================================================================
+FAIL: test_off_grid_schedule_starts_at_release_and_finishes_nine_seconds_later (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_off_grid_schedule_starts_at_release_and_finishes_nine_seconds_later)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 39, in test_off_grid_schedule_starts_at_release_and_finishes_nine_seconds_later
+    self.assertEqual([60], self.starts(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60] != [600.0]
+
+First differing element 0:
+60
+600.0
+
+- [60]
++ [600.0]
+
+======================================================================
+FAIL: test_poll_interval_does_not_change_uncontended_scheduled_start (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_poll_interval_does_not_change_uncontended_scheduled_start) (interval=90.5)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 45, in test_poll_interval_does_not_change_uncontended_scheduled_start
+    self.assertEqual([60], self.starts(self.run_sim(self.config(interval=interval))))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60] != [90.5]
+
+First differing element 0:
+60
+90.5
+
+- [60]
++ [90.5]
+
+======================================================================
+FAIL: test_poll_interval_does_not_change_uncontended_scheduled_start (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_poll_interval_does_not_change_uncontended_scheduled_start) (interval=900)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 45, in test_poll_interval_does_not_change_uncontended_scheduled_start
+    self.assertEqual([60], self.starts(self.run_sim(self.config(interval=interval))))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60] != [600.0]
+
+First differing element 0:
+60
+600.0
+
+- [60]
++ [600.0]
+
+======================================================================
+FAIL: test_poll_interval_does_not_change_uncontended_scheduled_start (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_poll_interval_does_not_change_uncontended_scheduled_start) (interval=3600)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 45, in test_poll_interval_does_not_change_uncontended_scheduled_start
+    self.assertEqual([60], self.starts(self.run_sim(self.config(interval=interval))))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60] != [600.0]
+
+First differing element 0:
+60
+600.0
+
+- [60]
++ [600.0]
+
+======================================================================
+FAIL: test_schedule_before_simulation_start_is_not_replayed_at_zero (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_schedule_before_simulation_start_is_not_replayed_at_zero)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 58, in test_schedule_before_simulation_start_is_not_replayed_at_zero
+    self.assertEqual([], self.starts(self.run_sim(config)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [] != [0.0]
+
+Second list contains 1 additional elements.
+First extra element 0:
+0.0
+
+- []
++ [0.0]
+
+======================================================================
+FAIL: test_weekday_and_fortnight_gates_are_preserved (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_weekday_and_fortnight_gates_are_preserved)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 87, in test_weekday_and_fortnight_gates_are_preserved
+    self.assertEqual([60, 14 * 86400 + 60], self.starts(self.run_sim(config)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60, 1209660] != [900.0, 1210500.0]
+
+First differing element 0:
+60
+900.0
+
+- [60, 1209660]
++ [900.0, 1210500.0]
+
+----------------------------------------------------------------------
+Ran 11 tests in 0.039s
+
+FAILED (failures=11)

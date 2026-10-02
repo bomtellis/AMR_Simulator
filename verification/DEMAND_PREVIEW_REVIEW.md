@@ -39,11 +39,14 @@ Other rules explicitly say **Not assessed** for independent count verification.
 LTN's complex rules currently have no independently assessed counts; zero count
 mismatches does not mean all LTN demand has been independently verified.
 
-The period includes its end instant. Existing department scheduling can move
-earlier start-day releases to time zero; this is exposed and covered by a reference
-test. Daily schedule sweeps show planned releases, not a promise about simulator
-poll timing or dispatch. Cross-day opening adjustments and more complex calendars
-need additional independent references. Preview identifiers are stable for frozen
+The period includes its end instant. D014 removes the old start-day catch-up:
+effective releases before the simulation start are excluded. Department opening
+hours can defer a nominal schedule into the run or into another day. The simulator
+now uses exact calendar events for schedules and timeframe slots. Resource waits,
+staff handoffs and configured staggering can still delay actual assignment.
+Cross-day opening and recurrence reference cases are recorded in
+`SCHEDULED_DISPATCH_REVIEW.md`; broader calendar combinations remain unverified.
+Preview identifiers are stable for frozen
 inputs, but are not simulation event identifiers. Generated records now carry
 additive rule identifiers/paths; event-log persistence belongs to Results investigation.
 

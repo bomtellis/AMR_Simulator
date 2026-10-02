@@ -38,14 +38,16 @@ class DemandPreviewTests(unittest.TestCase):
         self.assertEqual(0, p['rules'][0]['count_difference'])
         self.assertEqual(6, sum(t['planned_records'] for t in timetable(p['tasks'])))
 
-    def test_inclusive_end_and_legacy_department_start_day_catchup(self):
+    def test_inclusive_end_excludes_releases_before_start(self):
         self.config['simulation'].update(start_datetime='2026-01-05T00:01:30', end_datetime='2026-01-05T00:02:00')
         self.category['scheduled_times'] = ['00:01', '00:02', '00:03']
-        # Existing department scheduling clamps pre-start releases to zero.
-        # Preserve and explain that contract rather than silently changing runs.
-        self.assertEqual([0, 30], [t['release_seconds'] for t in self.preview()['tasks']])
+        # D014 removes the legacy clamp that replayed a past service at zero.
+        preview = self.preview()
+        self.assertEqual([30], [t['release_seconds'] for t in preview['tasks']])
+        self.assertEqual(1, preview['rules'][0]['expected_fixed_records'])
+        self.assertEqual(0, preview['rules'][0]['count_difference'])
         records = Simulation(copy.deepcopy(self.config)).task_generation_manager.update_until(30)
-        self.assertEqual([0, 30], [r.task.release_time for r in records])
+        self.assertEqual([30], [r.task.release_time for r in records])
 
     def test_timeframe_multiple_has_three_records(self):
         self.category.update(generation_mode='timeframe', timeframe_start='00:02', timeframe_end='00:08', timeframe_payload_multiple=3)

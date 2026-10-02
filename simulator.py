@@ -823,6 +823,16 @@ class Simulation:
 
         if getattr(self.task_generation_manager, "generators", []):
             self.push_event(0.0, "generator_tick", {})
+            interval = max(60.0, self.task_generation_interval_sec)
+            for release in self.task_generation_manager.scheduled_wake_times(
+                self.task_generation_horizon_sec
+            ):
+                # Ordinary polling already handles zero, its exact multiples,
+                # and the inclusive horizon. Keep its consumption cadence.
+                if (release == self.task_generation_horizon_sec
+                        or abs(release - round(release / interval) * interval) <= 1e-9):
+                    continue
+                self.push_event(release, "scheduled_generator_tick", {})
         if self.enable_opportunity_charging:
             first_opportunity_check = self.opportunity_charging_idle_period_sec
             if first_opportunity_check <= self.task_generation_horizon_sec:
@@ -12609,6 +12619,12 @@ class Simulation:
             cfg = self._mass_collection_config_by_id(event.payload.get("config_id", ""))
             if cfg is not None:
                 self._handle_mass_collection_capacity_tick(cfg, event.time)
+
+        elif event.event_type == "scheduled_generator_tick":
+            for record in self.task_generation_manager.update_schedules_until(event.time):
+                self._schedule_generated_task_record(record)
+            # Release events perform assignment after the whole due group is
+            # scheduled. A fill event below threshold creates no dispatch work.
 
         elif event.event_type == "generator_tick":
             self._update_task_generators_until(event.time)
