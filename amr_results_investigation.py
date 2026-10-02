@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from amr_run_evidence import config_hash, file_hash
+from report.amr_energy_evidence import summarize_energy
 
 COMPLETED = {'task_complete', 'multi_stop_task_complete'}
 ASSIGNED = {'task_assigned', 'multi_stop_task_assigned'}
@@ -318,6 +319,20 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
            known=complete_evidence and all(e['journey_id'] for e in events if e['type'] in ASSIGNED))
     metric('lift_segments', 'Planned lift movements', len(lifts), [e['id'] for e in lifts],
            'Transfer and empty reposition segment records, each counted once regardless of carried task count. These are logged route-plan movements, not independent execution confirmations.')
+    energy = summarize_energy((e['row'] for e in events), complete=complete_evidence,
+                              capabilities=metadata.get('event_capabilities', []))
+    for source, record in energy['sources'].items():
+        metrics.append({'key': source + '_energy_kwh', 'title': record['title'] + ' (kWh)',
+            'value': record['value_kwh'], 'observed_count': record['observed_kwh'],
+            'coverage': 'full bound attribution' if record['known'] else 'partial or unknown attribution',
+            'definition': 'Sum of explicitly source-attributed movement energy, once per event ID. Shared tasks do not multiply a journey. Planned energy, not measured execution; charging input is excluded.',
+            'event_ids': record['event_ids'] + record['missing_event_ids']})
+    for journey_id, record in energy['journeys'].items():
+        if journey_id in journeys:
+            journeys[journey_id]['observed_energy_kwh'] = record['amr_battery'] + record['lift_supply']
+            journeys[journey_id]['energy_event_ids'] = record['event_ids']
+    if not all(record['known'] for record in energy['sources'].values()):
+        findings.append('Complete source-attributed energy is not established. Legacy, filtered or incomplete movement evidence is not zero consumption.')
     if payload_gaps:
         findings.append('Payload movement evidence has missing identifiers/times, repeated exits or unpaired exits; transfer totals may be incomplete.')
         findings.extend(a['reason'] for a in payload_anomalies)
@@ -334,7 +349,7 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
             'software': metadata.get('software'), 'project_binding': metadata.get('project_binding'), 'findings': sorted(set(findings)),
             'tasks': tasks, 'events': events, 'metrics': metrics, 'payload_movements': payload_moves,
             'payload_tracking_findings': payload_anomalies,
-            'journeys': list(journeys.values()), 'reconciliation': reconciliation,
+            'journeys': list(journeys.values()), 'reconciliation': reconciliation, 'energy': energy,
             'limitations': ['Wait intervals can overlap and are not summed into an additive delay breakdown.',
                             'Route-plan segments may be logged ahead of execution; completion is established only by terminal events.',
                             'Missing events, reasons or physical identifiers are not reconstructed from the current project.',

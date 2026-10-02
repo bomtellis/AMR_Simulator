@@ -8,6 +8,10 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 import json
+try:
+    from .amr_energy_evidence import read_energy_evidence
+except ImportError:  # Standalone report CLI.
+    from amr_energy_evidence import read_energy_evidence
 
 COLUMN_ALIASES = {
     "timestamp": [
@@ -5081,6 +5085,13 @@ def analyse(
     amr_weights: Optional[Dict[str, float]] = None,
 ) -> Dict[str, pd.DataFrame]:
     payload_weights = payload_weights or {}
+    energy_evidence = read_energy_evidence(csv_path)
+    energy_summary = pd.DataFrame([
+        {'metric': record['title'], 'planned_kwh': record['value_kwh'],
+         'attributed_observed_kwh': record['observed_kwh'],
+         'coverage': 'Full bound attribution' if record['known'] else 'Not established'}
+        for record in energy_evidence['sources'].values()
+    ])
     raw = pd.read_csv(csv_path, low_memory=False)
     df, ctx = parse_time_column(raw)
     df = df.sort_values(ctx.time_col, kind='stable').reset_index(drop=True)
@@ -5788,7 +5799,9 @@ def analyse(
         lift_summary["idle_pct"] = (
             (100 - lift_summary["utilisation_pct"]).clip(lower=0).round(1)
         )
-        lift_summary["lift_energy_kwh"] = lift_summary["lift_energy_kwh"].round(4)
+        lift_summary["lift_energy_kwh"] = (
+            lift_summary['lift_id'].map(energy_evidence['lifts']).fillna(0.0)
+            if energy_evidence['sources']['lift_supply']['known'] else float('nan'))
 
     # Lift Wait times
 
@@ -6372,6 +6385,8 @@ def analyse(
         "amr_route_summary": amr_route_summary,
         "utilisation_summary": amr_utilisation,
         "lift_summary": lift_summary,
+        "energy_summary": energy_summary,
+        "energy_evidence": energy_evidence,
         "lift_usage_profile": lift_usage_profile,
         "journey_detail": journey_detail,
         "journey_flow_summary": journey_flow_summary,

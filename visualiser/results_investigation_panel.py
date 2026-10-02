@@ -15,7 +15,7 @@ def display(value):
     if value is None:
         return 'Not recorded'
     if isinstance(value, float):
-        return f'{value:.3f}'.rstrip('0').rstrip('.')
+        return f'{value:.9g}'
     return str(value) if value != '' else '—'
 
 
@@ -76,7 +76,7 @@ class ResultsInvestigationPanel(QWidget):
         split = QSplitter(Qt.Vertical)
         self.tabs = QTabWidget()
         self.tasks = self.table(['Task', 'Outcome', 'Released (s)', 'Assigned (s)', 'Completed (s)', 'Assignment delay (s)', 'Route profile'])
-        self.metrics = self.table(['Metric', 'Value', 'Observed count', 'Coverage'])
+        self.metrics = self.table(['Metric', 'Value', 'Observed value', 'Coverage'])
         self.evidence = QPlainTextEdit()
         self.evidence.setReadOnly(True)
         self.tabs.addTab(self.tasks, 'Tasks')

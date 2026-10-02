@@ -124,7 +124,8 @@ class Simulation:
         self._evidence_inputs = json.loads(json.dumps(config))
         self._evidence_config_hash = config_hash(self._evidence_inputs)
         self._evidence_software = software_snapshot() if verbose else None
-        self._evidence_event_capabilities = ['payload_service_arrivals', 'staged_payload_recovery']
+        self._evidence_event_capabilities = ['payload_service_arrivals', 'staged_payload_recovery',
+                                             'segment_energy_sources_v1']
         self._evidence_run_status = 'incomplete'
         self._evidence_sequence = 0
         self._evidence_journey_sequence = 0
@@ -2093,6 +2094,9 @@ class Simulation:
                 energy = energy_for_travel_kwh(power, float(segment.get('duration', 0)))
                 segment.update(energy_kwh=energy, energy_source='amr_battery')
                 total += energy
+            elif kind == 'lift_reposition':
+                # Whole lift-journey supply is carried once by its transfer.
+                segment.update(energy_kwh=0.0, energy_source='lift_supply')
         return total
 
     def _estimate_multi_stop_for_amr_impl(
@@ -9635,6 +9639,8 @@ class Simulation:
             if segment.get('type') == 'corridor':
                 segment['energy_kwh'] = self._charge_motor_energy_kwh(amr, [segment])
                 segment['energy_source'] = 'amr_battery'
+            elif segment.get('type') == 'lift_reposition':
+                segment.update(energy_kwh=0.0, energy_source='lift_supply')
         plan['amr_energy_kwh'] = motor_energy
         plan.setdefault('lift_energy_kwh', 0.0)
         plan['energy_kwh'] = motor_energy + plan['lift_energy_kwh']
@@ -12973,7 +12979,10 @@ class Simulation:
                         ),
                         "duration_sec": round(float(event.payload["duration"]), 3),
                         "distance_m": round(sum(float(seg.get("distance_m", 0.0) or 0.0) for seg in event.payload.get("segments", []) or []), 3),
-                        "energy_kwh": round(event.payload["energy_kwh"], 4),
+                        "energy_kwh": None,
+                        "energy_basis": "shared_journey_not_allocated",
+                        "journey_energy_kwh": event.payload["energy_kwh"],
+                        "journey_lift_energy_kwh": event.payload.get("lift_energy_kwh", 0.0),
                         "payload_orientation": str(getattr(task, "payload_orientation", "") or ""),
                         "wash_cycle_required": bool(getattr(task, "wash_cycle_required", False)),
                         "scenario_name": self.scenario_name,
@@ -12981,9 +12990,7 @@ class Simulation:
                             event.payload["battery_soc_after"], 2
                         ),
                         "segments": event.payload["segments"],
-                        "lift_energy_kwh": round(
-                            event.payload.get("lift_energy_kwh", 0.0), 4
-                        ),
+                        "lift_energy_kwh": None,
                         "lift_empty_sec_total": round(
                             event.payload.get("lift_empty_sec_total", 0.0), 3
                         ),
@@ -14035,6 +14042,7 @@ class Simulation:
                 "origin": origin, "destination": destination, "trips": 0,
                 "total_distance_m": 0.0, "total_duration_sec": 0.0,
                 "total_energy_kwh": 0.0, "wash_cycle_trips": 0,
+                "energy_basis": "individual_journey_totals",
                 "payloads": defaultdict(int), "amrs": set(),
             })
             item["trips"] += 1
@@ -14076,7 +14084,12 @@ class Simulation:
                 if pickup_seen
                 else float(record.get("duration_sec", 0.0) or 0.0)
             )
-            item["total_energy_kwh"] += float(record.get("energy_kwh", 0.0) or 0.0)
+            if record.get('multi_stop'):
+                item['energy_basis'] = 'shared_journey_not_allocated'
+            elif record.get('energy_kwh') is None:
+                item['energy_basis'] = 'missing_energy_evidence'
+            else:
+                item["total_energy_kwh"] += float(record["energy_kwh"])
             item["wash_cycle_trips"] += int(bool(record.get("wash_cycle_required", False)))
             payload_name = str(record.get("payload", "") or "")
             if payload_name:
@@ -14087,7 +14100,7 @@ class Simulation:
         fieldnames = [
             "origin", "destination", "trips", "total_distance_m", "average_distance_m",
             "total_duration_sec", "average_duration_sec", "total_energy_kwh",
-            "wash_cycle_trips", "unique_amrs", "payload_mix", "scenario_name",
+            "energy_basis", "wash_cycle_trips", "unique_amrs", "payload_mix", "scenario_name",
         ]
         with open(path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -14101,7 +14114,9 @@ class Simulation:
                     "average_distance_m": round(item["total_distance_m"] / trips, 3),
                     "total_duration_sec": round(item["total_duration_sec"], 3),
                     "average_duration_sec": round(item["total_duration_sec"] / trips, 3),
-                    "total_energy_kwh": round(item["total_energy_kwh"], 4),
+                    "total_energy_kwh": (round(item["total_energy_kwh"], 4)
+                                         if item['energy_basis'] == 'individual_journey_totals' else ''),
+                    "energy_basis": item['energy_basis'],
                     "wash_cycle_trips": item["wash_cycle_trips"],
                     "unique_amrs": len(item["amrs"]),
                     "payload_mix": ("" if self.scenario_mode and not self.scenario_enhanced_logging else json.dumps(dict(sorted(item["payloads"].items())), ensure_ascii=False)),

@@ -2073,7 +2073,20 @@ def build_report(
         Spacer(1, 8),
     ]
 
-    story += [Spacer(1, 8), Paragraph("Lift energy consumption", styles["Section"])]
+    story += [Spacer(1, 8), Paragraph("Recorded route-plan energy", styles["Section"])]
+    story.append(Paragraph(
+        "Movement records are counted once, including shared journeys. Values describe "
+        "planned energy, not measured execution. Charging input and stationary robot "
+        "auxiliaries are excluded. Missing or legacy attribution is not zero consumption.",
+        styles['BodyText']))
+    energy_df = results.get('energy_summary', pd.DataFrame()).copy()
+    if not energy_df.empty:
+        energy_df['planned_kwh'] = energy_df['planned_kwh'].map(
+            lambda value: f'{value:.6g}' if pd.notna(value) else 'Not established')
+        energy_df = energy_df[['metric', 'planned_kwh', 'coverage']].rename(columns={
+            'metric': 'Source', 'planned_kwh': 'Plan kWh', 'coverage': 'Evidence'})
+        story.append(table_from_df(energy_df, [66 * mm, 44 * mm, 60 * mm], styles))
+    story += [Spacer(1, 8), Paragraph("Lift route-plan energy", styles["Section"])]
 
     lift_df = results["lift_summary"].copy()
     if lift_df.empty:
@@ -2089,12 +2102,15 @@ def build_report(
             "trips": lift_df["trips"].sum(),
             "total_lift_time_s": lift_df["total_lift_time_s"].sum(),
             "avg_trip_s": lift_df["avg_trip_s"].mean(),
-            "lift_energy_kwh": lift_df["lift_energy_kwh"].sum(),
+            "lift_energy_kwh": (lift_df["lift_energy_kwh"].sum()
+                                if lift_df["lift_energy_kwh"].notna().all() else float('nan')),
             "utilisation_pct": "",
             "idle_pct": "",
         }
 
         lift_df = pd.concat([lift_df, pd.DataFrame([lift_df_total])], ignore_index=True)
+        lift_df['lift_energy_kwh'] = lift_df['lift_energy_kwh'].map(
+            lambda value: f'{value:.6g}' if pd.notna(value) else 'Not established')
         lift_df["total_lift_time_s"] = lift_df["total_lift_time_s"].map(
             lambda x: fmt_duration(x) if isinstance(x, (int, float)) else x
         )
@@ -2107,7 +2123,7 @@ def build_report(
                 "lift_id": "Lift",
                 "trips": "Trips",
                 "total_lift_time_s": "Total lift time",
-                "lift_energy_kwh": "kWh Consumed",
+                "lift_energy_kwh": "Plan kWh",
                 "avg_trip_s": "Avg trip",
                 "utilisation_pct": "Util %",
                 "idle_pct": "Idle %",

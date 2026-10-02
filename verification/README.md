@@ -117,6 +117,7 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D035 | Pre-task charging appeared twice in movement and physical-payload timestamps | Start the segment timeline at charging start, retaining the actual charge end separately. Independent same-floor and cross-floor cases verify pickup, arrival, completion and busy duration. |
 | D036 | Idle robots above reserve could strand tasks requiring more route energy, despite reachable chargers | Use explicit scheduler charge requests, check compatible reachable chargers and onward feasibility, retain pending work, and commit charging separately. See REQUIRED_CHARGE_DISPATCH_REVIEW.md. |
 | D037 | Read-only charger availability checks cleared stale bay occupancy/reservations | Make inspection pure and defer stale-marker cleanup to serial reservation/arrival operations. Live occupants remain protected; failed commits retain transaction rollback. |
+| D038 | Shared journey energy was repeated per task and added again in the transport matrix; legacy missing lift energy appeared as zero | Leave per-task shared energy unallocated, retain explicitly scoped journey totals, and use one source-attributed movement ledger for investigation and report totals. Missing attribution remains unknown. See SHARED_ENERGY_REVIEW.md. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation
