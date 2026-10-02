@@ -109,6 +109,12 @@ Review the small references and representative LTN behaviour before continuing.
 
 ### 2. Finish verification of existing configuration and simulation behaviour
 
+**Slice 2A, 3 October 2026:** sixteen routing/door option contracts now have
+individual source/default/validation/acceptance traceability. See
+[Routing contracts review](ROUTING_CONTRACTS_REVIEW.md). Boolean coercion,
+sub-0.1 m width handling and import-normalisation gaps remain explicit next work;
+the full inventory and checkpoint 2 gate remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -358,6 +364,7 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Verify checkpoint 1 using its review scenario and evidence. After user acceptance,
-begin checkpoint 2 with the existing configuration/feature inventory and independent
-acceptance gaps. Keep the larger geometry and UI work in their planned order.
+Review slice 2A's routing contracts and resolve its input-validation gaps next.
+Continue the configuration inventory and independent acceptance audit through
+generation precedence, schedules, returns and resource contention. Keep the larger
+geometry and UI work in their planned order.

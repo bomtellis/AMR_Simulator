@@ -140,11 +140,20 @@ def write_report(path, report):
                     f'<details><summary>{len(feature["evidence"])} linked tests</summary><ul>{tests}</ul></details></article>')
     options = "".join(
         f'<tr><td>{esc(o["path"])}</td><td>{esc(o["disposition"])}</td><td>{esc(o["units"])}</td>'
-        f'<td>{esc(o["meaning"])}<br>{esc(o["precedence"])}</td></tr>'
+        f'<td>{esc(o["meaning"])}<br>{esc(o["precedence"])}'
+        f'<details><summary>Contract and acceptance evidence</summary>'
+        f'<p>Support: {esc(o.get("support_status", "not individually reviewed"))}</p>'
+        f'<p>Runtime default: {esc(o.get("runtime_default", "not reviewed"))}</p>'
+        f'<p>Editor/import: {esc(o.get("editor_behaviour", "not reviewed"))}</p>'
+        f'<p>Validation: {esc(o.get("validation", "not reviewed"))}</p>'
+        f'<p>Limitations: {esc(o.get("limitations", "not reviewed"))}</p>'
+        f'<p>Source: {esc("; ".join(o.get("source_symbols", [])))}</p>'
+        f'<p>Tests: {esc("; ".join(c["status"] + " — " + c["id"] for c in o.get("evidence", [])))}</p>'
+        f'</details></td></tr>'
         for o in report["options"])
     counts = report["counts"]
     path.write_text(f'''<!doctype html><html lang="en"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>AMR verification — Project runs</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>AMR engineering verification</title>
 <style>body{{font:17px/1.5 system-ui,sans-serif;background:#f5f7fa;color:#172635;max-width:1150px;margin:auto;padding:24px}}
 h1,h2{{line-height:1.2}}article,.panel{{background:white;border:1px solid #b3c2d0;border-radius:8px;padding:20px;margin:16px 0}}
 .status{{font-weight:700;color:#334d65}}table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:left;border:1px solid #b3c2d0;padding:8px;overflow-wrap:anywhere}}
@@ -157,6 +166,8 @@ input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer
 <p>{len(report["options"])} observed/documented option paths; {counts["unreviewed_options"]} require individual semantic review.</p>
 <p><a href="evidence.json">Complete machine-readable evidence</a> · <a href="tests.txt">Test log</a> · <a href="options.json">Option inventory</a> · <a href="source-key-candidates.json">Additional source-key candidates</a> · <a href="source-snapshot.zip">Tested source snapshot</a></p></div>
 <div class="panel"><h2>Changes to review</h2><ul>
+<li>Routing and door option contracts now include runtime defaults, editor/import behaviour, validation limits, source symbols and linked acceptance results. New-project defaults are distinguished from omitted values in imported projects. Partial support is retained even when its reference tests pass.</li>
+<li>Local route failures preserve endpoints and reject blocked straight fallbacks. Prepared runs fingerprint all root and visualiser/report Python modules; older results retain an explicit source-coverage warning.</li>
 <li>Multi-stop journeys now enforce the common node, edge and lift permissions of payloads currently onboard, updating after pickup and delivery. Straight clearance also follows the actual onboard payloads. Incompatible batches can use separate valid journeys.</li>
 <li>Scheduled and timeframe demand now releases at exact calendar times, including overnight department opening adjustments. Consumption remains polled; resource waits and configured staggering still affect assignment.</li>
 <li>Same-container service arrivals are recorded separately from stored inventory, so payload movement evidence can reconcile without inflating storage counts.</li>
@@ -181,14 +192,14 @@ input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer
 <p>Open Home → Project checks in the editor. Filter findings, navigate to an affected object, edit it and confirm the checks become stale. Recheck before exporting. In the launcher, review and acknowledge warnings before running, then inspect project_checks.json in the run folder.</p>
 <p>Open Home → Demand preview → Build preview. Inspect Tasks, Timetable and Rules and reconciliation. Select a task for its origin and effective settings; edit the project and confirm the preview becomes stale.</p>
 <p>Open Home → Results investigation or Investigate Results in the launcher. Select a full event CSV, inspect a task, then select a metric to see its contributing records. Planned segments do not establish completion; missing evidence is not zero activity.</p>
-<p>Use Home → Save project as, then Project revisions to compare and restore a saved configuration. Move the project without the original drawings and reopen it. Export JSON for the existing simulator. Full project-to-run integration remains outstanding.</p>
+<p>Use Home → Save project as, then Project revisions to compare and restore a saved configuration. Move the project without the original drawings and reopen it. Export JSON for the existing simulator.</p>
 <p>Use Edit → Undo / Redo (Ctrl+Z / Ctrl+Y) after dragging a node, deleting a linked node or editing settings. A drag is one step; deleting a node restores its edges with it. Undo back to saved values clears unsaved state. Open/recovery/revision restore starts a new undo history.</p>
-<p>Open Home → Project runs → Save, check and simulate. Review warnings, run the nine-second reference case, then investigate it. Move a completed folder and use Locate moved run. Session links are not yet stored inside project metadata.</p>
+<p>Open Home → Project runs → Save, check and simulate. Review warnings, run the nine-second reference case, then investigate it. Move a completed folder and use Locate moved run.</p>
 <p>Change a setting and verify Save / Discard / Cancel when opening or closing. After 30 seconds outside modal editing, use Home → Recover unsaved work. Recover to a new filename and confirm the original remains unchanged. Hover over the filename for recovery status.</p>
 <p><a href="ltn-project-checks.json">LTN structured findings</a> reflects the current saved project. Previously reported references may have been corrected. Complex calendars without an independent expected count are marked not assessed. The remaining option audit, complete report reconciliation, unified application and new geometry remain later work.</p></div>
 <label for="filter">Filter features and settings</label><input id="filter" type="search" placeholder="Try doors, charging, route profiles…">
 {''.join(rows)}<h2>Configuration option inventory</h2><p>{esc(report["inventory_scope"])}</p>
-<p>Source-key matches are discovery aids. Values and precedence are not guessed for unreviewed fields. See editor_defaults.json for the saved default configuration.</p>
+<p>Source-key matches are discovery aids. A documented description alone is not an individually reviewed contract. Expand each contract for defaults, validation, limitations, source and test results. Passing reference tests do not remove a partial disposition. See editor_defaults.json for new-project defaults.</p>
 <table><thead><tr><th>Setting</th><th>Disposition</th><th>Units</th><th>Contract</th></tr></thead><tbody>{options}</tbody></table>
 <script>document.getElementById('filter').addEventListener('input',e=>{{const q=e.target.value.toLowerCase();document.querySelectorAll('article,tbody tr').forEach(n=>n.hidden=!n.textContent.toLowerCase().includes(q));}});</script></html>''', encoding="utf-8")
 
@@ -217,8 +228,12 @@ def main(argv=None):
         result = unittest.TextTestRunner(stream=log, verbosity=2, resultclass=EvidenceResult).run(suite)
     cases = result.cases
     features = link_evidence(inventory["features"], cases)
+    from verification.inventory import link_option_evidence
+    options = link_option_evidence(inventory["options"], cases)
     broken_links = [f'{feature["id"]}: {pattern}' for feature in features
                     for pattern in feature["unmatched_test_patterns"]]
+    broken_links.extend(f'{option["path"]}: {pattern}' for option in options
+                        for pattern in option["unmatched_test_patterns"])
     packages = {}
     for name in ("PySide6", "numpy", "pandas", "reportlab", "pypdf", "ezdxf"):
         try:
@@ -236,13 +251,13 @@ def main(argv=None):
         "source": fingerprint, "source_unchanged_during_tests": fingerprint == source_manifest(),
         "seconds": round(time.perf_counter() - started, 6),
         "counts": {"total": len(cases), "passed": sum(c["status"] == "passed" for c in cases),
-                   "unreviewed_options": sum(o["disposition"] == "semantic_review_required" for o in inventory["options"])},
-        "test_cases": cases, "features": features, "options": inventory["options"],
+                   "unreviewed_options": sum(o["disposition"] != "reviewed_contract" for o in options)},
+        "test_cases": cases, "features": features, "options": options,
         "inventory_scope": inventory["scope"], "broken_evidence_links": broken_links, "ltn": ltn,
     }
     write_json(output / "evidence.json", report)
     write_json(output / 'ltn-project-checks.json', ltn.get('project_checks', {'error': 'Checks did not complete'}))
-    write_json(output / "options.json", inventory["options"])
+    write_json(output / "options.json", options)
     write_json(output / "source-key-candidates.json", inventory["source_key_candidates"])
     write_json(output / "editor_defaults.json", inventory["editor_defaults"])
     write_junit(output / "junit.xml", cases)

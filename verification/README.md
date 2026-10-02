@@ -12,6 +12,8 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
+The latest verification slice is [Routing and door option contracts](ROUTING_CONTRACTS_REVIEW.md):
+individual defaults, import behaviour, validation limits and acceptance links.
 The latest application checkpoint is [Local routing and software evidence](LOCAL_ROUTING_REVIEW.md):
 explicit local path failures, preserved endpoints, safe smoothing and broader
 software fingerprints. Earlier [Effective demand settings](GENERATION_PROVENANCE_REVIEW.md) cover:

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from verification.inventory import ROOT, fields, link_evidence, source_key_candidates
+from verification.inventory import ROOT, fields, link_evidence, link_option_evidence, source_key_candidates
 from verification.run import EvidenceResult, write_junit
 
 
@@ -27,6 +27,28 @@ class VerificationEvidenceTests(unittest.TestCase):
         result = link_evidence([{"id": "F", "tests": ["test_missing.*"]}], [])[0]
         self.assertEqual(["test_missing.*"], result["unmatched_test_patterns"])
         self.assertFalse(result["evidence_passed"])
+
+    def test_option_links_preserve_partial_disposition_and_report_stale_tests(self):
+        options = [dict(path='corridors.auto_connect', support_status='partial',
+                        tests=['test_routing.*', 'test_missing.*'])]
+        result = link_option_evidence(options, [dict(id='test_routing.case', status='passed')])[0]
+        self.assertEqual('partial', result['support_status'])
+        self.assertEqual(['test_missing.*'], result['unmatched_test_patterns'])
+        self.assertFalse(result['evidence_passed'])
+
+    def test_reviewed_contracts_have_traceable_defaults_limits_and_acceptance(self):
+        contracts = json.loads((ROOT / 'verification/field_contracts.json').read_text())
+        reviewed = [contract for contract in contracts.values() if 'support_status' in contract]
+        self.assertTrue(reviewed)
+        for contract in reviewed:
+            self.assertIn(contract['support_status'], ('verified_reference_scope', 'partial', 'unsupported', 'defective'))
+            for key in ('runtime_default', 'editor_behaviour', 'units', 'meaning', 'precedence',
+                        'validation', 'limitations', 'source_symbols', 'tests', 'review_date'):
+                self.assertTrue(contract.get(key), key)
+            for reference in contract['source_symbols']:
+                source, symbol = reference.split(':', 1)
+                self.assertTrue((ROOT / source).is_file(), source)
+                self.assertTrue(symbol.split('.')[-1] in (ROOT / source).read_text(encoding='utf-8-sig'), reference)
 
     def test_failed_subtest_is_not_reported_as_passed(self):
         class DeliberateFailure(unittest.TestCase):

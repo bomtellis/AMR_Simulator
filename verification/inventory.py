@@ -93,7 +93,16 @@ def build_inventory():
         sample = next(iter(seen.values()), None)
         options.append({
             "path": path,
-            "disposition": "documented_contract" if contract else "semantic_review_required",
+            "disposition": ("reviewed_contract" if contract.get("support_status") else
+                            "documented_contract" if contract else "semantic_review_required"),
+            "support_status": contract.get("support_status", "not_individually_reviewed"),
+            "runtime_default": contract.get("runtime_default", "not individually reviewed"),
+            "editor_behaviour": contract.get("editor_behaviour", "not individually reviewed"),
+            "validation": contract.get("validation", "not individually reviewed"),
+            "limitations": contract.get("limitations", "not individually reviewed"),
+            "source_symbols": contract.get("source_symbols", []),
+            "tests": contract.get("tests", []),
+            "review_date": contract.get("review_date"),
             "feature_ids": feature_ids,
             "observed_in": sorted(seen),
             "observed_type": type(sample).__name__ if seen else "not_observed",
@@ -118,7 +127,12 @@ def link_evidence(features, cases):
             fnmatch.fnmatchcase(case["id"], pattern) for pattern in feature["tests"])]
         item["unmatched_test_patterns"] = [pattern for pattern in feature["tests"] if not any(
             fnmatch.fnmatchcase(case["id"], pattern) for case in cases)]
-        item["evidence_passed"] = bool(item["evidence"]) and all(
+        item["evidence_passed"] = bool(item["evidence"]) and not item["unmatched_test_patterns"] and all(
             case["status"] == "passed" for case in item["evidence"])
         linked.append(item)
     return linked
+
+
+def link_option_evidence(options, cases):
+    """Attach real test outcomes without promoting a reviewed support disposition."""
+    return link_evidence(options, cases)
