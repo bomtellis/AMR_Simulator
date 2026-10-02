@@ -7304,11 +7304,15 @@ class Simulation:
         start_name: str,
         end_name: str,
         rules: Optional[dict] = None,
+        *,
+        minimum_width_m: float = 0.0,
     ) -> Optional[dict]:
         graph = self.floor_graphs.get(floor, {})
         reverse_graph = self.floor_reverse_graphs.get(floor, {})
         rules = rules or self._empty_route_rules()
-        cache_key = (floor, start_name, end_name, *self._rules_cache_key(rules))
+        # Width is part of the query, not a post-filter: a longer passable
+        # route must remain available when the shortest route contains a door.
+        cache_key = (floor, start_name, end_name, *self._rules_cache_key(rules), minimum_width_m)
         cache_miss = object()
 
         with self.route_cache_lock:
@@ -7359,6 +7363,8 @@ class Simulation:
                         best_distance = candidate
                         meeting_node = node
                 for edge in graph.get(node, []):
+                    if float(edge["width_m"]) + 1e-9 < minimum_width_m:
+                        continue
                     nxt = edge["to"]
                     if not self._node_allowed(nxt, rules):
                         continue
@@ -7384,6 +7390,8 @@ class Simulation:
                         best_distance = candidate
                         meeting_node = node
                 for edge in reverse_graph.get(node, []):
+                    if float(edge["width_m"]) + 1e-9 < minimum_width_m:
+                        continue
                     nxt = edge["to"]
                     # Reverse edge node -> nxt corresponds to original edge nxt -> node.
                     if not self._node_allowed(nxt, rules):
@@ -7459,7 +7467,7 @@ class Simulation:
 
         t = requested_start
         while True:
-            overlap_count = 0
+            occupancy_events = []
             next_candidate = None
             scan_start = self._reservation_scan_start(
                 reservations, t, 0.0, max_duration
@@ -7470,11 +7478,19 @@ class Simulation:
                 if start >= t + duration:
                     break
                 if not (t + duration <= start or t >= end):
-                    overlap_count += 1
+                    # Count simultaneous occupants, not every reservation
+                    # intersecting the requested interval. Ends sort before
+                    # starts at a shared timestamp (half-open intervals).
+                    occupancy_events.append((max(t, start), 1))
+                    occupancy_events.append((min(t + duration, end), -1))
                     if next_candidate is None or end < next_candidate:
                         next_candidate = end
 
-            if overlap_count < max_concurrency:
+            occupancy = peak = 0
+            for _time, delta in sorted(occupancy_events):
+                occupancy += delta
+                peak = max(peak, occupancy)
+            if peak < max_concurrency:
                 return t
 
             if next_candidate is None:
@@ -8394,10 +8410,23 @@ class Simulation:
             t += duration
 
     def _travel_same_floor(self, amr: AMR, start: Location, end: Location) -> float:
-        route = self._shortest_path_same_floor(start.floor, start.name, end.name)
+        route = self._shortest_path_same_floor(
+            start.floor, start.name, end.name,
+            minimum_width_m=self._required_corridor_width(amr),
+        )
         if route is None:
             return math.inf
         return route["distance_m"] / max(amr.speed_m_per_sec, 1e-9)
+
+    def _required_corridor_width(
+        self, amr: AMR, payload: Optional[PayloadType] = None,
+        orientation: str = "lengthways",
+    ) -> float:
+        """Straight passage envelope; turning/clearance are separate models."""
+        width = float(getattr(amr, "width_m", 0.0) or 0.0)
+        if payload is not None and not is_empty_payload_name(payload.name):
+            width = max(width, self._payload_orientation_dimensions(payload, orientation)[1])
+        return width
 
     def _same_floor_segments(
         self,
@@ -8410,7 +8439,10 @@ class Simulation:
         orientation: str = "lengthways",
         collect_segments: bool = True,
     ) -> Optional[Tuple[List[dict], float, float]]:
-        route = self._shortest_path_same_floor(start.floor, start.name, end.name, rules=rules)
+        route = self._shortest_path_same_floor(
+            start.floor, start.name, end.name, rules=rules,
+            minimum_width_m=self._required_corridor_width(amr, payload, orientation),
+        )
         if route is None:
             return None
         segments: List[dict] = []
@@ -9643,6 +9675,7 @@ class Simulation:
                     amr_loc.name,
                     pickup_loc.name,
                     rules=pre_pickup_rules,
+                    minimum_width_m=self._required_corridor_width(amr),
                 )
                 if to_pickup_route is not None:
                     to_pickup_sec = float(to_pickup_route["distance_m"]) / max(
@@ -9654,6 +9687,7 @@ class Simulation:
                     pickup_loc.name,
                     dropoff_loc.name,
                     rules=loaded_route_rules,
+                    minimum_width_m=self._required_corridor_width(amr, payload, task.payload_orientation),
                 )
                 if loaded_route is not None:
                     loaded_sec = float(loaded_route["distance_m"]) / max(
@@ -9714,6 +9748,9 @@ class Simulation:
                             location_a.name,
                             location_b.name,
                             rules=rules,
+                            minimum_width_m=self._required_corridor_width(
+                                amr, payload_for_leg, orientation_for_leg
+                            ),
                         )
                         if route is None:
                             return math.inf, location_b, None, 0.0
@@ -10516,14 +10553,23 @@ class Simulation:
 
         try:
             if from_loc.floor == to_loc.floor:
-                result = (
+                orientations = {
+                    orientation
+                    for slot in self._runtime_amr_payload_slots(amr)
+                    for orientation in self._compatible_payload_orientations(payload, slot)
+                }
+                if is_empty_payload_name(payload.name):
+                    orientations = {"lengthways"}
+                result = any(
                     self._shortest_path_same_floor(
                         from_loc.floor,
                         from_loc.name,
                         to_loc.name,
                         rules=rules,
+                        minimum_width_m=self._required_corridor_width(amr, payload, orientation),
                     )
                     is not None
+                    for orientation in orientations
                 )
                 self._route_feasibility_cache_set(cache_key, result)
                 return result
@@ -10745,7 +10791,8 @@ class Simulation:
         if not dropoff_reachable:
             return (
                 f"No graph/lift route from {pickup_name} to {dropoff_name} "
-                f"for payload {payload.name} using the task route restrictions"
+                f"for payload {payload.name} using the task route restrictions "
+                "and robot/payload width limits"
             )
 
         # If no compatible AMR can currently reach the pickup, keep it pending

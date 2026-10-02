@@ -964,7 +964,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             # category default and only when there are no department overrides.
             # This prevents the "Category defaults" row from creating a site-wide
             # task in addition to department-level tasks.
-            if bool(category.get("enabled", False)) and not overrides:
+            if bool(category.get("enabled", False)) and not overrides and not groups:
                 instances.append(
                     {
                         "key": category_key_text,
@@ -2552,24 +2552,28 @@ class TaskGenerationManager:
 
     def _has_dynamic_categories(self) -> bool:
         categories = self._task_generation_cfg().get("categories", {}) or {}
-        for category in categories.values():
-            if not isinstance(category, dict):
-                continue
+        return any(self._category_has_enabled_rule(category) for category in categories.values())
 
-            # Enabled category default, usually legacy/global category generation.
-            if bool(category.get("enabled", False)):
-                return True
-
-            # Enabled department overrides must start the dynamic generator even
-            # when the category default is intentionally disabled.
-            overrides = category.get("departments", {})
-            if isinstance(overrides, dict):
-                for override in overrides.values():
-                    if isinstance(override, dict) and bool(
-                        override.get("enabled", False)
-                    ):
-                        return True
-        return False
+    @staticmethod
+    def _category_has_enabled_rule(category: dict) -> bool:
+        """Groups are independent services, just like department overrides."""
+        if not isinstance(category, dict):
+            return False
+        if bool(category.get("enabled", False)):
+            return True
+        overrides = category.get("departments", {})
+        if isinstance(overrides, dict) and any(
+            isinstance(value, dict) and bool(value.get("enabled", False))
+            for value in overrides.values()
+        ):
+            return True
+        groups = category.get("department_groups", [])
+        return isinstance(groups, list) and any(
+            isinstance(group, dict) and bool(group.get("departments"))
+            and isinstance(group.get("payload"), dict)
+            and bool(group["payload"].get("enabled", False))
+            for group in groups
+        )
 
     def _build_generators(self) -> None:
         task_generation = self._task_generation_cfg()
@@ -2603,18 +2607,7 @@ class TaskGenerationManager:
             if isinstance(categories.get("waste", {}), dict)
             else {}
         )
-        waste_overrides = (
-            waste_category.get("departments", {})
-            if isinstance(waste_category.get("departments", {}), dict)
-            else {}
-        )
-        dynamic_waste_enabled = bool(
-            bool(waste_category.get("enabled", False))
-            or any(
-                isinstance(override, dict) and bool(override.get("enabled", False))
-                for override in waste_overrides.values()
-            )
-        )
+        dynamic_waste_enabled = self._category_has_enabled_rule(waste_category)
 
         if (
             waste_streams

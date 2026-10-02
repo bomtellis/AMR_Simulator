@@ -212,3 +212,8 @@ __marimo__/
 # CSV
 *.csv
 simulation_steps.csv
+
+# Reproducible verification output is retained locally and as CI artifacts.
+# Keep reference cases, contracts, before-fix evidence and review summaries tracked.
+/verification/latest/
+/verification/stage1-tests.txt

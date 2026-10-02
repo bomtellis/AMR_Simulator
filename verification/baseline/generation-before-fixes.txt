@@ -1,0 +1,61 @@
+test_enabled_group_runs_when_category_default_is_disabled (test_generation_reference.GenerationReferenceTests.test_enabled_group_runs_when_category_default_is_disabled) ... FAIL
+test_enabled_waste_group_suppresses_legacy_generator (test_generation_reference.GenerationReferenceTests.test_enabled_waste_group_suppresses_legacy_generator) ... FAIL
+test_global_disabled_prevents_group_generation (test_generation_reference.GenerationReferenceTests.test_global_disabled_prevents_group_generation) ... ok
+test_group_does_not_also_generate_category_default_task (test_generation_reference.GenerationReferenceTests.test_group_does_not_also_generate_category_default_task) ... FAIL
+test_group_override_wins_and_category_wide_policy_is_preserved (test_generation_reference.GenerationReferenceTests.test_group_override_wins_and_category_wide_policy_is_preserved) ... ok
+test_two_groups_are_two_deliberate_services (test_generation_reference.GenerationReferenceTests.test_two_groups_are_two_deliberate_services) ... FAIL
+
+======================================================================
+FAIL: test_enabled_group_runs_when_category_default_is_disabled (test_generation_reference.GenerationReferenceTests.test_enabled_group_runs_when_category_default_is_disabled)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_reference.py", line 36, in test_enabled_group_runs_when_category_default_is_disabled
+    self.assertEqual(1, len(records))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0
+
+======================================================================
+FAIL: test_enabled_waste_group_suppresses_legacy_generator (test_generation_reference.GenerationReferenceTests.test_enabled_waste_group_suppresses_legacy_generator)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_reference.py", line 71, in test_enabled_waste_group_suppresses_legacy_generator
+    self.assertEqual(["dynamic_category"], [g.generator_type for g in manager.generators])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: ['dynamic_category'] != ['department_waste']
+
+First differing element 0:
+'dynamic_category'
+'department_waste'
+
+- ['dynamic_category']
++ ['department_waste']
+
+======================================================================
+FAIL: test_group_does_not_also_generate_category_default_task (test_generation_reference.GenerationReferenceTests.test_group_does_not_also_generate_category_default_task)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_reference.py", line 30, in test_group_does_not_also_generate_category_default_task
+    self.assertEqual(1, len(records))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_two_groups_are_two_deliberate_services (test_generation_reference.GenerationReferenceTests.test_two_groups_are_two_deliberate_services)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_reference.py", line 63, in test_two_groups_are_two_deliberate_services
+    self.assertEqual([60, 120], sorted(r.task.release_time for r in records))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60, 120] != []
+
+First list contains 2 additional elements.
+First extra element 0:
+60
+
+- [60, 120]
++ []
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.004s
+
+FAILED (failures=4)

@@ -102,7 +102,13 @@ class FlexibleInventoryModelTests(unittest.TestCase):
             ):
                 compatible_spaces.append(space["name"])
 
-        self.assertEqual(3, len(compatible_spaces))
+        # The checkpoint project includes a fourth bay added after this test's
+        # original three-bay layout. Keep an explicit LTN regression expectation.
+        self.assertCountEqual(
+            ["Burlodge Trolley space 1", "Burlodge Trolley space 2",
+             "Burlodge Trolley space 3", "Flexible space 1"],
+            compatible_spaces,
+        )
 
 
 if __name__ == "__main__":

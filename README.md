@@ -1,5 +1,14 @@
 # Autonomous Mobile Robot Simulator
 
+## Engineering verification
+
+The first verification checkpoint provides independently calculated routing,
+door-width, service-time, reservation and task-generation reference cases, plus
+a searchable evidence pack and an inventory of settings still requiring review.
+See [verification/README.md](verification/README.md) for the three review projects,
+known limitations and commands to reproduce the results. This is verification of
+specific model behaviour, not a claim of full simulator validation.
+
 ***Project licensed under AGPL.***
 
 This script simulates paths taken by autonomous mobile robots around a facility to deliver payloads to destinations.
