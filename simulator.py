@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
+from amr_route_reservations import RouteReservationTransaction
 
 from amr_sim_energy import (
     requires_recharge_before_route,
@@ -1957,6 +1958,16 @@ class Simulation:
     def _estimate_multi_stop_for_amr(
         self, amr: AMR, tasks: List[Task], reserve: bool = False
     ) -> Optional[dict]:
+        if not reserve:
+            return self._estimate_multi_stop_for_amr_impl(amr, tasks, reserve=False)
+        with RouteReservationTransaction(self, amr, tasks) as transaction:
+            result = self._estimate_multi_stop_for_amr_impl(amr, tasks, reserve=True)
+            transaction.committed = result is not None
+            return result
+
+    def _estimate_multi_stop_for_amr_impl(
+        self, amr: AMR, tasks: List[Task], reserve: bool = False
+    ) -> Optional[dict]:
         try:
             if not tasks or len(tasks) < 2:
                 return None
@@ -1989,6 +2000,20 @@ class Simulation:
                         return None
 
             aggregate_payload = self._make_aggregate_payload(tasks)
+            inventory_plan = self._multi_stop_inventory_assignments(tasks)
+            if inventory_plan is None:
+                return None
+            if reserve:
+                # Claim the complete matching before any travel reservations.
+                # A flexible/overflow task must not steal a strict task's bay.
+                for task in tasks:
+                    space = inventory_plan.get(task.id)
+                    if space is not None:
+                        task.assigned_inventory_space = str(space.get('name', ''))
+                        if self._reserve_inventory_space_for_task(task, self._payload_for_task(task)) is None:
+                            self._set_task_pending_reason(task, self._inventory_pending_reason(
+                                task.dropoff, self._payload_for_task(task)))
+                            return None
             empty_payload = self.payloads.get(EMPTY_PAYLOAD_NAME, aggregate_payload)
             amr_loc = self.locations[amr.location_name]
             t = max(
@@ -4484,6 +4509,9 @@ class Simulation:
         candidate task, which scaled badly on large estates.
         """
         active = self._active_task_ids()
+        transaction = getattr(self, '_route_reservation_transaction', None)
+        if transaction is not None:
+            active = active | transaction.task_ids
         failed = self.failed_task_ids
         location_name = str(location_name or "").strip()
         if location_name:
@@ -4497,6 +4525,7 @@ class Simulation:
                     continue
                 if reserved_by in active and reserved_by not in failed:
                     continue
+                self._remember_route_object(space)
                 space["reserved_by_task"] = ""
 
     def _clear_inventory_space_reservation_for_task(self, task: Task) -> None:
@@ -4530,6 +4559,65 @@ class Simulation:
         if not candidates:
             return None
         return min(candidates, key=lambda item: (item[0], item[1]))[2]
+
+    def _multi_stop_inventory_assignments(self, tasks: List[Task]) -> Optional[dict]:
+        """Match every strict delivery to a distinct compatible free bay.
+
+        This is a local matching, not a live reservation: parallel estimates
+        share no tentative bay claims. Overflow/exchange deliveries use leftover
+        free bays where available and retain their existing fallback semantics.
+        """
+        candidates, spaces, required, optional = {}, {}, [], []
+        for task in tasks:
+            payload = self._payload_for_task(task)
+            if payload is None or not self._location_has_payload_inventory_spaces(task.dropoff):
+                continue
+            flexible = (self._task_allows_dropoff_zone_overflow(task, payload)
+                        or self._task_can_exchange_with_store_empty(task, payload))
+            (optional if flexible else required).append(task)
+            assigned_name = str(getattr(task, 'assigned_inventory_space', '') or '')
+            choices = []
+            for index, space in enumerate(self.inventory_spaces_by_location.get(task.dropoff, [])):
+                owner = str(space.get('reserved_by_task', '') or '')
+                if (space.get('occupied', False) or (owner and owner != task.id)
+                        or (assigned_name and space.get('name') != assigned_name)
+                        or not self._inventory_space_can_fit_payload(space, payload)):
+                    continue
+                key = (task.dropoff, index)
+                spaces[key] = space
+                choices.append((self._inventory_space_fit_score(space, payload), index, key))
+            candidates[task.id] = [key for _score, _index, key in sorted(choices)]
+
+        owners = {}
+        def place(task_id, visited):
+            # Keep an existing best-fit choice when another compatible bay is
+            # free; rearrange prior choices only when needed for feasibility.
+            for key in candidates[task_id]:
+                if key not in visited and key not in owners:
+                    visited.add(key)
+                    owners[key] = task_id
+                    return True
+            for key in candidates[task_id]:
+                if key in visited:
+                    continue
+                visited.add(key)
+                owner = owners.get(key)
+                if owner is None or place(owner, visited):
+                    owners[key] = task_id
+                    return True
+            return False
+
+        for task in sorted(required, key=lambda item: len(candidates[item.id])):
+            if not place(task.id, set()):
+                self._set_task_pending_reason(task,
+                    f'Insufficient distinct compatible inventory spaces for this batch at {task.dropoff}')
+                return None
+        for task in optional:
+            for key in candidates[task.id]:
+                if key not in owners:
+                    owners[key] = task.id
+                    break
+        return {task_id: spaces[key] for key, task_id in owners.items()}
 
     def _task_allows_dropoff_zone_overflow(
         self, task: Optional[Task], payload: Optional[PayloadType] = None
@@ -4623,10 +4711,13 @@ class Simulation:
             if assigned_name and space_name != assigned_name:
                 continue
             if assigned_name or (task_id and reserved_by == task_id):
+                if reserved_by and reserved_by != task_id:
+                    return None
                 if bool(space.get("occupied", False)) and reserved_by != task_id:
                     return None
                 if not self._inventory_space_can_fit_payload(space, payload):
                     return None
+                self._remember_route_object(space)
                 space["reserved_by_task"] = task_id
                 task.assigned_inventory_space = space_name
                 return space
@@ -4635,6 +4726,7 @@ class Simulation:
         if space is None:
             return None
 
+        self._remember_route_object(space)
         space["reserved_by_task"] = task_id
         task.assigned_inventory_space = str(space.get("name", ""))
         return space
@@ -7541,7 +7633,7 @@ class Simulation:
         duration: float,
     ) -> float:
         max_concurrency = self.location_max_concurrency.get(location_name, 999999)
-        reservations = self.location_reservations[location_name]
+        reservations = self.location_reservations.get(location_name, [])
         max_duration = self.location_reservation_max_duration.get(location_name, 0.0)
 
         t = requested_start
@@ -7577,7 +7669,19 @@ class Simulation:
 
             t = next_candidate
 
+    def _remember_route_mapping(self, mapping, key) -> None:
+        transaction = getattr(self, '_route_reservation_transaction', None)
+        if transaction is not None:
+            transaction.remember_mapping(mapping, key)
+
+    def _remember_route_object(self, value) -> None:
+        transaction = getattr(self, '_route_reservation_transaction', None)
+        if transaction is not None:
+            transaction.remember_dict(value if isinstance(value, dict) else vars(value))
+
     def _reserve_location(self, location_name: str, start_time: float, end_time: float):
+        self._remember_route_mapping(self.location_reservations, location_name)
+        self._remember_route_mapping(self.location_reservation_max_duration, location_name)
         reservations = self.location_reservations[location_name]
         item = (start_time, end_time)
         insort_right(reservations, item)
@@ -8384,6 +8488,12 @@ class Simulation:
         edge_key = self._physical_edge_key(from_name, to_name)
         item = (start_time, end_time, amr_id)
 
+        self._remember_route_mapping(self.edge_reservations, edge_key)
+        self._remember_route_mapping(self.edge_reservation_max_duration, edge_key)
+        directed_key = (from_name, to_name)
+        self._remember_route_mapping(self.directed_edge_reservations, directed_key)
+        self._remember_route_mapping(self.directed_edge_reservation_max_duration, directed_key)
+
         reservations = self.edge_reservations[edge_key]
         insort_right(reservations, item)
         interval_duration = max(0.0, float(end_time) - float(start_time))
@@ -8406,6 +8516,8 @@ class Simulation:
         end_time: float,
         amr_id: str,
     ):
+        self._remember_route_mapping(self.node_reservations, node_name)
+        self._remember_route_mapping(self.node_reservation_max_duration, node_name)
         reservations = self.node_reservations[node_name]
         item = (start_time, end_time, amr_id)
         insort_right(reservations, item)
@@ -8833,6 +8945,8 @@ class Simulation:
 
     def _reserve_lift_journey(self, plan: dict, amr_id: str = "") -> None:
         lift = plan["lift"]
+        self._remember_route_mapping(self.lift_reservations, lift.id)
+        self._remember_route_object(lift)
         item = (
             float(plan["lift_start"]),
             float(plan["lift_finish"]),
@@ -9194,6 +9308,7 @@ class Simulation:
         journey_operating_sec: float = 0.0,
         journey_finish_time: Optional[float] = None,
     ) -> None:
+        self._remember_route_object(lift)
         lift.apply_journey_wear()
         lift.operating_time_since_failure_sec += max(
             0.0, float(journey_operating_sec or 0.0)
@@ -9452,6 +9567,10 @@ class Simulation:
             return
 
         wait_until = min(future_times)
+        waiting_tasks = [task for _, _, _, task in self.pending_tasks
+                         if not self._pending_task_removed(task)]
+        reasons = [f"{task.id}: {getattr(task, 'pending_reason', '') or 'Awaiting assignment'}"
+                   for task in waiting_tasks]
 
         self.push_event(
             wait_until,
@@ -9459,12 +9578,8 @@ class Simulation:
             {
                 "start_time": now,
                 "end_time": wait_until,
-                "pending_task_ids": [
-                    task.id
-                    for _, _, _, task in self.pending_tasks
-                    if not self._pending_task_removed(task)
-                ],
-                "reason": "No AMRs currently available",
+                "pending_task_ids": [task.id for task in waiting_tasks],
+                "reason": "At start of assignment wait: " + "; ".join(reasons),
             },
         )
 
@@ -10809,12 +10924,9 @@ class Simulation:
             )
             if compatible_space_count <= 0:
                 return self._inventory_pending_reason(dropoff_name, payload)
-            if self._find_free_inventory_space(
-                dropoff_name, payload, task=task
-            ) is None and not self._task_allows_dropoff_zone_overflow(
-                task, payload
-            ) and not self._task_can_exchange_with_store_empty(task, payload):
-                return self._inventory_pending_reason(dropoff_name, payload)
+            # Compatible bays that are occupied or reserved are temporary
+            # constraints: a collection can free them. Keep waiting under the
+            # original deferral deadline rather than declaring infeasibility.
 
         if not self._pickup_instance_available(task):
             if bool(

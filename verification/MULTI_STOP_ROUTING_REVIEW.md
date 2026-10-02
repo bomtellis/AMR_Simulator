@@ -65,8 +65,9 @@ Clearance uses the largest currently carried oriented envelope under the existin
 straight-passage model. It does not prove combined slot layout, swept turns,
 door-leaf clearance, physical lanes or junction conflicts. Corridor energy still
 uses the full-batch aggregate over loaded travel and needs independent refinement.
-Resource reservation rollback and simultaneous inventory capacity interactions
-remain separate verification work. The full completion ledger remains open.
+The subsequent [storage checkpoint](STORAGE_RESERVATIONS_REVIEW.md) verifies
+multi-stop reservation rollback and distinct bay claims; broader resource and
+exchange interactions remain open. The full completion ledger remains open.
 
 ## Recorded verification
 
