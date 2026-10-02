@@ -12612,8 +12612,13 @@ class Simulation:
 
         elif event.event_type == "generator_tick":
             self._update_task_generators_until(event.time)
-            next_tick = event.time + max(60.0, self.task_generation_interval_sec)
-            if next_tick <= self.task_generation_horizon_sec:
+            # Include the final partial interval exactly once. The horizon limits
+            # new demand; released tasks can still finish beyond it.
+            next_tick = min(
+                event.time + max(60.0, self.task_generation_interval_sec),
+                self.task_generation_horizon_sec,
+            )
+            if next_tick > event.time:
                 self.push_event(next_tick, "generator_tick", {})
             self._try_assign_tasks(event.time)
 

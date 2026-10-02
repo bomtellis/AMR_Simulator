@@ -1,0 +1,68 @@
+test_disabled_generator_does_not_gain_a_final_update (tests.test_generation_boundaries.GenerationBoundaryTests.test_disabled_generator_does_not_gain_a_final_update) ... ok
+test_exact_interval_boundary_does_not_duplicate_work (tests.test_generation_boundaries.GenerationBoundaryTests.test_exact_interval_boundary_does_not_duplicate_work) ... ok
+test_final_partial_interval_includes_each_rule_once (tests.test_generation_boundaries.GenerationBoundaryTests.test_final_partial_interval_includes_each_rule_once) ... FAIL
+test_horizon_is_inclusive_and_later_schedule_is_excluded (tests.test_generation_boundaries.GenerationBoundaryTests.test_horizon_is_inclusive_and_later_schedule_is_excluded) ... FAIL
+test_run_shorter_than_interval_includes_scheduled_demand (tests.test_generation_boundaries.GenerationBoundaryTests.test_run_shorter_than_interval_includes_scheduled_demand) ... FAIL
+test_zero_duration_only_includes_start_time (tests.test_generation_boundaries.GenerationBoundaryTests.test_zero_duration_only_includes_start_time) ... ok
+
+======================================================================
+FAIL: test_final_partial_interval_includes_each_rule_once (tests.test_generation_boundaries.GenerationBoundaryTests.test_final_partial_interval_includes_each_rule_once)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_boundaries.py", line 40, in test_final_partial_interval_includes_each_rule_once
+    self.assert_releases(self.run_case(1000, ['00:01', '00:16']), [60, 960])
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_boundaries.py", line 33, in assert_releases
+    self.assertEqual(expected, sorted(sim.observed_test_releases))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60, 960] != [60.0]
+
+First list contains 1 additional elements.
+First extra element 1:
+960
+
+- [60, 960]
++ [60.0]
+
+======================================================================
+FAIL: test_horizon_is_inclusive_and_later_schedule_is_excluded (tests.test_generation_boundaries.GenerationBoundaryTests.test_horizon_is_inclusive_and_later_schedule_is_excluded)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_boundaries.py", line 43, in test_horizon_is_inclusive_and_later_schedule_is_excluded
+    self.assert_releases(self.run_case(600, ['00:10', '00:11']), [600])
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_boundaries.py", line 33, in assert_releases
+    self.assertEqual(expected, sorted(sim.observed_test_releases))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [600] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+600
+
+- [600]
++ []
+
+======================================================================
+FAIL: test_run_shorter_than_interval_includes_scheduled_demand (tests.test_generation_boundaries.GenerationBoundaryTests.test_run_shorter_than_interval_includes_scheduled_demand)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_boundaries.py", line 37, in test_run_shorter_than_interval_includes_scheduled_demand
+    self.assert_releases(self.run_case(600, ['00:01']), [60])
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_boundaries.py", line 33, in assert_releases
+    self.assertEqual(expected, sorted(sim.observed_test_releases))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60] != []
+
+First list contains 1 additional elements.
+First extra element 0:
+60
+
+- [60]
++ []
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.005s
+
+FAILED (failures=3)
