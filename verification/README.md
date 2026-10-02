@@ -132,6 +132,7 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D050 | Earlier gap insertion used future wear state and could place its repair after a later booked journey | Keep wear/failure-enabled journeys in chronological commitment order; preserve committed routes and expose the scheduling assumption in Project Checks. See LIFT_RESERVATION_ORDER_REVIEW.md. |
 | D051 | Investigation exports and header replaced the event-log path with `lift_supply` | Keep the energy-source loop variable separate from the original log source path. See LIFT_EVIDENCE_REVIEW.md. |
 | D052 | Unchecking Bidirectional edges still created a link the simulator could traverse both ways | Connect and continuous-drawing tools now write the selected direction explicitly. Existing links retain their directions. See CORRIDOR_DRAWING_REVIEW.md and baseline/corridor-direction-before-fix.txt. |
+| D053 | Reading absent drawing lists silently edited the project and caused a false unsaved indicator | Drawing queries no longer insert configuration fields; explicit mapping edits still create lists. See PROJECT_WORKSPACE_REVIEW.md and baseline/drawing-read-before-fix.txt. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation

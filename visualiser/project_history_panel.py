@@ -9,6 +9,15 @@ class ProjectHistoryPanel(QWidget):
         super().__init__(editor)
         self.editor = editor
         layout = QVBoxLayout(self)
+        from PySide6.QtWidgets import QHBoxLayout
+        actions = QHBoxLayout()
+        for title, handler in [('Open project / JSON', editor.open_json), ('Save project', editor.save_project),
+                               ('Save project as', lambda: editor.save_project(save_as=True)),
+                               ('Export JSON', editor.export_project_json), ('Recovery copies', editor.recover_unsaved_work)]:
+            button = QPushButton(title)
+            button.clicked.connect(handler)
+            actions.addWidget(button)
+        layout.addLayout(actions)
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)

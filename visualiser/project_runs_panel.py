@@ -33,7 +33,8 @@ class ProjectRunsPanel(QWidget):
         layout.addLayout(buttons)
         actions = QHBoxLayout()
         for title, handler in (("Refresh runs", self.refresh_runs), ("Results location…", self.choose_results_root),
-                               ("Locate moved run…", self.relink_run), ("Investigate selected run", self.investigate)):
+                               ("Locate moved run…", self.relink_run), ("Investigate selected run", self.investigate),
+                               ("Report selected run", self.report)):
             button = QPushButton(title)
             button.clicked.connect(handler)
             actions.addWidget(button)
@@ -256,3 +257,12 @@ class ProjectRunsPanel(QWidget):
                 self.editor.results_panel.load(str(path))
             except Exception as exc:
                 QMessageBox.critical(self, "Run unavailable", str(exc))
+
+    def report(self):
+        path = self.selected_path()
+        if path:
+            try:
+                inspect_run(path, self.editor.project, reference=self.run_refs[self.runs.currentRow()])
+                self.editor.show_project_report(path)
+            except Exception as exc:
+                QMessageBox.critical(self, 'Report unavailable', str(exc))

@@ -302,7 +302,8 @@ class AMRGraphEditor(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("AMR Simulation Graph Editor")
+        self.setWindowTitle("AMR Engineering Project")
+        self.setProperty('amrProjectWorkspace', True)
         self.resize(1500, 920)
 
         self.store = JsonStore()
@@ -491,9 +492,11 @@ class AMRGraphEditor(QMainWindow):
     def _update_unsaved_indicator(self):
         self._commit_history()
         dirty = self.has_unsaved_changes()
-        self.setWindowTitle("AMR Simulation Graph Editor" + (" — Unsaved changes" if dirty else ""))
+        self.setWindowTitle("AMR Engineering Project" + (" — Unsaved changes" if dirty else ""))
         self.file_label.setText((self.current_json_path or "New file") + (" • Unsaved changes" if dirty else ""))
         self.file_label.setToolTip(self._recovery_status)
+        if hasattr(self, 'workspace'):
+            self.workspace.refresh(dirty)
 
     def _discard_own_recovery(self):
         if self._recovery_store is not None:
@@ -543,6 +546,9 @@ class AMRGraphEditor(QMainWindow):
             return False
 
     def _confirm_unsaved_changes(self):
+        if hasattr(self, 'report_panel') and self.report_panel.running():
+            QMessageBox.information(self, 'Report running', 'Stop report generation or wait for it to finish before changing projects or closing the application.')
+            return False
         if hasattr(self, 'project_runs_panel') and self.project_runs_panel.running():
             QMessageBox.information(self, "Simulation running", "Stop the run or wait for it to finish before opening another project or closing the editor.")
             return False
@@ -939,7 +945,9 @@ class AMRGraphEditor(QMainWindow):
             page_layout.addStretch(1)
             content.adjustSize()
 
-        layout.addWidget(self.canvas, 1)
+        from project_workspace import ProjectWorkspace
+        self.workspace = ProjectWorkspace(self, self.canvas)
+        layout.addWidget(self.workspace, 1)
 
         self.status_label = QLabel("Ready")
         self.status_label.setMinimumWidth(240)
@@ -952,6 +960,8 @@ class AMRGraphEditor(QMainWindow):
         return str(self.mode_combo.currentData() or "select_move")
 
     def _set_edit_mode(self, value):
+        if hasattr(self, 'workspace'):
+            self.workspace.show_page('layout', self.canvas)
         index = self.mode_combo.findData(str(value))
         if index >= 0:
             self.mode_combo.setCurrentIndex(index)
@@ -1386,7 +1396,7 @@ class AMRGraphEditor(QMainWindow):
         )
 
     def floor_pdf_underlay_entries(self):
-        return self.store.data.setdefault("floor_pdf_underlays", [])
+        return self.store.data.get("floor_pdf_underlays", [])
 
     def get_floor_pdf_underlay(self, floor):
         for entry in self.floor_pdf_underlay_entries():
@@ -1400,7 +1410,7 @@ class AMRGraphEditor(QMainWindow):
     @undoable("Edit drawing mapping")
     def set_floor_pdf_underlay(self, floor, mapping):
         payload = normalise_pdf_underlay({**mapping, "floor": int(floor)})
-        entries = self.floor_pdf_underlay_entries()
+        entries = self.store.data.setdefault("floor_pdf_underlays", [])
         for entry in entries:
             try:
                 if int(entry.get("floor")) == int(floor):
@@ -1475,7 +1485,7 @@ class AMRGraphEditor(QMainWindow):
         self.scene.addItem(item)
 
     def floor_dxf_entries(self):
-        return self.store.data.setdefault("floor_dxf_files", [])
+        return self.store.data.get("floor_dxf_files", [])
 
     def get_floor_dxf_path(self, floor):
         for entry in self.floor_dxf_entries():
@@ -1489,7 +1499,7 @@ class AMRGraphEditor(QMainWindow):
 
     @undoable("Edit drawing mapping")
     def set_floor_dxf_path(self, floor, filepath):
-        entries = self.floor_dxf_entries()
+        entries = self.store.data.setdefault("floor_dxf_files", [])
         payload = {"floor": int(floor), "filepath": str(filepath)}
         for entry in entries:
             try:
@@ -3350,12 +3360,8 @@ class AMRGraphEditor(QMainWindow):
         from project_history_panel import ProjectHistoryPanel
         if not hasattr(self, "project_history_panel"):
             self.project_history_panel = ProjectHistoryPanel(self)
-            self.project_history_dock = QDockWidget("Project revisions", self)
-            self.project_history_dock.setWidget(self.project_history_panel)
-            self.addDockWidget(Qt.RightDockWidgetArea, self.project_history_dock)
         self.project_history_panel.refresh()
-        self.project_history_dock.show()
-        self.project_history_dock.raise_()
+        self.workspace.show_page('project', self.project_history_panel)
 
     def show_project_runs(self):
         root = str(Path(__file__).resolve().parents[1])
@@ -3364,12 +3370,19 @@ class AMRGraphEditor(QMainWindow):
         from project_runs_panel import ProjectRunsPanel
         if not hasattr(self, 'project_runs_panel'):
             self.project_runs_panel = ProjectRunsPanel(self)
-            self.project_runs_dock = QDockWidget('Project runs', self)
-            self.project_runs_dock.setWidget(self.project_runs_panel)
-            self.addDockWidget(Qt.BottomDockWidgetArea, self.project_runs_dock)
         self.project_runs_panel.refresh_runs()
-        self.project_runs_dock.show()
-        self.project_runs_dock.raise_()
+        self.workspace.show_page('simulate', self.project_runs_panel)
+
+    def show_project_report(self, path=None):
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from project_report_panel import ProjectReportPanel
+        if not hasattr(self, 'report_panel'):
+            self.report_panel = ProjectReportPanel(self)
+        if path is not None:
+            self.report_panel.set_run(path)
+        self.workspace.show_page('report', self.report_panel)
 
     def _ask_dxf_units(self):
         units, accepted = QInputDialog.getItem(
@@ -3779,14 +3792,9 @@ class AMRGraphEditor(QMainWindow):
         if root not in sys.path:
             sys.path.insert(0, root)
         from results_investigation_panel import ResultsInvestigationPanel
-        if not hasattr(self, 'results_dock'):
-            self.results_dock = QDockWidget('Results investigation', self)
-            self.results_dock.setObjectName('resultsInvestigationDock')
-            self.results_panel = ResultsInvestigationPanel(self.results_dock)
-            self.results_dock.setWidget(self.results_panel)
-            self.addDockWidget(Qt.BottomDockWidgetArea, self.results_dock)
-        self.results_dock.show()
-        self.results_dock.raise_()
+        if not hasattr(self, 'results_panel'):
+            self.results_panel = ResultsInvestigationPanel(self)
+        self.workspace.show_page('review', self.results_panel)
         self.set_status('Results investigation opened. Select a saved run or event CSV.')
 
     def show_demand_preview(self):
@@ -3795,36 +3803,27 @@ class AMRGraphEditor(QMainWindow):
         if root not in sys.path:
             sys.path.insert(0, root)
         from demand_preview_panel import DemandPreviewPanel
-        if not hasattr(self, 'demand_dock'):
-            self.demand_dock = QDockWidget('Demand preview', self)
-            self.demand_dock.setObjectName('demandPreviewDock')
-            self.demand_panel = DemandPreviewPanel(lambda: self.store.data, self.demand_dock)
-            self.demand_dock.setWidget(self.demand_panel)
-            self.addDockWidget(Qt.BottomDockWidgetArea, self.demand_dock)
-        self.demand_dock.show()
-        self.demand_dock.raise_()
+        if not hasattr(self, 'demand_panel'):
+            self.demand_panel = DemandPreviewPanel(lambda: self.store.data, self)
+        self.workspace.show_page('demand', self.demand_panel)
         self.set_status('Demand preview opened. Build a preview to inspect planned demand.')
 
     def validate_json(self):
         from project_checks_panel import ProjectChecksPanel
-        if not hasattr(self, 'checks_dock'):
-            self.checks_dock = QDockWidget('Project checks', self)
-            self.checks_dock.setObjectName('projectChecksDock')
+        if not hasattr(self, 'checks_panel'):
             self.checks_panel = ProjectChecksPanel(
-                lambda: self.store.data, self.checks_dock,
+                lambda: self.store.data, self,
                 lambda: Path(self.current_json_path).parent if self.current_json_path else None)
             self.checks_panel.navigate.connect(self.navigate_check_finding)
-            self.checks_dock.setWidget(self.checks_panel)
-            self.addDockWidget(Qt.BottomDockWidgetArea, self.checks_dock)
         else:
             self.checks_panel.check_now()
-        self.checks_dock.show()
-        self.checks_dock.raise_()
+        self.workspace.show_page('checks', self.checks_panel)
         self.set_status('Project checks opened; select a finding to investigate.')
 
     def navigate_check_finding(self, finding):
         points = self.store.all_points()
         if finding.target in points and finding.section in {'corridors', 'locations', 'lifts'}:
+            self.workspace.show_page('layout', self.canvas)
             point = points[finding.target]
             self.floor_spin.setValue(int(point['floor']))
             self.selected_point_name = finding.target

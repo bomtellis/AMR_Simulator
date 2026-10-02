@@ -288,7 +288,7 @@ class InvestigationUiTests(unittest.TestCase):
         try:
             editor.show_results_investigation()
             self.assertIsNone(editor.results_panel.result)
-            self.assertIs(editor.results_dock.widget(), editor.results_panel)
+            self.assertIs(editor.workspace.stack.currentWidget(), editor.results_panel)
         finally:
             editor.close()
 

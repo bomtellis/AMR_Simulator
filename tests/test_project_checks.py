@@ -208,7 +208,8 @@ class ProjectChecksUiTests(unittest.TestCase):
             finding = next(f for f in editor.checks_panel.report.findings if f.code == 'LOCATION_ISOLATED')
             editor.navigate_check_finding(finding)
             self.assertEqual(finding.target, editor.selected_point_name)
-            self.assertIs(editor.checks_dock.widget(), editor.checks_panel)
+            self.assertIs(editor.workspace.pages['checks'], editor.checks_panel)
+            self.assertIs(editor.workspace.stack.currentWidget(), editor.canvas)
         finally:
             with patch.object(editor, "_confirm_unsaved_changes", return_value=True):
                 editor.close()

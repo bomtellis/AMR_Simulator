@@ -12,7 +12,7 @@ implementation; no national-body certification claim is made.
 | Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
 | Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
 | Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
-| Individual defect reproduction and changed-result explanations | D001–D052 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
+| Individual defect reproduction and changed-result explanations | D001–D053 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
 | LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
 | Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
 
@@ -26,9 +26,11 @@ implementation; no national-body certification claim is made.
 
 ## 3. Dependable editing and unified project — completion OPEN
 
-- Integrate all seven stages in one window: Project, Layout, Configuration,
-  Check, Simulate, Review and Report, with persistent project tree, central
-  workspace and contextual properties. Playback/report integration is unfinished.
+- Seven stages now share a persistent workflow tree and central workspace:
+  Project, Layout, Configuration, Check, Simulate, Review and Report. Report
+  generation uses selected runs' frozen inputs and external outputs. See
+  PROJECT_WORKSPACE_REVIEW.md. Playback embedding, contextual properties and
+  fuller object navigation remain unfinished; configuration dialogs still exist.
 - Centralised state and undoable editing: snapshot undo/redo exists; finish
   command coverage and frequent editing outside modal dialogs.
 - `.amrproj` compressed storage, deduplicated drawings, atomic saves, recovery,
@@ -37,7 +39,8 @@ implementation; no national-body certification claim is made.
 - Results stay external. Immutable run inputs/revision/software binding and
   persistent run references/custom locations now survive reopening. Moved runs
   retain missing entries and relink by identity; Save As rebases paths. See
-  PERSISTENT_RUN_LINKS_REVIEW.md. Broader project-tree integration remains open.
+  PERSISTENT_RUN_LINKS_REVIEW.md. The workflow tree now includes floors; fuller
+  object-level project-tree integration remains open.
 - Explicit corridor splitting and subdivision now preserve edge attributes,
   routing/resource references and grouped undo; see CORRIDOR_EDITING_REVIEW.md.
   Continuous drawing now places and connects successive nodes, snaps to points

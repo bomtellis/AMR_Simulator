@@ -470,7 +470,8 @@ def polish_dialog(dialog: QWidget) -> None:
     if not isinstance(dialog, (QDialog, QMainWindow)):
         return
     install_application_theme()
-    if isinstance(dialog, QMainWindow) and dialog.windowTitle() == "AMR Simulation Graph Editor":
+    if isinstance(dialog, QMainWindow) and (dialog.property('amrProjectWorkspace') or
+            dialog.windowTitle().startswith("AMR Simulation Graph Editor")):
         dialog.setProperty("amrDialogPolished", True)
         return
     if not dialog.property("amrDialogPolished"):
