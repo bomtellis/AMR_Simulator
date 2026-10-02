@@ -125,7 +125,7 @@ class Simulation:
         self._evidence_config_hash = config_hash(self._evidence_inputs)
         self._evidence_software = software_snapshot() if verbose else None
         self._evidence_event_capabilities = ['payload_service_arrivals', 'staged_payload_recovery',
-                                             'segment_energy_sources_v1']
+                                             'segment_energy_sources_v1', 'charge_cycle_arrivals_v1']
         self._evidence_run_status = 'incomplete'
         self._evidence_sequence = 0
         self._evidence_journey_sequence = 0
@@ -156,6 +156,7 @@ class Simulation:
         self.people_affected_segments = 0
         self.wash_cycles_completed = 0
         self.charge_intervals: List[dict] = []
+        self._charge_wait_reasons: Dict[str, str] = {}
         start_datetime = parse_datetime(
             sim_cfg.get("start_datetime", "2026-01-01T08:00:00")
         )
@@ -3827,6 +3828,9 @@ class Simulation:
         initial_heading_deg = float(
             getattr(amr, "rotation_deg", target_heading_deg) or target_heading_deg
         )
+        if (math.hypot(start[0] - end[0], start[1] - end[1]) <= 1e-9
+                and abs(self._normalise_angle_deg(initial_heading_deg - target_heading_deg)) <= 1e-9):
+            return [], 0.0, 0.0
         cache_key = (
             str(location_name or "").strip(),
             space_name.strip(),
@@ -9530,7 +9534,7 @@ class Simulation:
                 f"No compatible AMR bay for {amr_id} at configured charge "
                 f"location(s): {names}"
             )
-        if compatible_locations and not charger_locations:
+        if compatible_locations and not charger_locations and not unavailable_charger_locations:
             names = ", ".join(compatible_locations)
             return (
                 f"No charger-equipped AMR bay for {base_id} at configured charge "
@@ -9986,13 +9990,16 @@ class Simulation:
         plan = self._plan_return_to_charge(amr, current_loc, now, reserve=True,
                                            destination_name=destination_name)
         if plan is None:
-            self._record_failed_task(
-                f"CHARGE-{amr.id}",
-                self._charge_plan_failure_reason(amr, current_loc),
-                event_time=now,
-            )
+            reason = self._charge_plan_failure_reason(amr, current_loc)
+            if self._charge_wait_reasons.get(amr.id) != reason:
+                self._charge_wait_reasons[amr.id] = reason
+                self.log_step(event_time=now, event_type='charge_wait', amr_id=amr.id,
+                    status='waiting', from_location=current_loc.name, details=reason)
             return False
 
+        self._charge_wait_reasons.pop(amr.id, None)
+        amr._charge_cycle_id = getattr(amr, '_charge_cycle_id', 0) + 1
+        amr._charge_cycle_phase = 'scheduled'
         charge_duration = amr.charge_duration_sec_to_full()
         charge_start = plan["finish_time"]
         charge_finish = charge_start + charge_duration
@@ -10004,6 +10011,9 @@ class Simulation:
             "end_time": charge_finish,
             "duration_sec": charge_duration,
             "reason": str(charge_reason or "reserve_threshold"),
+            "cycle_id": amr._charge_cycle_id,
+            "status": "scheduled",
+            "planned_end_time": charge_finish,
         })
 
         amr.is_charging = True
@@ -10011,38 +10021,49 @@ class Simulation:
         amr.location_name = plan["end_location"]
         self._invalidate_route_estimate_cache()
 
-        self.push_event(
-            now,
-            "charge_cycle_start",
-            {
-                "amr_id": amr.id,
-                "travel_segments": plan["segments"],
-                "travel_finish": plan["finish_time"],
-                "charge_start": charge_start,
-                "charge_finish": charge_finish,
-                "charge_duration": charge_duration,
-                "charge_location": plan.get(
-                    "charge_location", plan.get("end_location", amr.location_name)
-                ),
-                "amr_inventory_space": plan.get("amr_inventory_space", ""),
-                "charge_reason": str(charge_reason or "reserve_threshold"),
-            },
-        )
-
-        self.push_event(
-            charge_finish,
-            "charge_cycle_complete",
-            {
-                "amr_id": amr.id,
-                "charge_duration": charge_duration,
-                "charge_location": plan.get(
-                    "charge_location", plan.get("end_location", amr.location_name)
-                ),
-                "amr_inventory_space": plan.get("amr_inventory_space", ""),
-                "charge_reason": str(charge_reason or "reserve_threshold"),
-            },
-        )
+        cycle = {
+            'amr_id': amr.id, 'cycle_id': amr._charge_cycle_id,
+            'travel_segments': plan['segments'], 'travel_finish': plan['finish_time'],
+            'charge_start': charge_start, 'charge_finish': charge_finish,
+            'charge_duration': charge_duration,
+            'charge_location': plan.get('charge_location', plan.get('end_location', amr.location_name)),
+            'amr_inventory_space': plan.get('amr_inventory_space', ''),
+            'charge_reason': str(charge_reason or 'reserve_threshold'),
+        }
+        # Stable insertion order also handles zero-travel/zero-duration cycles.
+        self.push_event(now, 'charge_cycle_start', dict(cycle))
+        self.push_event(charge_start, 'charge_cycle_arrive', dict(cycle))
+        self.push_event(charge_finish, 'charge_cycle_complete', dict(cycle))
         return True
+
+    def _charge_event_is_current(self, amr, event, phase):
+        return (amr.is_charging and event.payload.get('cycle_id') == getattr(amr, '_charge_cycle_id', None)
+                and getattr(amr, '_charge_cycle_phase', None) == phase)
+
+    def _set_charge_interval_status(self, amr, event, status, *, failed=False):
+        for interval in reversed(self.charge_intervals):
+            if interval.get('amr_id') == amr.id and interval.get('cycle_id') == event.payload['cycle_id']:
+                interval['status'] = status
+                interval['space'] = str(getattr(amr, 'inventory_space_name', '') or '')
+                if failed:
+                    interval['end_time'] = max(interval['start_time'], min(event.time, interval['end_time']))
+                    interval['duration_sec'] = interval['end_time'] - interval['start_time']
+                break
+
+    def _fail_charge_cycle(self, amr, event, reason):
+        if getattr(amr, '_charge_cycle_phase', None) == 'charging':
+            amr.total_charge_time += max(0.0, event.time - event.payload['charge_start'])
+        self._set_charge_interval_status(amr, event, 'failed', failed=True)
+        amr._charge_cycle_phase = 'failed'
+        amr.is_charging = False
+        amr.available_time = event.time
+        self._free_amr_inventory_space(amr)
+        self._invalidate_route_estimate_cache()
+        self.log_step(event_time=event.time, event_type='charge_cycle_failed',
+            amr_id=amr.id, status='operational_failure', to_location=event.payload['charge_location'],
+            details=json.dumps({'reason': reason, 'cycle_id': event.payload['cycle_id'],
+                'applied_charge_kwh': 0, 'basis': 'no_credit_without_valid_completion'}))
+        self._try_assign_tasks(event.time)
 
     def _schedule_opportunity_charge(self, now: float) -> bool:
         """Admit at most one sufficiently idle AMR to charge on each check."""
@@ -12727,10 +12748,12 @@ class Simulation:
             completed_end_location_name = str(event.payload.get("end_location") or task.dropoff or "")
             completed_amr_loc = self.locations.get(completed_end_location_name)
             completed_amr_space = None
-            if completed_amr is not None:
-                planned_space = str(
-                    event.payload.get("amr_inventory_space", "") or ""
-                ).strip()
+            planned_space = str(event.payload.get('amr_inventory_space', '') or '').strip()
+            # A payload action at this same timestamp may already have
+            # dispatched the AMR again. The older completion must not clear
+            # its newer charging/delivery reservation while attempting to stow.
+            if (completed_amr is not None and not completed_amr.is_charging
+                    and completed_amr.available_time <= event.time + 1e-9):
                 if not planned_space and getattr(task, "is_idle_return", False):
                     for segment in reversed(event.payload.get("segments", []) or []):
                         planned_space = str(
@@ -12974,7 +12997,8 @@ class Simulation:
                 )
                 final_amr = self.amrs_by_id.get(event.payload.get("amr_id"))
                 if final_amr is not None:
-                    self._occupy_amr_inventory_space(final_amr, final_location_name)
+                    if not final_amr.is_charging and final_amr.available_time <= event.time + 1e-9:
+                        self._occupy_amr_inventory_space(final_amr, final_location_name)
                     final_location = self._amr_display_location(
                         final_amr, final_location_name
                     )
@@ -13152,6 +13176,9 @@ class Simulation:
 
         elif event.event_type == "charge_cycle_start":
             amr = self.amrs_by_id[event.payload["amr_id"]]
+            if not self._charge_event_is_current(amr, event, 'scheduled'):
+                return
+            amr._charge_cycle_phase = 'travelling'
             charge_location_name = str(
                 event.payload.get("charge_location")
                 or getattr(amr, "target_charge_location", "")
@@ -13233,18 +13260,28 @@ class Simulation:
                 )
                 segment_start_time = segment_end_time
 
+        elif event.event_type == 'charge_cycle_arrive':
+            amr = self.amrs_by_id[event.payload['amr_id']]
+            if not self._charge_event_is_current(amr, event, 'travelling'):
+                return
+            charge_location_name = event.payload['charge_location']
             if charge_location_name:
                 amr.location_name = charge_location_name
             occupied_charger = self._occupy_amr_inventory_space(
                 amr, amr.location_name, require_charger=True
             )
             if occupied_charger is None and self._location_has_any_amr_inventory_spaces(amr.location_name):
-                self._record_failed_task(
-                    f"CHARGE-{amr.id}",
-                    f"No charger-equipped AMR space available at {amr.location_name}",
-                    event_time=event.payload["charge_start"],
-                    dropoff=amr.location_name,
-                )
+                self._fail_charge_cycle(amr, event, f'No charger-equipped AMR space available at {amr.location_name}')
+                return
+            if not self._amr_is_at_operational_charger(amr):
+                self._fail_charge_cycle(amr, event, 'Charging location is no longer operational')
+                return
+            amr._charge_cycle_phase = 'charging'
+            self._set_charge_interval_status(amr, event, 'charging')
+            self.log_step(event_time=event.time, event_type='charge_cycle_arrive',
+                amr_id=amr.id, status='charging', to_location=charge_location_name,
+                amr_inventory_space=getattr(amr, 'inventory_space_name', ''),
+                details=json.dumps({'cycle_id': event.payload['cycle_id']}))
             charge_display_loc = self._amr_display_location(amr, amr.location_name)
             self.log_step(
                 event_time=event.payload["charge_start"],
@@ -13283,6 +13320,14 @@ class Simulation:
 
         elif event.event_type == "charge_cycle_complete":
             amr = self.amrs_by_id[event.payload["amr_id"]]
+            if not self._charge_event_is_current(amr, event, 'charging'):
+                return
+            bay_owned = (not self._location_has_any_amr_inventory_spaces(amr.location_name)
+                or any(space.get('amr_id') == amr.id and self._space_name(space) == amr.inventory_space_name
+                       for space in self.inventory_spaces_by_location.get(amr.location_name, [])))
+            if not self._amr_is_at_operational_charger(amr) or not bay_owned:
+                self._fail_charge_cycle(amr, event, 'Charging bay unavailable at completion; no energy credited')
+                return
             charge_location_name = str(
                 event.payload.get("charge_location")
                 or getattr(amr, "location_name", "")
@@ -13294,6 +13339,8 @@ class Simulation:
             amr.charge_to_full()
             self._log_battery_charge_applied(amr, credited_energy, basis='credited_at_charge_completion')
             amr.is_charging = False
+            amr._charge_cycle_phase = 'completed'
+            self._set_charge_interval_status(amr, event, 'completed')
 
             self.log_step(
                 event_time=event.time,
@@ -14045,9 +14092,10 @@ class Simulation:
     def charger_estimate_summary(self) -> dict:
         configured_by_location = self._configured_charger_counts()
         intervals_by_location: Dict[str, List[dict]] = defaultdict(list)
-        for interval in self.charge_intervals:
+        all_intervals = [interval for interval in self.charge_intervals
+                        if not (interval.get('status') == 'failed' and interval['duration_sec'] <= 0)]
+        for interval in all_intervals:
             intervals_by_location[str(interval.get("location", "") or "")].append(interval)
-        all_intervals = list(self.charge_intervals)
         required_peak = self._peak_interval_concurrency(all_intervals)
         configured = sum(configured_by_location.values())
         duration_hours = max(float(self.current_time) / 3600.0, 1e-9)

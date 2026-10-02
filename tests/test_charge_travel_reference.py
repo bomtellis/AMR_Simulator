@@ -93,7 +93,9 @@ class ChargeTravelReferenceTests(unittest.TestCase):
         sim = prepare()
         sim.amrs[0].battery_soc_percent = 0.005
         self.assertFalse(sim._schedule_charge_cycle(sim.amrs[0], 0))
-        self.assertIn('Insufficient battery energy', sim.failed_tasks[0]['reason'])
+        self.assertFalse(sim.failed_tasks)
+        waiting = [r for r in sim.verbose_rows if r['event_type']=='charge_wait']
+        self.assertIn('Insufficient battery energy', waiting[0]['details'])
         self.assertFalse(sim.charge_intervals)
 
     def test_energy_reachable_charger_is_chosen_even_with_a_longer_wait(self):

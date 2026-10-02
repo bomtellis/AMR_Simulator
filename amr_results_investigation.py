@@ -269,6 +269,11 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
     metric('unknown_outcome', 'Tasks without a recorded outcome', sum(t['outcome'] == 'outcome not recorded' for t in tasks),
            [eid for t in tasks if t['outcome'] == 'outcome not recorded' for eid in t['event_ids']],
            'Observed or explicitly configured tasks lacking completion/failure evidence; not automatically classified as pending.')
+    for kind, title in [('charge_wait', 'Charging wait observations'), ('charge_cycle_failed', 'Failed charging attempts')]:
+        records = [e for e in events if e['type'] == kind]
+        metric(kind, title, len(records), [e['id'] for e in records],
+               'Recorded robot charging events, separate from delivery task outcomes. Repeated unchanged wait reasons are suppressed; this count is not waiting duration. Missing or older event coverage is unknown.',
+               known=complete_evidence and 'charge_cycle_arrivals_v1' in metadata.get('event_capabilities', []))
     metric('payload_moves', 'Payload transfers between locations', len(payload_moves), [eid for m in payload_moves for eid in m['event_ids']],
            'Paired exit and subsequent stored entry or service arrival for the same physical payload instance at different locations. Service handling does not imply inventory occupancy. Initial population is excluded.',
            known=complete_evidence and not payload_gaps)

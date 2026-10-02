@@ -109,7 +109,7 @@ class SingleChargeAtomicityTests(unittest.TestCase):
                 self.assertEqual('B', sim.amrs[0].location_name)
                 self.assertTrue(sim.amrs[0].is_charging)
                 self.assertEqual(1, len(sim.charge_intervals))
-                self.assertEqual({'charge_cycle_start', 'charge_cycle_complete'},
+                self.assertEqual({'charge_cycle_start', 'charge_cycle_arrive', 'charge_cycle_complete'},
                                  {e.event_type for e in sim.events})
 
     def test_successful_single_retains_charge_record_and_storage_claim(self):

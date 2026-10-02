@@ -1,0 +1,6 @@
+Baseline: 2551213
+Command: .venv/Scripts/python.exe -m unittest tests.test_charger_contention -v
+test_bay_is_reserved_until_physical_arrival: FAIL
+Expected empty occupied-AMR field at departure; observed R-1 before 5-second arrival.
+test_busy_charger_is_waiting_not_a_failed_delivery: FAIL
+Expected no failed delivery; observed synthetic failed task CHARGE-R-2.

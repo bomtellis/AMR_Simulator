@@ -12,7 +12,7 @@ implementation; no national-body certification claim is made.
 | Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
 | Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
 | Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
-| Individual defect reproduction and changed-result explanations | D001–D040 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
+| Individual defect reproduction and changed-result explanations | D001–D043 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
 | LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
 | Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
 
@@ -112,7 +112,8 @@ REQUIRED_CHARGE_DISPATCH_REVIEW.md. D038 separates shared task/journey energy
 and adds source-attributed investigation/report reconciliation; see
 SHARED_ENERGY_REVIEW.md. D039 records charging input and reconciles model battery
 balances; see BATTERY_BALANCE_REVIEW.md. D040 adds direct batch charging and onward
-batch feasibility for detours; see BATCH_CHARGING_REVIEW.md. Next audit charger
-contention and operational failures,
+batch feasibility for detours; see BATCH_CHARGING_REVIEW.md. D041–D043 verify charger
+arrival/capacity, reject invalid credits and protect newer reservations; see
+CHARGER_CONTENTION_REVIEW.md. Next audit wider operational failure/recovery interactions,
 alongside the wider generation-mode matrix.
 These are concrete next checks, not replacements for the full requirements above.
