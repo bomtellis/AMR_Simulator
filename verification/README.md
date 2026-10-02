@@ -6,7 +6,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest application checkpoint is [Route identification](ROUTE_IDENTIFICATION_REVIEW.md):
+The latest application checkpoint is [Project checks workflow](CHECK_WORKFLOW_REVIEW.md):
+exact object/field navigation, changed-input tracking, check coverage and drawing
+availability invalidation. [Route identification](ROUTE_IDENTIFICATION_REVIEW.md) provides
 profile names, colours, patterns, directional access and a searchable table, shared
 with frozen-run playback. [Appearance](APPEARANCE_REVIEW.md) provides
 saved per-user themes, interface/map text sizes, contrast-checked colours and a
@@ -145,6 +147,8 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D051 | Investigation exports and header replaced the event-log path with `lift_supply` | Keep the energy-source loop variable separate from the original log source path. See LIFT_EVIDENCE_REVIEW.md. |
 | D052 | Unchecking Bidirectional edges still created a link the simulator could traverse both ways | Connect and continuous-drawing tools now write the selected direction explicitly. Existing links retain their directions. See CORRIDOR_DRAWING_REVIEW.md and baseline/corridor-direction-before-fix.txt. |
 | D053 | Reading absent drawing lists silently edited the project and caused a false unsaved indicator | Drawing queries no longer insert configuration fields; explicit mapping edits still create lists. See PROJECT_WORKSPACE_REVIEW.md and baseline/drawing-read-before-fix.txt. |
+| D054 | An edge finding selected its start node instead of its corridor record | Resolve exact finding paths before human-readable targets, then focus supported properties. See CHECK_WORKFLOW_REVIEW.md and baseline/check-navigation-and-drawing-before-fix.txt. |
+| D055 | Adding or removing a referenced drawing left checks current when JSON was unchanged | Track the availability tested by drawing checks and invalidate run readiness when it changes. See CHECK_WORKFLOW_REVIEW.md and baseline/check-navigation-and-drawing-before-fix.txt. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation

@@ -15,6 +15,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from amr_sim_payload_instances import normalise_payload_name
+try:
+    from . import check_dependencies as dependency_checks
+except ImportError:
+    import check_dependencies as dependency_checks
 
 
 def config_fingerprint(config) -> str:
@@ -49,9 +53,35 @@ class CheckReport:
     findings: list[Finding]
     checked_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     acknowledged: set[str] = field(default_factory=set)
+    finding_inputs: dict = field(default_factory=dict)
+    check_groups: dict = field(default_factory=dict)
+    external_files: dict = field(default_factory=dict)
 
     def is_stale(self, config):
-        return self.config_hash != config_fingerprint(config)
+        return (self.config_hash != config_fingerprint(config) or
+                dependency_checks.current_drawings(self.external_files) != self.external_files)
+
+    def changed_inputs(self, finding, config):
+        recorded = self.finding_inputs.get(finding.id)
+        if not recorded:
+            return ['*'] if self.is_stale(config) else []
+        return dependency_checks.changed_inputs(recorded, config, dependency_checks.current_drawings(self.external_files))
+
+    def group_states(self, config):
+        external = dependency_checks.current_drawings(self.external_files)
+        keys = {key for value in self.check_groups.values() for key in value['inputs']}
+        hashes = {key: dependency_checks.input_hash(config, key, external) for key in keys}
+        return {key: {'label': value['label'], 'execution': value['execution'],
+                      'changed_inputs': [name for name, checksum in value['inputs'].items() if hashes[name] != checksum]}
+                for key, value in self.check_groups.items()}
+
+    def finding_states(self, config):
+        external = dependency_checks.current_drawings(self.external_files)
+        keys = {key for inputs in self.finding_inputs.values() for key in inputs}
+        hashes = {key: dependency_checks.input_hash(config, key, external) for key in keys}
+        stale = self.is_stale(config)
+        return {f.id: ([key for key, checksum in self.finding_inputs[f.id].items() if hashes[key] != checksum]
+                       if f.id in self.finding_inputs else ['*'] if stale else []) for f in self.findings}
 
     def acknowledge_warnings(self):
         self.acknowledged = {f.id for f in self.findings if f.severity == "warning"}
@@ -66,12 +96,16 @@ class CheckReport:
                 "checked_at_utc": self.checked_at,
                 "findings": [f.to_dict() for f in self.findings],
                 "acknowledged_warning_ids": sorted(self.acknowledged),
+                "dependency_schema_version": 1,
+                "finding_inputs": self.finding_inputs, "check_groups": self.check_groups,
+                "external_drawing_availability": self.external_files,
                 "scope": "Structural, reference, schedule, graph and payload-capacity preflight; not full simulator validation."}
 
 
 def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport:
     """Read raw input before normalisation; never repair or save it implicitly."""
     findings = []
+    completed_groups = set()
 
     def add(code, severity, path, name, message, consequence, action,
             section="project", target="", kind=None):
@@ -85,8 +119,21 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     def finish():
         rank = {"error": 0, "warning": 1, "info": 2}
         unique = {f.id: f for f in findings}
-        return CheckReport(config_fingerprint(config), sorted(unique.values(), key=lambda f: (rank[f.severity], f.path, f.code)))
+        ordered = sorted(unique.values(), key=lambda f: (rank[f.severity], f.path, f.code))
+        external = dependency_checks.drawing_state(config, base_path)
+        hashes = {}
+        def capture(deps):
+            for key in deps:
+                if key not in hashes:
+                    hashes[key] = dependency_checks.input_hash(config, key, external)
+            return {key: hashes[key] for key in deps}
+        return CheckReport(config_fingerprint(config), ordered,
+            finding_inputs={f.id: capture(dependency_checks.dependencies(f)) for f in ordered},
+            check_groups={key: {'label': label, 'execution': 'completed' if key in completed_groups else 'not_run',
+                                'inputs': capture(deps)}
+                          for key, (label, deps) in dependency_checks.GROUPS.items()}, external_files=external)
 
+    completed_groups.add('structure')
     if not isinstance(config, dict):
         error("/", "The project must be a JSON object.")
         return finish()
@@ -184,6 +231,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         except (TypeError, ValueError):
             error("/simulation/end_datetime", "End must follow start and both dates must use compatible timezone offsets.", "simulation", code="RUN_PERIOD")
 
+    completed_groups.add('values')
     names = {}
     by_collection = {}
     for section, rows, field_name in [(key, config.get(key, []), "id" if key in {"amrs", "lifts", "tasks", "departments"} else "name")
@@ -362,6 +410,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         elif not task.get('route_profile') and 'dirty' in task.get('labels', []) and 'dirty' not in profiles:
             error(f'/tasks/{i}/labels', "The dirty label selects route profile 'dirty', which does not exist.",
                   'tasks', task.get('id', ''), 'PROFILE_REFERENCE')
+    completed_groups.add('references')
     # Deeper checks require structurally and numerically valid inputs.
     if any(f.severity == "error" for f in findings):
         add("CHECKS_INCOMPLETE", "info", "/", "Project", "Some dependent checks were skipped.",
@@ -415,6 +464,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                 "Location has no corridor or lift connection.", "AMR journeys involving this location may be impossible.",
                 "Connect it to the intended graph or acknowledge an intentional isolated location.", "locations", location["name"])
 
+    completed_groups.add('graph')
     try:
         try:
             from .models import JsonStore, normalise_amr_payload_slots
@@ -442,6 +492,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                 add("PAYLOAD_NO_AMR", "warning", f"/payloads/{i}", payload["name"],
                     "No configured active AMR slot can carry this payload.", "Tasks using it may fail for capacity or dimensions.",
                     "Review payload dimensions, allowed orientation and AMR capacity.", "payloads", payload["name"])
+        completed_groups.add('compatibility')
         if include_legacy:
             for message in JsonStore(copy.deepcopy(config)).validate():
                 # Replace the older connectivity diagnostics with graph-aware findings above.
@@ -451,6 +502,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                 add("LEGACY_CHECK", "warning" if constraint else "error", "/", "Existing validation", message,
                     "Review this existing validator finding before relying on a run.",
                     "Use the referenced settings to investigate.", "amrs" if constraint else "project")
+            completed_groups.add('legacy')
     except (TypeError, ValueError, KeyError, AttributeError, OverflowError) as exc:
         error("/", f"Existing checks could not complete: {exc}", code="CHECK_FAILED")
 
@@ -468,6 +520,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                     add("DRAWING_MISSING", "warning", f"/{section}/{i}/filepath", f"Floor {entry.get('floor', '?')}",
                         f"Drawing is unavailable: {value}", "The background cannot be displayed; explicit graph routes can still be simulated.",
                         "Relink the drawing or acknowledge a run without it.", section)
+    completed_groups.add('drawings')
     add("MODEL_SCOPE", "info", "/corridors", "Movement model", "Lane capacity and turn drawings remain approximations.",
         "This check does not verify keep-right lane geometry, swept turns or physical contamination control.",
         "Consult the verification feature inventory before making physical clearance claims.", "corridors", kind="assumption")
@@ -479,4 +532,5 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             "Scenario speed is sampled at phase entry; mid-journey outages are not simulated.",
             "Review lift settings and the lift reservation and repair references before interpreting reliability or utilisation.",
             "lifts", kind="assumption")
+    completed_groups.add('scope')
     return finish()

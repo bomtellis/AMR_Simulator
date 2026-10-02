@@ -120,7 +120,7 @@ class ProjectWorkspace(QWidget):
 
     def activate(self, key):
         handlers = {'project': self.editor.show_project_revisions, 'layout': lambda: self.show_page('layout', self.editor.canvas),
-            'configuration': self.configuration, 'checks': self.editor.validate_json, 'demand': self.editor.show_demand_preview,
+            'configuration': self.configuration, 'checks': self.editor.show_project_checks, 'demand': self.editor.show_demand_preview,
             'simulate': self.editor.show_project_runs, 'review': self.editor.show_results_investigation,
             'report': self.editor.show_project_report, 'playback': self.editor.show_project_playback,
             'appearance': self.editor.show_appearance, 'route_display': self.editor.show_route_identification}

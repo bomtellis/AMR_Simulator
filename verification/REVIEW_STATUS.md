@@ -1,5 +1,28 @@
 # Stage 1 clash review — 2 October 2026
 
+## Later checkpoint — finding navigation and check dependencies
+
+- Check now preserves its existing report when reopened through the project tree,
+  identifies changed inputs for each finding, and lists evaluated/skipped groups
+  in Check coverage. Exact object and field navigation respects pending drafts
+  and refuses stale array indices. See the [illustrated review](CHECK_WORKFLOW_REVIEW.md).
+- **851 / 851 tests passed**, including 26 new acceptance cases; zero broken
+  feature-to-test links. Source fingerprints stayed unchanged during the run.
+  Cases cover dependency changes, passing/skipped groups, older metadata,
+  drawing availability, exact navigation, ambiguous identifiers and large text.
+- D054 fixes corridor findings selecting an endpoint instead of the affected
+  edge. D055 fixes drawing availability changes leaving checks current when the
+  configuration is unchanged. Their before/after baseline is recorded.
+- Actual screens were inspected at 1366 × 900; large-text sizing passes at
+  1280 × 800. LTN checking took approximately 0.169 seconds and status refresh
+  averaged 0.025 seconds locally, leaving the project unmodified. These are
+  observations, not performance gates. No simulator algorithm changed.
+- Every changed project still requires a full recheck and renewed warning review
+  before running. Drawing checks cover availability, not drawing contents.
+  Complete option coverage, generation-rule checks, remaining legacy navigation
+  and physical traffic verification remain open. The unrelated `ltn.json` edit
+  remains outside this checkpoint commit.
+
 ## Later checkpoint — route-profile identification
 
 - Layout and frozen-run playback now share profile names, colours, line patterns

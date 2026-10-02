@@ -45,6 +45,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -3940,6 +3941,14 @@ class AMRGraphEditor(QMainWindow):
         self.workspace.show_page('demand', self.demand_panel)
         self.set_status('Demand preview opened. Build a preview to inspect planned demand.')
 
+    def show_project_checks(self):
+        if not hasattr(self, 'checks_panel'):
+            self.validate_json()
+            return
+        self.checks_panel.check_staleness()
+        self.workspace.show_page('checks', self.checks_panel)
+        self.set_status('Review existing findings or choose Run checks to evaluate the current inputs.')
+
     def validate_json(self):
         from project_checks_panel import ProjectChecksPanel
         if not hasattr(self, 'checks_panel'):
@@ -3953,18 +3962,37 @@ class AMRGraphEditor(QMainWindow):
         self.set_status('Project checks opened; select a finding to investigate.')
 
     def navigate_check_finding(self, finding):
-        points = self.store.all_points()
-        if finding.target in points and finding.section in {'corridors', 'locations', 'lifts'}:
-            self.workspace.show_page('layout', self.canvas)
-            point = points[finding.target]
-            self.floor_spin.setValue(int(point['floor']))
-            self.selected_point_name = finding.target
-            self.selected_point_names = {finding.target}
-            self.selected_edge_keys = set()
-            self.refresh_canvas()
-            self.canvas.centerOn(self.world_to_scene(point['x'], point['y']))
-            self.set_status(f'{finding.target}: {finding.message}')
-            return
+        if hasattr(self, 'checks_panel') and not self.checks_panel.finding_current(finding):
+            self.set_status('This finding needs a recheck before navigating to its recorded object.')
+            return False
+        from check_navigation import destination
+        try:
+            target = destination(self.store.data, finding)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            target = None
+        if target is not None:
+            if target.kind in {'point', 'edge'}:
+                self.workspace.select_object((target.kind, target.key))
+            else:
+                self.workspace.select_configuration(target.kind, target.key)
+            panel = self.properties_panel
+            expected = ('points', (target.key,)) if target.kind == 'point' else ('edges', (target.key,)) if target.kind == 'edge' else (target.kind, (target.key,))
+            field = panel.fields.get(target.field) if panel.target == expected else None
+            if field is not None:
+                focus = getattr(field, 'search', field)
+                panel.scroll.ensureWidgetVisible(focus)
+                focus.setFocus(Qt.OtherFocusReason)
+                if isinstance(field, QLineEdit):
+                    field.selectAll()
+                self.set_status(f'{finding.message} — {finding.path}')
+            elif panel.pending and panel.target != expected:
+                self.set_status('Your existing property draft is retained. Apply or discard it before editing the affected object.')
+            else:
+                self.set_status(f'{finding.message} — {finding.path}. Use the full editor for fields not shown here.')
+            return True
+        if finding.code in {'DUPLICATE', 'IDENTIFIER'} and finding.section in {'corridors', 'locations', 'lifts'}:
+            self.set_status('This graph object has no unambiguous identifier. Repair its identity in the full editor before selecting it on the map. ' + finding.path)
+            return False
         handlers = {
             'simulation': self.manage_simulation_settings,
             'corridors': self.manage_corridor_settings,
