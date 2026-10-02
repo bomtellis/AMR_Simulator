@@ -1,0 +1,6 @@
+Baseline: 315739d
+Command: .venv/Scripts/python.exe -m unittest tests.test_lift_repair_reference -v
+First lift service ends 7.5 s; deterministic 70 s repair ends 77.5 s.
+Lift speed halves during 60–120 s. Second reposition and loaded travel must each take 2 s.
+Expected task finishes: [10, 88] seconds.
+Observed task finishes: [10, 86] seconds (durations used planning time 0).

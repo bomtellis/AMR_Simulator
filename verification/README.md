@@ -127,6 +127,7 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D045 | A temporary lift outage could permanently fail a structurally valid delivery | Separate allowed graph/lift/width feasibility from current availability; retain original task deadlines. See SCENARIO_RECOVERY_REVIEW.md. |
 | D046 | Multi-stop assignment bypassed robot outage admission | Apply robot availability to batch and separate charging admission. See SCENARIO_RECOVERY_REVIEW.md. |
 | D047 | Overnight scenario weekdays were interpreted as the current day, losing the after-midnight portion | Anchor half-open intervals to their start day and preserve fractional boundary comparisons. See SCENARIO_RECOVERY_REVIEW.md. |
+| D048 | Lift service delayed by repair used scenario speed at planning time | Sample reposition, loaded and reset movement speed at their planned phase start; reject non-finite future candidates. See LIFT_REPAIR_REVIEW.md. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation

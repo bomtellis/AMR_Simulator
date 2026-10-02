@@ -9214,65 +9214,37 @@ class Simulation:
             else 0.0,
         )
 
-        loaded_travel_sec = self._lift_vertical_seconds(
-            lift, origin_floor, destination_floor
-        )
-
-        for (
-            next_start,
-            next_finish,
-            next_origin,
-            next_destination,
-            _owner,
-        ) in reservations:
-            reposition_sec = self._lift_vertical_seconds(
-                lift, previous_floor, origin_floor
-            )
-            reposition_start = max(
-                float(arrival_at_lift), previous_finish, blackout_until
-            )
+        def service_at(start, from_floor):
+            reposition_sec = self._lift_vertical_seconds(lift, from_floor, origin_floor, at_time=start)
+            loaded_start = start + reposition_sec + lift.door_time_sec + lift.boarding_time_sec
+            # Outages can make a candidate impossible. Avoid passing infinity
+            # into the scenario clock while evaluating the rest of that slot.
+            loaded_travel_sec = (self._lift_vertical_seconds(
+                lift, origin_floor, destination_floor, at_time=loaded_start)
+                if math.isfinite(loaded_start) else math.inf)
             reposition_finish, loaded_start, loaded_finish, unload_finish = (
-                self._lift_service_finish_time(
-                    lift, reposition_start, reposition_sec, loaded_travel_sec
-                )
-            )
-            reset_for_next_sec = self._lift_vertical_seconds(
-                lift, destination_floor, int(next_origin)
-            )
-            if unload_finish + reset_for_next_sec <= float(next_start) + 1e-9:
-                return {
-                    "lift_start": reposition_start,
-                    "lift_finish": unload_finish,
-                    "reposition_from_floor": previous_floor,
-                    "reposition_to_floor": origin_floor,
-                    "reposition_sec": reposition_sec,
-                    "reposition_finish": reposition_finish,
-                    "loaded_start": loaded_start,
-                    "loaded_finish": loaded_finish,
-                    "loaded_travel_sec": loaded_travel_sec,
-                }
+                self._lift_service_finish_time(lift, start, reposition_sec, loaded_travel_sec))
+            return {
+                'lift_start': start, 'lift_finish': unload_finish,
+                'reposition_from_floor': from_floor, 'reposition_to_floor': origin_floor,
+                'reposition_sec': reposition_sec, 'reposition_finish': reposition_finish,
+                'loaded_start': loaded_start, 'loaded_finish': loaded_finish,
+                'loaded_travel_sec': loaded_travel_sec,
+            }
 
+        for next_start, next_finish, next_origin, next_destination, _owner in reservations:
+            start = max(float(arrival_at_lift), previous_finish, blackout_until)
+            slot = service_at(start, previous_floor)
+            reset_for_next_sec = (self._lift_vertical_seconds(
+                lift, destination_floor, int(next_origin), at_time=slot['lift_finish'])
+                if math.isfinite(slot['lift_finish']) else math.inf)
+            if slot['lift_finish'] + reset_for_next_sec <= float(next_start) + 1e-9:
+                return slot
             previous_finish = max(previous_finish, float(next_finish))
             previous_floor = int(next_destination)
 
-        reposition_sec = self._lift_vertical_seconds(lift, previous_floor, origin_floor)
-        reposition_start = max(float(arrival_at_lift), previous_finish, blackout_until)
-        reposition_finish, loaded_start, loaded_finish, unload_finish = (
-            self._lift_service_finish_time(
-                lift, reposition_start, reposition_sec, loaded_travel_sec
-            )
-        )
-        return {
-            "lift_start": reposition_start,
-            "lift_finish": unload_finish,
-            "reposition_from_floor": previous_floor,
-            "reposition_to_floor": origin_floor,
-            "reposition_sec": reposition_sec,
-            "reposition_finish": reposition_finish,
-            "loaded_start": loaded_start,
-            "loaded_finish": loaded_finish,
-            "loaded_travel_sec": loaded_travel_sec,
-        }
+        start = max(float(arrival_at_lift), previous_finish, blackout_until)
+        return service_at(start, previous_floor)
 
     def _reserve_lift_journey(self, plan: dict, amr_id: str = "") -> None:
         lift = plan["lift"]
@@ -9429,6 +9401,8 @@ class Simulation:
             )
             lift_start = lift_slot["lift_start"]
             lift_finish = lift_slot["lift_finish"]
+            if not math.isfinite(lift_finish):
+                continue
             lift_wait_node = self._lift_wait_node_for_plan(
                 to_lift_segments,
                 origin_lift.name,
