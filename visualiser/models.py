@@ -1275,6 +1275,23 @@ class JsonStore:
         self.data = updated
         return chains
 
+    def draw_corridor_step(self, start, floor, x, y, *, snap=True, bidirectional=True):
+        try:
+            from .corridor_editing import draw_step
+        except ImportError:
+            from corridor_editing import draw_step
+        updated, target = draw_step(self.data, self.all_points(), start, floor, x, y,
+                                    snap=snap, bidirectional=bidirectional)
+        self.data = updated
+        return target
+
+    def connect_corridor(self, start, finish, bidirectional=True):
+        try:
+            from .corridor_editing import connect
+        except ImportError:
+            from corridor_editing import connect
+        return connect(self.data, self.all_points(), start, finish, bidirectional)
+
     def add_location(self, name: str, floor: int, x: float, y: float) -> None:
         self.data["locations"].append(
             {

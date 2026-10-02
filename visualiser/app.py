@@ -56,6 +56,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
     QInputDialog,
+    QLayout,
     QMenu,
 )
 
@@ -229,6 +230,7 @@ class EditorGraphicsView(QGraphicsView):
     middleReleased = Signal(object)
     mouseWheelScrolled = Signal(object)
     mouseDragged = Signal(object, float, float)
+    pointerMoved = Signal(float, float)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -240,6 +242,7 @@ class EditorGraphicsView(QGraphicsView):
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self._middle_panning = False
         self._last_middle_pos = None
+        self.setMouseTracking(True)
 
     def mousePressEvent(self, event):
         scene_pos = self.mapToScene(event.position().toPoint())
@@ -270,6 +273,7 @@ class EditorGraphicsView(QGraphicsView):
 
     def mouseMoveEvent(self, event):
         scene_pos = self.mapToScene(event.position().toPoint())
+        self.pointerMoved.emit(scene_pos.x(), scene_pos.y())
         if self._middle_panning and self._last_middle_pos is not None:
             self.middleDragged.emit(event)
         if event.buttons() & Qt.LeftButton:
@@ -348,6 +352,8 @@ class AMRGraphEditor(QMainWindow):
         self.offset_y = 250
         self.last_pan = None
         self.selected_for_edge = None
+        self.corridor_draw_start = None
+        self.corridor_draw_preview = None
         self.selected_point_name = None
         self.selected_point_names = set()
         self.selected_edge_keys = set()
@@ -415,6 +421,7 @@ class AMRGraphEditor(QMainWindow):
         self._update_history_actions()
 
     def _reset_edit_history(self):
+        self._clear_corridor_drawing()
         self.edit_history.reset(self.store.data)
         self._update_history_actions()
 
@@ -434,6 +441,7 @@ class AMRGraphEditor(QMainWindow):
             self.selected_point_names.clear()
             self.selected_edge_keys.clear()
             self.selected_for_edge = None
+            self._clear_corridor_drawing()
             self._clear_dxf_cache()
             self._pdf_pixmap_cache.clear()
             self._pdf_render_errors.clear()
@@ -623,10 +631,13 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.middleReleased.connect(self.on_middle_release)
         self.canvas.mouseWheelScrolled.connect(self.on_mousewheel)
         self.canvas.mouseDragged.connect(self.on_drag)
+        self.canvas.pointerMoved.connect(self.preview_corridor_drawing)
 
         self.mode_combo = QComboBox()
+        self.mode_combo.setMinimumWidth(230)
         edit_modes = [
             ("Select and move", "select_move", "Select, multi-select, drag and edit existing items."),
+            ("Draw corridor route", "corridor_draw", "Click successive points to draw connected corridors. Existing points and edges snap automatically. Right-click or Escape finishes."),
             ("Add corridor node", "corridor_node", "Place a graph node used by corridor routes and door openings."),
             ("Add location", "location", "Place a general simulation location."),
             ("Draw location boundary", "location_bbox", "Draw or replace the usable boundary around a location."),
@@ -645,7 +656,7 @@ class AMRGraphEditor(QMainWindow):
             self.mode_combo.addItem(label, value)
             self.mode_combo.setItemData(self.mode_combo.count() - 1, tooltip, Qt.ToolTipRole)
         self.mode_combo.setToolTip("Choose what a mouse click does in the topology editor.")
-        self.mode_combo.currentIndexChanged.connect(self.refresh_canvas)
+        self.mode_combo.currentIndexChanged.connect(self.on_edit_mode_changed)
         self.floor_spin = QSpinBox()
         self.floor_spin.setRange(0, 99)
         self.floor_spin.valueChanged.connect(self.on_floor_changed)
@@ -690,6 +701,7 @@ class AMRGraphEditor(QMainWindow):
             content = QWidget()
             content.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
             page_layout = QHBoxLayout(content)
+            page_layout.setSizeConstraint(QLayout.SetMinimumSize)
             page_layout.setContentsMargins(6, 5, 6, 5)
             page_layout.setSpacing(6)
             scroll.setWidget(content)
@@ -815,6 +827,13 @@ class AMRGraphEditor(QMainWindow):
             button("Subdivide selected…", self.subdivide_selected_corridors,
                    "Divide each selected corridor into equal sections. Added sections can change traffic reservations."),
         ], columns=1)
+        add_group(edit, "Draw route", [button("Finish route", self.finish_corridor_drawing,
+                  "Finish the current chain (Escape or right-click). Placed segments remain; Undo removes the last step.")], columns=1)
+        self.finish_route_action = QAction("Finish corridor route", self)
+        self.finish_route_action.setShortcut(QKeySequence("Escape"))
+        self.finish_route_action.setEnabled(False)
+        self.finish_route_action.triggered.connect(self.finish_corridor_drawing)
+        self.addAction(self.finish_route_action)
 
         view = create_page("View")
         add_group(
@@ -936,6 +955,55 @@ class AMRGraphEditor(QMainWindow):
         index = self.mode_combo.findData(str(value))
         if index >= 0:
             self.mode_combo.setCurrentIndex(index)
+
+    def _clear_corridor_drawing(self):
+        self.corridor_draw_start = None
+        self.corridor_draw_preview = None
+        if hasattr(self, 'canvas'):
+            self.canvas.viewport().update()
+
+    def on_edit_mode_changed(self, *_):
+        self._clear_corridor_drawing()
+        if hasattr(self, 'finish_route_action'):
+            self.finish_route_action.setEnabled(self._current_edit_mode() == 'corridor_draw')
+        self.selected_for_edge = None
+        self.edge_delete_start = None
+        self.refresh_canvas()
+
+    def finish_corridor_drawing(self, *_):
+        if self._current_edit_mode() != 'corridor_draw':
+            return
+        self._clear_corridor_drawing()
+        self.set_status('Route finished. Click to start another route; Undo removes the last placed step.')
+
+    def preview_corridor_drawing(self, sx, sy):
+        if self._current_edit_mode() != 'corridor_draw':
+            return
+        from corridor_editing import drawing_target
+        x, y = self.scene_to_world(sx, sy)
+        try:
+            self.corridor_draw_preview = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
+                self.floor_spin.value(), x, y, self.snap_check.isChecked())
+        except (ValueError, KeyError, TypeError):
+            self.corridor_draw_preview = None
+        self.canvas.viewport().update()
+
+    @undoable('Draw corridor step')
+    def draw_next_corridor(self, x, y):
+        try:
+            target = self.store.draw_corridor_step(self.corridor_draw_start, self.floor_spin.value(), x, y,
+                snap=self.snap_check.isChecked(), bidirectional=self.bidirectional_check.isChecked())
+        except (ValueError, KeyError, TypeError) as exc:
+            self.set_status(f'Route was not changed: {exc}')
+            return False
+        self.corridor_draw_start = target['name']
+        self.corridor_draw_preview = None
+        self.selected_point_name = target['name']
+        self.selected_point_names = {target['name']}
+        self.selected_edge_keys.clear()
+        self.refresh_canvas()
+        self.set_status(f"Route end: {target['name']}. Click the next point; right-click or Escape finishes. Existing directions and profiles are retained.")
+        return True
 
     def set_status(self, text):
         self.status_label.setText(text)
@@ -1309,6 +1377,9 @@ class AMRGraphEditor(QMainWindow):
         return created
 
     def on_floor_changed(self, *_):
+        self._clear_corridor_drawing()
+        self.selected_for_edge = None
+        self.edge_delete_start = None
         self.refresh_canvas()
         self._queue_all_floor_dxf_loads(
             active_floor=self.floor_spin.value(), force_reload=False
@@ -2016,6 +2087,16 @@ class AMRGraphEditor(QMainWindow):
             item = self.scene.addLine(pa.x(), pa.y(), pb.x(), pb.y(), pen)
             item.setZValue(5 if key in self.selected_edge_keys else 0)
             self._item_lookup[item] = ("edge", edge)
+            if not edge.get('bidirectional', True) and pa != pb:
+                arrow = QGraphicsPolygonItem(QPolygonF([QPointF(5, 0), QPointF(-5, -4), QPointF(-5, 4)]))
+                arrow.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+                arrow.setPos((pa + pb) / 2)
+                arrow.setRotation(math.degrees(math.atan2(pb.y() - pa.y(), pb.x() - pa.x())))
+                arrow.setPen(QPen(pen.color(), 1))
+                arrow.setBrush(QBrush(pen.color()))
+                arrow.setZValue(6)
+                self.scene.addItem(arrow)
+                self._item_lookup[arrow] = ('edge', edge)
 
     def draw_points(self, floor):
         for name, point in self.store.points_for_floor(floor).items():
@@ -2112,6 +2193,17 @@ class AMRGraphEditor(QMainWindow):
                 self._item_lookup[text] = ("point_label", name)
 
     def draw_overlay_panels(self, painter, viewport_rect):
+        target = self.corridor_draw_preview
+        if self._current_edit_mode() == 'corridor_draw' and target:
+            endpoint = self.canvas.mapFromScene(self.world_to_scene(target['x'], target['y']))
+            start = self.store.all_points().get(self.corridor_draw_start)
+            painter.setPen(QPen(QColor('#7dd3fc'), 2, Qt.DashLine))
+            if start:
+                origin = self.canvas.mapFromScene(self.world_to_scene(start['x'], start['y']))
+                painter.drawLine(origin, endpoint)
+            painter.drawEllipse(endpoint, 7, 7)
+            label = {'point': 'Reuse point', 'edge': 'Join corridor', 'new': 'Place node'}[target['kind']]
+            painter.drawText(endpoint + QPoint(12, -12), label)
         floor = self.floor_spin.value()
         mapped_path = self.get_floor_dxf_path(floor)
         dxf_name = Path(mapped_path).name if mapped_path else "None"
@@ -2127,17 +2219,22 @@ class AMRGraphEditor(QMainWindow):
             "Yellow square = corridor node",
             "Orange D square = door node",
             "Blue/orange/purple edge = staff/public/mixed",
+            "Arrow = one-way corridor direction",
             "Teal diamond = department",
             "Red diamond = lift node",
             f"Mode: {self.mode_combo.currentText()} | Floor: {floor}",
             f"PDF: {pdf_name}",
             f"DXF: {dxf_name}",
-            "Double-click a point to edit",
-            "Ctrl-click nodes/edges for multiple selection",
+            "Double-click = finish route" if self._current_edit_mode() == 'corridor_draw' else "Double-click a point to edit",
+            "Each placed step supports Undo / Redo" if self._current_edit_mode() == 'corridor_draw' else "Ctrl-click nodes/edges for multiple selection",
             f"Selected: {len(self.selected_point_names)} nodes, {len(self.selected_edge_keys)} corridors",
         ]
         if not self._drawings_enabled:
             lines.append("Drawings not loaded")
+        if self._current_edit_mode() == 'corridor_draw':
+            lines.append('Click = next route point | Right-click / Escape = finish')
+            lines.append('Crossing lines join only when a point is placed on them')
+            lines.append('New links need adding to restricted route profiles')
         if self._current_edit_mode() == "department":
             lines.append("Click anywhere to add a department")
         if self._current_edit_mode() == "pdf_underlay_align":
@@ -2358,6 +2455,10 @@ class AMRGraphEditor(QMainWindow):
         if mode == "pdf_underlay_align":
             return
 
+        if mode == 'corridor_draw':
+            self.draw_next_corridor(raw_x, raw_y)
+            return
+
         # Insertion needs a precise endpoint hit; the broad selection radius
         # otherwise consumes every click on corridors shorter than six metres.
         picked = self.find_nearest_point_name(raw_x, raw_y, floor, radius_world=0.45 if mode == "corridor_node" else 3.0)
@@ -2544,18 +2645,20 @@ class AMRGraphEditor(QMainWindow):
 
                 start = self.selected_for_edge
 
-                self.store.add_edge(start, picked)
-                if self.bidirectional_check.isChecked():
-                    self.store.add_edge(picked, start)
+                try:
+                    created = self.store.connect_corridor(start, picked, self.bidirectional_check.isChecked())
+                except (ValueError, TypeError, KeyError) as exc:
+                    self.set_status(f'Corridor was not changed: {exc}')
+                    return
 
                 if self.chain_edges_check.isChecked():
                     self.selected_for_edge = picked
                     self.set_status(
-                        f"Connected {start} -> {picked}. Chain start now: {picked}"
+                        f"{'Connected' if created else 'Reused existing corridor'} {start} -> {picked}. Chain start now: {picked}"
                     )
                 else:
                     self.selected_for_edge = None
-                    self.set_status(f"Connected {start} -> {picked}")
+                    self.set_status(f"{'Connected' if created else 'Reused existing corridor'} {start} -> {picked}")
 
                 self.refresh_canvas()
 
@@ -2578,6 +2681,9 @@ class AMRGraphEditor(QMainWindow):
 
     @undoable("Edit layout")
     def on_double_click(self, event, sx, sy):
+        if self._current_edit_mode() == 'corridor_draw':
+            self.finish_corridor_drawing()
+            return
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)
@@ -2670,6 +2776,9 @@ class AMRGraphEditor(QMainWindow):
     @undoable("Edit layout")
     def on_right_click(self, event, sx, sy):
         mode = self._current_edit_mode()
+        if mode == 'corridor_draw':
+            self.finish_corridor_drawing()
+            return
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)

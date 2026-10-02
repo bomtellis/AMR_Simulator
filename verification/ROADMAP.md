@@ -12,7 +12,7 @@ implementation; no national-body certification claim is made.
 | Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
 | Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
 | Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
-| Individual defect reproduction and changed-result explanations | D001–D051 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
+| Individual defect reproduction and changed-result explanations | D001–D052 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
 | LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
 | Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
 
@@ -40,8 +40,10 @@ implementation; no national-body certification claim is made.
   PERSISTENT_RUN_LINKS_REVIEW.md. Broader project-tree integration remains open.
 - Explicit corridor splitting and subdivision now preserve edge attributes,
   routing/resource references and grouped undo; see CORRIDOR_EDITING_REVIEW.md.
-  Finish continuous corridor drawing, full snapping and automatic linking.
-  Added graph sections can change reservation and people-occupancy timing.
+  Continuous drawing now places and connects successive nodes, snaps to points
+  and explicit edges, previews the next click, and supports per-step undo; see
+  CORRIDOR_DRAWING_REVIEW.md. Broader snapping controls and crossing-junction
+  editing remain open. Added sections can change reservation and people timing.
 - Complete shared accessible themes, font/colour controls, keyboard navigation,
   dialog consistency and bulk-edit previews. Route identification must combine
   labels and line patterns with colour.

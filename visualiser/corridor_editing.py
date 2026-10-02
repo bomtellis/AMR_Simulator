@@ -3,6 +3,98 @@ from copy import deepcopy
 import math
 
 
+def drawing_target(points, edges, floor, x, y, snap=True):
+    """Resolve a drawing click/preview: point, explicit edge, then free grid point."""
+    x, y = float(x), float(y)
+    if not all(math.isfinite(v) for v in (x, y)):
+        raise ValueError('Choose a finite position on the current floor.')
+    local = {name: p for name, p in points.items() if int(p['floor']) == int(floor)}
+
+    def point_at(px, py, radius):
+        candidates = [(math.hypot(float(p['x']) - px, float(p['y']) - py), name) for name, p in local.items()]
+        nearby = sorted((distance, name) for distance, name in candidates if distance <= radius)
+        if nearby:
+            name = nearby[0][1]
+            if local[name].get('kind') == 'department':
+                raise ValueError('Connect to a department location, not the department marker.')
+            return dict(kind='point', name=name, x=float(local[name]['x']), y=float(local[name]['y']))
+
+    target = point_at(x, y, .45)
+    if target:
+        return target
+    def edge_at(x, y, radius):
+        candidates = []
+        for edge in edges:
+            key = tuple(sorted((edge['from'], edge['to'])))
+            if any(n not in local or local[n].get('kind') == 'department' for n in key):
+                continue
+            a, b = (local[n] for n in key)
+            try:
+                fraction = project_fraction(a, b, x, y)
+            except ValueError:
+                continue
+            if not 0 < fraction < 1:
+                continue
+            px = float(a['x']) + fraction * (float(b['x']) - float(a['x']))
+            py = float(a['y']) + fraction * (float(b['y']) - float(a['y']))
+            distance = math.hypot(px - x, py - y)
+            if distance <= radius:
+                candidates.append((distance, key, fraction, px, py))
+        if candidates:
+            _, key, fraction, px, py = min(candidates)
+            return dict(kind='edge', key=key, fraction=fraction, x=px, y=py)
+    target = edge_at(x, y, .45)
+    if target:
+        return target
+    x, y = (float(round(x)), float(round(y))) if snap else (round(x, 3), round(y, 3))
+    # Grid rounding must not create a second point at an occupied position.
+    return point_at(x, y, 1e-6) or edge_at(x, y, 1e-6) or dict(kind='new', x=x, y=y)
+
+
+def connect(config, points, start, finish, bidirectional=True):
+    """Add one physical corridor without changing any existing permissions."""
+    a, b = points.get(start), points.get(finish)
+    if not a or not b or a.get('kind') == 'department' or b.get('kind') == 'department':
+        raise ValueError('Both corridor endpoints must be graph points.')
+    if int(a['floor']) != int(b['floor']):
+        raise ValueError('Corridors must stay on one floor. Use a lift between floors.')
+    if start == finish or math.hypot(float(a['x']) - float(b['x']), float(a['y']) - float(b['y'])) < 1e-6:
+        raise ValueError('Choose a different point to extend the route.')
+    project_fraction(a, b, a['x'], a['y'])
+    if any({e['from'], e['to']} == {start, finish} for e in config['corridors']['edges']):
+        return False
+    width = float(config.get('building', {}).get('default_corridor_width_m', 2.4))
+    if not math.isfinite(width) or width <= 0:
+        raise ValueError('Set a positive finite default corridor width before drawing.')
+    config['corridors']['edges'].append({'from': start, 'to': finish, 'bidirectional': bool(bidirectional),
+                                        'width_m': width, 'people_area_type': 'none', 'people_profile_ids': []})
+    return True
+
+
+def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True):
+    """Atomically place/reuse/split a target and connect it to the current anchor."""
+    if start is not None and (start not in points or int(points[start]['floor']) != int(floor)):
+        raise ValueError('Finish this route before starting on another floor or layout.')
+    target = drawing_target(points, config['corridors']['edges'], floor, x, y, snap)
+    result = deepcopy(config)
+    if target['kind'] == 'edge':
+        result, chains = subdivide(config, points, {target['key']: [target['fraction']]})
+        name = chains[target['key']][1]
+    elif target['kind'] == 'point':
+        name = target['name']
+    else:
+        index = 1
+        while f'C{int(floor)}-{index}' in points:
+            index += 1
+        name = f'C{int(floor)}-{index}'
+        result['corridors']['nodes'].append(dict(name=name, floor=int(floor), x=target['x'], y=target['y'], has_door=False,
+                                               door_clear_width_m=float(config.get('building', {}).get('default_door_clear_width_m', .9) or .9)))
+    updated_points = dict(points)
+    updated_points.update({p['name']: p for p in result['corridors']['nodes']})
+    connected = connect(result, updated_points, start, name, bidirectional) if start is not None and start != name else False
+    return result, dict(target, name=name, connected=connected)
+
+
 def project_fraction(a, b, x, y):
     dx, dy = float(b['x']) - float(a['x']), float(b['y']) - float(a['y'])
     length_sq = dx * dx + dy * dy
