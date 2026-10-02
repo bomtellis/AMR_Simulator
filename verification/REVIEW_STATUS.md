@@ -1,5 +1,26 @@
 # Stage 1 clash review — 2 October 2026
 
+## Later checkpoint — configuration objects and route permissions
+
+- Robots, payloads, lifts, static tasks and route profiles now appear in the
+  project tree with common contextual fields in the Configuration workspace.
+  Route permissions use searchable choices and named edge pairs, with explicit
+  unrestricted-empty and directional semantics. See
+  [Configuration properties](CONFIGURATION_PROPERTIES_REVIEW.md).
+- **782 / 782 tests passed**, including 20 new acceptance cases; zero broken
+  feature-to-test links. Independent references verify robot-speed duration,
+  payload/door clearance, lift unit conversion, dirty-route timing, missing-edge
+  failure and the effect of explicitly unrestricted permissions.
+- Scalar edits preserve nested slots, tracked contents and unrelated fields.
+  Draft pinning, stale-update rejection, undo, recovery and desktop sizing pass.
+- Actual themed screens were inspected at 1366 × 900. Opening the LTN robot
+  form took 0.013 seconds and a profile form 0.0629 seconds locally. These are
+  measurements, not performance acceptance thresholds. No simulator algorithms
+  were changed by this checkpoint.
+- Creation/deletion/renaming, nested options and complex schedules remain in the
+  full editors. Accessibility, route styling, verified geometry and the wider
+  roadmap remain open. The unrelated `ltn.json` edit stays outside this commit.
+
 ## Later checkpoint — layout objects and contextual properties
 
 - A searchable layout tree lists points and explicit directed corridor records.

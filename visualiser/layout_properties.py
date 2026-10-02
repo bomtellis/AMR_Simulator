@@ -11,6 +11,9 @@ def fingerprint(config):
 
 def records(config, target):
     kind, keys = target
+    if kind not in {'points', 'edges'}:
+        from configuration_properties import records as config_records
+        return config_records(config, target)
     if kind == 'edges':
         edges = config.get('corridors', {}).get('edges', [])
         if not keys or any(type(i) is not int or not 0 <= i < len(edges) for i in keys):
@@ -34,6 +37,9 @@ def records(config, target):
 
 
 def specs(config, target):
+    if target[0] not in {'points', 'edges'}:
+        from configuration_properties import specs as config_specs
+        return config_specs(config, target)
     rows = records(config, target)
     kinds = {kind for kind, _ in rows}
     fields = []
@@ -58,6 +64,9 @@ def specs(config, target):
 def apply_properties(config, target, changes, expected):
     if fingerprint(config) != expected:
         raise ValueError('The project changed after these values were opened. Discard the draft to reload current values.')
+    if target[0] not in {'points', 'edges'}:
+        from configuration_properties import apply
+        return apply(config, target, changes)
     fields = {key: kind for key, _label, kind in specs(config, target)}
     if not changes or any(key not in fields for key in changes):
         raise ValueError('Choose supported properties to change.')

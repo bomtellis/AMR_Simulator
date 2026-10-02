@@ -1,6 +1,8 @@
 """Contextual layout fields with an explicit, atomic apply and bulk preview."""
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QLineEdit, QComboBox, QPushButton, QScrollArea
 from layout_properties import records, specs, fingerprint, apply_properties
+from configuration_properties import SECTIONS, REQUIRED, choices
+from property_choices import PropertyChoices
 
 
 class ProjectPropertiesPanel(QWidget):
@@ -44,6 +46,8 @@ class ProjectPropertiesPanel(QWidget):
 
     def selection(self):
         editor = self.editor
+        if getattr(editor, 'workspace', None) is not None and editor.workspace.stage == 'configuration':
+            return editor.workspace.selected_configuration
         names = set(editor.selected_point_names)
         if editor.selected_point_name:
             names.add(editor.selected_point_name)
@@ -83,26 +87,40 @@ class ProjectPropertiesPanel(QWidget):
                 self.note.setText('Select one object, corridor records, or matching nodes for a bulk edit.')
                 return
             rows = records(self.editor.store.data, target)
-            labels = list(target[1]) if target[0] == 'points' else [f"{r['from']} → {r['to']} (record {i + 1})" for i, (_, r) in zip(target[1], rows)]
+            if target[0] in SECTIONS:
+                section_title, identity = SECTIONS[target[0]]
+                labels = [f"{section_title}: {rows[0][1].get(identity) if identity else target[1][0]}"]
+            else:
+                labels = list(target[1]) if target[0] == 'points' else [f"{r['from']} → {r['to']} (record {i + 1})" for i, (_, r) in zip(target[1], rows)]
             self.title.setText('\n'.join(str(s) for s in labels[:3]) +
                                (f'\n… and {len(labels) - 3} more objects' if len(labels) > 3 else ''))
             self.title.setToolTip('\n'.join(str(s) for s in labels))
             self.note.setText('Names and floors are read-only here. Blank optional values use the existing defaults. Only changed fields will be applied.')
+            if target[0] == 'route_profiles':
+                self.note.setText('Empty lists mean unrestricted. Edges are directional. Include shared sections in every permitted profile. Task allowances extend these lists; return profiles are explicit. Empty approach, charging and idle-return journeys are unrestricted by profiles.')
+            elif target[0] in SECTIONS:
+                self.note.setText('Identity and unshown settings are preserved. Only changed fields apply. Use the existing full editor for nested slots, schedules and other options.')
             for key, label, kind in specs(self.editor.store.data, target):
                 # An explicit JSON null is not the same as an absent override
                 # (for example null wash duration means zero, absent means 300).
                 values = [(key in r, r.get(key)) for _, r in rows]
                 mixed = any(value != values[0] for value in values[1:])
                 present, value = values[0]
-                if kind in {'bool', 'people', 'location'}:
+                if kind in {'nodes', 'edges', 'lifts', 'orientations'}:
+                    widget = PropertyChoices(self.editor.store.data, kind, value)
+                    widget.changed.connect(self.changed)
+                elif kind in {'bool', 'people', 'location', 'payload', 'profile'}:
                     widget = QComboBox()
                     if mixed:
                         widget.addItem('Mixed — leave unchanged', '__mixed__')
                     widget.addItem('Use default / unset', None)
-                    choices = [('Yes', True), ('No', False)] if kind == 'bool' else (
+                    if key in REQUIRED.get(target[0], set()):
+                        widget.setItemText(widget.count() - 1, 'Choose a value')
+                        widget.model().item(widget.count() - 1).setEnabled(False)
+                    options = [('Yes', True), ('No', False)] if kind == 'bool' else (
                         [('No routine occupancy', 'none'), ('Staff', 'staff'), ('Public', 'public'), ('Staff and public', 'both')]
-                        if kind == 'people' else [(r['name'], r['name']) for r in self.editor.store.data.get('locations', [])])
-                    for text, data in choices:
+                        if kind == 'people' else choices(self.editor.store.data, kind))
+                    for text, data in options:
                         widget.addItem(text, data)
                     if present and value is None and not mixed:
                         widget.addItem('Existing null — unchanged', '__null__')
@@ -110,7 +128,7 @@ class ProjectPropertiesPanel(QWidget):
                     else:
                         index = 0 if mixed else widget.findData(value)
                     if index < 0:
-                        widget.addItem(str(value) + ' (existing value)', value)
+                        widget.addItem((str(value) if value != '' else 'Blank') + ' (existing value)', value)
                         index = widget.count() - 1
                     widget.setCurrentIndex(index)
                     widget.currentIndexChanged.connect(self.changed)
@@ -122,11 +140,14 @@ class ProjectPropertiesPanel(QWidget):
                 self.fields[key] = widget
                 self.labels[key] = label
                 self.initial[key] = self.value(widget)
-                if kind in {'positive', 'nonnegative'}:
+                if kind in {'positive', 'nonnegative', 'integer', 'percent'}:
                     line = QHBoxLayout()
                     line.addWidget(widget)
                     default_button = QPushButton('Default')
                     default_button.setToolTip('Remove this explicit override from all selected records.')
+                    if key in REQUIRED.get(target[0], set()):
+                        default_button.setEnabled(False)
+                        default_button.setToolTip('This property requires an explicit value.')
                     default_button.clicked.connect(lambda _checked=False, field=widget: field.setText('default'))
                     line.addWidget(default_button)
                     self.form.addRow(label, line)
@@ -140,7 +161,7 @@ class ProjectPropertiesPanel(QWidget):
                          'wash_cycle_duration_sec': 'Unset: 300 seconds in the simulator. Zero explicitly disables the wash delay.',
                          'wash_location': 'Unset: use this location.',
                          'has_door': 'Unset: no door restriction.', 'wash_cycle_required': 'Unset: no required wash cycle.'}
-                widget.setToolTip(hints.get(key, label))
+                widget.setToolTip((label + '. Default removes the explicit value; simulator defaults then apply.') if target[0] in SECTIONS else hints.get(key, label))
             profiles = self.editor.store.data.get('route_profiles', {})
             if profiles:
                 hint = QLabel('Clean / dirty / shared access is defined by Route profiles in Configuration. Changing people occupancy does not change those profiles.')
@@ -153,6 +174,8 @@ class ProjectPropertiesPanel(QWidget):
 
     @staticmethod
     def value(widget):
+        if isinstance(widget, PropertyChoices):
+            return widget.value()
         return widget.currentData() if isinstance(widget, QComboBox) else widget.text().strip()
 
     def changes(self):
@@ -170,7 +193,11 @@ class ProjectPropertiesPanel(QWidget):
         self.pending = bool(changes)
         self.apply_button.setEnabled(self.pending)
         self.discard_button.setEnabled(self.pending)
-        lines = [f"{self.labels[key]}: {self.initial[key] if self.initial[key] is not None else 'default'} → {value if value is not None else 'default'}" for key, value in changes.items()]
+        def describe(value):
+            if isinstance(value, list):
+                return f'{len(value)} selected' if value else 'empty list'
+            return str(value) if value is not None else 'default'
+        lines = [f"{self.labels[key]}: {describe(self.initial[key])} → {describe(value)}" for key, value in changes.items()]
         self.preview.setText(f'{len(self.target[1])} object(s) will change.\n' + '\n'.join(lines) if changes else '')
         self.editor._update_unsaved_indicator()
         if not self.pending:
@@ -193,7 +220,10 @@ class ProjectPropertiesPanel(QWidget):
             return True
         except (ValueError, KeyError, TypeError) as exc:
             self.note.setText(str(exc))
-            self.editor.workspace.show_page('layout', self.editor.canvas)
+            if self.target[0] in SECTIONS:
+                self.editor.workspace.configuration()
+            else:
+                self.editor.workspace.show_page('layout', self.editor.canvas)
             return False
 
     def recovery_config(self):

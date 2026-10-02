@@ -33,8 +33,11 @@ implementation; no national-body certification claim is made.
   an embedded timeline and local monitors; see PROJECT_PLAYBACK_REVIEW.md.
   Layout objects now have a searchable tree and contextual properties with bulk
   previews, undo and draft safeguards; see LAYOUT_PROPERTIES_REVIEW.md.
-  Configuration-object properties, broader identity/floor editing and replacement
-  of other frequent dialogs remain unfinished. Playback underlays and large-log
+  Robots, payloads, lifts, static tasks and route profiles now have common
+  contextual fields and searchable tree entries; route permissions use checklists
+  and named edge selection. See CONFIGURATION_PROPERTIES_REVIEW.md. Nested options,
+  creation/deletion/renaming, broader identity/floor editing and replacement
+  of other dialogs remain unfinished. Playback underlays and large-log
   scaling remain open.
 - Centralised state and undoable editing: snapshot undo/redo exists; finish
   command coverage and frequent editing outside modal dialogs.
@@ -44,8 +47,8 @@ implementation; no national-body certification claim is made.
 - Results stay external. Immutable run inputs/revision/software binding and
   persistent run references/custom locations now survive reopening. Moved runs
   retain missing entries and relink by identity; Save As rebases paths. See
-  PERSISTENT_RUN_LINKS_REVIEW.md. The workflow tree now includes floors; fuller
-  configuration-object tree integration remains open; layout objects are listed.
+  PERSISTENT_RUN_LINKS_REVIEW.md. Layout objects and the main configuration object
+  types are listed in the tree; generated rules and other advanced objects remain.
 - Explicit corridor splitting and subdivision now preserve edge attributes,
   routing/resource references and grouped undo; see CORRIDOR_EDITING_REVIEW.md.
   Continuous drawing now places and connects successive nodes, snaps to points

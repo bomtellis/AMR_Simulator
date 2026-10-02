@@ -550,11 +550,11 @@ class AMRGraphEditor(QMainWindow):
             self.file_label.setToolTip(self._recovery_status)
             return False
 
-    @undoable('Edit layout properties')
+    @undoable('Edit object properties')
     def apply_layout_properties(self, updated):
         self.store.data = updated
         self.refresh_canvas()
-        self.set_status('Layout properties applied. Undo restores the previous values.')
+        self.set_status('Object properties applied. Undo restores the previous values.')
 
     def _finish_property_draft(self):
         return not hasattr(self, 'properties_panel') or self.properties_panel.apply()
@@ -2451,6 +2451,7 @@ class AMRGraphEditor(QMainWindow):
     def on_left_click(self, event, sx, sy):
         if hasattr(self, 'workspace'):
             self.workspace.selected_edge_record = None
+            self.workspace.selected_configuration = None
         mode = self._current_edit_mode()
         floor = self.floor_spin.value()
         raw_x, raw_y = self.scene_to_world(sx, sy)
@@ -3231,6 +3232,7 @@ class AMRGraphEditor(QMainWindow):
         if hasattr(self, 'properties_panel'):
             self.properties_panel.reset()
             self.workspace.selected_edge_record = None
+            self.workspace.selected_configuration = None
         self.store = store
         self._recovered_work = False
         self.project = project

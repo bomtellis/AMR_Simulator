@@ -25,10 +25,15 @@ class ProjectWorkspace(QWidget):
         self._objects = None
         self.selected_edge_record = None
         self.object_items = {}
+        self.configuration_items = {}
+        self._configuration_objects = None
+        self.selected_configuration = None
         self._navigating = False
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         split = QSplitter()
+        self.splitter = split
+        self._property_layout = None
         root.addWidget(split)
         sidebar = QWidget()
         nav = QVBoxLayout(sidebar)
@@ -36,8 +41,8 @@ class ProjectWorkspace(QWidget):
         self.project_label.setWordWrap(True)
         nav.addWidget(self.project_label)
         self.search = QLineEdit()
-        self.search.setPlaceholderText('Find layout objects…')
-        self.search.setAccessibleName('Filter layout objects')
+        self.search.setPlaceholderText('Find project objects…')
+        self.search.setAccessibleName('Filter project objects')
         self.search.textChanged.connect(self.filter_objects)
         nav.addWidget(self.search)
         self.tree = QTreeWidget()
@@ -90,6 +95,9 @@ class ProjectWorkspace(QWidget):
         key = item.data(0, Qt.UserRole)
         if key is None:
             return
+        if isinstance(key, tuple) and key[0] == 'config':
+            self.select_configuration(key[1], key[2])
+            return
         if isinstance(key, tuple) and key[0] in {'point', 'edge'}:
             self.select_object(key)
             return
@@ -118,7 +126,14 @@ class ProjectWorkspace(QWidget):
         self.stage = key
         self.stack.setCurrentWidget(widget)
         self.editor.ribbon_tabs.setVisible(key == 'layout')
-        self.properties.setVisible(key == 'layout')
+        properties_visible = key == 'layout' or (key == 'configuration' and (self.selected_configuration is not None or self.properties.pending))
+        self.properties.setVisible(properties_visible)
+        property_layout = (key, properties_visible)
+        if property_layout != self._property_layout:
+            self._property_layout = property_layout
+            self.properties.setMaximumWidth(10000 if key == 'configuration' else 410)
+            if properties_visible:
+                self.splitter.setSizes([200, 280, 900] if key == 'configuration' else [200, 960, 300])
         self._navigating = True
         try:
             self.tree.setCurrentItem(self.items[key])
@@ -209,6 +224,7 @@ class ProjectWorkspace(QWidget):
                 item.setExpanded(True)
             finally:
                 self.tree.blockSignals(False)
+        self.refresh_configuration_objects()
         self.properties.refresh()
         self.filter_objects()
         if self.stage == 'layout' and not self.properties.pending:
@@ -220,6 +236,52 @@ class ProjectWorkspace(QWidget):
                     self.tree.blockSignals(True)
                     self.tree.setCurrentItem(row)
                     self.tree.blockSignals(False)
+        elif self.stage == 'configuration' and self.selected_configuration is not None:
+            section, keys = self.selected_configuration
+            row = self.configuration_items.get(('config', section, keys[0]))
+            if row is not None:
+                self.tree.blockSignals(True)
+                self.tree.setCurrentItem(row)
+                self.tree.blockSignals(False)
+
+    def refresh_configuration_objects(self):
+        from configuration_properties import SECTIONS
+        config = self.editor.store.data
+        catalogue = []
+        for section, (title, identity) in SECTIONS.items():
+            source = config.get(section, {} if section == 'route_profiles' else [])
+            entries = [(name, name) for name in source] if section == 'route_profiles' else [
+                (index, str(row.get(identity, f'Unnamed record {index + 1}'))) for index, row in enumerate(source)]
+            catalogue.append((section, title, tuple(entries)))
+        signature = tuple(catalogue)
+        if signature == self._configuration_objects:
+            return
+        self._configuration_objects = signature
+        expanded = {key for key, item in self.configuration_items.items() if item.isExpanded()}
+        self.tree.blockSignals(True)
+        try:
+            self.items['configuration'].takeChildren()
+            self.configuration_items = {}
+            for section, title, entries in catalogue:
+                group = QTreeWidgetItem([f'{title} ({len(entries)})'])
+                self.items['configuration'].addChild(group)
+                self.configuration_items[('group', section)] = group
+                for key, label in entries:
+                    item = QTreeWidgetItem([label])
+                    token = ('config', section, key)
+                    item.setData(0, Qt.UserRole, token)
+                    item.setToolTip(0, title + ': ' + label)
+                    group.addChild(item)
+                    self.configuration_items[token] = item
+            for key in expanded:
+                if key in self.configuration_items:
+                    self.configuration_items[key].setExpanded(True)
+        finally:
+            self.tree.blockSignals(False)
+
+    def select_configuration(self, section, key):
+        self.selected_configuration = (section, (key,))
+        self.configuration()
 
     def filter_objects(self, *_):
         if not hasattr(self, 'items'):
@@ -233,9 +295,9 @@ class ProjectWorkspace(QWidget):
             if query and any(child_matches):
                 item.setExpanded(True)
             return visible
-        root = self.items['layout']
-        for index in range(root.childCount()):
-            visit(root.child(index))
+        for root in (self.items['layout'], self.items['configuration']):
+            for index in range(root.childCount()):
+                visit(root.child(index))
 
     def select_object(self, key):
         editor = self.editor
@@ -272,7 +334,7 @@ class ProjectWorkspace(QWidget):
         if 'configuration' not in self.pages:
             content = QWidget()
             layout = QVBoxLayout(content)
-            intro = QLabel('Configure the current project. Changes share the layout editor’s undo history. Preview demand and run checks before simulation.')
+            intro = QLabel('Select a robot, payload, lift, task or route profile under Configuration in the project tree to edit its properties here. Changes share the project undo history. The full editors below provide nested slots, schedules and other options. Preview demand and run checks before simulation.')
             intro.setWordWrap(True)
             layout.addWidget(intro)
             for title, method in CONFIGURATION:
