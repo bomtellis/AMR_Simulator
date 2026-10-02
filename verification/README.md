@@ -6,7 +6,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest application checkpoint is [Appearance](APPEARANCE_REVIEW.md):
+The latest application checkpoint is [Route identification](ROUTE_IDENTIFICATION_REVIEW.md):
+profile names, colours, patterns, directional access and a searchable table, shared
+with frozen-run playback. [Appearance](APPEARANCE_REVIEW.md) provides
 saved per-user themes, interface/map text sizes, contrast-checked colours and a
 scalable or hidden layout legend. [Configuration properties](CONFIGURATION_PROPERTIES_REVIEW.md) provides
 common object fields and searchable route-profile permissions in the main window.

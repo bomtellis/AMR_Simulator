@@ -4591,7 +4591,7 @@ class SimulationVisualizer(QMainWindow):
                 continue
             ax, ay = self.world_to_scene(a["x"], a["y"])
             bx, by = self.world_to_scene(b["x"], b["y"])
-            self.draw_line_item(ax, ay, bx, by, "#5f8dd3", 0.0)
+            self.draw_line_item(ax, ay, bx, by, getattr(self, 'layout_edge_colour', '#5f8dd3'), 0.0)
 
         for name, point in self.layout_model.points_for_floor(floor).items():
             if not self._point_in_world_rect(

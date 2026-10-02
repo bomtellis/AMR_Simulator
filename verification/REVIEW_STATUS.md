@@ -1,5 +1,27 @@
 # Stage 1 clash review — 2 October 2026
 
+## Later checkpoint — route-profile identification
+
+- Layout and frozen-run playback now share profile names, colours, line patterns
+  and direction arrows. Project → Route identification provides a searchable
+  access table, lift-allowance summary and per-user style controls. See the
+  [illustrated review](ROUTE_IDENTIFICATION_REVIEW.md).
+- **825 / 825 tests passed**, including 25 new acceptance cases; zero broken
+  feature-to-test links. Independent clean/dirty/shared direction sets, physical
+  one-way edges, empty/node allowances, automatic connections and their provenance,
+  malformed input, style persistence and frozen playback inputs are covered.
+- The reference clean and dirty paths remain 10 m and 14 m, giving 9 s and 11 s
+  loaded tasks at 2 m/s plus handling. No simulation algorithm changed.
+- LTN projects 804 physical sections and three profiles. Opening the combined
+  access display took approximately 0.184 seconds locally; saved LTN playback
+  loading/display took approximately 0.724 seconds for 9,612 events. Frozen
+  configuration checksums remained unchanged. These are observations, not gates.
+- Actual screens were inspected at 1366 × 900; 24 pt controls fit a scrollable
+  1280 × 800 workspace. Dense label placement, standalone viewer controls and
+  verified traffic geometry remain open. Parallel strokes are schematic and do
+  not represent implemented lanes. Broad roadmap gates remain open. The unrelated
+  `ltn.json` changes remain outside this commit.
+
 ## Later checkpoint — saved appearance preferences
 
 - Project → Appearance provides Light, Dark and High contrast presets, adjustable

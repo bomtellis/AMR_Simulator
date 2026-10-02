@@ -1,8 +1,8 @@
 """Read-only, revision-bound playback inside the project workspace."""
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot, Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog, QMainWindow, QDockWidget, QScrollArea
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot, Qt, QPointF
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog, QMainWindow, QDockWidget, QScrollArea, QComboBox, QCheckBox
 
 from amr_run_review import verified_inputs
 from amr_run_evidence import file_hash
@@ -111,6 +111,40 @@ class BoundVisualizer(SimulationVisualizer):
         self.live_waste_fill_check.setChecked(False)
         self.live_waste_fill_check.setText('Estimate waste fill from saved rules')
         self.live_waste_fill_check.setToolTip('Optional calculation from frozen configuration; this is not recorded inventory evidence.')
+        from appearance import controller
+        from route_display import styles_for, SCOPE
+        self.route_styles = styles_for(controller())
+        self.route_model = None
+        self.route_error = ''
+        self.route_choice = QComboBox()
+        self.route_choice.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.route_choice.setMinimumContentsLength(20)
+        self.route_choice.setAccessibleName('Frozen run route profile display')
+        self.route_labels = QCheckBox('Show profile labels')
+        self.route_labels.setChecked(True)
+        self.route_note = QLabel('Profile access from frozen inputs. ' + SCOPE)
+        self.route_note.setWordWrap(True)
+        for widget in (self.route_note, self.route_choice, self.route_labels):
+            side.layout().addWidget(widget)
+        self.route_choice.currentIndexChanged.connect(self.refresh_static_scene)
+        self.route_labels.toggled.connect(self.refresh_static_scene)
+        self.route_styles.changed.connect(self.refresh_static_scene)
+        controller().changed.connect(self.refresh_static_scene)
+
+    def draw_layout_qt(self, floor):
+        self.layout_edge_colour = '#505050' if hasattr(self, 'route_choice') and self.route_choice.currentData() is not None else '#5f8dd3'
+        super().draw_layout_qt(floor)
+        if not hasattr(self, 'route_choice'):
+            return
+        from route_display import draw_access
+        selected = self.route_choice.currentData()
+        if selected is None or self.route_model is None:
+            return
+        points, sections, _rules = self.route_model
+        items = draw_access(self.graphics_scene, points, sections, floor, selected, self.route_styles,
+                            lambda x, y: QPointF(*self.world_to_scene(x, y)),
+                            self.route_styles.appearance.value.map_font_size, self.route_labels.isChecked())
+        self.static_items.extend(item for item, _section in items)
 
     def _content_bounds(self):
         bounds = super()._content_bounds()
@@ -172,6 +206,15 @@ class BoundVisualizer(SimulationVisualizer):
 
     def adopt(self, data):
         directory, _manifest, self.layout_model, self.sim_log = data
+        from route_display import access_preview, populate_choices, SCOPE
+        populate_choices(self.route_choice, self.layout_model.data)
+        try:
+            self.route_model = access_preview(self.layout_model.data)
+            self.route_error = ''
+        except (ValueError, TypeError, KeyError, OverflowError) as exc:
+            self.route_model = None
+            self.route_error = 'Profile preview unavailable: ' + str(exc)
+        self.route_note.setText(self.route_error or 'Profile access from frozen inputs. ' + SCOPE)
         self.current_json_path = str(directory / 'config.json')
         self.current_csv_path = str(directory / OUTPUTS['steps_csv'])
         self.current_time = None

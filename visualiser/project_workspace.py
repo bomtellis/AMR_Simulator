@@ -62,6 +62,10 @@ class ProjectWorkspace(QWidget):
         self.items['project'].addChild(child)
         self.items['project'].setExpanded(True)
         self.items['appearance'] = child
+        child = QTreeWidgetItem(['Route identification'])
+        child.setData(0, Qt.UserRole, 'route_display')
+        self.items['project'].addChild(child)
+        self.items['route_display'] = child
         child = QTreeWidgetItem(['Demand preview'])
         child.setData(0, Qt.UserRole, 'demand')
         self.items['checks'].addChild(child)
@@ -119,7 +123,7 @@ class ProjectWorkspace(QWidget):
             'configuration': self.configuration, 'checks': self.editor.validate_json, 'demand': self.editor.show_demand_preview,
             'simulate': self.editor.show_project_runs, 'review': self.editor.show_results_investigation,
             'report': self.editor.show_project_report, 'playback': self.editor.show_project_playback,
-            'appearance': self.editor.show_appearance}
+            'appearance': self.editor.show_appearance, 'route_display': self.editor.show_route_identification}
         handlers[key]()
 
     def show_page(self, key, widget):
@@ -146,7 +150,7 @@ class ProjectWorkspace(QWidget):
             self.tree.setCurrentItem(self.items[key])
         finally:
             self._navigating = False
-        index = [s[0] for s in STAGES].index({'demand': 'checks', 'playback': 'review', 'appearance': 'project'}.get(key, key))
+        index = [s[0] for s in STAGES].index({'demand': 'checks', 'playback': 'review', 'appearance': 'project', 'route_display': 'layout'}.get(key, key))
         self.previous.setEnabled(index > 0)
         self.next.setEnabled(index < len(STAGES) - 1)
         self.refresh()
@@ -164,7 +168,7 @@ class ProjectWorkspace(QWidget):
                 runs.report()
                 return
         keys = [s[0] for s in STAGES]
-        index = keys.index({'demand': 'checks', 'playback': 'review', 'appearance': 'project'}.get(self.stage, self.stage)) + delta
+        index = keys.index({'demand': 'checks', 'playback': 'review', 'appearance': 'project', 'route_display': 'layout'}.get(self.stage, self.stage)) + delta
         if 0 <= index < len(keys):
             self.activate(keys[index])
 

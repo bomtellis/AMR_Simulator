@@ -59,8 +59,11 @@ implementation; no national-body certification claim is made.
   custom colours are available under Project → Appearance; see APPEARANCE_REVIEW.md.
   Live standard controls and layout labels/legend are covered; playback/custom
   rendering and comprehensive accessibility remain open. Complete keyboard navigation,
-  dialog consistency and bulk-edit previews. Route identification must combine
-  labels and line patterns with colour.
+  dialog consistency and bulk-edit previews. Route identification now combines
+  names, line patterns, colours and directional arrows in Layout and frozen-run
+  playback, with a searchable permission table and saved per-user styles; see
+  ROUTE_IDENTIFICATION_REVIEW.md. Automatic label placement and legacy standalone
+  viewer controls remain open; the overlay is not verified traffic geometry.
 
 ## 4. Verified geometric traffic — completion OPEN
 

@@ -307,6 +307,10 @@ class AMRGraphEditor(QMainWindow):
         self.resize(1500, 920)
         from appearance import controller
         self.appearance = controller()
+        from route_display import styles_for
+        self.route_styles = styles_for(self.appearance)
+        self._route_access_cache = None
+        self.route_preview_error = ''
 
         self.store = JsonStore()
         self.current_json_path = None
@@ -392,6 +396,7 @@ class AMRGraphEditor(QMainWindow):
         self._recovery_timer.start(30000)
         QTimer.singleShot(0, self._announce_recovery)
         self.appearance.changed.connect(self._appearance_changed)
+        self.route_styles.changed.connect(self.refresh_canvas)
 
     def _appearance_changed(self, _value):
         self.refresh_canvas()
@@ -401,6 +406,25 @@ class AMRGraphEditor(QMainWindow):
             from appearance_panel import AppearancePanel
             self.appearance_panel = AppearancePanel(self.appearance, self)
         self.workspace.show_page('appearance', self.appearance_panel)
+
+    def route_access_model(self):
+        from route_display import access_preview
+        data = self.store.data
+        key = json.dumps({name: data.get(name) for name in ('locations', 'lifts', 'corridors', 'route_profiles')}, sort_keys=True)
+        if self._route_access_cache is None or key != self._route_access_cache[0]:
+            self._route_access_cache = (key, access_preview(data))
+        return self._route_access_cache[1]
+
+    def show_route_identification(self):
+        if not hasattr(self, 'route_display_panel'):
+            from route_display_panel import RouteDisplayPanel
+            self.route_display_panel = RouteDisplayPanel(self)
+            self.route_display_scroll = QScrollArea(self)
+            self.route_display_scroll.setWidgetResizable(True)
+            self.route_display_scroll.setWidget(self.route_display_panel)
+        else:
+            self.route_display_panel.refresh()
+        self.workspace.show_page('route_display', self.route_display_scroll)
 
     def _configuration_state(self):
         # Comparison also works for malformed numeric input opened for repair.
@@ -870,6 +894,16 @@ class AMRGraphEditor(QMainWindow):
         self.addAction(self.finish_route_action)
 
         view = create_page("View")
+        self.route_display_combo = QComboBox()
+        self.route_display_combo.setAccessibleName('Route profile display')
+        self.route_display_combo.setMinimumContentsLength(20)
+        self.route_display_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.route_display_combo.currentIndexChanged.connect(self.refresh_canvas)
+        self.route_labels_check = QCheckBox('Show profile labels')
+        self.route_labels_check.setChecked(True)
+        self.route_labels_check.toggled.connect(self.refresh_canvas)
+        add_group(view, 'Profile access (schematic)', [self.route_display_combo, self.route_labels_check,
+                  button('Route identification…', self.show_route_identification)], columns=1)
         add_group(
             view,
             "Display",
@@ -1868,6 +1902,8 @@ class AMRGraphEditor(QMainWindow):
         self.refresh_canvas()
 
     def refresh_canvas(self):
+        from route_display import populate_choices
+        populate_choices(self.route_display_combo, self.store.data)
         self.scene.clear()
         self._item_lookup = {}
         self._point_item_lookup = {}
@@ -1892,6 +1928,7 @@ class AMRGraphEditor(QMainWindow):
             self.draw_location_bounding_boxes(floor)
         self.draw_temporary_location_bounding_box(floor)
         self.draw_edges(floor)
+        self.draw_route_access(floor)
         self.draw_points(floor)
         if self.show_charging_spaces_check.isChecked():
             self.draw_charging_space_markers(floor)
@@ -1899,6 +1936,23 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.viewport().update()
         if hasattr(self, 'workspace'):
             self.workspace.refresh()
+
+    def draw_route_access(self, floor):
+        from route_display import populate_choices, draw_access
+        populate_choices(self.route_display_combo, self.store.data)
+        selected = self.route_display_combo.currentData()
+        self.route_preview_error = ''
+        if selected is None:
+            return
+        try:
+            points, sections, _rules = self.route_access_model()
+            items = draw_access(self.scene, points, sections, floor, selected, self.route_styles,
+                                self.world_to_scene, self.appearance.value.map_font_size, self.route_labels_check.isChecked())
+            for item, section in items:
+                if section['source'] is not None:
+                    self._item_lookup[item] = ('edge', section['source'])
+        except (ValueError, TypeError, KeyError, OverflowError) as exc:
+            self.route_preview_error = 'Profile preview unavailable: ' + str(exc)
 
     def draw_charging_space_markers(self, floor):
         """Overlay a compact charger count beside locations with charger-equipped AMR bays."""
@@ -2123,7 +2177,8 @@ class AMRGraphEditor(QMainWindow):
                 pen = pen_cross_floor
             else:
                 area = str(edge.get("people_area_type", "none") or "none").lower()
-                pen = QPen(colour_by_area.get(area, colour_by_area["none"]), 0)
+                colour = QColor('#505050') if self.route_display_combo.currentData() is not None else colour_by_area.get(area, colour_by_area['none'])
+                pen = QPen(colour, 0)
             item = self.scene.addLine(pa.x(), pa.y(), pb.x(), pb.y(), pen)
             item.setZValue(5 if key in self.selected_edge_keys else 0)
             self._item_lookup[item] = ("edge", edge)
@@ -2290,7 +2345,13 @@ class AMRGraphEditor(QMainWindow):
                 lines.append("Left-click = add point | Right-click empty = finish")
             else:
                 lines.append("Right-click a location and choose draw bounding box")
-        if self.appearance.value.show_legend:
+        if self.route_display_combo.currentData() is not None:
+            lines.insert(1, 'Profile access: ' + self.route_display_combo.currentText())
+            lines.insert(2, 'Names / patterns / arrows; schematic, not lanes')
+            lines.insert(3, 'Grey = underlying corridors; colour = profile access')
+        if self.route_preview_error:
+            lines.insert(1, self.route_preview_error)
+        if self.appearance.value.show_legend or self.route_preview_error:
             self._draw_overlay_box(painter, 12, 12, 320, lines, "#8995a3", self.appearance.value.map_text_colour)
         else:
             self.canvas.setToolTip('')
