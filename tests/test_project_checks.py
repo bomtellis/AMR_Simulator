@@ -117,9 +117,9 @@ class ProjectCheckTests(unittest.TestCase):
             Path(folder, 'missing.dxf').write_text('placeholder')
             self.assertNotIn('DRAWING_MISSING', self.codes(base_path=folder))
 
-    def test_clean_dirty_limitations_visible(self):
+    def test_clean_dirty_profile_policy_visible(self):
         self.config['route_profiles'] = {'clean': {}, 'dirty': {}}
-        self.assertIn('PROFILE_SEPARATION', self.codes())
+        self.assertIn('PROFILE_POLICY', self.codes())
 
     def test_generation_references_remain_warnings_until_effective_rules_resolved(self):
         self.config['task_generation'] = {'categories': {'linen': {'department_groups': [

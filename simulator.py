@@ -6555,6 +6555,24 @@ class Simulation:
     def _edge_key(self, a_name: str, b_name: str) -> Tuple[str, str]:
         return (a_name, b_name)
 
+    def _require_route_profile(self, name, task_id: str) -> dict:
+        if not isinstance(name, str) or name not in self.route_profiles:
+            raise ValueError(f"Route profile {name!r} for task {task_id!r} does not exist")
+        profile = self.route_profiles[name]
+        if not isinstance(profile, dict):
+            raise ValueError(f"Route profile {name!r} for task {task_id!r} must be an object")
+        return profile
+
+    def _validate_task_route_profiles(self, task: Task) -> None:
+        # Validate effective tasks, after generation overrides have been resolved.
+        # A misspelt profile must never silently become an unrestricted network.
+        self._resolve_task_route_rules(task)
+        return_profile = str(getattr(task, "return_route_profile", "") or "").strip()
+        if not return_profile and "dirty" in getattr(task, "labels", []):
+            return_profile = "dirty"
+        if getattr(task, "return_enabled", False) and return_profile:
+            self._require_route_profile(return_profile, task.id)
+
     def _resolve_task_route_rules(self, task: Task) -> dict:
         rules = self._empty_route_rules()
 
@@ -6563,7 +6581,7 @@ class Simulation:
             profile_name = "dirty"
 
         if profile_name:
-            profile = self.route_profiles.get(profile_name, {})
+            profile = self._require_route_profile(profile_name, task.id)
             rules["allowed_lifts"].update(profile.get("allowed_lifts", []))
             rules["allowed_nodes"].update(profile.get("allowed_nodes", []))
             rules["allowed_edges"].update(
@@ -7547,6 +7565,7 @@ class Simulation:
             return
         self._start_task_deferral_limit(task)
         self._prepare_task_payload_instance(task)
+        self._validate_task_route_profiles(task)
         self.push_event(task.release_time, "task_release", {"task": task})
 
     def _start_task_deferral_limit(self, task: Task) -> None:
@@ -7610,6 +7629,7 @@ class Simulation:
         task = Task(**task_data)
         task.created_during_runtime = True
         self._prepare_task_payload_instance(task)
+        self._validate_task_route_profiles(task)
         with self.lock:
             if task.release_time <= self.current_time:
                 self._queue_pending_task(task)
@@ -8135,6 +8155,7 @@ class Simulation:
     def _queue_pending_task(self, task: Task):
         if task.id in self.failed_task_ids:
             return
+        self._validate_task_route_profiles(task)
         self._start_task_deferral_limit(task)
         self.pending_task_counter += 1
         self._removed_pending_task_ids.discard(str(getattr(task, "id", "") or ""))

@@ -50,7 +50,9 @@ Also review the generation rules: enabled groups run even when category defaults
 are disabled; groups do not add an extra category-level task; multiple groups can
 deliberately request separate services; category-wide zone capacity policy wins.
 Legacy route profiles still union their allow-lists with task allowances, and an
-empty list means unrestricted. Strict clean/dirty separation is not yet implemented.
+empty list means unrestricted. Clean, dirty and shared access is defined by route
+profiles: include shared sections in every applicable profile. See
+`ROUTE_PROFILES_REVIEW.md` for the verified scope and empty/return journey policies.
 
 ## Reproduce the evidence
 
@@ -87,14 +89,17 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D007 | Fast assignment and charging estimates could still use a route rejected by door-width checks | Apply the same oriented robot/payload width to preliminary travel, energy and fast assignment queries. Three regression cases verify detour time, impossible passage and both charging-estimate legs. |
 | D008 | LTN has two exits for one clinical-waste instance before its next recorded entry | Open investigation. Results investigation links both records and marks transfer totals incomplete; underlying tracking behaviour has not been repaired or classified as physical payload loss. |
 | D009 | Sorting configuration keys in project, undo and recovery snapshots changed generation category iteration order | Preserve configuration key order in persisted/restored snapshots. Ordered-category acceptance tests reproduce the defect. The project-bound six-hour LTN run now matches the original detailed outcome fingerprint exactly. Previously sorted snapshots cannot reconstruct discarded order; reimport the original JSON for baseline comparisons. |
+| D010 | Missing route profiles silently became unrestricted, including generated tasks and implicit dirty-label selection | Reject unknown effective profiles before scheduling. Validate active return profiles too. Static checks now detect missing implicit dirty profiles; effective generation overrides are checked by the engine. Runs using invalid names must be corrected rather than compared as valid routing results. |
+| D011 | Generating profile edges from selected nodes omitted reverse directions of two-way corridors | Generate both permitted directions and remove duplicates. One-way corridors remain one-way. Existing manually authored or saved edge lists remain unchanged until deliberately regenerated. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation
 modes, lifts, energy, resource contention and reports. Structured findings are now
 available at the Project checks checkpoint described below. The project container,
 unified UI, lanes, swept turns, tutorials and illustrated guide remain later stages.
-Unknown route profile fallback, lack of explicit clean/dirty shared sections,
-time-boundary semantics and approximate lane capacity are explicitly outstanding.
+Broader route-profile interactions, time-boundary semantics and approximate lane
+capacity remain outstanding. Shared sections use the existing route profiles;
+there is no separate clean/dirty classification system.
 
 ## Project checks checkpoint
 

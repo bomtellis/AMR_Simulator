@@ -308,6 +308,14 @@ class RouteProfilesEditorV2(QDialog):
         self.allowed_nodes = []
 
         root_layout = QVBoxLayout(self)
+        guidance = QLabel(
+            "Profiles define the allowed routes: include a shared section in each profile that may use it. "
+            "Empty lists mean unrestricted; edge pairs are directional. Task allowances extend profile allowances. "
+            "Profiles apply after pickup. Empty approach, charging and idle-return journeys are unrestricted by profiles. "
+            "Set a return profile explicitly when a return must follow a particular route."
+        )
+        guidance.setWordWrap(True)
+        root_layout.addWidget(guidance)
         layout = QHBoxLayout()
         root_layout.addLayout(layout, 1)
         splitter = QSplitter()
@@ -392,7 +400,7 @@ class RouteProfilesEditorV2(QDialog):
 
     def summarize(self, values):
         if not values:
-            return "None"
+            return "Unrestricted (empty list)"
         if len(values) <= 6:
             return ", ".join(values)
         return f"{len(values)} selected"
@@ -461,11 +469,19 @@ class RouteProfilesEditorV2(QDialog):
 
     def fill_edges_from_nodes(self):
         allowed = set(self.allowed_nodes)
-        profile_edges = [
-            [e["from"], e["to"]]
-            for e in self.corridor_edges
-            if e["from"] in allowed and e["to"] in allowed
-        ]
+        profile_edges = []
+        seen = set()
+        for edge in self.corridor_edges:
+            a, b = edge["from"], edge["to"]
+            if a not in allowed or b not in allowed:
+                continue
+            pairs = [(a, b)]
+            if edge.get("bidirectional", True):
+                pairs.append((b, a))
+            for pair in pairs:
+                if pair not in seen:
+                    seen.add(pair)
+                    profile_edges.append(list(pair))
         self.edges_text.setPlainText(json.dumps(profile_edges, indent=2))
 
     def on_profile_select(self, name):

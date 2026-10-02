@@ -271,11 +271,13 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         pairs = profile.get("allowed_edges", [])
         if not isinstance(pairs, list) or any(not isinstance(p, (list, tuple)) or len(p) != 2 or any(not isinstance(n, str) or n not in names for n in p) for p in pairs):
             error(f"/route_profiles/{name}/allowed_edges", "Allowed edges must contain pairs of known node names.", "route_profiles", name, "REFERENCE")
-    if "clean" in profiles and "dirty" in profiles:
-        add("PROFILE_SEPARATION", "warning", "/route_profiles", "Clean / dirty",
-            "Profiles do not enforce mutual separation or explicitly shared sections yet.",
-            "Allowed networks can overlap; task allow-lists extend profile allowances.",
-            "Review both profiles and document any intentional overlap.", "route_profiles", kind="assumption")
+    if profiles:
+        add("PROFILE_POLICY", "info", "/route_profiles", "Route profile policy",
+            "Shared sections are represented by allowing the same sections in each applicable profile.",
+            "Empty lists are unrestricted and task allow-lists extend profile allowances. Profiles apply after pickup; "
+            "empty approach, charging and idle-return journeys are unrestricted by profiles. A blank return profile "
+            "uses the return task's label fallback, not automatic outbound-profile inheritance (seeded waste returns are an exception).",
+            "Review profile overlap and set explicit return profiles where required.", "route_profiles", kind="assumption")
 
     def references(value, path="", section="project", target=""):
         if isinstance(value, dict):
@@ -325,6 +327,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             error(f'/tasks/{i}/allowed_edges', 'Allowed edges must contain pairs of known node names.', 'tasks', task.get('id', ''), 'REFERENCE')
         if not isinstance(task.get('labels', []), list):
             error(f'/tasks/{i}/labels', 'Task labels must be a list.', 'tasks', task.get('id', ''))
+        elif not task.get('route_profile') and 'dirty' in task.get('labels', []) and 'dirty' not in profiles:
+            error(f'/tasks/{i}/labels', "The dirty label selects route profile 'dirty', which does not exist.",
+                  'tasks', task.get('id', ''), 'PROFILE_REFERENCE')
     # Deeper checks require structurally and numerically valid inputs.
     if any(f.severity == "error" for f in findings):
         add("CHECKS_INCOMPLETE", "info", "/", "Project", "Some dependent checks were skipped.",
@@ -432,6 +437,6 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                         f"Drawing is unavailable: {value}", "The background cannot be displayed; explicit graph routes can still be simulated.",
                         "Relink the drawing or acknowledge a run without it.", section)
     add("MODEL_SCOPE", "info", "/corridors", "Movement model", "Lane capacity and turn drawings remain approximations.",
-        "This check does not verify keep-right lane geometry, swept turns or clean/dirty separation.",
+        "This check does not verify keep-right lane geometry, swept turns or physical contamination control.",
         "Consult the verification feature inventory before making physical clearance claims.", "corridors", kind="assumption")
     return finish()
