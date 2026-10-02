@@ -21,7 +21,7 @@ implementation; no national-body certification claim is made.
 | Workspace | Remaining requirements |
 | --- | --- |
 | Project checks | Exact common-object/field navigation, per-finding dependencies, evaluated/skipped check groups and drawing-availability invalidation now exist; see CHECK_WORKFLOW_REVIEW.md. Full rechecks still gate every changed run. Complete reference/dimension/schedule/connectivity/profile/resource coverage, effective generation inputs and remaining legacy navigation are still required. |
-| Demand preview | Complete searchable table/timetable filters, effective-rule provenance and inherited/override values for every supported mode; reconcile configured demand and explain all zero-work rules. Runtime-dependent totals must remain unknown where appropriate. |
+| Demand preview | Searchable tasks/timetable and dynamic rule assignment histories now show category/group/department/waste precedence and derived waste values; see GENERATION_PROVENANCE_REVIEW.md. Complete task-specific/global staff attribution, inactive rules and implicit defaults, independent configured-demand reconciliation and all zero-work explanations remain. Runtime-dependent totals stay unknown. |
 | Results investigation | Lift floor continuity, overlap and booking/log count checks now expose per-lift coverage and supporting events; see LIFT_EVIDENCE_REVIEW.md. Complete assignment/resource/route/failure explanations, task/payload/AMR/lift distinctions, all metric-to-record links, missing-evidence handling and large-log access remain. Existing frozen input/event IDs and legacy adapters are foundations. |
 
 ## 3. Dependable editing and unified project — completion OPEN

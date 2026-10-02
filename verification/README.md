@@ -6,7 +6,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest application checkpoint is [Project checks workflow](CHECK_WORKFLOW_REVIEW.md):
+The latest application checkpoint is [Effective demand settings](GENERATION_PROVENANCE_REVIEW.md):
+ordered rule assignments, inherited/override values and waste calculations.
+[Project checks workflow](CHECK_WORKFLOW_REVIEW.md) provides
 exact object/field navigation, changed-input tracking, check coverage and drawing
 availability invalidation. [Route identification](ROUTE_IDENTIFICATION_REVIEW.md) provides
 profile names, colours, patterns, directional access and a searchable table, shared

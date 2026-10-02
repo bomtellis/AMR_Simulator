@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 from amr_sim_models import Location, PayloadType, Task
 from amr_sim_time_utils import SimulationClock
+from amr_generation_provenance import RuleTrace
 
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 SCHEDULED_MODES = {"scheduled", "scheduled_threshold", "scheduled_sporadic"}
@@ -492,6 +493,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         payloads: Dict[str, PayloadType],
         clock: SimulationClock,
         waste_streams: Optional[Dict[str, dict]] = None,
+        waste_stream_paths: Optional[Dict[str, str]] = None,
     ):
         self.task_generation = task_generation or {}
         self.staff_config = _normalise_global_staff_config(
@@ -504,6 +506,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self.payloads = payloads or {}
         self.clock = clock
         self.waste_streams = waste_streams or {}
+        self.waste_stream_paths = waste_stream_paths or {}
         self.task_counter = 0
         self.return_counter = 0
         self.scheduled_emitted = set()
@@ -600,12 +603,17 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         return _day_key_for_datetime(self.clock.sim_seconds_to_datetime(sim_time_sec))
 
     def _merge_category_with_override(
-        self, category: dict, override: Optional[dict]
+        self, category: dict, override: Optional[dict], trace=None
     ) -> dict:
         merged = dict(category or {})
         merged.pop("departments", None)
         if isinstance(override, dict):
             merged.update(override)
+        if trace is not None:
+            for key, value in (category or {}).items():
+                trace.record(key, value, 'Category default')
+            for key, value in (override or {}).items():
+                trace.record(key, value, 'Override')
         # Zone capacity is an operating rule for the payload category, not an
         # individual department. Old projects may still contain stale values in
         # department overrides; deliberately restore the category-wide value.
@@ -615,6 +623,10 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             )
             or "allow_temporary_overflow"
         ).strip().lower()
+        if trace is not None:
+            trace.record('dropoff_zone_capacity_policy', merged['dropoff_zone_capacity_policy'],
+                         'Category-wide policy' if 'dropoff_zone_capacity_policy' in (category or {}) else 'Generator default',
+                         'Category policy is restored after the ordinary group/department override; blank defaults to allow_temporary_overflow, then whitespace and case are normalised.')
         return merged
 
     def _department_id(self, dept: dict) -> str:
@@ -744,7 +756,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         if not dept_id:
             return
 
-        cfg = self._merge_category_with_override(category, override)
+        trace = RuleTrace()
+        cfg = self._merge_category_with_override(category, override, trace)
         if not bool(cfg.get("enabled", False)):
             return
 
@@ -766,6 +779,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 dropoff_locations = dropoff_zone_locations
                 cfg["requires_staff"] = True
                 cfg["return_enabled"] = True
+                for key in ('requires_staff', 'return_enabled'):
+                    trace.record(key, True, 'Department drop-off zone handoff',
+                                 'A department destination with a drop-off zone requires staff handoff and return.')
             else:
                 dropoff_locations = dept_locations
         department_location_role = role if dept_locations else ""
@@ -779,8 +795,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
             if stream_items:
                 for stream_item in stream_items:
+                    stream_trace = RuleTrace()
                     stream_cfg = self._waste_stream_cfg_for_department(
-                        category, override, stream_item
+                        category, override, stream_item, stream_trace
                     )
                     if not stream_cfg:
                         continue
@@ -789,6 +806,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         dept_id, stream_name, stream_cfg, pickup_locations
                     )
                     stream_cfg["container_group"] = container_group
+                    stream_trace.record('container_group', container_group, 'Derived container group',
+                                        'Explicit shared group, otherwise shared pickup/stream signature, otherwise department/stream identity.')
                     unique_key = f"waste:{dept_id}:{stream_name}"
                     if suffix:
                         unique_key = f"{unique_key}:{suffix}"
@@ -802,6 +821,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                             "department_name": self._department_name(dept),
                             "department": dict(dept),
                             "cfg": stream_cfg,
+                            '_rule_trace': stream_trace,
+                            '_source_department': dept,
                             "pickup_locations": pickup_locations,
                             "dropoff_locations": dropoff_locations,
                             "waste_stream": stream_name,
@@ -821,6 +842,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 "department_name": self._department_name(dept),
                 "department": dict(dept),
                 "cfg": cfg,
+                '_rule_trace': trace,
                 "pickup_locations": pickup_locations,
                 "dropoff_locations": dropoff_locations,
                 "final_destination_locations": (
@@ -858,7 +880,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         return f"department:{dept_id}:{stream_name}"
 
     def _waste_stream_cfg_for_department(
-        self, category_cfg: dict, dept_override: dict, stream_item: dict
+        self, category_cfg: dict, dept_override: dict, stream_item: dict, trace=None
     ) -> Optional[dict]:
         stream_name = _clean_text(stream_item.get("name"))
         if not stream_name:
@@ -874,12 +896,14 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         ):
             return None
 
-        cfg = self._merge_category_with_override(category_cfg, dept_override)
+        cfg = self._merge_category_with_override(category_cfg, dept_override, trace)
 
         # Global stream definition supplies the container/payload defaults.
         for key in ("payload", "container_capacity_m3", "full_threshold_fraction"):
             if key in global_stream and _clean_text(global_stream.get(key)):
                 cfg[key] = global_stream.get(key)
+                if trace is not None:
+                    trace.record(key, cfg[key], 'Waste stream default')
 
         # The department's selected stream item supplies generation settings and
         # may intentionally override the global stream payload if present.
@@ -887,6 +911,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if key == "name":
                 continue
             cfg[key] = value
+            if trace is not None:
+                trace.record(key, value, 'Department waste stream')
 
         cfg["waste_stream"] = stream_name
         cfg["task_source"] = "department_waste"
@@ -897,21 +923,41 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         cfg["shared_container_group"] = _clean_text(
             cfg.get("shared_container_group", cfg.get("shared_container_id", ""))
         )
+        if trace is not None:
+            trace.record('waste_stream', stream_name, 'Derived stream identity', 'Name of the selected department waste stream.')
+            trace.record('task_source', cfg['task_source'], 'Generator default', 'Department stream instances use department_waste.')
+            for key in ('initial_container_present', 'shared_container', 'shared_container_group'):
+                trace.record(key, cfg[key], 'Normalised waste setting',
+                             'Boolean defaults: initial container present true, shared container false. Shared group uses shared_container_group, then shared_container_id; text is trimmed.')
 
         payload_name = _clean_text(cfg.get("payload", ""))
         if not payload_name:
             payload_name = _clean_text(global_stream.get("payload", ""))
             cfg["payload"] = payload_name
+            if trace is not None:
+                trace.record('payload', payload_name, 'Waste stream default', 'Blank effective payload falls back to the global stream payload.')
 
         if payload_name not in self.payloads:
             return None
 
         threshold = self._threshold_from_waste_stream(stream_name, cfg)
         if threshold > 0:
+            threshold_basis = (
+                f"Positive effective threshold {cfg.get('threshold_volume_m3')} m³ is retained and converted to a number."
+                if _as_float(cfg.get('threshold_volume_m3', 0.0), 0.0) > 0 else
+                f"Global stream capacity {_as_float(global_stream.get('container_capacity_m3', 0.0), 0.0)} m³ × "
+                f"global fraction {_as_float(global_stream.get('full_threshold_fraction', 0.8), 0.8)} = {threshold} m³. "
+                'Department capacity/fraction overrides do not change this fallback calculation.')
             cfg["threshold_volume_m3"] = threshold
+            if trace is not None:
+                trace.record('threshold_volume_m3', threshold, 'Derived threshold',
+                             threshold_basis)
 
         if _as_float(cfg.get("volume_per_event_m3", 0.0), 0.0) <= 0.0:
             cfg["volume_per_event_m3"] = threshold
+            if trace is not None:
+                trace.record('volume_per_event_m3', threshold, 'Derived event volume',
+                             'Non-positive or absent event volume uses the resolved threshold, including zero.')
 
         return cfg
 
@@ -923,18 +969,30 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             for instance in rows:
                 instance['rule_path'] = override_path or category_path
                 instance['category_path'] = category_path
-                sources = {key: (override_path if override and key in override else category_path if key in category else 'Generator default or derived value')
-                           for key in instance['cfg'] if key != 'department_groups'}
-                sources['dropoff_zone_capacity_policy'] = category_path + ' (category-wide policy)'
-                if instance.get('dropoff_zone_locations'):
-                    for key in ('requires_staff', 'return_enabled'):
-                        sources[key] = 'Department drop-off zone handoff'
+                origins = {'Category default': category_path, 'Category-wide policy': category_path}
+                if override_path:
+                    origins['Override'] = override_path
                 if instance.get('waste_stream'):
-                    # Waste has additional stream and department layers; do not guess
-                    # a more specific source from matching values alone.
-                    sources = {key: 'Resolved waste stream settings; see precedence notes'
-                               for key in sources}
-                instance['field_sources'] = sources
+                    # Input arrays retain source ordering. Duplicate global stream
+                    # names use the last definition; department streams use first.
+                    stream = instance['waste_stream']
+                    if stream in self.waste_stream_paths:
+                        origins['Waste stream default'] = self.waste_stream_paths[stream]
+                    dept_index = next((i for i, dept in enumerate(self.departments)
+                                       if dept is instance.get('_source_department')), None)
+                    if dept_index is not None:
+                        raw = self.departments[dept_index].get('waste_streams', [])
+                        stream_index = next((i for i, item in enumerate(raw)
+                            if _clean_text(item.get('name') if isinstance(item, dict) else item) == stream), None)
+                        if stream_index is not None and isinstance(raw[stream_index], dict):
+                            origins['Department waste stream'] = f'/departments/{dept_index}/waste_streams/{stream_index}'
+                trace = instance.pop('_rule_trace')
+                instance.pop('_source_department', None)
+                instance['field_provenance'] = trace.resolve(instance['cfg'], origins,
+                    {'Override': 'Group override' if '/department_groups/' in override_path else 'Department override'})
+                instance['field_sources'] = {key: (entry['path'] + (' (category-wide policy)' if entry['source'] == 'Category-wide policy' else '')
+                                                  if entry['path'] else entry['source'])
+                                             for key, entry in instance['field_provenance'].items()}
 
         for category_key, category in categories.items():
             if not isinstance(category, dict):
@@ -999,13 +1057,15 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             # This prevents the "Category defaults" row from creating a site-wide
             # task in addition to department-level tasks.
             if bool(category.get("enabled", False)) and not overrides and not groups:
+                trace = RuleTrace()
                 instances.append(
                     {
                         "key": category_key_text,
                         "category_key": category_key_text,
                         "department_id": "",
                         "department_name": "",
-                        "cfg": self._merge_category_with_override(category, None),
+                        "cfg": self._merge_category_with_override(category, None, trace),
+                        '_rule_trace': trace,
                         "pickup_locations": self._pickup_locations_from_cfg(category),
                         "dropoff_locations": self._dropoff_locations_from_cfg(category),
                     }
@@ -2690,6 +2750,9 @@ class TaskGenerationManager:
                     payloads=self.payloads,
                     clock=self.clock,
                     waste_streams=waste_streams,
+                    waste_stream_paths={str(item.get('name', '')).strip(): f'/waste_streams/{i}'
+                                        for i, item in enumerate(self.config.get('waste_streams', []))
+                                        if str(item.get('name', '')).strip()},
                 )
             )
 

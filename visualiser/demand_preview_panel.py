@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, QTimer
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
     QAbstractItemView, QPlainTextEdit, QFileDialog, QMessageBox)
 
@@ -36,7 +36,10 @@ def rule_explanation(rule):
         if key in {'departments', 'department_groups'}:
             continue
         source = rule.get('field_sources', {}).get(key, 'Stored setting')
-        if 'category-wide' in source:
+        provenance = rule.get('field_provenance', {}).get(key)
+        if provenance:
+            source = provenance['source']
+        elif 'category-wide' in source:
             source = 'Category-wide policy'
         elif '/department_groups/' in source:
             source = 'Group override'
@@ -77,7 +80,7 @@ class DemandPreviewPanel(QWidget):
         intro = QLabel('Inspect planned demand before simulation. Runtime-dependent demand and returns remain unknown; these are not completed movements.')
         intro.setWordWrap(True)
         layout.addWidget(intro)
-        actions = QHBoxLayout()
+        actions = QVBoxLayout()
         self.build_button = QPushButton('Build preview')
         self.build_button.clicked.connect(self.build)
         self.end = QLineEdit()
@@ -86,9 +89,11 @@ class DemandPreviewPanel(QWidget):
         self.end.textChanged.connect(self.check_staleness)
         self.export_button = QPushButton('Export preview…')
         self.export_button.clicked.connect(self.export)
-        actions.addWidget(self.build_button)
-        actions.addWidget(self.end, 1)
-        actions.addWidget(self.export_button)
+        actions.addWidget(self.end)
+        buttons = QHBoxLayout()
+        buttons.addWidget(self.build_button)
+        buttons.addWidget(self.export_button)
+        actions.addLayout(buttons)
         layout.addLayout(actions)
         self.summary = QLabel('Build a preview to inspect demand. Maximum 31 days and 20,000 task records.')
         self.summary.setWordWrap(True)
@@ -98,14 +103,16 @@ class DemandPreviewPanel(QWidget):
         self.search.setAccessibleName('Search demand')
         self.search.textChanged.connect(self.populate)
         layout.addWidget(self.search)
-        filters = QHBoxLayout()
+        filters = QGridLayout()
         self.filters = {}
-        for key, title in [('department', 'Department'), ('category', 'Category'), ('payload', 'Payload'), ('date', 'Date'), ('route_profile', 'Route profile')]:
+        for index, (key, title) in enumerate([('department', 'Department'), ('category', 'Category'), ('payload', 'Payload'), ('date', 'Date'), ('route_profile', 'Route profile')]):
             box = QComboBox()
             box.setAccessibleName(title)
             box.addItem('All ' + title.lower(), '')
             box.currentIndexChanged.connect(self.populate)
-            filters.addWidget(box)
+            box.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            box.setMinimumContentsLength(8)
+            filters.addWidget(box, index // 3, index % 3)
             self.filters[key] = box
         layout.addLayout(filters)
         self.tabs = QTabWidget()
@@ -115,6 +122,23 @@ class DemandPreviewPanel(QWidget):
         self.tabs.addTab(self.tasks, 'Tasks')
         self.tabs.addTab(self.hours, 'Timetable')
         self.tabs.addTab(self.rules, 'Rules and reconciliation')
+        provenance = QWidget()
+        provenance_layout = QVBoxLayout(provenance)
+        self.field_context = QLabel('Select a task or rule to inspect its resolved rule settings.')
+        self.field_context.setWordWrap(True)
+        provenance_layout.addWidget(self.field_context)
+        self.field_search = QLineEdit()
+        self.field_search.setPlaceholderText('Find a setting, value or source…')
+        self.field_search.setAccessibleName('Search effective rule settings')
+        provenance_layout.addWidget(self.field_search)
+        self.fields = self.table(['Setting', 'Effective value', 'Winning source', 'Source setting'])
+        provenance_layout.addWidget(self.fields)
+        self.tabs.addTab(provenance, 'Effective settings')
+        self.selected_rule = None
+        self.field_rows = []
+        self.field_search.textChanged.connect(self.populate_fields)
+        self.fields.itemSelectionChanged.connect(self.field_details)
+        self.tabs.currentChanged.connect(self.tab_details)
         layout.addWidget(self.tabs, 1)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
@@ -171,8 +195,9 @@ class DemandPreviewPanel(QWidget):
         if error:
             self.summary.setText('Preview could not complete: ' + error)
             self.rows = []
-            for table in (self.tasks, self.hours, self.rules):
+            for table in (self.tasks, self.hours, self.rules, self.fields):
                 table.setRowCount(0)
+            self.select_rule(None)
             self.details.clear()
             self.export_button.setEnabled(False)
             return
@@ -200,6 +225,9 @@ class DemandPreviewPanel(QWidget):
                                r.get('expected_fixed_records') if r.get('expected_fixed_records') is not None else 'Not assessed',
                                r['count_difference'] if r['count_difference'] is not None else 'Not assessed',
                                'Unknown' if r['total_demand'] is None else r['total_demand']] for r in self.preview['rules']])
+        self.tasks.clearSelection()
+        self.rules.clearSelection()
+        self.select_rule(None)
         self.details.setPlainText('Rules and reconciliation always show the entire preview; task filters apply to Tasks and Timetable only.\n\n' + '\n'.join(self.preview['precedence']))
         self.check_staleness()
 
@@ -225,6 +253,7 @@ class DemandPreviewPanel(QWidget):
         if 0 <= index < len(self.rows):
             task = self.rows[index]
             rule = next(r for r in self.preview['rules'] if r['id'] == task['rule_id'])
+            self.select_rule(rule)
             effective = task['effective_task']
             lines = [task['explanation'], f"{task['release_datetime']} · {task['timing']}",
                      f"{task['payload']}: {task['pickup']} → {task['dropoff']}"]
@@ -239,7 +268,65 @@ class DemandPreviewPanel(QWidget):
         index = self.rules.currentRow()
         if self.preview and 0 <= index < len(self.preview['rules']):
             rule = self.preview['rules'][index]
+            self.select_rule(rule)
             self.details.setPlainText(rule_explanation(rule) + '\n\nPrecedence:\n' + '\n'.join(self.preview['precedence']))
+
+    def select_rule(self, rule):
+        self.selected_rule = rule
+        self.field_context.setText(
+            f"{rule['category']} · {rule['department'] or 'Category default'} · {rule['id']}\n"
+            'Resolved rule settings. Select a field for its ordered override history. Task-specific and runtime adjustments are separate.'
+            if rule else 'Select a task or rule to inspect its resolved rule settings.')
+        self.populate_fields()
+
+    def populate_fields(self, *_):
+        rule = self.selected_rule
+        self.field_rows = []
+        if rule:
+            query = self.field_search.text().casefold()
+            for key, value in sorted(rule['effective_config'].items()):
+                if key in {'departments', 'department_groups'}:
+                    continue
+                entry = rule.get('field_provenance', {}).get(key)
+                if entry is None:
+                    # Older exports and inactive rules have no resolution history.
+                    # Do not invent inheritance from matching values.
+                    entry = {'value': value, 'source': 'Stored value; resolution history unavailable',
+                             'path': '', 'history': []}
+                if query in (key + ' ' + json.dumps(entry, ensure_ascii=False)).casefold():
+                    self.field_rows.append((key, entry))
+        self.fill(self.fields, [[key.replace('_', ' ').capitalize(), readable(entry['value']),
+                                entry['source'], entry['path'] or 'Derived/default; see history']
+                               for key, entry in self.field_rows])
+        self.fields.clearSelection()
+        if self.tabs.currentIndex() == 3:
+            self.field_details()
+
+    def field_details(self):
+        index = self.fields.currentRow()
+        if not self.fields.selectedItems() or not 0 <= index < len(self.field_rows):
+            self.details.setPlainText('Select a setting to inspect its override history. Last assignment wins; equal values still retain their separate sources.')
+            return
+        key, entry = self.field_rows[index]
+        lines = [key.replace('_', ' ').capitalize() + ': ' + readable(entry['value']), '',
+                 'Assignment history (last assignment wins):']
+        for i, step in enumerate(entry['history'], 1):
+            lines.extend([f"{i}. {step['layer']}: {readable(step['value'])}",
+                          step['path'] or 'No stored field: default, normalisation or derived value.',
+                          step.get('explanation', ''), ''])
+        if not entry['history']:
+            lines.append('History unavailable for this stored rule or older preview; no resolved source is claimed.')
+        self.details.setPlainText('\n'.join(lines))
+
+    def tab_details(self, index):
+        if index == 3:
+            self.field_details()
+        elif index == 0:
+            self.task_details()
+        elif index == 2:
+            self.rule_details()
+        else:
+            self.details.setPlainText('Timetable groups the currently filtered planned task records by release hour, category and department.')
 
     def export(self):
         if not self.current() or self.job:

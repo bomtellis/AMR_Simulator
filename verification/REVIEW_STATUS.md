@@ -1,5 +1,30 @@
 # Stage 1 clash review — 2 October 2026
 
+## Later checkpoint — effective demand-rule provenance
+
+- Demand preview now records ordered category/group/department/waste assignments
+  and exposes a searchable Effective settings tab with winning values, stored
+  source paths and calculation history. Equal-value overrides keep their sources.
+  See the [illustrated review](GENERATION_PROVENANCE_REVIEW.md).
+- **870 / 870 tests passed**, including 19 new acceptance cases; zero broken
+  feature-to-test links. Source fingerprints stayed unchanged during testing.
+  Precedence examples, derived waste arithmetic, unknown totals, stale selection,
+  older metadata, input preservation and 24 pt desktop sizing are covered.
+- Eight small generation-mode comparisons against `226c245` retained identical
+  resolved configurations and generated records. They do not establish complete
+  runtime-mode coverage. No demand scheduling or simulation calculation changed.
+- LTN preview took approximately 0.54 seconds locally: 1,234 planned records,
+  264 rules with complete resolved-field histories and 190 rules with unknown
+  total demand. Its checksum stayed unchanged. LTN has no independently assessed
+  demand count in this preview; record reconciliation alone is not validation.
+- Existing waste exceptions are now explicit: fallback thresholds use global
+  capacity/fraction, and department waste-stream fields can override the restored
+  category policy. Complete task-specific/global staff attribution, implicit
+  defaults, inactive rules and all zero-work explanations remain open.
+- Actual screens were inspected at 1366 × 900; large text fits 1280 × 800.
+  The user's unrelated `ltn.json` edit remains outside this commit. Work pauses
+  after this checkpoint at the user's request; the full roadmap remains open.
+
 ## Later checkpoint — finding navigation and check dependencies
 
 - Check now preserves its existing report when reopened through the project tree,
