@@ -128,6 +128,8 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D046 | Multi-stop assignment bypassed robot outage admission | Apply robot availability to batch and separate charging admission. See SCENARIO_RECOVERY_REVIEW.md. |
 | D047 | Overnight scenario weekdays were interpreted as the current day, losing the after-midnight portion | Anchor half-open intervals to their start day and preserve fractional boundary comparisons. See SCENARIO_RECOVERY_REVIEW.md. |
 | D048 | Lift service delayed by repair used scenario speed at planning time | Sample reposition, loaded and reset movement speed at their planned phase start; reject non-finite future candidates. See LIFT_REPAIR_REVIEW.md. |
+| D049 | Earlier lift gap insertion allowed a reset movement that was never recorded or reserved | Permit gaps only when the recorded journey restores the next booking's original starting floor. See LIFT_RESERVATION_ORDER_REVIEW.md. |
+| D050 | Earlier gap insertion used future wear state and could place its repair after a later booked journey | Keep wear/failure-enabled journeys in chronological commitment order; preserve committed routes and expose the scheduling assumption in Project Checks. See LIFT_RESERVATION_ORDER_REVIEW.md. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation

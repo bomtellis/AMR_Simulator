@@ -12,7 +12,7 @@ implementation; no national-body certification claim is made.
 | Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
 | Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
 | Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
-| Individual defect reproduction and changed-result explanations | D001–D048 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
+| Individual defect reproduction and changed-result explanations | D001–D050 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
 | LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
 | Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
 
@@ -117,7 +117,9 @@ arrival/capacity, reject invalid credits and protect newer reservations; see
 CHARGER_CONTENTION_REVIEW.md. D044–D047 verify scheduled robot/lift admission and
 recovery, structural failure checks and overnight windows; see SCENARIO_RECOVERY_REVIEW.md.
 D048 samples lift speeds at planned service phases and adds independent wear/repair
-references; see LIFT_REPAIR_REVIEW.md. Next audit mid-journey outages, chronological
-lift reservation/repair interactions and wider failure/recovery behaviour,
+references; see LIFT_REPAIR_REVIEW.md. D049/D050 preserve lift floor continuity and
+chronological wear/repair by protecting committed bookings; see
+LIFT_RESERVATION_ORDER_REVIEW.md. Next audit mid-journey outages, multiple-lift
+interactions and wider failure/recovery behaviour,
 alongside the wider generation-mode matrix.
 These are concrete next checks, not replacements for the full requirements above.

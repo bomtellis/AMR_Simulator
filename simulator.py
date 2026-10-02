@@ -9200,6 +9200,14 @@ class Simulation:
         origin_floor: int,
         destination_floor: int,
     ) -> dict:
+        """Find a slot without changing the assumptions of committed journeys.
+
+        Wear and deterministic failure state project the end of the booked
+        schedule, so affected lifts accept new journeys after its tail. With
+        both disabled, an earlier gap is usable only when the recorded journey
+        returns the car to the next booking's original starting floor. We do
+        not invent an unrecorded reset trip or retime another robot's route.
+        """
         reservations = self.lift_reservations.get(lift.id, [])
         initial_floor = int(
             self.lift_initial_floors.get(lift.id, getattr(lift, "current_floor", 0))
@@ -9232,16 +9240,22 @@ class Simulation:
                 'loaded_travel_sec': loaded_travel_sec,
             }
 
-        for next_start, next_finish, next_origin, next_destination, _owner in reservations:
-            start = max(float(arrival_at_lift), previous_finish, blackout_until)
-            slot = service_at(start, previous_floor)
-            reset_for_next_sec = (self._lift_vertical_seconds(
-                lift, destination_floor, int(next_origin), at_time=slot['lift_finish'])
-                if math.isfinite(slot['lift_finish']) else math.inf)
-            if slot['lift_finish'] + reset_for_next_sec <= float(next_start) + 1e-9:
-                return slot
-            previous_finish = max(previous_finish, float(next_finish))
-            previous_floor = int(next_destination)
+        reliability_ordered = (
+            float(lift.health_loss_per_journey_percent or 0.0) > 0.0
+            or float(lift.mean_time_between_failures_hours or 0.0) > 0.0
+        )
+        if reservations and reliability_ordered:
+            tail = max(reservations, key=lambda reservation: reservation[1])
+            previous_finish, previous_floor = float(tail[1]), int(tail[3])
+        else:
+            for next_start, next_finish, _next_origin, next_destination, _owner in reservations:
+                if int(destination_floor) == previous_floor:
+                    start = max(float(arrival_at_lift), previous_finish, blackout_until)
+                    slot = service_at(start, previous_floor)
+                    if slot['lift_finish'] <= float(next_start) + 1e-9:
+                        return slot
+                previous_finish = max(previous_finish, float(next_finish))
+                previous_floor = int(next_destination)
 
         start = max(float(arrival_at_lift), previous_finish, blackout_until)
         return service_at(start, previous_floor)

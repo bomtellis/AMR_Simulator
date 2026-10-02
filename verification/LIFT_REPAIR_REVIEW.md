@@ -77,6 +77,11 @@ wear below it can make later work terminally infeasible. Speed uses health befor
 the journey, whereas the failure threshold uses health after wear. These rules
 describe the current approximation and are not a calibrated reliability model.
 
+Follow-up D049/D050 in [LIFT_RESERVATION_ORDER_REVIEW.md](LIFT_RESERVATION_ORDER_REVIEW.md)
+protects committed floor continuity and orders bookings chronologically when
+wear or failure thresholds are enabled. It supersedes the earlier-gap limitation
+below for those settings; the remaining reliability-model limits still apply.
+
 Known scheduled speed is sampled at phase entry. Mid-phase speed changes and
 outage interruption are not integrated over the trajectory. Repair/wear state is
 applied during serial route commitment; inserting journeys into earlier gaps

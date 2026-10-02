@@ -1,0 +1,183 @@
+{
+  "before": {
+    "summary": {
+      "run_directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\ltn-lift-repair\\results\\run_20261002_175125_18lz4v7j",
+      "project": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\ltn-lift-repair\\ltn-bounded.amrproj",
+      "binding": {
+        "run_key": "6ad169a039294b70bcd7f2e355cbd277",
+        "project_id": "9e1fc87ef38c4918888c9a9686614fd3",
+        "revision_id": "17b6b52aa4004ce69f0cdfcd8b19f0ac",
+        "revision_config_sha256": "167ef9995476fbf689fc3ffbc1970bc3bcae822619f484ade44eac5ee7e8d959"
+      },
+      "completed": 203,
+      "failed": 0,
+      "pending": 0,
+      "run_seconds": 17.294,
+      "outcome_sha256": "cbbdd6eba406e47d09ca44d14115111acf9f06ac967044715b65d64ee850f79b",
+      "input_unchanged": true,
+      "reconciliation": [
+        {
+          "outcome": "completed",
+          "recorded_summary_count": 203,
+          "event_count": 203,
+          "matches": true,
+          "missing_from_events": [],
+          "missing_from_summary": []
+        },
+        {
+          "outcome": "failed",
+          "recorded_summary_count": 0,
+          "event_count": 0,
+          "matches": true,
+          "missing_from_events": [],
+          "missing_from_summary": []
+        }
+      ],
+      "warning_review": "Automatically acknowledged by the engineering regression command, not human approval."
+    },
+    "completed_by_source": {
+      "task_generation": 124,
+      "idle_return": 51,
+      "task_generation_return": 27,
+      "department_waste": 1
+    },
+    "lift_movement_count": 371,
+    "floor_discontinuities": [
+      {
+        "lift": "Lift-1",
+        "expected_origin": 2,
+        "start": 20496.733,
+        "duration": 40.229,
+        "origin": 0,
+        "destination": 1,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000006648"
+      },
+      {
+        "lift": "Lift-2",
+        "expected_origin": 1,
+        "start": 20041.193,
+        "duration": 40.234,
+        "origin": 0,
+        "destination": 1,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000006406"
+      },
+      {
+        "lift": "Lift-4",
+        "expected_origin": 0,
+        "start": 18715.395,
+        "duration": 8.931,
+        "origin": 4,
+        "destination": 0,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000005725"
+      },
+      {
+        "lift": "Lift-5",
+        "expected_origin": 2,
+        "start": 11378.526,
+        "duration": 4.452,
+        "origin": 4,
+        "destination": 2,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000001398"
+      },
+      {
+        "lift": "Lift-5",
+        "expected_origin": 0,
+        "start": 16339.787,
+        "duration": 4.463,
+        "origin": 2,
+        "destination": 0,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000004518"
+      },
+      {
+        "lift": "Lift-5",
+        "expected_origin": 0,
+        "start": 18252.564,
+        "duration": 6.714,
+        "origin": 3,
+        "destination": 0,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000005525"
+      },
+      {
+        "lift": "Lift-6",
+        "expected_origin": 2,
+        "start": 11368.849,
+        "duration": 4.451,
+        "origin": 4,
+        "destination": 2,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000001360"
+      },
+      {
+        "lift": "Lift-6",
+        "expected_origin": 0,
+        "start": 18338.897,
+        "duration": 44.707,
+        "origin": 3,
+        "destination": 0,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000005626"
+      },
+      {
+        "lift": "Lift-7",
+        "expected_origin": 4,
+        "start": 14358.5,
+        "duration": 42.46,
+        "origin": 0,
+        "destination": 2,
+        "event_id": "144cdaf279d3463d94681b013ec4732b:000000002721"
+      }
+    ],
+    "lift_overlaps": [],
+    "battery_known": true,
+    "battery_count": 22,
+    "all_battery_balances_match": true
+  },
+  "after": {
+    "summary": {
+      "run_directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\ltn-lift-reservation-order\\results\\run_20261002_180628_1p16sqal",
+      "project": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\ltn-lift-reservation-order\\ltn-bounded.amrproj",
+      "binding": {
+        "run_key": "8b925124778d4a00a6af7ae891389bba",
+        "project_id": "dc5b895dbb5a4be0acd8b128bf22e718",
+        "revision_id": "47eb47144561421c8c3d4f39b51fb765",
+        "revision_config_sha256": "167ef9995476fbf689fc3ffbc1970bc3bcae822619f484ade44eac5ee7e8d959"
+      },
+      "completed": 204,
+      "failed": 0,
+      "pending": 0,
+      "run_seconds": 14.297,
+      "outcome_sha256": "9140519eb512a425fb5956e26456743bd71bb15594f75ebd430bd3b82095119a",
+      "input_unchanged": true,
+      "reconciliation": [
+        {
+          "outcome": "completed",
+          "recorded_summary_count": 204,
+          "event_count": 204,
+          "matches": true,
+          "missing_from_events": [],
+          "missing_from_summary": []
+        },
+        {
+          "outcome": "failed",
+          "recorded_summary_count": 0,
+          "event_count": 0,
+          "matches": true,
+          "missing_from_events": [],
+          "missing_from_summary": []
+        }
+      ],
+      "warning_review": "Automatically acknowledged by the engineering regression command, not human approval."
+    },
+    "completed_by_source": {
+      "task_generation": 124,
+      "idle_return": 52,
+      "task_generation_return": 27,
+      "department_waste": 1
+    },
+    "lift_movement_count": 368,
+    "floor_discontinuities": [],
+    "lift_overlaps": [],
+    "battery_known": true,
+    "battery_count": 22,
+    "all_battery_balances_match": true
+  },
+  "same_demand_task_ids": true
+}

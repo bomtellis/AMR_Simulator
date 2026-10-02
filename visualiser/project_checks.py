@@ -471,4 +471,12 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     add("MODEL_SCOPE", "info", "/corridors", "Movement model", "Lane capacity and turn drawings remain approximations.",
         "This check does not verify keep-right lane geometry, swept turns or physical contamination control.",
         "Consult the verification feature inventory before making physical clearance claims.", "corridors", kind="assumption")
+    if config.get("lifts"):
+        add("LIFT_MODEL_SCOPE", "info", "/lifts", "Lift scheduling",
+            "Lifts with wear or failure thresholds serve booked journeys in commitment order.",
+            "Earlier gaps are used only with wear and failures disabled and when the recorded journey preserves the next booking's starting floor. "
+            "Failures use a deterministic operating-time threshold; repairs do not restore health. "
+            "Scenario speed is sampled at phase entry; mid-journey outages are not simulated.",
+            "Review lift settings and the lift reservation and repair references before interpreting reliability or utilisation.",
+            "lifts", kind="assumption")
     return finish()

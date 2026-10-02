@@ -1,0 +1,18 @@
+Baseline: b8c88fd
+Command: .venv/Scripts/python.exe -m unittest tests.test_lift_reservation_order -v
+8 independent references: 5 failed, 3 passed before the scheduling fix.
+
+D049: after booking floor 0->1 at 100..105 seconds, a new 0->1 journey
+was inserted at 10..15. The gap check allowed a reset to floor 0 but no
+reset movement was reserved, logged, charged energy or applied to wear.
+The preserved-booking expectation is 105..111, including recorded reposition.
+
+D050: with 10% wear, the new earlier journey used the health remaining
+after the later journey; the later journey retained its original faster timing.
+With a two-second failure threshold, a new earlier 1->0 journey at 10..16
+reached the threshold, but repair was placed after the booked 100..105 journey.
+Chronological commitment expects the second service at 105..110, repair
+110..120 and the third service 120..125. Zero-duration repair also failed.
+
+Full individual route: expected second completion 116.10526315789474 seconds;
+observed 10.052631578947368 seconds under the inconsistent earlier insertion.
