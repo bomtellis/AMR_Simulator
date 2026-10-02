@@ -10,6 +10,8 @@ Unsaved-work safeguards and automatic recovery copies are described in the
 [recovery review guide](verification/RECOVERY_REVIEW.md).
 Use **Edit → Undo / Redo** for completed changes; see the
 [undo and redo review guide](verification/UNDO_REDO_REVIEW.md) for scope and limits.
+**Home → Project runs** can save, check and simulate a project revision, then open
+its results in the editor. See the [project runs review guide](verification/PROJECT_RUNS_REVIEW.md).
 
 The first verification checkpoint provides independently calculated routing,
 door-width, service-time, reservation and task-generation reference cases, plus

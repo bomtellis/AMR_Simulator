@@ -144,8 +144,11 @@ class ResultsInvestigationPanel(QWidget):
             reconciliation.append(f"{r['outcome'].capitalize()}: recorded summary {r['recorded_summary_count']}, events {r['event_count']} — "
                                   + ('matched' if r['matches'] else 'MISMATCH: ' + json.dumps(r)))
         software = result.get('software') or {}
+        binding = result.get('project_binding') or {}
         self.evidence.setPlainText('\n'.join([
             'Run: ' + (result['run_id'] or 'Legacy; no native run identity'),
+            'Project revision: ' + (binding.get('revision_id') or 'Not recorded'),
+            'Project identity: ' + (binding.get('project_id') or 'Not recorded'),
             'Input snapshot: ' + ('Available from saved evidence' if result['frozen_inputs'] else 'Unavailable; current editor inputs are not used'),
             'Software source fingerprint: ' + (software.get('sha256') or 'Not recorded'),
             'Log checksum: ' + result['log_sha256'], '', 'Summary reconciliation:',

@@ -28,12 +28,14 @@ continue to accept JSON; use **Export JSON** to provide their input.
 
 ## Storage contract
 
-Version 1 is a compressed ZIP containing a manifest, canonical configuration
+Version 1 is a compressed ZIP containing a manifest, compact configuration
 snapshots and SHA-256-addressed drawing bytes. Only `floor_dxf_files` and
 `floor_pdf_underlays` collect external files. Results folders, CSV logs and report
 files are never collected. Snapshots retain all other configuration data.
 Opening a project materializes drawings in a temporary cache for the renderer;
 persistent snapshots use portable internal references.
+Configuration key order is preserved following defect D009; see the
+[project-run checkpoint](PROJECT_RUNS_REVIEW.md) for prior-file compatibility.
 
 Unchanged saves do not add revisions. Restore appends history and preserves
 current edits first. Saves flush a temporary file on the destination volume, then

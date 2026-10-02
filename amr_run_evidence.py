@@ -21,7 +21,7 @@ def config_hash(config):
 def software_snapshot():
     root = Path(__file__).resolve().parent
     files = {p.name: file_hash(p) for p in sorted(root.glob('amr_sim_*.py'))}
-    for name in ('simulator.py', 'amr_run_evidence.py'):
+    for name in ('simulator.py', 'amr_run_evidence.py', 'amr_project_runs.py'):
         files[name] = file_hash(root / name)
     return {'version_scheme': 'source file SHA-256', 'sha256': config_hash(files), 'files': files}
 
@@ -33,6 +33,7 @@ def write_run_evidence(simulation, csv_path, *, kind='full'):
         'config_sha256': simulation._evidence_config_hash,
         'frozen_inputs': simulation._evidence_inputs,
         'software': simulation._evidence_software,
+        'project_binding': getattr(simulation, '_evidence_project_binding', None),
         'log_sha256': file_hash(path), 'log_kind': kind,
         'logging_enabled': simulation.verbose,
         'reduced_logging': bool(simulation.scenario_mode and not simulation.scenario_enhanced_logging),

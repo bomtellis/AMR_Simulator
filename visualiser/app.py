@@ -386,7 +386,7 @@ class AMRGraphEditor(QMainWindow):
     def _configuration_state(self):
         # Comparison also works for malformed numeric input opened for repair.
         # Persistent saves and recovery still reject non-finite JSON values.
-        return json.dumps(self.store.data, sort_keys=True, ensure_ascii=False)
+        return json.dumps(self.store.data, ensure_ascii=False)
 
     def _history_busy(self):
         return (self._edit_depth > 0 or QApplication.activeModalWidget() is not None or
@@ -504,6 +504,8 @@ class AMRGraphEditor(QMainWindow):
         self._discard_own_recovery()
         self._recovery_status = "No unsaved work awaiting recovery"
         self._update_unsaved_indicator()
+        if hasattr(self, 'project_runs_panel'):
+            self.project_runs_panel.refresh_runs()
 
     def capture_recovery(self):
         # Avoid capturing a half-finished drag or modal editor operation.
@@ -533,6 +535,9 @@ class AMRGraphEditor(QMainWindow):
             return False
 
     def _confirm_unsaved_changes(self):
+        if hasattr(self, 'project_runs_panel') and self.project_runs_panel.running():
+            QMessageBox.information(self, "Simulation running", "Stop the run or wait for it to finish before opening another project or closing the editor.")
+            return False
         if any(window.isVisible() for window in self.findChildren(QMainWindow)):
             QMessageBox.information(self, "Finish editing first",
                 "Close the task editor or planner before opening another project or closing the main editor. This keeps its pending edits with the correct project.")
@@ -752,6 +757,7 @@ class AMRGraphEditor(QMainWindow):
                 button("Project checks", self.validate_json),
                 button("Demand preview", self.show_demand_preview),
                 button("Results investigation", self.show_results_investigation),
+                button("Project runs", self.show_project_runs),
             ],
             columns=3,
         )
@@ -3177,6 +3183,20 @@ class AMRGraphEditor(QMainWindow):
         self.project_history_panel.refresh()
         self.project_history_dock.show()
         self.project_history_dock.raise_()
+
+    def show_project_runs(self):
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from project_runs_panel import ProjectRunsPanel
+        if not hasattr(self, 'project_runs_panel'):
+            self.project_runs_panel = ProjectRunsPanel(self)
+            self.project_runs_dock = QDockWidget('Project runs', self)
+            self.project_runs_dock.setWidget(self.project_runs_panel)
+            self.addDockWidget(Qt.BottomDockWidgetArea, self.project_runs_dock)
+        self.project_runs_panel.refresh_runs()
+        self.project_runs_dock.show()
+        self.project_runs_dock.raise_()
 
     def _ask_dxf_units(self):
         units, accepted = QInputDialog.getItem(

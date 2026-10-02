@@ -293,7 +293,7 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
                                    'missing_from_summary': sorted(observed - expected)})
     return {'schema_version': 1, 'source': source, 'log_sha256': log_hash, 'run_id': metadata.get('run_id'),
             'complete_evidence': complete_evidence, 'frozen_inputs': frozen,
-            'software': metadata.get('software'), 'findings': sorted(set(findings)),
+            'software': metadata.get('software'), 'project_binding': metadata.get('project_binding'), 'findings': sorted(set(findings)),
             'tasks': tasks, 'events': events, 'metrics': metrics, 'payload_movements': payload_moves,
             'payload_tracking_findings': payload_anomalies,
             'journeys': list(journeys.values()), 'reconciliation': reconciliation,

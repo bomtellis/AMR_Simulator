@@ -86,6 +86,7 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D006 | LTN regression assumed three bays after the project acquired a fourth | Assert the actual four named bays; no LTN data was changed. |
 | D007 | Fast assignment and charging estimates could still use a route rejected by door-width checks | Apply the same oriented robot/payload width to preliminary travel, energy and fast assignment queries. Three regression cases verify detour time, impossible passage and both charging-estimate legs. |
 | D008 | LTN has two exits for one clinical-waste instance before its next recorded entry | Open investigation. Results investigation links both records and marks transfer totals incomplete; underlying tracking behaviour has not been repaired or classified as physical payload loss. |
+| D009 | Sorting configuration keys in project, undo and recovery snapshots changed generation category iteration order | Preserve configuration key order in persisted/restored snapshots. Ordered-category acceptance tests reproduce the defect. The project-bound six-hour LTN run now matches the original detailed outcome fingerprint exactly. Previously sorted snapshots cannot reconstruct discarded order; reimport the original JSON for baseline comparisons. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation
@@ -159,7 +160,12 @@ Exports contain the frozen project configuration, so treat them as project data.
 
 ## Results investigation checkpoint
 
-The latest checkpoint is [Undo and redo](UNDO_REDO_REVIEW.md): shared completed-edit
+The latest checkpoint is [Project-bound simulation](PROJECT_RUNS_REVIEW.md):
+save, check and simulate within the editor, frozen revision-bound external runs,
+moved-run matching and Results investigation. Persistent run links and the full
+project tree remain outstanding.
+
+[Undo and redo](UNDO_REDO_REVIEW.md) provides shared completed-edit
 history, keyboard shortcuts, save-aware dirty state and protection against stale
 editing windows. Saved revisions remain the cross-session restore mechanism.
 
