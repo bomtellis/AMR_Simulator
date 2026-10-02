@@ -773,6 +773,8 @@ class Simulation:
                 self.amrs.append(amr)
 
         self.amrs_by_id: Dict[str, AMR] = {amr.id: amr for amr in self.amrs}
+        self._initial_battery_energy = {amr.id: amr.battery_energy_kwh() for amr in self.amrs}
+        self._battery_summary_written = False
         self._assign_initial_amrs_to_charge_inventory_spaces()
         self.amrs_by_id = {amr.id: amr for amr in self.amrs}
 
@@ -9876,6 +9878,8 @@ class Simulation:
                         "duration": charge_duration,
                         "battery_soc_before": amr.battery_soc_percent,
                         "battery_soc_after": 100.0,
+                        "energy_kwh": max(0.0, amr.battery_capacity_kwh - amr.battery_energy_kwh()),
+                        "energy_source": "battery_charge_input",
                         "charger_space": str(getattr(amr, "inventory_space_name", "") or ""),
                     }
                 )
@@ -11778,6 +11782,9 @@ class Simulation:
             carrying_payload = False
 
             for segment in committed["segments"]:
+                if segment.get('type') == 'charge':
+                    self._log_battery_charge_applied(amr, float(segment['energy_kwh']),
+                        task_id=task.id, basis='credited_at_route_commit')
                 segment.setdefault("payload_orientation", committed.get("payload_orientation", getattr(task, "payload_orientation", "")))
                 from_node = segment.get("from", "")
                 to_node = segment.get("to", "")
@@ -13172,11 +13179,12 @@ class Simulation:
                 event_time=event.payload["charge_start"],
                 event_type="segment_charge",
                 amr_id=amr.id,
-                details=(
-                    "Opportunity charging after inactivity"
-                    if event.payload.get("charge_reason") == "opportunity_idle"
-                    else "Recharge required by battery reserve"
-                ),
+                details=json.dumps({
+                    'reason': event.payload.get('charge_reason', 'reserve_threshold'),
+                    'energy_source': 'battery_charge_input',
+                    'energy_kwh': float(amr.battery_charge_rate_kw) * float(event.payload['charge_duration']) / 3600.0,
+                    'basis': 'planned_until_charge_completion',
+                }),
                 from_location=charge_location_name,
                 to_location=charge_location_name,
                 duration_sec=event.payload["charge_duration"],
@@ -13211,7 +13219,9 @@ class Simulation:
                 or getattr(self, "charge_location_name", "")
             ).strip()
             amr.total_charge_time += event.payload["charge_duration"]
+            credited_energy = max(0.0, amr.battery_capacity_kwh - amr.battery_energy_kwh())
             amr.charge_to_full()
+            self._log_battery_charge_applied(amr, credited_energy, basis='credited_at_charge_completion')
             amr.is_charging = False
 
             self.log_step(
@@ -14233,6 +14243,29 @@ class Simulation:
                 writer.writerow([metric, value, unit, self.scenario_description if metric == "Scenario" else ""])
         return str(path)
 
+    def _log_battery_charge_applied(self, amr, energy, *, task_id='', basis):
+        self.log_step(event_time=self.current_time, event_type='battery_charge_applied',
+            amr_id=amr.id, task_id=task_id, status='accounting', energy_kwh=energy,
+            details=json.dumps({'energy_source': 'battery_charge_input',
+                                'energy_kwh': energy, 'basis': basis}))
+
+    def _append_battery_balance_rows(self):
+        if (self._battery_summary_written or not self.verbose
+                or self._evidence_run_status not in ('finished', 'cancelled')):
+            return
+        self._battery_summary_written = True
+        self._evidence_event_capabilities.append('battery_balance_v1')
+        for amr in self.amrs:
+            self.log_step(event_time=self.current_time, event_type='battery_balance_summary',
+                amr_id=amr.id, status='summary', details=json.dumps({
+                    'initial_kwh': self._initial_battery_energy.get(amr.id),
+                    'charged_kwh': amr.total_energy_charged_kwh,
+                    'traction_kwh': amr.total_energy_used_kwh,
+                    'final_kwh': amr.battery_energy_kwh(),
+                    'charge_in_progress': bool(amr.is_charging),
+                    'basis': 'model_accounting_not_measured_state',
+                }))
+
     def write_verbose_csv(self):
         """Flush the bounded verbose buffer and append final summary rows."""
         if not self.verbose_csv_path:
@@ -14241,6 +14274,7 @@ class Simulation:
         self._append_scenario_summary_row()
         if not (self.scenario_mode and not self.scenario_enhanced_logging):
             self._append_payload_population_summary_rows()
+            self._append_battery_balance_rows()
         self._append_location_space_recommendation_rows()
         self._flush_verbose_rows_to_csv()
         self._ensure_verbose_csv_header()

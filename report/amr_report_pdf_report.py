@@ -2029,7 +2029,8 @@ def build_report(
     # --- END AMR Utilisation Summary ---
 
     # --- START AMR Recharge Summary ---
-    story += [Spacer(1, 8), Paragraph("AMR recharge summary", styles["Section"])]
+    story += [Spacer(1, 8), Paragraph("Scheduled AMR recharge summary", styles["Section"])]
+    story.append(Paragraph('Recharge segments describe scheduled input. The battery balance below uses only energy credited to the model battery.', styles['BodyText']))
     recharge_df = results["recharge_summary"].copy()
 
     if recharge_df.empty:
@@ -2042,6 +2043,9 @@ def build_report(
     else:
         recharge_df["recharge_time_s"] = recharge_df["recharge_time_s"].map(
             fmt_duration
+        )
+        recharge_df["recharge_energy_kwh"] = recharge_df["recharge_energy_kwh"].map(
+            lambda value: f'{value:.6g}' if pd.notna(value) else 'Unknown'
         )
         recharge_df = recharge_df.rename(
             columns={
@@ -2063,6 +2067,27 @@ def build_report(
     story += [PageBreak()]
 
     # --- END AMR Recharge Summary ---
+
+    battery_df = results.get('battery_balance', pd.DataFrame()).copy()
+    story.append(Paragraph('Recorded model battery balance', styles['Section']))
+    story.append(Paragraph(
+        'Initial + applied charge - planned traction = final model battery. Delivery traction is booked when a route is committed. '
+        'In-place route charging is credited during commitment; separate charging is credited on completion. '
+        'This verifies model accounting, not measured or continuously interpolated battery state. All energy values are kWh.',
+        styles['BodyText']))
+    if battery_df.empty:
+        story.append(Paragraph('Battery balance is not established by this log.', styles['BodyText']))
+    else:
+        for column in ('initial_kwh', 'applied_charge_kwh', 'planned_traction_kwh', 'final_kwh', 'residual_kwh'):
+            battery_df.loc[~battery_df['known'].astype(bool), column] = float('nan')
+            battery_df[column] = battery_df[column].map(
+                lambda value: f'{value:.6g}' if pd.notna(value) else 'Unknown')
+        battery_df = battery_df[['amr_id', 'initial_kwh', 'applied_charge_kwh', 'planned_traction_kwh',
+                                 'final_kwh', 'residual_kwh', 'status']].rename(columns={
+            'amr_id': 'AMR', 'initial_kwh': 'Initial', 'applied_charge_kwh': 'Applied charge',
+            'planned_traction_kwh': 'Traction', 'final_kwh': 'Final', 'residual_kwh': 'Residual', 'status': 'Evidence'})
+        story.append(table_from_df(battery_df, [28 * mm, 24 * mm, 27 * mm, 24 * mm, 24 * mm, 25 * mm, 30 * mm], styles))
+    story.append(PageBreak())
 
     # --- START Lift usage Summary ---
 

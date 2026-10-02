@@ -1,0 +1,7 @@
+{
+  "baseline_simulator": "9436cdf",
+  "expected_charge_input_kwh": 0.0009,
+  "observed_charge_input_kwh": [
+    0.0
+  ]
+}

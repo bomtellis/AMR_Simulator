@@ -320,7 +320,8 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
     metric('lift_segments', 'Planned lift movements', len(lifts), [e['id'] for e in lifts],
            'Transfer and empty reposition segment records, each counted once regardless of carried task count. These are logged route-plan movements, not independent execution confirmations.')
     energy = summarize_energy((e['row'] for e in events), complete=complete_evidence,
-                              capabilities=metadata.get('event_capabilities', []))
+                              capabilities=metadata.get('event_capabilities', []),
+                              expected_amrs=metadata.get('summary', {}).get('battery_amr_ids'))
     for source, record in energy['sources'].items():
         metrics.append({'key': source + '_energy_kwh', 'title': record['title'] + ' (kWh)',
             'value': record['value_kwh'], 'observed_count': record['observed_kwh'],
@@ -333,6 +334,25 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
             journeys[journey_id]['energy_event_ids'] = record['event_ids']
     if not all(record['known'] for record in energy['sources'].values()):
         findings.append('Complete source-attributed energy is not established. Legacy, filtered or incomplete movement evidence is not zero consumption.')
+    battery = energy['battery']
+    metrics.append({'key': 'battery_charge_applied_kwh', 'title': 'Applied battery charging (kWh)',
+        'value': battery['applied_charge_kwh'], 'observed_count': battery['observed_applied_charge_kwh'],
+        'coverage': 'full bound model accounting' if battery['known'] else 'partial or unknown accounting',
+        'definition': 'Charge energy explicitly credited to the model battery. Separate charge cycles credit at completion; in-place route charges credit during commitment. Not measured wall-supply consumption or continuous physical state.',
+        'event_ids': battery['charge_event_ids']})
+    for record in battery['records']:
+        metrics.append({'key': 'battery_balance_' + record['amr_id'],
+            'title': 'Model battery balance: ' + record['amr_id'],
+            'value': record['status'] if record['known'] else None,
+            'observed_count': record['residual_kwh'], 'coverage': record['status'],
+            'definition': (f"Initial {record['initial_kwh']} kWh + applied charge {record['applied_charge_kwh']} kWh "
+                f"- planned traction {record['planned_traction_kwh']} kWh - final {record['final_kwh']} kWh. "
+                'Residual must be zero within 1e-9 kWh; charge and traction records must also match the recorded counters. This is model accounting, not continuous physical state.'),
+            'event_ids': record['event_ids']})
+        if record['matches'] is False:
+            findings.append(f"Battery accounting mismatch for {record['amr_id']}: inspect charge, movement and summary evidence.")
+    if not battery['known']:
+        findings.append('Complete battery balance is not established; applied charging and final model state require bound accounting evidence.')
     if payload_gaps:
         findings.append('Payload movement evidence has missing identifiers/times, repeated exits or unpaired exits; transfer totals may be incomplete.')
         findings.extend(a['reason'] for a in payload_anomalies)

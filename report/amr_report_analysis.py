@@ -5678,7 +5678,6 @@ def analyse(
                 errors="coerce",
             )
             .fillna(0.0)
-            .round(3)
         )
 
         recharge_summary["recharge_time_s"] = (
@@ -5709,7 +5708,6 @@ def analyse(
             errors="coerce",
         )
         .fillna(0.0)
-        .round(3)
     )
 
     amr_summary = amr_summary.merge(
@@ -6387,6 +6385,7 @@ def analyse(
         "lift_summary": lift_summary,
         "energy_summary": energy_summary,
         "energy_evidence": energy_evidence,
+        "battery_balance": pd.DataFrame(energy_evidence['battery']['records']),
         "lift_usage_profile": lift_usage_profile,
         "journey_detail": journey_detail,
         "journey_flow_summary": journey_flow_summary,

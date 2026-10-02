@@ -40,7 +40,8 @@ def write_run_evidence(simulation, csv_path, *, kind='full'):
         'reduced_logging': bool(simulation.scenario_mode and not simulation.scenario_enhanced_logging),
         'run_status': simulation._evidence_run_status,
         'summary': {'completed_task_ids': sorted({r['task_id'] for r in simulation.completed_task_records}),
-                    'failed_task_ids': sorted(simulation.failed_task_ids)},
+                    'failed_task_ids': sorted(simulation.failed_task_ids),
+                    'battery_amr_ids': sorted(amr.id for amr in simulation.amrs)},
         'scope': 'Recorded inputs and source fingerprint; no claim of tamper-proof audit or certification.',
     }
     target = Path(str(path) + '.run.json')

@@ -252,6 +252,7 @@ class AMR:
     total_busy_time: float = 0.0
     total_charge_time: float = 0.0
     total_energy_used_kwh: float = 0.0
+    total_energy_charged_kwh: float = 0.0
     is_charging: bool = False
     payload: str = ""
     payload_instance_id: str = ""
@@ -294,4 +295,5 @@ class AMR:
         return (missing_kwh / max(self.battery_charge_rate_kw, 1e-9)) * 3600.0
 
     def charge_to_full(self):
+        self.total_energy_charged_kwh += max(0.0, self.battery_capacity_kwh - self.battery_energy_kwh())
         self.battery_soc_percent = 100.0
