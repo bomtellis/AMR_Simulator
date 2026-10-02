@@ -1,0 +1,46 @@
+test_beyond_full_battery_has_explicit_reason_and_no_charge (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_beyond_full_battery_has_explicit_reason_and_no_charge) ... FAIL
+test_charge_estimate_does_not_change_resources (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_charge_estimate_does_not_change_resources) ... FAIL
+test_cross_floor_shortfall_charges_then_replans (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_cross_floor_shortfall_charges_then_replans) ... FAIL
+test_released_cross_floor_task_completes_after_required_charge (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_released_cross_floor_task_completes_after_required_charge) ... FAIL
+test_retry_failure_restores_the_original_state (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_retry_failure_restores_the_original_state) ... ok
+
+======================================================================
+FAIL: test_beyond_full_battery_has_explicit_reason_and_no_charge (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_beyond_full_battery_has_explicit_reason_and_no_charge)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_charge_replanning.py", line 51, in test_beyond_full_battery_has_explicit_reason_and_no_charge
+    self.assertIn('exceeds usable full-battery energy', task.pending_reason)
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'exceeds usable full-battery energy' not found in 'AMR R-1 has insufficient battery energy for this route and reserve'
+
+======================================================================
+FAIL: test_charge_estimate_does_not_change_resources (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_charge_estimate_does_not_change_resources)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_charge_replanning.py", line 39, in test_charge_estimate_does_not_change_resources
+    self.assertIsNotNone(plan)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^
+AssertionError: unexpectedly None
+
+======================================================================
+FAIL: test_cross_floor_shortfall_charges_then_replans (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_cross_floor_shortfall_charges_then_replans)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_charge_replanning.py", line 25, in test_cross_floor_shortfall_charges_then_replans
+    self.assertIsNotNone(plan)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^
+AssertionError: unexpectedly None
+
+======================================================================
+FAIL: test_released_cross_floor_task_completes_after_required_charge (tests.test_route_charge_replanning.RouteChargeReplanningTests.test_released_cross_floor_task_completes_after_required_charge)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_charge_replanning.py", line 70, in test_released_cross_floor_task_completes_after_required_charge
+    self.assertEqual(1, len(sim.completed_task_records))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.007s
+
+FAILED (failures=4)

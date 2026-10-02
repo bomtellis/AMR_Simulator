@@ -162,6 +162,9 @@ class DeliveryEnergyReferenceTests(unittest.TestCase):
         cfg = lift_config()
         cfg['amrs'][0].update(battery_soc_percent=.001, recharge_threshold_percent=0)
         sim = Simulation(cfg)
+        # A depleted robot away from a charger cannot spend energy it lacks.
+        sim.charge_location_names = ['B']
+        sim.charge_location_name = 'B'
         before = state(sim)
         plan = sim._estimate_task_for_amr(sim.amrs[0], Task('T', 'A', 'B', 'Box'), reserve=True)
         self.assertIsNone(plan)

@@ -12,7 +12,7 @@ implementation; no national-body certification claim is made.
 | Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
 | Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
 | Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
-| Individual defect reproduction and changed-result explanations | D001–D033 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
+| Individual defect reproduction and changed-result explanations | D001–D035 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
 | LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
 | Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
 
@@ -104,7 +104,9 @@ see PAYLOAD_LIFECYCLE_REVIEW.md. Explicit staged recovery now has location, rout
 robot and capacity checks, editor controls and outcome evidence; D032 fixes task
 editing compatibility. See STAGED_RECOVERY_REVIEW.md. Staging geometry/capacity
 remains open. D033 corrects delivery traction, lift-supply attribution and actual
-battery feasibility; see DELIVERY_ENERGY_REVIEW.md. Next audit full-route charging
-replanning, shared-journey energy/report reconciliation and operational failures,
+battery feasibility; see DELIVERY_ENERGY_REVIEW.md. D034/D035 add in-place
+individual-route charging retries and correct physical-event charging timestamps;
+see ROUTE_CHARGE_REPLANNING_REVIEW.md. Next audit charging dispatch from other
+locations, shared-journey energy/report reconciliation and operational failures,
 alongside the wider generation-mode matrix.
 These are concrete next checks, not replacements for the full requirements above.

@@ -1,0 +1,25 @@
+{
+  "baseline_commit": "e798897",
+  "expected_pickup_sec": 172,
+  "expected_arrival_sec": 179,
+  "observed_actions": [
+    {
+      "event": "location_payload_exit",
+      "seconds": 342.0
+    },
+    {
+      "event": "location_payload_enter",
+      "seconds": 349.0
+    }
+  ],
+  "charge_intervals": [
+    {
+      "amr_id": "R-1",
+      "location": "A",
+      "space": "",
+      "start_time": 0.0,
+      "end_time": 170.00000000000003,
+      "duration_sec": 170.00000000000003
+    }
+  ]
+}

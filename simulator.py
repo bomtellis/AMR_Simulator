@@ -9829,6 +9829,8 @@ class Simulation:
         to_pickup_sec: float,
         loaded_sec: float,
         ready_time: float,
+        *,
+        force_charge: bool = False,
     ) -> Tuple[float, List[dict], float]:
         required_energy_kwh = total_route_energy_kwh(
             amr, payload, to_pickup_sec, loaded_sec
@@ -9836,7 +9838,7 @@ class Simulation:
         extra_segments: List[dict] = []
         adjusted_ready_time = ready_time
 
-        if requires_recharge_before_route(amr, required_energy_kwh):
+        if force_charge or requires_recharge_before_route(amr, required_energy_kwh):
             # Never charge on an arbitrary corridor/location node.  In-place
             # pre-route charging is valid only when the AMR is actually parked
             # in a charger-equipped bay (or at a legacy charger location with no
@@ -10044,14 +10046,26 @@ class Simulation:
         return self._schedule_charge_cycle(amr, now, charge_reason="post_task")
 
     def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False):
-        if not reserve:
-            return self._estimate_task_for_amr_impl(amr, task, reserve=False)
-        with RouteReservationTransaction(self, amr, [task]) as transaction:
-            result = self._estimate_task_for_amr_impl(amr, task, reserve=True)
-            transaction.committed = result is not None
-            return result
+        # A charge changes all subsequent resource times. Discard the first
+        # attempt before constructing the route again; never shift reservations
+        # or reuse a trajectory computed before charging.
+        for force_charge in (False, True):
+            if reserve:
+                with RouteReservationTransaction(self, amr, [task]) as transaction:
+                    result = self._estimate_task_for_amr_impl(
+                        amr, task, reserve=True, force_charge=force_charge)
+                    retry = bool(result and result.get('_retry_after_charge'))
+                    transaction.committed = result is not None and not retry
+            else:
+                result = self._estimate_task_for_amr_impl(
+                    amr, task, reserve=False, force_charge=force_charge)
+                retry = bool(result and result.get('_retry_after_charge'))
+            if not retry:
+                return result
+        return None
 
-    def _estimate_task_for_amr_impl(self, amr: AMR, task: Task, reserve: bool = False):
+    def _estimate_task_for_amr_impl(self, amr: AMR, task: Task, reserve: bool = False,
+                                  *, force_charge: bool = False):
         try:
             availability_time = max(self.current_time, float(getattr(amr, "available_time", 0.0) or 0.0), float(getattr(task, "release_time", 0.0) or 0.0))
             amr_scenario_state = self._scenario_event_state("amr", amr.id, availability_time)
@@ -10175,7 +10189,7 @@ class Simulation:
 
             t = max(self.current_time, amr.available_time, task.release_time)
             charge_ready_time, charge_segments, required_route_energy_kwh = self._plan_charge_cycle_if_needed(
-                amr, payload, to_pickup_sec, loaded_sec, t
+                amr, payload, to_pickup_sec, loaded_sec, t, force_charge=force_charge
             )
             if requires_recharge_before_route(amr, required_route_energy_kwh) and not charge_segments:
                 self._set_task_pending_reason(
@@ -10183,8 +10197,8 @@ class Simulation:
                     f"AMR {amr.id} requires a charger-equipped bay before this route",
                 )
                 return None
-            t = charge_ready_time
             task_start_time = t
+            t = charge_ready_time
 
             total = sum(seg["duration"] for seg in charge_segments)
             segments = list(charge_segments)
@@ -10609,7 +10623,12 @@ class Simulation:
 
             available_energy = (amr.battery_capacity_kwh if charge_segments
                                 else amr.battery_energy_kwh())
+            if corridor_energy_kwh > amr.battery_capacity_kwh - amr.min_reserve_energy_kwh() + 1e-12:
+                self._set_task_pending_reason(task, f"AMR {amr.id}: route traction exceeds usable full-battery energy")
+                return None
             if available_energy - corridor_energy_kwh < amr.min_reserve_energy_kwh() - 1e-12:
+                if not force_charge and not charge_segments and self._amr_is_at_operational_charger(amr):
+                    return {'_retry_after_charge': True}
                 self._set_task_pending_reason(task, f"AMR {amr.id} has insufficient battery energy for this route and reserve")
                 return None
             projected_battery_soc_after = (
@@ -10621,13 +10640,13 @@ class Simulation:
             if reserve:
                 if charge_segments:
                     charge_duration = float(charge_segments[0]["duration"] or 0.0)
-                    charge_start = float(task_start_time) - charge_duration
+                    charge_start = float(task_start_time)
                     self.charge_intervals.append({
                         "amr_id": amr.id,
                         "location": str(amr.location_name or ""),
                         "space": str(getattr(amr, "inventory_space_name", "") or ""),
                         "start_time": charge_start,
-                        "end_time": float(task_start_time),
+                        "end_time": float(charge_ready_time),
                         "duration_sec": charge_duration,
                     })
                     amr.total_charge_time += charge_duration
