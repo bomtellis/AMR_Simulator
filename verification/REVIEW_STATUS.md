@@ -1,5 +1,26 @@
 # Stage 1 clash review — 2 October 2026
 
+## Later checkpoint — layout objects and contextual properties
+
+- A searchable layout tree lists points and explicit directed corridor records.
+  A contextual panel edits positions, doors, corridor properties and location
+  wash settings without modal dialogs; bulk changes have an inline preview.
+  See [Layout properties](LAYOUT_PROPERTIES_REVIEW.md).
+- **762 / 762 tests passed**, including 26 new acceptance cases, with zero broken
+  feature-to-test links. Independent reference results are 11.5 seconds for a
+  10 m + 5 m route at 2 m/s plus 4 seconds handling, and 6.5 seconds when the
+  first edge explicitly has zero distance. Door and direction consequences pass.
+- Drafts retain their original targets, reject stale overwrites, apply in one
+  undo step, and participate in save/export and recovery. Existing JSON nulls are
+  distinguished from absent settings and remain unchanged unless edited.
+- The LTN tree has 2,326 entries including groups. Twenty unchanged refreshes
+  averaged 0.00971 seconds locally; this is not a performance acceptance gate.
+  Actual themed screenshots were inspected at 1366 × 900; tests cover 1280 × 800
+  and a 100-node bulk selection.
+- Configuration-object properties, identity/floor changes, wider accessibility,
+  verified geometry and the full roadmap remain open. The unrelated `ltn.json`
+  change stays outside this commit.
+
 ## Later checkpoint — integrated playback
 
 - Review now embeds playback from completed, revision-bound full event logs,

@@ -466,6 +466,8 @@ class AMRGraphEditor(QMainWindow):
         return self._apply_history(redo=True)
 
     def has_unsaved_changes(self):
+        if hasattr(self, 'properties_panel') and self.properties_panel.pending:
+            return True
         try:
             return self._configuration_state() != self._saved_state
         except (TypeError, ValueError):
@@ -526,15 +528,18 @@ class AMRGraphEditor(QMainWindow):
             self._discard_own_recovery()
             return False
         try:
-            state = self._configuration_state()
+            recovery_config = self.properties_panel.recovery_config() if hasattr(self, 'properties_panel') else self.store.data
+            state = json.dumps(recovery_config, ensure_ascii=False)
             if state == self._recovery_last_state:
                 return True
             revision = self.project.revisions[-1]["id"] if self.project else None
-            body = self._get_recovery_store().capture(self.store.data, source_path=self.current_json_path,
+            body = self._get_recovery_store().capture(recovery_config, source_path=self.current_json_path,
                 source_hash=self._source_disk_hash, revision_id=revision)
             self._recovery_last_state = state
             self._recovery_status = f"Recovery copy: {body['captured_utc']}" + (
                 f"; {len(body['warnings'])} drawing(s) could not be copied" if body['warnings'] else "")
+            if hasattr(self, 'properties_panel') and self.properties_panel.pending:
+                self._recovery_status += '; includes unapplied property values'
             if body['warnings']:
                 self.set_status(self._recovery_status)
             self._update_unsaved_indicator()
@@ -545,7 +550,18 @@ class AMRGraphEditor(QMainWindow):
             self.file_label.setToolTip(self._recovery_status)
             return False
 
+    @undoable('Edit layout properties')
+    def apply_layout_properties(self, updated):
+        self.store.data = updated
+        self.refresh_canvas()
+        self.set_status('Layout properties applied. Undo restores the previous values.')
+
+    def _finish_property_draft(self):
+        return not hasattr(self, 'properties_panel') or self.properties_panel.apply()
+
     def _confirm_unsaved_changes(self):
+        if not self._finish_property_draft():
+            return False
         if hasattr(self, 'report_panel') and self.report_panel.running():
             QMessageBox.information(self, 'Report running', 'Stop report generation or wait for it to finish before changing projects or closing the application.')
             return False
@@ -1869,6 +1885,8 @@ class AMRGraphEditor(QMainWindow):
             self.draw_charging_space_markers(floor)
         self.file_label.setText(self.current_json_path or "New file")
         self.canvas.viewport().update()
+        if hasattr(self, 'workspace'):
+            self.workspace.refresh()
 
     def draw_charging_space_markers(self, floor):
         """Overlay a compact charger count beside locations with charger-equipped AMR bays."""
@@ -2431,6 +2449,8 @@ class AMRGraphEditor(QMainWindow):
 
     @undoable("Edit layout")
     def on_left_click(self, event, sx, sy):
+        if hasattr(self, 'workspace'):
+            self.workspace.selected_edge_record = None
         mode = self._current_edit_mode()
         floor = self.floor_spin.value()
         raw_x, raw_y = self.scene_to_world(sx, sy)
@@ -3208,6 +3228,9 @@ class AMRGraphEditor(QMainWindow):
 
         if hasattr(self, 'playback_panel'):
             self.playback_panel.reset()
+        if hasattr(self, 'properties_panel'):
+            self.properties_panel.reset()
+            self.workspace.selected_edge_record = None
         self.store = store
         self._recovered_work = False
         self.project = project
@@ -3263,6 +3286,8 @@ class AMRGraphEditor(QMainWindow):
         self.fit_view()
 
     def save_json(self):
+        if not self._finish_property_draft():
+            return False
         self._commit_history()
         if self.project is not None:
             return self.save_project()
@@ -3302,6 +3327,8 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def save_project(self, *, save_as=False):
+        if not self._finish_property_draft():
+            return False
         self._commit_history()
         root = str(Path(__file__).resolve().parents[1])
         if root not in sys.path:
@@ -3344,6 +3371,8 @@ class AMRGraphEditor(QMainWindow):
             return False
 
     def export_project_json(self):
+        if not self._finish_property_draft():
+            return
         root = str(Path(__file__).resolve().parents[1])
         if root not in sys.path:
             sys.path.insert(0, root)

@@ -6,7 +6,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest application checkpoint is [Project playback](PROJECT_PLAYBACK_REVIEW.md):
+The latest application checkpoint is [Layout properties](LAYOUT_PROPERTIES_REVIEW.md):
+searchable layout objects, contextual fields, bulk previews and undoable edits.
+[Project playback](PROJECT_PLAYBACK_REVIEW.md) also remains available:
 saved-run playback and its timeline now stay in Review, with frozen inputs,
 background loading and project-switch/pause safeguards.
 

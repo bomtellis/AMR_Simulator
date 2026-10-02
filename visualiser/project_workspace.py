@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QScrollArea)
+    QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QScrollArea, QLineEdit)
 
 
 STAGES = [('project', 'Project'), ('layout', 'Layout'), ('configuration', 'Configuration'),
@@ -22,6 +22,9 @@ class ProjectWorkspace(QWidget):
         self.pages = {'layout': canvas}
         self.stage = 'layout'
         self._floors = None
+        self._objects = None
+        self.selected_edge_record = None
+        self.object_items = {}
         self._navigating = False
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -32,6 +35,11 @@ class ProjectWorkspace(QWidget):
         self.project_label = QLabel('Unsaved project')
         self.project_label.setWordWrap(True)
         nav.addWidget(self.project_label)
+        self.search = QLineEdit()
+        self.search.setPlaceholderText('Find layout objects…')
+        self.search.setAccessibleName('Filter layout objects')
+        self.search.textChanged.connect(self.filter_objects)
+        nav.addWidget(self.search)
         self.tree = QTreeWidget()
         self.tree.setColumnCount(1)
         self.tree.setHeaderLabel('Project workflow')
@@ -65,8 +73,12 @@ class ProjectWorkspace(QWidget):
         self.stack = QStackedWidget()
         self.stack.addWidget(canvas)
         split.addWidget(self.stack)
+        from project_properties_panel import ProjectPropertiesPanel
+        self.properties = ProjectPropertiesPanel(editor)
+        editor.properties_panel = self.properties
+        split.addWidget(self.properties)
         split.setStretchFactor(1, 1)
-        split.setSizes([220, 1250])
+        split.setSizes([200, 960, 300])
         sidebar.setMinimumWidth(180)
         self.tree.currentItemChanged.connect(self.selected)
         self.show_page('layout', canvas)
@@ -76,6 +88,11 @@ class ProjectWorkspace(QWidget):
         if item is None or self._navigating:
             return
         key = item.data(0, Qt.UserRole)
+        if key is None:
+            return
+        if isinstance(key, tuple) and key[0] in {'point', 'edge'}:
+            self.select_object(key)
+            return
         if isinstance(key, tuple) and key[0] == 'floor':
             self.editor.floor_spin.setValue(key[1])
             self.show_page('layout', self.editor.canvas)
@@ -101,6 +118,7 @@ class ProjectWorkspace(QWidget):
         self.stage = key
         self.stack.setCurrentWidget(widget)
         self.editor.ribbon_tabs.setVisible(key == 'layout')
+        self.properties.setVisible(key == 'layout')
         self._navigating = True
         try:
             self.tree.setCurrentItem(self.items[key])
@@ -137,20 +155,118 @@ class ProjectWorkspace(QWidget):
             dirty = self.editor.has_unsaved_changes() if hasattr(self.editor, '_saved_state') else False
         self.project_label.setText(title + revision + ('\nUnsaved changes' if dirty else ''))
         self.project_label.setToolTip(str(path or 'Save a project to start revision history.'))
-        floors = tuple(sorted({int(p['floor']) for p in self.editor.store.all_points().values()}))
-        if floors != self._floors:
+        points = self.editor.store.all_points()
+        edges = self.editor.store.data.get('corridors', {}).get('edges', [])
+        floors = tuple(sorted({int(p['floor']) for p in points.values()}))
+        objects = (tuple(sorted((name, int(p['floor']), p['kind']) for name, p in points.items())),
+                   tuple((e.get('from'), e.get('to'), e.get('bidirectional', True)) for e in edges))
+        if objects != self._objects:
+            self._objects = objects
             self._floors = floors
             self.tree.blockSignals(True)
             try:
                 item = self.items['layout']
+                expanded = {key for key, row in self.object_items.items() if row.isExpanded()}
                 item.takeChildren()
+                self.object_items = {}
+                groups = {}
                 for floor in floors:
                     child = QTreeWidgetItem([f'Floor {floor}'])
                     child.setData(0, Qt.UserRole, ('floor', floor))
                     item.addChild(child)
+                    self.object_items[('floor', floor)] = child
+                    for kind, label in [('location', 'Locations'), ('corridor_node', 'Corridor nodes / doors'),
+                                        ('lift_node', 'Lift stops'), ('department', 'Departments'), ('edge', 'Corridors')]:
+                        group = QTreeWidgetItem([label])
+                        child.addChild(group)
+                        groups[floor, kind] = group
+                        self.object_items[('group', floor, kind)] = group
+                for name, point in sorted(points.items()):
+                    row = QTreeWidgetItem([name])
+                    key = ('point', name)
+                    row.setData(0, Qt.UserRole, key)
+                    row.setToolTip(0, f"{point['kind'].replace('_', ' ')} | floor {point['floor']}")
+                    groups[int(point['floor']), point['kind']].addChild(row)
+                    self.object_items[key] = row
+                unresolved = None
+                for index, edge in enumerate(edges):
+                    arrow = '↔' if edge.get('bidirectional', True) else '→'
+                    row = QTreeWidgetItem([f"{edge.get('from')} {arrow} {edge.get('to')} [{index + 1}]"])
+                    key = ('edge', index)
+                    row.setData(0, Qt.UserRole, key)
+                    start = points.get(edge.get('from'))
+                    if start:
+                        groups[int(start['floor']), 'edge'].addChild(row)
+                    else:
+                        if unresolved is None:
+                            unresolved = QTreeWidgetItem(['Unresolved corridors'])
+                            item.addChild(unresolved)
+                        unresolved.addChild(row)
+                    self.object_items[key] = row
+                for key in expanded:
+                    if key in self.object_items:
+                        self.object_items[key].setExpanded(True)
                 item.setExpanded(True)
             finally:
                 self.tree.blockSignals(False)
+        self.properties.refresh()
+        self.filter_objects()
+        if self.stage == 'layout' and not self.properties.pending:
+            target = self.properties.selection()
+            if target and len(target[1]) == 1:
+                key = ('point' if target[0] == 'points' else 'edge', target[1][0])
+                row = self.object_items.get(key)
+                if row is not None:
+                    self.tree.blockSignals(True)
+                    self.tree.setCurrentItem(row)
+                    self.tree.blockSignals(False)
+
+    def filter_objects(self, *_):
+        if not hasattr(self, 'items'):
+            return
+        query = self.search.text().strip().casefold()
+        def visit(item, parent_match=False):
+            own_match = parent_match or not query or query in item.text(0).casefold()
+            child_matches = [visit(item.child(i), own_match) for i in range(item.childCount())]
+            visible = own_match or any(child_matches)
+            item.setHidden(not visible)
+            if query and any(child_matches):
+                item.setExpanded(True)
+            return visible
+        root = self.items['layout']
+        for index in range(root.childCount()):
+            visit(root.child(index))
+
+    def select_object(self, key):
+        editor = self.editor
+        points = editor.store.all_points()
+        editor.selected_point_names.clear()
+        editor.selected_point_name = None
+        editor.selected_edge_keys.clear()
+        self.selected_edge_record = None
+        if key[0] == 'point':
+            point = points.get(key[1])
+            if point is None:
+                return
+            editor.selected_point_name = key[1]
+            editor.selected_point_names = {key[1]}
+            names = [key[1]]
+        else:
+            edges = editor.store.data.get('corridors', {}).get('edges', [])
+            if not 0 <= key[1] < len(edges):
+                return
+            edge = edges[key[1]]
+            names = [edge['from'], edge['to']]
+            editor.selected_edge_keys = {tuple(sorted(names))}
+            self.selected_edge_record = key[1]
+        available = [points[name] for name in names if name in points]
+        if available:
+            editor.floor_spin.setValue(int(available[0]['floor']))
+        self.show_page('layout', editor.canvas)
+        editor.refresh_canvas()
+        if available:
+            editor.canvas.centerOn(sum(float(p['x']) for p in available) / len(available),
+                                   -sum(float(p['y']) for p in available) / len(available))
 
     def configuration(self):
         if 'configuration' not in self.pages:

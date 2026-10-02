@@ -31,9 +31,11 @@ implementation; no national-body certification claim is made.
   generation uses selected runs' frozen inputs and external outputs. See
   PROJECT_WORKSPACE_REVIEW.md. Revision-bound playback now sits under Review with
   an embedded timeline and local monitors; see PROJECT_PLAYBACK_REVIEW.md.
-  Contextual properties and fuller object navigation remain unfinished;
-  configuration dialogs still exist. Playback underlays and large-log scaling
-  remain open.
+  Layout objects now have a searchable tree and contextual properties with bulk
+  previews, undo and draft safeguards; see LAYOUT_PROPERTIES_REVIEW.md.
+  Configuration-object properties, broader identity/floor editing and replacement
+  of other frequent dialogs remain unfinished. Playback underlays and large-log
+  scaling remain open.
 - Centralised state and undoable editing: snapshot undo/redo exists; finish
   command coverage and frequent editing outside modal dialogs.
 - `.amrproj` compressed storage, deduplicated drawings, atomic saves, recovery,
@@ -43,7 +45,7 @@ implementation; no national-body certification claim is made.
   persistent run references/custom locations now survive reopening. Moved runs
   retain missing entries and relink by identity; Save As rebases paths. See
   PERSISTENT_RUN_LINKS_REVIEW.md. The workflow tree now includes floors; fuller
-  object-level project-tree integration remains open.
+  configuration-object tree integration remains open; layout objects are listed.
 - Explicit corridor splitting and subdivision now preserve edge attributes,
   routing/resource references and grouped undo; see CORRIDOR_EDITING_REVIEW.md.
   Continuous drawing now places and connects successive nodes, snaps to points
