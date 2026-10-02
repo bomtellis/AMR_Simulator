@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDockWidget,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -506,7 +507,7 @@ class AMRGraphEditor(QMainWindow):
                     self.export_all_floors_dxf,
                     "Export every configured floor to a separate, sequentially numbered DXF file. Background DXF/PDF artwork is excluded.",
                 ),
-                button("Validate", self.validate_json),
+                button("Project checks", self.validate_json),
             ],
             columns=3,
         )
@@ -3169,15 +3170,53 @@ class AMRGraphEditor(QMainWindow):
         self.refresh_canvas()
 
     def validate_json(self):
-        errors = self.store.validate()
-        if errors:
-            QMessageBox.critical(self, "Validation errors", "\n".join(errors[:100]))
-            self.set_status(f"Validation failed with {len(errors)} error(s)")
+        from project_checks_panel import ProjectChecksPanel
+        if not hasattr(self, 'checks_dock'):
+            self.checks_dock = QDockWidget('Project checks', self)
+            self.checks_dock.setObjectName('projectChecksDock')
+            self.checks_panel = ProjectChecksPanel(
+                lambda: self.store.data, self.checks_dock,
+                lambda: Path(self.current_json_path).parent if self.current_json_path else None)
+            self.checks_panel.navigate.connect(self.navigate_check_finding)
+            self.checks_dock.setWidget(self.checks_panel)
+            self.addDockWidget(Qt.BottomDockWidgetArea, self.checks_dock)
         else:
-            QMessageBox.information(
-                self, "Validation", "JSON structure is internally consistent."
-            )
-            self.set_status("Validation passed")
+            self.checks_panel.check_now()
+        self.checks_dock.show()
+        self.checks_dock.raise_()
+        self.set_status('Project checks opened; select a finding to investigate.')
+
+    def navigate_check_finding(self, finding):
+        points = self.store.all_points()
+        if finding.target in points and finding.section in {'corridors', 'locations', 'lifts'}:
+            point = points[finding.target]
+            self.floor_spin.setValue(int(point['floor']))
+            self.selected_point_name = finding.target
+            self.selected_point_names = {finding.target}
+            self.selected_edge_keys = set()
+            self.refresh_canvas()
+            self.canvas.centerOn(self.world_to_scene(point['x'], point['y']))
+            self.set_status(f'{finding.target}: {finding.message}')
+            return
+        handlers = {
+            'simulation': self.manage_simulation_settings,
+            'corridors': self.manage_corridor_settings,
+            'building': self.manage_corridor_settings,
+            'amrs': self.manage_amrs, 'payloads': self.manage_payloads,
+            'lifts': self.manage_lifts, 'tasks': self.manage_tasks,
+            'task_generation': self.manage_task_generation,
+            'route_profiles': self.manage_route_profiles,
+            'departments': self.manage_departments,
+            'waste_streams': self.manage_waste_streams,
+            'mass_collections': self.manage_mass_collections,
+            'people_movements': self.manage_people_movement,
+            'scenario_testing': self.manage_scenario_testing,
+        }
+        handler = handlers.get(finding.section)
+        if handler:
+            handler()
+        else:
+            self.set_status(f'{finding.path}: {finding.action}')
 
     def manage_payloads(self):
         location_names = sorted(

@@ -87,9 +87,53 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D007 | Fast assignment and charging estimates could still use a route rejected by door-width checks | Apply the same oriented robot/payload width to preliminary travel, energy and fast assignment queries. Three regression cases verify detour time, impossible passage and both charging-estimate legs. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
-Priorities after review: continue individual option contracts and independent
-cases for other generation modes, lifts, energy, resource contention and reports;
-then surface structured findings in the application. The project container,
+Continue individual option contracts and independent cases for other generation
+modes, lifts, energy, resource contention and reports. Structured findings are now
+available at the Project checks checkpoint described below. The project container,
 unified UI, lanes, swept turns, tutorials and illustrated guide remain later stages.
 Unknown route profile fallback, lack of explicit clean/dirty shared sections,
 time-boundary semantics and approximate lane capacity are explicitly outstanding.
+
+## Project checks checkpoint
+
+In the editor, use **Home → Project checks**. The dock stays open while editing.
+Filter by severity or search for an object. Select a finding for its explanation,
+consequence, setting path and next action. **Go to affected settings** selects a
+graph point or opens the relevant settings editor. Older validator findings that
+do not identify a section retain their explanation without precise navigation.
+Severity is written in text; it does not depend on colour.
+
+Any configuration edit makes the report stale (checked every 750 ms and again
+before actions). Rerunning checks resets warning acknowledgement. Export saves a
+JSON record containing findings, stable finding IDs and the configuration hash.
+
+Launcher runs now review the raw configuration before normalisation. Detected
+malformed input errors block a run. Warnings describe operational constraints,
+missing drawings or unresolved rule references and require acknowledgement.
+Each run saves the exact reviewed input bytes as `config.json` and saves findings
+and acknowledged warning IDs in `project_checks.json`. The manifest contains
+both a file hash and a canonical configuration hash. An external configuration
+edit during review prevents launch unless its parsed values still match.
+Direct command-line simulation retains its existing behaviour.
+
+Manual review before the next stage:
+
+1. Open LTN without drawings and open Project checks. Its stored linen group
+   references to `D26-LINEN` should appear as warnings. Department assignments can
+   replace group destinations, so these are not a claim that LTN demand fails.
+2. Search for `D26`, select a warning and open its task-generation settings.
+3. Edit a setting on a disposable copy. Confirm the checks become stale and
+   export/navigation are disabled until checks are rerun.
+4. In the launcher, try a copy with robot speed zero: the error must prevent a run.
+   Restore a valid speed, recheck, review warnings and run. Inspect its saved checks.
+5. Confirm the dock and run dialog are readable with your display scaling and
+   keyboard navigation. Automated Qt checks and a local render do not replace this.
+
+This is incremental preflight, not a complete schema or acceptance of every
+configuration field. Static directed connectivity and profile allowance unions
+are checked; loaded door passage, lift compatibility, dynamic generation
+precedence, capacity contention and swept geometry are not proved by preflight.
+Existing reference simulation tests still supply those narrower verified claims.
+Drawing file availability is checked on recheck, not watched continuously.
+All checks become stale together; dependency-specific invalidation is deferred.
+Demand preview is the next implementation checkpoint, after user review.

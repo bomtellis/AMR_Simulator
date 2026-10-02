@@ -98,18 +98,21 @@ def write_json(path, value):
 
 def ltn_audit():
     from visualiser.models import JsonStore
+    from visualiser.project_checks import check_project
     start = time.perf_counter()
     path = ROOT / "ltn.json"
     raw = path.read_bytes()
     store = JsonStore.from_file(str(path))
     findings = store.validate()
+    checks = check_project(json.loads(raw), base_path=path.parent)
     return {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw),
             "load_and_check_seconds": round(time.perf_counter() - start, 6),
             "locations": len(store.data.get("locations", [])),
             "nodes": len(store.data.get("corridors", {}).get("nodes", [])),
             "edges": len(store.data.get("corridors", {}).get("edges", [])),
             "findings": findings,
-            "scope": "Load and existing editor checks only; not a full LTN simulation or numerical validation."}
+            "project_checks": checks.to_dict(),
+            "scope": "Load, legacy editor validation and structured preflight; not a full LTN simulation or numerical validation."}
 
 
 def write_junit(path, cases):
@@ -141,26 +144,29 @@ def write_report(path, report):
         for o in report["options"])
     counts = report["counts"]
     path.write_text(f'''<!doctype html><html lang="en"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>AMR verification — Stage 1</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>AMR verification — Project checks</title>
 <style>body{{font:17px/1.5 system-ui,sans-serif;background:#f5f7fa;color:#172635;max-width:1150px;margin:auto;padding:24px}}
 h1,h2{{line-height:1.2}}article,.panel{{background:white;border:1px solid #b3c2d0;border-radius:8px;padding:20px;margin:16px 0}}
 .status{{font-weight:700;color:#334d65}}table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:left;border:1px solid #b3c2d0;padding:8px;overflow-wrap:anywhere}}
 input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer}}a{{color:#174c94}}li{{overflow-wrap:anywhere}}
 @media print{{body{{padding:0}}details{{display:block}}}}</style>
-<h1>AMR engineering verification</h1><p>Stage 1 review gate · {esc(report["created_utc"])}</p>
+<h1>AMR engineering verification</h1><p>Project checks review gate · {esc(report["created_utc"])}</p>
 <div class="panel"><h2>{counts["passed"]} / {counts["total"]} tests passed</h2>
 <p><strong>This is not full simulator validation.</strong> Verified claims apply only to the stated reference cases. Partial and unsupported features remain visible below.</p>
 <p>Rollback commit: 07a059a · tested source fingerprint: <code>{esc(report["source"]["sha256"])}</code></p>
 <p>{len(report["options"])} observed/documented option paths; {counts["unreviewed_options"]} require individual semantic review.</p>
 <p><a href="evidence.json">Complete machine-readable evidence</a> · <a href="tests.txt">Test log</a> · <a href="options.json">Option inventory</a> · <a href="source-key-candidates.json">Additional source-key candidates</a> · <a href="source-snapshot.zip">Tested source snapshot</a></p></div>
 <div class="panel"><h2>Changes to review</h2><ul>
+<li>Project checks now show searchable findings, affected objects, explanations and navigation in the editor.</li>
+<li>Launcher runs block detected input errors, require warning acknowledgement, and save checks alongside the exact reviewed configuration.</li>
 <li>Robot and payload width now exclude impassable corridors/doors while allowing wider alternative routes.</li>
 <li>Location capacity counts actual simultaneous occupancy, using half-open time intervals.</li>
 <li>Enabled groups activate generation under disabled category defaults; grouped services no longer create an extra default task.</li>
 <li>PDF test dependency declared; LTN bay regression updated to its saved four-bay layout.</li></ul>
 <p>LTN load/check: {esc(report["ltn"].get("load_and_check_seconds", "not measured"))} s; {len(report["ltn"].get("findings", []))} existing validation findings. Full week simulation not run at this gate.</p></div>
 <div class="panel"><h2>Your review checkpoint</h2><p>Open the three JSON examples in verification/scenarios in the existing editor or simulator. Expected results: door-pass — one delivery in 9 seconds; door-blocked — one explicit failed task; door-detour — one delivery in 14 seconds via the 20 metre alternative.</p>
-<p>Check the intended behaviour and the limitations listed below. The rest of the option audit, integrated application and new geometry remain later work. No user interface behaviour has changed at this gate.</p></div>
+<p>Open Home → Project checks in the editor. Filter findings, navigate to an affected object, edit it and confirm the checks become stale. Recheck before exporting. In the launcher, review and acknowledge warnings before running, then inspect project_checks.json in the run folder.</p>
+<p><a href="ltn-project-checks.json">LTN structured findings</a>: stored D26-LINEN references need review; effective department overrides are not resolved at this gate. Demand preview, the remaining option audit, the unified application and new geometry remain later work.</p></div>
 <label for="filter">Filter features and settings</label><input id="filter" type="search" placeholder="Try doors, charging, route profiles…">
 {''.join(rows)}<h2>Configuration option inventory</h2><p>{esc(report["inventory_scope"])}</p>
 <p>Source-key matches are discovery aids. Values and precedence are not guessed for unreviewed fields. See editor_defaults.json for the saved default configuration.</p>
@@ -216,6 +222,7 @@ def main(argv=None):
         "inventory_scope": inventory["scope"], "broken_evidence_links": broken_links, "ltn": ltn,
     }
     write_json(output / "evidence.json", report)
+    write_json(output / 'ltn-project-checks.json', ltn.get('project_checks', {'error': 'Checks did not complete'}))
     write_json(output / "options.json", inventory["options"])
     write_json(output / "source-key-candidates.json", inventory["source_key_candidates"])
     write_json(output / "editor_defaults.json", inventory["editor_defaults"])

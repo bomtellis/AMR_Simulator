@@ -8,12 +8,15 @@ the existing scripts with explicit input/output paths.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+
+from visualiser.project_checks_panel import RunChecksDialog
 
 from PySide6.QtCore import QProcess, Qt, QTimer
 from PySide6.QtGui import QAction, QDesktopServices, QTextCursor
@@ -670,10 +673,35 @@ class LauncherWindow(QMainWindow):
         self.detail_label.setText(f"Deleted launcher config:\n{path.name}")
 
     def run_selected_config(self) -> None:
+        if self.process is not None and self.process.state() != QProcess.NotRunning:
+            QMessageBox.warning(self, 'Process running', 'Wait for the current process to finish or cancel it first.')
+            return
         config = self.selected_config_path()
         if not config:
             QMessageBox.warning(self, "No config", "Select a config first.")
             return
+
+        def read_config():
+            return json.loads(config.read_bytes().decode('utf-8-sig'))
+
+        checks = RunChecksDialog(read_config, self, lambda: config.parent)
+        try:
+            if checks.exec() != QDialog.Accepted:
+                return
+            # Capture exactly the bytes whose parsed values passed the reviewed checks.
+            config_bytes = config.read_bytes()
+            frozen_config = json.loads(config_bytes.decode('utf-8-sig'))
+            report = checks.panel.report
+            if report is None or not report.can_run(frozen_config):
+                QMessageBox.warning(self, 'Checks changed', 'The configuration changed. Review Project checks again before running.')
+                return
+            check_record = report.to_dict()
+        except (OSError, ValueError, TypeError) as exc:
+            QMessageBox.critical(self, 'Configuration unavailable', str(exc))
+            return
+        finally:
+            checks.panel.timer.stop()
+            checks.deleteLater()
 
         name_text = self.run_name_edit.text().strip()
         safe_name = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in name_text)
@@ -682,7 +710,9 @@ class LauncherWindow(QMainWindow):
         run_dir.mkdir(parents=True, exist_ok=False)
 
         config_copy = run_dir / "config.json"
-        shutil.copy2(config, config_copy)
+        config_copy.write_bytes(config_bytes)
+        checks_path = run_dir / 'project_checks.json'
+        checks_path.write_text(json.dumps(check_record, indent=2) + '\n', encoding='utf-8')
 
         verbose_enabled = self.verbose_combo.currentIndex() == 0
         manifest = {
@@ -691,6 +721,9 @@ class LauncherWindow(QMainWindow):
             "started_at": datetime.now().isoformat(timespec="seconds"),
             "config_source": str(config),
             "config_copy": str(config_copy),
+            "config_sha256": hashlib.sha256(config_bytes).hexdigest(),
+            "project_checks": str(checks_path),
+            "checked_config_sha256": report.config_hash,
             "outputs": {
                 "steps_csv": str(run_dir / "simulation_steps.csv"),
                 "visualiser_csv": str(run_dir / "visualiser_steps.csv"),
