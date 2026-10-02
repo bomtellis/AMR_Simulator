@@ -6,7 +6,7 @@ import sys
 from PySide6.QtCore import QProcess
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QListWidget, QPlainTextEdit, QFileDialog, QMessageBox, QDialog
 from project_checks_panel import RunChecksDialog
-from amr_project_runs import PreparedRun, inspect_run, finish_run, read_json, MANIFEST
+from amr_project_runs import PreparedRun, inspect_run, finish_run, read_json, MANIFEST, link_run
 
 
 class ProjectRunsPanel(QWidget):
@@ -16,9 +16,8 @@ class ProjectRunsPanel(QWidget):
         self.process = None
         self.run_dir = None
         self.cancelled = False
-        self.roots = {}
-        self.linked = {}
         self.run_paths = []
+        self.run_refs = []
         layout = QVBoxLayout(self)
         self.summary = QLabel("Save a project to start a revision-bound simulation.")
         self.summary.setWordWrap(True)
@@ -61,7 +60,12 @@ class ProjectRunsPanel(QWidget):
         project = self.editor.project
         if project is None:
             return None
-        return self.roots.get(project.project_id, project.path.parent / (project.path.stem + "_results"))
+        return project.results_root()
+
+    def sync_metadata_hash(self):
+        # Metadata saves must not mark unsaved layout/configuration edits saved.
+        self.editor._source_disk_hash = self.editor.project._disk_hash
+        self.editor._recovery_last_state = None
 
     def choose_results_root(self):
         if self.editor.project is None:
@@ -69,36 +73,60 @@ class ProjectRunsPanel(QWidget):
             return
         selected = QFileDialog.getExistingDirectory(self, "External results location", str(self.results_root()))
         if selected:
-            self.roots[self.editor.project.project_id] = Path(selected)
-            self.refresh_runs()
+            try:
+                self.editor.project.set_results_root(selected)
+                self.sync_metadata_hash()
+                self.refresh_runs()
+            except Exception as exc:
+                QMessageBox.critical(self, "Results location was not saved", str(exc))
 
     def refresh_runs(self):
         self.runs.clear()
         self.run_paths = []
+        self.run_refs = []
         self.details.clear()
         project = self.editor.project
         if project is None:
             self.summary.setText("Save as an AMR project to link simulations to saved revisions.")
             return
         root = self.results_root()
-        candidates = set(root.glob("*/" + MANIFEST)) if root.exists() else set()
-        candidates.update(Path(p) / MANIFEST for p in self.linked.get(project.project_id, []))
+        stored = {project.resolve_results_location(ref['location']): ref for ref in project.external_results['runs']}
+        discovery_error = ''
+        try:
+            discovered = {p.parent.resolve() for p in root.glob("*/" + MANIFEST)} if root.exists() else set()
+        except OSError as exc:
+            discovered = set()
+            discovery_error = f" Results folder could not be read: {exc}"
+        candidates = set(stored) | discovered
         rejected = 0
-        for manifest_path in sorted(candidates, reverse=True):
+        missing = 0
+        saved_keys = {ref['run_key'] for ref in stored.values()}
+        for directory in sorted(candidates, reverse=True):
+            ref = stored.get(directory)
             try:
-                manifest = inspect_run(manifest_path.parent, project)
-            except Exception:
-                rejected += 1
+                manifest = inspect_run(directory, project, reference=ref)
+            except Exception as exc:
+                if ref is None:
+                    rejected += 1
+                    continue
+                self.run_paths.append(directory)
+                self.run_refs.append(ref)
+                self.runs.addItem(f"{ref['name']} | missing or unavailable — locate run | revision {ref['revision_id'][:8]}")
+                missing += 1
                 continue
-            self.run_paths.append(manifest_path.parent)
+            if ref is None and manifest['run_key'] in saved_keys:
+                continue  # A relocated/copy folder must explicitly replace its saved link.
+            self.run_paths.append(directory)
+            self.run_refs.append(ref or {**manifest['project_binding'], 'software_sha256': manifest['software']['sha256']})
             status = manifest['status']
-            if status == 'prepared' and self.run_dir == manifest_path.parent and self.running():
+            if status == 'prepared' and self.run_dir == directory and self.running():
                 status = 'starting'
-            if status == 'running' and (self.run_dir != manifest_path.parent or not self.running()):
+            if status == 'running' and (self.run_dir != directory or not self.running()):
                 status = 'unfinished — process state unknown'
             self.runs.addItem(f"{manifest['name']} | {status} | revision {manifest['project_binding']['revision_id'][:8]}")
-        self.summary.setText(f"Results location: {root}\n{len(self.run_paths)} run(s) match this project's saved revisions. "
-                             f"{rejected} unrelated or invalid folder(s) excluded. Location choices and moved-run links last for this editor session.")
+        self.summary.setText(f"Results location: {root}\n{len(self.run_paths)} run reference(s); {missing} missing or unavailable. "
+                             f"{rejected} unrelated or invalid folder(s) excluded. New runs, location choices and relinks are saved in the project; outputs stay external."
+                             + discovery_error)
 
     def selected_path(self):
         row = self.runs.currentRow()
@@ -109,14 +137,20 @@ class ProjectRunsPanel(QWidget):
         if path is None:
             return
         try:
-            manifest = inspect_run(path, self.editor.project)
+            manifest = inspect_run(path, self.editor.project, reference=self.run_refs[self.runs.currentRow()])
             binding = manifest['project_binding']
             self.details.setPlainText(f"Run folder: {path}\nProject: {binding['project_id']}\nRevision: {binding['revision_id']}\n"
                 f"Status: {manifest['status']}\nCompleted tasks: {manifest.get('completed_tasks', 'Not recorded')}\n"
                 f"Failed tasks: {manifest.get('failed_tasks', 'Not recorded')}\n"
                 f"Software fingerprint: {manifest['software']['sha256']}\n{manifest.get('error', '')}")
         except Exception as exc:
-            self.details.setPlainText(f"Run unavailable: {exc}")
+            ref = self.run_refs[self.runs.currentRow()]
+            reason = ("The run folder or a required run file is missing." if isinstance(exc, FileNotFoundError)
+                      else "The run folder cannot be read. Check its access permissions." if isinstance(exc, PermissionError)
+                      else str(exc))
+            self.details.setPlainText(f"Run unavailable: {reason}\nSaved folder: {path}\nSaved run identity: {ref['run_key']}\n"
+                f"Saved revision: {ref['revision_id']}\nSaved software fingerprint: {ref['software_sha256']}\n"
+                "Select Locate moved run to find this run's external folder. Project links do not contain the result files.")
 
     def start_run(self):
         if self.running():
@@ -135,6 +169,7 @@ class ProjectRunsPanel(QWidget):
             if checks.exec() != QDialog.Accepted:
                 return
             directory = draft.commit(checks.panel.report)
+            self.sync_metadata_hash()
             self.start_process(directory)
         except Exception as exc:
             QMessageBox.critical(self, "Simulation could not start", str(exc))
@@ -194,20 +229,21 @@ class ProjectRunsPanel(QWidget):
             self.cancelled = True
             self.process.kill()
 
-    def link_run(self, path):
+    def link_run(self, path, *, expected_run_key=None):
         if self.editor.project is None:
             raise ValueError("Open the saved project first")
         directory = Path(path).resolve()
-        inspect_run(directory, self.editor.project)
-        paths = self.linked.setdefault(self.editor.project.project_id, set())
-        paths.add(str(directory))
+        link_run(self.editor.project, directory, expected_run_key=expected_run_key)
+        self.sync_metadata_hash()
         self.refresh_runs()
 
     def relink_run(self):
+        row = self.runs.currentRow()
+        expected = self.run_refs[row]['run_key'] if 0 <= row < len(self.run_refs) else None
         path = QFileDialog.getExistingDirectory(self, "Locate moved run folder")
         if path:
             try:
-                self.link_run(path)
+                self.link_run(path, expected_run_key=expected)
             except Exception as exc:
                 QMessageBox.critical(self, "Run could not be linked", str(exc))
 
@@ -215,7 +251,7 @@ class ProjectRunsPanel(QWidget):
         path = self.selected_path()
         if path:
             try:
-                inspect_run(path, self.editor.project)
+                inspect_run(path, self.editor.project, reference=self.run_refs[self.runs.currentRow()])
                 self.editor.show_results_investigation()
                 self.editor.results_panel.load(str(path))
             except Exception as exc:

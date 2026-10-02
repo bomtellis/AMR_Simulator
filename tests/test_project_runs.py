@@ -284,7 +284,9 @@ class ProjectRunsUiTests(unittest.TestCase):
         moved = self.root / 'moved-run'
         shutil.move(str(path), moved)
         self.panel.refresh_runs()
-        self.assertEqual(0, self.panel.runs.count())
+        # Persistent references remain visible when the original folder moves.
+        self.assertEqual(1, self.panel.runs.count())
+        self.assertIn('missing or unavailable', self.panel.runs.item(0).text())
         self.panel.link_run(moved)
         self.assertEqual(1, self.panel.runs.count())
         self.panel.runs.setCurrentRow(0)

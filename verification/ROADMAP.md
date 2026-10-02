@@ -34,8 +34,10 @@ implementation; no national-body certification claim is made.
 - `.amrproj` compressed storage, deduplicated drawings, atomic saves, recovery,
   revision comparison/restore and JSON export exist. Finish explicit migration
   coverage, retention/cleanup and responsiveness for large projects.
-- Results stay external. Immutable run inputs/revision/software binding exists;
-  persistent run references and moved-result relinking across sessions remain.
+- Results stay external. Immutable run inputs/revision/software binding and
+  persistent run references/custom locations now survive reopening. Moved runs
+  retain missing entries and relink by identity; Save As rebases paths. See
+  PERSISTENT_RUN_LINKS_REVIEW.md. Broader project-tree integration remains open.
 - Finish continuous corridor drawing, snapping, automatic linking, edge splitting
   and subdivision, preserving attributes and grouping each operation into undo.
 - Complete shared accessible themes, font/colour controls, keyboard navigation,

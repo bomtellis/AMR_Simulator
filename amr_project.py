@@ -84,6 +84,7 @@ class Project:
         self.assets = {}
         self.path = None
         self._disk_hash = None
+        self.external_results = {"version": 1, "root": None, "runs": []}
 
     @classmethod
     def open(cls, path):
@@ -113,6 +114,7 @@ class Project:
             if not isinstance(project.project_id, str) or not re.fullmatch(r"[0-9a-f]{32}", project.project_id):
                 raise ValueError("Invalid project identifier")
             project.revisions = manifest["revisions"]
+            project.external_results = manifest.get("external_results", {"version": 1, "root": None, "runs": []})
             if not isinstance(project.revisions, list) or not project.revisions:
                 raise ValueError("Project has no revision history")
             for name in names:
@@ -147,7 +149,103 @@ class Project:
                 if asset_hash(entry["filepath"], suffix) not in project.assets:
                     raise ValueError("A revision refers to a missing embedded drawing")
         project.path, project._disk_hash = path, digest(raw)
+        project._validate_external_results()
         return project
+
+    def _validate_external_results(self):
+        settings = self.external_results
+        if not isinstance(settings, dict) or settings.get("version") != 1 or not isinstance(settings.get("runs"), list):
+            raise ValueError("Unsupported external-results settings")
+
+        def locator(value):
+            if (not isinstance(value, dict) or not isinstance(value.get("path"), str)
+                    or not value["path"] or '\x00' in value["path"] or type(value.get("relative")) is not bool):
+                raise ValueError("Invalid external-results location")
+            if value["relative"] and (Path(value["path"]).is_absolute() or Path(value["path"]).drive):
+                raise ValueError("Relative results location must not contain a drive or absolute path")
+            if not value["relative"] and not Path(value["path"]).is_absolute():
+                raise ValueError("Absolute results location must be absolute")
+
+        if settings.get("root") is not None:
+            locator(settings["root"])
+        seen, locations = set(), set()
+        revisions = {r['id']: r['config'] for r in self.revisions}
+        for ref in settings["runs"]:
+            if not isinstance(ref, dict):
+                raise ValueError("Invalid saved run reference")
+            key = ref.get("run_key")
+            if not isinstance(key, str) or not re.fullmatch(r'[0-9a-f]{32}', key) or key in seen:
+                raise ValueError("Invalid or duplicate saved run identity")
+            seen.add(key)
+            if not isinstance(ref.get("revision_id"), str) or revisions.get(ref['revision_id']) != ref.get("revision_config_sha256") or ref['revision_id'] not in revisions:
+                raise ValueError("Saved run refers to an unknown project revision")
+            if not isinstance(ref.get("software_sha256"), str) or not re.fullmatch(r'[0-9a-f]{64}', ref['software_sha256']):
+                raise ValueError("Invalid saved run software fingerprint")
+            if not isinstance(ref.get("name"), str):
+                raise ValueError("Invalid saved run name")
+            locator(ref.get("location"))
+            location = self.resolve_results_location(ref['location'])
+            if location in locations:
+                raise ValueError("One results folder cannot represent two saved run identities")
+            locations.add(location)
+
+    def _location(self, directory, *, project_path=None):
+        base = Path(project_path or self.path).parent
+        directory = Path(directory).resolve()
+        try:
+            return {"relative": True, "path": Path(os.path.relpath(directory, base)).as_posix()}
+        except ValueError:  # Different Windows drives cannot share a relative path.
+            return {"relative": False, "path": str(directory)}
+
+    def resolve_results_location(self, location):
+        if self.path is None:
+            raise ValueError("Save the project before linking results")
+        path = Path(location['path'])
+        return (self.path.parent / path if location['relative'] else path).resolve()
+
+    def results_root(self):
+        if self.path is None:
+            raise ValueError("Save the project before selecting results")
+        root = self.external_results.get('root')
+        return self.resolve_results_location(root) if root else self.path.parent / (self.path.stem + '_results')
+
+    def _save_external_results(self, settings):
+        if self.path is None:
+            raise ValueError("Save the project before linking results")
+        if settings == self.external_results:
+            return
+        candidate = deepcopy(self)
+        candidate.external_results = deepcopy(settings)
+        candidate._validate_external_results()
+        candidate._write(self.path)
+        self.__dict__.update(candidate.__dict__)
+
+    def set_results_root(self, directory):
+        if self.path is None:
+            raise ValueError("Save the project before selecting results")
+        settings = deepcopy(self.external_results)
+        settings['root'] = self._location(directory)
+        self._save_external_results(settings)
+
+    def remember_run(self, directory, manifest):
+        """Persist an already inspected run, preserving its immutable identity."""
+        if self.path is None:
+            raise ValueError("Save the project before linking results")
+        binding = manifest['project_binding']
+        if binding['project_id'] != self.project_id or binding['run_key'] != manifest['run_key']:
+            raise ValueError("Run belongs to a different project or identity")
+        reference = {key: binding[key] for key in ('run_key', 'revision_id', 'revision_config_sha256')}
+        reference.update(software_sha256=manifest['software']['sha256'], name=manifest['name'],
+                         location=self._location(directory))
+        settings = deepcopy(self.external_results)
+        previous = next((r for r in settings['runs'] if r['run_key'] == reference['run_key']), None)
+        if previous:
+            for key in ('revision_id', 'revision_config_sha256', 'software_sha256'):
+                if previous[key] != reference[key]:
+                    raise ValueError("Relinked run does not match its saved revision/software identity")
+            settings['runs'].remove(previous)
+        settings['runs'].append(reference)
+        self._save_external_results(settings)
 
     def _pack_config(self, config, base_dir):
         if not isinstance(config, dict):
@@ -202,13 +300,23 @@ class Project:
         return config
 
     def _write(self, path):
+        self._validate_external_results()
         path = Path(path).resolve()
         if path.suffix.lower() != ".amrproj":
             raise ValueError("Project filenames must end in .amrproj")
         if path == self.path and (not path.exists() or digest(path.read_bytes()) != self._disk_hash):
             raise ValueError("Project changed on disk. Reopen it or save to a new file.")
+        results = deepcopy(self.external_results)
+        if self.path is not None and path != self.path:
+            # Save As keeps existing external folders attached; moving the whole
+            # project/results bundle instead preserves the stored relative paths.
+            if results.get('root') is not None:
+                results['root'] = self._location(self.resolve_results_location(results['root']), project_path=path)
+            for ref in results['runs']:
+                ref['location'] = self._location(self.resolve_results_location(ref['location']), project_path=path)
         manifest = {"format": "amrproj", "schema_version": SCHEMA_VERSION,
-                    "project_id": self.project_id, "revisions": self.revisions}
+                    "project_id": self.project_id, "revisions": self.revisions,
+                    "external_results": results}
         contents = {"manifest.json": encoded(manifest)}
         contents.update({f"configs/{key}.json": configuration_bytes(value) for key, value in self.configs.items()})
         contents.update({f"assets/{key}": data for key, data in self.assets.items()})
@@ -230,6 +338,7 @@ class Project:
         finally:
             Path(temporary).unlink(missing_ok=True)
         self.path, self._disk_hash = path, saved_hash
+        self.external_results = results
 
     def save(self, path, config, *, base_dir=".", label="Saved changes"):
         candidate = deepcopy(self)

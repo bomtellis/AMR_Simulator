@@ -84,7 +84,7 @@ cancelled checks, stale review, external input/check/software changes, interrupt
 runs, swapped evidence, moved folders and project mismatch. It also checks that
 simulation outputs do not enter the compressed project archive.
 
-Location choices and moved-run links currently last for the editor session. Runs
+The original session-only location/link limitation is superseded by PERSISTENT_RUN_LINKS_REVIEW.md: new runs, chosen locations and relinks now persist in project metadata. Runs
 in the default sibling results folder are rediscovered on reopening. Persistent
 external-run references inside project metadata, a full project tree, playback
 integration and report generation from this workspace remain outstanding. The

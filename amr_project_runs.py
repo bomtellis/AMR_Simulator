@@ -35,6 +35,7 @@ class PreparedRun:
         if project.path is None:
             raise ValueError("Save the project before preparing a run")
         self.root = Path(results_root).resolve()
+        self.project = project
         self.root.mkdir(parents=True, exist_ok=True)
         self.directory = Path(tempfile.mkdtemp(prefix="run_" + datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S") + "_", dir=self.root))
         self.committed = False
@@ -73,6 +74,7 @@ class PreparedRun:
         self.manifest["checks_sha256"] = file_hash(self.directory / "project_checks.json")
         self.manifest["checked_config_sha256"] = report.config_hash
         write_json(self.directory / MANIFEST, self.manifest)
+        link_run(self.project, self.directory)
         self.committed = True
         return self.directory
 
@@ -157,13 +159,26 @@ def finish_run(directory, exit_code, *, cancelled=False, error=""):
     return manifest
 
 
-def inspect_run(directory, project):
+def inspect_run(directory, project, *, reference=None):
     """Validate relink candidates by identity AND saved revision content, never by name."""
     manifest, _ = validate_run_inputs(directory, verify_drawings=False)
     binding = manifest["project_binding"]
     revision = next((r for r in project.revisions if r["id"] == binding["revision_id"]), None)
     if binding["project_id"] != project.project_id or revision is None or revision["config"] != binding["revision_config_sha256"]:
         raise ValueError("Run does not belong to a revision in this project")
+    if reference is not None:
+        if (any(binding.get(key) != reference.get(key) for key in ('run_key', 'revision_id', 'revision_config_sha256'))
+                or manifest.get('software', {}).get('sha256') != reference.get('software_sha256')):
+            raise ValueError("Run folder does not match its saved run/revision/software identity")
+    return manifest
+
+
+def link_run(project, directory, *, expected_run_key=None):
+    """Relink only a verified revision; optionally require the selected run ID."""
+    manifest = inspect_run(directory, project)
+    if expected_run_key is not None and manifest['run_key'] != expected_run_key:
+        raise ValueError("Selected folder is a different run; the missing run link was not changed")
+    project.remember_run(directory, manifest)
     return manifest
 
 
