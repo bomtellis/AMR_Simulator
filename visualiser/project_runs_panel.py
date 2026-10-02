@@ -34,6 +34,7 @@ class ProjectRunsPanel(QWidget):
         actions = QHBoxLayout()
         for title, handler in (("Refresh runs", self.refresh_runs), ("Results location…", self.choose_results_root),
                                ("Locate moved run…", self.relink_run), ("Investigate selected run", self.investigate),
+                               ("Playback selected run", self.playback),
                                ("Report selected run", self.report)):
             button = QPushButton(title)
             button.clicked.connect(handler)
@@ -257,6 +258,15 @@ class ProjectRunsPanel(QWidget):
                 self.editor.results_panel.load(str(path))
             except Exception as exc:
                 QMessageBox.critical(self, "Run unavailable", str(exc))
+
+    def playback(self):
+        path = self.selected_path()
+        if path:
+            try:
+                inspect_run(path, self.editor.project, reference=self.run_refs[self.runs.currentRow()])
+                self.editor.show_project_playback(path)
+            except Exception as exc:
+                QMessageBox.critical(self, 'Playback unavailable', str(exc))
 
     def report(self):
         path = self.selected_path()

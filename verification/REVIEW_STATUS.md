@@ -1,5 +1,23 @@
 # Stage 1 clash review — 2 October 2026
 
+## Later checkpoint — integrated playback
+
+- Review now embeds playback from completed, revision-bound full event logs,
+  with its own timeline and local lift/payload monitors. See
+  [Project playback](PROJECT_PLAYBACK_REVIEW.md).
+- **736 / 736 tests passed**, including 18 new playback acceptance cases;
+  zero broken feature-to-test links. Independent positions, backward seeking,
+  frozen-input isolation and UI lifecycle checks pass.
+- The existing six-hour LTN run loads 9,612 events in approximately 0.4 seconds;
+  its 204 completed, zero failed and zero pending outcomes remain unchanged.
+  This is a playback check, not a new simulation performance claim.
+- Actual themed screenshots were inspected at 1366 × 900. Controls and timeline
+  also have automated 1280 × 800 checks. Current editor speed was changed to
+  99 m/s during visual review while playback retained the saved run's speed.
+- Simulator behaviour is unchanged. Drawing underlays, interruptible/paged
+  loading, contextual properties and the broader roadmap gates remain open.
+- The unrelated local `ltn.json` change is preserved outside this commit.
+
 ## Repository reconciliation
 
 - Reviewed the `testing` working tree against rollback commit `07a059a`.

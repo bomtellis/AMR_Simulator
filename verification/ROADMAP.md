@@ -29,8 +29,11 @@ implementation; no national-body certification claim is made.
 - Seven stages now share a persistent workflow tree and central workspace:
   Project, Layout, Configuration, Check, Simulate, Review and Report. Report
   generation uses selected runs' frozen inputs and external outputs. See
-  PROJECT_WORKSPACE_REVIEW.md. Playback embedding, contextual properties and
-  fuller object navigation remain unfinished; configuration dialogs still exist.
+  PROJECT_WORKSPACE_REVIEW.md. Revision-bound playback now sits under Review with
+  an embedded timeline and local monitors; see PROJECT_PLAYBACK_REVIEW.md.
+  Contextual properties and fuller object navigation remain unfinished;
+  configuration dialogs still exist. Playback underlays and large-log scaling
+  remain open.
 - Centralised state and undoable editing: snapshot undo/redo exists; finish
   command coverage and frequent editing outside modal dialogs.
 - `.amrproj` compressed storage, deduplicated drawings, atomic saves, recovery,

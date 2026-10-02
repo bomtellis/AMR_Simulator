@@ -86,7 +86,7 @@ opened project as unsaved and add an undo step. The reproduced failure is in
 explicit drawing-mapping edits still create the required lists. Simulation
 behaviour is unchanged.
 
-Playback is still a separate tool. Embedding it, adding contextual properties,
+Playback is now embedded under Review; see PROJECT_PLAYBACK_REVIEW.md. Adding contextual properties,
 expanding the object tree, replacing frequent modal editing, preserving workspace
 preferences across application restarts, report browsing/retention and large-file
 responsiveness remain open. This checkpoint does not close the full roadmap.

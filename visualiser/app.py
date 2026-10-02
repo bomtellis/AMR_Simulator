@@ -400,7 +400,7 @@ class AMRGraphEditor(QMainWindow):
                 QApplication.mouseButtons() != Qt.NoButton or self.drag_mode_active or
                 bool(self.dragging_point_name) or bool(self.bounding_box_location_name) or
                 self.department_location_placement_active or self.route_profile_selection_active or
-                any(window.isVisible() for window in self.findChildren(QMainWindow)))
+                any(window.isVisible() and not window.property('amrEmbeddedPlayback') for window in self.findChildren(QMainWindow)))
 
     def _update_history_actions(self):
         if not hasattr(self, "edit_history"):
@@ -552,7 +552,7 @@ class AMRGraphEditor(QMainWindow):
         if hasattr(self, 'project_runs_panel') and self.project_runs_panel.running():
             QMessageBox.information(self, "Simulation running", "Stop the run or wait for it to finish before opening another project or closing the editor.")
             return False
-        if any(window.isVisible() for window in self.findChildren(QMainWindow)):
+        if any(window.isVisible() and not window.property('amrEmbeddedPlayback') for window in self.findChildren(QMainWindow)):
             QMessageBox.information(self, "Finish editing first",
                 "Close the task editor or planner before opening another project or closing the main editor. This keeps its pending edits with the correct project.")
             return False
@@ -3206,6 +3206,8 @@ class AMRGraphEditor(QMainWindow):
                 f"Validation could not complete. The file was opened for editing, but some editor features may need missing fields to be repaired first: {exc}"
             ]
 
+        if hasattr(self, 'playback_panel'):
+            self.playback_panel.reset()
         self.store = store
         self._recovered_work = False
         self.project = project
@@ -3383,6 +3385,17 @@ class AMRGraphEditor(QMainWindow):
         if path is not None:
             self.report_panel.set_run(path)
         self.workspace.show_page('report', self.report_panel)
+
+    def show_project_playback(self, path=None):
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from project_playback_panel import ProjectPlaybackPanel
+        if not hasattr(self, 'playback_panel'):
+            self.playback_panel = ProjectPlaybackPanel(self)
+        self.workspace.show_page('playback', self.playback_panel)
+        if path is not None:
+            self.playback_panel.load(path)
 
     def _ask_dxf_units(self):
         units, accepted = QInputDialog.getItem(
@@ -4055,6 +4068,8 @@ class AMRGraphEditor(QMainWindow):
             return
         self._dirty_timer.stop()
         self._recovery_timer.stop()
+        if hasattr(self, 'playback_panel'):
+            self.playback_panel.reset()
         self._discard_own_recovery()
         try:
             self._dxf_thread.quit()

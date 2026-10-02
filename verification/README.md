@@ -6,6 +6,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
+The latest application checkpoint is [Project playback](PROJECT_PLAYBACK_REVIEW.md):
+saved-run playback and its timeline now stay in Review, with frozen inputs,
+background loading and project-switch/pause safeguards.
+
 Open `latest/index.html` in a browser. It contains the test results, feature
 contracts, limitations and searchable option inventory. `latest/evidence.json`
 contains individual outcomes, source hashes, environment versions and test links.

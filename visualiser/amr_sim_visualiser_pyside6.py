@@ -186,7 +186,10 @@ class LayoutModel:
 
     def load(self, path: str):
         with open(path, "r", encoding="utf-8") as f:
-            self.data = json.load(f)
+            self.load_data(json.load(f))
+
+    def load_data(self, data):
+        self.data = copy.deepcopy(data)
         self._rebuild_points()
         self._rebuild_task_timeline()
         self._rebuild_simulation_timeline()
@@ -1001,7 +1004,12 @@ class SimulationLog:
         checkpoint_idx, payload = self._state_checkpoints[pos]
         return checkpoint_idx, self._copy_state_accumulators(payload)
 
-    def load(self, path: str):
+    def load(self, path: str, *, parallel=True):
+        if not parallel:
+            # Read-only loading for a background thread inside the project UI.
+            self.events = _parse_visual_event_chunk_file_process(path)
+            self._rebuild_event_index()
+            return
         self.events = []
         self._event_start_times = []
         chunk_size = 10000
@@ -1126,7 +1134,7 @@ class SimulationLog:
 
 
 class GraphicsView(QGraphicsView):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, use_opengl=True):
         super().__init__(parent)
         self._last_pan_pos = None
         self._zoom_callback = None
@@ -1147,7 +1155,8 @@ class GraphicsView(QGraphicsView):
         self.opengl_enabled = False
         self.opengl_error = ""
         self.graphics_backend = "raster"
-        self.enable_opengl_viewport()
+        if use_opengl:
+            self.enable_opengl_viewport()
 
     def enable_opengl_viewport(self) -> bool:
         """Use an OpenGL-backed viewport when available.
@@ -3139,7 +3148,7 @@ class SimulationVisualizer(QMainWindow):
         side_layout = QVBoxLayout(side)
 
         self.graphics_scene = QGraphicsScene(self)
-        self.view = GraphicsView(self)
+        self.view = GraphicsView(self, use_opengl=not getattr(self, "embedded", False))
         self.view.setScene(self.graphics_scene)
         self.view.set_callbacks(
             zoom_callback=self.on_zoom,

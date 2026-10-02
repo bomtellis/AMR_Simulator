@@ -47,6 +47,11 @@ class ProjectWorkspace(QWidget):
         child.setData(0, Qt.UserRole, 'demand')
         self.items['checks'].addChild(child)
         self.items['demand'] = child
+        child = QTreeWidgetItem(['Playback'])
+        child.setData(0, Qt.UserRole, 'playback')
+        self.items['review'].addChild(child)
+        self.items['review'].setExpanded(True)
+        self.items['playback'] = child
         nav.addWidget(self.tree, 1)
         buttons = QHBoxLayout()
         self.previous = QPushButton('Previous')
@@ -82,7 +87,7 @@ class ProjectWorkspace(QWidget):
         handlers = {'project': self.editor.show_project_revisions, 'layout': lambda: self.show_page('layout', self.editor.canvas),
             'configuration': self.configuration, 'checks': self.editor.validate_json, 'demand': self.editor.show_demand_preview,
             'simulate': self.editor.show_project_runs, 'review': self.editor.show_results_investigation,
-            'report': self.editor.show_project_report}
+            'report': self.editor.show_project_report, 'playback': self.editor.show_project_playback}
         handlers[key]()
 
     def show_page(self, key, widget):
@@ -91,6 +96,8 @@ class ProjectWorkspace(QWidget):
             self.stack.addWidget(widget)
         if self.stage == 'layout' and key != 'layout':
             self.editor._clear_corridor_drawing()
+        if self.stage == 'playback' and key != 'playback':
+            self.pages['playback'].pause()
         self.stage = key
         self.stack.setCurrentWidget(widget)
         self.editor.ribbon_tabs.setVisible(key == 'layout')
@@ -99,12 +106,15 @@ class ProjectWorkspace(QWidget):
             self.tree.setCurrentItem(self.items[key])
         finally:
             self._navigating = False
-        index = [s[0] for s in STAGES].index('checks' if key == 'demand' else key)
+        index = [s[0] for s in STAGES].index({'demand': 'checks', 'playback': 'review'}.get(key, key))
         self.previous.setEnabled(index > 0)
         self.next.setEnabled(index < len(STAGES) - 1)
         self.refresh()
 
     def step(self, delta):
+        if delta == 1 and self.stage == 'playback':
+            self.editor.show_project_report(self.pages['playback'].directory)
+            return
         runs = getattr(self.editor, 'project_runs_panel', None)
         if delta == 1 and runs is not None and runs.selected_path() is not None:
             if self.stage == 'simulate':
@@ -114,7 +124,7 @@ class ProjectWorkspace(QWidget):
                 runs.report()
                 return
         keys = [s[0] for s in STAGES]
-        index = keys.index('checks' if self.stage == 'demand' else self.stage) + delta
+        index = keys.index({'demand': 'checks', 'playback': 'review'}.get(self.stage, self.stage)) + delta
         if 0 <= index < len(keys):
             self.activate(keys[index])
 
