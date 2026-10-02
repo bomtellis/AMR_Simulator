@@ -3,6 +3,8 @@
 For current sequencing and completion criteria, use the
 [revised delivery plan](ROADMAP.md), reassessed from code and tests on 2 October 2026.
 Earlier checkpoint notes below are historical evidence, not the current work estimate.
+The [UI design review](../design/ui-options/REVIEW.md) records the approved
+graph-focused visual direction and the workflows still requiring review.
 
 This gate establishes repeatable evidence and fixes defects reproduced by small
 reference cases. It does **not** complete the feature audit or certify the simulator.

@@ -5,6 +5,13 @@ Reassessed from implementation and tests on 2 October 2026, at code baseline
 original roadmap. Implementation remains paused pending the user's instruction
 to resume. Updating this plan does not authorise restarting implementation.
 
+Sequencing update: the major UI rework and user tutorial follow completion of
+core checkpoints 1–7. Initial concept images can be prepared now for discussion;
+production UI rework requires explicit user approval of the options and workflows.
+The user selected Option A and approved its graph-focused A2 refinement on
+3 October 2026. This sets the visual direction; detailed workflows remain for review.
+See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md).
+
 ## Assessment and evidence rules
 
 The project has a working integrated application and substantial engineering
@@ -59,7 +66,9 @@ completion criteria to match what happens to be implemented.
 
 Preserve unrelated working changes, including `ltn.json`. Keep simulation outputs
 external. Do not rewrite the simulator wholesale or rebuild working workspaces.
-Add contextual help and meaningful acceptance tests alongside each completed feature.
+Keep technical help notes and meaningful acceptance tests alongside core changes.
+Produce the final user tutorial and illustrated guide after the approved UI rework
+so their instructions and screenshots match the delivered application.
 
 ### 1. Correct the concrete gaps found in the source review
 
@@ -152,6 +161,9 @@ explanations. Missing evidence remains distinguishable from zero activity.
 ### 4. Finish project and editor hardening
 
 **Purpose:** complete the second release using the existing integrated application.
+This checkpoint supplies reliable core editing commands and necessary controls.
+The broad screen redesign and final user workflows are deferred to checkpoint 8;
+do not choose a new navigation layout or interaction scheme on the user's behalf.
 
 - Finish frequent nested configuration editing, rule editing and create/rename/delete
   workflows with reference-safe updates, inline properties and bulk previews.
@@ -162,8 +174,9 @@ explanations. Missing evidence remains distinguishable from zero activity.
 - Retain revision/input/software-bound external runs, relinking and JSON interchange.
 - Finish snapping controls, intentional crossing/junction creation and corridor
   operations that preserve applicable attributes/references in one undo step.
-- Complete keyboard navigation, consistent dialogs, scalable custom rendering,
-  font/colour accessibility, playback underlays and dense route label placement.
+- Preserve functional keyboard access, readable controls and user preferences
+  while hardening the core. Finish playback underlay functionality. Full navigation,
+  dialog, typography and dense-map presentation rework is reviewed at checkpoint 8.
   Route identification must continue to use labels/patterns alongside colour.
 
 **Gate:** representative users can create, edit, check, save, close, reopen, recover,
@@ -224,10 +237,95 @@ search-limit/deadlock outcomes. Legacy comparisons identify changed assumptions.
 **Third-release gate:** checkpoints 5–7 plus continued earlier-release regression
 and the final release requirements below.
 
-### 8. Release validation and learning materials
+## Core-feature completion gate
 
-This work runs alongside development; the final gate closes it rather than
-starting all documentation at the end.
+Core checkpoints 1–7 must meet their acceptance gates before production UI rework
+starts: supported engineering behaviour is verified, project/run operations are
+reliable, and the specified geometric model is implemented with explicit failure
+outcomes. Unresolved supported-feature defects keep this gate open. Preparing
+concept images is design work and does not satisfy this gate. Visual selection
+does not establish implemented functionality.
+
+### 8. User-approved UI and CAD workflow rework — after core features
+
+**Entry conditions:** core-feature gate met, plus explicit user approval of the
+proposed UI configuration and workflows. The graph-focused A2 workbench is the
+approved visual direction; detailed interaction workflows remain pending. Stored
+images are design concepts, not evidence of implemented controls or geometry.
+
+**8A — design and workflow approval**
+
+- Retain the selected A2 project-tree workbench as the visual target. The graph
+  occupies the majority of the main workspace. Side and bottom panels provide
+  additional information and must not overcrowd the graph. Keep drawing controls
+  compact, with properties and checks collapsed in the default drawing view.
+- Retain A, B and C alternatives for comparison. Review panel expansion, docking,
+  resizing, remembered state and a focus-canvas action before implementation;
+  frequent selection must not unexpectedly shrink the drawing area. Keep important
+  check/status information discoverable when its full panel is collapsed.
+- Review creation/drawing, selection/properties, configuration, checks, simulation,
+  investigation and reporting flows. Show save/recovery, invalid input, stale
+  checks, warnings, progress/cancellation and representative dialog states.
+- Obtain explicit approval of navigation, panels, tool grouping, visual hierarchy,
+  drawing gestures, keyboard mappings and the distinction between current projects
+  and read-only saved runs. Elapsed time or an unattended machine is not approval.
+- Confirm the selected design with a reviewable prototype before completing the
+  production rework. Any material workflow change returns for user approval.
+
+**8B — familiar CAD interaction requirements**
+
+- Draw lines, connected polylines, arcs/fillets where supported, corridor nodes,
+  doors and labelled location footprints directly on the canvas. Locations have
+  clear connection points and editable size, position and rotation.
+- Provide crosshair/dynamic input, typed coordinates/lengths/angles with visible
+  units, grid and object snaps (endpoint, midpoint, intersection and perpendicular),
+  orthogonal/polar constraints and clear snap/preview feedback.
+- Support familiar selection, additive selection and window/crossing selection;
+  editable grips; move, copy, rotate, trim, extend, offset, split and join operations
+  where meaningful. Model topology and routing references must remain correct.
+- Inserting a node on an edge splits/reconnects it atomically. Crossing a route
+  must explicitly distinguish a connected junction from a geometric crossing.
+- Provide layers, visibility/locking, line type, line weight, colour and labels.
+  These control presentation, not routing permissions. Clean/dirty/shared access
+  remains defined by route profiles; shared means membership in applicable profiles.
+- Provide wheel zoom around the cursor, pan, zoom extents/selection, consistent
+  Esc cancel and Enter finish behaviour, repeat command and per-operation undo/redo.
+  Final keyboard/mouse mappings require user approval and discoverable tooltips.
+- Show widths, turning radii and swept-clearance feedback using the verified core
+  model. Invalid geometry must be explained rather than merely drawn as successful.
+- Complete resizable/dockable workspaces, contextual properties, bulk-edit previews,
+  consistent dialogs, large text, keyboard access, contrast and custom-rendering
+  accessibility. Labels and patterns accompany route colours.
+
+**Gate:** the user approves the design and workflows, then verifies the implemented
+CAD operations on reference and LTN projects. Drawing, cancellation, selection,
+topology preservation, undo/redo, save/reopen, accessibility and saved-run isolation
+pass acceptance tests. Image approval alone does not prove working interactions.
+
+### 9. User tutorial and illustrated guide — after approved UI delivery
+
+- Deliver a compact guided tutorial taking a new user from a blank project through
+  drawing corridors, placing nodes/locations/doors, assigning profiles, configuring
+  robots/payloads/demand, checking, simulating, investigating and reporting.
+- Include explicit step-by-step actions, expected screen states, independently
+  verified expected results, common mistakes and recovery. Cover CAD snapping,
+  dimensions, line types/layers, selection and undo as practical exercises.
+- Follow with an LTN worked example and contextual help in the final application.
+- Deliver a separate illustrated PDF user guide with editable source, an option
+  reference and screenshots of the approved UI and relevant dialogs. Distinguish
+  display settings from engineering model settings and explain limitations.
+- Have the user complete and approve the tutorial workflow; fix unclear instructions
+  and UI problems before final release. Design-concept images are not final guide
+  screenshots, and checkpoint notes do not substitute for this deliverable.
+
+**Gate:** a new engineering modeller can reproduce the expected reference outcome
+and follow the LTN example using only the delivered tutorial and guide. Documents
+match the released UI version and all files are retained with editable sources.
+
+### 10. Final release validation
+
+Automated tests and engineering evidence run throughout development. This final
+gate follows the core, approved UI and tutorial gates.
 
 - Execute Windows clean-install and launch/run/report checks from the actual
   distributable or supported installation procedure. Retain executed CI evidence.
@@ -237,9 +335,8 @@ starting all documentation at the end.
   thresholds with reproducible inputs and the released software fingerprint.
 - Publish the general engineering verification pack: requirements/dispositions,
   independent calculations, test inputs/results, defects and unresolved limitations.
-- Deliver contextual help, a compact guided tutorial, the LTN worked example and
-  a separate illustrated PDF user guide with editable source. Cover all supported
-  options and relevant dialogs; existing checkpoint guides are supporting material.
+- Verify the contextual help, tutorial, LTN example and illustrated guide from
+  checkpoint 9 against the final installed application.
 - Have the user complete the tutorial and representative project workflow and
   resolve review findings before declaring the complete plan delivered.
 

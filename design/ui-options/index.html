@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMR Engineering — UI design review</title>
+<style>
+body{margin:0;background:#f1f5f9;color:#172638;font:18px/1.55 system-ui,sans-serif}
+main{max-width:1400px;margin:auto;padding:32px}h1{line-height:1.2}h2{margin-top:36px}
+a{color:#07569b}a:focus-visible{outline:3px solid #b45309;outline-offset:4px}
+.note{padding:18px 24px;background:#fff;border-left:5px solid #1963a2;border-radius:4px}
+nav{display:flex;flex-wrap:wrap;gap:10px 24px;margin:24px 0}figure{margin:16px 0}
+img{display:block;width:100%;height:auto;border:1px solid #bcc8d4;border-radius:6px}
+figcaption{margin-top:8px;color:#384d61}section{margin-bottom:42px}p{max-width:95ch}
+.badge{font-size:14px;font-weight:700;letter-spacing:.05em;color:#07569b}
+footer{border-top:1px solid #bcc8d4;padding-top:20px;font-size:16px}
+@media(max-width:650px){main{padding:18px}body{font-size:16px}}
+</style>
+</head>
+<body><main>
+<p class="badge">DESIGN REVIEW · ILLUSTRATIVE CONCEPTS</p>
+<h1>AMR Engineering: a graph-focused CAD workbench</h1>
+<div class="note"><strong>A2 approved as the visual direction — 3 October 2026.</strong>
+<p>The graph takes the majority of the view. Side and bottom panels provide supporting
+information without overcrowding it. Detailed interactions remain for review.
+Implementation is paused.</p></div>
+<nav aria-label="Concepts"><a href="#a2">Approved A2</a><a href="#a">Original A</a>
+<a href="#b">Guided B</a><a href="#c">Comparison C</a><a href="#cad">CAD interactions</a>
+<a href="REVIEW.md">Decision and workflow record</a></nav>
+<section id="a2"><h2>A2 · Approved graph-focused direction</h2>
+<p>A slim project tree, compact drawing tools and a dominant canvas. Properties and
+checks stay collapsed until needed. Panel behaviour and shortcuts will be reviewed
+in a prototype after the core-feature completion gate.</p>
+<figure><a href="option-a2-graph-focused-workbench.png"><img src="option-a2-graph-focused-workbench.png" alt="Graph-focused CAD workbench with slim project tree, large floor plan, collapsed properties and checks."></a>
+<figcaption>Selected visual target. Open the image for full size.</figcaption></figure></section>
+<section id="a"><h2>A · Original workbench</h2><p>The chosen workbench style with
+expanded properties and checks. A2 improves the default drawing space.</p>
+<figure><a href="option-a-project-workbench.png"><img loading="lazy" src="option-a-project-workbench.png" alt="Original workbench with expanded left tree, right properties and bottom checks."></a></figure></section>
+<section id="b"><h2>B · Guided workspace</h2><p>Retained for comparison. Step-by-step
+guidance may inform the tutorial; this is not the selected application shell.</p>
+<figure><a href="option-b-guided-workspace.png"><img loading="lazy" src="option-b-guided-workspace.png" alt="Alternative guided workspace with a workflow stage bar and instructions beside the canvas."></a></figure></section>
+<section id="c"><h2>C · Comparison workspace</h2><p>Retained as an idea for optional
+results investigation. Current editable inputs and read-only saved runs stay distinct.</p>
+<figure><a href="option-c-comparison-workspace.png"><img loading="lazy" src="option-c-comparison-workspace.png" alt="Alternative comparison view showing current layout and saved run with evidence below."></a></figure></section>
+<section id="cad"><h2>CAD interaction review</h2><p>Polyline drawing, snapping,
+node insertion, location footprints and dimensional editing need familiar,
+undoable interactions. Line styling is presentation; route profiles govern access.</p>
+<figure><a href="cad-interaction-sheet.png"><img loading="lazy" src="cad-interaction-sheet.png" alt="Four concepts for corridor drawing, node insertion, location placement and geometry editing."></a></figure></section>
+<footer><p>Sequence: core features → approved UI rework → tutorial and illustrated
+guide → final release validation. No automatic overnight restart is scheduled.</p>
+<p>Generated using built-in image_gen. <a href="prompts.json">Generation prompts</a> ·
+<a href="../../verification/ROADMAP.md">Delivery plan</a>. Sample controls and geometry
+are not evidence of implemented functionality or engineering validation.</p></footer>
+</main></body></html>
