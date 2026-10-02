@@ -125,6 +125,19 @@ class ProjectRunTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'checks have changed'):
             validate_run_inputs(directory)
 
+    def test_every_fingerprinted_source_change_invalidates_prepared_execution(self):
+        from amr_run_evidence import file_hash, software_snapshot
+        directory = self.prepare()
+        root = Path(__file__).resolve().parents[1]
+        for name in software_snapshot()['files']:
+            with self.subTest(source=name):
+                changed_path = root / name
+                def changed_hash(path):
+                    return 'changed-source' if Path(path) == changed_path else file_hash(path)
+                with patch('amr_run_evidence.file_hash', side_effect=changed_hash):
+                    with self.assertRaisesRegex(ValueError, 'software changed'):
+                        validate_run_inputs(directory, require_current_software=True)
+
     def test_stale_review_and_unacknowledged_warnings_cannot_commit(self):
         draft = PreparedRun(self.project, self.root / 'results')
         try:

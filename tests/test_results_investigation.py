@@ -67,6 +67,16 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(0, self.metric(report, 'failed')['value'])
         self.assertEqual(sim.run_id, report['run_id'])
 
+    def test_legacy_source_fingerprint_remains_readable_with_scope_warning(self):
+        _, path = self.run_reference()
+        sidecar = Path(str(path) + '.run.json')
+        data = json.loads(sidecar.read_text())
+        data['software'].pop('scope_version')
+        sidecar.write_text(json.dumps(data))
+        report = load_investigation(path)
+        self.assertEqual('completed', report['tasks'][0]['outcome'])
+        self.assertTrue(any('fingerprint scope' in finding for finding in report['findings']))
+
     def test_stable_native_identifiers_survive_playback_export(self):
         sim, path = self.run_reference()
         original = load_investigation(path)

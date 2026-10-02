@@ -20,11 +20,21 @@ def config_hash(config):
 
 
 def software_snapshot():
+    """Conservative application-source binding, including editor/check/report code.
+
+    Include whole application directories so newly imported local modules cannot
+    silently escape a manually maintained dependency list. Tests, examples,
+    outputs and documentation are not executable application inputs. Third-party
+    packages and the Python runtime are outside this source-only fingerprint.
+    """
     root = Path(__file__).resolve().parent
-    files = {p.name: file_hash(p) for p in sorted(root.glob('amr_sim_*.py'))}
-    for name in ('simulator.py', 'amr_run_evidence.py', 'amr_project_runs.py', 'amr_lift_evidence.py'):
-        files[name] = file_hash(root / name)
-    return {'version_scheme': 'source file SHA-256', 'sha256': config_hash(files), 'files': files}
+    paths = set(root.glob('*.py'))
+    for directory in ('visualiser', 'report'):
+        paths.update((root / directory).rglob('*.py'))
+    files = {p.relative_to(root).as_posix(): file_hash(p) for p in sorted(paths)}
+    return {'version_scheme': 'source file SHA-256', 'scope_version': 2,
+            'scope': 'Root Python modules and all visualiser/report Python modules; excludes third-party runtime.',
+            'sha256': config_hash(files), 'files': files}
 
 
 def write_run_evidence(simulation, csv_path, *, kind='full'):

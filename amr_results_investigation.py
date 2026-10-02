@@ -84,6 +84,8 @@ def load_investigation(path):
             findings.append('Unsupported run-evidence version. Treating this as an unverified log.')
         else:
             metadata, frozen = data, data['frozen_inputs']
+            if (data.get('software') or {}).get('scope_version') != 2:
+                findings.append('Legacy or unknown software fingerprint scope: application source coverage is incomplete or unverified. Recorded results remain available.')
     else:
         findings.append('No bound run-evidence sidecar. Legacy log: completeness and software version are unknown.')
         # Legacy launcher snapshots may be used as context only when the manifest

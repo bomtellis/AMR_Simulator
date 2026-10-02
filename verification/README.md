@@ -12,7 +12,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest application checkpoint is [Effective demand settings](GENERATION_PROVENANCE_REVIEW.md):
+The latest application checkpoint is [Local routing and software evidence](LOCAL_ROUTING_REVIEW.md):
+explicit local path failures, preserved endpoints, safe smoothing and broader
+software fingerprints. Earlier [Effective demand settings](GENERATION_PROVENANCE_REVIEW.md) cover:
 ordered rule assignments, inherited/override values and waste calculations.
 [Project checks workflow](CHECK_WORKFLOW_REVIEW.md) provides
 exact object/field navigation, changed-input tracking, check coverage and drawing

@@ -2,8 +2,8 @@
 
 Reassessed from implementation and tests on 2 October 2026, at code baseline
 `b4770ca`. This replaces the earlier progress estimate while retaining the full
-original roadmap. Implementation remains paused pending the user's instruction
-to resume. Updating this plan does not authorise restarting implementation.
+original roadmap. The user resumed checkpoint 1 on 3 October 2026. Work continues
+in bounded checkpoints with a user verification stop after each tested commit.
 
 Sequencing update: the major UI rework and user tutorial follow completion of
 core checkpoints 1–7. Initial concept images can be prepared now for discussion;
@@ -71,6 +71,10 @@ Produce the final user tutorial and illustrated guide after the approved UI rewo
 so their instructions and screenshots match the delivered application.
 
 ### 1. Correct the concrete gaps found in the source review
+
+**Delivery update, 3 October 2026:** fixes and acceptance coverage are recorded in
+[Local routing and software evidence](LOCAL_ROUTING_REVIEW.md). User verification
+is the next gate; the later geometry requirements remain open.
 
 **Purpose:** make existing behaviour and run evidence trustworthy before extending it.
 
@@ -354,6 +358,6 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Begin checkpoint 1 with the blocked local-manoeuvre reproduction and an endpoint
-preservation test. Then repair software fingerprint coverage. Do not start the
-larger geometric traffic model before those existing correctness gaps are closed.
+Verify checkpoint 1 using its review scenario and evidence. After user acceptance,
+begin checkpoint 2 with the existing configuration/feature inventory and independent
+acceptance gaps. Keep the larger geometry and UI work in their planned order.

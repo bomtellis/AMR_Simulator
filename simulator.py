@@ -42,6 +42,14 @@ from amr_sim_time_utils import (
 )
 
 
+class LocalManoeuvreError(ValueError):
+    """A local route cannot be used; no movement or reservation may be committed."""
+
+    def __init__(self, reason, detail):
+        self.reason = reason
+        super().__init__(f"Local manoeuvre {reason}: {detail}")
+
+
 def _bool_from_config(value, default: bool = False) -> bool:
     """Return a predictable bool for JSON/config values.
 
@@ -2591,6 +2599,10 @@ class Simulation:
                 "lift_loaded_sec_total": lift_loaded_sec_total,
                 "slot_assignments": slot_assignments,
             }
+        except LocalManoeuvreError as exc:
+            for task in tasks:
+                self._set_task_pending_reason(task, str(exc))
+            return None
         except Exception as exc:
             print(f"_estimate_multi_stop_for_amr failed for {amr.id}: {exc}")
             return None
@@ -3566,7 +3578,13 @@ class Simulation:
         corridor. The former all-obstacle visibility graph grew approximately
         cubically with the number of spaces and became a dominant run-time cost.
         Every candidate edge is still checked against the complete obstacle set.
+        Failure exhausts this bounded heuristic, not all possible geometric paths.
         """
+        for label, point in (("start", start), ("end", end)):
+            if (not all(math.isfinite(value) for value in point)
+                    or any(self._point_inside_bbox(point, box) for box in obstacles)):
+                raise LocalManoeuvreError('invalid_endpoint',
+                                         f'{label} {point} is invalid or inside an obstacle')
         if self._clear_local_segment(start, end, obstacles):
             return [start, end]
 
@@ -3623,9 +3641,10 @@ class Simulation:
                 ]
             )
 
-        filtered: List[Tuple[float, float]] = []
-        seen = set()
-        for point in candidates:
+        # Endpoints retain their exact positions and indices, even when very close.
+        filtered: List[Tuple[float, float]] = [start, end]
+        seen = {(round(p[0], 4), round(p[1], 4)) for p in (start, end)}
+        for point in candidates[2:]:
             key = (round(point[0], 4), round(point[1], 4))
             if key in seen:
                 continue
@@ -3634,15 +3653,13 @@ class Simulation:
                 continue
             filtered.append(point)
         candidates = filtered
-        if len(candidates) < 2:
-            return [start, end]
 
         graph: Dict[int, List[Tuple[int, float]]] = {
             i: [] for i in range(len(candidates))
         }
         for i in range(len(candidates)):
             for j in range(i + 1, len(candidates)):
-                if self._clear_local_segment(candidates[i], candidates[j], nearby):
+                if self._clear_local_segment(candidates[i], candidates[j], obstacles):
                     dist = math.hypot(
                         candidates[i][0] - candidates[j][0],
                         candidates[i][1] - candidates[j][1],
@@ -3668,14 +3685,14 @@ class Simulation:
 
         if 1 not in distances:
             # Cheap orthogonal alternatives are preferable to rebuilding a huge
-            # all-space visibility graph. Keep the legacy direct fallback only
-            # when neither dogleg is collision free.
+            # all-space visibility graph. Failure must never invent a direct path.
             for middle in ((start[0], end[1]), (end[0], start[1])):
                 if self._clear_local_segment(
                     start, middle, obstacles
                 ) and self._clear_local_segment(middle, end, obstacles):
                     return [start, middle, end]
-            return [start, end]
+            raise LocalManoeuvreError('search_exhausted',
+                                     f'no clear local path found from {start} to {end}')
 
         order = [1]
         while order[-1] != 0:
@@ -3692,7 +3709,8 @@ class Simulation:
                 start, middle, obstacles
             ) and self._clear_local_segment(middle, end, obstacles):
                 return [start, middle, end]
-        return [start, end]
+        raise LocalManoeuvreError('search_exhausted',
+                                 f'no clear local path found from {start} to {end}')
 
     def _normalise_angle_deg(self, value: float) -> float:
         return (float(value) + 180.0) % 360.0 - 180.0
@@ -3855,9 +3873,14 @@ class Simulation:
             waypoints = self._insert_vehicle_alignment_waypoint(
                 waypoints, target_heading_deg, radius, obstacles
             )
-            waypoints = self._smooth_vehicle_waypoints(
+            smoothed = self._smooth_vehicle_waypoints(
                 waypoints, initial_heading_deg, target_heading_deg, radius
             )
+            # Visual corner cutting is optional legacy styling, not permission
+            # to cross an obstacle. Retain the clear polyline when it is unsafe.
+            if all(self._clear_local_segment(a, b, obstacles)
+                   for a, b in zip(smoothed, smoothed[1:])):
+                waypoints = smoothed
             self._local_manoeuvre_waypoint_cache_set(cache_key, waypoints)
 
         segments: List[dict] = []
@@ -10800,6 +10823,9 @@ class Simulation:
                 "payload_slot": payload_slot_name,
                 "payload_orientation": task.payload_orientation,
             }
+        except LocalManoeuvreError as exc:
+            self._set_task_pending_reason(task, str(exc))
+            return None
         except Exception as exc:
             print(f"_estimate_task_for_amr failed for {task.id} on {amr.id}: {exc}")
             return None
