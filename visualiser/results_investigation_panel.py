@@ -77,10 +77,13 @@ class ResultsInvestigationPanel(QWidget):
         self.tabs = QTabWidget()
         self.tasks = self.table(['Task', 'Outcome', 'Released (s)', 'Assigned (s)', 'Completed (s)', 'Assignment delay (s)', 'Route profile'])
         self.metrics = self.table(['Metric', 'Value', 'Observed value', 'Coverage'])
+        self.lift_checks = self.table(['Lift', 'Check result', 'Transfers recorded', 'Repositions recorded', 'Transfers booked', 'Repositions booked', 'Coverage'])
+        self.lift_checks.setAccessibleName('Lift movement consistency checks')
         self.evidence = QPlainTextEdit()
         self.evidence.setReadOnly(True)
         self.tabs.addTab(self.tasks, 'Tasks')
         self.tabs.addTab(self.metrics, 'Metrics')
+        self.tabs.addTab(self.lift_checks, 'Lift checks')
         self.tabs.addTab(self.evidence, 'Run evidence')
         split.addWidget(self.tabs)
         timeline = QWidget()
@@ -101,6 +104,7 @@ class ResultsInvestigationPanel(QWidget):
         layout.addWidget(self.details)
         self.tasks.itemSelectionChanged.connect(self.select_task)
         self.metrics.itemSelectionChanged.connect(self.select_metric)
+        self.lift_checks.itemSelectionChanged.connect(self.select_lift)
         self.events.itemSelectionChanged.connect(self.select_event)
 
     def open_csv(self):
@@ -132,6 +136,7 @@ class ResultsInvestigationPanel(QWidget):
             self.summary.setText('Investigation could not open: ' + error)
             self.tasks.setRowCount(0)
             self.metrics.setRowCount(0)
+            self.lift_checks.setRowCount(0)
             self.evidence.clear()
             return
         coverage = 'Full saved log verified against its run evidence' if result['complete_evidence'] else 'Partial or legacy evidence — missing activity is not zero'
@@ -139,6 +144,11 @@ class ResultsInvestigationPanel(QWidget):
         self.events_by_id = {e['id']: e for e in result['events']}
         self.populate_tasks()
         self.fill(self.metrics, [[m['title'], display(m['value']), m['observed_count'], m['coverage']] for m in result['metrics']])
+        self.lift_rows = result.get('lift_checks', {}).get('records', [])
+        self.fill(self.lift_checks, [[r['lift_id'] or 'Unidentified lift', r['status'],
+            r['observed']['transfer'], r['observed']['reposition'],
+            display((r['expected'] or {}).get('transfer')), display((r['expected'] or {}).get('reposition')),
+            'Full bound planned movements' if r['known'] else 'Incomplete evidence'] for r in self.lift_rows])
         reconciliation = []
         for r in result['reconciliation']:
             reconciliation.append(f"{r['outcome'].capitalize()}: recorded summary {r['recorded_summary_count']}, events {r['event_count']} — "
@@ -200,6 +210,23 @@ class ResultsInvestigationPanel(QWidget):
             self.timeline_label.setText(metric['title'] + ': ' + display(metric['value']) + '\n' + metric['definition'])
             self.show_events(metric['event_ids'])
             self.details.setPlainText(metric['coverage'] + '\nEach event below contributes to this metric. Shared task lists do not multiply segment counts.')
+
+    def select_lift(self):
+        index = self.lift_checks.currentRow()
+        if not self.result or not 0 <= index < len(getattr(self, 'lift_rows', [])):
+            return
+        record = self.lift_rows[index]
+        self.timeline_label.setText(f"{record['lift_id'] or 'Unidentified lift'} · {record['status']}\n"
+                                   'Recorded plans checked against frozen initial floors and final bookings; not confirmation of physical execution.')
+        related = [eid for p in record['issues'] for eid in p['event_ids']]
+        self.show_events(related or record['event_ids'])
+        self.details.setPlainText('\n'.join([
+            'Initial floor from saved inputs: ' + display(record['initial_floor']),
+            'Recorded movement counts: ' + json.dumps(record['observed']),
+            'Final booking counts: ' + (json.dumps(record['expected']) if record['expected'] is not None else 'Not recorded'),
+            'Timing tolerance: 0.002 seconds for rounded CSV timestamps.',
+            *([p['reason'] for p in record['issues']] or ['No conflicts found in the available records.']),
+            'Coverage: ' + ('full bound planned movements' if record['known'] else 'incomplete; absence of a conflict does not prove consistency')]))
 
     def select_event(self):
         index = self.events.currentRow()

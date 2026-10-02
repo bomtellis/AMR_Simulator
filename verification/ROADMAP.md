@@ -12,7 +12,7 @@ implementation; no national-body certification claim is made.
 | Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
 | Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
 | Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
-| Individual defect reproduction and changed-result explanations | D001–D050 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
+| Individual defect reproduction and changed-result explanations | D001–D051 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
 | LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
 | Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
 
@@ -22,7 +22,7 @@ implementation; no national-body certification claim is made.
 | --- | --- |
 | Project checks | Complete reference/dimension/schedule/connectivity/profile/resource checks, check-specific staleness and navigation. Existing findings, warning acknowledgements and malformed-input blocking must cover all effective inputs. |
 | Demand preview | Complete searchable table/timetable filters, effective-rule provenance and inherited/override values for every supported mode; reconcile configured demand and explain all zero-work rules. Runtime-dependent totals must remain unknown where appropriate. |
-| Results investigation | Complete assignment/resource/route/failure explanations, task/payload/AMR/lift distinctions, all metric-to-record links, missing-evidence handling and large-log access. Existing frozen input/event IDs and legacy adapters are foundations. |
+| Results investigation | Lift floor continuity, overlap and booking/log count checks now expose per-lift coverage and supporting events; see LIFT_EVIDENCE_REVIEW.md. Complete assignment/resource/route/failure explanations, task/payload/AMR/lift distinctions, all metric-to-record links, missing-evidence handling and large-log access remain. Existing frozen input/event IDs and legacy adapters are foundations. |
 
 ## 3. Dependable editing and unified project — completion OPEN
 

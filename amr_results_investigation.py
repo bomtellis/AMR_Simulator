@@ -11,6 +11,7 @@ from pathlib import Path
 
 from amr_run_evidence import config_hash, file_hash
 from report.amr_energy_evidence import summarize_energy
+from amr_lift_evidence import check_lift_movements
 
 COMPLETED = {'task_complete', 'multi_stop_task_complete'}
 ASSIGNED = {'task_assigned', 'multi_stop_task_assigned'}
@@ -324,11 +325,29 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
            known=complete_evidence and all(e['journey_id'] for e in events if e['type'] in ASSIGNED))
     metric('lift_segments', 'Planned lift movements', len(lifts), [e['id'] for e in lifts],
            'Transfer and empty reposition segment records, each counted once regardless of carried task count. These are logged route-plan movements, not independent execution confirmations.')
+    lift_checks = check_lift_movements(events, frozen, complete=complete_evidence,
+        capabilities=metadata.get('event_capabilities', []),
+        expected=metadata.get('summary', {}).get('lift_movement_counts'))
+    for kind, title, definition in (
+        ('floor_discontinuity', 'Unexplained recorded lift floor changes',
+         'Movement origins differing from the preceding destination or frozen initial floor. Malformed sequences are not bridged. Observations in partial logs may reflect missing movements.'),
+        ('overlap', 'Overlapping planned lift movements',
+         'Movement starts while an earlier movement of the same lift is still active, with 2 ms tolerance for CSV rounding. Each conflicting start counts once and links to a prior overlapping movement; this is not a count of all interval pairs.'),
+        ('count_mismatch', 'Lift booking/log count mismatches',
+         'Lifts whose recorded transfer/reposition counts differ from counts independently derived from final bookings. Missing final counts remain unknown.')):
+        problems = [p for p in lift_checks['issues'] if p['kind'] == kind]
+        metric('lift_' + kind, title, len(problems), [eid for p in problems for eid in p['event_ids']],
+               definition, known=lift_checks['known'])
+    for record in lift_checks['records']:
+        if record['status'] == 'Conflict':
+            findings.append(f"Lift movement evidence conflict for {record['lift_id']}: inspect the Lift checks workspace.")
+    if not lift_checks['known']:
+        findings.append('Complete lift movement consistency is not established; inspect bound inputs, movement records and final booking counts.')
     energy = summarize_energy((e['row'] for e in events), complete=complete_evidence,
                               capabilities=metadata.get('event_capabilities', []),
                               expected_amrs=metadata.get('summary', {}).get('battery_amr_ids'))
-    for source, record in energy['sources'].items():
-        metrics.append({'key': source + '_energy_kwh', 'title': record['title'] + ' (kWh)',
+    for energy_source, record in energy['sources'].items():
+        metrics.append({'key': energy_source + '_energy_kwh', 'title': record['title'] + ' (kWh)',
             'value': record['value_kwh'], 'observed_count': record['observed_kwh'],
             'coverage': 'full bound attribution' if record['known'] else 'partial or unknown attribution',
             'definition': 'Sum of explicitly source-attributed movement energy, once per event ID. Shared tasks do not multiply a journey. Planned energy, not measured execution; charging input is excluded.',
@@ -375,6 +394,7 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
             'tasks': tasks, 'events': events, 'metrics': metrics, 'payload_movements': payload_moves,
             'payload_tracking_findings': payload_anomalies,
             'journeys': list(journeys.values()), 'reconciliation': reconciliation, 'energy': energy,
+            'lift_checks': lift_checks,
             'limitations': ['Wait intervals can overlap and are not summed into an additive delay breakdown.',
                             'Route-plan segments may be logged ahead of execution; completion is established only by terminal events.',
                             'Missing events, reasons or physical identifiers are not reconstructed from the current project.',
