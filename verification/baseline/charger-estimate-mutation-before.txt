@@ -1,0 +1,16 @@
+test_stale_bay_inspection_is_pure_until_actual_charge_reservation (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_stale_bay_inspection_is_pure_until_actual_charge_reservation) ... FAIL
+
+======================================================================
+FAIL: test_stale_bay_inspection_is_pure_until_actual_charge_reservation (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_stale_bay_inspection_is_pure_until_actual_charge_reservation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_required_charge_dispatch.py", line 203, in test_stale_bay_inspection_is_pure_until_actual_charge_reservation
+    self.assertEqual(before, state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'res[473 chars]ed': True, 'amr_id': 'GONE', 'reserved_by_amr'[1299 chars]: []} != {'res[473 chars]ed': False, 'amr_id': '', 'reserved_by_amr': '[1292 chars]: []}
+Diff is 4103 characters long. Set self.maxDiff to None to see it.
+
+----------------------------------------------------------------------
+Ran 1 test in 0.006s
+
+FAILED (failures=1)

@@ -8,6 +8,7 @@ import os
 import threading
 import time
 import uuid
+from copy import copy
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
@@ -4018,7 +4019,7 @@ class Simulation:
         return None
 
     def _space_is_available_for_amr(
-        self, space: dict, amr: AMR, location_name: str = ""
+        self, space: dict, amr: AMR, location_name: str = "", *, cleanup: bool = False
     ) -> bool:
         """Return True if an AMR bay can be claimed by this AMR.
 
@@ -4027,7 +4028,8 @@ class Simulation:
         allow stale ``amr_id`` / ``reserved_by_amr`` markers to make all bays at a
         charging location appear unavailable.  A bay is blocked only when the
         other AMR still records that exact bay as its current or target bay at
-        the same location.
+        the same location. Inspection is read-only; only serial claim operations
+        request cleanup of stale markers.
         """
         amr_id = str(getattr(amr, "id", "") or "").strip()
         space_name = self._space_name(space)
@@ -4051,15 +4053,16 @@ class Simulation:
             ):
                 return False
             # Stale occupancy marker.  Clear it so subsequent AMRs can use the bay.
-            self._remember_route_object(space)
-            space["amr_id"] = ""
-            if not str(space.get("payload", "") or "").strip():
-                space["occupied"] = False
+            if cleanup:
+                self._remember_route_object(space)
+                space["amr_id"] = ""
+                if not str(space.get("payload", "") or "").strip():
+                    space["occupied"] = False
         elif bool(space.get("occupied", False)) and not occupied_by:
             # AMR bays should not be blocked by a bare occupied flag.  If there
             # is no payload and no AMR id, this is stale state from a prior
             # stow/return and must not prevent a compatible AMR using the bay.
-            if not str(space.get("payload", "") or "").strip():
+            if cleanup and not str(space.get("payload", "") or "").strip():
                 self._remember_route_object(space)
                 space["occupied"] = False
 
@@ -4090,8 +4093,9 @@ class Simulation:
             ):
                 return False
             # Stale reservation marker.
-            self._remember_route_object(space)
-            space["reserved_by_amr"] = ""
+            if cleanup:
+                self._remember_route_object(space)
+                space["reserved_by_amr"] = ""
 
         return True
 
@@ -4229,6 +4233,8 @@ class Simulation:
         if space is None:
             setattr(amr, "target_inventory_space_name", "")
             return None
+        if not self._space_is_available_for_amr(space, amr, location_name, cleanup=True):
+            return None
         self._remember_route_object(space)
         space["reserved_by_amr"] = str(getattr(amr, "id", "") or "").strip()
         setattr(amr, "target_inventory_space_name", str(space.get("name", "") or ""))
@@ -4316,6 +4322,7 @@ class Simulation:
         # Final guard: if the selected bay became occupied/reserved by another
         # AMR between selection and claim, try once more to reselect a free bay
         # instead of blocking the arriving AMR at the location node.
+        self._space_is_available_for_amr(target_space, amr, location_name, cleanup=True)
         occupied_by = str(target_space.get("amr_id", "") or "").strip()
         reserved_by = str(target_space.get("reserved_by_amr", "") or "").strip()
         if (occupied_by and occupied_by != amr_id) or (
@@ -9499,9 +9506,11 @@ class Simulation:
         )
 
     def _select_charge_location_for_amr(
-        self, amr: AMR, current_loc: Location, now: float, *, for_charging: bool = False
+        self, amr: AMR, current_loc: Location, now: float, *, for_charging: bool = False,
+        candidates=None,
     ) -> Optional[Location]:
-        candidates = self._charge_location_candidates()
+        if candidates is None:
+            candidates = self._charge_location_candidates()
         if not candidates:
             return None
         best_loc = None
@@ -9594,13 +9603,16 @@ class Simulation:
         current_loc: Location,
         current_time_value: float,
         reserve: bool = False,
+        *, destination_name: Optional[str] = None,
     ) -> Optional[dict]:
         if not reserve:
-            result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value)
+            result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value,
+                                                      destination_name=destination_name)
             return self._finalise_charge_travel(amr, result, current_time_value, reserve=False)
         with RouteReservationTransaction(self, amr, []) as transaction:
             self._free_amr_inventory_space(amr)
-            result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value, reserve=True)
+            result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value, reserve=True,
+                                                      destination_name=destination_name)
             result = self._finalise_charge_travel(amr, result, current_time_value, reserve=True)
             transaction.committed = result is not None
             return result
@@ -9640,9 +9652,14 @@ class Simulation:
         current_loc: Location,
         current_time_value: float,
         reserve: bool = False,
+        *, destination_name: Optional[str] = None,
     ) -> Optional[dict]:
+        selection_options = {}
+        if destination_name is not None:
+            selection_options['candidates'] = [location for location in self._charge_location_candidates()
+                                                if location.name == destination_name]
         charge_loc = self._select_charge_location_for_amr(
-            amr, current_loc, current_time_value, for_charging=True
+            amr, current_loc, current_time_value, for_charging=True, **selection_options
         )
         if charge_loc is None:
             return None
@@ -9906,12 +9923,14 @@ class Simulation:
         amr: AMR,
         now: float,
         charge_reason: str = "reserve_threshold",
+        *, destination_name: Optional[str] = None,
     ) -> bool:
         if getattr(amr, "is_charging", False):
             return True
 
         current_loc = self.locations[amr.location_name]
-        plan = self._plan_return_to_charge(amr, current_loc, now, reserve=True)
+        plan = self._plan_return_to_charge(amr, current_loc, now, reserve=True,
+                                           destination_name=destination_name)
         if plan is None:
             self._record_failed_task(
                 f"CHARGE-{amr.id}",
@@ -10045,7 +10064,8 @@ class Simulation:
         """Compatibility entry point using the handled charge-cycle events."""
         return self._schedule_charge_cycle(amr, now, charge_reason="post_task")
 
-    def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False):
+    def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False,
+                              *, return_charge_request: bool = False):
         # A charge changes all subsequent resource times. Discard the first
         # attempt before constructing the route again; never shift reservations
         # or reuse a trajectory computed before charging.
@@ -10055,12 +10075,15 @@ class Simulation:
                     result = self._estimate_task_for_amr_impl(
                         amr, task, reserve=True, force_charge=force_charge)
                     retry = bool(result and result.get('_retry_after_charge'))
-                    transaction.committed = result is not None and not retry
+                    transaction.committed = (result is not None and not retry
+                                             and not result.get('_requires_route_charge'))
             else:
                 result = self._estimate_task_for_amr_impl(
                     amr, task, reserve=False, force_charge=force_charge)
                 retry = bool(result and result.get('_retry_after_charge'))
             if not retry:
+                if result and result.get('_requires_route_charge') and not return_charge_request:
+                    return None
                 return result
         return None
 
@@ -10191,12 +10214,9 @@ class Simulation:
             charge_ready_time, charge_segments, required_route_energy_kwh = self._plan_charge_cycle_if_needed(
                 amr, payload, to_pickup_sec, loaded_sec, t, force_charge=force_charge
             )
-            if requires_recharge_before_route(amr, required_route_energy_kwh) and not charge_segments:
-                self._set_task_pending_reason(
-                    task,
-                    f"AMR {amr.id} requires a charger-equipped bay before this route",
-                )
-                return None
+            # The complete route must be examined even when the preliminary
+            # estimate exceeds the current battery. It may justify a charging
+            # detour, or reveal that a full battery cannot support this route.
             task_start_time = t
             t = charge_ready_time
 
@@ -10625,11 +10645,20 @@ class Simulation:
                                 else amr.battery_energy_kwh())
             if corridor_energy_kwh > amr.battery_capacity_kwh - amr.min_reserve_energy_kwh() + 1e-12:
                 self._set_task_pending_reason(task, f"AMR {amr.id}: route traction exceeds usable full-battery energy")
+                # A reachable intermediate charger can shorten the uncharged
+                # approach to pickup. Test its onward route before declaring
+                # that the task cannot benefit from charging.
+                if not self._amr_is_at_operational_charger(amr) and not getattr(task, 'is_idle_return', False):
+                    return {'_requires_route_charge': True, 'exceeds_full_energy': True,
+                            'required_energy_kwh': corridor_energy_kwh}
                 return None
             if available_energy - corridor_energy_kwh < amr.min_reserve_energy_kwh() - 1e-12:
                 if not force_charge and not charge_segments and self._amr_is_at_operational_charger(amr):
                     return {'_retry_after_charge': True}
                 self._set_task_pending_reason(task, f"AMR {amr.id} has insufficient battery energy for this route and reserve")
+                if not getattr(task, 'is_idle_return', False):
+                    return {'_requires_route_charge': True,
+                            'required_energy_kwh': corridor_energy_kwh}
                 return None
             projected_battery_soc_after = (
                 100.0
@@ -10787,7 +10816,7 @@ class Simulation:
         key = self._route_estimate_cache_key(amr, task)
         if key in self.route_estimate_cache:
             return self.route_estimate_cache[key]
-        estimate = self._estimate_task_for_amr(amr, task, reserve=False)
+        estimate = self._estimate_task_for_amr(amr, task, reserve=False, return_charge_request=True)
         self._set_cached_task_estimate(amr, task, estimate)
         return estimate
 
@@ -10971,9 +11000,13 @@ class Simulation:
 
         best_by_task = {}
         preferred_by_task = {}
+        charge_requests = []
 
         for job, estimate in self._estimate_candidate_jobs(single_jobs):
             if estimate is None:
+                continue
+            if estimate.get('_requires_route_charge'):
+                charge_requests.append((job, estimate))
                 continue
 
             task = job["task_or_tasks"]
@@ -11007,7 +11040,70 @@ class Simulation:
                 best_order = chosen_order
                 best = (amr, task, estimate)
 
+        if best is not None:
+            return best
+        # Charging cannot displace a delivery that is already feasible. Examine
+        # detours only when no delivery can be assigned, in deterministic order.
+        charge_choices = []
+        for job, request in sorted(charge_requests, key=lambda item: item[0]['order']):
+            option = self._required_route_charge_option(job['amr'], job['task_or_tasks'], request)
+            if option is not None:
+                charge_choices.append((option['finish_time'], job['order'], job['amr'],
+                                       job['task_or_tasks'], option))
+        if charge_choices:
+            _finish, _order, amr, task, option = min(charge_choices, key=lambda item: item[:2])
+            return amr, task, option
+        return None
+
+    def _required_route_charge_option(self, amr, task, request):
+        """Read-only feasibility of reachable charger plus a full-battery task."""
+        if (amr.is_charging or amr.available_time > self.current_time
+                or task.release_time > self.current_time or not self._task_allowed_for_amr(task, amr)):
+            return None
+        best = None
+        for location in self._charge_location_candidates():
+            travel = self._plan_return_to_charge(amr, self.locations[amr.location_name],
+                self.current_time, destination_name=location.name)
+            if travel is None:
+                continue
+            projected = copy(amr)
+            projected.consume_energy(travel['amr_energy_kwh'])
+            charge_finish = travel['finish_time'] + projected.charge_duration_sec_to_full()
+            projected.charge_to_full()
+            projected.location_name = location.name
+            projected.inventory_space_name = ''
+            projected.available_time = charge_finish
+            onward = self._estimate_task_for_amr(projected, copy(task))
+            if onward is None:
+                continue
+            option = dict(request, charge_location=location.name, charge_finish=charge_finish,
+                          finish_time=onward['finish_time'])
+            if best is None or option['finish_time'] < best['finish_time']:
+                best = option
+        if best is None:
+            self._set_task_pending_reason(task, f"AMR {amr.id}: no reachable available charger with an onward task within usable full-battery energy")
         return best
+
+    def _dispatch_required_route_charge(self, amr, task, request):
+        # Recheck in the serial scheduler: estimates never reserve a bay or
+        # promise that an earlier charging option is still available.
+        option = self._required_route_charge_option(amr, task, request)
+        if option is None:
+            return False
+        energy_before = amr.battery_energy_kwh()
+        if not self._schedule_charge_cycle(amr, self.current_time, charge_reason='route_energy',
+                                           destination_name=option['charge_location']):
+            return False
+        self._set_task_pending_reason(task, f"Waiting for AMR {amr.id} to charge for this route")
+        self.log_step(event_time=self.current_time, event_type='route_charge_required',
+            task_id=task.id, amr_id=amr.id, status='waiting',
+            to_location=option['charge_location'], details=json.dumps({
+                'required_traction_kwh': request['required_energy_kwh'],
+                'available_battery_kwh': energy_before,
+                'reserve_kwh': amr.min_reserve_energy_kwh(),
+                'charge_location': option['charge_location'],
+            }))
+        return True
 
     def _route_possible_between_locations(
         self,
@@ -11477,7 +11573,14 @@ class Simulation:
                 self._create_wait_event_for_pending_tasks(self.current_time)
                 return
 
-            amr, task_or_tasks, _ = choice
+            amr, task_or_tasks, assignment_estimate = choice
+
+            if assignment_estimate.get('_requires_route_charge'):
+                if self._dispatch_required_route_charge(amr, task_or_tasks, assignment_estimate):
+                    processed_this_tick += 1
+                    continue
+                self._create_wait_event_for_pending_tasks(self.current_time)
+                return
 
             if isinstance(task_or_tasks, list):
                 tasks = task_or_tasks
@@ -11594,7 +11697,14 @@ class Simulation:
                 continue
 
             task = task_or_tasks
-            committed = self._estimate_task_for_amr(amr, task, reserve=True)
+            committed = self._estimate_task_for_amr(amr, task, reserve=True, return_charge_request=True)
+
+            if committed and committed.get('_requires_route_charge'):
+                if self._dispatch_required_route_charge(amr, task, committed):
+                    processed_this_tick += 1
+                    continue
+                self._create_wait_event_for_pending_tasks(self.current_time)
+                return
 
             if committed is None:
                 if self._task_commit_failure_is_transient(task):
