@@ -1,0 +1,67 @@
+test_editor_and_cli_keep_the_same_short_scheduled_run (test_generation_settings.GenerationSettingsTests.test_editor_and_cli_keep_the_same_short_scheduled_run) ...
+  test_editor_and_cli_keep_the_same_short_scheduled_run (test_generation_settings.GenerationSettingsTests.test_editor_and_cli_keep_the_same_short_scheduled_run) (editor_normalised=True) ... FAIL
+test_task_generation_dialog_save_retains_update_interval (test_generation_settings.GenerationSettingsTests.test_task_generation_dialog_save_retains_update_interval) ... FAIL
+test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) ...
+  test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) (interval=0) ... FAIL
+  test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) (interval=60) ... FAIL
+  test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) (interval=90.5) ... FAIL
+  test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) (interval=1800) ... FAIL
+
+======================================================================
+FAIL: test_editor_and_cli_keep_the_same_short_scheduled_run (test_generation_settings.GenerationSettingsTests.test_editor_and_cli_keep_the_same_short_scheduled_run) (editor_normalised=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_settings.py", line 58, in test_editor_and_cli_keep_the_same_short_scheduled_run
+    self.assertEqual(1, len(sim.completed_task_records))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0
+
+======================================================================
+FAIL: test_task_generation_dialog_save_retains_update_interval (test_generation_settings.GenerationSettingsTests.test_task_generation_dialog_save_retains_update_interval)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_settings.py", line 45, in test_task_generation_dialog_save_retains_update_interval
+    self.assertEqual(60, saved[0].get('update_interval_sec'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 60 != None
+
+======================================================================
+FAIL: test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) (interval=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_settings.py", line 34, in test_update_interval_survives_open_save_reopen
+    self.assertEqual(interval, restored.data['task_generation'].get('update_interval_sec'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != None
+
+======================================================================
+FAIL: test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) (interval=60)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_settings.py", line 34, in test_update_interval_survives_open_save_reopen
+    self.assertEqual(interval, restored.data['task_generation'].get('update_interval_sec'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 60 != None
+
+======================================================================
+FAIL: test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) (interval=90.5)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_settings.py", line 34, in test_update_interval_survives_open_save_reopen
+    self.assertEqual(interval, restored.data['task_generation'].get('update_interval_sec'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 90.5 != None
+
+======================================================================
+FAIL: test_update_interval_survives_open_save_reopen (test_generation_settings.GenerationSettingsTests.test_update_interval_survives_open_save_reopen) (interval=1800)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_generation_settings.py", line 34, in test_update_interval_survives_open_save_reopen
+    self.assertEqual(interval, restored.data['task_generation'].get('update_interval_sec'))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1800 != None
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.095s
+
+FAILED (failures=6)

@@ -3706,6 +3706,8 @@ class TaskGenerationSettingsDialog(QDialog):
             ),
             "categories": {},
         }
+        if "update_interval_sec" in source:
+            result["update_interval_sec"] = source["update_interval_sec"]
         incoming_categories = (
             source.get("categories", {})
             if isinstance(source.get("categories", {}), dict)

@@ -382,6 +382,10 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
     if not isinstance(value, dict):
         return merged
 
+    # This simulator setting has no category control. Opening/saving the editor
+    # must not replace an explicit polling interval with the engine fallback.
+    if "update_interval_sec" in value:
+        merged["update_interval_sec"] = deepcopy(value["update_interval_sec"])
     merged["enabled"] = bool(value.get("enabled", merged["enabled"]))
     merged["staff_config"] = normalise_staff_task_generation_config(
         value.get("staff_config", value.get("staff", {}))
