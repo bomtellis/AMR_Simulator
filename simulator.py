@@ -1234,6 +1234,18 @@ class Simulation:
                 return False
             selected.append((task, record.instance_id))
             used.add(record.instance_id)
+        creations = []
+        for task in tasks:
+            if not normalise_payload_name(task.payload) or self._task_requires_existing_payload_instance(task):
+                continue
+            instance_id = str(getattr(task, 'payload_instance_id', '') or '').strip()
+            if not instance_id:
+                continue  # Unnamed new payloads receive unique generated IDs.
+            if instance_id in used or not self._pickup_instance_available(task):
+                self._set_task_pending_reason(task, self._pickup_instance_pending_reason(task))
+                return False
+            used.add(instance_id)
+            creations.append((task, instance_id))
         if not self._plan_exchange_empty_claims(tasks, reserve=reserve, excluded_instance_ids=used):
             return False
         if reserve:
@@ -1243,6 +1255,9 @@ class Simulation:
                     self._set_task_pending_reason(task, self._pickup_instance_pending_reason(task))
                     return False
                 task.payload_instance_id = instance_id
+            for task, instance_id in creations:
+                self._remember_route_mapping(self.payload_instance_store._creation_claims, instance_id)
+                self.payload_instance_store._creation_claims[instance_id] = task.id
         return True
 
     def _plan_exchange_empty_claims(self, tasks: List[Task], *, reserve: bool,
@@ -2517,8 +2532,17 @@ class Simulation:
         # Most return tasks collect an existing object, but waste-bin exchange
         # returns are different: the full bin remains at the waste store and a
         # newly issued empty bin is returned to the department/shared bin space.
+        instance_id = str(getattr(task, 'payload_instance_id', '') or '').strip()
+        store = self.payload_instance_store
+        if instance_id in store._records:
+            return True
+        owner = store._creation_claims.get(instance_id)
+        if owner and owner != task.id:
+            return True
         if bool(getattr(task, "creates_new_payload_instance", False)):
             return False
+        if instance_id in store._issued_instances:
+            return True
         return bool(getattr(task, "is_return_task", False)) or bool(
             getattr(task, "requires_existing_payload_instance", False)
         )
@@ -2527,6 +2551,10 @@ class Simulation:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
         if not payload_name:
             return True
+        instance_id = str(getattr(task, 'payload_instance_id', '') or '').strip()
+        known = self.payload_instance_store._known_instances.get(instance_id)
+        if known is not None and known.payload != payload_name:
+            return False
         if not self._task_requires_existing_payload_instance(task):
             return True
         return next(self._pickup_instance_candidates(task), None) is not None
@@ -2572,6 +2600,9 @@ class Simulation:
 
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
         record = None
+
+        if not self._pickup_instance_available(task):
+            raise RuntimeError(self._pickup_instance_pending_reason(task))
 
         if instance_id:
             record = self.payload_instance_store.pickup(
@@ -2627,6 +2658,8 @@ class Simulation:
         if instance_id:
             task.payload_instance_id = instance_id
             task.payload_instance_picked_up = True
+            self.payload_instance_store._issued_instances.add(instance_id)
+            self.payload_instance_store.release_creation_claim(instance_id, task.id)
             self.payload_instance_store.release_reservation(
                 instance_id, str(getattr(task, "id", "") or "")
             )
@@ -6668,6 +6701,7 @@ class Simulation:
             self.payload_instance_store.release_reservation(
                 instance_id, str(getattr(task, "id", "") or "")
             )
+            self.payload_instance_store.release_creation_claim(instance_id, task.id)
 
     def _fail_task(self, task: Task, reason: str, now: Optional[float] = None) -> None:
         self._task_deferrals.pop(task.id, None)

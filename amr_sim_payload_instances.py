@@ -65,13 +65,24 @@ class PayloadInstanceStore:
         # generated tasks from binding to the same shared physical container and
         # allows a failed/deferred task to release only its own reservation.
         self._reservations: Dict[str, str] = {}
+        # Registration may precede physical creation. Issued IDs must never be
+        # recreated merely because they are currently in transit or removed.
+        self._issued_instances = set()
+        self._creation_claims: Dict[str, str] = {}
         self._counter = 0
 
     def make_instance_id(self, payload_name: str, task_id: str = "") -> str:
-        self._counter += 1
         base = safe_token(payload_name)
-        task = safe_token(task_id) if task_id else f"{self._counter:06d}"
-        return f"{base}-{task}-{self._counter:06d}"
+        while True:
+            self._counter += 1
+            task = safe_token(task_id) if task_id else f"{self._counter:06d}"
+            candidate = f"{base}-{task}-{self._counter:06d}"
+            if candidate not in self._known_instances and candidate not in self._creation_claims:
+                return candidate
+
+    def release_creation_claim(self, instance_id: str, task_id: str) -> None:
+        if self._creation_claims.get(instance_id) == task_id:
+            self._creation_claims.pop(instance_id, None)
 
     def register_instance(
         self,
@@ -153,6 +164,7 @@ class PayloadInstanceStore:
             status="stored",
             metadata=dict(metadata or {}),
         )
+        self._issued_instances.add(instance_id)
         self._by_location.setdefault(location_name, {})[instance_id] = None
         self._counts_by_payload[payload_name] = (
             int(self._counts_by_payload.get(payload_name, 0) or 0) + 1

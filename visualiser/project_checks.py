@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from amr_sim_payload_instances import normalise_payload_name
+
 
 def config_fingerprint(config) -> str:
     return hashlib.sha256(json.dumps(config, sort_keys=True, ensure_ascii=False,
@@ -261,6 +263,21 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             if candidates:
                 near = min(candidates, key=lambda n: (float(point["x"]) - float(names[n]["x"])) ** 2 + (float(point["y"]) - float(names[n]["y"])) ** 2)
                 directed.extend([(name, near, ""), (near, name, "")])
+
+    # Repeated IDs may describe successive moves of one object, but its payload
+    # type must agree. Do not reject legitimate sequential reuse as a duplicate.
+    instance_types = {}
+    for i, task in enumerate(config.get('tasks', [])):
+        instance_id = str(task.get('payload_instance_id', '') or '').strip()
+        payload = normalise_payload_name(task.get('payload', ''))
+        if not instance_id or not payload:
+            continue
+        previous = instance_types.setdefault(instance_id, payload)
+        if previous != payload:
+            error(f'/tasks/{i}/payload_instance_id',
+                  f'Container {instance_id} is already declared as {previous}, not {payload}. '
+                  'Use one payload type per physical container ID.',
+                  'tasks', task.get('id', ''), 'PAYLOAD_ID_TYPE')
 
     profiles = config.get("route_profiles", {})
     for name, profile in profiles.items():
