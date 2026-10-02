@@ -1,0 +1,6 @@
+Baseline: 49db46b
+Command: .venv/Scripts/python.exe -m unittest tests.test_batch_charging -v
+Reference: two Box tasks A to B, one two-slot AMR at its charger, 20% battery.
+Expected: 2 multi_stop_task_assigned records on one shared journey after charging.
+Observed: 0 multi_stop_task_assigned records; tasks completed individually.
+AssertionError: 2 != 0

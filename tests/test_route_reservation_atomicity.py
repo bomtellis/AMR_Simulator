@@ -81,6 +81,9 @@ class ReservationAtomicityTests(unittest.TestCase):
     def test_insufficient_battery_rolls_back_corridors_and_inventory(self):
         sim, tasks = self.prepare(storage_config(2))
         sim.amrs[0].battery_soc_percent = 0
+        # Charging at A now makes this route feasible; rejection requires the
+        # depleted robot to be away from an operational charger.
+        sim.charge_location_names = ['B']
         before = resource_state(sim)
         self.assertIsNone(sim._estimate_multi_stop_for_amr(sim.amrs[0], tasks, reserve=True))
         self.assertEqual(before, resource_state(sim))
@@ -89,6 +92,7 @@ class ReservationAtomicityTests(unittest.TestCase):
     def test_insufficient_battery_rolls_back_lift_position_wear_and_bookings(self):
         sim, tasks = self.prepare(storage_config(2, lifts=True))
         sim.amrs[0].battery_soc_percent = 0
+        sim.charge_location_names = ['B']
         for lift in sim.lifts:
             lift.health_loss_per_journey_percent = 1
             lift.mean_time_between_failures_hours = 0.000001
@@ -131,6 +135,7 @@ class ReservationAtomicityTests(unittest.TestCase):
         sim._reserve_node('X', 100, 101, 'OTHER')
         sim._reserve_location('B', 100, 105)
         sim.amrs[0].battery_soc_percent = 0
+        sim.charge_location_names = ['B']
         before = resource_state(sim)
         self.assertIsNone(sim._estimate_multi_stop_for_amr(sim.amrs[0], tasks, reserve=True))
         self.assertEqual(before, resource_state(sim))

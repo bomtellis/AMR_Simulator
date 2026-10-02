@@ -119,6 +119,7 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D037 | Read-only charger availability checks cleared stale bay occupancy/reservations | Make inspection pure and defer stale-marker cleanup to serial reservation/arrival operations. Live occupants remain protected; failed commits retain transaction rollback. |
 | D038 | Shared journey energy was repeated per task and added again in the transport matrix; legacy missing lift energy appeared as zero | Leave per-task shared energy unallocated, retain explicitly scoped journey totals, and use one source-attributed movement ledger for investigation and report totals. Missing attribution remains unknown. See SHARED_ENERGY_REVIEW.md. |
 | D039 | An in-place pre-task charge added battery energy but its exported charge segment recorded zero input | Record its planned input, log applied charge credits separately, and reconcile each robot's initial, credited, traction and final energy. Cancelled or legacy evidence cannot establish a full balance. See BATTERY_BALANCE_REVIEW.md. |
+| D040 | A multi-stop batch needing charge was rejected even at a usable charger, forcing individual delivery fallback | Replan batches after in-place charging; check reachable chargers against the full onward batch, with serial rechecks and rollback. Feasible deliveries precede charging detours. See BATCH_CHARGING_REVIEW.md. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation

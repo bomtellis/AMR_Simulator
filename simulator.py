@@ -2061,14 +2061,28 @@ class Simulation:
         return ordered
 
     def _estimate_multi_stop_for_amr(
-        self, amr: AMR, tasks: List[Task], reserve: bool = False
+        self, amr: AMR, tasks: List[Task], reserve: bool = False,
+        return_charge_request: bool = False,
     ) -> Optional[dict]:
-        if not reserve:
-            return self._estimate_multi_stop_for_amr_impl(amr, tasks, reserve=False)
-        with RouteReservationTransaction(self, amr, tasks) as transaction:
-            result = self._estimate_multi_stop_for_amr_impl(amr, tasks, reserve=True)
-            transaction.committed = result is not None
-            return result
+        # Charging changes every subsequent resource time. Roll back the first
+        # attempt before rebuilding the complete batch at the later departure.
+        for force_charge in (False, True):
+            if reserve:
+                with RouteReservationTransaction(self, amr, tasks) as transaction:
+                    result = self._estimate_multi_stop_for_amr_impl(
+                        amr, tasks, reserve=True, force_charge=force_charge)
+                    retry = bool(result and result.get('_retry_after_charge'))
+                    transaction.committed = (result is not None and not retry
+                                             and not result.get('_requires_route_charge'))
+            else:
+                result = self._estimate_multi_stop_for_amr_impl(
+                    amr, tasks, reserve=False, force_charge=force_charge)
+                retry = bool(result and result.get('_retry_after_charge'))
+            if not retry:
+                if result and result.get('_requires_route_charge') and not return_charge_request:
+                    return None
+                return result
+        return None
 
     def _annotate_delivery_motor_energy(self, amr, tasks, segments):
         """Traction only: physical movement with the load onboard at that time.
@@ -2102,7 +2116,8 @@ class Simulation:
         return total
 
     def _estimate_multi_stop_for_amr_impl(
-        self, amr: AMR, tasks: List[Task], reserve: bool = False
+        self, amr: AMR, tasks: List[Task], reserve: bool = False,
+        *, force_charge: bool = False,
     ) -> Optional[dict]:
         try:
             if not tasks or len(tasks) < 2:
@@ -2160,14 +2175,21 @@ class Simulation:
                 max(task.release_time for task in tasks),
             )
             task_start_time = t
+            charge_segments = []
+            if force_charge:
+                t, charge_segments, _energy = self._plan_charge_cycle_if_needed(
+                    amr, aggregate_payload, 0, 0, t, force_charge=True)
+                if not charge_segments:
+                    return None
+            charge_ready_time = t
             ordered_legs = self._ordered_multi_stop_legs(
                 amr, tasks, amr_loc, aggregate_payload, t
             )
             if ordered_legs is None:
                 return None
 
-            segments: List[dict] = []
-            total = 0.0
+            segments: List[dict] = list(charge_segments)
+            total = sum(s['duration'] for s in charge_segments)
             lift_energy_kwh_total = 0.0
             lift_empty_sec_total = 0.0
             lift_loaded_sec_total = 0.0
@@ -2509,14 +2531,36 @@ class Simulation:
 
             corridor_energy_kwh = self._annotate_delivery_motor_energy(amr, tasks, segments)
             actual_energy_kwh = corridor_energy_kwh + lift_energy_kwh_total
+            available_energy = amr.battery_capacity_kwh if charge_segments else amr.battery_energy_kwh()
+            if corridor_energy_kwh > amr.battery_capacity_kwh - amr.min_reserve_energy_kwh() + 1e-12:
+                for task in tasks:
+                    self._set_task_pending_reason(task, f"AMR {amr.id}: batch traction exceeds usable full-battery energy")
+                if not self._amr_is_at_operational_charger(amr):
+                    return {'_requires_route_charge': True, 'exceeds_full_energy': True,
+                            'required_energy_kwh': corridor_energy_kwh}
+                return None
+            if available_energy - corridor_energy_kwh < amr.min_reserve_energy_kwh() - 1e-12:
+                if not force_charge and self._amr_is_at_operational_charger(amr):
+                    return {'_retry_after_charge': True}
+                for task in tasks:
+                    self._set_task_pending_reason(task, f"AMR {amr.id} has insufficient battery energy for this batch and reserve")
+                return {'_requires_route_charge': True, 'required_energy_kwh': corridor_energy_kwh}
             projected_battery_soc_after = (
                 100.0
-                * max(0.0, amr.battery_energy_kwh() - corridor_energy_kwh)
+                * max(0.0, available_energy - corridor_energy_kwh)
                 / max(amr.battery_capacity_kwh, 1e-9)
             )
-            if requires_recharge_before_route(amr, corridor_energy_kwh):
-                return None
             if reserve:
+                if charge_segments:
+                    charge_duration = charge_segments[0]['duration']
+                    self.charge_intervals.append({
+                        'amr_id': amr.id, 'location': amr.location_name,
+                        'space': str(getattr(amr, 'inventory_space_name', '') or ''),
+                        'start_time': task_start_time, 'end_time': charge_ready_time,
+                        'duration_sec': charge_duration,
+                    })
+                    amr.total_charge_time += charge_duration
+                    amr.charge_to_full()
                 amr.consume_energy(corridor_energy_kwh)
                 battery_soc_after = amr.battery_soc_percent
             else:
@@ -10917,15 +10961,19 @@ class Simulation:
                     "amr": amr,
                     "task_or_tasks": batch,
                     "fn": self._estimate_multi_stop_for_amr,
-                    "args": (amr, batch, False),
+                    "args": (amr, batch, False, True),
                 }
             )
 
         multi_stop_best = None
+        batch_charge_requests = []
         multi_stop_best_finish = math.inf
         multi_stop_best_order = math.inf
         for job, estimate in self._estimate_candidate_jobs(multi_stop_jobs):
             if estimate is None:
+                continue
+            if estimate.get('_requires_route_charge'):
+                batch_charge_requests.append((job, estimate))
                 continue
             finish_time = estimate["finish_time"]
             order = int(job.get("order", 0))
@@ -11010,7 +11058,7 @@ class Simulation:
 
         best_by_task = {}
         preferred_by_task = {}
-        charge_requests = []
+        charge_requests = batch_charge_requests
 
         for job, estimate in self._estimate_candidate_jobs(single_jobs):
             if estimate is None:
@@ -11055,20 +11103,29 @@ class Simulation:
         # Charging cannot displace a delivery that is already feasible. Examine
         # detours only when no delivery can be assigned, in deterministic order.
         charge_choices = []
-        for job, request in sorted(charge_requests, key=lambda item: item[0]['order']):
+        def charge_order(job):
+            return ((0, job['order']) if isinstance(job['task_or_tasks'], list)
+                    else (1, *job['order']))
+
+        for job, request in sorted(charge_requests, key=lambda item: charge_order(item[0])):
             option = self._required_route_charge_option(job['amr'], job['task_or_tasks'], request)
             if option is not None:
-                charge_choices.append((option['finish_time'], job['order'], job['amr'],
+                charge_choices.append((option['finish_time'], charge_order(job), job['amr'],
                                        job['task_or_tasks'], option))
         if charge_choices:
-            _finish, _order, amr, task, option = min(charge_choices, key=lambda item: item[:2])
+            # Retain the same batch preference as ordinary assignments once
+            # charging is necessary for every available delivery.
+            _finish, _order, amr, task, option = min(
+                charge_choices, key=lambda item: (item[1][0], item[0], item[1]))
             return amr, task, option
         return None
 
     def _required_route_charge_option(self, amr, task, request):
-        """Read-only feasibility of reachable charger plus a full-battery task."""
+        """Read-only feasibility of reachable charger plus full-battery work."""
+        tasks = task if isinstance(task, list) else [task]
         if (amr.is_charging or amr.available_time > self.current_time
-                or task.release_time > self.current_time or not self._task_allowed_for_amr(task, amr)):
+                or not tasks or any(t.release_time > self.current_time
+                    or not self._task_allowed_for_amr(t, amr) for t in tasks)):
             return None
         best = None
         for location in self._charge_location_candidates():
@@ -11083,7 +11140,8 @@ class Simulation:
             projected.location_name = location.name
             projected.inventory_space_name = ''
             projected.available_time = charge_finish
-            onward = self._estimate_task_for_amr(projected, copy(task))
+            onward = (self._estimate_multi_stop_for_amr(projected, [copy(t) for t in tasks])
+                      if isinstance(task, list) else self._estimate_task_for_amr(projected, copy(task)))
             if onward is None:
                 continue
             option = dict(request, charge_location=location.name, charge_finish=charge_finish,
@@ -11091,7 +11149,8 @@ class Simulation:
             if best is None or option['finish_time'] < best['finish_time']:
                 best = option
         if best is None:
-            self._set_task_pending_reason(task, f"AMR {amr.id}: no reachable available charger with an onward task within usable full-battery energy")
+            for pending_task in tasks:
+                self._set_task_pending_reason(pending_task, f"AMR {amr.id}: no reachable available charger with onward work within usable full-battery energy")
         return best
 
     def _dispatch_required_route_charge(self, amr, task, request):
@@ -11104,9 +11163,11 @@ class Simulation:
         if not self._schedule_charge_cycle(amr, self.current_time, charge_reason='route_energy',
                                            destination_name=option['charge_location']):
             return False
-        self._set_task_pending_reason(task, f"Waiting for AMR {amr.id} to charge for this route")
+        tasks = task if isinstance(task, list) else [task]
+        for pending_task in tasks:
+            self._set_task_pending_reason(pending_task, f"Waiting for AMR {amr.id} to charge for this route")
         self.log_step(event_time=self.current_time, event_type='route_charge_required',
-            task_id=task.id, amr_id=amr.id, status='waiting',
+            task_id=','.join(t.id for t in tasks), amr_id=amr.id, status='waiting',
             to_location=option['charge_location'], details=json.dumps({
                 'required_traction_kwh': request['required_energy_kwh'],
                 'available_battery_kwh': energy_before,
@@ -11594,7 +11655,14 @@ class Simulation:
 
             if isinstance(task_or_tasks, list):
                 tasks = task_or_tasks
-                committed = self._estimate_multi_stop_for_amr(amr, tasks, reserve=True)
+                committed = self._estimate_multi_stop_for_amr(amr, tasks, reserve=True, return_charge_request=True)
+
+                if committed and committed.get('_requires_route_charge'):
+                    if self._dispatch_required_route_charge(amr, tasks, committed):
+                        processed_this_tick += 1
+                        continue
+                    self._create_wait_event_for_pending_tasks(self.current_time)
+                    return
 
                 if committed is None:
                     if any(
@@ -12144,6 +12212,9 @@ class Simulation:
 
         for segment in committed["segments"]:
             segment_type = str(segment.get("type", "") or "").strip()
+            if segment_type == 'charge':
+                self._log_battery_charge_applied(amr, float(segment['energy_kwh']),
+                    task_id=','.join(task.id for task in tasks), basis='credited_at_route_commit')
             segment_task_ids = _task_ids_for_segment(segment)
             task = (
                 tasks_by_id.get(segment_task_ids[0])
