@@ -1,0 +1,7 @@
+Baseline: 75f7a8c
+Command: .venv/Scripts/python.exe -m unittest tests.test_scenario_recovery -v
+4 tests failed:
+- 00:00–00:01 robot outage: expected one completed delivery at 69 s; observed zero completions.
+- 00:00–00:01 lift outage: expected one completed delivery at 70 s; observed zero completions.
+- Multi-stop robot outage: assignment occurred before recovery at 60 s.
+- Monday 23:00–01:00 outage: Tuesday 00:00 should remain blocked; observed availability 100%.

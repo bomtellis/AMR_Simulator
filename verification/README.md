@@ -123,6 +123,10 @@ evidence even on failure. The workflow itself has not yet run on GitHub at this 
 | D041 | Charger occupancy began before arrival; rejected bay claims could still credit charging, and unavailable chargers polluted delivery failures | Add arrival/completion phase and cycle checks, separate operational wait/failure evidence and validate bay ownership before battery credit. See CHARGER_CONTENTION_REVIEW.md. |
 | D042 | An older delivery completion could clear a newly assigned charger reservation at the same timestamp | Skip obsolete stow actions once newer work or charging owns the robot. The reproduced two-robot case now uses one charger serially. See CHARGER_CONTENTION_REVIEW.md. |
 | D043 | An identical local start/end pose generated an alignment loop, consuming time and battery | Return zero local movement when both position and heading match. See CHARGER_CONTENTION_REVIEW.md. |
+| D044 | Valid work could remain asleep after a temporary robot outage | Schedule scenario start/end checks that invalidate estimates and retry pending work. See SCENARIO_RECOVERY_REVIEW.md. |
+| D045 | A temporary lift outage could permanently fail a structurally valid delivery | Separate allowed graph/lift/width feasibility from current availability; retain original task deadlines. See SCENARIO_RECOVERY_REVIEW.md. |
+| D046 | Multi-stop assignment bypassed robot outage admission | Apply robot availability to batch and separate charging admission. See SCENARIO_RECOVERY_REVIEW.md. |
+| D047 | Overnight scenario weekdays were interpreted as the current day, losing the after-midnight portion | Anchor half-open intervals to their start day and preserve fractional boundary comparisons. See SCENARIO_RECOVERY_REVIEW.md. |
 
 The original 115-test baseline and before-fix reference failures are in `baseline/`.
 Continue individual option contracts and independent cases for other generation

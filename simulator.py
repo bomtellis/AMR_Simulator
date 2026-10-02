@@ -850,6 +850,7 @@ class Simulation:
                     "opportunity_charge_tick",
                     {},
                 )
+        self._schedule_scenario_boundaries()
 
     def _normalise_mass_collection_configs(self, raw_configs) -> List[dict]:
         """Normalise third-party mass collection/empty-bin rotation settings.
@@ -2122,6 +2123,11 @@ class Simulation:
     ) -> Optional[dict]:
         try:
             if not tasks or len(tasks) < 2:
+                return None
+            availability_time = max(self.current_time, amr.available_time, max(t.release_time for t in tasks))
+            if self._scenario_event_state('amr', amr.id, availability_time)['availability_percent'] <= 0:
+                for task in tasks:
+                    self._set_task_pending_reason(task, f'AMR {amr.id} unavailable in scenario {self.scenario_name}')
                 return None
             slot_assignments = self._assign_tasks_to_amr_slots(amr, tasks)
             if slot_assignments is None:
@@ -7267,13 +7273,45 @@ class Simulation:
             return candidate == resource_id or candidate.startswith(resource_id + "-")
         return candidate == resource_id
 
+    def _scenario_window(self, event, day):
+        """A half-open occurrence, anchored to its start weekday.
+
+        Equal clock times retain the legacy all-day meaning.
+        """
+        days = {str(x).strip().lower()[:3] for x in (event.get('days_active', []) or []) if str(x).strip()}
+        if days and ['mon','tue','wed','thu','fri','sat','sun'][day.weekday()] not in days:
+            return None
+        midnight = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = self._parse_hhmm_to_minutes(event.get('start_time'), 0)
+        end = self._parse_hhmm_to_minutes(event.get('end_time'), 1440)
+        if start == end:
+            return midnight, midnight + timedelta(days=1)
+        return (midnight + timedelta(minutes=start),
+                midnight + timedelta(minutes=end, days=1 if end < start else 0))
+
+    def _schedule_scenario_boundaries(self):
+        if not self.scenario_mode:
+            return
+        origin = self.clock.sim_seconds_to_datetime(0)
+        final = self.clock.sim_seconds_to_datetime(self.task_generation_horizon_sec)
+        day = origin.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        boundaries = set()
+        while day <= final:
+            for event in self.scenario_events:
+                window = self._scenario_window(event, day)
+                for boundary in window or ():
+                    seconds = (boundary - origin).total_seconds()
+                    if 0 <= seconds <= self.task_generation_horizon_sec:
+                        boundaries.add(seconds)
+            day += timedelta(days=1)
+        for seconds in sorted(boundaries):
+            self.push_event(seconds, 'scenario_boundary', {})
+
     def _scenario_event_state(self, resource_type: str, candidate: str, sim_time_sec: float) -> dict:
         state = {"availability_percent": 100.0, "speed_factor": 1.0, "blocked_until": float(sim_time_sec), "notes": ""}
         if not self.scenario_mode:
             return state
         dt = self.clock.sim_seconds_to_datetime(float(sim_time_sec))
-        day_key = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][dt.weekday()]
-        minute = dt.hour * 60 + dt.minute + dt.second / 60.0
         for event in self.scenario_events:
             if str(event.get("resource_type", "") or "").strip().lower() != resource_type:
                 continue
@@ -7287,17 +7325,8 @@ class Simulation:
                 for resource_id in resource_ids
             ):
                 continue
-            days = {str(x).strip().lower()[:3] for x in (event.get("days_active", []) or []) if str(x).strip()}
-            if days and day_key not in days:
-                continue
-            start_min = self._parse_hhmm_to_minutes(event.get("start_time"), 0)
-            end_min = self._parse_hhmm_to_minutes(event.get("end_time"), 24 * 60)
-            if end_min == start_min:
-                active = True
-            elif end_min > start_min:
-                active = start_min <= minute < end_min
-            else:
-                active = minute >= start_min or minute < end_min
+            windows = [self._scenario_window(event, day) for day in (dt - timedelta(days=1), dt)]
+            active = [window for window in windows if window and window[0] <= dt < window[1]]
             if not active:
                 continue
             availability = max(0.0, min(100.0, float(event.get("availability_percent", 100.0) or 0.0)))
@@ -7306,12 +7335,7 @@ class Simulation:
             state["speed_factor"] = min(state["speed_factor"], speed_factor)
             state["notes"] = str(event.get("notes", "") or state["notes"])
             if availability <= 0.0:
-                if end_min > start_min:
-                    seconds_to_end = max(0.0, (end_min - minute) * 60.0)
-                elif minute >= start_min:
-                    seconds_to_end = max(0.0, ((24 * 60 - minute) + end_min) * 60.0)
-                else:
-                    seconds_to_end = max(0.0, (end_min - minute) * 60.0)
+                seconds_to_end = max((window[1] - dt).total_seconds() for window in active)
                 state["blocked_until"] = max(state["blocked_until"], float(sim_time_sec) + seconds_to_end)
         return state
 
@@ -9986,6 +10010,14 @@ class Simulation:
         if getattr(amr, "is_charging", False):
             return True
 
+        if self._scenario_event_state('amr', amr.id, now)['availability_percent'] <= 0:
+            reason = f'AMR {amr.id} unavailable in scenario {self.scenario_name}'
+            if self._charge_wait_reasons.get(amr.id) != reason:
+                self._charge_wait_reasons[amr.id] = reason
+                self.log_step(event_time=now, event_type='charge_wait', amr_id=amr.id,
+                    status='waiting', from_location=amr.location_name, details=reason)
+            return False
+
         current_loc = self.locations[amr.location_name]
         plan = self._plan_return_to_charge(amr, current_loc, now, reserve=True,
                                            destination_name=destination_name)
@@ -11243,17 +11275,33 @@ class Simulation:
                 self._route_feasibility_cache_set(cache_key, result)
                 return result
 
-            result = (
-                self._nearest_compatible_lift_plan(
-                    self.current_time,
-                    amr,
-                    from_loc,
-                    to_loc,
-                    payload,
-                    rules=rules,
-                )
-                is not None
-            )
+            # Terminal feasibility is structural. A scheduled outage or repair
+            # cannot turn an otherwise usable lift route into permanent failure.
+            orientations = {orientation for slot in self._runtime_amr_payload_slots(amr)
+                            for orientation in self._compatible_payload_orientations(payload, slot)}
+            if is_empty_payload_name(payload.name):
+                orientations = {'lengthways'}
+            result = False
+            for lift in self.lifts:
+                if (not lift.can_serve(from_loc.floor, to_loc.floor)
+                        or not self._lift_allowed(lift, rules)
+                        or self._lift_health_speed_factor(lift) <= 0):
+                    continue
+                origin = self._lift_location_on_floor(lift, from_loc.floor)
+                destination = self._lift_location_on_floor(lift, to_loc.floor)
+                if not self._node_allowed(origin.name, rules) or not self._node_allowed(destination.name, rules):
+                    continue
+                for orientation in orientations:
+                    width = self._required_corridor_width(amr, payload, orientation)
+                    if (lift.can_fit(payload, amr, orientation=orientation)
+                            and self._shortest_path_same_floor(from_loc.floor, from_loc.name, origin.name,
+                                rules=rules, minimum_width_m=width) is not None
+                            and self._shortest_path_same_floor(to_loc.floor, destination.name, to_loc.name,
+                                rules=rules, minimum_width_m=width) is not None):
+                        result = True
+                        break
+                if result:
+                    break
             self._route_feasibility_cache_set(cache_key, result)
             return result
         except Exception:
@@ -11440,19 +11488,6 @@ class Simulation:
                 return (
                     f"All lifts serving floors {pickup_loc.floor} and {dropoff_loc.floor} "
                     f"are below their operational health threshold: {health_text}"
-                )
-            if serving_lifts and self.scenario_mode and all(
-                float(
-                    self._scenario_event_state(
-                        "lift", lift.id, self.current_time
-                    ).get("availability_percent", 100.0)
-                )
-                <= 0.0
-                for lift in serving_lifts
-            ):
-                return (
-                    f"All lifts serving floors {pickup_loc.floor} and {dropoff_loc.floor} "
-                    f"are unavailable in scenario {self.scenario_name}"
                 )
         if not dropoff_reachable:
             return (
@@ -12658,7 +12693,12 @@ class Simulation:
         return released_tasks
 
     def _handle_event(self, event: Event):
-        if event.event_type == "task_deferral_timeout":
+        if event.event_type == 'scenario_boundary':
+            self._invalidate_route_estimate_cache()
+            self.log_step(event_time=event.time, event_type='scenario_boundary',
+                status='resource_check', details=f'Scenario {self.scenario_name}: scheduled boundary; rechecking pending work')
+            self._try_assign_tasks(event.time)
+        elif event.event_type == "task_deferral_timeout":
             if self._expire_task_deferral(event.payload["task"], event.time):
                 self._try_assign_tasks(event.time)
         elif event.event_type == "dropoff_zone_handoff_complete":
