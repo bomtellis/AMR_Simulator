@@ -144,19 +144,20 @@ def write_report(path, report):
         for o in report["options"])
     counts = report["counts"]
     path.write_text(f'''<!doctype html><html lang="en"><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>AMR verification — Recovery</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>AMR verification — Undo and redo</title>
 <style>body{{font:17px/1.5 system-ui,sans-serif;background:#f5f7fa;color:#172635;max-width:1150px;margin:auto;padding:24px}}
 h1,h2{{line-height:1.2}}article,.panel{{background:white;border:1px solid #b3c2d0;border-radius:8px;padding:20px;margin:16px 0}}
 .status{{font-weight:700;color:#334d65}}table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:left;border:1px solid #b3c2d0;padding:8px;overflow-wrap:anywhere}}
 input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer}}a{{color:#174c94}}li{{overflow-wrap:anywhere}}
 @media print{{body{{padding:0}}details{{display:block}}}}</style>
-<h1>AMR engineering verification</h1><p>Recovery and unsaved-work review gate · {esc(report["created_utc"])}</p>
+<h1>AMR engineering verification</h1><p>Undo and redo review gate · {esc(report["created_utc"])}</p>
 <div class="panel"><h2>{counts["passed"]} / {counts["total"]} tests passed</h2>
 <p><strong>This is not full simulator validation.</strong> Verified claims apply only to the stated reference cases. Partial and unsupported features remain visible below.</p>
 <p>Rollback commit: 07a059a · tested source fingerprint: <code>{esc(report["source"]["sha256"])}</code></p>
 <p>{len(report["options"])} observed/documented option paths; {counts["unreviewed_options"]} require individual semantic review.</p>
 <p><a href="evidence.json">Complete machine-readable evidence</a> · <a href="tests.txt">Test log</a> · <a href="options.json">Option inventory</a> · <a href="source-key-candidates.json">Additional source-key candidates</a> · <a href="source-snapshot.zip">Tested source snapshot</a></p></div>
 <div class="panel"><h2>Changes to review</h2><ul>
+<li>Shared undo/redo groups completed configuration edits and canvas drags, preserves history across saves, and starts fresh when another document opens. Finish active editing windows before undoing.</li>
 <li>Unsaved-work prompts protect open/close. Separate recovery copies capture edits and available drawings every 30 seconds; recovery opens as unsaved work without overwriting the original.</li>
 <li>Portable .amrproj storage packages configuration, deduplicated drawings and saved revisions. Atomic saves protect the previous file; restore preserves current edits first. Results stay external.</li>
 <li>Results investigation links task timelines and defined metrics to event records, using saved input snapshots rather than the current editor project.</li>
@@ -174,7 +175,8 @@ input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer
 <p>Open Home → Project checks in the editor. Filter findings, navigate to an affected object, edit it and confirm the checks become stale. Recheck before exporting. In the launcher, review and acknowledge warnings before running, then inspect project_checks.json in the run folder.</p>
 <p>Open Home → Demand preview → Build preview. Inspect Tasks, Timetable and Rules and reconciliation. Select a task for its origin and effective settings; edit the project and confirm the preview becomes stale.</p>
 <p>Open Home → Results investigation or Investigate Results in the launcher. Select a full event CSV, inspect a task, then select a metric to see its contributing records. Planned segments do not establish completion; missing evidence is not zero activity.</p>
-<p>Use Home → Save project as, then Project revisions to compare and restore a saved configuration. Move the project without the original drawings and reopen it. Export JSON for the existing simulator. Global undo/redo and project-to-run integration remain outstanding.</p>
+<p>Use Home → Save project as, then Project revisions to compare and restore a saved configuration. Move the project without the original drawings and reopen it. Export JSON for the existing simulator. Full project-to-run integration remains outstanding.</p>
+<p>Use Edit → Undo / Redo (Ctrl+Z / Ctrl+Y) after dragging a node, deleting a linked node or editing settings. A drag is one step; deleting a node restores its edges with it. Undo back to saved values clears unsaved state. Open/recovery/revision restore starts a new undo history.</p>
 <p>Change a setting and verify Save / Discard / Cancel when opening or closing. After 30 seconds outside modal editing, use Home → Recover unsaved work. Recover to a new filename and confirm the original remains unchanged. Hover over the filename for recovery status.</p>
 <p><a href="ltn-project-checks.json">LTN structured findings</a> reflects the current saved project. Previously reported references may have been corrected. Complex calendars without an independent expected count are marked not assessed. The remaining option audit, complete report reconciliation, unified application and new geometry remain later work.</p></div>
 <label for="filter">Filter features and settings</label><input id="filter" type="search" placeholder="Try doors, charging, route profiles…">

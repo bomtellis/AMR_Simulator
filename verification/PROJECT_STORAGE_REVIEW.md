@@ -72,8 +72,9 @@ Save took 1.877 s and open 0.316 s; the configuration roundtrip matched and sour
 bytes were unchanged. These are single-machine measurements, not performance guarantees.
 
 Recovery and unsaved-change prompts are now covered by the next
-[recovery checkpoint](RECOVERY_REVIEW.md). Global undo/redo,
-history pruning, project-to-run revision bindings, relinking results and a single
+[recovery checkpoint](RECOVERY_REVIEW.md), with session history in the
+[undo/redo checkpoint](UNDO_REDO_REVIEW.md). History pruning,
+project-to-run revision bindings, relinking results and a single
 simulation/review workflow remain outstanding. Revisions recover saved work;
 they do not recover edits lost before a save. All retained revisions contribute
 to archive size. Previous project caches remain until editor shutdown so

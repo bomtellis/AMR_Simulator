@@ -48,6 +48,9 @@ class ProjectHistoryPanel(QWidget):
             QMessageBox.critical(self, "Comparison failed", str(exc))
 
     def restore(self):
+        if self.editor._history_busy():
+            QMessageBox.information(self, "Finish editing first", "Finish or close the active editor before restoring a revision.")
+            return
         try:
             project = self.editor.project
             project.restore(self.revisions.currentData(), self.editor.store.data,

@@ -71,6 +71,7 @@ external drawing files alone are not monitored. Recovery is not a backup against
 loss of the computer or user profile. Drawing members are limited to 256 MiB,
 each snapshot to 512 MiB of unique expanded drawings and 32 MiB of metadata.
 
-Global undo/redo, a central editing-command model, project-to-run revision binding,
+[Undo and redo](UNDO_REDO_REVIEW.md) now supplies a shared completed-edit history.
+A full individual-command model, project-to-run revision binding,
 result relinking and the unified simulation workflow remain outstanding. Existing
 simulation verification limitations, including D008, remain open.

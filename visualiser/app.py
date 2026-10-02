@@ -25,7 +25,8 @@ from PySide6.QtCore import (
     QTimer,
     QStandardPaths,
 )
-from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont, QPolygonF
+from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont, QPolygonF, QKeySequence
+from edit_history import EditHistory, undoable
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -364,6 +365,10 @@ class AMRGraphEditor(QMainWindow):
 
         self._build_ui()
         self.refresh_canvas()
+        self._edit_depth = 0
+        self._history_restoring = False
+        self.edit_history = EditHistory(self.store.data)
+        self._update_history_actions()
         self._saved_state = self._configuration_state()
         self._source_disk_hash = None
         self._recovery_store = None
@@ -382,6 +387,74 @@ class AMRGraphEditor(QMainWindow):
         # Comparison also works for malformed numeric input opened for repair.
         # Persistent saves and recovery still reject non-finite JSON values.
         return json.dumps(self.store.data, sort_keys=True, ensure_ascii=False)
+
+    def _history_busy(self):
+        return (self._edit_depth > 0 or QApplication.activeModalWidget() is not None or
+                QApplication.mouseButtons() != Qt.NoButton or self.drag_mode_active or
+                bool(self.dragging_point_name) or bool(self.bounding_box_location_name) or
+                self.department_location_placement_active or self.route_profile_selection_active or
+                any(window.isVisible() for window in self.findChildren(QMainWindow)))
+
+    def _update_history_actions(self):
+        if not hasattr(self, "edit_history"):
+            return
+        busy = self._history_busy()
+        for action, prefix, label in ((self.undo_action, "Undo", self.edit_history.undo_label),
+                                      (self.redo_action, "Redo", self.edit_history.redo_label)):
+            action.setText(f"{prefix}: {label}" if label else prefix)
+            action.setEnabled(bool(label) and not busy)
+            action.setToolTip("Finish or close the active editor before undo/redo." if busy else
+                "Up to 100 changes / 32 MiB, in this editor session. Saved revisions remain separate." +
+                (" Older steps have expired." if self.edit_history.trimmed else ""))
+
+    def _commit_history(self, label="Configuration changes"):
+        if not hasattr(self, "edit_history") or self._history_restoring:
+            return
+        if not self._history_busy():
+            self.edit_history.record(self.store.data, label)
+        self._update_history_actions()
+
+    def _reset_edit_history(self):
+        self.edit_history.reset(self.store.data)
+        self._update_history_actions()
+
+    def _apply_history(self, redo=False):
+        if self._history_busy():
+            self.set_status("Finish or close the active editor before undo/redo.")
+            return False
+        self._commit_history()
+        label = self.edit_history.redo_label if redo else self.edit_history.undo_label
+        config = self.edit_history.redo() if redo else self.edit_history.undo()
+        if config is None:
+            return False
+        self._history_restoring = True
+        try:
+            self.store.data = config
+            self.selected_point_name = None
+            self.selected_point_names.clear()
+            self.selected_edge_keys.clear()
+            self.selected_for_edge = None
+            self._clear_dxf_cache()
+            self._pdf_pixmap_cache.clear()
+            self._pdf_render_errors.clear()
+            self.refresh_canvas()
+            self._queue_all_floor_dxf_loads(active_floor=self.floor_spin.value(), force_reload=False)
+            self._update_unsaved_indicator()
+            for name in ("checks_panel", "demand_panel"):
+                panel = getattr(self, name, None)
+                if panel is not None:
+                    panel.check_staleness()
+            self.set_status(f"{'Redid' if redo else 'Undid'}: {label}")
+        finally:
+            self._history_restoring = False
+            self._update_history_actions()
+        return True
+
+    def undo_edit(self):
+        return self._apply_history()
+
+    def redo_edit(self):
+        return self._apply_history(redo=True)
 
     def has_unsaved_changes(self):
         try:
@@ -408,6 +481,7 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Recovery folder unavailable: {exc}")
 
     def _update_unsaved_indicator(self):
+        self._commit_history()
         dirty = self.has_unsaved_changes()
         self.setWindowTitle("AMR Simulation Graph Editor" + (" — Unsaved changes" if dirty else ""))
         self.file_label.setText((self.current_json_path or "New file") + (" • Unsaved changes" if dirty else ""))
@@ -459,6 +533,10 @@ class AMRGraphEditor(QMainWindow):
             return False
 
     def _confirm_unsaved_changes(self):
+        if any(window.isVisible() for window in self.findChildren(QMainWindow)):
+            QMessageBox.information(self, "Finish editing first",
+                "Close the task editor or planner before opening another project or closing the main editor. This keeps its pending edits with the correct project.")
+            return False
         if not self.has_unsaved_changes():
             return True
         choice = QMessageBox.warning(self, "Unsaved changes",
@@ -693,6 +771,24 @@ class AMRGraphEditor(QMainWindow):
         )
 
         edit = create_page("Edit")
+        self.undo_action = QAction("Undo", self)
+        self.undo_action.setShortcut(QKeySequence.Undo)
+        self.undo_action.triggered.connect(self.undo_edit)
+        self.redo_action = QAction("Redo", self)
+        self.redo_action.setShortcuts([QKeySequence.Redo, QKeySequence("Ctrl+Shift+Z")])
+        self.redo_action.triggered.connect(self.redo_edit)
+        self.addActions([self.undo_action, self.redo_action])
+        undo_button = QPushButton("Undo")
+        redo_button = QPushButton("Redo")
+        for control, action in ((undo_button, self.undo_action), (redo_button, self.redo_action)):
+            control.clicked.connect(action.trigger)
+            def sync(control=control, action=action):
+                control.setText(action.text())
+                control.setEnabled(action.isEnabled())
+                control.setToolTip(action.toolTip())
+            action.changed.connect(sync)
+            sync()
+        add_group(edit, "History", [undo_button, redo_button], columns=1)
         add_group(edit, "Placement", [("Mode", self.mode_combo)], columns=2)
         floor_go = button("Go", self.refresh_canvas)
         floor_widget = QWidget()
@@ -913,6 +1009,7 @@ class AMRGraphEditor(QMainWindow):
                 best_key = key
         return best_key
 
+    @undoable("Classify corridors")
     def classify_selected_corridors(self, area_type):
         keys = self._selected_corridor_keys(include_incident_nodes=True)
         if not keys:
@@ -933,6 +1030,7 @@ class AMRGraphEditor(QMainWindow):
         self.set_status(f"Classified {len(keys)} corridor asset(s) as {area}")
         self.refresh_canvas()
 
+    @undoable("Set door openings")
     def mark_selected_nodes_as_doors(self):
         names = self.selected_corridor_node_names()
         if not names:
@@ -962,6 +1060,7 @@ class AMRGraphEditor(QMainWindow):
         self.set_status(f"Marked {len(names)} corridor node(s) as {width:.3f} m doors")
         self.refresh_canvas()
 
+    @undoable("Set door openings")
     def clear_selected_node_doors(self):
         names = self.selected_corridor_node_names()
         if not names:
@@ -975,6 +1074,7 @@ class AMRGraphEditor(QMainWindow):
         self.set_status(f"Removed door classification from {len(names)} node(s)")
         self.refresh_canvas()
 
+    @undoable("Edit people profiles")
     def create_people_profile_from_selection(self):
         selected = self.selected_corridor_labels(include_incident_nodes=True)
         if not selected:
@@ -1055,6 +1155,7 @@ class AMRGraphEditor(QMainWindow):
 
         self.set_status("Department location placement cancelled")
 
+    @undoable("Edit department locations")
     def finish_department_location_placement(self, x, y, floor):
         if not self.department_location_placement_active:
             return False
@@ -1133,6 +1234,7 @@ class AMRGraphEditor(QMainWindow):
             self.store.data.get("departments", [])
         )
 
+    @undoable("Edit department locations")
     def create_department_generated_locations(self, department_result):
         created = 0
 
@@ -1170,6 +1272,7 @@ class AMRGraphEditor(QMainWindow):
                 continue
         return None
 
+    @undoable("Edit drawing mapping")
     def set_floor_pdf_underlay(self, floor, mapping):
         payload = normalise_pdf_underlay({**mapping, "floor": int(floor)})
         entries = self.floor_pdf_underlay_entries()
@@ -1184,6 +1287,7 @@ class AMRGraphEditor(QMainWindow):
         entries.append(payload)
         entries.sort(key=lambda item: int(item.get("floor", 0)))
 
+    @undoable("Edit drawing mapping")
     def clear_floor_pdf_underlay_mapping(self, floor):
         self.store.data["floor_pdf_underlays"] = [
             entry
@@ -1203,6 +1307,7 @@ class AMRGraphEditor(QMainWindow):
         self._pdf_render_errors.pop(key, None)
         return pixmap, page_count
 
+    @undoable("Move PDF underlay", capture_before=False)
     def _pdf_underlay_moved(self, floor, x_m, y_m):
         mapping = self.get_floor_pdf_underlay(floor)
         if mapping is None:
@@ -1257,6 +1362,7 @@ class AMRGraphEditor(QMainWindow):
                 continue
         return None
 
+    @undoable("Edit drawing mapping")
     def set_floor_dxf_path(self, floor, filepath):
         entries = self.floor_dxf_entries()
         payload = {"floor": int(floor), "filepath": str(filepath)}
@@ -1271,6 +1377,7 @@ class AMRGraphEditor(QMainWindow):
         entries.append(payload)
         entries.sort(key=lambda item: int(item.get("floor", 0)))
 
+    @undoable("Edit drawing mapping")
     def clear_floor_dxf_mapping(self, floor):
         self.store.data["floor_dxf_files"] = [
             entry
@@ -1682,6 +1789,7 @@ class AMRGraphEditor(QMainWindow):
         )
         return results
 
+    @undoable("Delete corridor links")
     def _delete_edge_connections(self, edges):
         removed = 0
         for edge in edges:
@@ -1793,6 +1901,7 @@ class AMRGraphEditor(QMainWindow):
         )
         self.refresh_canvas()
 
+    @undoable("Edit location boundary")
     def finish_location_bounding_box_draw(self):
         name = self.bounding_box_location_name
         if not name:
@@ -2023,6 +2132,7 @@ class AMRGraphEditor(QMainWindow):
     def _item_at_scene(self, sx, sy):
         return self.canvas.itemAt(self.canvas.mapFromScene(QPointF(sx, sy)))
 
+    @undoable("Edit department locations")
     def create_department_at_point(self, point_name):
         point = self.store.all_points().get(point_name)
         if not point:
@@ -2058,6 +2168,7 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Added department {dialog.result['name']}")
             self.refresh_canvas()
 
+    @undoable("Edit department locations")
     def create_department_at_position(self, x, y, floor):
         location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
         waste_stream_names = sorted(
@@ -2091,6 +2202,7 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Added department {dept_name}")
             self.refresh_canvas()
 
+    @undoable("Edit department locations")
     def edit_department_by_name(self, dept_name):
         dept = next(
             (
@@ -2156,6 +2268,7 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Edited department {new_name}")
             self.refresh_canvas()
 
+    @undoable("Edit layout")
     def on_left_click(self, event, sx, sy):
         mode = self._current_edit_mode()
         floor = self.floor_spin.value()
@@ -2399,6 +2512,7 @@ class AMRGraphEditor(QMainWindow):
                 self.refresh_canvas()
             return
 
+    @undoable("Edit layout")
     def on_double_click(self, event, sx, sy):
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
@@ -2453,6 +2567,7 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Edited {dialog.result['name']}")
             self.refresh_canvas()
 
+    @undoable("Move layout item", capture_before=False)
     def on_left_release(self, event):
         if self.route_profile_selection_active:
             if self.route_profile_selection_rect_item is not None:
@@ -2488,6 +2603,7 @@ class AMRGraphEditor(QMainWindow):
         self.dragging_bounding_box_point_index = None
         self.last_pan = None
 
+    @undoable("Edit layout")
     def on_right_click(self, event, sx, sy):
         mode = self._current_edit_mode()
         floor = self.floor_spin.value()
@@ -2935,6 +3051,7 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Opened {Path(path).name}{suffix}")
         self.refresh_canvas()
         self.fit_view()
+        self._reset_edit_history()
         self._mark_saved()
         return True
 
@@ -2955,6 +3072,7 @@ class AMRGraphEditor(QMainWindow):
         self.fit_view()
 
     def save_json(self):
+        self._commit_history()
         if self.project is not None:
             return self.save_project()
         path = self.current_json_path
@@ -2972,7 +3090,14 @@ class AMRGraphEditor(QMainWindow):
                 from amr_project import Project
                 Project().export_json(path, self.store.data)
                 # Recovery drawing caches are temporary; JSON needs durable copies.
-                self.store.data = json.loads(Path(path).read_text(encoding="utf-8"))
+                exported = json.loads(Path(path).read_text(encoding="utf-8"))
+                remapped = {}
+                for key in ("floor_dxf_files", "floor_pdf_underlays"):
+                    for old, new in zip(self.store.data.get(key, []), exported.get(key, [])):
+                        if old.get("filepath") and new.get("filepath"):
+                            remapped[old["filepath"]] = new["filepath"]
+                self.edit_history.remap_drawings(remapped)
+                self.store.data = exported
                 self._recovered_work = False
             else:
                 self.store.save(path)
@@ -2986,6 +3111,7 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def save_project(self, *, save_as=False):
+        self._commit_history()
         root = str(Path(__file__).resolve().parents[1])
         if root not in sys.path:
             sys.path.insert(0, root)
@@ -3003,9 +3129,14 @@ class AMRGraphEditor(QMainWindow):
             self.current_json_path = str(project.path)
             cache = self._project_cache[-1] if self._project_cache else tempfile.TemporaryDirectory(prefix="amr-project-")
             portable = project.materialize(cache.name)
+            remapped = {}
             for key in ("floor_dxf_files", "floor_pdf_underlays"):
                 if key in portable:
+                    for old, new in zip(self.store.data.get(key, []), portable[key]):
+                        if old.get("filepath") and new.get("filepath"):
+                            remapped[old["filepath"]] = new["filepath"]
                     self.store.data[key] = portable[key]
+            self.edit_history.remap_drawings(remapped)
             if self._project_cache is None:
                 self._project_cache = []
             if cache not in self._project_cache:
@@ -3179,6 +3310,7 @@ class AMRGraphEditor(QMainWindow):
             "Mapped DXF/PDF backgrounds were excluded.",
         )
 
+    @undoable("Edit simulation settings")
     def manage_simulation_settings(self):
         dialog = SimulationSettingsDialog(
             self,
@@ -3189,6 +3321,7 @@ class AMRGraphEditor(QMainWindow):
             end_text = dialog.result.get("end_datetime", "") or "not set"
             self.set_status(f"Simulation end date set to {end_text}")
 
+    @undoable("Edit scenarios")
     def manage_scenario_testing(self):
         dialog = ScenarioTestingDialog(
             self,
@@ -3205,6 +3338,7 @@ class AMRGraphEditor(QMainWindow):
                 f"Scenario testing set to {dialog.result.get('active_scenario', 'Normal operation')}"
             )
 
+    @undoable("Edit people profiles")
     def manage_people_movement(self):
         locations = sorted(self.store.all_points().keys())
         corridor_options = sorted(
@@ -3273,6 +3407,7 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Updated {len(dialog.result)} people movement profile(s)")
             self.refresh_canvas()
 
+    @undoable("Edit corridor settings")
     def manage_corridor_settings(self):
         building = self.store.data.setdefault("building", {})
         corridors = self.store.data.setdefault("corridors", {})
@@ -3306,6 +3441,7 @@ class AMRGraphEditor(QMainWindow):
             )
             self.refresh_canvas()
 
+    @undoable("Edit drawing mapping")
     def load_pdf_underlay(self):
         floor = self.floor_spin.value()
         existing = self.get_floor_pdf_underlay(floor)
@@ -3349,6 +3485,7 @@ class AMRGraphEditor(QMainWindow):
             f"{width_m:.3f} x {height_m:.3f} m; drag it to align"
         )
 
+    @undoable("Edit drawing mapping")
     def edit_pdf_underlay(self):
         floor = self.floor_spin.value()
         mapping = self.get_floor_pdf_underlay(floor)
@@ -3373,6 +3510,7 @@ class AMRGraphEditor(QMainWindow):
         self.refresh_canvas()
         self.set_status(f"Updated PDF underlay settings for floor {floor}")
 
+    @undoable("Edit drawing mapping")
     def clear_floor_pdf_underlay(self):
         floor = self.floor_spin.value()
         mapping = self.get_floor_pdf_underlay(floor)
@@ -3392,6 +3530,7 @@ class AMRGraphEditor(QMainWindow):
         self.set_status(f"Removed PDF underlay from floor {floor}")
         self.refresh_canvas()
 
+    @undoable("Edit drawing mapping")
     def load_dxf(self):
         floor = self.floor_spin.value()
         initialdir = ""
@@ -3418,6 +3557,7 @@ class AMRGraphEditor(QMainWindow):
         self.refresh_canvas()
         self.set_status(f"Mapped DXF {Path(path).name} to floor {floor}")
 
+    @undoable("Edit drawing mapping")
     def clear_floor_dxf(self):
         floor = self.floor_spin.value()
         existing = self.get_floor_dxf_path(floor)
@@ -3521,6 +3661,7 @@ class AMRGraphEditor(QMainWindow):
         else:
             self.set_status(f'{finding.path}: {finding.action}')
 
+    @undoable("Edit payloads")
     def manage_payloads(self):
         location_names = sorted(
             str(x.get("name", "")).strip()
@@ -3536,18 +3677,22 @@ class AMRGraphEditor(QMainWindow):
         )
         dialog.exec()
 
+    @undoable("Edit payloads")
     def _save_payloads(self, items):
         self.store.data["payloads"] = items
         self.set_status("Payloads updated")
 
+    @undoable("Edit lifts")
     def manage_lifts(self):
         dialog = LiftListDialog(self, self.store, self._lifts_changed)
         dialog.exec()
 
+    @undoable("Edit lifts")
     def _lifts_changed(self):
         self.set_status("Lifts updated")
         self.refresh_canvas()
 
+    @undoable("Edit lifts")
     def _save_lift_result(self, result, old_id=None):
         if old_id and old_id != result["id"]:
             self.store.delete_lift(old_id)
@@ -3576,6 +3721,7 @@ class AMRGraphEditor(QMainWindow):
             result["start_floor"],
         )
 
+    @undoable("Edit AMRs")
     def manage_amrs(self):
         location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
 
@@ -3587,6 +3733,7 @@ class AMRGraphEditor(QMainWindow):
         )
         dialog.exec()
 
+    @undoable("Edit AMRs")
     def _save_amrs(self, items):
         self.store.data["amrs"] = items
         if hasattr(self.store, "ensure_amr_defaults"):
@@ -3631,6 +3778,7 @@ class AMRGraphEditor(QMainWindow):
             manual_single_payload_available=self._manual_task_amr_available(),
         )
 
+    @undoable("Edit tasks")
     def _save_tasks(self, items):
         self.store.data["tasks"] = items
         self.set_status("Tasks updated")
@@ -3655,6 +3803,7 @@ class AMRGraphEditor(QMainWindow):
             manual_single_payload_available=self._manual_task_amr_available(),
         )
 
+    @undoable("Edit task generation")
     def manage_task_generation(self):
         locations = self.store.data.get("locations", [])
         location_names = sorted(x["name"] for x in locations)
@@ -3677,6 +3826,7 @@ class AMRGraphEditor(QMainWindow):
         )
         dialog.exec()
 
+    @undoable("Edit task generation")
     def _save_task_generation(self, config):
         if hasattr(self.store, "set_task_generation"):
             self.store.set_task_generation(config)
@@ -3684,6 +3834,7 @@ class AMRGraphEditor(QMainWindow):
             self.store.data["task_generation"] = config
         self.set_status("Task generation parameters updated")
 
+    @undoable("Edit route profiles")
     def manage_route_profiles(self):
         point_names = set(self.store.names_in_use()) | {
             x["name"] for x in self.store.data.get("locations", [])
@@ -3701,6 +3852,7 @@ class AMRGraphEditor(QMainWindow):
         )
         dialog.exec()
 
+    @undoable("Edit route profiles")
     def _save_route_profiles(self, profiles):
         self.store.data["route_profiles"] = profiles
         self.set_status("Route profiles updated")
@@ -3723,6 +3875,7 @@ class AMRGraphEditor(QMainWindow):
             self._project_cache = None
         super().closeEvent(event)
 
+    @undoable("Edit mass collections")
     def manage_mass_collections(self):
         dialog = MassCollectionListDialog(
             self,
@@ -3733,6 +3886,7 @@ class AMRGraphEditor(QMainWindow):
         )
         dialog.exec()
 
+    @undoable("Edit waste streams")
     def manage_waste_streams(self):
         payload_names = sorted(x["name"] for x in self.store.data.get("payloads", []))
         items = list(self.store.data.get("waste_streams", []))
@@ -3741,10 +3895,12 @@ class AMRGraphEditor(QMainWindow):
         )
         dialog.exec()
 
+    @undoable("Edit waste streams")
     def _save_waste_streams(self, items):
         self.store.data["waste_streams"] = items
         self.set_status("Waste streams updated")
 
+    @undoable("Edit department locations")
     def manage_departments(self):
         location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
         waste_stream_names = sorted(
@@ -3763,15 +3919,18 @@ class AMRGraphEditor(QMainWindow):
         )
         dialog.exec()
 
+    @undoable("Edit inventory spaces")
     def manage_location_spaces(self):
         dialog = LocationSpacesManagerDialog(self)
         dialog.exec()
 
+    @undoable("Edit department locations")
     def _save_departments(self, items):
         self.store.data["departments"] = items
         self.set_status("Departments updated")
         self.refresh_canvas()
 
+    @undoable("Edit charging locations")
     def manage_charging_locations(self):
         location_names = sorted(x["name"] for x in self.store.data.get("locations", []))
 

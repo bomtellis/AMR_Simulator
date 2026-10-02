@@ -8,6 +8,8 @@ deduplicated drawings and saved revisions. See the
 Export JSON for the existing simulator and launcher; results remain external.
 Unsaved-work safeguards and automatic recovery copies are described in the
 [recovery review guide](verification/RECOVERY_REVIEW.md).
+Use **Edit → Undo / Redo** for completed changes; see the
+[undo and redo review guide](verification/UNDO_REDO_REVIEW.md) for scope and limits.
 
 The first verification checkpoint provides independently calculated routing,
 door-width, service-time, reservation and task-generation reference cases, plus

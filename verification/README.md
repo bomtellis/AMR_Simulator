@@ -159,9 +159,13 @@ Exports contain the frozen project configuration, so treat them as project data.
 
 ## Results investigation checkpoint
 
-The latest checkpoint is [Recovery and unsaved work](RECOVERY_REVIEW.md):
+The latest checkpoint is [Undo and redo](UNDO_REDO_REVIEW.md): shared completed-edit
+history, keyboard shortcuts, save-aware dirty state and protection against stale
+editing windows. Saved revisions remain the cross-session restore mechanism.
+
+[Recovery and unsaved work](RECOVERY_REVIEW.md) provides
 30-second recovery copies, Save / Discard / Cancel safeguards and recovery to a
-new unsaved document. Global undo/redo remains outstanding.
+new unsaved document.
 
 [Portable project storage](PROJECT_STORAGE_REVIEW.md) provides
 compressed `.amrproj`, deduplicated drawings, atomic saves and revision restore.
