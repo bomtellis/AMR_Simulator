@@ -248,11 +248,13 @@ class PayloadInstanceStore:
         excluding_owner = clean_text(excluding_owner)
         return bool(owner and owner != excluding_owner)
 
-    def reserve_instance(self, instance_id: str, task_id: str) -> bool:
+    def reserve_instance(self, instance_id: str, task_id: str, *, allow_staged_recovery: bool = False) -> bool:
         """Atomically reserve an existing payload instance for one task."""
         instance_id = clean_text(instance_id)
         task_id = clean_text(task_id)
-        if not instance_id or not task_id or instance_id not in self._records:
+        staged = self._known_instances.get(instance_id) if allow_staged_recovery else None
+        eligible_staging = bool(staged and staged.status == 'staged' and staged.metadata.get('recovery_required'))
+        if not instance_id or not task_id or (instance_id not in self._records and not eligible_staging):
             return False
         owner = self.reservation_owner(instance_id)
         if owner and owner != task_id:

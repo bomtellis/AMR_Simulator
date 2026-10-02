@@ -77,6 +77,9 @@ class Task:
     assigned_inventory_space: str = ""
     payload_instance_id: str = ""
     is_return_task: bool = False
+    recover_staged_payload: bool = False
+    manual_task: bool = False
+    manual_single_payload_only: bool = False
 
     # Optional department drop-off-zone hand-off. ``dropoff`` remains the AMR
     # destination, while ``final_destination`` is the department location served

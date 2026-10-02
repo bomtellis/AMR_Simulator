@@ -1,0 +1,2 @@
+Baseline fd6a8dd, editor-emitted manual flags:
+Task.__init__() got an unexpected keyword argument 'manual_task'

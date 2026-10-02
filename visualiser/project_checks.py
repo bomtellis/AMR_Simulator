@@ -270,6 +270,21 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     for i, task in enumerate(config.get('tasks', [])):
         instance_id = str(task.get('payload_instance_id', '') or '').strip()
         payload = normalise_payload_name(task.get('payload', ''))
+        recovery = task.get('recover_staged_payload', False)
+        if not isinstance(recovery, bool):
+            error(f'/tasks/{i}/recover_staged_payload', 'Recovery must be true or false.', 'tasks', task.get('id',''), 'RECOVERY_INPUT')
+        elif recovery:
+            if not instance_id or not payload:
+                error(f'/tasks/{i}/payload_instance_id', 'Recovery needs a payload and the exact staged container ID.',
+                      'tasks', task.get('id',''), 'RECOVERY_INPUT')
+            if task.get('return_enabled') or task.get('requires_staff') or (task.get('dropoff_zone') and task.get('final_destination')):
+                error(f'/tasks/{i}/recover_staged_payload', 'Recovery must be a direct task without a further return or staff handoff.',
+                      'tasks', task.get('id',''), 'RECOVERY_INPUT')
+            add('RECOVERY_POLICY', 'info', f'/tasks/{i}/recover_staged_payload', task.get('id',''),
+                'This task collects only the named container marked as staged and requiring recovery at its pickup.',
+                'It waits if that state is not reached; route, robot and destination capacity checks still apply. Unconfirmed arrivals cannot be recovered this way.',
+                'Use the container identity and location from the run evidence; choose a release time and permitted route for a new run.',
+                'tasks', task.get('id',''), kind='assumption')
         if not instance_id or not payload:
             continue
         previous = instance_types.setdefault(instance_id, payload)

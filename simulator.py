@@ -122,7 +122,7 @@ class Simulation:
         self._evidence_inputs = json.loads(json.dumps(config))
         self._evidence_config_hash = config_hash(self._evidence_inputs)
         self._evidence_software = software_snapshot() if verbose else None
-        self._evidence_event_capabilities = ['payload_service_arrivals']
+        self._evidence_event_capabilities = ['payload_service_arrivals', 'staged_payload_recovery']
         self._evidence_run_status = 'incomplete'
         self._evidence_sequence = 0
         self._evidence_journey_sequence = 0
@@ -1251,7 +1251,8 @@ class Simulation:
         if reserve:
             for task, instance_id in selected:
                 self._remember_route_mapping(self.payload_instance_store._reservations, instance_id)
-                if not self.payload_instance_store.reserve_instance(instance_id, task.id):
+                if not self.payload_instance_store.reserve_instance(instance_id, task.id,
+                        allow_staged_recovery=bool(getattr(task, 'recover_staged_payload', False))):
                     self._set_task_pending_reason(task, self._pickup_instance_pending_reason(task))
                     return False
                 task.payload_instance_id = instance_id
@@ -2517,6 +2518,14 @@ class Simulation:
 
     def _prepare_task_payload_instance(self, task: Task) -> None:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        recovery = getattr(task, 'recover_staged_payload', False)
+        if not isinstance(recovery, bool):
+            raise ValueError(f'Task {task.id}: recover_staged_payload must be true or false')
+        if recovery and (not payload_name or not str(getattr(task, 'payload_instance_id', '') or '').strip()):
+            raise ValueError(f'Task {task.id}: staged recovery requires a payload and exact container ID')
+        if recovery and (getattr(task, 'return_enabled', False) or getattr(task, 'requires_staff', False)
+                         or (getattr(task, 'dropoff_zone', '') and getattr(task, 'final_destination', ''))):
+            raise ValueError(f'Task {task.id}: staged recovery must be a direct task without a further return or staff handoff')
         if not payload_name:
             task.payload = EMPTY_PAYLOAD_NAME
             task.payload_instance_id = ""
@@ -2536,6 +2545,8 @@ class Simulation:
         # newly issued empty bin is returned to the department/shared bin space.
         instance_id = str(getattr(task, 'payload_instance_id', '') or '').strip()
         store = self.payload_instance_store
+        if getattr(task, 'recover_staged_payload', False) or store.is_reserved(instance_id, excluding_owner=task.id):
+            return True
         if instance_id in store._records:
             return True
         owner = store._creation_claims.get(instance_id)
@@ -2571,7 +2582,12 @@ class Simulation:
         """Yield available physical sources with the same policy used at commit."""
         instance_id = str(getattr(task, 'payload_instance_id', '') or '').strip()
         payload_name = normalise_payload_name(task.payload)
-        if instance_id:
+        if getattr(task, 'recover_staged_payload', False):
+            record = self.payload_instance_store._known_instances.get(instance_id)
+            records = [record] if (record is not None and record.location == task.pickup
+                and record.status == 'staged' and record.metadata.get('recovery_required')
+                and self.payload_instance_store._creation_claims.get(instance_id, task.id) == task.id) else []
+        elif instance_id:
             record = self.payload_instance_store._records.get(instance_id)
             records = [record] if record is not None and record.location == task.pickup else []
         else:
@@ -2586,6 +2602,8 @@ class Simulation:
     def _pickup_instance_pending_reason(self, task: Task) -> str:
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        if getattr(task, 'recover_staged_payload', False):
+            return f'Container {instance_id} ({payload_name}) is not staged for recovery at {task.pickup}, or is claimed by another task'
         if instance_id:
             return (
                 f"Payload instance {instance_id} ({payload_name}) is not available "
@@ -2606,7 +2624,12 @@ class Simulation:
         if not self._pickup_instance_available(task):
             raise RuntimeError(self._pickup_instance_pending_reason(task))
 
-        if instance_id:
+        if getattr(task, 'recover_staged_payload', False):
+            record = next(self._pickup_instance_candidates(task), None)
+            if record is None:
+                raise RuntimeError(self._pickup_instance_pending_reason(task))
+            task.payload_instance_metadata = dict(record.metadata)
+        elif instance_id:
             record = self.payload_instance_store.pickup(
                 task.pickup,
                 payload_name=payload_name,
@@ -2728,6 +2751,11 @@ class Simulation:
             "container_type": getattr(task, "container_type", ""),
             "container_state": self._payload_instance_container_state_for_task(task),
         }
+        if getattr(task, 'recover_staged_payload', False):
+            previous = getattr(task, 'payload_instance_metadata', {})
+            for key in ('container_group', 'shared_container_group', 'waste_stream', 'container_type', 'container_state'):
+                if key in previous:
+                    metadata[key] = previous[key]
 
         existing_record = getattr(self.payload_instance_store, "_records", {}).get(
             instance_id
@@ -4963,7 +4991,13 @@ class Simulation:
         if not self._plan_exchange_empty_claims([task], reserve=True):
             raise RuntimeError(task.pending_reason)
         self._pickup_payload_instance_for_task(task, event_time=event_time)
-        self._free_inventory_space_for_pickup(task, payload)
+        if not getattr(task, 'recover_staged_payload', False):
+            self._free_inventory_space_for_pickup(task, payload)
+        else:
+            self.log_step(event_time=event_time, event_type='payload_recovery_started', task_id=task.id,
+                payload_name=task.payload, payload_instance_id=task.payload_instance_id,
+                from_location=task.pickup, to_location=task.dropoff, status='in_transit',
+                details='Explicit recovery collected the staged container using a committed route.')
         task.payload_pickup_processed = True
 
     def _process_payload_dropoff(self, task: Task, payload: Optional[PayloadType], event_time: float) -> None:
@@ -4988,6 +5022,11 @@ class Simulation:
             if not self._occupy_inventory_space_for_completed_task(task, payload):
                 raise RuntimeError(task.pending_reason or self._inventory_pending_reason(task.dropoff, payload))
         task.payload_dropoff_processed = True
+        if getattr(task, 'recover_staged_payload', False):
+            self.log_step(event_time=event_time, event_type='payload_recovery_completed', task_id=task.id,
+                payload_name=task.payload, payload_instance_id=task.payload_instance_id,
+                from_location=task.pickup, to_location=task.dropoff, status='stored',
+                details='Explicit recovery confirmed arrival and destination storage.')
 
     def _schedule_payload_action_events(self, task: Task, amr_id: str, pickup_time: float, dropoff_time: float) -> None:
         if is_empty_payload_name(task.payload):
@@ -6793,7 +6832,8 @@ class Simulation:
                 details='Task failed after pickup; payload arrival is unconfirmed. No stock was restored or destination arrival invented.')
 
         staged_ids = {str(getattr(task, 'exchange_empty_payload_instance_id', '') or '')}
-        if not getattr(task, 'payload_pickup_processed', False) and getattr(task, 'creates_new_payload_instance', False):
+        if not getattr(task, 'payload_pickup_processed', False) and (
+                getattr(task, 'creates_new_payload_instance', False) or getattr(task, 'recover_staged_payload', False)):
             staged_ids.add(str(getattr(task, 'payload_instance_id', '') or ''))
         if getattr(task, 'return_same_payload_instance', False) and getattr(task, 'payload_dropoff_processed', False):
             staged_ids.add(str(getattr(task, 'payload_instance_id', '') or ''))
@@ -11271,6 +11311,8 @@ class Simulation:
                 continue
             if not self._task_requires_existing_payload_instance(task):
                 continue
+            if getattr(task, 'recover_staged_payload', False):
+                continue  # Recovery binds the exact staged ID only at route commitment.
 
             instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
             if instance_id and self._pickup_instance_available(task):

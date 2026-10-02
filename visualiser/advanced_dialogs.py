@@ -617,6 +617,15 @@ class TaskFormDialog(QDialog):
         self.route_profile_combo.addItems(self.profile_names)
         self.route_profile_combo.setCurrentText(self.seed.get("route_profile", ""))
 
+        self.instance_edit = QLineEdit(str(self.seed.get('payload_instance_id', '') or ''))
+        self.instance_edit.setPlaceholderText('Optional for ordinary tasks; required for recovery')
+        self.instance_edit.setAccessibleName('Physical container ID')
+        self.recovery_check = QCheckBox('Recover a container staged after a failed return')
+        self.recovery_check.setChecked(bool(self.seed.get('recover_staged_payload', False)))
+        self.recovery_check.setToolTip('Use the exact container ID and pickup location from run evidence. '
+            'The new run must reach that staged recovery state. Normal route, robot and storage checks apply; '
+            'unconfirmed arrivals cannot be recovered with this option.')
+
         form.addRow("ID", self.id_edit)
         form.addRow("Pickup", pickup_row)
         form.addRow("Dropoff", dropoff_row)
@@ -626,6 +635,8 @@ class TaskFormDialog(QDialog):
         form.addRow("Priority", self.priority_edit)
         form.addRow("Labels (comma-separated)", self.labels_edit)
         form.addRow("Route profile", self.route_profile_combo)
+        form.addRow('Container ID', self.instance_edit)
+        form.addRow('Recovery', self.recovery_check)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -666,7 +677,13 @@ class TaskFormDialog(QDialog):
                 raise ValueError("Dropoff is required")
             if not self.payload_combo.currentText().strip():
                 raise ValueError("Payload is required")
+            if self.recovery_check.isChecked() and not self.instance_edit.text().strip():
+                raise ValueError('Recovery requires the exact staged container ID from run evidence.')
+            if self.recovery_check.isChecked() and (self.seed.get('return_enabled') or self.seed.get('requires_staff')
+                    or (self.seed.get('dropoff_zone') and self.seed.get('final_destination'))):
+                raise ValueError('Create a direct recovery task without a further return or staff handoff.')
             self.result = {
+                **deepcopy(self.seed),
                 "id": self.id_edit.text().strip(),
                 "pickup": self.pickup_edit.text().strip(),
                 "dropoff": self.dropoff_edit.text().strip(),
@@ -676,9 +693,12 @@ class TaskFormDialog(QDialog):
                 "priority": int(self.priority_edit.value()),
                 "labels": [x.strip() for x in self.labels_edit.text().split(",")],
                 "route_profile": self.route_profile_combo.currentText().strip(),
+                "payload_instance_id": self.instance_edit.text().strip(),
+                "recover_staged_payload": self.recovery_check.isChecked(),
                 "manual_task": True,
                 "manual_single_payload_only": True,
             }
+            self.result.pop('release_time', None)  # The form edits the explicit date/time.
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid task", str(exc))
@@ -1665,6 +1685,8 @@ class TaskEditorWindow(QMainWindow):
         ("priority", "Priority", 80),
         ("labels", "Labels", 150),
         ("route_profile", "Route profile", 120),
+        ("payload_instance_id", "Container ID", 180),
+        ("recover_staged_payload", "Recovery", 90),
     ]
 
     def __init__(
@@ -1743,6 +1765,8 @@ class TaskEditorWindow(QMainWindow):
             item.get("priority", ""),
             ", ".join(item.get("labels", [])),
             item.get("route_profile", ""),
+            item.get('payload_instance_id', ''),
+            'Yes' if item.get('recover_staged_payload', False) else 'No',
         ]
         for col, value in enumerate(values):
             self.table.setItem(row, col, QTableWidgetItem(str(value)))

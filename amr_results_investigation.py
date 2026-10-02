@@ -287,7 +287,21 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
     metric('payload_issued', 'Physical containers issued during the run', len(issued), [e['id'] for e in issued],
            'Distinct physically issued identities including initial stock and removed containers; excludes planned-only IDs. Not a simultaneous peak.',
            known=lifecycle_known)
-    recovery = [e for e in events if e['type'] == 'payload_recovery_required']
+    recovery, recovered = {}, []
+    for event in events:
+        identity = event['payload_instance_id']
+        if event['type'] == 'payload_recovery_required' and identity:
+            recovery[identity] = event
+        elif event['type'] in {'payload_recovery_started', 'payload_recovery_completed'}:
+            recovery.pop(identity, None)
+            if event['type'] == 'payload_recovery_completed':
+                recovered.append(event)
+    recovery_known = complete_evidence and 'staged_payload_recovery' in metadata.get('event_capabilities', [])
+    metric('payload_recovery_outstanding', 'Staged containers awaiting recovery', len(recovery),
+           [e['id'] for e in recovery.values()],
+           'Recovery-required identities without a later recorded recovery pickup. Recovery in transit is counted separately by lifecycle state.', known=recovery_known)
+    metric('payload_recovery_completed', 'Confirmed recovery arrivals', len(recovered), [e['id'] for e in recovered],
+           'Explicit recovery tasks with a confirmed destination arrival and storage event; earlier failed task outcomes remain unchanged.', known=recovery_known)
     if recovery:
         findings.append('A failed task left a staged container awaiting recovery. No recovery movement or storage bay has been assumed.')
 
