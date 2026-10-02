@@ -1,0 +1,47 @@
+test_delivery_stock_is_available_before_post_delivery_wash_finishes (tests.test_payload_action_timing.PayloadActionTimingTests.test_delivery_stock_is_available_before_post_delivery_wash_finishes) ... FAIL
+test_no_return_does_not_remove_empty_stock_to_make_room (tests.test_payload_action_timing.PayloadActionTimingTests.test_no_return_does_not_remove_empty_stock_to_make_room) ... FAIL
+test_no_return_uses_a_free_bay_without_consuming_an_empty (tests.test_payload_action_timing.PayloadActionTimingTests.test_no_return_uses_a_free_bay_without_consuming_an_empty) ... FAIL
+test_source_is_empty_after_pickup_and_before_arrival (tests.test_payload_action_timing.PayloadActionTimingTests.test_source_is_empty_after_pickup_and_before_arrival) ... FAIL
+
+======================================================================
+FAIL: test_delivery_stock_is_available_before_post_delivery_wash_finishes (tests.test_payload_action_timing.PayloadActionTimingTests.test_delivery_stock_is_available_before_post_delivery_wash_finishes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_action_timing.py", line 47, in test_delivery_stock_is_available_before_post_delivery_wash_finishes
+    self.assertEqual(1, len(observed[10]['B']))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0
+
+======================================================================
+FAIL: test_no_return_does_not_remove_empty_stock_to_make_room (tests.test_payload_action_timing.PayloadActionTimingTests.test_no_return_does_not_remove_empty_stock_to_make_room)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_action_timing.py", line 58, in test_no_return_does_not_remove_empty_stock_to_make_room
+    self.assertEqual({'T1'}, sim.failed_task_ids)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Items in the first set but not the second:
+'T1'
+
+======================================================================
+FAIL: test_no_return_uses_a_free_bay_without_consuming_an_empty (tests.test_payload_action_timing.PayloadActionTimingTests.test_no_return_uses_a_free_bay_without_consuming_an_empty)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_action_timing.py", line 76, in test_no_return_uses_a_free_bay_without_consuming_an_empty
+    self.assertEqual(2, len(sim.payload_instance_store.records_at('B')))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 1
+
+======================================================================
+FAIL: test_source_is_empty_after_pickup_and_before_arrival (tests.test_payload_action_timing.PayloadActionTimingTests.test_source_is_empty_after_pickup_and_before_arrival)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_action_timing.py", line 37, in test_source_is_empty_after_pickup_and_before_arrival
+    self.assertEqual(set(), observed[3]['A'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Items in the second set but not the first:
+'PHYSICAL'
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.008s
+
+FAILED (failures=4)

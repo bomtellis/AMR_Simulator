@@ -1191,18 +1191,28 @@ class Simulation:
     ) -> bool:
         if not self._task_is_full_bin_dropoff_to_inventory_rotation(task, payload):
             return False
+        if bool(getattr(task, 'return_same_payload_instance', False)):
+            return True  # Same-bin service bypasses finite store occupancy.
+        if not self._task_requires_empty_exchange(task):
+            return False
         return (
             self._available_empty_container_record(task.dropoff, payload.name, task.id)
             is not None
         )
 
+    def _task_requires_empty_exchange(self, task: Task) -> bool:
+        return_payload = normalise_payload_name(getattr(task, 'return_payload', '') or task.payload)
+        return (bool(getattr(task, 'return_enabled', False))
+                and not bool(getattr(task, 'return_same_payload_instance', False))
+                and return_payload == normalise_payload_name(task.payload)
+                and self._task_is_full_bin_dropoff_to_inventory_rotation(task))
+
     def _plan_exchange_empty_claims(self, tasks: List[Task], *, reserve: bool) -> bool:
         """Assign distinct physical empty bins without moving them during planning."""
         selected, used = [], set()
         for task in tasks:
-            if (bool(getattr(task, 'return_same_payload_instance', False))
-                    or getattr(task, 'exchange_empty_payload_instance_id', '')
-                    or not self._task_is_full_bin_dropoff_to_inventory_rotation(task)):
+            if (getattr(task, 'exchange_empty_payload_instance_id', '')
+                    or not self._task_requires_empty_exchange(task)):
                 continue
             existing = str(getattr(task, 'reserved_exchange_empty_id', '') or '')
             record = next((record for record in self.payload_instance_store.records_at(task.dropoff)
@@ -1229,9 +1239,7 @@ class Simulation:
         self, task: Task, payload: PayloadType
     ) -> None:
         """Stage an empty bin for the return leg and free its store slot for the full bin."""
-        if bool(getattr(task, "return_same_payload_instance", False)):
-            return
-        if not self._task_is_full_bin_dropoff_to_inventory_rotation(task, payload):
+        if not self._task_requires_empty_exchange(task):
             return
         if str(getattr(task, "exchange_empty_payload_instance_id", "") or "").strip():
             return
@@ -4889,8 +4897,40 @@ class Simulation:
             raise RuntimeError(task.pending_reason)
         self._pickup_payload_instance_for_task(task, event_time=event_time)
         self._free_inventory_space_for_pickup(task, payload)
-        self._consume_store_empty_for_exchange(task, payload)
         task.payload_pickup_processed = True
+
+    def _process_payload_dropoff(self, task: Task, payload: Optional[PayloadType], event_time: float) -> None:
+        """Apply physical arrival once, independently of the remaining journey."""
+        if bool(getattr(task, 'payload_dropoff_processed', False)):
+            return
+        if payload is None or is_empty_payload_name(task.payload):
+            task.payload_dropoff_processed = True
+            return
+        service = bool(getattr(task, 'return_same_payload_instance', False)
+                       and self._location_has_inventory_mass_collection_rotation(task.dropoff, payload.name))
+        if service:
+            self._log_payload_service_arrival(task, event_time)
+        else:
+            self._consume_store_empty_for_exchange(task, payload)
+            if self._location_has_payload_inventory_spaces(task.dropoff):
+                space = self._reserve_inventory_space_for_task(task, payload)
+                if (space is None and not str(getattr(task, 'assigned_inventory_space', '') or '').strip()
+                        and not self._task_allows_dropoff_zone_overflow(task, payload)):
+                    raise RuntimeError(self._inventory_pending_reason(task.dropoff, payload))
+            self._store_payload_instance_for_task(task, event_time=event_time)
+            if not self._occupy_inventory_space_for_completed_task(task, payload):
+                raise RuntimeError(task.pending_reason or self._inventory_pending_reason(task.dropoff, payload))
+        task.payload_dropoff_processed = True
+
+    def _schedule_payload_action_events(self, task: Task, amr_id: str, pickup_time: float, dropoff_time: float) -> None:
+        if is_empty_payload_name(task.payload):
+            return
+        pickup_event = ('return_payload_pickup' if (
+            bool(getattr(task, 'is_return_task', False))
+            and bool(getattr(task, 'release_next_after_return_pickup', False))
+            and str(getattr(task, 'generator_release_spacing_key', '') or '').strip()) else 'payload_pickup')
+        self.push_event(pickup_time, pickup_event, {'task': task, 'amr_id': amr_id, 'pickup_time': pickup_time})
+        self.push_event(dropoff_time, 'payload_dropoff', {'task': task, 'amr_id': amr_id})
 
     def _set_task_pending_reason(self, task: Optional[Task], reason: str) -> None:
         if task is None:
@@ -6670,6 +6710,17 @@ class Simulation:
             container_type=getattr(task, "container_type", ""),
             pending_reason=reason,
         )
+
+        if (bool(getattr(task, 'payload_pickup_processed', False))
+                and not bool(getattr(task, 'payload_dropoff_processed', False))
+                and not is_empty_payload_name(task.payload)):
+            self.log_step(
+                event_time=event_time, event_type='payload_arrival_unconfirmed',
+                task_id=task.id, payload_name=self._payload_log_name(task.payload),
+                payload_instance_id=getattr(task, 'payload_instance_id', ''),
+                from_location=task.pickup, status='unresolved',
+                start_time=event_time, end_time=event_time,
+                details='Task failed after pickup; payload arrival is unconfirmed. No stock was restored or destination arrival invented.')
 
     def _record_failed_task(
         self,
@@ -11358,6 +11409,11 @@ class Simulation:
                 )
 
                 self._invalidate_route_estimate_cache()
+                for batch_task in tasks:
+                    self._schedule_payload_action_events(
+                        batch_task, amr.id,
+                        payload_action_times['pickup'].get(batch_task.id, finish_time),
+                        payload_action_times['dropoff'].get(batch_task.id, finish_time))
 
                 self.push_event(
                     finish_time,
@@ -11680,24 +11736,9 @@ class Simulation:
             payload_pickup_time = payload_action_times["pickup"].get(
                 "", finish_time
             )
-            if (
-                bool(getattr(task, "is_return_task", False))
-                and bool(
-                    getattr(task, "release_next_after_return_pickup", False)
-                )
-                and str(
-                    getattr(task, "generator_release_spacing_key", "") or ""
-                ).strip()
-            ):
-                self.push_event(
-                    payload_pickup_time,
-                    "return_payload_pickup",
-                    {
-                        "task": task,
-                        "amr_id": amr.id,
-                        "pickup_time": payload_pickup_time,
-                    },
-                )
+            self._schedule_payload_action_events(
+                task, amr.id, payload_pickup_time,
+                payload_action_times['dropoff'].get('', finish_time))
 
             self.push_event(
                 finish_time,
@@ -12270,6 +12311,20 @@ class Simulation:
         elif event.event_type == "assignment_continue":
             self._assignment_continue_scheduled = False
             self._try_assign_tasks(event.time)
+        elif event.event_type in {"payload_pickup", "payload_dropoff"}:
+            task = event.payload['task']
+            if task.id in self.failed_task_ids:
+                return
+            try:
+                payload = self._payload_for_task(task)
+                if event.event_type == 'payload_pickup':
+                    self._process_payload_pickup(task, payload, event.time)
+                else:
+                    self._process_payload_dropoff(task, payload, event.time)
+            except RuntimeError as exc:
+                self._fail_task(task, str(exc), now=event.time)
+                return
+            self._try_assign_tasks(event.time)
         elif event.event_type == "return_payload_pickup":
             task: Task = event.payload["task"]
             if str(getattr(task, "id", "") or "").strip() in self.failed_task_ids:
@@ -12319,58 +12374,12 @@ class Simulation:
                 event.payload.get("payload_dropoff_time", event.payload["finish_time"])
             )
             payload_obj = self._payload_for_task(task)
-            if payload_obj is not None and not is_empty_payload_name(task.payload):
-                try:
-                    self._process_payload_pickup(
-                        task, payload_obj, payload_pickup_time
-                    )
-                except RuntimeError as exc:
-                    self._fail_task(task, str(exc), now=event.payload["finish_time"])
-                    return
-                skip_dropoff_payload_store = bool(
-                    getattr(task, "return_same_payload_instance", False)
-                    and self._location_has_inventory_mass_collection_rotation(
-                        task.dropoff, payload_obj.name
-                    )
-                )
-                # Verify/claim a stowage space before writing a stored physical
-                # payload record.  If the location is full, fail the task with a
-                # precise reason rather than silently adding stock and inflating
-                # peak occupancy.
-                if (
-                    not skip_dropoff_payload_store
-                    and self._location_has_payload_inventory_spaces(task.dropoff)
-                ):
-                    claimed_space = self._reserve_inventory_space_for_task(
-                        task, payload_obj
-                    )
-                    if (
-                        claimed_space is None
-                        and not str(
-                            getattr(task, "assigned_inventory_space", "") or ""
-                        ).strip()
-                        and not self._task_allows_dropoff_zone_overflow(task, payload_obj)
-                    ):
-                        reason = self._inventory_pending_reason(
-                            task.dropoff, payload_obj
-                        )
-                        self._fail_task(task, reason, now=event.payload["finish_time"])
-                        return
-                if not skip_dropoff_payload_store:
-                    self._store_payload_instance_for_task(
-                        task, event_time=payload_dropoff_time
-                    )
-                    if not self._occupy_inventory_space_for_completed_task(
-                        task, payload_obj
-                    ):
-                        reason = str(
-                            getattr(task, "pending_reason", "")
-                            or self._inventory_pending_reason(task.dropoff, payload_obj)
-                        )
-                        self._fail_task(task, reason, now=event.payload["finish_time"])
-                        return
-                else:
-                    self._log_payload_service_arrival(task, payload_dropoff_time)
+            try:
+                self._process_payload_pickup(task, payload_obj, payload_pickup_time)
+                self._process_payload_dropoff(task, payload_obj, payload_dropoff_time)
+            except RuntimeError as exc:
+                self._fail_task(task, str(exc), now=event.time)
+                return
             completed_amr = self.amrs_by_id.get(event.payload.get("amr_id"))
             completed_end_location_name = str(event.payload.get("end_location") or task.dropoff or "")
             completed_amr_loc = self.locations.get(completed_end_location_name)
@@ -12597,6 +12606,8 @@ class Simulation:
         elif event.event_type == "multi_stop_complete":
             tasks: List[Task] = event.payload["tasks"]
             for task in tasks:
+                if task.id in self.failed_task_ids:
+                    continue
                 payload_pickup_time = float(
                     (event.payload.get("payload_pickup_times", {}) or {}).get(
                         str(task.id), event.payload["finish_time"]
@@ -12608,64 +12619,12 @@ class Simulation:
                     )
                 )
                 payload_obj = self._payload_for_task(task)
-                if payload_obj is not None and not is_empty_payload_name(task.payload):
-                    try:
-                        self._process_payload_pickup(
-                            task, payload_obj, payload_pickup_time
-                        )
-                    except RuntimeError as exc:
-                        self._fail_task(
-                            task, str(exc), now=event.payload["finish_time"]
-                        )
-                        continue
-                    skip_dropoff_payload_store = bool(
-                        getattr(task, "return_same_payload_instance", False)
-                        and self._location_has_inventory_mass_collection_rotation(
-                            task.dropoff, payload_obj.name
-                        )
-                    )
-                    if (
-                        not skip_dropoff_payload_store
-                        and self._location_has_payload_inventory_spaces(task.dropoff)
-                    ):
-                        claimed_space = self._reserve_inventory_space_for_task(
-                            task, payload_obj
-                        )
-                        if (
-                            claimed_space is None
-                            and not str(
-                                getattr(task, "assigned_inventory_space", "") or ""
-                            ).strip()
-                            and not self._task_allows_dropoff_zone_overflow(task, payload_obj)
-                        ):
-                            self._fail_task(
-                                task,
-                                self._inventory_pending_reason(
-                                    task.dropoff, payload_obj
-                                ),
-                                now=event.payload["finish_time"],
-                            )
-                            continue
-                    if not skip_dropoff_payload_store:
-                        self._store_payload_instance_for_task(
-                            task, event_time=payload_dropoff_time
-                        )
-                        if not self._occupy_inventory_space_for_completed_task(
-                            task, payload_obj
-                        ):
-                            self._fail_task(
-                                task,
-                                str(
-                                    getattr(task, "pending_reason", "")
-                                    or self._inventory_pending_reason(
-                                        task.dropoff, payload_obj
-                                    )
-                                ),
-                                now=event.payload["finish_time"],
-                            )
-                            continue
-                    else:
-                        self._log_payload_service_arrival(task, payload_dropoff_time)
+                try:
+                    self._process_payload_pickup(task, payload_obj, payload_pickup_time)
+                    self._process_payload_dropoff(task, payload_obj, payload_dropoff_time)
+                except RuntimeError as exc:
+                    self._fail_task(task, str(exc), now=event.time)
+                    continue
 
                 final_location_name = str(
                     event.payload.get("end_location") or task.dropoff or ""

@@ -2,7 +2,7 @@
 
 Each full-bin exchange plan now claims a distinct physical empty bin at the
 destination store. Estimates check availability without claiming or removing
-stock. Committed plans reserve instances for their task; pickup processing uses
+stock. Committed plans reserve instances for their task; arrival processing uses
 that task's own claim. A rejected plan or a failed task releases unconsumed claims.
 Same-bin servicing continues to leave the separate exchange stock alone.
 
@@ -45,12 +45,11 @@ See `latest/ltn-exchange-claims/summary.json`.
 
 ## Remaining limits
 
-The existing engine stages the empty bin when outbound pickup is processed,
-before the full bin reaches the store. That timing is retained here; exact bay
-occupancy through arrival, a modelled staging area and recovery after pickup
-still require verification. Exchange tasks without a return also need an explicit
-physical-disposition policy. This checkpoint proves exclusive claims and the
-listed completed-cycle conservation cases, not all inventory workflows.
+The subsequent [action-timing checkpoint](PAYLOAD_ACTION_TIMING_REVIEW.md) keeps
+exchange stock in its bay until arrival and preserves empties on no-return
+deliveries. A modelled staging area and staged-bin recovery remain open. This
+checkpoint proves exclusive claims and the listed completed-cycle conservation
+cases, not all inventory workflows.
 
 Other open work includes delivery/lift energy attribution and reconciliation of
 operational failures with reports. The full [roadmap](ROADMAP.md) remains open.

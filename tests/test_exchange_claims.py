@@ -86,12 +86,14 @@ class ExchangeClaimTests(unittest.TestCase):
         sim._fail_task(tasks[0], 'Cancelled before pickup', now=0)
         self.assertTrue(sim._task_can_exchange_with_store_empty(tasks[1], sim.payloads['Box']))
 
-    def test_reverse_pickup_order_consumes_each_tasks_own_claim(self):
+    def test_reverse_arrival_order_consumes_each_tasks_own_claim(self):
         sim, tasks = prepare(2)
         self.assertIsNotNone(sim._estimate_multi_stop_for_amr(sim.amrs[0], tasks, reserve=True))
         claimed = {item.id: item.reserved_exchange_empty_id for item in tasks}
         for item in reversed(tasks):
             sim._process_payload_pickup(item, sim.payloads['Box'], 2)
+            self.assertEqual(claimed[item.id], item.reserved_exchange_empty_id)
+            sim._process_payload_dropoff(item, sim.payloads['Box'], 9)
             self.assertEqual(claimed[item.id], item.exchange_empty_payload_instance_id)
         self.assertFalse(sim.payload_instance_store._reservations)
 
