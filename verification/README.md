@@ -159,6 +159,11 @@ Exports contain the frozen project configuration, so treat them as project data.
 
 ## Results investigation checkpoint
 
+The latest checkpoint is [Portable project storage](PROJECT_STORAGE_REVIEW.md):
+compressed `.amrproj`, deduplicated drawings, atomic saves and revision restore.
+Use **Home → Save project as** and **Project revisions**. Results stay external;
+use **Export JSON** for the existing launcher and command-line tools.
+
 Use **Home → Results investigation**, or **Investigate Results** in the launcher.
 Select the saved run folder or full event CSV. Task timelines distinguish recorded
 outcomes from planned route segments. Metric selection opens contributing events;

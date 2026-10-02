@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -1056,8 +1058,16 @@ class JsonStore:
         self.ensure_amr_defaults()
         self.ensure_department_defaults()
         self.ensure_mass_collection_defaults()
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        destination = Path(path)
+        fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2, allow_nan=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, destination)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
 
     def floor_dxf_path(self, floor: int) -> Optional[str]:
         for entry in self.data.get("floor_dxf_files", []):

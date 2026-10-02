@@ -2,6 +2,11 @@
 
 ## Engineering verification
 
+The editor now opens compressed `.amrproj` files containing configuration,
+deduplicated drawings and saved revisions. See the
+[project storage review guide](verification/PROJECT_STORAGE_REVIEW.md).
+Export JSON for the existing simulator and launcher; results remain external.
+
 The first verification checkpoint provides independently calculated routing,
 door-width, service-time, reservation and task-generation reference cases, plus
 a searchable evidence pack and an inventory of settings still requiring review.

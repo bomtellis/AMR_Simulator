@@ -5,6 +5,7 @@ AMR Simulator app
 import json
 import math
 import sys
+import tempfile
 from pathlib import Path
 
 import os
@@ -298,6 +299,8 @@ class AMRGraphEditor(QMainWindow):
 
         self.store = JsonStore()
         self.current_json_path = None
+        self.project = None
+        self._project_cache = None
         self._drawings_enabled = True
         self.current_dxf_path = None
         self.loaded_dxf_floor = None
@@ -490,13 +493,16 @@ class AMRGraphEditor(QMainWindow):
             home,
             "File",
             [
-                button("Open JSON", self.open_json),
+                button("Open project / JSON", self.open_json),
                 button(
                     "Open without drawings",
                     lambda: self.open_json(load_drawings=False),
                     "Open a configuration without loading DXF drawings or PDF backgrounds. Saved drawing paths are preserved.",
                 ),
-                button("Save JSON", self.save_json),
+                button("Save", self.save_json),
+                button("Save project as", lambda: self.save_project(save_as=True)),
+                button("Export JSON", self.export_project_json),
+                button("Project revisions", self.show_project_revisions),
                 button(
                     "Export floor DXF",
                     self.export_current_floor_dxf,
@@ -2679,8 +2685,19 @@ class AMRGraphEditor(QMainWindow):
         )
 
     def load_json_file(self, path: str, *, load_drawings: bool = True) -> bool:
+        project = None
+        cache = None
         try:
-            store = JsonStore.from_file(path)
+            if Path(path).suffix.lower() == ".amrproj":
+                root = str(Path(__file__).resolve().parents[1])
+                if root not in sys.path:
+                    sys.path.insert(0, root)
+                from amr_project import Project
+                project = Project.open(path)
+                cache = tempfile.TemporaryDirectory(prefix="amr-project-")
+                store = JsonStore(project.materialize(cache.name))
+            else:
+                store = JsonStore.from_file(path)
         except json.JSONDecodeError as exc:
             QMessageBox.critical(
                 self,
@@ -2698,9 +2715,11 @@ class AMRGraphEditor(QMainWindow):
             self.set_status("JSON open failed: file could not be read")
             return False
         except Exception as exc:
+            if cache is not None:
+                cache.cleanup()
             QMessageBox.critical(
                 self,
-                "Could not open JSON",
+                "Could not open project or JSON",
                 f"{Path(path).name} could not be loaded.\n\n{exc}",
             )
             self.set_status("JSON open failed")
@@ -2723,6 +2742,15 @@ class AMRGraphEditor(QMainWindow):
             ]
 
         self.store = store
+        self.project = project
+        # Retain previous drawing caches until shutdown: background workers may
+        # still be reading files belonging to the previous open project.
+        if cache is not None:
+            if self._project_cache is None:
+                self._project_cache = []
+            self._project_cache.append(cache)
+        if hasattr(self, "project_history_panel"):
+            self.project_history_panel.refresh()
         self._drawings_enabled = load_drawings
         self.current_json_path = path
         self.selected_point_name = None
@@ -2750,7 +2778,7 @@ class AMRGraphEditor(QMainWindow):
 
     def open_json(self, *, load_drawings=True):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open JSON" if load_drawings else "Open configuration without drawings", "", "JSON files (*.json)"
+            self, "Open project or JSON" if load_drawings else "Open configuration without drawings", "", "AMR projects and JSON (*.amrproj *.json);;AMR projects (*.amrproj);;JSON files (*.json)"
         )
         if not path:
             return
@@ -2765,6 +2793,8 @@ class AMRGraphEditor(QMainWindow):
         self.fit_view()
 
     def save_json(self):
+        if self.project is not None:
+            return self.save_project()
         path = self.current_json_path
         if not path:
             path, _ = QFileDialog.getSaveFileName(
@@ -2772,10 +2802,74 @@ class AMRGraphEditor(QMainWindow):
             )
         if not path:
             return
-        self.store.save(path)
+        try:
+            self.store.save(path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Save failed", str(exc))
+            return
         self.current_json_path = path
         self.set_status(f"Saved {Path(path).name}")
         self.refresh_canvas()
+
+    def save_project(self, *, save_as=False):
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from amr_project import Project
+        path = str(self.project.path) if self.project is not None else ""
+        if save_as or not path:
+            suggested = str(Path(self.current_json_path).with_suffix(".amrproj")) if self.current_json_path else "project.amrproj"
+            path, _ = QFileDialog.getSaveFileName(self, "Save portable project", suggested, "AMR projects (*.amrproj)")
+        if not path:
+            return False
+        try:
+            project = self.project or Project()
+            project.save(path, self.store.data, base_dir=Path(self.current_json_path).parent if self.current_json_path else Path.cwd())
+            self.project = project
+            self.current_json_path = str(project.path)
+            cache = self._project_cache[-1] if self._project_cache else tempfile.TemporaryDirectory(prefix="amr-project-")
+            portable = project.materialize(cache.name)
+            for key in ("floor_dxf_files", "floor_pdf_underlays"):
+                if key in portable:
+                    self.store.data[key] = portable[key]
+            if self._project_cache is None:
+                self._project_cache = []
+            if cache not in self._project_cache:
+                self._project_cache.append(cache)
+            self.set_status(f"Saved {project.path.name} — {len(project.revisions)} revision(s)")
+            if hasattr(self, "project_history_panel"):
+                self.project_history_panel.refresh()
+            self.refresh_canvas()
+            return True
+        except Exception as exc:
+            QMessageBox.critical(self, "Project save failed", f"The project was not saved.\n\n{exc}")
+            return False
+
+    def export_project_json(self):
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from amr_project import Project
+        path, _ = QFileDialog.getSaveFileName(self, "Export JSON with drawings", "", "JSON files (*.json)")
+        if not path:
+            return
+        try:
+            (self.project or Project()).export_json(path, self.store.data,
+                base_dir=Path(self.current_json_path).parent if self.current_json_path else Path.cwd())
+            self.set_status(f"Exported {Path(path).name} and drawing files; open project unchanged")
+        except Exception as exc:
+            QMessageBox.critical(self, "Export failed", str(exc))
+
+    def show_project_revisions(self):
+        from project_history_panel import ProjectHistoryPanel
+        if not hasattr(self, "project_history_panel"):
+            self.project_history_panel = ProjectHistoryPanel(self)
+            self.project_history_dock = QDockWidget("Project revisions", self)
+            self.project_history_dock.setWidget(self.project_history_panel)
+            self.addDockWidget(Qt.RightDockWidgetArea, self.project_history_dock)
+        self.project_history_panel.refresh()
+        self.project_history_dock.show()
+        self.project_history_dock.raise_()
 
     def _ask_dxf_units(self):
         units, accepted = QInputDialog.getItem(
@@ -3441,6 +3535,10 @@ class AMRGraphEditor(QMainWindow):
             self._dxf_thread.wait(2000)
         except Exception:
             pass
+        if self._project_cache and not self._dxf_thread.isRunning():
+            for cache in self._project_cache:
+                cache.cleanup()
+            self._project_cache = None
         super().closeEvent(event)
 
     def manage_mass_collections(self):
