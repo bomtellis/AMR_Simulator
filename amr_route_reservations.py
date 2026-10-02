@@ -51,7 +51,7 @@ class RouteReservationTransaction:
             self.remember_attributes(task, (
                 'assigned_inventory_space', 'payload_orientation', 'wash_cycle_required',
                 'pickup', 'dropoff', 'target_charge_location', 'assigned_amr_inventory_space',
-                'reserved_exchange_empty_id'))
+                'reserved_exchange_empty_id', 'payload_instance_id'))
         return self
 
     def __exit__(self, exc_type, _exc, _traceback):

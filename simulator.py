@@ -1207,9 +1207,48 @@ class Simulation:
                 and return_payload == normalise_payload_name(task.payload)
                 and self._task_is_full_bin_dropoff_to_inventory_rotation(task))
 
-    def _plan_exchange_empty_claims(self, tasks: List[Task], *, reserve: bool) -> bool:
-        """Assign distinct physical empty bins without moving them during planning."""
+    def _plan_payload_claims(self, tasks: List[Task], *, reserve: bool) -> bool:
+        """Match source stock and exchange stock before committing either use.
+
+        Exact identities and empty-only pickups precede flexible pickups. These
+        restrictions are nested within each location/payload pool, so this order
+        leaves unrestricted tasks the remaining stock without stealing a match.
+        Estimates never bind task IDs or change physical stock/reservations.
+        """
         selected, used = [], set()
+        existing_tasks = [task for task in tasks
+                          if normalise_payload_name(task.payload)
+                          and self._task_requires_existing_payload_instance(task)]
+        existing_tasks.sort(key=lambda task: (
+            not bool(getattr(task, 'payload_instance_id', '')),
+            not self._pickup_requires_empty_container(task)))
+        for task in existing_tasks:
+            # Preserve empty stock for exchange demands when the source pickup
+            # accepts a full container too. Keep insertion order within each set.
+            candidates = sorted(self._pickup_instance_candidates(task),
+                                key=self._record_is_available_empty_container)
+            record = next((record for record in candidates
+                           if record.instance_id not in used), None)
+            if record is None:
+                self._set_task_pending_reason(task, self._pickup_instance_pending_reason(task))
+                return False
+            selected.append((task, record.instance_id))
+            used.add(record.instance_id)
+        if not self._plan_exchange_empty_claims(tasks, reserve=reserve, excluded_instance_ids=used):
+            return False
+        if reserve:
+            for task, instance_id in selected:
+                self._remember_route_mapping(self.payload_instance_store._reservations, instance_id)
+                if not self.payload_instance_store.reserve_instance(instance_id, task.id):
+                    self._set_task_pending_reason(task, self._pickup_instance_pending_reason(task))
+                    return False
+                task.payload_instance_id = instance_id
+        return True
+
+    def _plan_exchange_empty_claims(self, tasks: List[Task], *, reserve: bool,
+                                    excluded_instance_ids=()) -> bool:
+        """Assign distinct physical empty bins without moving them during planning."""
+        selected, used = [], set(excluded_instance_ids)
         for task in tasks:
             if (getattr(task, 'exchange_empty_payload_instance_id', '')
                     or not self._task_requires_empty_exchange(task)):
@@ -2017,7 +2056,7 @@ class Simulation:
             slot_assignments = self._assign_tasks_to_amr_slots(amr, tasks)
             if slot_assignments is None:
                 return None
-            if not self._plan_exchange_empty_claims(tasks, reserve=reserve):
+            if not self._plan_payload_claims(tasks, reserve=reserve):
                 return None
             for task in tasks:
                 payload = self._payload_for_task(task)
@@ -2486,53 +2525,33 @@ class Simulation:
 
     def _pickup_instance_available(self, task: Task) -> bool:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
-        instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
         if not payload_name:
             return True
         if not self._task_requires_existing_payload_instance(task):
             return True
+        return next(self._pickup_instance_candidates(task), None) is not None
+
+    @staticmethod
+    def _pickup_requires_empty_container(task: Task) -> bool:
+        return (bool(getattr(task, 'is_return_task', False))
+                and str(getattr(task, 'task_source', '') or '') == 'task_generation_return'
+                and not bool(getattr(task, 'returns_same_payload_instance', False)))
+
+    def _pickup_instance_candidates(self, task: Task):
+        """Yield available physical sources with the same policy used at commit."""
+        instance_id = str(getattr(task, 'payload_instance_id', '') or '').strip()
+        payload_name = normalise_payload_name(task.payload)
         if instance_id:
-            if self.payload_instance_store.is_reserved(
-                instance_id, excluding_owner=str(getattr(task, "id", "") or "")
-            ):
-                return False
-            if not self.payload_instance_store.has_instance_at(
-                task.pickup, instance_id, payload_name
-            ):
-                return False
-            if (
-                bool(getattr(task, "is_return_task", False))
-                and str(getattr(task, "task_source", "") or "")
-                == "task_generation_return"
-                and not bool(getattr(task, "returns_same_payload_instance", False))
-            ):
-                record = getattr(self.payload_instance_store, "_records", {}).get(
-                    instance_id
-                )
-                return record is None or self._record_is_available_empty_container(
-                    record
-                )
-            return True
-        records = [
-            record
-            for record in self.payload_instance_store.records_at(task.pickup)
-            if record.payload == payload_name
-            and not self.payload_instance_store.is_reserved(
-                record.instance_id,
-                excluding_owner=str(getattr(task, "id", "") or ""),
-            )
-        ]
-        if (
-            bool(getattr(task, "is_return_task", False))
-            and str(getattr(task, "task_source", "") or "") == "task_generation_return"
-            and not bool(getattr(task, "returns_same_payload_instance", False))
-        ):
-            records = [
-                record
-                for record in records
-                if self._record_is_available_empty_container(record)
-            ]
-        return bool(records)
+            record = self.payload_instance_store._records.get(instance_id)
+            records = [record] if record is not None and record.location == task.pickup else []
+        else:
+            records = self.payload_instance_store.records_at(task.pickup)
+        for record in records:
+            if (record.payload == payload_name
+                    and not self.payload_instance_store.is_reserved(record.instance_id, excluding_owner=task.id)
+                    and (not self._pickup_requires_empty_container(task)
+                         or self._record_is_available_empty_container(record))):
+                yield record
 
     def _pickup_instance_pending_reason(self, task: Task) -> str:
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
@@ -9955,7 +9974,7 @@ class Simulation:
             if payload is None:
                 return None
 
-            if not self._plan_exchange_empty_claims([task], reserve=reserve):
+            if not self._plan_payload_claims([task], reserve=reserve):
                 return None
 
             if not self._pickup_instance_available(task):
