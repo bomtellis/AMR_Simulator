@@ -20,6 +20,7 @@ from amr_route_reservations import RouteReservationTransaction
 from amr_sim_energy import (
     energy_for_travel_kwh,
     idle_move_power_w,
+    loaded_power_w,
     requires_recharge_before_route,
     total_lift_energy_kwh,
     total_route_energy_kwh,
@@ -2065,6 +2066,34 @@ class Simulation:
             transaction.committed = result is not None
             return result
 
+    def _annotate_delivery_motor_energy(self, amr, tasks, segments):
+        """Traction only: physical movement with the load onboard at that time.
+
+        Lift supply and stationary auxiliaries are outside the battery model.
+        Action IDs, rather than movement labels, track shared batch loads.
+        """
+        by_id = {task.id: task for task in tasks}
+        onboard = {}
+        total = 0.0
+        for segment in segments:
+            kind = segment.get('type')
+            if kind in ('pickup', 'dropoff'):
+                task_ids = segment.get('task_ids', list(by_id) if len(tasks) == 1 else [])
+                for task_id in task_ids:
+                    if kind == 'pickup':
+                        task = by_id[task_id]
+                        if not is_empty_payload_name(task.payload):
+                            onboard[task_id] = task
+                    else:
+                        onboard.pop(task_id, None)
+            elif kind in ('corridor', 'local_manoeuvre'):
+                power = (loaded_power_w(amr, self._make_aggregate_payload(list(onboard.values())))
+                         if onboard else idle_move_power_w(amr))
+                energy = energy_for_travel_kwh(power, float(segment.get('duration', 0)))
+                segment.update(energy_kwh=energy, energy_source='amr_battery')
+                total += energy
+        return total
+
     def _estimate_multi_stop_for_amr_impl(
         self, amr: AMR, tasks: List[Task], reserve: bool = False
     ) -> Optional[dict]:
@@ -2167,7 +2196,7 @@ class Simulation:
                         start_time_value=current_time_value,
                         payload=payload_for_leg,
                         orientation="lengthways",
-                        collect_segments=reserve,
+                        collect_segments=True,
                     )
                     if route is None:
                         return math.inf, None, 0.0, 0.0
@@ -2192,11 +2221,11 @@ class Simulation:
                     payload_for_leg,
                     rules=rules,
                     orientation="lengthways",
-                    collect_segments=reserve,
+                    collect_segments=True,
                 )
                 if plan is None:
                     return math.inf, None, 0.0, 0.0
-                lift_energy_kwh_total += total_lift_energy_kwh(
+                leg_lift_energy = total_lift_energy_kwh(
                     lift=plan["lift"],
                     payload=payload_for_leg,
                     floor_height_m=self.floor_height_m,
@@ -2206,7 +2235,9 @@ class Simulation:
                     loaded_floor_delta=(location_b.floor - location_a.floor),
                     wait_time_sec=plan["wait_time"],
                     door_time_sec=plan["lift"].door_time_sec,
+                    boarding_time_sec=plan["lift"].boarding_time_sec,
                 )
+                lift_energy_kwh_total += leg_lift_energy
                 lift_empty_sec_total += float(plan.get("reposition_sec", 0.0))
                 lift_loaded_sec_total += float(plan.get("loaded_travel_sec", 0.0))
                 if reserve:
@@ -2223,14 +2254,6 @@ class Simulation:
                         journey_operating_sec=float(plan.get("reposition_sec", 0.0))
                         + float(plan.get("loaded_travel_sec", 0.0)),
                         journey_finish_time=plan["lift_finish"],
-                    )
-                if not reserve:
-                    segment_duration = plan["final_finish"] - current_time_value
-                    total += segment_duration
-                    return plan["final_finish"], [], segment_duration, (
-                        plan["to_lift_distance_m"]
-                        + plan["vertical_distance_m"]
-                        + plan["from_lift_distance_m"]
                     )
                 transfer_segments = list(plan["to_lift_segments"])
                 if plan["wait_time"] > 0:
@@ -2271,6 +2294,8 @@ class Simulation:
                 transfer_segments.append(
                     {
                         "type": "lift_transfer",
+                        "energy_kwh": leg_lift_energy,
+                        "energy_source": "lift_supply",
                         "lift_id": plan["lift"].id,
                         "from": plan["origin_lift"].name,
                         "to": plan["destination_lift"].name,
@@ -2475,22 +2500,17 @@ class Simulation:
                     for delivered_task in leg_tasks:
                         onboard.remove(delivered_task)
 
-            corridor_energy_kwh = total_route_energy_kwh(
-                amr,
-                aggregate_payload,
-                travel_to_first_pickup_sec,
-                loaded_travel_sec_total,
-            )
+            corridor_energy_kwh = self._annotate_delivery_motor_energy(amr, tasks, segments)
             actual_energy_kwh = corridor_energy_kwh + lift_energy_kwh_total
             projected_battery_soc_after = (
                 100.0
-                * max(0.0, amr.battery_energy_kwh() - actual_energy_kwh)
+                * max(0.0, amr.battery_energy_kwh() - corridor_energy_kwh)
                 / max(amr.battery_capacity_kwh, 1e-9)
             )
-            if requires_recharge_before_route(amr, actual_energy_kwh):
+            if requires_recharge_before_route(amr, corridor_energy_kwh):
                 return None
             if reserve:
-                amr.consume_energy(actual_energy_kwh)
+                amr.consume_energy(corridor_energy_kwh)
                 battery_soc_after = amr.battery_soc_percent
             else:
                 battery_soc_after = projected_battery_soc_after
@@ -2507,6 +2527,7 @@ class Simulation:
                 "energy_kwh": actual_energy_kwh,
                 "battery_soc_after": battery_soc_after,
                 "corridor_energy_kwh": corridor_energy_kwh,
+                "amr_energy_kwh": corridor_energy_kwh,
                 "lift_energy_kwh": lift_energy_kwh_total,
                 "lift_empty_sec_total": lift_empty_sec_total,
                 "lift_loaded_sec_total": lift_loaded_sec_total,
@@ -10219,7 +10240,10 @@ class Simulation:
                         return (
                             current_time_value + route_duration,
                             location_b,
-                            [],
+                            [{"type": "corridor", "duration": route_duration,
+                              "distance_m": float(route["distance_m"]),
+                              "from": location_a.name, "to": location_b.name,
+                              "estimate_only": True}],
                             route_duration,
                         )
 
@@ -10231,7 +10255,7 @@ class Simulation:
                         start_time_value=current_time_value,
                         payload=payload_for_leg,
                         orientation=orientation_for_leg,
-                        collect_segments=reserve,
+                        collect_segments=True,
                     )
                     if route is None:
                         return math.inf, location_b, None, 0.0
@@ -10261,13 +10285,13 @@ class Simulation:
                     payload_for_leg or self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
                     rules=rules,
                     orientation=orientation_for_leg,
-                    collect_segments=reserve,
+                    collect_segments=True,
                 )
                 if plan is None:
                     return math.inf, location_b, None, 0.0
 
                 nonlocal lift_energy_kwh_total
-                lift_energy_kwh_total += total_lift_energy_kwh(
+                leg_lift_energy = total_lift_energy_kwh(
                     lift=plan["lift"],
                     payload=payload_for_leg or self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
                     floor_height_m=self.floor_height_m,
@@ -10277,7 +10301,9 @@ class Simulation:
                     loaded_floor_delta=(location_b.floor - location_a.floor),
                     wait_time_sec=plan["wait_time"],
                     door_time_sec=plan["lift"].door_time_sec,
+                    boarding_time_sec=plan["lift"].boarding_time_sec,
                 )
+                lift_energy_kwh_total += leg_lift_energy
 
                 segment_duration = plan["final_finish"] - current_time_value
                 total += segment_duration
@@ -10304,14 +10330,6 @@ class Simulation:
                         journey_operating_sec=float(plan.get("reposition_sec", 0.0))
                         + float(plan.get("loaded_travel_sec", 0.0)),
                         journey_finish_time=plan["lift_finish"],
-                    )
-
-                if not reserve:
-                    return (
-                        plan["final_finish"],
-                        location_b,
-                        [],
-                        segment_duration,
                     )
 
                 transfer_segments = list(plan["to_lift_segments"])
@@ -10350,18 +10368,7 @@ class Simulation:
                                 - plan["reposition_from_floor"]
                             )
                             * self.floor_height_m,
-                            "energy_kwh": total_lift_energy_kwh(
-                                lift=plan["lift"],
-                                payload=payload_for_leg or self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
-                                floor_height_m=self.floor_height_m,
-                                reposition_floor_delta=(
-                                    plan["reposition_to_floor"]
-                                    - plan["reposition_from_floor"]
-                                ),
-                                loaded_floor_delta=0,
-                                wait_time_sec=0.0,
-                                door_time_sec=0.0,
-                            ),
+                            "energy_kwh": 0.0,
                         }
                     )
 
@@ -10384,15 +10391,8 @@ class Simulation:
                         ),
                         "distance_m": plan["vertical_distance_m"],
                         "vertical_distance_m": plan["vertical_distance_m"],
-                        "energy_kwh": total_lift_energy_kwh(
-                            lift=plan["lift"],
-                            payload=payload,
-                            floor_height_m=self.floor_height_m,
-                            reposition_floor_delta=0,
-                            loaded_floor_delta=(location_b.floor - location_a.floor),
-                            wait_time_sec=plan["wait_time"],
-                            door_time_sec=plan["lift"].door_time_sec,
-                        ),
+                        "energy_kwh": leg_lift_energy,
+                        "energy_source": "lift_supply",
                     }
                 )
 
@@ -10601,17 +10601,20 @@ class Simulation:
             else:
                 end_location_name = dropoff_loc.name
 
-            corridor_energy_kwh = total_route_energy_kwh(
-                amr, payload, travel_to_pickup_sec, loaded_travel_sec
-            )
+            corridor_energy_kwh = self._annotate_delivery_motor_energy(amr, [task], segments)
 
             lift_energy_kwh = lift_energy_kwh_total
 
             actual_energy_kwh = corridor_energy_kwh + lift_energy_kwh
 
+            available_energy = (amr.battery_capacity_kwh if charge_segments
+                                else amr.battery_energy_kwh())
+            if available_energy - corridor_energy_kwh < amr.min_reserve_energy_kwh() - 1e-12:
+                self._set_task_pending_reason(task, f"AMR {amr.id} has insufficient battery energy for this route and reserve")
+                return None
             projected_battery_soc_after = (
                 100.0
-                * max(0.0, amr.battery_energy_kwh() - actual_energy_kwh)
+                * max(0.0, available_energy - corridor_energy_kwh)
                 / max(amr.battery_capacity_kwh, 1e-9)
             )
 
@@ -10630,7 +10633,7 @@ class Simulation:
                     amr.total_charge_time += charge_duration
                     amr.charge_to_full()
 
-                amr.consume_energy(actual_energy_kwh)
+                amr.consume_energy(corridor_energy_kwh)
                 battery_soc_after = amr.battery_soc_percent
             else:
                 battery_soc_after = projected_battery_soc_after
@@ -10646,6 +10649,7 @@ class Simulation:
                 "energy_kwh": actual_energy_kwh,
                 "battery_soc_after": battery_soc_after,
                 "corridor_energy_kwh": corridor_energy_kwh,
+                "amr_energy_kwh": corridor_energy_kwh,
                 "lift_energy_kwh": lift_energy_kwh,
                 "lift_empty_sec_total": lift_empty_sec_total,
                 "lift_loaded_sec_total": lift_loaded_sec_total,
