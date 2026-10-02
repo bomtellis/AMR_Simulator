@@ -1,6 +1,8 @@
 # Checkpoint 2A — routing and door option audit
 
 Review date: 3 October 2026. Baseline: `f52631b`.
+Follow-up: [slice 2B](ROUTING_INPUT_REVIEW.md) corrects the routing boolean and
+width-coercion defects identified here. The findings below are the historical audit.
 This is the first bounded slice of checkpoint 2. It improves acceptance coverage
 and traceability; it does not close the full configuration inventory.
 

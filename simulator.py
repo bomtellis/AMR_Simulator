@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Tuple
 
 from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
 from amr_route_reservations import RouteReservationTransaction
+from amr_routing_inputs import validate_routing_inputs
 
 from amr_sim_energy import (
     energy_for_travel_kwh,
@@ -126,6 +127,7 @@ class Simulation:
         verbose: bool = False,
         verbose_csv_path: Optional[str] = None,
     ):
+        validate_routing_inputs(config)
         self.location_reservations = defaultdict(list)
         self.config = config
         self.run_id = uuid.uuid4().hex
@@ -438,12 +440,8 @@ class Simulation:
         self.min_congestion_speed_factor = float(
             building_cfg.get("min_congestion_speed_factor", 0.45)
         )
-        self.default_corridor_width_m = max(
-            0.1, float(building_cfg.get("default_corridor_width_m", 2.4) or 2.4)
-        )
-        self.default_door_clear_width_m = max(
-            0.1, float(building_cfg.get("default_door_clear_width_m", 0.9) or 0.9)
-        )
+        self.default_corridor_width_m = float(building_cfg.get("default_corridor_width_m", 2.4))
+        self.default_door_clear_width_m = float(building_cfg.get("default_door_clear_width_m", 0.9))
         self.people_slowdown_per_person = max(
             0.0, float(building_cfg.get("people_slowdown_per_person", 0.08) or 0.08)
         )
@@ -7116,15 +7114,7 @@ class Simulation:
                 x=float(node_data["x"]),
                 y=float(node_data["y"]),
                 has_door=bool(node_data.get("has_door", False)),
-                door_clear_width_m=max(
-                    0.1,
-                    float(
-                        node_data.get(
-                            "door_clear_width_m", self.default_door_clear_width_m
-                        )
-                        or self.default_door_clear_width_m
-                    ),
-                ),
+                door_clear_width_m=float(node_data.get("door_clear_width_m", self.default_door_clear_width_m)),
             )
             self.graph_nodes[node.name] = node
             self.floor_graphs[node.floor][node.name]
@@ -7142,24 +7132,12 @@ class Simulation:
         ):
             a = self.graph_nodes[a_name]
             b = self.graph_nodes[b_name]
-            configured_width = max(
-                0.1, float(width_m or self.default_corridor_width_m)
-            )
+            configured_width = float(self.default_corridor_width_m if width_m is None else width_m)
             effective_width = configured_width
             door_nodes = []
             for node in (a, b):
                 if bool(getattr(node, "has_door", False)):
-                    opening = max(
-                        0.1,
-                        float(
-                            getattr(
-                                node,
-                                "door_clear_width_m",
-                                self.default_door_clear_width_m,
-                            )
-                            or self.default_door_clear_width_m
-                        ),
-                    )
+                    opening = float(getattr(node, "door_clear_width_m", self.default_door_clear_width_m))
                     effective_width = min(effective_width, opening)
                     door_nodes.append(node.name)
             profile_ids = [
@@ -7744,7 +7722,7 @@ class Simulation:
         if cached is not None:
             return cached
 
-        width = max(0.1, float(edge.get("width_m", self.default_corridor_width_m) or self.default_corridor_width_m))
+        width = float(edge.get("width_m", self.default_corridor_width_m))
         if not bool(edge.get("bidirectional", True)):
             result = (1, width, width)
             self.corridor_lane_capacity_cache[cache_key] = result

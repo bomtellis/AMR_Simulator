@@ -111,9 +111,11 @@ Review the small references and representative LTN behaviour before continuing.
 
 **Slice 2A, 3 October 2026:** sixteen routing/door option contracts now have
 individual source/default/validation/acceptance traceability. See
-[Routing contracts review](ROUTING_CONTRACTS_REVIEW.md). Boolean coercion,
-sub-0.1 m width handling and import-normalisation gaps remain explicit next work;
-the full inventory and checkpoint 2 gate remain open.
+[Routing contracts review](ROUTING_CONTRACTS_REVIEW.md).
+**Slice 2B:** [Routing input validation](ROUTING_INPUT_REVIEW.md) rejects ambiguous
+flags and invalid widths before import/simulation, and preserves positive widths
+below 0.1 m. Wider schema coverage and interactive width-entry consistency remain
+open, as do the full inventory and checkpoint 2 gate.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -364,7 +366,7 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2A's routing contracts and resolve its input-validation gaps next.
+Review slice 2B's routing input correction.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

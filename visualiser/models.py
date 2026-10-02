@@ -570,6 +570,8 @@ DEFAULT_JSON = {
 
 class JsonStore:
     def __init__(self, data: Optional[dict] = None):
+        from amr_routing_inputs import validate_routing_inputs
+        validate_routing_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
         self.ensure_simulation_defaults()
         self.ensure_task_generation_defaults()
@@ -868,6 +870,8 @@ class JsonStore:
                     )
 
     def ensure_corridor_defaults(self) -> None:
+        from amr_routing_inputs import validate_routing_inputs
+        validate_routing_inputs(self.data)
         building = self.data.setdefault("building", {})
         default_width = float(building.get("default_corridor_width_m", 2.4) or 2.4)
         default_door_width = float(building.get("default_door_clear_width_m", 0.9) or 0.9)
@@ -878,19 +882,13 @@ class JsonStore:
             if not isinstance(node, dict):
                 continue
             node["has_door"] = bool(node.get("has_door", False))
-            try:
-                node["door_clear_width_m"] = max(0.1, float(node.get("door_clear_width_m", default_door_width) or default_door_width))
-            except Exception:
-                node["door_clear_width_m"] = default_door_width
+            node["door_clear_width_m"] = float(node.get("door_clear_width_m", default_door_width))
 
         for edge in corridors.setdefault("edges", []):
             if not isinstance(edge, dict):
                 continue
             edge.setdefault("bidirectional", True)
-            try:
-                edge["width_m"] = max(0.1, float(edge.get("width_m", default_width) or default_width))
-            except Exception:
-                edge["width_m"] = default_width
+            edge["width_m"] = float(edge.get("width_m", default_width))
             area = str(edge.get("people_area_type", "none") or "none").strip().lower()
             if area == "mixed":
                 area = "both"

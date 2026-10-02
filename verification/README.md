@@ -12,7 +12,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest verification slice is [Routing and door option contracts](ROUTING_CONTRACTS_REVIEW.md):
+The latest correction is [Routing input validation](ROUTING_INPUT_REVIEW.md):
+ambiguous flags are rejected and positive widths retain their physical values.
+The preceding audit is [Routing and door option contracts](ROUTING_CONTRACTS_REVIEW.md):
 individual defaults, import behaviour, validation limits and acceptance links.
 The latest application checkpoint is [Local routing and software evidence](LOCAL_ROUTING_REVIEW.md):
 explicit local path failures, preserved endpoints, safe smoothing and broader

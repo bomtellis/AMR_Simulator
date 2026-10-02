@@ -166,6 +166,12 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     if findings:
         return finish()
 
+    from amr_routing_inputs import routing_input_findings
+    for path, message in routing_input_findings(config):
+        error(path, message, path.split('/')[1], code="ROUTING_INPUT")
+    if findings:
+        return finish()
+
     # Detect invalid numeric values before JsonStore normalisation can clamp them.
     positive = {"length_m", "width_m", "height_m", "door_clear_width_m", "default_corridor_width_m",
                 "default_door_clear_width_m", "speed_m_per_sec", "walking_speed_m_per_sec", "battery_capacity_kwh",
