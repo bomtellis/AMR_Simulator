@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QScrollArea, QLineEdit)
+    QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QScrollArea, QLineEdit, QLayout)
 
 
 STAGES = [('project', 'Project'), ('layout', 'Layout'), ('configuration', 'Configuration'),
@@ -37,6 +37,7 @@ class ProjectWorkspace(QWidget):
         root.addWidget(split)
         sidebar = QWidget()
         nav = QVBoxLayout(sidebar)
+        nav.setSizeConstraint(QLayout.SetMinimumSize)
         self.project_label = QLabel('Unsaved project')
         self.project_label.setWordWrap(True)
         nav.addWidget(self.project_label)
@@ -56,6 +57,11 @@ class ProjectWorkspace(QWidget):
             item.setData(0, Qt.UserRole, key)
             self.items[key] = item
             self.tree.addTopLevelItem(item)
+        child = QTreeWidgetItem(['Appearance'])
+        child.setData(0, Qt.UserRole, 'appearance')
+        self.items['project'].addChild(child)
+        self.items['project'].setExpanded(True)
+        self.items['appearance'] = child
         child = QTreeWidgetItem(['Demand preview'])
         child.setData(0, Qt.UserRole, 'demand')
         self.items['checks'].addChild(child)
@@ -66,7 +72,7 @@ class ProjectWorkspace(QWidget):
         self.items['review'].setExpanded(True)
         self.items['playback'] = child
         nav.addWidget(self.tree, 1)
-        buttons = QHBoxLayout()
+        buttons = QVBoxLayout()
         self.previous = QPushButton('Previous')
         self.next = QPushButton('Next')
         self.previous.clicked.connect(lambda: self.step(-1))
@@ -112,7 +118,8 @@ class ProjectWorkspace(QWidget):
         handlers = {'project': self.editor.show_project_revisions, 'layout': lambda: self.show_page('layout', self.editor.canvas),
             'configuration': self.configuration, 'checks': self.editor.validate_json, 'demand': self.editor.show_demand_preview,
             'simulate': self.editor.show_project_runs, 'review': self.editor.show_results_investigation,
-            'report': self.editor.show_project_report, 'playback': self.editor.show_project_playback}
+            'report': self.editor.show_project_report, 'playback': self.editor.show_project_playback,
+            'appearance': self.editor.show_appearance}
         handlers[key]()
 
     def show_page(self, key, widget):
@@ -139,7 +146,7 @@ class ProjectWorkspace(QWidget):
             self.tree.setCurrentItem(self.items[key])
         finally:
             self._navigating = False
-        index = [s[0] for s in STAGES].index({'demand': 'checks', 'playback': 'review'}.get(key, key))
+        index = [s[0] for s in STAGES].index({'demand': 'checks', 'playback': 'review', 'appearance': 'project'}.get(key, key))
         self.previous.setEnabled(index > 0)
         self.next.setEnabled(index < len(STAGES) - 1)
         self.refresh()
@@ -157,7 +164,7 @@ class ProjectWorkspace(QWidget):
                 runs.report()
                 return
         keys = [s[0] for s in STAGES]
-        index = keys.index({'demand': 'checks', 'playback': 'review'}.get(self.stage, self.stage)) + delta
+        index = keys.index({'demand': 'checks', 'playback': 'review', 'appearance': 'project'}.get(self.stage, self.stage)) + delta
         if 0 <= index < len(keys):
             self.activate(keys[index])
 

@@ -25,7 +25,7 @@ from PySide6.QtCore import (
     QTimer,
     QStandardPaths,
 )
-from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont, QPolygonF, QKeySequence
+from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont, QFontMetrics, QPolygonF, QKeySequence
 from edit_history import EditHistory, undoable
 from PySide6.QtWidgets import (
     QApplication,
@@ -305,6 +305,8 @@ class AMRGraphEditor(QMainWindow):
         self.setWindowTitle("AMR Engineering Project")
         self.setProperty('amrProjectWorkspace', True)
         self.resize(1500, 920)
+        from appearance import controller
+        self.appearance = controller()
 
         self.store = JsonStore()
         self.current_json_path = None
@@ -389,6 +391,16 @@ class AMRGraphEditor(QMainWindow):
         self._recovery_timer.timeout.connect(self.capture_recovery)
         self._recovery_timer.start(30000)
         QTimer.singleShot(0, self._announce_recovery)
+        self.appearance.changed.connect(self._appearance_changed)
+
+    def _appearance_changed(self, _value):
+        self.refresh_canvas()
+
+    def show_appearance(self):
+        if not hasattr(self, 'appearance_panel'):
+            from appearance_panel import AppearancePanel
+            self.appearance_panel = AppearancePanel(self.appearance, self)
+        self.workspace.show_page('appearance', self.appearance_panel)
 
     def _configuration_state(self):
         # Comparison also works for malformed numeric input opened for repair.
@@ -2214,7 +2226,10 @@ class AMRGraphEditor(QMainWindow):
             self._point_item_lookup[name] = item
             if self.show_labels_check.isChecked():
                 text = QGraphicsSimpleTextItem(name)
-                text.setBrush(label_color)
+                text.setBrush(QColor(self.appearance.value.map_text_colour))
+                font = QFont(QApplication.font())
+                font.setPixelSize(self.appearance.value.map_font_size)
+                text.setFont(font)
                 text.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
                 text.setPos(pos.x() + 0.5, pos.y())
                 self.scene.addItem(text)
@@ -2275,26 +2290,38 @@ class AMRGraphEditor(QMainWindow):
                 lines.append("Left-click = add point | Right-click empty = finish")
             else:
                 lines.append("Right-click a location and choose draw bounding box")
-        self._draw_overlay_box(painter, 12, 12, 320, lines, "#333333", "white")
+        if self.appearance.value.show_legend:
+            self._draw_overlay_box(painter, 12, 12, 320, lines, "#8995a3", self.appearance.value.map_text_colour)
+        else:
+            self.canvas.setToolTip('')
 
     def _draw_overlay_box(self, painter, x, y, w, lines, border_color, title_color):
         margin_x = 10
         margin_y = 8
-        line_h = 18
-        box_h = (margin_y * 2) + (len(lines) * line_h)
-
         painter.save()
+        font = QFont(QApplication.font())
+        font.setPixelSize(self.appearance.value.map_font_size)
+        painter.setFont(font)
+        metrics = QFontMetrics(font)
+        line_h = metrics.height() + 4
+        # Keep the legend inside the viewport at large text sizes. Truncation is
+        # explicit; the complete legend remains available in the canvas tooltip.
+        available_w = max(40, self.canvas.viewport().width() - x - 12)
+        w = min(available_w, max(w, min(520, max(metrics.horizontalAdvance(line) for line in lines) + 20)))
+        count = max(1, (self.canvas.viewport().height() - y - 12 - 2 * margin_y) // line_h)
+        shown = lines[:count]
+        if len(lines) > count:
+            shown[-1] = '… Full legend: hover over map'
+        self.canvas.setToolTip('\n'.join(lines))
+        box_h = (margin_y * 2) + (len(shown) * line_h)
         painter.setPen(QPen(QColor(border_color), 1))
         painter.setBrush(QBrush(QColor("#151515")))
         painter.drawRect(QRect(x, y, w, box_h))
 
-        font = QFont()
-        font.setPixelSize(12)
-        painter.setFont(font)
-
-        for i, line in enumerate(lines):
-            painter.setPen(QColor(title_color if i == 0 else "white"))
-            painter.drawText(x + margin_x, y + margin_y + 12 + (i * line_h), line)
+        for i, line in enumerate(shown):
+            painter.setPen(QColor(title_color))
+            painter.drawText(x + margin_x, y + margin_y + metrics.ascent() + (i * line_h),
+                             metrics.elidedText(line, Qt.ElideRight, max(1, w - 2 * margin_x)))
 
         painter.restore()
 
@@ -4276,6 +4303,8 @@ class AMRGraphEditor(QMainWindow):
 
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
+    from appearance import controller, user_settings
+    controller(app, settings=user_settings())
     install_application_theme(app)
     window = AMRGraphEditor()
     window.show()

@@ -55,7 +55,10 @@ implementation; no national-body certification claim is made.
   and explicit edges, previews the next click, and supports per-step undo; see
   CORRIDOR_DRAWING_REVIEW.md. Broader snapping controls and crossing-junction
   editing remain open. Added sections can change reservation and people timing.
-- Complete shared accessible themes, font/colour controls, keyboard navigation,
+- Per-user Light/Dark/High contrast themes, interface/map text sizes and checked
+  custom colours are available under Project → Appearance; see APPEARANCE_REVIEW.md.
+  Live standard controls and layout labels/legend are covered; playback/custom
+  rendering and comprehensive accessibility remain open. Complete keyboard navigation,
   dialog consistency and bulk-edit previews. Route identification must combine
   labels and line patterns with colour.
 

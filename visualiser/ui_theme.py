@@ -79,6 +79,7 @@ QPlainTextEdit, QTextEdit {
     border-radius: 4px;
     background: palette(base);
     selection-background-color: palette(highlight);
+    selection-color: palette(highlighted-text);
 }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus,
 QTimeEdit:focus, QDateTimeEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {
@@ -119,6 +120,7 @@ QTableView, QTreeView, QListView {
     background: palette(base);
     alternate-background-color: palette(alternate-base);
     selection-background-color: palette(highlight);
+    selection-color: palette(highlighted-text);
 }
 QHeaderView::section {
     padding: 5px 7px;

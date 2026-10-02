@@ -1,5 +1,24 @@
 # Stage 1 clash review — 2 October 2026
 
+## Later checkpoint — saved appearance preferences
+
+- Project → Appearance provides Light, Dark and High contrast presets, adjustable
+  interface/map text, checked custom colours, and a scalable or hidden layout
+  legend. Preferences live outside project/revision/run inputs. See the illustrated
+  [Appearance review](APPEARANCE_REVIEW.md).
+- **800 / 800 tests passed**, including 18 new appearance acceptance cases; zero
+  broken feature-to-test links. Reference contrast, persistence, corrupt/failed
+  settings, live styled controls, pending drafts, project/check isolation, keyboard
+  actions, large text and hidden-tab font reductions are covered.
+- Actual screens were inspected at 1366 × 900 and 1280 × 800, including 24 pt
+  interface text. LTN display application took approximately 0.052 seconds here,
+  with underlays disabled, and left the project unmodified. This is a local
+  observation, not a performance threshold. No simulator algorithms changed.
+- Playback/custom rendering, comprehensive accessibility and route-profile
+  labels/patterns remain open. Clean/dirty/shared access continues to be defined
+  by route profiles. Broad roadmap gates remain open. The unrelated `ltn.json`
+  edit remains outside the checkpoint commit.
+
 ## Later checkpoint — configuration objects and route permissions
 
 - Robots, payloads, lifts, static tasks and route profiles now appear in the
