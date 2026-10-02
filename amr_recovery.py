@@ -7,7 +7,7 @@ import re
 import uuid
 import zlib
 
-from amr_project import atomic_write, digest, drawing_entries, encoded, MAX_MEMBER_BYTES, MAX_TOTAL_BYTES
+from amr_project import atomic_write, digest, drawing_entries, encoded, configuration_bytes, MAX_MEMBER_BYTES, MAX_TOTAL_BYTES
 
 MAX_SNAPSHOT_BYTES = 32 * 1024 * 1024
 PREFIX = "amr-recovery-asset:"
@@ -77,8 +77,8 @@ class RecoveryStore:
         body = {"schema_version": 1, "captured_utc": datetime.now(timezone.utc).isoformat(),
                 "source_path": str(Path(source_path).resolve()) if source_path else None,
                 "source_hash": source_hash, "revision_id": revision_id,
-                "config": config, "warnings": warnings}
-        data = encoded({"body": body, "sha256": digest(encoded(body))})
+                "config": config, "config_order_sha256": digest(configuration_bytes(config)), "warnings": warnings}
+        data = configuration_bytes({"body": body, "sha256": digest(encoded(body))})
         if len(data) > MAX_SNAPSHOT_BYTES:
             raise ValueError("Recovery configuration exceeds 32 MiB; previous snapshot retained")
         self.snapshot_path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,6 +95,8 @@ class RecoveryStore:
             raise ValueError("Recovery snapshot checksum mismatch")
         if body.get("schema_version") != 1 or not isinstance(body.get("config"), dict):
             raise ValueError("Unsupported recovery snapshot format")
+        if body.get("config_order_sha256") and body["config_order_sha256"] != digest(configuration_bytes(body["config"])):
+            raise ValueError("Recovery configuration order checksum mismatch")
         if not isinstance(body.get("warnings"), list) or not isinstance(body.get("captured_utc"), str):
             raise ValueError("Invalid recovery description")
         return body

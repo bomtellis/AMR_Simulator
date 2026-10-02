@@ -13,7 +13,7 @@ class EditHistory:
 
     @staticmethod
     def snapshot(config, label):
-        raw = json.dumps(config, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        raw = json.dumps(config, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         return {"label": label, "hash": hashlib.sha256(raw).hexdigest(), "data": zlib.compress(raw)}
 
     @staticmethod

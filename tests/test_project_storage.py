@@ -67,6 +67,19 @@ class ProjectStorageTests(unittest.TestCase):
         self.save()
         self.assertEqual(1, len(Project.open(self.path).revisions))
 
+    def test_configuration_key_order_is_preserved_for_generation_categories(self):
+        self.config['task_generation'] = {'categories': {'waste': {}, 'stores': {}, 'linen': {}}}
+        self.save()
+        loaded = Project.open(self.path)
+        self.assertEqual(['waste', 'stores', 'linen'], list(loaded.configuration()['task_generation']['categories']))
+        self.assertEqual(list(self.config), list(loaded.configuration()))
+
+    def test_old_sorted_configuration_archives_still_open(self):
+        # Existing schema-1 files contain sorted compact JSON; preserve support.
+        self.config = json.loads(json.dumps(self.config, sort_keys=True))
+        self.save()
+        self.assertEqual(self.project.configuration(), Project.open(self.path).configuration())
+
     def test_restore_preserves_unsaved_changes_and_old_drawing(self):
         self.save()
         first = self.project.revisions[0]["id"]

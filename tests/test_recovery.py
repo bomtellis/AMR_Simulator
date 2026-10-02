@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from amr_recovery import RecoveryStore
-from amr_project import digest, encoded
+from amr_project import digest, encoded, configuration_bytes
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "visualiser"))
@@ -49,6 +49,11 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(9, config['value'])
         self.assertEqual(1, len(body['warnings']))
         self.assertEqual(str(self.root / "missing.pdf"), config['floor_pdf_underlays'][0]['filepath'])
+
+    def test_recovery_preserves_generation_category_order(self):
+        self.recovery.capture({'categories': {'waste': {}, 'stores': {}, 'linen': {}}})
+        config, _ = self.recovery.recover(self.recovery.snapshot_path, self.root / 'cache')
+        self.assertEqual(['waste', 'stores', 'linen'], list(config['categories']))
 
     def test_failed_atomic_write_keeps_previous_snapshot(self):
         self.recovery.capture({"value": 2})
@@ -104,6 +109,7 @@ class RecoveryTests(unittest.TestCase):
             self.recovery.recover(self.recovery.snapshot_path, self.root / 'cache')
         envelope = json.loads(self.recovery.snapshot_path.read_bytes())
         envelope['body']['config']['floor_dxf_files'][0]['filepath'] = 'amr-recovery-asset:../escape.dxf'
+        envelope['body']['config_order_sha256'] = digest(configuration_bytes(envelope['body']['config']))
         envelope['sha256'] = digest(encoded(envelope['body']))
         self.recovery.snapshot_path.write_text(json.dumps(envelope))
         with self.assertRaisesRegex(ValueError, 'reference'):

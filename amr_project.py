@@ -30,6 +30,13 @@ def encoded(value):
                       separators=(",", ":")).encode("utf-8")
 
 
+def configuration_bytes(value):
+    # Generation category iteration currently affects task IDs/order. Preserve
+    # insertion order even though JSON object order is normally insignificant.
+    return json.dumps(value, ensure_ascii=False, allow_nan=False,
+                      separators=(",", ":")).encode("utf-8")
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -119,8 +126,8 @@ class Project:
                     config = json.loads(data)
                     if not isinstance(config, dict):
                         raise ValueError("Configuration must be an object")
-                    if digest(encoded(config)) != key:
-                        raise ValueError("Configuration is not in canonical project format")
+                    if digest(configuration_bytes(config)) != key:
+                        raise ValueError("Configuration is not in compact project format")
                     project.configs[key] = config
                 else:
                     project.assets[key] = data
@@ -168,7 +175,7 @@ class Project:
         return config
 
     def _append(self, config, label):
-        key = digest(encoded(config))
+        key = digest(configuration_bytes(config))
         if self.revisions and self.revisions[-1]["config"] == key:
             return
         self.configs[key] = deepcopy(config)
@@ -203,7 +210,7 @@ class Project:
         manifest = {"format": "amrproj", "schema_version": SCHEMA_VERSION,
                     "project_id": self.project_id, "revisions": self.revisions}
         contents = {"manifest.json": encoded(manifest)}
-        contents.update({f"configs/{key}.json": encoded(value) for key, value in self.configs.items()})
+        contents.update({f"configs/{key}.json": configuration_bytes(value) for key, value in self.configs.items()})
         contents.update({f"assets/{key}": data for key, data in self.assets.items()})
         if len(contents) > MAX_MEMBERS or any(len(v) > MAX_MEMBER_BYTES for v in contents.values()) or sum(map(len, contents.values())) > MAX_TOTAL_BYTES:
             raise ValueError("Project exceeds archive size limits")

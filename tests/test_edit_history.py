@@ -19,6 +19,12 @@ from amr_recovery import RecoveryStore
 
 
 class EditHistoryTests(unittest.TestCase):
+    def test_undo_preserves_generation_category_order(self):
+        history = EditHistory({'categories': {'waste': {}, 'stores': {}, 'linen': {}}})
+        history.record({'categories': {'linen': {}, 'stores': {}, 'waste': {}}}, 'Reorder')
+        self.assertEqual(['waste', 'stores', 'linen'], list(history.undo()['categories']))
+        self.assertEqual(['linen', 'stores', 'waste'], list(history.redo()['categories']))
+
     def test_undo_redo_and_new_branch(self):
         history = EditHistory({'x': 1})
         history.record({'x': 2}, 'Move')
