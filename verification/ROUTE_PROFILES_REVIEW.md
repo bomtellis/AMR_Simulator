@@ -87,6 +87,8 @@ by a valid group value, so the engine validates the effective task at scheduling
 
 - Lift selection, multi-stop combinations, seeded waste-return inheritance and
   charging/idle-return interactions need broader independent acceptance cases.
+  `MULTI_STOP_ROUTING_REVIEW.md` now covers per-leg onboard node/edge/lift
+  intersections and rejects forbidden shared routes without widening permissions.
 - Empty journeys have no selectable profile policy yet. This checkpoint records
   existing behaviour rather than silently changing established projects.
 - Preflight does not resolve all effective generated or runtime return settings.

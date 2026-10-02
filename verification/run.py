@@ -150,13 +150,16 @@ h1,h2{{line-height:1.2}}article,.panel{{background:white;border:1px solid #b3c2d
 .status{{font-weight:700;color:#334d65}}table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:left;border:1px solid #b3c2d0;padding:8px;overflow-wrap:anywhere}}
 input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer}}a{{color:#174c94}}li{{overflow-wrap:anywhere}}
 @media print{{body{{padding:0}}details{{display:block}}}}</style>
-<h1>AMR engineering verification</h1><p>Project-bound simulation review gate · {esc(report["created_utc"])}</p>
+<h1>AMR engineering verification</h1><p>Engineering verification checkpoints · {esc(report["created_utc"])}</p>
 <div class="panel"><h2>{counts["passed"]} / {counts["total"]} tests passed</h2>
 <p><strong>This is not full simulator validation.</strong> Verified claims apply only to the stated reference cases. Partial and unsupported features remain visible below.</p>
 <p>Rollback commit: 07a059a · tested source fingerprint: <code>{esc(report["source"]["sha256"])}</code></p>
 <p>{len(report["options"])} observed/documented option paths; {counts["unreviewed_options"]} require individual semantic review.</p>
 <p><a href="evidence.json">Complete machine-readable evidence</a> · <a href="tests.txt">Test log</a> · <a href="options.json">Option inventory</a> · <a href="source-key-candidates.json">Additional source-key candidates</a> · <a href="source-snapshot.zip">Tested source snapshot</a></p></div>
 <div class="panel"><h2>Changes to review</h2><ul>
+<li>Multi-stop journeys now enforce the common node, edge and lift permissions of payloads currently onboard, updating after pickup and delivery. Straight clearance also follows the actual onboard payloads. Incompatible batches can use separate valid journeys.</li>
+<li>Scheduled and timeframe demand now releases at exact calendar times, including overnight department opening adjustments. Consumption remains polled; resource waits and configured staggering still affect assignment.</li>
+<li>Same-container service arrivals are recorded separately from stored inventory, so payload movement evidence can reconcile without inflating storage counts.</li>
 <li>Project runs joins saved revisions, reviewed preflight, separate-process simulation and results investigation. External folders record immutable input checksums and project/revision/software identities. Moved runs are matched by identity and saved configuration.</li>
 <li>Shared undo/redo groups completed configuration edits and canvas drags, preserves history across saves, and starts fresh when another document opens. Finish active editing windows before undoing.</li>
 <li>Unsaved-work prompts protect open/close. Separate recovery copies capture edits and available drawings every 30 seconds; recovery opens as unsaved work without overwriting the original.</li>
@@ -173,6 +176,8 @@ input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer
 <li>PDF test dependency declared; LTN bay regression updated to its saved four-bay layout.</li></ul>
 <p>LTN load/check: {esc(report["ltn"].get("load_and_check_seconds", "not measured"))} s; {len(report["ltn"].get("findings", []))} existing validation findings. Full week simulation not run at this gate.</p></div>
 <div class="panel"><h2>Your review checkpoint</h2><p>Open the three JSON examples in verification/scenarios in the existing editor or simulator. Expected results: door-pass — one delivery in 9 seconds; door-blocked — one explicit failed task; door-detour — one delivery in 14 seconds via the 20 metre alternative.</p>
+<p>Multi-stop review: open multi-stop-shared.json and multi-stop-separate.json. Both complete two tasks. The shared case uses one 20 m journey, with final delivery at 16 seconds; the separate case uses two journeys, with final delivery at 28 seconds. <a href="../MULTI_STOP_ROUTING_REVIEW.md">Calculations and limits</a>.</p>
+<p>Exact schedule review: generation-final-interval.json starts its one task at 00:01:00 and finishes at 00:01:09. <a href="../SCHEDULED_DISPATCH_REVIEW.md">Calendar cases and changed LTN timings</a>. The <a href="../ROADMAP.md">full completion ledger</a> remains open.</p>
 <p>Open Home → Project checks in the editor. Filter findings, navigate to an affected object, edit it and confirm the checks become stale. Recheck before exporting. In the launcher, review and acknowledge warnings before running, then inspect project_checks.json in the run folder.</p>
 <p>Open Home → Demand preview → Build preview. Inspect Tasks, Timetable and Rules and reconciliation. Select a task for its origin and effective settings; edit the project and confirm the preview becomes stale.</p>
 <p>Open Home → Results investigation or Investigate Results in the launcher. Select a full event CSV, inspect a task, then select a metric to see its contributing records. Planned segments do not establish completion; missing evidence is not zero activity.</p>

@@ -1859,7 +1859,8 @@ class Simulation:
             slot_count, min(len(released), self.max_multi_stop_candidate_tasks)
         )
         for task in released[:candidate_limit]:
-            # Keep a batch on the same route profile / dirty-label state so route restrictions stay predictable.
+            # Preserve profile/dirty-label grouping; each loaded leg separately
+            # enforces all onboard tasks' effective node, edge and lift rules.
             signature = (
                 str(getattr(task, "route_profile", "") or ""),
                 bool("dirty" in list(getattr(task, "labels", []) or [])),
@@ -1894,6 +1895,7 @@ class Simulation:
                 to_loc,
                 rules=rules,
                 start_time_value=start_time_value,
+                payload=payload,
                 collect_segments=False,
             )
             return math.inf if route is None else float(route[1])
@@ -1919,67 +1921,37 @@ class Simulation:
         tasks: List[Task],
         start_loc: Location,
         aggregate_payload: PayloadType,
-        loaded_rules: Optional[dict],
         start_time_value: float,
-    ) -> List[Tuple[str, Task]]:
+    ) -> Optional[List[Tuple[str, Task]]]:
         ordered: List[Tuple[str, Task]] = []
         current = start_loc
         t = start_time_value
-        remaining = list(tasks)
         empty_payload = self.payloads.get(EMPTY_PAYLOAD_NAME, aggregate_payload)
-        carrying = False
-        while remaining:
-            payload_for_leg = aggregate_payload if carrying else empty_payload
-            rules = loaded_rules if carrying else None
-            next_task = min(
-                remaining,
-                key=lambda task: self._estimate_route_seconds(
-                    amr,
-                    current,
-                    self.locations[task.pickup],
-                    payload_for_leg,
-                    rules=rules,
-                    start_time_value=t,
-                ),
-            )
-            ordered.append(("pickup", next_task))
-            t += self._estimate_route_seconds(
-                amr,
-                current,
-                self.locations[next_task.pickup],
-                payload_for_leg,
-                rules=rules,
-                start_time_value=t,
-            )
-            t += self.load_unload_time_sec
-            current = self.locations[next_task.pickup]
-            carrying = True
-            remaining.remove(next_task)
-        remaining = list(tasks)
-        while remaining:
-            next_task = min(
-                remaining,
-                key=lambda task: self._estimate_route_seconds(
-                    amr,
-                    current,
-                    self.locations[task.dropoff],
-                    aggregate_payload,
-                    rules=loaded_rules,
-                    start_time_value=t,
-                ),
-            )
-            ordered.append(("dropoff", next_task))
-            t += self._estimate_route_seconds(
-                amr,
-                current,
-                self.locations[next_task.dropoff],
-                aggregate_payload,
-                rules=loaded_rules,
-                start_time_value=t,
-            )
-            t += self.load_unload_time_sec
-            current = self.locations[next_task.dropoff]
-            remaining.remove(next_task)
+        onboard: List[Task] = []
+        for action in ("pickup", "dropoff"):
+            remaining = list(tasks)
+            while remaining:
+                payload_for_leg = self._make_aggregate_payload(onboard) if onboard else empty_payload
+                rules = self._onboard_route_rules(onboard)
+                choices = []
+                for index, task in enumerate(remaining):
+                    target = self.locations[getattr(task, action)]
+                    duration = self._estimate_route_seconds(
+                        amr, current, target, payload_for_leg, rules=rules,
+                        start_time_value=t,
+                    )
+                    choices.append((duration, index, task))
+                duration, _index, next_task = min(choices, key=lambda choice: choice[:2])
+                if not math.isfinite(duration):
+                    return None
+                ordered.append((action, next_task))
+                t += duration + self.load_unload_time_sec
+                current = self.locations[getattr(next_task, action)]
+                if action == "pickup":
+                    onboard.append(next_task)
+                else:
+                    onboard.remove(next_task)
+                remaining.remove(next_task)
         return ordered
 
     def _estimate_multi_stop_for_amr(
@@ -2019,7 +1991,6 @@ class Simulation:
             aggregate_payload = self._make_aggregate_payload(tasks)
             empty_payload = self.payloads.get(EMPTY_PAYLOAD_NAME, aggregate_payload)
             amr_loc = self.locations[amr.location_name]
-            loaded_rules = self._resolve_task_route_rules(tasks[0])
             t = max(
                 self.current_time,
                 amr.available_time,
@@ -2027,8 +1998,10 @@ class Simulation:
             )
             task_start_time = t
             ordered_legs = self._ordered_multi_stop_legs(
-                amr, tasks, amr_loc, aggregate_payload, loaded_rules, t
+                amr, tasks, amr_loc, aggregate_payload, t
             )
+            if ordered_legs is None:
+                return None
 
             segments: List[dict] = []
             total = 0.0
@@ -2038,7 +2011,7 @@ class Simulation:
             travel_to_first_pickup_sec = 0.0
             loaded_travel_sec_total = 0.0
             current_location = amr_loc
-            carrying_count = 0
+            onboard: List[Task] = []
 
             departure_space_name = str(
                 getattr(amr, "inventory_space_name", "") or ""
@@ -2232,15 +2205,15 @@ class Simulation:
                     task.pickup if action == "pickup" else task.dropoff
                 ]
                 payload_for_leg = (
-                    aggregate_payload if carrying_count > 0 else empty_payload
+                    self._make_aggregate_payload(onboard) if onboard else empty_payload
                 )
-                rules = loaded_rules if carrying_count > 0 else None
+                rules = self._onboard_route_rules(onboard)
                 t, new_segments, seg_time, _distance = move_between(
                     current_location, target_location, t, payload_for_leg, rules=rules
                 )
                 if new_segments is None or math.isinf(t):
                     return None
-                if carrying_count == 0 and action == "pickup":
+                if not onboard and action == "pickup":
                     travel_to_first_pickup_sec += seg_time
                 else:
                     loaded_travel_sec_total += seg_time
@@ -2370,9 +2343,10 @@ class Simulation:
                 total += self.load_unload_time_sec
                 current_location = target_location
                 if action == "pickup":
-                    carrying_count += len(leg_tasks)
+                    onboard.extend(leg_tasks)
                 elif action == "dropoff":
-                    carrying_count = max(0, carrying_count - len(leg_tasks))
+                    for delivered_task in leg_tasks:
+                        onboard.remove(delivered_task)
 
             corridor_energy_kwh = total_route_energy_kwh(
                 amr,
@@ -6581,13 +6555,14 @@ class Simulation:
 
     def _rules_cache_key(
         self, rules: Optional[dict]
-    ) -> Tuple[Tuple[str, ...], Tuple[str, ...], Tuple[Tuple[str, str], ...]]:
+    ) -> tuple:
         if not rules:
-            return ((), (), ())
+            return ((), (), (), ())
         allowed_lifts = tuple(sorted(rules.get("allowed_lifts", set())))
         allowed_nodes = tuple(sorted(rules.get("allowed_nodes", set())))
         allowed_edges = tuple(sorted(rules.get("allowed_edges", set())))
-        return (allowed_lifts, allowed_nodes, allowed_edges)
+        blocked = tuple(sorted(rules.get("blocked_route_dimensions", set())))
+        return (allowed_lifts, allowed_nodes, allowed_edges, blocked)
 
     def _empty_route_rules(self) -> dict:
         return {
@@ -6643,6 +6618,8 @@ class Simulation:
     def _node_allowed(self, node_name: str, rules: Optional[dict]) -> bool:
         if not rules:
             return True
+        if "allowed_nodes" in rules.get("blocked_route_dimensions", set()):
+            return False
         allowed_nodes = rules.get("allowed_nodes", set())
         if not allowed_nodes:
             return True
@@ -6653,6 +6630,8 @@ class Simulation:
     ) -> bool:
         if not rules:
             return True
+        if "allowed_edges" in rules.get("blocked_route_dimensions", set()):
+            return False
         allowed_edges = rules.get("allowed_edges", set())
         if not allowed_edges:
             return True
@@ -6661,10 +6640,33 @@ class Simulation:
     def _lift_allowed(self, lift: Lift, rules: Optional[dict]) -> bool:
         if not rules:
             return True
+        if "allowed_lifts" in rules.get("blocked_route_dimensions", set()):
+            return False
         allowed_lifts = rules.get("allowed_lifts", set())
         if not allowed_lifts:
             return True
         return lift.id in allowed_lifts
+
+    def _onboard_route_rules(self, tasks: List[Task]) -> Optional[dict]:
+        """Intersect effective permissions for the payloads currently carried.
+
+        Profile/task unions are resolved separately for each task first. Empty
+        user allow-lists still mean unrestricted; an empty intersection between
+        restricted lists means forbidden and must have a distinct cache key.
+        """
+        if not tasks:
+            return None
+        resolved = [self._resolve_task_route_rules(task) for task in tasks]
+        combined = self._empty_route_rules()
+        blocked = set()
+        for dimension in combined:
+            restricted = [rules[dimension] for rules in resolved if rules[dimension]]
+            if restricted:
+                combined[dimension] = set.intersection(*restricted)
+                if not combined[dimension]:
+                    blocked.add(dimension)
+        combined["blocked_route_dimensions"] = blocked
+        return combined
 
     def _build_floor_graphs(self, corridor_cfg: dict):
         for location in self.locations.values():

@@ -12,7 +12,7 @@ implementation; no national-body certification claim is made.
 | Inventory every option, behaviour, units, defaults, precedence and limitation | `features.json`, `field_contracts.json`, generated inventory. Hundreds of option paths still require individual semantic review; source-key discovery is not a complete dataflow audit. |
 | Explicit feature dispositions and unsupported options surfaced | Feature inventory and project-check scope findings exist. Complete option-level unsupported/defective presentation remains. |
 | Independent reference calculations | Door, graph, profile, scheduled demand, capacity and payload-service cases exist. Generation boundaries, returns/staff, contention, energy, lifts, scenarios and interactions remain incomplete. |
-| Individual defect reproduction and changed-result explanations | D001–D012 recorded in README; D008 repaired with a reference cycle and LTN reconciliation; D012 preserves generator settings through the editor. Continue identifying defects rather than equating green tests with complete verification. |
+| Individual defect reproduction and changed-result explanations | D001–D016 recorded in README, with reference failures and changed-result explanations. Continue identifying defects rather than equating green tests with complete verification. |
 | LTN realistic regression and performance | Repeatable bounded six-hour windows; full representative operational and performance matrix remains. |
 | Completion gate | NOT MET: every supported feature needs acceptance evidence, every inventoried option needs disposition, and unresolved limits must remain visible. |
 
@@ -87,6 +87,7 @@ incrementally, not replaced wholesale.
 Final partial-interval generation coverage is fixed in D013. D014 adds exact
 calendar dispatch for scheduled and timeframe releases, with 22 reference cases
 including overnight, department opening, staff spacing and physical-bin fills.
-Complete the wider generation-mode matrix and assess per-task allow-list
-enforcement within multi-stop batches next. These are concrete next checks,
-not replacements for the full requirements above.
+D015/D016 now verify onboard per-leg restrictions and straight clearance in
+multi-stop routing. Complete the wider generation-mode matrix and investigate
+multi-stop resource reservation rollback/capacity interactions next. These are
+concrete next checks, not replacements for the full requirements above.
