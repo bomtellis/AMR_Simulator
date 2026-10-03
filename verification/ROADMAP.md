@@ -240,6 +240,14 @@ Source links now resolve qualified definitions; the pack publishes an exact
 remaining audit by family. Neither passing tests nor a reviewed partial contract
 closes the feature or release gate.
 
+**Slice 2Y:** [Lift contracts](LIFT_CONTRACT_REVIEW.md) records 19 partial scalar
+contracts and unsupported legacy size-unit capacity. Fourteen references cover
+independent service timing, exact cabin bounds, exclusive reservations, entry-point
+validation and editor behaviour. Displays follow effective runtime speed; saves
+retain unit-conversion precision and use runtime boarding/cabin defaults. Floor
+identities, served-floor/coordinate structure and all precision round trips remain
+open, as do the stated physical and reliability limitations.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -489,11 +497,11 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2X's audit and layer evidence. Next audit lift configuration against
-existing movement/resource tests and independent timing and capacity references,
-recording defaults, units, invalid inputs and interactions. This broadens coverage
-beyond task generation while preserving its remaining calendar, staffing and
-mixed-stock limitations. Use latest/audit-backlog.json to select exact gaps; do not
-equate its count with missing features. Then continue robot, location and department
-contracts and complete the workspace gates. Keep geometry, approved CAD UI,
+Review slice 2Y's lift references and result changes. Next audit lift floor
+identities, served-floor membership, starting floor and coordinates against the
+graph and editor. Then continue the robot, location and department inventory,
+preserving generation's remaining calendar, staffing and mixed-stock limitations.
+Use latest/audit-backlog.json to select exact gaps; do not equate its count with
+missing features. Complete the workspace gates after the core audit.
+Keep geometry, approved CAD UI,
 tutorial and final release work in their planned order.

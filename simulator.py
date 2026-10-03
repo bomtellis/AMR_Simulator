@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
 from amr_route_reservations import RouteReservationTransaction
 from amr_routing_inputs import validate_routing_inputs
+from amr_lift_inputs import validate_lift_inputs
 from amr_generation_inputs import validate_generation_inputs
 from amr_staff_policy import resolve_staff_requirement
 
@@ -130,6 +131,7 @@ class Simulation:
         verbose_csv_path: Optional[str] = None,
     ):
         validate_routing_inputs(config)
+        validate_lift_inputs(config, require_speed=True)
         validate_generation_inputs(config)
         self.location_reservations = defaultdict(list)
         self.config = config

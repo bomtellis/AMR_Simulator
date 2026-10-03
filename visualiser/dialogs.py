@@ -4881,7 +4881,7 @@ class LiftEditorDialog(QDialog):
         self.speed_edit = _double_input(
             self._default_speed_m_per_sec(), minimum=0.01, maximum=20.0,
             decimals=3, suffix=" m/s", step=0.1,
-            tooltip="Vertical car travel speed. Door and boarding times are added separately.",
+            tooltip="Effective floors/second speed multiplied by building floor height. Saving synchronises both units. Door and boarding times are added separately.",
         )
         self.door_edit = _double_input(
             self.lift.get("door_time_sec", 4), minimum=0.0, maximum=600.0,
@@ -4889,7 +4889,7 @@ class LiftEditorDialog(QDialog):
             tooltip="Total opening and closing allowance for one lift stop.",
         )
         self.board_edit = _double_input(
-            self.lift.get("boarding_time_sec", 6), minimum=0.0, maximum=600.0,
+            self.lift.get("boarding_time_sec", 5), minimum=0.0, maximum=600.0,
             decimals=1, suffix=" s", step=0.5,
             tooltip="Time allowed for the AMR to enter or leave the lift car.",
         )
@@ -4921,17 +4921,17 @@ class LiftEditorDialog(QDialog):
         capacity_box = QGroupBox("Usable car envelope")
         capacity_form = QFormLayout(capacity_box)
         self.capacity_length_edit = _double_input(
-            self.lift.get("capacity_length_m", 1.0), minimum=0.1, maximum=20.0,
+            self.lift.get("capacity_length_m", 2.8), minimum=0.1, maximum=20.0,
             decimals=3, suffix=" m", step=0.05,
             tooltip="Maximum clear length available to the AMR and its carried payload.",
         )
         self.capacity_width_edit = _double_input(
-            self.lift.get("capacity_width_m", 1.0), minimum=0.1, maximum=20.0,
+            self.lift.get("capacity_width_m", 1.8), minimum=0.1, maximum=20.0,
             decimals=3, suffix=" m", step=0.05,
             tooltip="Maximum clear width available to the AMR and its carried payload.",
         )
         self.capacity_height_edit = _double_input(
-            self.lift.get("capacity_height_m", 2.0), minimum=0.1, maximum=20.0,
+            self.lift.get("capacity_height_m", 2.1), minimum=0.1, maximum=20.0,
             decimals=3, suffix=" m", step=0.05,
             tooltip="Maximum clear height available to the AMR and its carried payload.",
         )
@@ -4999,7 +4999,7 @@ class LiftEditorDialog(QDialog):
         )
         self.health_speed_penalty_edit = _double_input(
             self.lift.get("health_speed_penalty_at_zero", 0.5),
-            minimum=0.01, maximum=1.0, decimals=3, step=0.05,
+            minimum=0.05, maximum=1.0, decimals=3, step=0.05,
             tooltip="Travel-speed multiplier at 0% health. 0.5 means half speed.",
         )
         health_form.addRow("Initial health", self.health_edit)
@@ -5046,9 +5046,8 @@ class LiftEditorDialog(QDialog):
         return float((data.get("building", {}) or {}).get("floor_height_m", 4.0) or 4.0)
 
     def _default_speed_m_per_sec(self):
-        if self.lift.get("speed_m_per_sec") is not None:
-            return float(self.lift.get("speed_m_per_sec") or 0.0)
-        return float(self.lift.get("speed_floors_per_sec", 0.45) or 0.45) * self._floor_height_m()
+        from amr_lift_inputs import lift_display_speed_m_per_sec
+        return lift_display_speed_m_per_sec(self.lift, self._floor_height_m())
 
     def _normalise_floor_locations(self, floor_locations):
         normalised = {}
@@ -5235,14 +5234,12 @@ class LiftListDialog(QDialog):
                 self.table.setItem(row, col, QTableWidgetItem(str(value)))
 
     def _lift_speed_m_per_sec(self, lift):
-        speed_m_per_sec = lift.get("speed_m_per_sec")
-        if speed_m_per_sec not in (None, ""):
-            return speed_m_per_sec
+        from amr_lift_inputs import lift_display_speed_m_per_sec
         floor_height_m = float(
             (self.store.data.get("building", {}) or {}).get("floor_height_m", 4.0)
             or 4.0
         )
-        return float(lift.get("speed_floors_per_sec", 0.45) or 0.45) * floor_height_m
+        return lift_display_speed_m_per_sec(lift, floor_height_m)
 
     def selected_lift(self):
         rows = self.table.selectionModel().selectedRows()

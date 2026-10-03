@@ -173,6 +173,13 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         return finish()
 
     from amr_generation_inputs import generation_input_findings
+    from amr_lift_inputs import lift_input_findings
+    completed_groups.add('lifts')
+    for path, message in lift_input_findings(config, require_speed=True):
+        error(path, message, 'lifts', code='LIFT_INPUT')
+    if any(f.severity == 'error' for f in findings):
+        return finish()
+
     completed_groups.add('generation')
     for severity, path, message in generation_input_findings(config):
         section = path.split('/')[1]
@@ -563,6 +570,21 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         "This check does not verify keep-right lane geometry, swept turns or physical contamination control.",
         "Consult the verification feature inventory before making physical clearance claims.", "corridors", kind="assumption")
     if config.get("lifts"):
+        height = float(config.get('building', {}).get('floor_height_m', 4.0))
+        for index, lift in enumerate(config['lifts']):
+            if 'capacity_size_units' in lift:
+                add('LIFT_LEGACY_CAPACITY', 'info', f'/lifts/{index}/capacity_size_units', lift.get('id', ''),
+                    'Legacy size-unit capacity is unused. Cabin fit uses length, width and height.',
+                    'This field cannot permit additional independent robots in a lift; reservations are exclusive.',
+                    'Set physical cabin dimensions and review the model scope.', 'lifts', kind='unsupported')
+            if 'speed_m_per_sec' in lift and not math.isclose(
+                    float(lift['speed_m_per_sec']), float(lift['speed_floors_per_sec']) * height,
+                    rel_tol=1e-9, abs_tol=1e-9):
+                add('LIFT_SPEED_METADATA', 'warning', f'/lifts/{index}/speed_m_per_sec', lift.get('id', ''),
+                    'Stored metres/second differs from the effective floors/second speed multiplied by floor height.',
+                    'Simulation and lift displays use floors/second. Legacy rounded or stale speed metadata is not authoritative.',
+                    'Review the effective speed and save the lift settings to synchronise its metadata, or acknowledge the difference.',
+                    'lifts', kind='assumption')
         add("LIFT_MODEL_SCOPE", "info", "/lifts", "Lift scheduling",
             "Lifts with wear or failure thresholds serve booked journeys in commitment order.",
             "Earlier gaps are used only with wear and failures disabled and when the recorded journey preserves the next booking's starting floor. "

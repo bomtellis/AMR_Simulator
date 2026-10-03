@@ -590,6 +590,8 @@ class JsonStore:
     def __init__(self, data: Optional[dict] = None):
         from amr_routing_inputs import validate_routing_inputs
         validate_routing_inputs(data)
+        from amr_lift_inputs import validate_lift_inputs
+        validate_lift_inputs(data)
         from amr_generation_inputs import validate_generation_inputs
         validate_generation_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
@@ -1990,10 +1992,10 @@ class JsonStore:
         floor_locations: Dict[int, Tuple[float, float]],
         speed_m_per_sec: float = 1.8,
         door_time_sec: float = 4,
-        boarding_time_sec: float = 6,
-        capacity_length_m: float = 1.0,
-        capacity_width_m: float = 1.0,
-        capacity_height_m: float = 2.0,
+        boarding_time_sec: float = 5,
+        capacity_length_m: float = 2.8,
+        capacity_width_m: float = 1.8,
+        capacity_height_m: float = 2.1,
         car_mass_kg: float = 1200.0,
         counterweight_ratio: float = 0.5,
         travel_efficiency: float = 0.75,
@@ -2019,7 +2021,7 @@ class JsonStore:
             "id": lift_id,
             "served_floors": sorted(served_floors),
             "speed_m_per_sec": round(float(speed_m_per_sec), 3),
-            "speed_floors_per_sec": round(float(speed_m_per_sec) / max(floor_height_m, 1e-9), 3),
+            "speed_floors_per_sec": round(float(speed_m_per_sec), 3) / floor_height_m,
             "door_time_sec": door_time_sec,
             "boarding_time_sec": boarding_time_sec,
             "capacity_length_m": capacity_length_m,
@@ -2047,6 +2049,8 @@ class JsonStore:
                 for f, pos in floor_locations.items()
             },
         }
+        from amr_lift_inputs import validate_lift_inputs
+        validate_lift_inputs({'lifts': [payload]}, require_speed=True)
         if lift is None:
             self.data["lifts"].append(payload)
         else:

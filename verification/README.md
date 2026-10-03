@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Configuration audit consolidation](CONFIG_AUDIT_REVIEW.md):
+The latest checkpoint is [Lift contracts](LIFT_CONTRACT_REVIEW.md):
+lift displays agree with runtime speed, saves preserve unit-conversion precision,
+omitted cabin/boarding defaults agree, and malformed scalar inputs are rejected.
+Independent timing, envelope and reservation references accompany 20 dispositions.
+The preceding checkpoint is [Configuration audit consolidation](CONFIG_AUDIT_REVIEW.md):
 group and department contracts have explicit partial dispositions and representative
 layer tests. The pack resolves qualified source definitions and publishes the
 remaining audit by option path and configuration family.
