@@ -13,7 +13,11 @@ and learning materials; workflow approvals and final release gates remain open.
 
 ## Review these results
 
-The current UI checkpoint is [CAD workspace and interactions](CAD_WORKSPACE_REVIEW.md):
+The current UI checkpoint is [A2 visual workbench implementation](A2_IMPLEMENTATION_REVIEW.md):
+the approved concept now supplies the production shell, themed graph, Properties
+side tab, workflow controls and checks strip, with direct Door placement.
+
+The preceding UI checkpoint is [CAD workspace and interactions](CAD_WORKSPACE_REVIEW.md):
 compact production drawing controls, explicitly opened properties, directional
 selection and typed corridor drawing. This follows the user's latest UI-first
 priority; unfinished geometry and release requirements remain open.

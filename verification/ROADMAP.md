@@ -527,6 +527,12 @@ The first production interaction checkpoint is described in
 properties, directional selection and typed continuous drawing. It does not close
 the full UI or core-feature gate.
 
+The following [A2 implementation checkpoint](A2_IMPLEMENTATION_REVIEW.md) applies
+the approved visual shell in production: workflow menus/bar, illustrated CAD
+tools, light/dark/high-contrast map, Properties side tab and checks strip. Direct
+Door placement preserves topology and references. Full CAD geometry commands,
+run editing locks, dense labels and final human acceptance remain open.
+
 **8A — design and workflow approval**
 
 - Retain the selected A2 project-tree workbench as the visual target. The graph

@@ -28,6 +28,11 @@ SCOPE = ('Profile access only: names, patterns and arrows identify permitted gra
 
 
 def default_style(name):
+    # Presentation defaults only; names never grant graph access.
+    if name.casefold() == 'clean':
+        return {'colour': '#56b4e9', 'pattern': 'Solid'}
+    if name.casefold() == 'dirty':
+        return {'colour': '#e69f00', 'pattern': 'Dashed'}
     digest = hashlib.sha256(name.encode('utf-8')).digest()
     return {'colour': PALETTE[digest[0] % len(PALETTE)], 'pattern': list(PATTERNS)[digest[1] % len(PATTERNS)]}
 
@@ -212,13 +217,18 @@ def populate_choices(combo, config):
 
 
 class ProfileLabel(QGraphicsSimpleTextItem):
+    def __init__(self, text, background='#111111'):
+        super().__init__(text)
+        self.background = background
+
     def paint(self, painter, option, widget=None):
         # Keep the name legible over nodes, intersecting lines and underlays.
-        painter.fillRect(self.boundingRect(), QColor('#111111'))
+        painter.fillRect(self.boundingRect(), QColor(self.background))
         super().paint(painter, option, widget)
 
 
-def draw_access(scene, points, sections, floor, selected, styles, mapper, font_size=12, labels=True):
+def draw_access(scene, points, sections, floor, selected, styles, mapper, font_size=12, labels=True,
+                label_background='#111111'):
     """Return (item, section) pairs so each host can preserve picking/lifetimes."""
     items = []
     for section in sections:
@@ -256,7 +266,7 @@ def draw_access(scene, points, sections, floor, selected, styles, mapper, font_s
                 scene.addItem(arrow)
                 created.append(arrow)
             if labels:
-                text = ProfileLabel(name + (' [auto]' if pairs & auto else ''))
+                text = ProfileLabel(name + (' [auto]' if pairs & auto else ''), label_background)
                 font = QFont(QApplication.font())
                 font.setPixelSize(font_size)
                 text.setFont(font)

@@ -34,6 +34,13 @@ Open the [image gallery](index.html) for a convenient visual comparison.
 
 ![A2 graph-focused workbench](option-a2-graph-focused-workbench.png)
 
+The concept's visual workbench is now implemented in the production editor:
+workflow navigation, illustrated CAD tools, themed graph/grid, compact project
+tree, Properties side tab and slim checks summary. See the
+[implementation review and actual screenshots](../../verification/A2_IMPLEMENTATION_REVIEW.md).
+These are distinct from the original generated design images. Remaining CAD
+operations and physical geometry requirements retain their roadmap gates.
+
 Use a compact project tree, a large central drawing area and a short CAD toolbar.
 Properties are a collapsed side tab and checks a slim bottom summary in the default
 drawing view. Expand supporting information when needed. Keep visible routes,

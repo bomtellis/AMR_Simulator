@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from tests import test_corridor_editing as editing
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QCoreApplication, QEvent, QSettings, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QVBoxLayout
@@ -36,7 +36,7 @@ class AppearanceValueTests(unittest.TestCase):
 
     def test_invalid_custom_colours_and_ranges_are_rejected(self):
         invalid = [dict(text_colour='#eeeeee'), dict(accent_colour='#fafafa'),
-                   dict(map_text_colour='#181818'), dict(text_colour='red'),
+                   dict(map_text_colour='#f7f7f7'), dict(text_colour='red'),
                    dict(map_text_colour=''), dict(font_size=25), dict(font_size=True),
                    dict(map_font_size=9), dict(map_font_size=12.5), dict(theme='unknown'),
                    dict(show_legend='false')]
@@ -183,6 +183,7 @@ class AppearanceUiTests(unittest.TestCase):
         self.assertEqual(2, self.editor.store.data['amrs'][0]['speed_m_per_sec'])
 
     def test_map_labels_use_requested_pixel_size_and_colour(self):
+        self.panel.theme.setCurrentText('Dark')
         self.panel.map_font_size.setValue(22)
         self.panel.colour_fields['map_text_colour'].setText('#ffff00')
         self.assertTrue(self.panel.apply())

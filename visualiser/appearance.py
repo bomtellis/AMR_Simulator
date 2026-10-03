@@ -1,5 +1,5 @@
 """Per-user presentation preferences; never part of a project's frozen inputs."""
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import json
 import re
 
@@ -26,8 +26,17 @@ class Appearance:
     map_font_size: int = 12
     text_colour: str = ''
     accent_colour: str = ''
-    map_text_colour: str = '#ffffff'
+    map_text_colour: str = 'auto'
     show_legend: bool = True
+    map_background_colour: str = ''
+    show_grid: bool = True
+    map_style_version: int = 2
+
+
+def with_theme(value, theme):
+    """An explicit preset selection restores compatible interface/map colours."""
+    return replace(value, theme=theme, text_colour='', accent_colour='',
+                   map_text_colour='auto', map_background_colour='')
 
 
 def contrast(first, second):
@@ -54,10 +63,15 @@ def validate(value):
     for label, size, lower, upper in [('Interface', value.font_size, 8, 24), ('Map', value.map_font_size, 10, 28)]:
         if type(size) is not int or not lower <= size <= upper:
             raise ValueError(f'{label} text size must be a whole number from {lower} to {upper}.')
-    if type(value.show_legend) is not bool:
-        raise ValueError('Show map legend must be true or false.')
+    if type(value.show_legend) is not bool or type(value.show_grid) is not bool:
+        raise ValueError('Show map legend and grid must be true or false.')
+    if type(value.map_style_version) is not int or value.map_style_version != 2:
+        raise ValueError('Unknown map appearance version.')
     for label, colour, optional in [('Interface text', value.text_colour, True),
-                                     ('Accent', value.accent_colour, True), ('Map text', value.map_text_colour, False)]:
+                                     ('Accent', value.accent_colour, True), ('Map text', value.map_text_colour, False),
+                                     ('Map background', value.map_background_colour, True)]:
+        if label == 'Map text' and colour == 'auto':
+            continue
         if optional and colour == '':
             continue
         if not isinstance(colour, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', colour):
@@ -68,8 +82,10 @@ def validate(value):
         raise ValueError('Interface text needs at least 4.5:1 contrast against every theme background.')
     if min(contrast(palette['accent'], b) for b in backgrounds) < 3:
         raise ValueError('Accent needs at least 3:1 contrast against every theme background.')
-    if min(contrast(value.map_text_colour, b) for b in ('#111111', '#151515')) < 4.5:
-        raise ValueError('Map text needs at least 4.5:1 contrast against the dark map and legend.')
+    from cad_map_style import map_colours
+    map_palette = map_colours(value)
+    if min(contrast(map_palette['text'], map_palette[b]) for b in ('background','panel')) < 4.5:
+        raise ValueError('Map text needs at least 4.5:1 contrast against the selected map background and legend.')
     return value
 
 
@@ -86,7 +102,16 @@ class AppearanceController(QObject):
             raw = settings.value(SETTINGS_KEY, '')
             if raw:
                 try:
-                    self.value = validate(Appearance(**json.loads(raw)))
+                    saved = json.loads(raw)
+                    if isinstance(saved, dict) and 'map_style_version' not in saved:
+                        saved = dict(saved)
+                        if str(saved.get('map_text_colour', '#ffffff')).lower() == '#ffffff':
+                            saved['map_text_colour'] = 'auto'
+                            self.load_warning = 'Legacy white map labels now follow the selected theme. Apply saves this display migration.'
+                        else:
+                            saved['map_background_colour'] = '#111111'
+                            self.load_warning = 'Custom map text is preserved on its legacy dark background. Apply saves this display migration.'
+                    self.value = validate(Appearance(**saved))
                 except (ValueError, TypeError):
                     self.load_warning = 'Saved appearance settings could not be read. Defaults are in use; Apply replaces the saved settings.'
         self._display(self.value)

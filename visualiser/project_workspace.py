@@ -44,9 +44,22 @@ class ProjectWorkspace(QWidget):
         self._property_layout = None
         root.addWidget(split)
         sidebar = QWidget()
+        sidebar.setObjectName('cadProjectSidebar')
         self.sidebar = sidebar
         nav = QVBoxLayout(sidebar)
+        nav.setContentsMargins(8, 6, 8, 6)
         nav.setSizeConstraint(QLayout.SetMinimumSize)
+        heading_row = QHBoxLayout()
+        self.sidebar_heading = QLabel('Project')
+        self.sidebar_heading.setProperty('sectionHeading', True)
+        heading_row.addWidget(self.sidebar_heading, 1)
+        self.hide_tree_button = QPushButton('‹')
+        self.hide_tree_button.setAccessibleName('Collapse project tree')
+        self.hide_tree_button.setToolTip('Collapse the project tree. Restore it from View → Project tree.')
+        self.hide_tree_button.setFixedWidth(28)
+        self.hide_tree_button.clicked.connect(lambda: self.set_project_tree_visible(False))
+        heading_row.addWidget(self.hide_tree_button)
+        nav.addLayout(heading_row)
         self.project_label = QLabel('Unsaved project')
         self.project_label.setWordWrap(True)
         nav.addWidget(self.project_label)
@@ -60,6 +73,8 @@ class ProjectWorkspace(QWidget):
         self.tree.setHeaderLabel('Project workflow')
         self.tree.setHeaderHidden(True)
         self.tree.setAccessibleName('Project workflow and floors')
+        self.tree.setIndentation(14)
+        self.tree.setUniformRowHeights(True)
         self.items = {}
         for key, title in STAGES:
             item = QTreeWidgetItem([title])
@@ -96,7 +111,12 @@ class ProjectWorkspace(QWidget):
         split.addWidget(sidebar)
         self.stack = QStackedWidget()
         self.stack.addWidget(canvas)
-        split.addWidget(self.stack)
+        self.central_workspace = QWidget()
+        self.central_layout = QVBoxLayout(self.central_workspace)
+        self.central_layout.setContentsMargins(4, 4, 4, 4)
+        self.central_layout.setSpacing(5)
+        self.central_layout.addWidget(self.stack, 1)
+        split.addWidget(self.central_workspace)
         from project_properties_panel import ProjectPropertiesPanel
         self.properties = ProjectPropertiesPanel(editor)
         editor.properties_panel = self.properties
@@ -105,6 +125,15 @@ class ProjectWorkspace(QWidget):
         self.properties.hide()
         split.setSizes([190, 1100, 0])
         sidebar.setMinimumWidth(150)
+        from cad_workbench import PropertiesTab
+        self.properties_rail = QWidget()
+        rail = QVBoxLayout(self.properties_rail)
+        rail.setContentsMargins(0, 4, 2, 0)
+        self.properties_tab = PropertiesTab(self.properties_rail)
+        self.properties_tab.clicked.connect(self.set_properties_visible)
+        rail.addWidget(self.properties_tab)
+        rail.addStretch(1)
+        root.addWidget(self.properties_rail)
         self.tree.currentItemChanged.connect(self.selected)
         self.show_page('layout', canvas)
         self.refresh()
@@ -171,6 +200,8 @@ class ProjectWorkspace(QWidget):
         visible = (self._layout_properties_open if self.stage == 'layout' else
                    self._configuration_properties_open if self.stage == 'configuration' else False)
         self.properties.setVisible(visible and not self._canvas_focus)
+        self.properties_rail.setVisible(self.stage in ('layout', 'configuration') and not self._canvas_focus)
+        self.properties_tab.setChecked(visible and not self._canvas_focus)
         self.editor.ribbon_tabs.setVisible(self.stage == 'layout' and self._ribbon_open and not self._canvas_focus)
         drawing = self.stage == 'layout' and self.editor._current_edit_mode() == 'corridor_draw'
         if hasattr(self.editor, 'cad_drawing_input'):
@@ -181,6 +212,9 @@ class ProjectWorkspace(QWidget):
         toolbar = getattr(self.editor, 'cad_toolbar', None)
         if toolbar is not None:
             toolbar.sync_panels()
+        workbench = getattr(self.editor, 'workbench', None)
+        if workbench is not None:
+            workbench.refresh()
 
     def _expand_properties(self):
         sizes = self.splitter.sizes()
@@ -259,6 +293,9 @@ class ProjectWorkspace(QWidget):
             dirty = self.editor.has_unsaved_changes() if hasattr(self.editor, '_saved_state') else False
         self.project_label.setText(title + revision + ('\nUnsaved changes' if dirty else ''))
         self.project_label.setToolTip(str(path or 'Save a project to start revision history.'))
+        workbench = getattr(self.editor, 'workbench', None)
+        if workbench is not None:
+            workbench.refresh()
         points = self.editor.store.all_points()
         edges = self.editor.store.data.get('corridors', {}).get('edges', [])
         floors = tuple(sorted({int(p['floor']) for p in points.values()}))

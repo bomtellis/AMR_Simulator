@@ -14,7 +14,7 @@ class AppearancePanel(QWidget):
         title.setProperty('sectionHeading', True)
         root.addWidget(title)
         intro = QLabel('Display preferences are saved for this Windows user, separately from projects and simulation results. '
-                       'Choose a preset, adjust text, then Apply. Blank interface colours use the preset.')
+                       'Choose a preset, adjust text, then Apply. Blank interface/background colours and auto map text use the preset.')
         intro.setWordWrap(True)
         root.addWidget(intro)
         scroll = QScrollArea()
@@ -40,13 +40,13 @@ class AppearancePanel(QWidget):
         form.addRow('&Layout map text', self.map_font_size)
         self.colour_fields = {}
         for key, label in [('text_colour', 'Interface text colour'), ('accent_colour', 'Focus / selection colour'),
-                           ('map_text_colour', 'Layout map text colour')]:
+                           ('map_text_colour', 'Layout map text colour'), ('map_background_colour', 'Layout map background')]:
             row = QWidget()
             horizontal = QHBoxLayout(row)
             horizontal.setContentsMargins(0, 0, 0, 0)
             field = QLineEdit()
             field.setAccessibleName(label)
-            field.setPlaceholderText('#RRGGBB' if key == 'map_text_colour' else 'Preset colour')
+            field.setPlaceholderText('auto or #RRGGBB' if key == 'map_text_colour' else 'Preset colour')
             self.colour_fields[key] = field
             horizontal.addWidget(field, 1)
             button = QPushButton('Choose…')
@@ -57,6 +57,8 @@ class AppearancePanel(QWidget):
             field.textChanged.connect(self.preview)
         self.legend = QCheckBox('Show layout map legend')
         form.addRow(self.legend)
+        self.grid = QCheckBox('Show adaptive metre grid')
+        form.addRow(self.grid)
         self.sample = QLabel('Preview: project objects, labels and instructions')
         self.sample.setWordWrap(True)
         self.sample.setAutoFillBackground(True)
@@ -90,12 +92,13 @@ class AppearancePanel(QWidget):
         self.font_size.valueChanged.connect(self.preview)
         self.map_font_size.valueChanged.connect(self.preview)
         self.legend.toggled.connect(self.preview)
+        self.grid.toggled.connect(self.preview)
         self.populate(appearance.value)
 
     def value(self):
         return Appearance(self.theme.currentText(), self.font_size.value(), self.map_font_size.value(),
                           **{key: field.text().strip() for key, field in self.colour_fields.items()},
-                          show_legend=self.legend.isChecked())
+                          show_legend=self.legend.isChecked(), show_grid=self.grid.isChecked())
 
     def populate(self, value):
         self.theme.blockSignals(True)
@@ -106,19 +109,25 @@ class AppearancePanel(QWidget):
         for key, field in self.colour_fields.items():
             field.setText(getattr(value, key))
         self.legend.setChecked(value.show_legend)
+        self.grid.setChecked(value.show_grid)
         self.preview()
 
     def theme_changed(self):
         # Choosing a preset intentionally restores its compatible text/accent pair.
         self.colour_fields['text_colour'].clear()
         self.colour_fields['accent_colour'].clear()
+        self.colour_fields['map_text_colour'].setText('auto')
+        self.colour_fields['map_background_colour'].clear()
         self.preview()
 
     def choose_colour(self, key):
         field = self.colour_fields[key]
         c = colours(Appearance(theme=self.theme.currentText()))
-        fallback = c['text' if key == 'text_colour' else 'accent'] if key != 'map_text_colour' else '#ffffff'
-        initial = QColor(field.text() or fallback)
+        from cad_map_style import map_colours
+        map_palette = map_colours(Appearance(theme=self.theme.currentText()))
+        fallback = (map_palette['text' if key == 'map_text_colour' else 'background']
+                    if key.startswith('map_') else c['text' if key == 'text_colour' else 'accent'])
+        initial = QColor(fallback if field.text() in ('', 'auto') else field.text())
         chosen = QColorDialog.getColor(initial, self, field.accessibleName())
         if chosen.isValid():
             field.setText(chosen.name())

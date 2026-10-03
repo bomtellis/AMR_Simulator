@@ -1,5 +1,6 @@
 """Compact drawing commands sharing the editor's existing state and actions."""
-from PySide6.QtCore import Qt
+from dataclasses import replace
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QLabel, QToolBar
 
@@ -12,7 +13,8 @@ class CadToolBar(QToolBar):
         self.setAccessibleName('CAD drawing commands')
         self.setMovable(False)
         self.setFloatable(False)
-        self.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self.setIconSize(QSize(24, 24))
         self.mode_actions = {}
         self.mode_group = QActionGroup(self)
         self.mode_group.setExclusive(True)
@@ -20,15 +22,17 @@ class CadToolBar(QToolBar):
                 ('Select', 'select_move', 'Select or move graph objects. Selection highlights; use Properties to edit.'),
                 ('Corridor', 'corridor_draw', 'Draw connected corridor segments. Snap to existing points and edges.'),
                 ('Node', 'corridor_node', 'Place a corridor node or insert a node into an existing corridor.'),
-                ('Location', 'location', 'Place a named simulation location.')):
+                ('Location', 'location', 'Place a named simulation location.'),
+                ('Door', 'door', 'Place a door restriction on a corridor. Existing nodes and clear widths are retained; links split when placed between nodes.')):
             action = self.command(title, lambda checked=False, value=mode: editor._set_edit_mode(value), explanation,
                                   checkable=True)
             self.mode_group.addAction(action)
+            action.setProperty('cadIcon', {'select_move': 'select', 'corridor_draw': 'corridor',
+                                         'corridor_node': 'node'}.get(mode, mode))
             self.mode_actions[mode] = action
         self.addSeparator()
-        self.addAction(editor.undo_action)
-        self.addAction(editor.redo_action)
-        self.command('Fit', editor.fit_view, 'Fit the current floor drawing into the available canvas.')
+        self.fit_action = self.command('Fit', editor.fit_view, 'Fit the current floor drawing into the available canvas.')
+        self.fit_action.setProperty('cadIcon', 'fit')
         self.addSeparator()
         label = QLabel('Floor ')
         label.setBuddy(editor.floor_spin)
@@ -41,6 +45,10 @@ class CadToolBar(QToolBar):
             checkable=True)
         self.snap_action.setChecked(editor.snap_check.isChecked())
         editor.snap_check.toggled.connect(self.snap_action.setChecked)
+        self.grid_action = self.command('Grid', self.change_grid,
+            'Show or hide the adaptive metre grid. This is a display setting; Snap is independent.', checkable=True)
+        self.grid_action.setChecked(editor.appearance.value.show_grid)
+        editor.appearance.changed.connect(self.sync_appearance)
         self.addSeparator()
         self.properties_action = self.command('Properties', editor.workspace.set_properties_visible,
             'Show or hide properties for the selection. Hiding keeps unapplied drafts and recovery data.', checkable=True)
@@ -52,6 +60,13 @@ class CadToolBar(QToolBar):
             'Show the full tool tabs: files, drawing settings, display, simulation and assets.', checkable=True)
         self.focus_action = self.command('Focus canvas', editor.workspace.set_canvas_focus,
             'Hide supporting panels. Toggle again to restore their previous visibility and sizes.', checkable=True)
+        for action, name in ((self.properties_action, 'properties'), (self.check_action, 'checks'),
+                             (self.project_action, 'tree'), (self.more_action, 'more'), (self.focus_action, 'focus')):
+            action.setProperty('cadIcon', name)
+        # The stage bar, right-side tab and View menu expose these commands;
+        # keep the drawing row reserved for frequent drawing tools.
+        for action in (self.properties_action, self.check_action, self.project_action):
+            self.removeAction(action)
         editor.mode_combo.currentIndexChanged.connect(self.sync_mode)
         self.sync_mode()
 
@@ -63,6 +78,12 @@ class CadToolBar(QToolBar):
         action.triggered.connect(callback)
         self.addAction(action)
         return action
+
+    def change_grid(self, checked):
+        self.editor.workbench._apply_appearance(replace(self.editor.appearance.value, show_grid=checked))
+
+    def sync_appearance(self, value):
+        self.grid_action.setChecked(value.show_grid)
 
     def sync_mode(self, *_):
         mode = self.editor.mode_combo.currentData()
@@ -78,6 +99,7 @@ class CadToolBar(QToolBar):
         self.more_action.setChecked(not self.editor.ribbon_tabs.isHidden())
         self.focus_action.setChecked(workspace._canvas_focus)
         layout = workspace.stage == 'layout'
+        self.setVisible(layout)
         for action in (*self.mode_actions.values(), self.more_action):
             action.setEnabled(layout)
         self.focus_action.setEnabled(layout or workspace._canvas_focus)

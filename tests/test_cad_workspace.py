@@ -16,8 +16,6 @@ class CadWorkspaceTests(unittest.TestCase):
 
     def tearDown(self):
         editing.CorridorEditingUiTests.tearDown(self)
-        self.editor.deleteLater()
-        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.app.processEvents()
 
     def show(self, width=1400, height=900):
@@ -135,8 +133,8 @@ class CadWorkspaceTests(unittest.TestCase):
         self.assertFalse(any(action.isChecked() for action in toolbar.mode_actions.values()))
         self.editor.mode_combo.setCurrentIndex(self.editor.mode_combo.findData('corridor_draw'))
         self.assertTrue(toolbar.mode_actions['corridor_draw'].isChecked())
-        self.assertIn(self.editor.undo_action, toolbar.actions())
-        self.assertIn(self.editor.redo_action, toolbar.actions())
+        self.assertIn(self.editor.undo_action, self.editor.workbench.workflow.actions())
+        self.assertIn(self.editor.redo_action, self.editor.workbench.workflow.actions())
         self.assertIs(toolbar.widgetForAction(next(action for action in toolbar.actions()
             if toolbar.widgetForAction(action) is self.editor.floor_spin)), self.editor.floor_spin)
         toolbar.more_action.trigger()

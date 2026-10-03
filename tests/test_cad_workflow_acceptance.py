@@ -18,8 +18,6 @@ class CadWorkflowAcceptanceTests(unittest.TestCase):
 
     def tearDown(self):
         editing.CorridorEditingUiTests.tearDown(self)
-        self.editor.deleteLater()
-        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.assertFalse(isValid(self.editor))
 
     def test_draw_select_edit_undo_and_portable_save_reopen(self):

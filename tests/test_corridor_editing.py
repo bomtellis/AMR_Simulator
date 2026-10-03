@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'visualiser'))
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QCoreApplication, QEvent, Qt
 from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox
 from app import AMRGraphEditor
 from models import JsonStore
@@ -232,6 +232,8 @@ class CorridorEditingUiTests(unittest.TestCase):
     def tearDown(self):
         with patch.object(self.editor, '_confirm_unsaved_changes', return_value=True):
             self.editor.close()
+        self.editor.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         self.temp.cleanup()
 
     def test_bulk_subdivision_and_all_references_are_one_undo_redo(self):

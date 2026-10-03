@@ -238,7 +238,7 @@ class EditorGraphicsView(QGraphicsView):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setRenderHint(QPainter.Antialiasing, False)
-        self.setBackgroundBrush(QBrush(QColor("#111111")))
+        self.setBackgroundBrush(QBrush(QColor("#fbfdff")))
         self._overlay_provider = None
         self.setDragMode(QGraphicsView.NoDrag)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -246,6 +246,22 @@ class EditorGraphicsView(QGraphicsView):
         self._middle_panning = False
         self._last_middle_pos = None
         self.setMouseTracking(True)
+
+    def drawBackground(self, painter, rect):
+        super().drawBackground(painter, rect)
+        if not getattr(self, '_show_map_grid', False):
+            return
+        from cad_map_style import adaptive_grid
+        scale = math.hypot(self.transform().m11(), self.transform().m12())
+        _, lines = adaptive_grid((rect.left(),rect.top(),rect.right(),rect.bottom()), scale)
+        style = self._map_style
+        painter.save()
+        for x0,y0,x1,y1,major in lines:
+            pen = QPen(QColor(style['major' if major else 'minor']), 1)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.drawLine(QPointF(x0,y0),QPointF(x1,y1))
+        painter.restore()
 
     def mousePressEvent(self, event):
         scene_pos = self.mapToScene(event.position().toPoint())
@@ -558,9 +574,10 @@ class AMRGraphEditor(QMainWindow):
     def _update_unsaved_indicator(self):
         self._commit_history()
         dirty = self.has_unsaved_changes()
-        self.setWindowTitle("AMR Engineering Project" + (" — Unsaved changes" if dirty else ""))
-        self.file_label.setText((self.current_json_path or "New file") + (" • Unsaved changes" if dirty else ""))
-        self.file_label.setToolTip(self._recovery_status)
+        project_name = Path(self.current_json_path).name if self.current_json_path else 'New project'
+        self.setWindowTitle(f"AMR Engineering — {project_name}" + (" — Unsaved changes" if dirty else ""))
+        self.file_label.setText(project_name + (" • Unsaved changes" if dirty else ""))
+        self.file_label.setToolTip((self.current_json_path or 'Not saved') + '\n' + self._recovery_status)
         if hasattr(self, 'workspace'):
             self.workspace.refresh(dirty)
 
@@ -725,6 +742,7 @@ class AMRGraphEditor(QMainWindow):
             ("Select and move", "select_move", "Select, multi-select, drag and edit existing items."),
             ("Draw corridor route", "corridor_draw", "Click successive points to draw connected corridors. Existing points and edges snap automatically. Right-click or Escape finishes."),
             ("Add corridor node", "corridor_node", "Place a graph node used by corridor routes and door openings."),
+            ("Add door", "door", "Place a door node or insert a door opening into an existing corridor."),
             ("Add location", "location", "Place a general simulation location."),
             ("Draw location boundary", "location_bbox", "Draw or replace the usable boundary around a location."),
             ("Add department location", "department", "Place a location associated with a department workflow."),
@@ -759,7 +777,7 @@ class AMRGraphEditor(QMainWindow):
         self.show_labels_check = QCheckBox("Show labels")
         self.show_labels_check.setChecked(True)
         self.show_location_bounds_check = QCheckBox("Show location bounding boxes")
-        self.show_location_bounds_check.setChecked(False)
+        self.show_location_bounds_check.setChecked(True)
         self.show_charging_spaces_check = QCheckBox("Show charging spaces")
         self.show_charging_spaces_check.setChecked(True)
         self.show_dxf_check.toggled.connect(self.refresh_canvas)
@@ -1032,7 +1050,7 @@ class AMRGraphEditor(QMainWindow):
         self.workspace = ProjectWorkspace(self, self.canvas)
         from cad_toolbar import CadToolBar
         self.cad_toolbar = CadToolBar(self)
-        layout.insertWidget(0, self.cad_toolbar)
+        self.workspace.central_layout.insertWidget(0, self.cad_toolbar)
         self.workspace._sync_panels()
         layout.addWidget(self.workspace, 1)
         layout.addWidget(self.ensure_cad_drawing_input())
@@ -1043,6 +1061,10 @@ class AMRGraphEditor(QMainWindow):
         self.file_label.setToolTip("Current JSON file")
         self.statusBar().addWidget(self.status_label, 1)
         self.statusBar().addPermanentWidget(self.file_label)
+        from cad_workbench import CadWorkbench
+        self.workbench = CadWorkbench(self)
+        layout.insertWidget(0, self.workbench.workflow)
+        self.workspace._sync_panels()
 
     def _current_edit_mode(self):
         return str(self.mode_combo.currentData() or "select_move")
@@ -1953,6 +1975,14 @@ class AMRGraphEditor(QMainWindow):
             ys = [float(p["y"]) for p in floor_points.values()]
             bounds.append((min(xs), min(ys), max(xs), max(ys)))
 
+        if self.show_location_bounds_check.isChecked():
+            for location in self.store.locations_for_floor(floor):
+                outline = self.store.get_location_bounding_box_points(location['name']) or []
+                if len(outline) >= 3:
+                    xs = [float(point['x']) for point in outline]
+                    ys = [float(point['y']) for point in outline]
+                    bounds.append((min(xs), min(ys), max(xs), max(ys)))
+
         if not bounds:
             return None
 
@@ -1973,7 +2003,7 @@ class AMRGraphEditor(QMainWindow):
 
     def _scene_rect_from_bounds(self, bounds, padding=8.0):
         min_x, min_y, max_x, max_y = bounds
-        return QRect(
+        return QRectF(
             min_x - padding,
             -(max_y + padding),
             max(1.0, (max_x - min_x) + (padding * 2)),
@@ -1983,7 +2013,9 @@ class AMRGraphEditor(QMainWindow):
     def fit_view(self):
         floor = self.floor_spin.value()
         ready = self.ensure_floor_dxf_loaded(floor)
-        rect = self._scene_rect_for_floor(floor, padding=8.0)
+        bounds = self._content_bounds(floor)
+        padding = max(1.0, max(bounds[2]-bounds[0], bounds[3]-bounds[1]) * .08) if bounds else 1.0
+        rect = self._scene_rect_for_floor(floor, padding=padding)
         if self._drawings_enabled and rect is None and not ready and self.get_floor_dxf_path(floor):
             self._pending_fit_after_load = True
             return
@@ -2001,13 +2033,18 @@ class AMRGraphEditor(QMainWindow):
 
     def refresh_canvas(self):
         from route_display import populate_choices
+        from cad_map_style import map_colours
         populate_choices(self.route_display_combo, self.store.data)
         self.scene.clear()
         self._item_lookup = {}
         self._point_item_lookup = {}
         floor = self.floor_spin.value()
         self.ensure_floor_dxf_loaded(floor)
-        self.scene.setBackgroundBrush(QBrush(QColor("#111111")))
+        self._map_colours = map_colours(self.appearance.value)
+        self.canvas._map_style = self._map_colours
+        self.canvas._show_map_grid = self.appearance.value.show_grid
+        self.scene.setBackgroundBrush(QBrush(QColor(self._map_colours['background'])))
+        self.canvas.setBackgroundBrush(QBrush(QColor(self._map_colours['background'])))
         rect = self._scene_rect_for_floor(floor, padding=8.0)
         if rect is not None:
             self.scene.setSceneRect(rect.adjusted(-40, -40, 40, 40))
@@ -2030,13 +2067,15 @@ class AMRGraphEditor(QMainWindow):
         self.draw_points(floor)
         if self.show_charging_spaces_check.isChecked():
             self.draw_charging_space_markers(floor)
-        self.file_label.setText(self.current_json_path or "New file")
+        self.file_label.setText(Path(self.current_json_path).name if self.current_json_path else "New project")
+        self.file_label.setToolTip(self.current_json_path or 'Not saved')
         self.canvas.viewport().update()
         if hasattr(self, 'workspace'):
             self.workspace.refresh()
 
     def draw_route_access(self, floor):
         from route_display import populate_choices, draw_access
+        from cad_map_style import ContrastRouteStyles
         populate_choices(self.route_display_combo, self.store.data)
         selected = self.route_display_combo.currentData()
         self.route_preview_error = ''
@@ -2044,8 +2083,10 @@ class AMRGraphEditor(QMainWindow):
             return
         try:
             points, sections, _rules = self.route_access_model()
-            items = draw_access(self.scene, points, sections, floor, selected, self.route_styles,
-                                self.world_to_scene, self.appearance.value.map_font_size, self.route_labels_check.isChecked())
+            styles = ContrastRouteStyles(self.route_styles, self._map_colours['background'])
+            items = draw_access(self.scene, points, sections, floor, selected, styles,
+                                self.world_to_scene, self.appearance.value.map_font_size, self.route_labels_check.isChecked(),
+                                label_background=self._map_colours['background'])
             for item, section in items:
                 if section['source'] is not None:
                     self._item_lookup[item] = ('edge', section['source'])
@@ -2066,7 +2107,7 @@ class AMRGraphEditor(QMainWindow):
                 continue
             point = self.world_to_scene(float(location.get("x", 0.0)), float(location.get("y", 0.0)))
             label = self.scene.addText(f"⚡ {len(chargers)}")
-            label.setDefaultTextColor(QColor("#ffd54f"))
+            label.setDefaultTextColor(QColor(self._map_colours['text']))
             label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
             label.setPos(point.x() + 0.35, point.y() - 0.75)
             label.setZValue(40)
@@ -2143,8 +2184,11 @@ class AMRGraphEditor(QMainWindow):
         return best_index
 
     def draw_location_bounding_boxes(self, floor):
-        pen = QPen(QColor("#00e5ff"), 0)
-        brush = QBrush(QColor(0, 229, 255, 35))
+        pen = QPen(QColor(self._map_colours['muted']), 1.5)
+        pen.setCosmetic(True)
+        fill = QColor(self._map_colours['panel'])
+        fill.setAlpha(220)
+        brush = QBrush(fill)
         for location in self.store.locations_for_floor(floor):
             points = self.store.get_location_bounding_box_points(location["name"]) or []
             if len(points) < 3:
@@ -2170,9 +2214,11 @@ class AMRGraphEditor(QMainWindow):
             return
 
         pts = [self.world_to_scene(p["x"], p["y"]) for p in self.bounding_box_points]
-        pen = QPen(QColor("#ffdd57"), 0)
+        pen = QPen(QColor(self._map_colours['accent']), 0)
         pen.setStyle(Qt.DashLine)
-        brush = QBrush(QColor(255, 221, 87, 35)) if len(pts) >= 3 else Qt.NoBrush
+        fill = QColor(self._map_colours['accent'])
+        fill.setAlpha(35)
+        brush = QBrush(fill) if len(pts) >= 3 else Qt.NoBrush
 
         # if len(pts) == 1:
         #     p = pts[0]
@@ -2187,11 +2233,11 @@ class AMRGraphEditor(QMainWindow):
         self.scene.addItem(item)
 
         for idx, p in enumerate(pts):
-            handle_pen = QPen(QColor("#ffffff"), 0)
+            handle_pen = QPen(QColor(self._map_colours['text']), 0)
             handle_brush = QBrush(
-                QColor("#ff6b6b")
+                QColor(self._map_colours['lift'])
                 if idx == self.dragging_bounding_box_point_index
-                else QColor("#ffdd57")
+                else QColor(self._map_colours['accent'])
             )
             handle = self.scene.addEllipse(
                 p.x() - 0.18,
@@ -2250,13 +2296,8 @@ class AMRGraphEditor(QMainWindow):
 
     def draw_edges(self, floor):
         points = self.store.all_points()
-        colour_by_area = {
-            "none": QColor("#6aa9ff"),
-            "staff": QColor("#4fc3f7"),
-            "public": QColor("#ffb74d"),
-            "both": QColor("#ba68c8"),
-        }
-        pen_cross_floor = QPen(QColor("#ff4d4f"), 0)
+        colour_by_area = {key: QColor(self._map_colours[key]) for key in ('none','staff','public','both')}
+        pen_cross_floor = QPen(QColor(self._map_colours['lift']), 0)
         for edge in self.store.data.get("corridors", {}).get("edges", []):
             a = points.get(edge["from"])
             b = points.get(edge["to"])
@@ -2270,13 +2311,15 @@ class AMRGraphEditor(QMainWindow):
             pb = self.world_to_scene(b["x"], b["y"])
             key = self._physical_edge_key(edge.get("from"), edge.get("to"))
             if key in self.selected_edge_keys:
-                pen = QPen(QColor("#00e5ff"), 0.12)
+                pen = QPen(QColor(self._map_colours['accent']), 3)
+                pen.setCosmetic(True)
             elif a_floor != b_floor:
                 pen = pen_cross_floor
             else:
                 area = str(edge.get("people_area_type", "none") or "none").lower()
-                colour = QColor('#505050') if self.route_display_combo.currentData() is not None else colour_by_area.get(area, colour_by_area['none'])
-                pen = QPen(colour, 0)
+                colour = QColor(self._map_colours['muted']) if self.route_display_combo.currentData() is not None else colour_by_area.get(area, colour_by_area['none'])
+                pen = QPen(colour, 1.5)
+                pen.setCosmetic(True)
             item = self.scene.addLine(pa.x(), pa.y(), pb.x(), pb.y(), pen)
             item.setZValue(5 if key in self.selected_edge_keys else 0)
             self._item_lookup[item] = ("edge", edge)
@@ -2306,7 +2349,7 @@ class AMRGraphEditor(QMainWindow):
             kind = point.get("kind")
             outline = QPen(
                 (
-                    QColor("#00e5ff")
+                    QColor(self._map_colours['accent'])
                     if route_selected or selected
                     else QColor("transparent")
                 ),
@@ -2320,7 +2363,7 @@ class AMRGraphEditor(QMainWindow):
                     2 * r,
                     2 * r,
                     outline,
-                    QBrush(QColor("#18c37e")),
+                    QBrush(QColor(self._map_colours['location'])),
                 )
                 label_color = QColor("#9bf0cd")
             elif kind == "corridor_node":
@@ -2332,12 +2375,12 @@ class AMRGraphEditor(QMainWindow):
                     2 * r,
                     2 * r,
                     outline,
-                    QBrush(QColor("#ff8f00") if has_door else QColor("#f2c94c")),
+                    QBrush(QColor(self._map_colours['door' if has_door else 'node'])),
                 )
                 label_color = QColor("#ffd180") if has_door else QColor("#ffe8a3")
                 if has_door:
                     door_text = QGraphicsSimpleTextItem("D")
-                    door_text.setBrush(QBrush(QColor("#ffffff")))
+                    door_text.setBrush(QBrush(QColor(self._map_colours['text'])))
                     door_text.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
                     door_text.setPos(pos.x() - 0.12, pos.y() - 0.55)
                     door_text.setZValue(35)
@@ -2353,8 +2396,8 @@ class AMRGraphEditor(QMainWindow):
                     ]
                 )
                 item = QGraphicsPolygonItem(poly)
-                item.setBrush(QBrush(QColor("#14b8a6")))
-                item.setPen(outline if selected else QPen(QColor("#7be7dc"), 0.08))
+                item.setBrush(QBrush(QColor(self._map_colours['department'])))
+                item.setPen(outline if selected else QPen(QColor(self._map_colours['department']), 0.08))
                 self.scene.addItem(item)
                 label_color = QColor("#bff7f2")
             else:
@@ -2368,7 +2411,7 @@ class AMRGraphEditor(QMainWindow):
                 item = QGraphicsPolygonItem()
                 item.setPolygon(QPolygonF(poly))
                 item.setPen(outline)
-                item.setBrush(QBrush(QColor("#ff7b72")))
+                item.setBrush(QBrush(QColor(self._map_colours['lift'])))
                 self.scene.addItem(item)
                 label_color = QColor("#ffb3ae")
             if not route_allowed:
@@ -2378,8 +2421,11 @@ class AMRGraphEditor(QMainWindow):
             self._item_lookup[item] = ("point", name)
             self._point_item_lookup[name] = item
             if self.show_labels_check.isChecked():
-                text = QGraphicsSimpleTextItem(name)
-                text.setBrush(QColor(self.appearance.value.map_text_colour))
+                label = name
+                if kind == 'corridor_node' and point.get('has_door') and point.get('door_clear_width_m') is not None:
+                    label += f" · {point['door_clear_width_m']} m"
+                text = QGraphicsSimpleTextItem(label)
+                text.setBrush(QColor(self._map_colours['text']))
                 font = QFont(QApplication.font())
                 font.setPixelSize(self.appearance.value.map_font_size)
                 text.setFont(font)
@@ -2393,66 +2439,55 @@ class AMRGraphEditor(QMainWindow):
         if self._current_edit_mode() == 'corridor_draw' and target:
             endpoint = self.canvas.mapFromScene(self.world_to_scene(target['x'], target['y']))
             start = self.store.all_points().get(self.corridor_draw_start)
-            painter.setPen(QPen(QColor('#7dd3fc'), 2, Qt.DashLine))
+            painter.setPen(QPen(QColor(self._map_colours['accent']), 2, Qt.DashLine))
             if start:
                 origin = self.canvas.mapFromScene(self.world_to_scene(start['x'], start['y']))
                 painter.drawLine(origin, endpoint)
             painter.drawEllipse(endpoint, 7, 7)
             label = {'point': 'Reuse point', 'edge': 'Join corridor', 'new': 'Place node'}[target['kind']]
             painter.drawText(endpoint + QPoint(12, -12), label)
-        floor = self.floor_spin.value()
-        mapped_path = self.get_floor_dxf_path(floor)
-        dxf_name = Path(mapped_path).name if mapped_path else "None"
-        pdf_mapping = self.get_floor_pdf_underlay(floor)
-        pdf_name = (
-            Path(pdf_mapping["filepath"]).name
-            if pdf_mapping and pdf_mapping.get("filepath")
-            else "None"
-        )
-        lines = [
-            "Legend",
-            "Green circle = location",
-            "Yellow square = corridor node",
-            "Orange D square = door node",
-            "Blue/orange/purple edge = staff/public/mixed",
-            "Arrow = one-way corridor direction",
-            "Teal diamond = department",
-            "Red diamond = lift node",
-            f"Mode: {self.mode_combo.currentText()} | Floor: {floor}",
-            f"PDF: {pdf_name}",
-            f"DXF: {dxf_name}",
-            "Double-click = finish route" if self._current_edit_mode() == 'corridor_draw' else "Double-click a point to edit",
-            "Each placed step supports Undo / Redo" if self._current_edit_mode() == 'corridor_draw' else "Ctrl-click nodes/edges for multiple selection",
-            f"Selected: {len(self.selected_point_names)} nodes, {len(self.selected_edge_keys)} corridors",
-        ]
-        if not self._drawings_enabled:
-            lines.append("Drawings not loaded")
-        if self._current_edit_mode() == 'corridor_draw':
-            lines.append('Click = next route point | Right-click / Escape = finish')
-            lines.append('Crossing lines join only when a point is placed on them')
-            lines.append('New links need adding to restricted route profiles')
-        if self._current_edit_mode() == "department":
-            lines.append("Click anywhere to add a department")
-        if self._current_edit_mode() == "pdf_underlay_align":
-            lines.append("Drag the PDF to align its lower-left paper corner")
-        if self._current_edit_mode() == "location_bbox":
-            if self.bounding_box_location_name:
-                lines.append(
-                    f"Bounding: {self.bounding_box_location_name} ({len(self.bounding_box_points)} pts)"
-                )
-                lines.append("Left-click = add point | Right-click empty = finish")
-            else:
-                lines.append("Right-click a location and choose draw bounding box")
-        if self.route_display_combo.currentData() is not None:
-            lines.insert(1, 'Profile access: ' + self.route_display_combo.currentText())
-            lines.insert(2, 'Names / patterns / arrows; schematic, not lanes')
-            lines.insert(3, 'Grey = underlying corridors; colour = profile access')
+        from cad_map_style import compact_legend, scale_bar
+        style = self._map_colours
+        font = QFont(QApplication.font())
+        font.setPixelSize(self.appearance.value.map_font_size)
+        metrics = QFontMetrics(font)
+        self.canvas.setToolTip('')
+        if self.appearance.value.show_legend:
+            profile = self.route_display_combo.currentText() if self.route_display_combo.currentData() is not None else None
+            lines = compact_legend(profile)
+            width = min(300, max(160, viewport_rect.width()//3))
+            height = 16 + len(lines)*(metrics.height()+4)
+            self._draw_overlay_box(painter, max(12,viewport_rect.width()-width-12),
+                max(12,viewport_rect.height()-height-12), width, lines, style['border'], style['text'])
+        # Errors are independent of the optional key and stay visible at the top.
         if self.route_preview_error:
-            lines.insert(1, self.route_preview_error)
-        if self.appearance.value.show_legend or self.route_preview_error:
-            self._draw_overlay_box(painter, 12, 12, 320, lines, "#8995a3", self.appearance.value.map_text_colour)
-        else:
-            self.canvas.setToolTip('')
+            self._draw_overlay_box(painter,12,12,min(600,viewport_rect.width()-24),
+                ['Map preview error',self.route_preview_error],style['lift'],style['text'])
+        scale = math.hypot(self.canvas.transform().m11(),self.canvas.transform().m12())
+        bar = scale_bar(scale)
+        if bar and viewport_rect.width() >= 360 and viewport_rect.height() >= 120:
+            metres, pixels = bar
+            painter.save()
+            painter.setFont(font)
+            painter.setPen(QPen(QColor(style['text']),1.5))
+            painter.setBrush(QBrush(QColor(style['panel'])))
+            x,y = 22,viewport_rect.height()-25
+            painter.drawRoundedRect(QRectF(x-10,y-metrics.height()-38,max(155,pixels+25),metrics.height()+55),4,4)
+            painter.drawLine(QPointF(x,y),QPointF(x+pixels,y))
+            painter.drawLine(QPointF(x,y-4),QPointF(x,y+4))
+            painter.drawLine(QPointF(x+pixels,y-4),QPointF(x+pixels,y+4))
+            painter.drawText(QPointF(x,y-8),f'{metres:g} m')
+            # +Y is the model axis, not an assumed geographic north orientation.
+            transform = self.canvas.transform()
+            vector = transform.map(QPointF(0,-1))-transform.map(QPointF(0,0))
+            magnitude = math.hypot(vector.x(),vector.y())
+            if magnitude:
+                origin = QPointF(x+10,y-metrics.height()-15)
+                tip = origin + vector*(12/magnitude)
+                painter.drawLine(origin,tip)
+                painter.drawEllipse(tip,2,2)
+                painter.drawText(QPointF(x+28,y-metrics.height()-17),'+Y (model)')
+            painter.restore()
 
     def _draw_overlay_box(self, painter, x, y, w, lines, border_color, title_color):
         margin_x = 10
@@ -2466,16 +2501,16 @@ class AMRGraphEditor(QMainWindow):
         # Keep the legend inside the viewport at large text sizes. Truncation is
         # explicit; the complete legend remains available in the canvas tooltip.
         available_w = max(40, self.canvas.viewport().width() - x - 12)
-        w = min(available_w, max(w, min(520, max(metrics.horizontalAdvance(line) for line in lines) + 20)))
+        w = min(available_w, w)
         count = max(1, (self.canvas.viewport().height() - y - 12 - 2 * margin_y) // line_h)
         shown = lines[:count]
         if len(lines) > count:
             shown[-1] = '… Full legend: hover over map'
-        self.canvas.setToolTip('\n'.join(lines))
+        self.canvas.setToolTip('\n'.join(filter(None, [self.canvas.toolTip(), '\n'.join(lines)])))
         box_h = (margin_y * 2) + (len(shown) * line_h)
         painter.setPen(QPen(QColor(border_color), 1))
-        painter.setBrush(QBrush(QColor("#151515")))
-        painter.drawRect(QRect(x, y, w, box_h))
+        painter.setBrush(QBrush(QColor(self._map_colours['panel'])))
+        painter.drawRoundedRect(QRect(x, y, w, box_h),4,4)
 
         for i, line in enumerate(shown):
             painter.setPen(QColor(title_color))
@@ -2688,6 +2723,36 @@ class AMRGraphEditor(QMainWindow):
 
         if mode == 'corridor_draw':
             self.draw_next_corridor(raw_x, raw_y)
+            return
+
+        if mode == 'door':
+            from corridor_editing import draw_step
+            try:
+                # Reuse the corridor drawing transaction so splitting preserves
+                # directed attributes and all profile/resource references.
+                updated, target = draw_step(
+                    self.store.data, self.store.all_points(), None, floor,
+                    raw_x, raw_y, snap=self.snap_check.isChecked())
+                node = next((node for node in updated['corridors']['nodes']
+                             if node['name'] == target['name']), None)
+                if node is None:
+                    raise ValueError('Place a door on a corridor node or link, not a location or lift.')
+                width = node.get('door_clear_width_m')
+                if width is None:
+                    width = float(updated.get('building', {}).get('default_door_clear_width_m', .9) or .9)
+                if isinstance(width, bool) or not math.isfinite(float(width)) or float(width) <= 0:
+                    raise ValueError('Set a positive finite door clear width before placing this door.')
+                node['has_door'] = True
+                node['door_clear_width_m'] = width
+            except (ValueError, TypeError, KeyError) as exc:
+                self.set_status(f'Door was not placed: {exc}')
+                return
+            self.store.data = updated
+            self.selected_point_name = target['name']
+            self.selected_point_names = {target['name']}
+            self.selected_edge_keys.clear()
+            self.set_status(f"Door {target['name']}: clear width {float(width):g} m. Edit width in Properties.")
+            self.refresh_canvas()
             return
 
         # Insertion needs a precise endpoint hit; the broad selection radius
@@ -4151,7 +4216,10 @@ class AMRGraphEditor(QMainWindow):
         from demand_preview_panel import DemandPreviewPanel
         if not hasattr(self, 'demand_panel'):
             self.demand_panel = DemandPreviewPanel(lambda: self.store.data, self)
-        self.workspace.show_page('demand', self.demand_panel)
+            self.demand_scroll = QScrollArea(self)
+            self.demand_scroll.setWidgetResizable(True)
+            self.demand_scroll.setWidget(self.demand_panel)
+        self.workspace.show_page('demand', self.demand_scroll)
         self.set_status('Demand preview opened. Build a preview to inspect planned demand.')
 
     def show_project_checks(self):

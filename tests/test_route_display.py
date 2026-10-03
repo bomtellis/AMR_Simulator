@@ -151,7 +151,7 @@ class RouteDisplayUiTests(unittest.TestCase):
         self.assertTrue(all('→' in item.toolTip() for item in items))
         base = [item for item, target in self.editor._item_lookup.items() if target[0] == 'edge' and
                 isinstance(item, QGraphicsLineItem) and item.data(0) != 'route_profile_access']
-        self.assertTrue(all(item.pen().color().name() == '#505050' for item in base))
+        self.assertTrue(all(item.pen().color().name() == self.editor._map_colours['muted'] for item in base))
 
     def test_profile_named_asterisk_does_not_select_all(self):
         self.editor.store.data['route_profiles']['*'] = {'allowed_edges': [['A', 'Shared']]}
@@ -174,7 +174,10 @@ class RouteDisplayUiTests(unittest.TestCase):
         self.assertFalse(self.editor.has_unsaved_changes())
         self.routes.show_map()
         lines = [item for item in self.overlays() if isinstance(item, QGraphicsLineItem)]
-        self.assertTrue(all(item.pen().style() == Qt.DotLine and item.pen().color().name() == '#ffff00' for item in lines))
+        from cad_map_style import contrast_colour
+        rendered = contrast_colour('#ffff00', self.editor._map_colours['background'])
+        self.assertTrue(all(item.pen().style() == Qt.DotLine and item.pen().color().name() == rendered for item in lines))
+        self.assertEqual('#ffff00', loaded.get('clean')['colour'])
 
     def test_rejected_style_keeps_saved_and_active_colour(self):
         self.select('clean')
