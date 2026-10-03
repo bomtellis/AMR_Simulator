@@ -157,6 +157,11 @@ overnight carry-in, disjoint available periods and previous-day department group
 sizing. Twelve references cover release arithmetic and visible fallback/deadline
 explanations. Heterogeneous pooled calendars and category active-day boundaries
 remain open; release spacing does not prove staffing capacity.
+**Slice 2L:** [Timeframe allocation](TIMEFRAME_ALLOCATION_REVIEW.md) corrects
+active-day/fortnight pool membership across midnight and preserves unrestricted
+imported category/department weekdays. Twelve references cover differing
+department windows, excluded slots and dialog display. Preview slot accounting
+explains outcomes without claiming an independent expectation or staff capacity.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -407,10 +412,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2K's working-period correction, then verify pooled timeframe rules
-with different department calendars and category active-day/fortnight boundaries.
-Check demand conservation and explain exclusions. Establish independent expectations
-before changing policy, retaining explicit limits on staffing capacity.
+Review slice 2L's allocation and import corrections, then audit continuous,
+threshold and sporadic demand calculations with independent arithmetic and
+configured-versus-generated reconciliation. Retain explicit limits on staffing
+capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

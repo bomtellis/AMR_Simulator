@@ -408,6 +408,8 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
             elif isinstance(incoming, dict):
                 merged["categories"][key].update(incoming)
             if isinstance(incoming, dict):
+                # Runtime omission means every weekday; templates are for new rules.
+                merged["categories"][key]["days_active"] = deepcopy(incoming.get("days_active", []))
                 if 'requires_staff' not in incoming and 'staff_required' not in incoming:
                     unspecified_staff.add(key)
                 # New-project category templates may require staff (Stores),
@@ -426,6 +428,7 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
             else:
                 unspecified_staff.discard(key)
             merged["categories"][key].update(value[key])
+            merged["categories"][key]["days_active"] = deepcopy(value[key].get("days_active", []))
             merged["categories"][key]["requires_staff"] = value[key].get(
                 "requires_staff", value[key].get("staff_required", False))
             merged["categories"][key]["staff_handling_minutes"] = value[key].get(
@@ -681,7 +684,9 @@ class JsonStore:
             if not str(dept.get("operating_end_time", "") or "").strip():
                 calculated_operating_hours_per_day(dept)
             dept["hours_operated_per_day"] = calculated_operating_hours_per_day(dept)
-            dept.setdefault("days_active", ["mon", "tue", "wed", "thu", "fri"])
+            # Imported omission means unrestricted weekdays in the runtime.
+            # New-department controls may still explicitly choose weekdays.
+            dept.setdefault("days_active", [])
             dept.setdefault("waste_streams", [])
             category_locations = dept.get("task_generation_locations", {}) or {}
             if isinstance(category_locations, dict):

@@ -1219,43 +1219,29 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             return int(cached)
         return self._calculate_timeframe_instance_task_count(instance)
 
-    def _instance_has_active_day(self, instance: dict, base_day: datetime) -> bool:
+    def _instance_has_active_timeframe(self, instance: dict, base_day: datetime) -> bool:
+        """Pool membership follows eligible release dates, including after midnight.
+
+        Membership reserves ordinal positions, not staff. Individual slots still
+        obey active-day/fortnight gates; excluded slots are not redistributed.
+        """
         cfg = instance.get("cfg", {}) or {}
-        if not bool(instance.get("_enabled", _as_bool(cfg.get("enabled", False), False))):
+        start, end = _timeframe_minutes_from_cfg(cfg)
+        if start is None or end is None:
             return False
-        active_days = instance.get("_active_days")
-        if active_days is None:
-            active_days = tuple(
-                _clean_text(x).lower()[:3]
-                for x in (cfg.get("days_active", []) or [])
-                if _clean_text(x)
-            )
-        if active_days:
-            if _day_key_for_datetime(base_day) not in active_days:
-                return False
-        if bool(
-            instance.get(
-                "_run_every_fortnight",
-                _as_bool(cfg.get("run_every_fortnight", False), False),
-            )
-        ):
-            week_index = max(
-                0, (base_day.date() - self.clock.start_datetime.date()).days // 7
-            )
-            if week_index % 2 != 0:
-                return False
-        dept = self._instance_department(instance)
-        if dept is not None:
-            start, end = _timeframe_minutes_from_cfg(cfg)
-            if start is None or end is None:
-                return False
-            if end <= start:
-                end += 24 * 60
-            if not self._department_work_periods(
-                instance, base_day + timedelta(minutes=start), base_day + timedelta(minutes=end)
-            ):
-                return False
-        return True
+        if end <= start:
+            end += 24 * 60
+        periods = self._department_work_periods(
+            instance, base_day + timedelta(minutes=start), base_day + timedelta(minutes=end)
+        )
+        for period_start, period_end in periods:
+            cursor = period_start
+            while cursor < period_end:
+                seconds = (cursor - self.clock.start_datetime).total_seconds()
+                if self._category_is_active(cfg, seconds):
+                    return True
+                cursor = cursor.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        return False
 
     def _timeframe_group_allocation(
         self, instance: dict, base_day: datetime
@@ -1270,7 +1256,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         members = [
             item
             for item in self._timeframe_group_members.get(group_key, [])
-            if self._instance_has_active_day(item, base_day)
+            if self._instance_has_active_timeframe(item, base_day)
         ]
 
         offset = 0
@@ -1813,6 +1799,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self, instance: dict, now: float, *, wake_times: Optional[set] = None,
         base_days: Optional[List[datetime]] = None,
         diagnostics: Optional[set] = None,
+        slot_audit: Optional[list] = None,
     ) -> List[GeneratedTaskRecord]:
         """Emit due slots, or collect their times without creating tasks.
 
@@ -1870,7 +1857,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             deadline_time = (
                 effective_deadline_dt - self.clock.start_datetime
             ).total_seconds()
-            if deadline_time < 0:
+            if deadline_time < 0 and slot_audit is None:
                 continue
 
             schedule_key_base = (
@@ -1916,15 +1903,26 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     release_time = self._adjust_release_to_department_open(
                         instance, original_release_time
                     )
+                    audit = {'nominal_date': timeframe_start_dt.date().isoformat(),
+                             'payload_index': index + 1, 'pickup': pickup, 'dropoff': dropoff,
+                             'planned_release_seconds': original_release_time,
+                             'release_seconds': release_time, 'deadline_seconds': deadline_time,
+                             'disposition': 'eligible'}
+                    if (slot_audit is not None and timeframe_start_dt <= current_dt
+                            and timeframe_end_dt > self.clock.start_datetime):
+                        slot_audit.append(audit)
                     if release_time is None:
+                        audit['disposition'] = 'no_department_opening'
                         if diagnostics is not None:
                             diagnostics.add('No department opening was found for a planned release.')
                         continue
                     if release_time < 0 or original_release_time > now:
+                        audit['disposition'] = 'outside_preview'
                         if diagnostics is not None:
                             diagnostics.add('Planned release slots fall outside the preview period.')
                         continue
                     if release_time >= deadline_time:
+                        audit['disposition'] = 'at_or_after_deadline'
                         if diagnostics is not None:
                             diagnostics.add(
                                 'The department opens at or after the timeframe deadline; releases at the deadline are excluded.'
@@ -1932,12 +1930,18 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                                 'A planned release reaches or exceeds the timeframe deadline; releases at the deadline are excluded.')
                         continue
                     if release_time > now:
+                        audit['disposition'] = 'outside_preview'
                         if diagnostics is not None:
                             diagnostics.add('The next department opening or eligible release is after the preview period.')
                         continue
                     if not self._instance_is_active(instance, release_time):
+                        audit['disposition'] = 'inactive_release_date'
                         if diagnostics is not None:
                             diagnostics.add('Active days, fortnight rules or department availability exclude the planned release date.')
+                        continue
+
+                    if not self._valid_locations_and_payload(pickup, dropoff, payload_name):
+                        audit['disposition'] = 'invalid_route_or_payload'
                         continue
 
                     if wake_times is not None:

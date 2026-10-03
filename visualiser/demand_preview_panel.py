@@ -32,6 +32,13 @@ def rule_explanation(rule):
         lines.extend(['Effective pickups: ' + readable(rule['effective_pickups']),
                       'Effective dropoffs: ' + readable(rule['effective_dropoffs']),
                       'Final destinations: ' + readable(rule['final_destinations']), rule['location_precedence'], rule['returns']])
+    accounting = rule.get('timeframe_slot_accounting')
+    if accounting:
+        lines.extend(['', 'Calendar slot accounting:',
+                      f"Candidates: {accounting['candidate_records']}; eligible: {accounting['eligible_records']}; "
+                      f"excluded: {accounting['excluded_records']}; emitted: {accounting['emitted_records']}",
+                      f"Emitted minus eligible: {accounting['count_difference']}",
+                      'Exclusions: ' + readable(accounting['exclusions']), accounting['basis']])
     lines.extend(['', 'Resolved rule settings (task-specific adjustments appear above when a task is selected):'])
     for key, value in rule['effective_config'].items():
         if key in {'departments', 'department_groups'}:

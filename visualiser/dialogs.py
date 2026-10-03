@@ -1223,6 +1223,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.day_checks = {}
         active_days = set(
             self.base_category.get("days_active", ["mon", "tue", "wed", "thu", "fri"])
+            or [key for key, _ in self.DAYS]
         )
         for key, label in self.DAYS:
             chk = QCheckBox(label)
@@ -4078,7 +4079,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.reusable_return_pool_check.setChecked(bool(item.get("reusable_return_pool_enabled", False)))
         self.reusable_return_pool_multiplier_edit.setText(str(item.get("reusable_return_pool_multiplier", 2.0)))
         self.reusable_return_pool_max_edit.setText(str(item.get("reusable_return_pool_max", 0)))
-        days = set(item.get("days_active", []))
+        days = set(item.get("days_active", []) or [key for key, _ in self.DAYS])
         for day_key, _label in self.DAYS:
             self.day_checks[day_key].setChecked(day_key in days)
         self.run_every_fortnight_check.setChecked(bool(item.get("run_every_fortnight", False)))
@@ -10046,6 +10047,7 @@ class DepartmentEditorDialog(QDialog):
         days_layout.setContentsMargins(0, 0, 0, 0)
         active_days = set(
             self.seed.get("days_active", ["mon", "tue", "wed", "thu", "fri"])
+            or [key for key, _ in self.DAYS]
         )
         self.day_checks = {}
         for key, label in self.DAYS:

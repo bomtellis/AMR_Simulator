@@ -224,6 +224,30 @@ def build_demand_preview(config, *, end_datetime=None):
                 day += timedelta(days=1)
             rule['explanation'] = ('Fixed schedule component shown; additional runtime demand remains unknown.' if runtime_dependent
                                    else 'Planned releases from the resolved schedule/timeframe, active days and department hours.')
+            if mode == 'timeframe':
+                slots = []
+                day = start.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+                nominal_days = []
+                while day <= end:
+                    nominal_days.append(day)
+                    day += timedelta(days=1)
+                # A final read-only pass uses the full preview horizon. Earlier
+                # daily sweeps can temporarily see future slots as out of range.
+                generator._timeframe_records(instance, duration, wake_times=set(),
+                                             base_days=nominal_days, slot_audit=slots)
+                dispositions = Counter(slot['disposition'] for slot in slots)
+                eligible = dispositions.pop('eligible', 0)
+                rule['timeframe_slots'] = slots
+                rule['timeframe_slot_accounting'] = {
+                    'candidate_records': len(slots), 'eligible_records': eligible,
+                    'excluded_records': sum(dispositions.values()),
+                    'exclusions': dict(sorted(dispositions.items())),
+                    'emitted_records': len(tasks) - before,
+                    'count_difference': len(tasks) - before - eligible,
+                    'basis': 'Generator slot decisions for nominal timeframes intersecting the preview; not an independent expectation or staffing-capacity check.'}
+                if dispositions:
+                    rule['explanation'] += (f' {sum(dispositions.values())} of {len(slots)} candidate timeframe '
+                                            'slots were excluded; see calendar slot accounting for the reasons.')
             if len(tasks) == before and not runtime_dependent:
                 rule.update(status='no-work', no_work_reasons=sorted(no_work_reasons),
                             explanation=(' '.join(sorted(no_work_reasons)) if no_work_reasons else

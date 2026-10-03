@@ -12,7 +12,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Timeframe working periods](TIMEFRAME_WINDOWS_REVIEW.md):
+The latest correction is [Timeframe allocation](TIMEFRAME_ALLOCATION_REVIEW.md):
+actual release dates control pool membership across midnight; weekend import parity and
+inspectable candidate-slot exclusions now accompany the reference results.
+The preceding correction is [Timeframe working periods](TIMEFRAME_WINDOWS_REVIEW.md):
 overnight shifts, disjoint periods and department closures now drive release spacing consistently;
 Demand Preview explains out-of-hours fallback and deadline exclusions.
 The preceding slice is [Generation input validation](GENERATION_INPUT_REVIEW.md):
