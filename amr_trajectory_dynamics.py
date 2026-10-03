@@ -1,16 +1,16 @@
 """Apply explicit scalar movement dynamics to an existing geometric trajectory.
 
-Translational boundary speeds are continuous across tangent line/arc joins.
-Pivot and path endpoints are stationary. Circular fillets have discontinuous
-curvature: this module does not enforce angular acceleration at line/arc joins.
-Angular acceleration/braking apply to stationary pivots. Curvature-continuous
-steering geometry is needed to remove that limitation without stopping at joins.
+Translation and yaw respect finite acceleration/braking on centre-path arcs.
+Circular fillets change curvature abruptly, so the robot stops at those joins
+before steering changes. No steering dwell or alternative geometry is invented.
+Equal signed-curvature subdivisions retain continuous speed. Path endpoints,
+pivots and movement direction changes are stationary.
 """
 from dataclasses import replace
 import math
 
 from amr_motion_profiles import (MotionProfile, MotionProfileError, MotionSettings,
-                                 profile_for_movement, turn_speed_limit)
+                                 profile_for_movement)
 from amr_trajectories import Trajectory
 
 
@@ -36,8 +36,9 @@ def retime_trajectory(trajectory, settings):
     """Return a Trajectory with profile-backed durations on the same geometry.
 
     Forward/reverse tangent lines/arcs and fixed-heading lateral lines retain
-    their geometry. Direction changes and pivots stop translation. This does
-    not search for paths. Input poses/clearance are never replaced.
+    their geometry. Direction changes, curvature changes and pivots stop
+    translation. This does not search for paths. Input poses/clearance are
+    never replaced.
     """
     if not isinstance(trajectory, Trajectory) or not trajectory.motions:
         raise MotionProfileError('Provide a nonempty geometric Trajectory.')
@@ -78,7 +79,10 @@ def retime_trajectory(trajectory, settings):
             side = ((m.end.y - m.start.y) * math.cos(m.start.heading)
                     - (m.end.x - m.start.x) * math.sin(m.start.heading))
             return (m.movement, 1 if side > 0 else -1)
-        return (m.movement, 0)
+        # Exact signed radius avoids treating slightly different curvature as
+        # continuous, or reciprocals underflowing to the straight-line key.
+        return (m.movement, math.copysign(m.radius_m, m.sweep_rad)
+                if m.kind == 'arc' else 0)
 
     i = 0
     while i < len(motions):
@@ -93,21 +97,18 @@ def retime_trajectory(trajectory, settings):
                and direction_key(motions[end]) == direction_key(motion)):
             end += 1
         chain = motions[i:end]
-        speed = {'forward': settings.forward_speed_m_per_sec,
-                 'reverse': settings.reverse_speed_m_per_sec,
-                 'lateral': settings.lateral_speed_m_per_sec}[motion.movement]
-        caps = [min(speed,
-                    turn_speed_limit(settings.maximum_turn_speed_m_per_sec,
-                                     settings.lateral_acceleration_m_per_sec2, m.radius_m))
-                if m.kind == 'arc' else speed for m in chain]
+        limits = [profile_for_movement(settings, movement=m.movement, distance=m.length_m,
+                                       turn_radius_m=m.radius_m if m.kind == 'arc' else None)
+                  for m in chain]
+        caps = [p.max_speed for p in limits]
         speeds = [0.0] + [min(a, b) for a, b in zip(caps, caps[1:])] + [0.0]
         for j, m in enumerate(chain):
-            speeds[j + 1] = min(speeds[j + 1], _reachable(speeds[j], settings.acceleration_m_per_sec2, m.length_m))
+            speeds[j + 1] = min(speeds[j + 1], _reachable(speeds[j], limits[j].acceleration, m.length_m))
         for j in range(len(chain) - 1, -1, -1):
-            speeds[j] = min(speeds[j], _reachable(speeds[j + 1], settings.braking_m_per_sec2, chain[j].length_m))
+            speeds[j] = min(speeds[j], _reachable(speeds[j + 1], limits[j].braking, chain[j].length_m))
         for j, m in enumerate(chain):
-            profile = MotionProfile(m.length_m, caps[j], settings.acceleration_m_per_sec2,
-                                    settings.braking_m_per_sec2, speeds[j], speeds[j + 1])
+            profile = MotionProfile(m.length_m, caps[j], limits[j].acceleration,
+                                    limits[j].braking, speeds[j], speeds[j + 1])
             output.append(replace(m, duration_sec=profile.duration_sec, profile=profile.to_dict()))
         i = end
     return replace(trajectory, motions=tuple(output))

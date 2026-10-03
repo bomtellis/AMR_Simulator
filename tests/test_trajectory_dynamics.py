@@ -88,20 +88,20 @@ class TrajectoryDynamicsTests(unittest.TestCase):
                                                                  rel_tol=1e-10, abs_tol=1e-12))
         self.assertEqual(5832, count)
 
-    def test_tangent_arc_cap_and_boundary_continuity(self):
-        # r2, lateral accel .5 => turncap1. First4m line: accelerate2s/2m,
-        # cruise.25s/.5m, brake1s/1.5m =>3.25s. Arc pi m at1; final symmetric.
+    def test_tangent_arc_stops_at_curvature_changes_with_finite_yaw_acceleration(self):
+        # r2, lateral accel .5 => turncap1. Each4m straight takes4s;
+        # arc pi m rest-to-rest at1 with a=b1 takes pi+1 seconds.
         result = retime_trajectory(path([(0, 0), (6, 0), (6, 6)]), robot())
-        self.assertAlmostEqual(6.5 + math.pi, result.duration_sec)
+        self.assertAlmostEqual(9 + math.pi, result.duration_sec)
         first, arc, last = result.motions
-        self.assertAlmostEqual(3.25, first.duration_sec)
-        self.assertAlmostEqual(1, first.profile['end_speed'])
-        self.assertAlmostEqual(1, arc.profile['start_speed'])
-        self.assertAlmostEqual(1, arc.profile['end_speed'])
-        self.assertAlmostEqual(1, last.profile['start_speed'])
+        self.assertAlmostEqual(4, first.duration_sec)
+        self.assertEqual(0, first.profile['end_speed'])
+        self.assertEqual(0, arc.profile['start_speed'])
+        self.assertEqual(0, arc.profile['end_speed'])
+        self.assertEqual(0, last.profile['start_speed'])
         self.assertEqual(0, first.profile['start_speed'])
         self.assertEqual(0, last.profile['end_speed'])
-        pose = result.pose_at_time(first.duration_sec + math.pi / 2)
+        pose = result.pose_at_time(first.duration_sec + arc.duration_sec / 2)
         self.assertAlmostEqual(4 + math.sqrt(2), pose.x)
         self.assertAlmostEqual(2 - math.sqrt(2), pose.y)
         self.assertAlmostEqual(math.pi / 4, pose.heading)
@@ -109,7 +109,7 @@ class TrajectoryDynamicsTests(unittest.TestCase):
     def test_configured_turn_speed_can_be_tighter_than_lateral_limit(self):
         result = retime_trajectory(path([(0, 0), (6, 0), (6, 6)]), robot(maximum_turn_speed_m_per_sec=.5))
         self.assertEqual(.5, result.motions[1].profile['max_speed'])
-        self.assertAlmostEqual(2 * math.pi, result.motions[1].duration_sec)
+        self.assertAlmostEqual(2 * math.pi + .5, result.motions[1].duration_sec)
 
     def test_pivot_stops_translation_and_has_angular_dynamics(self):
         result = retime_trajectory(path([(0, 0), (1, 0), (1, 1)]), robot())

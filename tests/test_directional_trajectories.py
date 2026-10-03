@@ -51,9 +51,10 @@ class DirectionalTrajectoryTests(unittest.TestCase):
         self.assertEqual(['line', 'arc', 'line'], [m.kind for m in path.motions])
         self.assertTrue(all(m.movement == 'reverse' for m in path.motions))
         self.assertAlmostEqual(8 + math.pi, path.length_m)
-        self.assertAlmostEqual(9 + math.pi, path.duration_sec)
-        self.assertAlmostEqual(4.5, path.motions[0].duration_sec)
-        pose = path.pose_at_time(4.5 + math.pi / 2)
+        # Each4m reverse straight takes5s; the stopped arc takes pi+1s.
+        self.assertAlmostEqual(11 + math.pi, path.duration_sec)
+        self.assertAlmostEqual(5, path.motions[0].duration_sec)
+        pose = path.pose_at_time(5 + path.motions[1].duration_sec / 2)
         self.assertAlmostEqual(-4 - math.sqrt(2), pose.x)
         self.assertAlmostEqual(-2 + math.sqrt(2), pose.y)
         angle_equal(self, pose.heading, math.pi / 4)
@@ -63,7 +64,7 @@ class DirectionalTrajectoryTests(unittest.TestCase):
         path = retime_trajectory(reverse([(0, 0), (-6, 0), (-6, -6)]),
                                  settings(lateral_acceleration_m_per_sec2=.125))
         self.assertAlmostEqual(.5, path.motions[1].profile['max_speed'])
-        self.assertAlmostEqual(2 * math.pi, path.motions[1].duration_sec)
+        self.assertAlmostEqual(2 * math.pi + .5, path.motions[1].duration_sec)
 
     def test_actual_initial_heading_mismatch_needs_explicit_pivot_permission(self):
         with self.assertRaisesRegex(TrajectoryError, 'infeasible_route'):

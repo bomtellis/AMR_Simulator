@@ -754,7 +754,12 @@ moving/loaded yielding, multi-point manoeuvres, reference offsets and proven
 deadlock detection remain open. Explicit blocked/search-limit stops now preserve
 verified partial runs, elapsed geometric activity and bounded playback. These
 stops do not establish deadlock; complete partial stock/battery reconciliation
-and partial report exports remain open. The full application guide is
+and partial report exports remain open. Curved motion now applies configured
+angular speed, acceleration and braking, including non-pivoting robots. Existing
+circular paths stop without dwell at curvature discontinuities; unchanged-curvature
+subdivisions preserve timing. This does not model steering-actuator time, jerk or
+continuous-curvature transitions, and reference-point offsets remain open.
+The full application guide is
 also unfinished.
 Continue with:
 

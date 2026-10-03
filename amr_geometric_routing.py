@@ -93,6 +93,13 @@ def geometry_input_findings(config):
         if 'movement' in robot:
             try:
                 select_motion_settings(robot['movement'],loaded=False)
+                for state in ('empty', 'loaded'):
+                    settings = robot['movement'][state]
+                    for key in ('rotation_speed_deg_per_sec', 'angular_acceleration_deg_per_sec2',
+                                'angular_braking_deg_per_sec2'):
+                        if settings.get(key) is None:
+                            error(f'/amrs/{i}/movement/{state}/{key}',
+                                  'Explicit angular limits are required for curved travel, including robots that cannot pivot.')
             except MotionProfileError as exc:
                 error(f'/amrs/{i}/movement',str(exc))
         path = f'/amrs/{i}/manoeuvring'

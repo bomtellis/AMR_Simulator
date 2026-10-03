@@ -226,8 +226,9 @@ def profile_for_movement(settings, *, movement, distance, start_speed=0, end_spe
                          turn_radius_m=None):
     """Build a profile; distance is metres, or positive radians for a pivot.
 
-    Arc radius refers to the explicitly chosen robot reference point. Geometric
-    transformation of that reference to a footprint remains the caller's job.
+    Arc radius refers to the modelled centre path. For a fixed-radius arc,
+    yaw speed is v/r and yaw acceleration is a/r: both linear and angular
+    limits apply, even when stationary pivots are forbidden.
     """
     if not isinstance(settings, MotionSettings):
         raise MotionProfileError('settings must be validated MotionSettings.')
@@ -247,6 +248,14 @@ def profile_for_movement(settings, *, movement, distance, start_speed=0, end_spe
     if turn_radius_m is not None:
         if movement not in ('forward', 'reverse'):
             raise MotionProfileError('Turning radius applies only to forward/reverse travel.')
+        radius = _number(turn_radius_m, 'turn_radius_m', positive=True)
+        angular = [math.radians(_number(getattr(settings, name), name, positive=True))
+                   for name in ('rotation_speed_deg_per_sec',
+                                'angular_acceleration_deg_per_sec2',
+                                'angular_braking_deg_per_sec2')]
         speed = min(speed, turn_speed_limit(settings.maximum_turn_speed_m_per_sec,
-                                           settings.lateral_acceleration_m_per_sec2, turn_radius_m))
+                                           settings.lateral_acceleration_m_per_sec2, radius),
+                    angular[0] * radius)
+        a = min(a, angular[1] * radius)
+        b = min(b, angular[2] * radius)
     return MotionProfile(distance, speed, a, b, start_speed, end_speed)

@@ -184,10 +184,10 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             ('Keep-right lanes use tangent transitions, single-file narrow sections and swept-time moving-route reservations.' if traffic else
              'Moving routes reserve their entire spatial envelopes.'),
             ('Complete committed plans include explicit initial placements, handling, waiting, charging and parked footprints. '
-             'Parked empty robots can yield to verified graph stopping points; coordinated/loaded recovery and proven deadlock termination remain unimplemented.' if traffic else
+             'One parked empty blocker and one requester can commit jointly to verified graph stopping points; general multi-robot/loaded recovery and proven deadlock detection remain unimplemented.' if traffic else
              'This is conservative moving-route exclusion, not directional lanes or full parked/waiting robot collision analysis.')+
             ' Graph widths remain access restrictions; physical openings must be modelled as obstacles.'+
-            (' Configured motion profiles include acceleration/braking and pivot angular dynamics; circular line/arc joins do not yet enforce finite steering angular acceleration.'
+            (' Configured motion profiles enforce translational and angular speed, acceleration and braking. Circular curvature changes require a momentary stop, without added dwell; steering actuator time and jerk are not modelled.'
              if any(isinstance(robot,dict) and 'movement' in robot for robot in config.get('amrs',[])) else ''),
             'Review explicit geometry and acknowledge the current traffic scope.', section='simulation', kind='assumption')
     if any(f.severity == 'error' for f in findings):
