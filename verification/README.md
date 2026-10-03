@@ -12,7 +12,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Accumulated demand](ACCUMULATION_REVIEW.md):
+The latest correction is [Waste thresholds and conservation](WASTE_CONSERVATION_REVIEW.md):
+effective department dimensions drive derived thresholds, legacy fill survives closed
+polls and invalid routes, and plain import preserves legacy generator settings.
+The preceding correction is [Accumulated demand](ACCUMULATION_REVIEW.md):
 closed-time polls retain accrued demand, inactive dates contribute none, and decimal
 threshold/event boundaries have independent conservation checks.
 The preceding correction is [Timeframe allocation](TIMEFRAME_ALLOCATION_REVIEW.md):

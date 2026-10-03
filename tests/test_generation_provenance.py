@@ -106,17 +106,17 @@ class GenerationProvenanceTests(unittest.TestCase):
         self.assertEqual('/departments/0/waste_streams/0/payload', field['path'])
         self.assertEqual('Department waste stream', field['source'])
 
-    def test_waste_threshold_uses_global_arithmetic_not_department_capacity(self):
+    def test_waste_threshold_uses_effective_department_capacity(self):
         config = waste_config()
         config['departments'][0]['waste_streams'][0].update(container_capacity_m3=2, full_threshold_fraction=0.5)
         rule = active_rule(config)
         self.assertEqual(2, rule['effective_config']['container_capacity_m3'])
-        # Current engine fallback is 0.5 * 0.8 = 0.4, not 2 * 0.5 = 1.
-        self.assertAlmostEqual(0.4, rule['effective_config']['threshold_volume_m3'])
+        # Department overrides: 2 m3 * .5 = 1 m3, replacing global .5 * .8.
+        self.assertAlmostEqual(1, rule['effective_config']['threshold_volume_m3'])
         field = rule['field_provenance']['threshold_volume_m3']
-        self.assertIn('0.5 m³ × global fraction 0.8', field['history'][-1]['explanation'])
-        self.assertIn('Department capacity/fraction overrides do not change', field['history'][-1]['explanation'])
-        self.assertAlmostEqual(0.4, rule['effective_config']['volume_per_event_m3'])
+        self.assertIn('2.0 m³ × effective fraction 0.5', field['history'][-1]['explanation'])
+        self.assertIn('after department stream overrides', field['history'][-1]['explanation'])
+        self.assertAlmostEqual(1, rule['effective_config']['volume_per_event_m3'])
 
     def test_waste_explicit_threshold_wins_and_event_volume_is_retained(self):
         config = waste_config()

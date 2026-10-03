@@ -892,8 +892,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             return threshold
 
         stream_cfg = self.waste_streams.get(stream_name, {}) or {}
-        capacity = _as_float(stream_cfg.get("container_capacity_m3", 0.0), 0.0)
-        fraction = _as_float(stream_cfg.get("full_threshold_fraction", 0.8), 0.8)
+        capacity = _as_float(cfg.get("container_capacity_m3", stream_cfg.get("container_capacity_m3", 0.0)), 0.0)
+        fraction = _as_float(cfg.get("full_threshold_fraction", stream_cfg.get("full_threshold_fraction", 0.8)), 0.8)
         fallback = capacity * fraction
         return fallback if fallback > 0 else 0.0
 
@@ -976,9 +976,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             threshold_basis = (
                 f"Positive effective threshold {cfg.get('threshold_volume_m3')} m³ is retained and converted to a number."
                 if _as_float(cfg.get('threshold_volume_m3', 0.0), 0.0) > 0 else
-                f"Global stream capacity {_as_float(global_stream.get('container_capacity_m3', 0.0), 0.0)} m³ × "
-                f"global fraction {_as_float(global_stream.get('full_threshold_fraction', 0.8), 0.8)} = {threshold} m³. "
-                'Department capacity/fraction overrides do not change this fallback calculation.')
+                f"Effective capacity {_as_float(cfg.get('container_capacity_m3', 0.0), 0.0)} m³ × "
+                f"effective fraction {_as_float(cfg.get('full_threshold_fraction', 0.8), 0.8)} = {threshold} m³. "
+                'Uses resolved values after department stream overrides.')
             cfg["threshold_volume_m3"] = threshold
             if trace is not None:
                 trace.record('threshold_volume_m3', threshold, 'Derived threshold',
@@ -1798,7 +1798,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         records: List[GeneratedTaskRecord] = []
         while (runtime["volume"] >= threshold_volume or
                math.isclose(runtime["volume"], threshold_volume, rel_tol=1e-12, abs_tol=0)):
-            runtime["volume"] = max(0.0, runtime["volume"] - threshold_volume)
+            collection_records = []
             for pickup, dropoff in self._pick_pairs(instance):
                 task = self._base_task(
                     instance, pickup, dropoff, payload_name, release_time, "threshold"
@@ -1810,7 +1810,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     # swaps in the CSV/visualiser.
                     task.generated_volume_m3 = threshold_volume
                     task.waste_volume_m3 = threshold_volume
-                records.extend(self._records_for_outbound(task, instance, details))
+                collection_records.extend(self._records_for_outbound(task, instance, details))
+            if not collection_records:
+                break  # No represented collection: retain the accumulated demand.
+            runtime["volume"] = max(0.0, runtime["volume"] - threshold_volume)
+            records.extend(collection_records)
         return records
 
     def _timeframe_records(
@@ -2720,32 +2724,34 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
                 if now <= last_time:
                     continue
 
-                if self._department_is_active(dept, now):
-                    elapsed_hours = (
-                        self._department_active_elapsed_seconds(dept, last_time, now)
-                        / 3600.0
-                    )
-                    generated_m3 = max(
-                        0.0, elapsed_hours * self._department_hourly_waste_rate_m3(dept)
-                    )
-                    runtime["fill_m3"] += generated_m3
-                    runtime["generated_m3_total"] += generated_m3
+                elapsed_hours = (
+                    self._department_active_elapsed_seconds(dept, last_time, now)
+                    / 3600.0
+                )
+                generated_m3 = max(
+                    0.0, elapsed_hours * self._department_hourly_waste_rate_m3(dept)
+                )
+                runtime["fill_m3"] += generated_m3
+                runtime["generated_m3_total"] += generated_m3
 
+                if self._department_is_active(dept, now):
                     trigger_volume_m3 = float(
                         runtime.get("container_capacity_m3", 0.0) or 0.0
                     ) * float(runtime.get("full_threshold_fraction", 0.8) or 0.8)
 
                     if trigger_volume_m3 > 0:
-                        while runtime["fill_m3"] >= trigger_volume_m3:
+                        while (runtime["fill_m3"] >= trigger_volume_m3 or
+                               math.isclose(runtime["fill_m3"], trigger_volume_m3, rel_tol=1e-12, abs_tol=0)):
                             record = self._create_task_record(
                                 dept=dept,
                                 stream_name=stream_name,
                                 release_time=now,
                                 waste_volume_m3=trigger_volume_m3,
                             )
-                            if record is not None:
-                                generated.append(record)
-                            runtime["fill_m3"] -= trigger_volume_m3
+                            if record is None:
+                                break  # Retain fill when no collection can be represented.
+                            generated.append(record)
+                            runtime["fill_m3"] = max(0.0, runtime["fill_m3"] - trigger_volume_m3)
                             runtime["tasks_created"] += 1
 
                 runtime["last_update_time"] = now

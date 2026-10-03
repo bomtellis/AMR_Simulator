@@ -16,6 +16,7 @@ FLAGS = {'enabled', 'requires_staff', 'staff_required', 'return_enabled',
          'tracked_item_exchange', 'release_next_after_return_pickup',
          'staff_use_custom_working_hours', 'staff_department_fallback_enabled',
          'staff_handoff_only', 'run_every_fortnight', 'reusable_return_pool_enabled'}
+FLAGS |= {'initial_container_present', 'shared_container'}
 COUNTS = {'staff_initial_count', 'timeframe_payload_multiple', 'payload_multiple'}
 DURATIONS = {'return_delay_minutes', 'staff_handling_minutes', 'staff_collection_delay_minutes'}
 DAYS = {'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'}
@@ -39,20 +40,22 @@ def generation_input_findings(config):
             return None
         return value
 
-    def number(row, path, name, minimum=0, positive=False, integer=False):
+    def number(row, path, name, minimum=0, positive=False, integer=False, maximum=None):
         if name not in row:
             return
         try:
             value = float(row[name])
             valid = (not isinstance(row[name], bool) and math.isfinite(value)
                      and (value > minimum if positive else value >= minimum)
-                     and (not integer or value.is_integer()))
+                     and (not integer or value.is_integer())
+                     and (maximum is None or value <= maximum))
         except (TypeError, ValueError, OverflowError):
             valid = False
         if not valid:
             qualifier = 'integer' if integer else 'number'
             bound = 'greater than' if positive else 'at least'
-            error(pointer(path, name), f'{name} must be a finite {qualifier} {bound} {minimum}; booleans are not numbers.')
+            upper = '' if maximum is None else f' and at most {maximum}'
+            error(pointer(path, name), f'{name} must be a finite {qualifier} {bound} {minimum}{upper}; booleans are not numbers.')
 
     def flags(row, path, names):
         for name in sorted(names):
@@ -79,6 +82,8 @@ def generation_input_findings(config):
             number(row, path, name)
         for name in ('base_daily_volume_m3', 'threshold_volume_m3', 'frequency_per_day', 'volume_per_event_m3'):
             number(row, path, name)
+        number(row, path, 'container_capacity_m3', positive=True)
+        number(row, path, 'full_threshold_fraction', positive=True, maximum=1)
         if 'generation_mode' in row:
             mode = row['generation_mode']
             if not isinstance(mode, str) or (mode.strip() and mode.strip() not in MODES):
@@ -185,6 +190,10 @@ def generation_input_findings(config):
             for name in sorted(LEGACY_CATEGORIES | {'department_waste'}):
                 if name in generation:
                     category(generation[name], pointer(path, name))
+    streams = config.get('waste_streams', [])
+    if isinstance(streams, list):
+        for index, stream in enumerate(streams):
+            rule(stream, f'/waste_streams/{index}')
     departments = config.get('departments', [])
     if isinstance(departments, list):
         for index, department in enumerate(departments):

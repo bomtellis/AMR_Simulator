@@ -32,7 +32,9 @@ identities, container grouping and normalisation have separate explanations.
 
 ![The fallback threshold calculation](images/demand-waste-calculation.png)
 
-Two current behaviours are now explicit and require careful interpretation:
+Two behaviours recorded at this checkpoint require careful interpretation. The
+global-only threshold calculation below was subsequently corrected in
+[checkpoint 2N](WASTE_CONSERVATION_REVIEW.md); the image above is historical.
 
 - A positive configured threshold is retained. Otherwise the fallback uses the
   **global** stream capacity × global fraction (fraction default 0.8). The reference

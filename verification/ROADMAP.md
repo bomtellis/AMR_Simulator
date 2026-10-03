@@ -166,6 +166,11 @@ explains outcomes without claiming an independent expectation or staff capacity.
 closed-time polls, inactive-date overcounting and decimal threshold/event boundaries.
 Twelve references and eight option contracts cover dynamic single-pair accumulation.
 Shared/legacy waste pools and tracked-item consumption remain open.
+**Slice 2N:** [Waste thresholds and conservation](WASTE_CONSERVATION_REVIEW.md)
+corrects effective threshold derivation, legacy closed-poll/invalid-route losses
+and plain-import legacy settings. Twelve references and ten option contracts cover
+the declared scope. Shared physical collection/return lifecycle and conflicting
+group definitions remain open.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -416,9 +421,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2M's accumulation corrections, then audit shared waste accumulation
-and collection thresholds, department overrides and the legacy generator path.
-Reconcile accrued, collected and remaining demand with independent arithmetic.
+Review slice 2N's waste corrections, then verify shared-bin collection and return
+lifecycle, failed pickup, unreturned bins and conflicting group definitions.
+Reconcile accrued demand with physical movements and remaining stock.
 Retain explicit limits on staffing capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger

@@ -399,6 +399,9 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
 
     unspecified_staff = set()
     incoming_categories = value.get("categories", {})
+    if 'waste' not in incoming_categories and not isinstance(value.get('waste'), dict):
+        # Do not silently replace legacy waste generation with a new-project rule.
+        merged['categories']['waste']['enabled'] = False
     if isinstance(incoming_categories, dict):
         for key, incoming in incoming_categories.items():
             if key not in merged["categories"]:
@@ -513,23 +516,10 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
         )
         category["run_every_fortnight"] = bool(category.get("run_every_fortnight", False))
 
-    # Keep the legacy department_waste mirror in step for older configs/tools.
-    # It is not a separate editor workflow; Waste stream volume settings live on
-    # departments[].waste_streams[] and are consumed by the Waste task generator.
+    # Legacy enablement/priority are independent inputs. The settings dialog can
+    # explicitly update them, but importing must not infer a migration from defaults.
     if "waste" in merged["categories"]:
         merged["categories"]["waste"]["uses_department_waste_streams"] = True
-        merged["department_waste"]["enabled"] = bool(
-            merged["categories"]["waste"].get(
-                "enabled", merged["department_waste"].get("enabled", True)
-            )
-        )
-        merged["department_waste"]["priority"] = int(
-            float(
-                merged["categories"]["waste"].get(
-                    "priority", merged["department_waste"].get("priority", 60)
-                )
-            )
-        )
 
     return merged
 
