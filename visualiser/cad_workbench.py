@@ -143,6 +143,11 @@ class CadWorkbench(QObject):
         self.edit_menu = editor.menuBar().addMenu('&Edit')
         self.edit_menu.addActions([editor.undo_action, editor.redo_action])
         self.edit_menu.addSeparator()
+        self.delete_action = self.action('Delete selected', editor.delete_selected, 'select',
+                                         'Delete selected graph objects as one undoable operation.', QKeySequence.Delete)
+        self.delete_action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+        editor.canvas.addAction(self.delete_action)
+        self.edit_menu.addAction(self.delete_action)
         self.edit_menu.addAction(editor.cad_toolbar.properties_action)
         self.edit_menu.addAction(self.action('Clear selection', editor.clear_topology_selection, 'select',
                                             'Clear graph selections without editing objects.'))
@@ -168,6 +173,8 @@ class CadWorkbench(QObject):
     def drawing_help(self):
         QMessageBox.information(self.editor, 'Drawing controls',
             'Start in Layout. Use Select to highlight objects; open Properties to edit them.\n\n'
+            'With the canvas focused, press Delete or right-click and choose Delete selected. '
+            'Confirm once for the selection; Undo restores it. Delete in a text field edits text only.\n\n'
             'Corridor draws connected segments. Type X,Y, @dx,dy or @length<angle in metres and degrees. '
             'Enter places a point; blank Enter finishes. Escape cancels the current drawing draft. '
             'Undo and Redo use the shared project history.\n\n'

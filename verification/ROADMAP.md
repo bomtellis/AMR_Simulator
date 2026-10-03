@@ -748,6 +748,19 @@ Keep engineering test evidence current throughout.
 
 ## Next action when resumed
 
+The subsequent CAD correction retains drawing caches on ordinary undo/redo,
+reuses unchanged DXF graphics on scene refresh and coalesces drag redraws while
+preserving the final model position. Graph tools bypass native DXF hover picking;
+PDF alignment retains native interaction. Delete operates on canvas selections
+through the keyboard, Edit menu and right-click menu with a single undo step.
+Demand generation is directly accessible under Configuration in the project tree.
+Acceptance is in `tests/test_cad_delete_and_drawing_history.py`. This
+checkpoint passed 105 focused regression tests; the full pack was not rerun.
+Results are in `verification/latest/cad-interaction-regression.txt`. The
+30,000-line drawing benchmark measured median scene refresh at 6.9 ms when
+rebuilding DXF graphics and 0.2 ms when retaining them. This is an offscreen
+microbenchmark, not an LTN frame-rate or full interactive performance guarantee.
+
 The operational UI checkpoint adds a standalone workbench entry point with
 optional project/JSON loading, File New with unsaved-work protection, portable
 first saves and standard Save As. Opening another document clears drawing and

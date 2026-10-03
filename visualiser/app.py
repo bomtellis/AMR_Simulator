@@ -315,6 +315,13 @@ class EditorGraphicsView(QGraphicsView):
             if self._cad_select_mode():
                 event.accept()
                 return
+        # Graph tools do their own picking. Native hover dispatch asks Qt to
+        # hit-test every detailed DXF path beneath the pointer on every move.
+        # Only PDF alignment uses native item mouse interaction.
+        editor = self.window()
+        if hasattr(editor, '_current_edit_mode') and editor._current_edit_mode() != 'pdf_underlay_align':
+            event.accept()
+            return
         super().mouseMoveEvent(event)
 
     def wheelEvent(self, event):
@@ -438,6 +445,10 @@ class AMRGraphEditor(QMainWindow):
         self._recovery_timer = QTimer(self)
         self._recovery_timer.timeout.connect(self.capture_recovery)
         self._recovery_timer.start(30000)
+        self._drag_refresh_timer = QTimer(self)
+        self._drag_refresh_timer.setSingleShot(True)
+        self._drag_refresh_timer.setInterval(16)
+        self._drag_refresh_timer.timeout.connect(lambda: self.refresh_canvas(update_panels=False))
         QTimer.singleShot(0, self._announce_recovery)
         self.appearance.changed.connect(self._appearance_changed)
         self.route_styles.changed.connect(self.refresh_canvas)
@@ -517,17 +528,20 @@ class AMRGraphEditor(QMainWindow):
             return False
         self._history_restoring = True
         try:
+            dxf_changed = self.store.data.get('floor_dxf_files', []) != config.get('floor_dxf_files', [])
             self.store.data = config
             self.selected_point_name = None
             self.selected_point_names.clear()
             self.selected_edge_keys.clear()
             self.selected_for_edge = None
             self._clear_corridor_drawing()
-            self._clear_dxf_cache()
-            self._pdf_pixmap_cache.clear()
-            self._pdf_render_errors.clear()
+            if dxf_changed:
+                self._clear_dxf_cache()
+            # PDF rasters are keyed by file and page; placement edits and
+            # unrelated model changes can reuse them unchanged.
             self.refresh_canvas()
-            self._queue_all_floor_dxf_loads(active_floor=self.floor_spin.value(), force_reload=False)
+            if dxf_changed:
+                self._queue_all_floor_dxf_loads(active_floor=self.floor_spin.value(), force_reload=False)
             self._update_unsaved_indicator()
             for name in ("checks_panel", "demand_panel"):
                 panel = getattr(self, name, None)
@@ -1279,6 +1293,52 @@ class AMRGraphEditor(QMainWindow):
             "corridor": self.selected_corridor_labels(include_incident_nodes=False),
             "corridor_node": self.selected_corridor_node_names(),
         }
+
+    @undoable('Delete selected objects')
+    def delete_selected(self):
+        if (self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move'
+                or self.route_profile_selection_active or self.department_location_placement_active
+                or self.dragging_point_name or self.drag_mode_active):
+            return False
+        if not self._finish_property_draft():
+            return False
+        points = self.store.all_points()
+        names = set(self.selected_point_names) & points.keys()
+        edges = set(self.selected_edge_keys)
+        if not names and not edges:
+            return False
+        lifts = {points[name]['lift_id'] for name in names if points[name]['kind'] == 'lift_node'}
+        detail = f'Delete {len(names)} selected point(s) and {len(edges)} selected corridor(s)?'
+        if lifts:
+            detail += '\nEntire lifts, including all floors: ' + ', '.join(sorted(lifts))
+        detail += '\nConnected edges and associated references are handled by the existing deletion rules. Undo restores this operation.'
+        if QMessageBox.question(self, 'Delete selected', detail,
+                                QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+            return False
+        # Stage the whole selection: a protected department must not leave
+        # earlier deletions applied when its reference check rejects removal.
+        staged = deepcopy(self.store)
+        try:
+            from amr_department_inputs import department_identity
+            for name in sorted(names):
+                if points[name]['kind'] == 'department':
+                    department = next(d for d in staged.data['departments'] if d.get('name') == name)
+                    staged.delete_department(department_identity(department))
+                elif points[name]['kind'] != 'lift_node':
+                    staged.delete_point(name)
+            for lift in sorted(lifts):
+                staged.delete_lift(lift)
+            for a, b in edges:
+                staged.remove_edge(a, b)
+                staged.remove_edge(b, a)
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Selection was not deleted', str(exc))
+            return False
+        self.store.data = staged.data
+        self.properties_panel.reset()
+        self.clear_topology_selection()
+        self.set_status('Deleted selection. Undo restores the selected objects and their connections.')
+        return True
 
     def clear_topology_selection(self):
         self.selected_point_names.clear()
@@ -2036,15 +2096,25 @@ class AMRGraphEditor(QMainWindow):
             self.canvas.viewport().update()
         self.refresh_canvas()
 
-    def refresh_canvas(self):
+    def refresh_canvas(self, *, update_panels=True):
         from route_display import populate_choices
         from cad_map_style import map_colours
         populate_choices(self.route_display_combo, self.store.data)
-        self.scene.clear()
-        self._item_lookup = {}
-        self._point_item_lookup = {}
         floor = self.floor_spin.value()
         self.ensure_floor_dxf_loaded(floor)
+        source = self._dxf_cache.get(int(floor)) if (self._drawings_enabled and self.show_dxf_check.isChecked()
+                                                   and self.loaded_dxf_floor == int(floor)) else None
+        retained = (source is not None and source is getattr(self, '_rendered_dxf_source', None))
+        drawing_items = getattr(self, '_rendered_dxf_items', []) if retained else []
+        for item in drawing_items:
+            self.scene.removeItem(item)
+        self.scene.clear()
+        for item in drawing_items:
+            self.scene.addItem(item)
+        self._rendered_dxf_source = source
+        self._rendered_dxf_items = drawing_items
+        self._item_lookup = {}
+        self._point_item_lookup = {}
         self._map_colours = map_colours(self.appearance.value)
         self.canvas._map_style = self._map_colours
         self.canvas._show_map_grid = self.appearance.value.show_grid
@@ -2061,9 +2131,10 @@ class AMRGraphEditor(QMainWindow):
             and self.loaded_dxf_floor == int(floor)
             and self.dxf_scene.entities
         ):
-            self.dxf_scene.populate_graphics_scene(
-                self.scene, self.canvas.transform().m11()
-            )
+            if not retained:
+                self._rendered_dxf_items = self.dxf_scene.populate_graphics_scene(
+                    self.scene, self.canvas.transform().m11()
+                )
         if self.show_location_bounds_check.isChecked():
             self.draw_location_bounding_boxes(floor)
         self.draw_temporary_location_bounding_box(floor)
@@ -2075,7 +2146,7 @@ class AMRGraphEditor(QMainWindow):
         self.file_label.setText(Path(self.current_json_path).name if self.current_json_path else "New project")
         self.file_label.setToolTip(self.current_json_path or 'Not saved')
         self.canvas.viewport().update()
-        if hasattr(self, 'workspace'):
+        if update_panels and hasattr(self, 'workspace'):
             self.workspace.refresh()
 
     def draw_route_access(self, floor):
@@ -3142,11 +3213,15 @@ class AMRGraphEditor(QMainWindow):
 
             return
 
+        was_dragging = bool(self.dragging_point_name or self.dragging_bounding_box_point_index is not None)
+        self._drag_refresh_timer.stop()
         self.dragging_point_name = None
         self.drag_mode_active = False
         self._cad_drag_offset = None
         self.dragging_bounding_box_point_index = None
         self.last_pan = None
+        if was_dragging:
+            self.refresh_canvas()
 
     @undoable("Edit layout")
     def on_right_click(self, event, sx, sy):
@@ -3191,8 +3266,10 @@ class AMRGraphEditor(QMainWindow):
                 self.selected_edge_keys = {picked_edge}
                 self.selected_point_names.clear()
                 self.selected_point_name = None
-            if self.selected_edge_keys or len(self.selected_point_names) > 1:
+            if self.selected_edge_keys or len(self.selected_point_names) > 1 or (not picked and self.selected_point_names):
                 menu = QMenu(self)
+                menu.addAction(self.workbench.delete_action)
+                menu.addSeparator()
                 if picked_edge is not None:
                     menu.addAction("Insert node here", lambda: self.split_corridor_at(picked_edge, x, y))
                 if self.selected_edge_keys:
@@ -3330,6 +3407,8 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
             point = self.store.all_points().get(picked, {})
             menu = QMenu(self)
+            menu.addAction(self.workbench.delete_action)
+            menu.addSeparator()
 
             if point.get("kind") == "department":
                 edit_department_action = menu.addAction("Edit department")
@@ -3470,7 +3549,7 @@ class AMRGraphEditor(QMainWindow):
             idx = self.dragging_bounding_box_point_index
             if 0 <= idx < len(self.bounding_box_points):
                 self.bounding_box_points[idx] = {"x": x, "y": y}
-                self.refresh_canvas()
+                self._schedule_drag_refresh()
             return
         if mode == "select_move" and self.drag_mode_active and self.dragging_point_name:
             x, y = self.scene_to_world(sx, sy)
@@ -3479,7 +3558,13 @@ class AMRGraphEditor(QMainWindow):
                 x, y = x-offset[0], y-offset[1]
             x, y = self.snap(x, y)
             self.store.set_point_position(self.dragging_point_name, x, y)
-            self.refresh_canvas()
+            self._schedule_drag_refresh()
+
+    def _schedule_drag_refresh(self):
+        # Keep the model exact on every move while coalescing render work.
+        # Release always flushes the final position and contextual panels.
+        if not self._drag_refresh_timer.isActive():
+            self._drag_refresh_timer.start()
 
     def on_middle_click(self, event):
         self.last_pan = event.position().toPoint()
@@ -3502,7 +3587,7 @@ class AMRGraphEditor(QMainWindow):
 
     def on_middle_release(self, event):
         self.last_pan = None
-        self.refresh_canvas()
+        self.canvas.viewport().update()
 
     def on_mousewheel(self, event):
         factor = 1.1 if event.angleDelta().y() > 0 else 0.9

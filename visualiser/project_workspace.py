@@ -144,6 +144,10 @@ class ProjectWorkspace(QWidget):
         key = item.data(0, Qt.UserRole)
         if key is None:
             return
+        if key == 'demand_generation':
+            self.configuration()
+            self.editor.manage_task_generation()
+            return
         if isinstance(key, tuple) and key[0] == 'config':
             self.select_configuration(key[1], key[2])
             return
@@ -388,6 +392,11 @@ class ProjectWorkspace(QWidget):
         try:
             self.items['configuration'].takeChildren()
             self.configuration_items = {}
+            demand = QTreeWidgetItem(['Demand generation'])
+            demand.setData(0, Qt.UserRole, 'demand_generation')
+            demand.setToolTip(0, 'Edit demand-generation rules, schedules and category settings.')
+            self.items['configuration'].addChild(demand)
+            self.items['demand_generation'] = demand
             for section, title, entries in catalogue:
                 group = QTreeWidgetItem([f'{title} ({len(entries)})'])
                 self.items['configuration'].addChild(group)
