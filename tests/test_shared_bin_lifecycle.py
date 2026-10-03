@@ -74,6 +74,7 @@ class SharedBinLifecycleTests(unittest.TestCase):
         other = copy.deepcopy(config['departments'][0]); other.update(id='E', name='Other')
         other['waste_streams'][0]['shared_container_group'] = 'OTHER'
         config['departments'].append(other)
+        config['task_generation']['categories']['waste']['department_groups'][0]['departments'].append('E')
         sim = Simulation(config)
         records = sim.payload_instance_store.records_at('A')
         expected = next(r.instance_id for r in records if r.metadata['container_group'] == 'shared:OTHER')

@@ -644,7 +644,6 @@ class Simulation:
         self.departments: List[dict] = list(config.get("departments", []))
         self.department_runtime: Dict[str, Dict[str, dict]] = {}
         self.department_task_counter = 0
-        self._seed_initial_waste_stream_containers()
 
         self.route_profiles = config.get("route_profiles", {})
         self.task_generation_manager = TaskGenerationManager(
@@ -653,6 +652,7 @@ class Simulation:
             locations=self.locations,
             payloads=self.payloads,
         )
+        self._seed_initial_waste_stream_containers()
         self.task_generation_interval_sec = float(
             (config.get("task_generation", {}) or {}).get("update_interval_sec", 900.0)
         )
@@ -8258,13 +8258,19 @@ class Simulation:
         space["reserved_by_task"] = ""
         return space
 
-    def _seed_initial_waste_stream_containers(self) -> None:
-        if not getattr(self, "seed_waste_stream_containers_at_start", False):
+    def _waste_container_seed_rows(self):
+        definitions = self.task_generation_manager.initial_waste_container_definitions()
+        if definitions is not None:
+            for definition in definitions:
+                for pickup in definition['pickup_locations']:
+                    group = definition['container_group']
+                    if group.startswith('department:'):
+                        group = f'{group}:{pickup}'
+                    yield (definition['department_id'], definition['waste_stream'],
+                           definition['payload'], pickup, group)
             return
-        if not self.waste_streams or not self.departments:
-            return
-
-        seeded_groups = set()
+        # Retain the raw adapter for legacy/custom services that do not use
+        # modern Waste instances. Their initial-stock contract is independent.
         for dept in self.departments:
             if not bool(dept.get("enabled", True)):
                 continue
@@ -8283,63 +8289,47 @@ class Simulation:
                 stream_cfg = self.waste_streams.get(stream_name, {}) or {}
                 payload_name = (str(stream_item.get("payload") or "").strip()
                                 or str(stream_cfg.get("payload") or "").strip())
-                payload = self.payloads.get(payload_name)
-                if payload is None:
-                    continue
                 for pickup_location in pickup_locations:
-                    seeded_space = None
-                    if self._location_has_payload_inventory_spaces(pickup_location):
-                        seeded_space = self._claim_initial_inventory_space(
-                            pickup_location,
-                            payload,
-                            "initial_waste_container",
-                        )
-                        if seeded_space is None:
-                            continue
                     group_key = self._waste_container_group_key_for_seed(
                         dept_id, stream_name, stream_item, pickup_location
                     )
-                    if group_key in seeded_groups:
-                        if seeded_space is not None:
-                            seeded_space["occupied"] = False
-                            seeded_space["payload"] = ""
-                            seeded_space["payload_instance_id"] = ""
-                            seeded_space["task_id"] = ""
-                            seeded_space["reserved_by_task"] = ""
-                        continue
-                    seeded_groups.add(group_key)
-                    instance_id = self.payload_instance_store.make_instance_id(
-                        payload_name, group_key
-                    )
-                    seeded_inventory_space = ""
-                    if seeded_space is not None:
-                        seeded_space["payload_instance_id"] = instance_id
-                        seeded_inventory_space = str(seeded_space.get("name", "") or "")
-                    self.payload_instance_store.store(
-                        pickup_location,
-                        payload_name,
-                        instance_id,
-                        source_task_id="initial_waste_container",
-                        metadata={
-                            "task_source": "initial_waste_container",
-                            "department_id": dept_id,
-                            "waste_stream": stream_name,
-                            "container_group": group_key,
-                            "container_type": payload_name,
-                            "container_state": "empty",
-                        },
-                    )
-                    self.initial_waste_container_instances[
-                        (group_key, pickup_location, payload_name)
-                    ] = instance_id
-                    self._log_payload_location_event(
-                        "location_payload_enter",
-                        pickup_location,
-                        payload_name,
-                        instance_id,
-                        inventory_space=seeded_inventory_space,
-                    )
-                    self._record_payload_population_snapshot()
+                    yield dept_id, stream_name, payload_name, pickup_location, group_key
+
+    def _seed_initial_waste_stream_containers(self) -> None:
+        if not getattr(self, "seed_waste_stream_containers_at_start", False):
+            return
+        seeded_groups = set()
+        for dept_id, stream_name, payload_name, pickup_location, group_key in self._waste_container_seed_rows():
+            payload = self.payloads.get(payload_name)
+            if payload is None or pickup_location not in self.locations or group_key in seeded_groups:
+                continue
+            seeded_space = None
+            if self._location_has_payload_inventory_spaces(pickup_location):
+                seeded_space = self._claim_initial_inventory_space(
+                    pickup_location, payload, "initial_waste_container")
+                if seeded_space is None:
+                    continue
+            seeded_groups.add(group_key)
+            instance_id = self.payload_instance_store.make_instance_id(payload_name, group_key)
+            seeded_inventory_space = ""
+            if seeded_space is not None:
+                seeded_space["payload_instance_id"] = instance_id
+                seeded_inventory_space = str(seeded_space.get("name", "") or "")
+            self.payload_instance_store.store(
+                pickup_location, payload_name, instance_id,
+                source_task_id="initial_waste_container",
+                metadata={
+                    "task_source": "initial_waste_container", "department_id": dept_id,
+                    "waste_stream": stream_name, "container_group": group_key,
+                    "container_type": payload_name, "container_state": "empty",
+                },
+            )
+            self.initial_waste_container_instances[(group_key, pickup_location, payload_name)] = instance_id
+            self._log_payload_location_event(
+                "location_payload_enter", pickup_location, payload_name, instance_id,
+                inventory_space=seeded_inventory_space,
+            )
+            self._record_payload_population_snapshot()
 
     def _mark_generated_waste_task_requires_existing_container(
         self, task: Task

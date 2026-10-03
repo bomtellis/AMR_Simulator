@@ -179,6 +179,12 @@ failure conservation and structured rejection of incompatible active shared rule
 Raw seed/resolved-rule parity, multi-location groups and failed collection volume
 reconciliation remain open.
 
+**Slice 2P:** [Resolved initial bins](WASTE_SEED_REVIEW.md) shares the existing
+modern Waste resolver with initial seeding. Eleven references cover inherited
+pickup/group/presence settings, disabled contributors, full automatic shared
+multi-pickup cycles and unavailable inventory space. Legacy/custom seeding remains
+an explicit compatibility adapter; threshold failure-volume reconciliation is next.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -428,10 +434,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2O's physical shared-bin references, then align initial-bin seeding
-with resolved active demand rules, including inherited settings and inactive
-contributors. Reconcile threshold volume with failed/completed physical collection
-and remaining stock; audit multiple route pairs and tracked-item consumption.
+Review slice 2P's resolved-seeding references, then reconcile threshold volume
+with failed, completed and pending physical collections and residual stock.
+Audit multiple route pairs and tracked-item consumption, preserving the explicit
+legacy/custom seed compatibility boundary and remaining inventory-space limitations.
 Retain explicit limits on staffing capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger

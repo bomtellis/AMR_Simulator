@@ -2777,7 +2777,9 @@ def shared_container_conflicts(instances):
     for instance in instances:
         cfg = instance.get('cfg', {})
         group = _clean_text(instance.get('container_group'))
-        if not cfg.get('enabled', False) or not group.startswith(('shared:', 'pickup:')):
+        if (not cfg.get('enabled', False)
+                or not instance.get('department', {}).get('enabled', True)
+                or not group.startswith(('shared:', 'pickup:'))):
             continue
         definition = {
             'payload': _clean_text(cfg.get('payload')),
@@ -2828,6 +2830,36 @@ class TaskGenerationManager:
 
     def _task_generation_cfg(self) -> dict:
         return self.config.get("task_generation", {}) or {}
+
+    def initial_waste_container_definitions(self):
+        """Resolved modern Waste stock, or None for the legacy seed adapter.
+
+        An enabled modern rule owns its initial bins, even when the global
+        generation switch disables that rule. Do not revive raw department stock
+        in that case. Legacy/custom waste services retain their existing adapter.
+        """
+        category = (self._task_generation_cfg().get('categories', {}) or {}).get('waste', {})
+        if not self._category_has_enabled_rule(category):
+            return None
+        definitions = []
+        for generator in self.generators:
+            if not isinstance(generator, DynamicCategoryTaskGenerator):
+                continue
+            for instance in generator.instances:
+                cfg = instance['cfg']
+                if (instance.get('category_key') != 'waste' or not instance.get('waste_stream')
+                        or not cfg.get('enabled', False)
+                        or not instance.get('department', {}).get('enabled', True)
+                        or not cfg.get('initial_container_present', True)):
+                    continue
+                definitions.append({
+                    'department_id': instance['department_id'],
+                    'waste_stream': instance['waste_stream'],
+                    'payload': cfg['payload'],
+                    'container_group': instance['container_group'],
+                    'pickup_locations': list(instance['pickup_locations']),
+                })
+        return definitions
 
     def _generation_enabled(self, name: str, default: bool = True) -> bool:
         cfg = self._task_generation_cfg()
