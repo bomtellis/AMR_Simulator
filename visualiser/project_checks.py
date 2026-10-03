@@ -180,8 +180,8 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             error(path, message, section, code='GENERATION_INPUT')
         else:
             add('GENERATION_UNSUPPORTED', 'warning', path, path, message,
-                'The run uses the supported fixed cycle instead of this setting.',
-                'Use the supported cycle or acknowledge this limitation.',
+                'The run uses the supported staff calendar behavior described in this finding.',
+                'Use supported calendar settings or acknowledge this limitation.',
                 section=section, kind='unsupported')
     if any(f.severity == 'error' for f in findings):
         return finish()

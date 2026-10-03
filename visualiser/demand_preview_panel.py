@@ -25,6 +25,7 @@ def readable(value):
 def rule_explanation(rule):
     lines = [rule['explanation'], '', f"Rule: {rule['id']}", f"Department: {rule['department'] or 'Category default'}",
              f"Planned records: {rule['planned_records']}",
+             f"Releases flagged for no staff/department working window: {rule.get('out_of_hours_records', 0)}",
              'Total demand: ' + ('Unknown before simulation' if rule['total_demand'] is None else str(rule['total_demand'])),
              'Independent expected count: ' + ('Not assessed' if rule.get('expected_fixed_records') is None else str(rule['expected_fixed_records']))]
     if 'effective_pickups' in rule:
@@ -244,6 +245,7 @@ class DemandPreviewPanel(QWidget):
         prefix = '' if current else 'STALE — inputs changed; rebuild before relying on this preview.\n'
         self.summary.setText(prefix + f"{len(self.rows)} shown / {totals['planned_task_records']} planned task records; "
                              f"{totals['runtime_dependent_rules']} rules have unknown total demand. "
+                             f"{totals.get('out_of_hours_records', 0)} releases flagged for no staff/department working window. "
                              f"Rule reconciliation: {totals['reconciled_rule_records']} records; independent counts: "
                              f"{totals['independently_reconciled_rules']} matched, {totals['count_mismatches']} mismatched (other rules not assessed).\n"
                              + self.preview['start_datetime'] + ' to ' + self.preview['end_datetime'] + ' (inclusive).')

@@ -143,6 +143,15 @@ def generation_input_findings(config):
                 continue
             clock(pattern, pattern_path, 'start_time')
             clock(pattern, pattern_path, 'end_time')
+            if name == 'four_on_four_off_12h' and 'days_active' in pattern:
+                days = pattern['days_active']
+                if isinstance(days, str):
+                    days = days.split(',')
+                if isinstance(days, list):
+                    selected = {str(day).strip().lower()[:3] for day in days} & DAYS
+                    if selected and selected != DAYS:
+                        findings.append(('warning', pointer(pattern_path, 'days_active'),
+                            'Rotating staff ignores days_active; generation and handling use all seven weekdays with alternating teams.'))
             for field in ('work_days', 'rest_days'):
                 number(pattern, pattern_path, field, integer=True)
                 if field in pattern:

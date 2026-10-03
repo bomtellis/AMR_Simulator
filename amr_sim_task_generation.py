@@ -1245,10 +1245,16 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if week_index % 2 != 0:
                 return False
         dept = self._instance_department(instance)
-        if dept is not None and not _department_operating_periods_for_date(
-            dept, base_day
-        ):
-            return False
+        if dept is not None:
+            start, end = _timeframe_minutes_from_cfg(cfg)
+            if start is None or end is None:
+                return False
+            if end <= start:
+                end += 24 * 60
+            if not self._department_work_periods(
+                instance, base_day + timedelta(minutes=start), base_day + timedelta(minutes=end)
+            ):
+                return False
         return True
 
     def _timeframe_group_allocation(
@@ -1315,17 +1321,17 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             )
             end_minutes = _parse_hhmm_to_minutes(day_cfg.get("end_time"), None)
         else:
-            _pattern_key, pattern = self._staff_shift_definition(cfg)
+            pattern_key, pattern = self._staff_shift_definition(cfg)
             active_days = {
                 _clean_text(x).lower()[:3]
                 for x in pattern.get("days_active", DAY_KEYS)
                 if _clean_text(x)
             }
-            if active_days and _day_key_for_datetime(base_day) not in active_days:
+            if pattern_key != 'four_on_four_off_12h' and active_days and _day_key_for_datetime(base_day) not in active_days:
                 return None
             start_minutes = _parse_hhmm_to_minutes(pattern.get("start_time"), None)
             end_minutes = _parse_hhmm_to_minutes(pattern.get("end_time"), None)
-        if start_minutes is None or end_minutes is None:
+        if start_minutes is None or end_minutes is None or start_minutes == end_minutes:
             return None
         if end_minutes <= start_minutes:
             end_minutes += 24 * 60
@@ -1336,12 +1342,12 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             day_start + timedelta(minutes=end_minutes),
         )
 
-    def _intersect_with_department_hours(
+    def _department_work_periods(
         self, instance: dict, start_dt: datetime, end_dt: datetime
-    ) -> Optional[Tuple[datetime, datetime]]:
+    ) -> List[Tuple[datetime, datetime]]:
         dept = self._instance_department(instance)
         if dept is None:
-            return start_dt, end_dt
+            return [(start_dt, end_dt)]
 
         candidate_periods: List[Tuple[datetime, datetime]] = []
         cursor = (start_dt - timedelta(days=1)).replace(
@@ -1360,17 +1366,20 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             overlap_end = min(end_dt, period_end)
             if overlap_end > overlap_start:
                 overlaps.append((overlap_start, overlap_end))
-        if not overlaps:
-            return None
-        return max(overlaps, key=lambda pair: (pair[1] - pair[0]).total_seconds())
+        return overlaps
 
-    def _timeframe_work_window(
+    def _timeframe_work_periods(
         self,
         instance: dict,
-        base_day: datetime,
         timeframe_start: datetime,
         timeframe_end: datetime,
-    ) -> Tuple[datetime, datetime, bool, bool]:
+    ) -> Tuple[List[Tuple[datetime, datetime]], bool, str]:
+        """Available periods, spacing flag and any fallback explanation.
+
+        Search the previous day as well as every day in the timeframe so an
+        overnight shift remains available. Merge intersections before spacing;
+        elapsed time in a closed gap must not consume a release slot.
+        """
         cfg = instance.get("cfg", {}) or {}
         staff_spread_enabled = bool(
             _instance_requires_staff(instance)
@@ -1379,24 +1388,34 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             and _as_bool(self.staff_config.get("spread_timeframe_tasks", True), True)
         )
         if not staff_spread_enabled:
-            return timeframe_start, timeframe_end, False, False
+            return [(timeframe_start, timeframe_end)], False, ''
 
-        shift_window = self._staff_shift_window_for_day(cfg, base_day)
-        if shift_window is None:
-            return timeframe_start, timeframe_end, False, True
-
-        shift_start, shift_end = shift_window
-        overlap_start = max(timeframe_start, shift_start)
-        overlap_end = min(timeframe_end, shift_end)
-        if overlap_end <= overlap_start:
-            return timeframe_start, timeframe_end, False, True
-
-        department_overlap = self._intersect_with_department_hours(
-            instance, overlap_start, overlap_end
-        )
-        if department_overlap is None:
-            return timeframe_start, timeframe_end, False, True
-        return department_overlap[0], department_overlap[1], True, False
+        overlaps = []
+        has_staff_overlap = False
+        cursor = (timeframe_start - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        while cursor < timeframe_end:
+            shift_window = self._staff_shift_window_for_day(cfg, cursor)
+            cursor += timedelta(days=1)
+            if shift_window is None:
+                continue
+            start = max(timeframe_start, shift_window[0])
+            end = min(timeframe_end, shift_window[1])
+            if end > start:
+                has_staff_overlap = True
+                overlaps.extend(self._department_work_periods(instance, start, end))
+        if not overlaps:
+            reason = ('No staff working period overlaps this timeframe.' if not has_staff_overlap else
+                      'Staff hours and department opening hours do not overlap within this timeframe.')
+            # Retain configured demand. Runtime handling still observes its own
+            # hours; this flag does not authorise out-of-hours staffing.
+            return [(timeframe_start, timeframe_end)], False, reason
+        merged = []
+        for start, end in sorted(overlaps):
+            if merged and start <= merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        return merged, True, ''
 
     def _base_task(
         self,
@@ -1793,6 +1812,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     def _timeframe_records(
         self, instance: dict, now: float, *, wake_times: Optional[set] = None,
         base_days: Optional[List[datetime]] = None,
+        diagnostics: Optional[set] = None,
     ) -> List[GeneratedTaskRecord]:
         """Emit due slots, or collect their times without creating tasks.
 
@@ -1810,6 +1830,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         start_minutes, end_minutes = _timeframe_minutes_from_cfg(cfg)
         if start_minutes is None or end_minutes is None:
+            if diagnostics is not None:
+                diagnostics.add('Timeframe start or end is missing or cannot be interpreted.')
             return []
         if end_minutes <= start_minutes:
             end_minutes += 24 * 60
@@ -1835,11 +1857,12 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             timeframe_start_dt = base_day + timedelta(minutes=start_minutes)
             timeframe_end_dt = base_day + timedelta(minutes=end_minutes)
 
-            work_start_dt, work_end_dt, spread_applied, out_of_hours = (
-                self._timeframe_work_window(
-                    instance, base_day, timeframe_start_dt, timeframe_end_dt
+            work_periods, spread_applied, out_of_hours_reason = (
+                self._timeframe_work_periods(
+                    instance, timeframe_start_dt, timeframe_end_dt
                 )
             )
+            work_start_dt, work_end_dt = work_periods[0][0], work_periods[-1][1]
             if work_end_dt <= work_start_dt:
                 continue
 
@@ -1861,7 +1884,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 work_end_dt.isoformat(),
             )
 
-            window_seconds = max(0.0, (work_end_dt - work_start_dt).total_seconds())
+            window_seconds = sum((end - start).total_seconds() for start, end in work_periods)
             group_offset, group_total = self._timeframe_group_allocation(
                 instance, base_day
             )
@@ -1874,9 +1897,15 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         slot_offset = window_seconds * (
                             float(global_ordinal) / float(max(1, group_total))
                         )
-                        candidate_release_dt = work_start_dt + timedelta(
-                            seconds=slot_offset
-                        )
+                        for period_start, period_end in work_periods:
+                            period_seconds = (period_end - period_start).total_seconds()
+                            if slot_offset < period_seconds:
+                                candidate_release_dt = period_start + timedelta(seconds=slot_offset)
+                                break
+                            slot_offset -= period_seconds
+                        else:
+                            # A slot at the final end is outside the half-open window.
+                            candidate_release_dt = work_end_dt
                     else:
                         candidate_release_dt = timeframe_start_dt
                     local_ordinal += 1
@@ -1887,11 +1916,28 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     release_time = self._adjust_release_to_department_open(
                         instance, original_release_time
                     )
-                    if release_time is None or release_time < 0 or release_time > now:
+                    if release_time is None:
+                        if diagnostics is not None:
+                            diagnostics.add('No department opening was found for a planned release.')
+                        continue
+                    if release_time < 0 or original_release_time > now:
+                        if diagnostics is not None:
+                            diagnostics.add('Planned release slots fall outside the preview period.')
                         continue
                     if release_time >= deadline_time:
+                        if diagnostics is not None:
+                            diagnostics.add(
+                                'The department opens at or after the timeframe deadline; releases at the deadline are excluded.'
+                                if release_time > original_release_time else
+                                'A planned release reaches or exceeds the timeframe deadline; releases at the deadline are excluded.')
+                        continue
+                    if release_time > now:
+                        if diagnostics is not None:
+                            diagnostics.add('The next department opening or eligible release is after the preview period.')
                         continue
                     if not self._instance_is_active(instance, release_time):
+                        if diagnostics is not None:
+                            diagnostics.add('Active days, fortnight rules or department availability exclude the planned release date.')
                         continue
 
                     if wake_times is not None:
@@ -1923,19 +1969,25 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     task.timeframe_payload_index = index + 1
                     task.timeframe_payload_multiple = multiple
                     task.staff_timeframe_spaced = bool(spread_applied)
-                    task.staff_out_of_hours_required = bool(out_of_hours)
+                    task.staff_out_of_hours_required = bool(out_of_hours_reason)
+                    task.staff_out_of_hours_reason = out_of_hours_reason
+                    task.staff_work_periods = [
+                        [(start - self.clock.start_datetime).total_seconds(),
+                         (end - self.clock.start_datetime).total_seconds()]
+                        for start, end in work_periods] if spread_applied else []
                     task.staff_work_window_start = (
                         work_start_dt - self.clock.start_datetime
                     ).total_seconds()
                     task.staff_work_window_end = deadline_time
 
                     spacing_note = (
-                        f"spaced across staff hours {work_start_dt.strftime('%H:%M')}-"
-                        f"{work_end_dt.strftime('%H:%M')}"
+                        'spaced across staff/department working periods ' + ', '.join(
+                            f"{start.isoformat(timespec='minutes')} to {end.isoformat(timespec='minutes')}"
+                            for start, end in work_periods)
                         if spread_applied
                         else (
-                            "outside configured staff hours"
-                            if out_of_hours
+                            out_of_hours_reason + ' Runtime staff hours still apply; handling may miss the timeframe deadline.'
+                            if out_of_hours_reason
                             else "released at timeframe start"
                         )
                     )

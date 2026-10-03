@@ -152,6 +152,11 @@ raw checks before import/runtime, precise structured errors and acknowledgeable
 unsupported-cycle findings. Ten tests cover rejection, non-mutation, retained
 legacy forms and stale acknowledgements. Complete schema and calendar/mode
 acceptance remain open.
+**Slice 2K:** [Timeframe working periods](TIMEFRAME_WINDOWS_REVIEW.md) corrects
+overnight carry-in, disjoint available periods and previous-day department group
+sizing. Twelve references cover release arithmetic and visible fallback/deadline
+explanations. Heterogeneous pooled calendars and category active-day boundaries
+remain open; release spacing does not prove staffing capacity.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -402,10 +407,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2J's generation-input checks, then continue the generation/calendar
-acceptance audit with no-work rules and out-of-hours behavior. Establish independent
-expectations before changing policy. Retain explicit limits on pooled calendar
-intersections and staffing capacity.
+Review slice 2K's working-period correction, then verify pooled timeframe rules
+with different department calendars and category active-day/fortnight boundaries.
+Check demand conservation and explain exclusions. Establish independent expectations
+before changing policy, retaining explicit limits on staffing capacity.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

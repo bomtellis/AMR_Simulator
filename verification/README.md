@@ -12,7 +12,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest slice is [Generation input validation](GENERATION_INPUT_REVIEW.md):
+The latest correction is [Timeframe working periods](TIMEFRAME_WINDOWS_REVIEW.md):
+overnight shifts, disjoint periods and department closures now drive release spacing consistently;
+Demand Preview explains out-of-hours fallback and deadline exclusions.
+The preceding slice is [Generation input validation](GENERATION_INPUT_REVIEW.md):
 malformed values are rejected before coercion and unsupported staff cycles have visible findings.
 The preceding correction is [Staff calendar switches](STAFF_CALENDAR_REVIEW.md):
 global/custom hours, runtime handling and timeframe release rules now agree in the reference cases.

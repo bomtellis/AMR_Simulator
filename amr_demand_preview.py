@@ -212,11 +212,12 @@ def build_demand_preview(config, *, end_datetime=None):
             if upper_bound > MAX_ROWS:
                 raise ValueError(f"Rule {instance['key']} exceeds the preview limit; shorten the period or reduce demand.")
             before = len(tasks)
+            no_work_reasons = set()
             day = start.replace(hour=0, minute=0, second=0, microsecond=0)
             while day <= end:
                 sweep = min(end, day + timedelta(days=1) - timedelta(microseconds=1))
                 now = (sweep - start).total_seconds()
-                records = (generator._timeframe_records(instance, now) if mode == 'timeframe'
+                records = (generator._timeframe_records(instance, now, diagnostics=no_work_reasons) if mode == 'timeframe'
                            else generator._schedule_records(instance, now))
                 for record in records:
                     row(vars(record.task), rule, record.details, deferred=record.deferred)
@@ -224,7 +225,9 @@ def build_demand_preview(config, *, end_datetime=None):
             rule['explanation'] = ('Fixed schedule component shown; additional runtime demand remains unknown.' if runtime_dependent
                                    else 'Planned releases from the resolved schedule/timeframe, active days and department hours.')
             if len(tasks) == before and not runtime_dependent:
-                rule.update(status='no-work', explanation='No release matched this period, active days, department opening hours and timeframe deadline.')
+                rule.update(status='no-work', no_work_reasons=sorted(no_work_reasons),
+                            explanation=(' '.join(sorted(no_work_reasons)) if no_work_reasons else
+                                         'No release matched this period, active days, department opening hours and timeframe deadline.'))
 
     # Inventory stored rules that never became instances, including suppressed
     # defaults and overrides. These must not disappear from an empty preview.
@@ -260,8 +263,14 @@ def build_demand_preview(config, *, end_datetime=None):
 
     tasks.sort(key=lambda t: (t['release_seconds'], t['rule_id'], t['preview_id']))
     counts = Counter(t['rule_id'] for t in tasks)
+    out_of_hours = Counter(t['rule_id'] for t in tasks if t['effective_task'].get('staff_out_of_hours_required'))
     for rule in rules:
         rule['planned_records'] = counts[rule['id']]
+        rule['out_of_hours_records'] = out_of_hours[rule['id']]
+        if rule['out_of_hours_records']:
+            rule['explanation'] += (f" {rule['out_of_hours_records']} planned releases have no overlapping "
+                                    'staff/department working window. Runtime staff hours still apply; '
+                                    'handling may miss the timeframe deadline.')
         rule['total_demand'] = None if rule.get('unknown_additional_demand') or rule['status'] == 'runtime-dependent' else counts[rule['id']]
         if rule['id'].startswith('static:') and not rule['planned_records']:
             rule.update(status='no-work', explanation='Explicit release falls outside the preview period.')
@@ -273,6 +282,7 @@ def build_demand_preview(config, *, end_datetime=None):
             'provenance_schema_version': 1,
             'precedence': PRECEDENCE, 'tasks': tasks, 'rules': rules,
             'totals': {'planned_task_records': len(tasks),
+                       'out_of_hours_records': sum(out_of_hours.values()),
                        'configured_quantity_units': sum(float(t['quantity']) for t in tasks),
                        'conditional_release_records': sum(t['timing'].startswith('Conditional') for t in tasks),
                        'runtime_dependent_rules': sum(r['total_demand'] is None for r in rules),
