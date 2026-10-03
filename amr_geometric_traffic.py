@@ -29,7 +29,8 @@ def _arc(start, radius, sweep, speed):
     return Motion('arc', start, end, length, length/speed, sweep, radius, centre)
 
 
-def lane_trajectory(trajectory, points, edges, *, loaded_width_m, clearance_m, speed_m_per_sec):
+def lane_trajectory(trajectory, points, edges, *, loaded_width_m, clearance_m, speed_m_per_sec,
+                    robot_clearance_m=None):
     """Replace each straight with a right lane and smooth centre-line transitions.
 
     A junction starts/ends at the existing tangent points. Single-file sections
@@ -54,14 +55,15 @@ def lane_trajectory(trajectory, points, edges, *, loaded_width_m, clearance_m, s
             raise TrajectoryError('invalid_input','A lane straight has no supporting graph edge.')
         index,edge = min(matches,key=lambda row:float(row[1]['width_m']))
         width = float(edge['width_m'])
-        required = loaded_width_m+2*clearance_m
-        single = edge.get('traffic_mode','keep_right') == 'single_file' or 2*required > width+EPS
+        required = (2*(loaded_width_m+2*clearance_m) if robot_clearance_m is None else
+                    2*loaded_width_m+2*clearance_m+robot_clearance_m)
+        single = edge.get('traffic_mode','keep_right') == 'single_file' or required > width+EPS
+        offset = width/4 if robot_clearance_m is None else width/2-clearance_m-loaded_width_m/2
         sections.append({'edge_index':index,'mode':'single_file' if single else 'keep_right',
-                         'offset_m':0 if single else width/4,'effective_width_m':width})
+                         'offset_m':0 if single else offset,'effective_width_m':width})
         if single:
             output.append(motion)
             continue
-        offset = width/4
         # Increase radius only when necessary for an offset larger than 2R.
         radius = max(trajectory.minimum_radius_m,offset/2)
         angle = math.acos(max(-1.,min(1.,1-offset/(2*radius))))
@@ -94,7 +96,7 @@ def polygon_bounds(polygon):
             max(p[0] for p in polygon),max(p[1] for p in polygon))
 
 
-def polygons_overlap(a,b):
+def polygons_overlap(a,b,minimum_gap=0):
     """Strict convex SAT: boundary contact is allowed; margins supply clearance."""
     for polygon in (a,b):
         for p,q in zip(polygon,polygon[1:]+polygon[:1]):
@@ -104,12 +106,12 @@ def polygons_overlap(a,b):
                 continue
             nx,ny = nx/norm,ny/norm
             pa,pb = [nx*x+ny*y for x,y in a],[nx*x+ny*y for x,y in b]
-            if max(pa) <= min(pb)+EPS or max(pb) <= min(pa)+EPS:
+            if max(pa)+minimum_gap <= min(pb)+EPS or max(pb)+minimum_gap <= min(pa)+EPS:
                 return False
     return True
 
 
-def swept_cells(trajectory, *, length_m, width_m, clearance_m, max_cells=MAX_CELLS):
+def swept_cells(trajectory, *, length_m, width_m, clearance_m, max_cells=MAX_CELLS,robot_clearance_m=0):
     """Return relative time intervals with certified enclosing convex footprints."""
     cells,elapsed = [],0.
     corner = math.hypot(length_m/2+clearance_m,width_m/2+clearance_m)
@@ -118,7 +120,8 @@ def swept_cells(trajectory, *, length_m, width_m, clearance_m, max_cells=MAX_CEL
         if len(cells)+count > max_cells:
             raise TrajectoryError('search_limit','Swept-time reservation cell budget exhausted.')
         for index in range(count):
-            lo,hi = index/count,(index+1)/count
+            start_time,end_time = index/count*motion.duration_sec,(index+1)/count*motion.duration_sec
+            lo,hi = motion.fraction_at_time(start_time),motion.fraction_at_time(end_time)
             mid = motion.pose_at((lo+hi)/2)
             if motion.kind == 'line':
                 # Fixed heading: elongation is the exact swept rectangle.
@@ -127,8 +130,8 @@ def swept_cells(trajectory, *, length_m, width_m, clearance_m, max_cells=MAX_CEL
                 # Every corner stays within this Euclidean radius of its midpoint.
                 bound = 2*(motion.radius_m+corner)*math.sin(abs(motion.sweep_rad)*(hi-lo)/4)
                 polygon = footprint(mid,length_m,width_m,clearance_m+bound)
-            cells.append({'start':elapsed+lo*motion.duration_sec,'end':elapsed+hi*motion.duration_sec,
-                          'polygon':polygon,'envelope':polygon_bounds(polygon)})
+            cells.append({'start':elapsed+start_time,'end':elapsed+end_time,
+                          'polygon':polygon,'envelope':polygon_bounds(polygon),'robot_clearance_m':robot_clearance_m})
         elapsed += motion.duration_sec
     return cells
 
@@ -145,9 +148,10 @@ def first_traffic_slot(reservations,cells,requested,owner,separation,*,max_pair_
             if checks > max_pair_checks:
                 raise TrajectoryError('search_limit','Traffic conflict comparison budget exhausted.')
             b = row['envelope']
-            if a[0] >= b[2] or b[0] >= a[2] or a[1] >= b[3] or b[1] >= a[3]:
+            gap = max(cell.get('robot_clearance_m',0),row.get('robot_clearance_m',0))
+            if a[0] >= b[2]+gap or b[0] >= a[2]+gap or a[1] >= b[3]+gap or b[1] >= a[3]+gap:
                 continue
-            if polygons_overlap(cell['polygon'],row['polygon']):
+            if polygons_overlap(cell['polygon'],row['polygon'],gap):
                 intervals.append((row['start']-separation-cell['end'],row['end']+separation-cell['start'],row['owner']))
     start = requested
     blockers = set()

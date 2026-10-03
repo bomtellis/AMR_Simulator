@@ -185,7 +185,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
              'Moving routes reserve their entire spatial envelopes.'),
             ('Moving-route conflicts include lanes and junctions; parked/waiting robot occupancy remains unverified.' if traffic else
              'This is conservative moving-route exclusion, not directional lanes or full parked/waiting robot collision analysis.')+
-            ' Graph widths remain access restrictions; physical openings must be modelled as obstacles.',
+            ' Graph widths remain access restrictions; physical openings must be modelled as obstacles.'+
+            (' Configured motion profiles include acceleration/braking and pivot angular dynamics; circular line/arc joins do not yet enforce finite steering angular acceleration.'
+             if any(isinstance(robot,dict) and 'movement' in robot for robot in config.get('amrs',[])) else ''),
             'Review explicit geometry and acknowledge the current traffic scope.', section='simulation', kind='assumption')
     if any(f.severity == 'error' for f in findings):
         return finish()

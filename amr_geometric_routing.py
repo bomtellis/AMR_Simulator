@@ -8,9 +8,13 @@ from copy import deepcopy
 from amr_trajectories import Motion, Pose, Trajectory, TrajectoryError, plan_trajectory, check_clearance
 from amr_sim_payload_instances import is_empty_payload_name
 from amr_geometric_traffic import TRAFFIC_MODEL, traffic_enabled, lane_trajectory
+from amr_clearances import clearance_input_findings, resolved_clearances
+from amr_geometric_occupancy import area_input_findings
+from amr_motion_profiles import select_motion_settings, MotionProfileError
+from amr_trajectory_dynamics import retime_trajectory
 
 MODEL = 'geometric_v1'
-PARAMETERS = ('minimum_radius_m','pivot_speed_deg_per_sec','clearance_m','initial_heading_deg')
+PARAMETERS = ('minimum_radius_m','pivot_speed_deg_per_sec','initial_heading_deg')
 
 
 def geometry_enabled(config):
@@ -55,6 +59,7 @@ def geometry_input_findings(config):
         return findings
     if geometry.get('traffic_model','whole_route_v1') not in ('whole_route_v1',TRAFFIC_MODEL):
         error('/geometry/traffic_model','Select whole_route_v1 or keep_right_v1 explicitly.')
+    findings.extend(clearance_input_findings(config))
     floors = geometry.get('floors')
     if not isinstance(floors,list) or not floors:
         error('/geometry/floors','Provide at least one modelled floor with bounds and obstacles.')
@@ -65,6 +70,7 @@ def geometry_input_findings(config):
         if not isinstance(floor,dict):
             error(path,'A modelled floor must be an object.')
             continue
+        findings.extend(area_input_findings(floor,path))
         identity = floor.get('floor')
         if isinstance(identity,bool) or not isinstance(identity,int) or identity in known:
             error(path+'/floor','Floor identifiers must be unique whole numbers.')
@@ -82,6 +88,11 @@ def geometry_input_findings(config):
     for i, robot in enumerate(config.get('amrs',[])):
         if not isinstance(robot,dict):
             continue
+        if 'movement' in robot:
+            try:
+                select_motion_settings(robot['movement'],loaded=False)
+            except MotionProfileError as exc:
+                error(f'/amrs/{i}/movement',str(exc))
         path = f'/amrs/{i}/manoeuvring'
         values = robot.get('manoeuvring',{})
         if not isinstance(values,dict):
@@ -140,6 +151,13 @@ def validate_geometry_inputs(config):
 
 def route_trajectory(sim, amr, route, start, end, payload, orientation, start_heading_deg=None):
     parameters = amr.manoeuvring
+    clearances = resolved_clearances(sim.config,parameters)
+    loaded = payload is not None and not is_empty_payload_name(payload.name)
+    settings = select_motion_settings(amr.movement,loaded=loaded) if getattr(amr,'movement',None) is not None else None
+    radius = (settings.minimum_radius_m or parameters['minimum_radius_m']) if settings else parameters['minimum_radius_m']
+    pivot_allowed = settings.pivot_allowed if settings else parameters['pivot_allowed']
+    pivot_speed = (settings.rotation_speed_deg_per_sec or parameters['pivot_speed_deg_per_sec']) if settings else parameters['pivot_speed_deg_per_sec']
+    speed = settings.forward_speed_m_per_sec if settings else amr.speed_m_per_sec
     nodes = {row['name']: row for row in sim.config.get('corridors',{}).get('nodes',[])}
     nodes.update({row['name']:row for row in sim.config['locations']})
     names = [start.name]+[edge['to'] for edge in route['edges']]
@@ -151,9 +169,9 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
         # A unit-duration stationary envelope is used only by the clearance checker.
         trajectory=Trajectory((Motion('pivot',pose,pose,0,1),),parameters['minimum_radius_m'],parameters['pivot_allowed'])
     else:
-        trajectory = plan_trajectory(points, minimum_radius_m=parameters['minimum_radius_m'],
-            speed_m_per_sec=amr.speed_m_per_sec, pivot_allowed=parameters['pivot_allowed'],
-            pivot_speed_deg_per_sec=parameters['pivot_speed_deg_per_sec'], start_heading_deg=heading)
+        trajectory = plan_trajectory(points, minimum_radius_m=radius,
+            speed_m_per_sec=speed, pivot_allowed=pivot_allowed,
+            pivot_speed_deg_per_sec=pivot_speed, start_heading_deg=heading)
     length,width = amr.length_m,amr.width_m
     if payload is not None and not is_empty_payload_name(payload.name):
         pl,pw,_ = sim._payload_orientation_dimensions(payload,orientation)
@@ -161,17 +179,24 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
     lane_sections = []
     if not static and traffic_enabled(sim.config):
         trajectory,lane_sections = lane_trajectory(trajectory,points,route['edges'],
-            loaded_width_m=width,clearance_m=parameters['clearance_m'],speed_m_per_sec=amr.speed_m_per_sec)
+            loaded_width_m=width,clearance_m=clearances['wall_m'],speed_m_per_sec=speed,
+            robot_clearance_m=clearances['robot_m'] if clearances['explicit'] else None)
     floor = next(row for row in sim.config['geometry']['floors'] if row['floor']==start.floor)
     a,b,c,d = floor['bounds']
     walls = [(-1e9,-1e9,a,1e9),(c,-1e9,1e9,1e9),(a,-1e9,c,b),(a,d,c,1e9)]
     result = check_clearance(trajectory,length_m=length,width_m=width,
-        clearance_m=parameters['clearance_m'],obstacles=floor['obstacles']+walls)
+        clearance_m=clearances['wall_m'],obstacles=floor['obstacles']+walls)
     if result['status'] != 'clear':
         raise TrajectoryError(result['status'],f'Route {start.name} to {end.name}: motion {result.get("motion")}, obstacle {result.get("obstacle")}.')
+    if not static and settings is not None:
+        try:
+            trajectory=retime_trajectory(trajectory,settings)
+        except MotionProfileError as exc:
+            raise TrajectoryError(exc.reason,str(exc)) from exc
+    result['clearances'] = clearances
     # Bounding boxes enclose all continuous swept motion, including pivot corners.
     # Reserving the complete envelope is intentionally conservative until lanes.
-    pad = math.hypot(length/2+parameters['clearance_m'],width/2+parameters['clearance_m'])
+    pad = math.hypot(length/2+clearances['wall_m'],width/2+clearances['wall_m'])
     xs,ys = [],[]
     for motion in trajectory.motions:
         if motion.kind=='arc':

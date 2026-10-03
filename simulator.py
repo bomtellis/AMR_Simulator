@@ -33,6 +33,8 @@ from amr_geometric_routing import (validate_geometry_inputs, geometry_enabled,
                                    route_trajectory, first_route_slot)
 from amr_trajectories import TrajectoryError
 from amr_geometric_traffic import traffic_enabled, swept_cells, first_traffic_slot
+from amr_clearances import resolved_clearances
+from amr_geometric_occupancy import automatic_stop_areas, stopping_findings
 from amr_staff_policy import resolve_staff_requirement
 
 from amr_sim_energy import (
@@ -780,6 +782,7 @@ class Simulation:
                 amr.payload_slots = payload_slots
                 if self.geometric_motion:
                     amr.manoeuvring = dict(amr_type['manoeuvring'])
+                    amr.movement = amr_type.get('movement')
                     amr.rotation_deg = float(amr.manoeuvring['initial_heading_deg'])
                 amr.multi_stop_enabled = bool(
                     amr_type.get("multi_stop_enabled", len(payload_slots) > 1)
@@ -8854,7 +8857,7 @@ class Simulation:
         if payload is not None and not is_empty_payload_name(payload.name):
             width = max(width, self._payload_orientation_dimensions(payload, orientation)[1])
         if self.geometric_motion:
-            width += 2 * amr.manoeuvring['clearance_m']
+            width += 2 * resolved_clearances(self.config,amr.manoeuvring)['wall_m']
         return width
 
     def _annotate_geometric_headings(self, amr, segments):
@@ -8895,10 +8898,21 @@ class Simulation:
                 requested = self.current_time if start_time_value is None else start_time_value
                 cells,blockers = [],[]
                 if self.geometric_traffic:
+                    separation = clearance['clearances']
                     cells = swept_cells(trajectory,length_m=dimensions[0],width_m=dimensions[1],
-                                        clearance_m=amr.manoeuvring['clearance_m'])
+                        clearance_m=0,robot_clearance_m=separation['robot_m'])
                     ready,blockers = first_traffic_slot(self.geometric_route_reservations.get(start.floor,[]),
                         cells,requested,amr.id,self.node_clearance_time_sec)
+                    if not math.isfinite(ready):
+                        raise TrajectoryError('traffic_blocked','No known release for blocking occupancy: '+', '.join(blockers))
+                    if ready > requested:
+                        floor_geometry = next(f for f in self.config['geometry']['floors'] if f['floor']==start.floor)
+                        stop_errors = stopping_findings(trajectory.motions[0].start,length_m=dimensions[0],width_m=dimensions[1],
+                            wall_clearance_m=separation['wall_m'],floor=floor_geometry,
+                            protected_areas=automatic_stop_areas(self.config,start.floor))
+                        if stop_errors:
+                            raise TrajectoryError('invalid_waiting_position',
+                                '; '.join(f"{finding['code']}: {finding['area_id']}" for finding in stop_errors))
                 else:
                     ready = first_route_slot(self.geometric_route_reservations.get(start.floor, []),
                         envelope, requested, trajectory.duration_sec, amr.id, self.node_clearance_time_sec)
@@ -8920,6 +8934,8 @@ class Simulation:
                     'duration': trajectory.duration_sec, 'distance_m': trajectory.length_m,
                     'trajectory': trajectory.to_dict(), 'clearance_result': clearance,
                     'loaded_length_m': dimensions[0], 'loaded_width_m': dimensions[1],
+                    'wall_clearance_m':clearance['clearances']['wall_m'],
+                    'robot_clearance_m':clearance['clearances']['robot_m'],
                     'route_nodes': names, 'reservation_envelope': envelope,
                     'reservation_policy': 'swept_time_v1' if self.geometric_traffic else 'whole_route_envelope',
                     'traffic_cells':cells,'lane_sections':lane_sections,'payload_orientation': orientation,
@@ -11122,6 +11138,10 @@ class Simulation:
             if chosen is None:
                 continue
             chosen_finish, chosen_order, amr, task, estimate = chosen
+            if self.geometric_traffic:
+                # Queue order is urgency, release, then insertion. A shorter
+                # journey must not displace higher-urgency feasible work.
+                return amr, task, estimate
             if (chosen_finish, chosen_order) < (best_finish, best_order):
                 best_finish = chosen_finish
                 best_order = chosen_order
@@ -11144,8 +11164,12 @@ class Simulation:
         if charge_choices:
             # Retain the same batch preference as ordinary assignments once
             # charging is necessary for every available delivery.
-            _finish, _order, amr, task, option = min(
-                charge_choices, key=lambda item: (item[1][0], item[0], item[1]))
+            if self.geometric_traffic:
+                _finish, _order, amr, task, option = min(
+                    charge_choices,key=lambda item:(item[1][1],item[0],item[1][2]))
+            else:
+                _finish, _order, amr, task, option = min(
+                    charge_choices, key=lambda item: (item[1][0], item[0], item[1]))
             return amr, task, option
         return None
 
@@ -13959,7 +13983,8 @@ class Simulation:
                 "motion_model": segment_meta.get('motion_model', ''),
                 "trajectory_json": json.dumps(segment_meta['trajectory']) if 'trajectory' in segment_meta else '',
                 "traffic_json": json.dumps({key:segment_meta[key] for key in
-                    ('reservation_policy','lane_sections','loaded_length_m','loaded_width_m','traffic_blockers')
+                    ('reservation_policy','lane_sections','loaded_length_m','loaded_width_m',
+                     'wall_clearance_m','robot_clearance_m','traffic_blockers')
                     if key in segment_meta}) if ('reservation_policy' in segment_meta or 'traffic_blockers' in segment_meta) else '',
                 # New schema
                 "segment_type": segment_type,

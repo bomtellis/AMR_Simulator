@@ -42,6 +42,14 @@ class Motion:
     sweep_rad: float = 0.0
     radius_m: float = 0.0
     centre: tuple = ()
+    profile: dict | None = None
+
+    def fraction_at_time(self, seconds):
+        """Time progression is separate from geometric pose_at fractions."""
+        if self.profile is not None:
+            from amr_motion_profiles import MotionProfile
+            return MotionProfile(**self.profile).fraction_at_time(seconds)
+        return min(1.,_number(seconds,'seconds')/self.duration_sec)
 
     def pose_at(self, fraction):
         f = _number(fraction, 'fraction')
@@ -80,7 +88,7 @@ class Trajectory:
             raise TrajectoryError('invalid_input', 'An empty trajectory has no pose.')
         for motion in self.motions:
             if elapsed <= motion.duration_sec:
-                return motion.pose_at(min(1, elapsed / motion.duration_sec))
+                return motion.pose_at(motion.fraction_at_time(elapsed))
             elapsed -= motion.duration_sec
         return self.motions[-1].end
 
@@ -257,7 +265,13 @@ def trajectory_from_dict(data):
                 previous = motions[-1].end
                 if not close(start.x,previous.x) or not close(start.y,previous.y) or not same_heading(start.heading,previous.heading):
                     raise ValueError('Discontinuous recorded trajectory.')
-            motions.append(Motion(kind,start,end,length,duration,sweep,r,centre))
+            profile = row.get('profile')
+            if profile is not None:
+                from amr_motion_profiles import MotionProfile
+                timing = MotionProfile(**profile)
+                if not close(timing.distance,abs(sweep) if kind=='pivot' else length) or not close(timing.duration_sec,duration):
+                    raise ValueError('Motion profile disagrees with recorded distance or duration.')
+            motions.append(Motion(kind,start,end,length,duration,sweep,r,centre,profile))
         result = Trajectory(tuple(motions),radius,data['pivot_allowed'])
         if not close(result.length_m,float(data['length_m'])) or not close(result.duration_sec,float(data['duration_sec'])):
             raise ValueError('Trajectory totals disagree.')

@@ -577,9 +577,12 @@ pass acceptance tests. Image approval alone does not prove working interactions.
 - Deliver a separate illustrated PDF user guide with editable source, an option
   reference and screenshots of the approved UI and relevant dialogs. Distinguish
   display settings from engineering model settings and explain limitations.
-- Have the user complete and approve the tutorial workflow; fix unclear instructions
-  and UI problems before final release. Design-concept images are not final guide
-  screenshots, and checkpoint notes do not substitute for this deliverable.
+- Supply editable guide sources in both Word and Markdown. Deliver the tutorial
+  as an in-application guided walkthrough, with the compact reference and LTN example.
+- Check the tutorial and guide against the delivered application. User completion
+  of the tutorial is explicitly excluded from release acceptance (3 October Q&A).
+  Design-concept images are not final guide screenshots, and checkpoint notes do
+  not substitute for this deliverable.
 
 **Gate:** a new engineering modeller can reproduce the expected reference outcome
 and follow the LTN example using only the delivered tutorial and guide. Documents
@@ -587,11 +590,14 @@ match the released UI version and all files are retained with editable sources.
 
 ### 10. Final release validation
 
-Automated tests and engineering evidence run throughout development. This final
-gate follows the core, approved UI and tutorial gates.
+Automated tests and engineering evidence run throughout development. User release
+acceptance follows the core and approved UI gates and excludes the tutorial.
+Tutorial/help/guide delivery and document quality checks remain required work.
 
 - Execute Windows clean-install and launch/run/report checks from the actual
-  distributable or supported installation procedure. Retain executed CI evidence.
+  installer, without administrator access and with networking unavailable.
+  Installation, normal operation, help and reporting must all work offline.
+  Retain executed CI evidence.
 - Run the complete normal/boundary/invalid/interaction acceptance matrix and
   independent invariant checks. Reconcile demand, event records and report totals.
 - Confirm repeatability and agreed project-size, save/load, memory and LTN runtime
@@ -600,8 +606,10 @@ gate follows the core, approved UI and tutorial gates.
   independent calculations, test inputs/results, defects and unresolved limitations.
 - Verify the contextual help, tutorial, LTN example and illustrated guide from
   checkpoint 9 against the final installed application.
-- Have the user complete the tutorial and representative project workflow and
-  resolve review findings before declaring the complete plan delivered.
+- Have the user complete this agreed acceptance workflow: open/create a project,
+  edit geometry and configuration, check inputs, simulate, investigate results or
+  a blockage, compare runs and export reports. Resolve review findings before
+  declaring the complete plan delivered. Do not add tutorial completion to this gate.
 
 **Final gate:** every original requirement has inspectable implementation,
 acceptance evidence and its required user-facing deliverable. An unresolved or
@@ -615,6 +623,112 @@ than certification; revision restore rather than a tamper-proof audit;
 compressed `.amrproj` with deduplicated drawings and external simulation outputs;
 explicit migrations and legacy comparison; sequential user verification checkpoints.
 
+## Confirmed Q&A decisions — 3 October 2026
+
+These requirements refine the earlier roadmap and take precedence where wording
+conflicts. They are agreed target behaviour, not claims of implemented or verified
+functionality. The user explicitly resumed implementation after the Q&A and
+authorised multiple subagents on 3 October 2026. Complete core features sequentially, then
+the approved UI workflows, and finish the tutorial and illustrated guide at the end.
+Keep engineering test evidence current throughout.
+
+### Simulation modes and geometry
+
+- Provide a Simple/Detailed simulation behaviour toggle, not a UI-complexity toggle.
+  Simple preserves existing graph/capacity behaviour, including door-width and
+  route-profile restrictions. Detailed adds physical trajectories and traffic
+  interactions. Record the selected mode with each frozen run.
+- Corridor width is measured between walls. Normally provide two keep-right lanes;
+  use single-file operation when the loaded footprints and required clearances
+  cannot accommodate two lanes. Physical openings/obstructions still use explicit
+  model geometry; drawings remain underlays.
+- Wall clearance and robot-to-robot minimum separation are separate user settings,
+  with project defaults and optional robot-type overrides. Enforce the larger
+  robot-to-robot requirement when two robot types differ. The earlier 100 mm
+  discussion does not establish a compulsory or universal default.
+- Users may draw no-queuing areas, but these are optional for simulation. Protect
+  modelled doors/openings and junction connecting paths automatically even without
+  custom areas. Check the complete loaded footprint when deciding whether a stop
+  obstructs protected space.
+
+### Yielding, queuing and blockage handling
+
+- Robots can queue in corridors if they do not obstruct doors, junctions or drawn
+  no-queuing areas. In a corridor wide enough for passing, the yielding robot may
+  stop where it is if the other can physically pass with the required separation.
+- Users draw passing places as usable areas; assess fit geometrically, not through
+  a manually declared capacity alone. They are not mandatory for every simulation.
+  Choose the nearest reachable passing place that fits when one is required.
+- Task urgency is fixed and numerical. Urgency determines access priority but must
+  not displace a robot already traversing a narrow section. Reserve passage before
+  entry; opposing robots wait outside until the section clears, including when no
+  passing places are marked.
+- Reversing is allowed. A yielding robot may retreat across several corridor
+  sections to a valid stopping/passing place if its complete movement is clear and
+  complies with robot movement constraints. Never invent free space or a retreat.
+- Distinguish ordinary waiting, genuine deadlock and exhausted search limits.
+  Establish deadlock only when no permitted movement or future scheduled release
+  can resolve the blockage. Stop the simulation on deadlock, retain partial results
+  and evidence, and highlight the robots, blocked routes and conflicting areas.
+  An exhausted search is a distinct explicit error, not proof of deadlock or passage.
+
+### Robot movement and load model
+
+- Provide steering, pivoting and omnidirectional presets. Define movement capability
+  per robot type, with independently selectable stationary pivot and lateral motion.
+  Reversing, minimum-radius turns and multi-point manoeuvres must use those capabilities.
+- Use one empty and one loaded settings set per robot type, not a separate movement
+  configuration for every robot/payload combination. Loaded settings may change
+  movement permissions, speeds and turning radius.
+- Configure forward, reverse, sideways and rotation speeds separately, exposing
+  the relevant values for each type. Loaded reverse, lateral and rotation speeds
+  are independently configurable from their empty equivalents.
+- Detailed mode models acceleration and braking explicitly, with separate empty
+  and loaded values and angular acceleration/braking. These affect journey time,
+  stopping distance and safe traffic behaviour.
+- Turning speed must satisfy both a configured maximum turning speed and a
+  configured lateral-acceleration limit; use the lower permitted speed.
+- The turning reference point is configurable per robot using longitudinal/lateral
+  offsets from its geometric centre in millimetres, and is displayed on its footprint.
+  Do not silently interpret an entered turning radius as a centre-based radius.
+- Payloads are centred, rigidly carried loads. Offset load placement and articulated
+  towing are outside this agreed scope; centred loads can still extend beyond the
+  robot body and their complete footprint must be checked.
+
+### CAD and project workflow
+
+- Support both centreline-plus-width corridor drawing with automatic nodes/links,
+  and explicit boundary drawing from which the route is derived.
+- Use CAD window/crossing selection: left-to-right selects fully enclosed objects;
+  right-to-left selects objects touched by the selection area. Support Shift
+  selection changes and Escape cancellation as proposed in the approved convention.
+- Selection highlights objects; users explicitly open contextual properties.
+  Preserve the approved A2 graph-dominant layout with compact, collapsible panels.
+- Lock project editing while its simulation runs. Frozen inputs, revision binding
+  and read-only saved-run investigation remain required.
+- The representative operating workload is 10 floors, 60 robots, 1,000 tasks per
+  day and seven simulated days. Benchmark this workload; do not impose these values
+  as hard software limits or invent an agreed runtime threshold.
+- Deliver a Windows installer that does not require administrator access. Bundle
+  the dependencies/assets needed for fully offline installation, help and reporting.
+
+### Reports, comparisons and learning materials
+
+- Default report sections, individually selectable: inputs/assumptions/software
+  version/project revision; demand and completed/failed/pending outcomes with
+  explanations; delivery times/waits/queues/resource utilisation; energy/charging/
+  fleet performance; route restrictions/geometric failures/deadlocks; verification
+  findings and known limitations.
+- Export PDF, supporting CSV records and an Excel workbook.
+- Integrate comparison of multiple runs, displaying input differences alongside
+  results. Support runs from different project files as well as revisions of the
+  same project, including alternative layouts and fleet sizes.
+- Deliver an in-app guided walkthrough, illustrated PDF guide and editable Word
+  and Markdown sources, covering the compact reference followed by LTN. Finish
+  these against the delivered UI after core and approved UI work.
+- User release acceptance is the workflow listed in checkpoint 10. Tutorial
+  completion is excluded from that acceptance; the tutorial remains a deliverable.
+
 ## Next action when resumed
 
 The user reprioritised active work on 3 October 2026: make tangible progress on
@@ -623,24 +737,28 @@ illustrated guide. Do not continue the exhaustive option audit as the default
 next task. Existing unresolved verification items remain open release requirements;
 this priority change does not turn them into completed work.
 
-The run-control correction is complete. The first shared forward-trajectory
-engine, drawable geometry workbench and illustrated prototype tutorial are now
-implemented; see [the checkpoint](GEOMETRY_WORKBENCH_REVIEW.md). They are planning
-tools, not the production geometric simulator or completed CAD application.
+The run-control correction and initial shared trajectory/workbench checkpoint are
+implemented; see [the checkpoint](GEOMETRY_WORKBENCH_REVIEW.md). Subsequent commits
+`6f4020c` and `c360a9a` added geometric timing/energy/playback integration and an
+opt-in keep-right moving-traffic model. These do not complete detailed traffic:
+stationary/handling/waiting occupancy, yielding, the Q&A movement constraints and
+deadlock handling remain open. The full application guide is also unfinished.
 Continue with:
 
-1. Extend the shared explicit trajectory model from its verified forward-turn,
-   pivot and loaded-footprint reference scope to versioned project inputs and
-   simulator route integration. Retain legacy comparison and explicit failures.
-2. Integrate verified trajectories into simulation timing, reservations and saved
-   playback; add directional lanes, narrow sections and junction conflict cases.
-   Extend to reversing and bounded multi-point manoeuvres without fallback paths.
-3. Demonstrate A2's graph-dominant layout and CAD drawing workflow in a runnable
-   prototype for user approval, then integrate approved interactions into the
-   project editor. Prototype work can proceed alongside geometry; do not claim it
-   completes the simulator or release gates.
-4. Develop a reproducible reference tutorial alongside completed workflows, then
-   produce the illustrated guide and LTN example using the delivered UI.
+1. Complete geometric traffic occupancy, optional drawn passing/no-queuing areas,
+   automatic door/junction protection, urgency-aware access and deadlock evidence
+   against the confirmed Q&A requirements. Retain explicit model choice and legacy
+   comparison; moving-route-only tests cannot close the full traffic gate.
+2. Complete configurable turning reference points, movement presets, empty/loaded
+   settings, reversing/lateral/multi-point manoeuvres and acceleration/braking.
+   Integrate the same trajectories into timing, reservations and playback, without
+   fallback paths, and satisfy the full core-feature gate before UI rework.
+3. Demonstrate and obtain approval for the detailed A2 CAD workflows, then deliver
+   the production UI with the agreed selection/properties and editing-lock rules.
+   Complete cross-project run comparison, report exports and offline distribution.
+4. Complete the in-app tutorial, illustrated guide, editable Word/Markdown sources
+   and LTN example using the delivered UI. Execute final validation and the agreed
+   user acceptance workflow, which explicitly excludes tutorial completion.
 
 Retain the other requirements above, including report/stock reconciliation,
 calendars, staffing, project reliability and final release validation. Return to
