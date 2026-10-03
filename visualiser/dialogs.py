@@ -4615,7 +4615,7 @@ class PointEditorDialog(QDialog):
             area_value = str(point.get("people_area_type", "none") or "none").lower()
             self.people_area_combo.setCurrentIndex(max(0, self.people_area_combo.findData(area_value)))
             self.people_area_combo.setToolTip(
-                "Classifies the location for people-routing profiles and route compatibility."
+                "Stored location metadata. Current people routing uses corridor-edge classifications; this location setting does not restrict access."
             )
 
             self.wash_cycle_check = QCheckBox(
@@ -4624,11 +4624,13 @@ class PointEditorDialog(QDialog):
             self.wash_cycle_check.setChecked(bool(point.get("wash_cycle_required", False)))
             self.wash_duration_edit = _double_input(
                 point.get("wash_cycle_duration_sec", 300.0), minimum=0.0,
-                maximum=86_400.0, decimals=0, suffix=" s", step=30.0,
-                tooltip="Time the AMR remains unavailable while the wash cycle is completed.",
+                maximum=max(86_400.0, float(point.get("wash_cycle_duration_sec", 300.0))), decimals=6, suffix=" s", step=30.0,
+                tooltip="Seconds of wash service using the target location's service capacity. Zero skips service; transfer still occurs. An unchanged imported value retains its full precision.",
             )
+            self._initial_wash_duration_display = self.wash_duration_edit.value()
             self.wash_location_combo = QComboBox()
-            self.wash_location_combo.addItem("Use this location", "")
+            self.wash_location_combo.addItem("Use task drop-off", "")
+            self.wash_location_combo.setToolTip("Washing follows delivery. If both pickup and drop-off require washing, the drop-off rule wins. An empty target uses the task drop-off.")
             location_names = []
             if self.parent_obj and hasattr(self.parent_obj, "store"):
                 location_names = sorted(
@@ -4639,6 +4641,8 @@ class PointEditorDialog(QDialog):
             for name in location_names:
                 self.wash_location_combo.addItem(name, name)
             wash_location = str(point.get("wash_location", "") or "").strip()
+            if wash_location and self.wash_location_combo.findData(wash_location) < 0:
+                self.wash_location_combo.addItem(f"Unavailable: {wash_location}", wash_location)
             self.wash_location_combo.setCurrentIndex(
                 max(0, self.wash_location_combo.findData(wash_location))
             )
@@ -4701,8 +4705,8 @@ class PointEditorDialog(QDialog):
             if self.point.get("kind") == "location":
                 wash_required = bool(self.wash_cycle_check.isChecked())
                 wash_duration = float(self.wash_duration_edit.value())
-                if wash_required and wash_duration <= 0.0:
-                    raise ValueError("Wash-cycle duration must be greater than zero when wash control is enabled.")
+                if wash_duration == self._initial_wash_duration_display:
+                    wash_duration = float(self.point.get("wash_cycle_duration_sec", 300.0))
                 self.result.update(
                     {
                         "wash_cycle_required": wash_required,

@@ -22,6 +22,7 @@ from amr_lift_inputs import validate_lift_inputs
 from amr_robot_inputs import validate_robot_inputs, normalise_amr_payload_slots, normalise_orientations
 from amr_payload_inputs import validate_payload_inputs, payload_dimensions, inventory_space_dimensions
 from amr_inventory_inputs import validate_inventory_inputs
+from amr_location_inputs import validate_location_inputs
 from amr_generation_inputs import validate_generation_inputs
 from amr_staff_policy import resolve_staff_requirement
 
@@ -138,6 +139,7 @@ class Simulation:
         validate_robot_inputs(config, require_complete=True)
         validate_payload_inputs(config, require_complete=True)
         validate_inventory_inputs(config, check_references=True)
+        validate_location_inputs(config, require_complete=True)
         validate_generation_inputs(config)
         self.location_reservations = defaultdict(list)
         self.config = config
@@ -10677,7 +10679,7 @@ class Simulation:
             if wash_trigger is not None and not getattr(task, "is_idle_return", False):
                 task.wash_cycle_required = True
                 wash_target_name = str(getattr(wash_trigger, "wash_location", "") or "").strip()
-                wash_target = self.locations.get(wash_target_name) or dropoff_loc
+                wash_target = self.locations[wash_target_name] if wash_target_name else dropoff_loc
                 if wash_target.name != current_location.name:
                     t, current_location, wash_travel_segments, wash_travel_sec = move_between(
                         current_location, wash_target, t, rules=None,
@@ -10693,6 +10695,18 @@ class Simulation:
                     travel_to_pickup_sec += wash_travel_sec
                 wash_duration = max(0.0, float(getattr(wash_trigger, "wash_cycle_duration_sec", 0.0) or 0.0))
                 if wash_duration > 0.0:
+                    wash_start = self._find_next_available_time(wash_target.name, t, wash_duration)
+                    wash_wait = wash_start - t
+                    if wash_wait > 0:
+                        segments.append({
+                            "type": "wait_for_location", "from": wash_target.name, "to": wash_target.name,
+                            "location": wash_target.name, "duration": wash_wait, "distance_m": 0.0,
+                            "wait_reason": "wash_capacity", "wash_trigger_location": wash_trigger.name,
+                        })
+                        total += wash_wait
+                        t = wash_start
+                    if reserve:
+                        self._reserve_location(wash_target.name, t, t + wash_duration)
                     segments.append({
                         "type": "wash_cycle", "from": wash_target.name, "to": wash_target.name,
                         "location": wash_target.name, "duration": wash_duration, "distance_m": 0.0,

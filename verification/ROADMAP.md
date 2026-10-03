@@ -278,6 +278,14 @@ Initial occupancy is explicitly distinguished from seeded stock. Location inputs
 mixed bay classification, legacy slot aliases, zero-dimension policy and full
 physical geometry remain open.
 
+**Slice 2AD:** [Location inputs and wash capacity](LOCATION_CONTRACT_REVIEW.md)
+checks location scalars and wash references, reserves wash-service capacity,
+preserves wash settings in the editor and updates wash references on rename.
+Sixteen new tests include independent 21/27-second journeys with delivery at 9
+seconds; nine dispositions expose the unused location people classification.
+Physical wash efficacy, queue geometry, local-service timing alignment, general
+rename/delete coverage and the complete location model remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -527,10 +535,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AC's bay reference and edit-preservation changes. Next audit
-location dimensions, washing/concurrency inputs and references; resolve remaining
+Review slice 2AD's location and wash-capacity changes. Next resolve remaining
 bay classification, legacy slot aliases and zero-dimension policy against the
-stock/conservation references, then continue the department inventory,
+stock/conservation references, finish location outlines and remaining input
+contracts, then continue the department inventory,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

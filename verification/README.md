@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Storage bay inputs and preservation](INVENTORY_INPUT_REVIEW.md):
+The latest checkpoint is [Location inputs and wash capacity](LOCATION_CONTRACT_REVIEW.md):
+wash service now reserves location capacity, invalid targets block running,
+location inputs reject malformed values, and wash controls preserve their settings.
+Sixteen new references and nine dispositions retain explicit model limitations.
+The preceding checkpoint is [Storage bay inputs and preservation](INVENTORY_INPUT_REVIEW.md):
 unknown bay references block running, duplicate and malformed inputs are rejected,
 and bay edits preserve dimension-only storage, precision and occupancy metadata.
 Initial occupancy is explained separately from physical stock. Thirteen new

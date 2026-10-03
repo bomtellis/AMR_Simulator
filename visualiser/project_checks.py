@@ -271,6 +271,12 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     for path, message in payload_input_findings(config, require_complete=True):
         if path not in invalid_paths:
             error(path, message, 'payloads', code='PAYLOAD_INPUT')
+    from amr_location_inputs import location_input_findings
+    completed_groups.add('locations')
+    invalid_paths = {f.path for f in findings if f.severity == 'error'}
+    for path, message in location_input_findings(config, require_complete=True):
+        if path not in invalid_paths:
+            error(path, message, 'locations', code='LOCATION_INPUT')
     from amr_inventory_inputs import inventory_input_findings
     completed_groups.add('inventory')
     invalid_paths = {f.path for f in findings if f.severity == 'error'}
@@ -588,6 +594,11 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                         "Relink the drawing or acknowledge a run without it.", section)
     completed_groups.add('drawings')
     for index, location in enumerate(config.get('locations', [])):
+        if location.get('people_area_type', '').strip().lower() not in {'', 'none'}:
+            add('LOCATION_MODEL_SCOPE', 'info', f'/locations/{index}/people_area_type', location.get('name', ''),
+                'Location people-area classification is stored metadata; current people routing checks corridor-edge classifications.',
+                'This location setting does not restrict AMR or people access.',
+                'Configure corridor people-area settings and AMR route profiles for their respective routing rules.', 'locations', kind='unsupported')
         spaces = location.get('inventory_spaces', [])
         if isinstance(spaces, list):
             for space_index, space in enumerate(spaces):

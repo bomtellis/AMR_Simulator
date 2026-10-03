@@ -91,7 +91,7 @@ def apply_properties(config, target, changes, expected):
         elif kind == 'people' and value not in {'none', 'staff', 'public', 'both'}:
             raise ValueError('Choose a supported people-area classification.')
         elif kind == 'location' and value not in {r.get('name') for r in config.get('locations', [])}:
-            raise ValueError('Choose an existing wash location or clear it to use this location.')
+            raise ValueError('Choose an existing wash location or clear it to use the task drop-off.')
         parsed[key] = value
     result = deepcopy(config)
     for kind, row in records(result, target):

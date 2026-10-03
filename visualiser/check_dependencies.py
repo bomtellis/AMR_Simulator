@@ -15,6 +15,7 @@ GROUPS = {
     'robots': ('Robot and orientation inputs', ('amrs', 'payloads')),
     'payloads': ('Physical payload inputs', ('payloads',)),
     'inventory': ('Storage bay inputs and references', ('locations', 'payloads', 'amrs')),
+    'locations': ('Location inputs and wash references', ('locations',)),
     'shared_containers': ('Shared container definitions', ('task_generation', 'departments', 'waste_streams', 'payloads', 'locations')),
     'values': ('Numbers and schedules', ('*',)),
     'references': ('Identifiers and references', ('*',)),
@@ -38,6 +39,8 @@ def input_names(keys):
 def dependencies(finding):
     code, section = finding.code, finding.section
     local = (section,) if section and section != 'project' else ('*',)
+    if code in {'LOCATION_INPUT', 'LOCATION_MODEL_SCOPE'}:
+        return ('locations',)
     if code in {'INVENTORY_INPUT', 'INVENTORY_OCCUPANCY_SCOPE'}:
         return GROUPS['inventory'][1]
     if code in {'PAYLOAD_INPUT', 'PAYLOAD_MODEL_SCOPE'}:

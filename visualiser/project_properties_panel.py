@@ -159,7 +159,7 @@ class ProjectPropertiesPanel(QWidget):
                          'distance_m': 'Unset: endpoint geometry. Zero is an explicit zero-length override; it does not mean automatic.',
                          'bidirectional': 'Unset: two-way travel. This changes this record only; a separate reverse record may still permit returning.',
                          'wash_cycle_duration_sec': 'Unset: 300 seconds in the simulator. Zero explicitly disables the wash delay.',
-                         'wash_location': 'Unset: use this location.',
+                         'wash_location': 'Unset: wash at the task drop-off after delivery. The drop-off wash rule wins if both endpoints require washing.',
                          'has_door': 'Unset: no door restriction.', 'wash_cycle_required': 'Unset: no required wash cycle.'}
                 widget.setToolTip((label + '. Default removes the explicit value; simulator defaults then apply.') if target[0] in SECTIONS else hints.get(key, label))
             profiles = self.editor.store.data.get('route_profiles', {})

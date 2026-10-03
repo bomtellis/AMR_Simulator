@@ -547,6 +547,8 @@ class JsonStore:
         validate_payload_inputs(data)
         from amr_inventory_inputs import validate_inventory_inputs
         validate_inventory_inputs(data)
+        from amr_location_inputs import validate_location_inputs
+        validate_location_inputs(data)
         from amr_generation_inputs import validate_generation_inputs
         validate_generation_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
@@ -1479,6 +1481,8 @@ class JsonStore:
         for item in self.data.get("locations", []):
             if item["name"] == old_name:
                 item["name"] = new_name
+            if item.get('wash_location') == old_name:
+                item['wash_location'] = new_name
         for item in self.data.get("corridors", {}).get("nodes", []):
             if item["name"] == old_name:
                 item["name"] = new_name
