@@ -94,7 +94,7 @@ This checkpoint reconciles completed/failed task sets against the recorded run
 summary. It does not independently certify every existing PDF/CSV report metric,
 reconstruct completed vehicle journeys, or prove full payload conservation.
 Legacy multi-stop journeys are reconstructed only where batch evidence exists.
-Logs above 150 MiB or 250,000 events are rejected explicitly; pagination for larger
+Logs above 300 MiB or 250,000 events are rejected explicitly; pagination for larger
 investigations remains outstanding. Direct event-schema migration is additive;
 existing report/visualiser columns remain available.
 

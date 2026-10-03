@@ -72,8 +72,8 @@ def resolve_log(path):
 
 def load_investigation(path):
     source = resolve_log(path)
-    if source.stat().st_size > 150 * 1024 * 1024:
-        raise ValueError('This investigation viewer supports logs up to 150 MiB. The file has not been truncated.')
+    if source.stat().st_size > 300 * 1024 * 1024:
+        raise ValueError('This investigation viewer supports logs up to 300 MiB. The file has not been truncated.')
     digest = file_hash(source)
     findings, metadata, frozen, simulation_mode = [], {}, None, None
     sidecar = Path(str(source) + '.run.json')
