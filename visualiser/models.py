@@ -531,8 +531,13 @@ class JsonStore:
     def __init__(self, data: Optional[dict] = None):
         from amr_simulation_inputs import validate_simulation_inputs
         validate_simulation_inputs(data)
-        from amr_geometric_routing import validate_geometry_inputs
-        validate_geometry_inputs(data)
+        # Explicit mode selections can be saved as incomplete authoring drafts.
+        # Project Checks and Simulation enforce their full physical readiness.
+        # Keep the import-validation contract of older geometric studies.
+        simulation = data.get('simulation', {}) if isinstance(data, dict) else {}
+        if not isinstance(simulation, dict) or 'mode' not in simulation:
+            from amr_geometric_routing import validate_geometry_inputs
+            validate_geometry_inputs(data)
         from amr_routing_inputs import validate_routing_inputs
         validate_routing_inputs(data)
         from amr_lift_inputs import validate_lift_inputs

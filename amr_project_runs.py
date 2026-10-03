@@ -10,7 +10,7 @@ import tempfile
 import uuid
 
 from amr_project import Project, atomic_write, configuration_bytes, digest
-from amr_run_evidence import config_hash, file_hash, software_snapshot
+from amr_run_evidence import config_hash, file_hash, software_snapshot, verified_simulation_mode
 
 MANIFEST = "run_manifest.json"
 PARTIAL_EXIT_CODE = 2
@@ -119,6 +119,7 @@ class PreparedRun:
                              "project_binding": self.binding, "config_source": str(saved.path),
                              "config_copy": "config.json", "config_sha256": file_hash(self.directory / "config.json"),
                              "config_object_sha256": config_hash(self.config), "software": software_snapshot(),
+                             "simulation_mode": verified_simulation_mode({}, self.config),
                              "outputs": OUTPUTS.copy()}
         except Exception:
             self.discard()
@@ -157,6 +158,7 @@ def validate_run_inputs(directory, *, require_current_software=False, verify_dra
     config = read_json(directory / "config.json")
     if file_hash(directory / "config.json") != manifest["config_sha256"] or config_hash(config) != manifest["config_object_sha256"]:
         raise ValueError("Frozen run inputs have changed")
+    manifest['simulation_mode'] = verified_simulation_mode(manifest, config)
     portable = read_json(directory / "project_configuration.json")
     binding = manifest["project_binding"]
     if manifest.get("run_key") != binding.get("run_key"):
@@ -212,6 +214,7 @@ def finish_run(directory, exit_code, *, cancelled=False, error=""):
                     evidence.get("software", {}).get("sha256") != manifest["software"]["sha256"] or
                     evidence.get("log_sha256") != file_hash(directory / OUTPUTS["steps_csv"])):
                 raise ValueError("Simulation evidence does not match this prepared run")
+            verified_simulation_mode(evidence, evidence['frozen_inputs'])
             status = evidence.get('run_status')
             if status in PARTIAL_REASONS:
                 termination = verified_termination(evidence, directory / OUTPUTS['steps_csv'])

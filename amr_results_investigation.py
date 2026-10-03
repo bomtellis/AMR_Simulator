@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from amr_run_evidence import config_hash, file_hash
+from amr_run_evidence import config_hash, file_hash, verified_simulation_mode
 from report.amr_energy_evidence import summarize_energy
 from amr_lift_evidence import check_lift_movements
 from amr_waste_evidence import summarize_waste_volume
@@ -75,7 +75,7 @@ def load_investigation(path):
     if source.stat().st_size > 150 * 1024 * 1024:
         raise ValueError('This investigation viewer supports logs up to 150 MiB. The file has not been truncated.')
     digest = file_hash(source)
-    findings, metadata, frozen = [], {}, None
+    findings, metadata, frozen, simulation_mode = [], {}, None, None
     sidecar = Path(str(source) + '.run.json')
     if sidecar.is_file():
         data = json.loads(sidecar.read_text(encoding='utf-8'))
@@ -86,7 +86,14 @@ def load_investigation(path):
         elif data.get('schema_version') != 1:
             findings.append('Unsupported run-evidence version. Treating this as an unverified log.')
         else:
-            metadata, frozen = data, data['frozen_inputs']
+            try:
+                simulation_mode = verified_simulation_mode(data, data['frozen_inputs'])
+            except ValueError:
+                if 'simulation_mode' in data:
+                    raise
+                findings.append('Legacy simulation mode cannot be resolved. Input evidence and final summary are not trusted.')
+            else:
+                metadata, frozen = data, data['frozen_inputs']
             if (data.get('software') or {}).get('scope_version') != 2:
                 findings.append('Legacy or unknown software fingerprint scope: application source coverage is incomplete or unverified. Recorded results remain available.')
     else:
@@ -98,6 +105,12 @@ def load_investigation(path):
             manifest = json.loads(manifest_path.read_text(encoding='utf-8-sig'))
             if manifest.get('config_sha256') == file_hash(config_path):
                 frozen = json.loads(config_path.read_text(encoding='utf-8-sig'))
+                try:
+                    simulation_mode = verified_simulation_mode(manifest, frozen)
+                except ValueError:
+                    if 'simulation_mode' in manifest:
+                        raise
+                    findings.append('Legacy simulation mode cannot be resolved from the saved snapshot.')
                 findings.append('Legacy launcher input snapshot verified against its manifest; the log itself is not bound to that snapshot.')
     start = None
     if frozen:
@@ -165,11 +178,18 @@ def load_investigation(path):
     if metadata.get('log_kind') == 'playback':
         findings.append('Playback CSV is filtered. Use the full simulation_steps.csv for investigation.')
     return investigate_events(events, frozen, metadata, findings, source=str(source), log_hash=digest,
-                              complete_evidence=complete_evidence)
+                              complete_evidence=complete_evidence, simulation_mode=simulation_mode)
 
 
-def investigate_events(events, frozen=None, metadata=None, findings=None, *, source='', log_hash='', complete_evidence=False):
+def investigate_events(events, frozen=None, metadata=None, findings=None, *, source='', log_hash='',
+                       complete_evidence=False, simulation_mode=None):
     metadata, findings = metadata or {}, list(findings or [])
+    if simulation_mode is None and frozen is not None:
+        try:
+            simulation_mode = verified_simulation_mode(metadata, frozen)
+        except ValueError:
+            if 'simulation_mode' in metadata:
+                raise
     by_task = defaultdict(list)
     for event in events:
         for task in event['task_ids']:
@@ -450,6 +470,7 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
                                    'missing_from_summary': sorted(observed - expected)})
     return {'schema_version': 1, 'source': source, 'log_sha256': log_hash, 'run_id': metadata.get('run_id'),
             'complete_evidence': complete_evidence, 'frozen_inputs': frozen,
+            'simulation_mode': simulation_mode,
             'software': metadata.get('software'), 'project_binding': metadata.get('project_binding'), 'findings': sorted(set(findings)),
             'tasks': tasks, 'events': events, 'metrics': metrics, 'payload_movements': payload_moves,
             'payload_tracking_findings': payload_anomalies,

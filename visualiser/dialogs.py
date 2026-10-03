@@ -8637,15 +8637,20 @@ class CorridorSettingsDialog(QDialog):
 
 
 class SimulationSettingsDialog(QDialog):
-    def __init__(self, parent, simulation=None):
+    def __init__(self, parent, simulation=None, *, full_config=None):
         super().__init__(parent)
         self.setWindowTitle("Simulation settings")
         self.resize(780, 640)
         self.setMinimumSize(660, 500)
 
-        self.simulation = dict(simulation or {})
+        self._mode_config = deepcopy(full_config) if full_config is not None else {}
+        self.simulation = deepcopy(simulation if simulation is not None
+                                   else self._mode_config.get('simulation', {}))
+        if simulation is not None or 'simulation' in self._mode_config:
+            self._mode_config['simulation'] = deepcopy(self.simulation)
         simulation = self._normalise_simulation(self.simulation)
         self.result = None
+        self.project_result = None
 
         layout = QVBoxLayout(self)
         layout.addWidget(
@@ -8658,18 +8663,44 @@ class SimulationSettingsDialog(QDialog):
         layout.addWidget(tabs, 1)
 
         period_page = QWidget()
-        tabs.addTab(period_page, "Run period")
+        period_scroll = QScrollArea()
+        period_scroll.setWidgetResizable(True)
+        period_scroll.setFrameShape(QFrame.NoFrame)
+        period_scroll.setWidget(period_page)
+        tabs.addTab(period_scroll, "Run period")
         period_layout = QVBoxLayout(period_page)
         period_box = QGroupBox("Simulation dates and speed")
         period_form = QFormLayout(period_box)
-        self.motion_model_combo = QComboBox()
-        self.motion_model_combo.addItem('Legacy graph model', 'legacy')
-        self.motion_model_combo.addItem('Geometric trajectories v1', 'geometric_v1')
-        self.motion_model_combo.setCurrentIndex(max(0,self.motion_model_combo.findData(simulation.get('motion_model','legacy'))))
-        self.motion_model_combo.setToolTip('Geometric mode requires explicit floor geometry and robot manoeuvring parameters. '
-            'Import an exported geometry-workbench project, run Project Checks and review its limitations. '
-            'Legacy mode preserves graph-based comparison; changing this selection does not infer a geometry migration.')
-        period_form.addRow('Motion model', self.motion_model_combo)
+        from amr_simulation_modes import resolve_simulation_mode
+        self.mode_combo = QComboBox()
+        self.motion_model_combo = self.mode_combo  # Existing dialog callers retain this widget name.
+        self.mode_combo.addItem('Simple — graph-based simulation', 'simple')
+        self.mode_combo.addItem('Detailed — geometric traffic', 'detailed')
+        try:
+            self._original_mode = resolve_simulation_mode(self._mode_config)['mode']
+            self._mode_error = None
+        except ValueError as exc:
+            self._original_mode = 'invalid'
+            self._mode_error = str(exc)
+        if self._original_mode == 'geometric_compatibility':
+            self.mode_combo.addItem('Historical geometric comparison', 'geometric_compatibility')
+        elif self._original_mode == 'invalid':
+            raw = {key: self.simulation[key] for key in ('mode', 'motion_model') if key in self.simulation}
+            self.mode_combo.addItem('Invalid current mode: ' + json.dumps(raw, ensure_ascii=False), 'invalid')
+        self.mode_combo.setCurrentIndex(self.mode_combo.findData(self._original_mode))
+        self.mode_combo.setToolTip('Simple uses graph travel. Detailed requires explicit geometry, robot motion '
+            'and traffic settings. Switching modes preserves dormant project data; review the changes below.')
+        period_form.addRow('Simulation mode', self.mode_combo)
+        self.mode_readiness_label = QLabel()
+        self.mode_readiness_label.setWordWrap(True)
+        self.mode_preview_text = QPlainTextEdit()
+        self.mode_preview_text.setReadOnly(True)
+        self.mode_preview_text.setMaximumHeight(130)
+        self.mode_preview_text.setAccessibleName('Simulation mode changes and readiness findings')
+        period_form.addRow(self.mode_readiness_label)
+        period_form.addRow(self.mode_preview_text)
+        self.mode_combo.currentIndexChanged.connect(self._update_mode_preview)
+        self._update_mode_preview()
         self.start_datetime_edit = QDateTimeEdit()
         self.start_datetime_edit.setCalendarPopup(True)
         self.start_datetime_edit.setDisplayFormat("dd MMM yyyy HH:mm:ss")
@@ -8911,12 +8942,50 @@ class SimulationSettingsDialog(QDialog):
             parsed = QDateTime.fromString(str(fallback), Qt.ISODate)
         return parsed
 
+    def _update_mode_preview(self):
+        from amr_simulation_modes import preview_mode_change
+        from amr_geometric_routing import geometry_input_findings
+        selected = self.mode_combo.currentData()
+        self._mode_preview = None
+        if selected == self._original_mode:
+            self._mode_preview = {'config': deepcopy(self._mode_config), 'changes': [],
+                                  'findings': geometry_input_findings(self._mode_config)}
+        else:
+            try:
+                self._mode_preview = preview_mode_change(self._mode_config, selected)
+            except ValueError as exc:
+                self.mode_readiness_label.setText('Invalid mode — choose Simple or Detailed before saving.')
+                self.mode_preview_text.setPlainText(str(exc))
+                return
+        changes = self._mode_preview['changes']
+        findings = self._mode_preview['findings']
+        if selected == 'invalid':
+            self.mode_readiness_label.setText('Invalid current mode — choose Simple or Detailed before saving.')
+        elif findings:
+            self.mode_readiness_label.setText('Needs Project Checks: save is allowed; resolve blocking findings before simulation.')
+        else:
+            self.mode_readiness_label.setText('Mode settings are ready. Run Project Checks before simulation.')
+        lines = ['Changes on Save:' if changes else 'No mode changes. Original representation is preserved.']
+        for change in changes:
+            old = json.dumps(change['old_value'], ensure_ascii=False) if change['old_present'] else '(absent)'
+            new = json.dumps(change['new_value'], ensure_ascii=False)
+            lines.append(f"{change['path']}: {old} → {new}")
+        if findings:
+            lines.append('\nBlocking readiness findings:')
+            lines.extend(f'{path}: {message}' for path, message in findings)
+        if self._mode_error and selected == 'invalid':
+            lines.append(self._mode_error)
+        self.mode_preview_text.setPlainText('\n'.join(lines))
+
     def _normalise_simulation(self, simulation):
         from amr_simulation_inputs import validate_simulation_inputs, resolved_simulation_settings
         validate_simulation_inputs({'simulation': simulation or {}})
         return resolved_simulation_settings(simulation or {})
 
     def accept(self):
+        if self.mode_combo.currentData() == 'invalid' or self._mode_preview is None:
+            QMessageBox.warning(self, 'Check simulation mode', 'Choose a valid Simple or Detailed mode before saving.')
+            return
         start = self.start_datetime_edit.dateTime()
         end = self.end_datetime_edit.dateTime()
         if self.use_end_datetime_check.isChecked() and end < start:
@@ -8927,7 +8996,8 @@ class SimulationSettingsDialog(QDialog):
             )
             return
 
-        result = dict(self.simulation)
+        project_result = deepcopy(self._mode_preview['config'])
+        result = deepcopy(project_result.get('simulation', {}))
         for key, value in self._control_values().items():
             if value != self._initial_control_values[key]:
                 result[key] = value
@@ -8938,13 +9008,15 @@ class SimulationSettingsDialog(QDialog):
             QMessageBox.warning(self, "Check simulation settings", str(exc))
             return
         self.result = result
+        if result != self.simulation or 'simulation' in project_result:
+            project_result['simulation'] = deepcopy(result)
+        self.project_result = project_result
         super().accept()
 
     def _control_values(self):
         start = self.start_datetime_edit.dateTime()
         end = self.end_datetime_edit.dateTime()
         return {
-                'motion_model': self.motion_model_combo.currentData(),
                 "start_datetime": start.toString(Qt.ISODate),
                 "end_datetime": end.toString(Qt.ISODate)
                 if self.use_end_datetime_check.isChecked()

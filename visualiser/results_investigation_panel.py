@@ -185,8 +185,14 @@ class ResultsInvestigationPanel(QWidget):
                                   + ('matched' if r['matches'] else 'MISMATCH: ' + json.dumps(r)))
         software = result.get('software') or {}
         binding = result.get('project_binding') or {}
+        mode = result.get('simulation_mode') or {}
+        mode_name = {'simple': 'Simple', 'detailed': 'Detailed',
+                     'geometric_compatibility': 'Historical geometric comparison'}.get(mode.get('mode'))
+        mode_text = (mode_name + ('; explicitly selected in frozen inputs' if mode.get('selection') == 'explicit'
+                                  else '; derived from frozen legacy inputs')) if mode_name else 'Unknown; no verified mode evidence'
         self.evidence.setPlainText('\n'.join([
             'Run: ' + (result['run_id'] or 'Legacy; no native run identity'),
+            'Simulation mode: ' + mode_text,
             'Project revision: ' + (binding.get('revision_id') or 'Not recorded'),
             'Project identity: ' + (binding.get('project_id') or 'Not recorded'),
             'Input snapshot: ' + ('Available from saved evidence' if result['frozen_inputs'] else 'Unavailable; current editor inputs are not used'),

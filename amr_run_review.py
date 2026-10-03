@@ -2,7 +2,7 @@
 from pathlib import Path
 from amr_project_runs import OUTPUTS, read_json, validate_run_inputs, verified_termination
 from amr_project import configuration_bytes
-from amr_run_evidence import file_hash, config_hash
+from amr_run_evidence import file_hash, config_hash, verified_simulation_mode
 
 
 def verified_inputs(directory, *, drawings=False, allow_partial=False):
@@ -21,6 +21,7 @@ def verified_inputs(directory, *, drawings=False, allow_partial=False):
             evidence.get('log_sha256') != file_hash(csv) or
             evidence.get('log_kind') != 'full' or not evidence.get('logging_enabled') or evidence.get('reduced_logging')):
         raise ValueError('This action requires complete event evidence matching this run and its frozen configuration.')
+    verified_simulation_mode(evidence, config)
     if partial:
         termination = verified_termination(evidence, csv)
         if (manifest.get('termination') != termination or manifest.get('termination_sha256') != config_hash(termination)

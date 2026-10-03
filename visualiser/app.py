@@ -3640,12 +3640,23 @@ class AMRGraphEditor(QMainWindow):
     def manage_simulation_settings(self):
         dialog = SimulationSettingsDialog(
             self,
-            self.store.data.setdefault("simulation", {}),
+            self.store.data.get("simulation"),
+            full_config=self.store.data,
         )
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
-            self.store.data["simulation"] = dialog.result
+            updated = deepcopy(self.store.data)
+            project_result = getattr(dialog, 'project_result', None)
+            if isinstance(project_result, dict):
+                for section in ('simulation', 'geometry'):
+                    if section in project_result:
+                        updated[section] = deepcopy(project_result[section])
+                    else:
+                        updated.pop(section, None)
+            else:  # Compatibility with existing simulation-only dialog callers.
+                updated['simulation'] = dialog.result
+            self.store.data = updated
             end_text = dialog.result.get("end_datetime", "") or "not set"
-            self.set_status(f"Simulation end date set to {end_text}")
+            self.set_status(f"Simulation settings updated; demand end: {end_text}")
 
     @undoable("Edit scenarios")
     def manage_scenario_testing(self):

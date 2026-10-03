@@ -5,6 +5,26 @@ import json
 import os
 from pathlib import Path
 from amr_lift_evidence import CAPABILITY as LIFT_CAPABILITY, booked_movement_counts
+from amr_simulation_modes import resolve_simulation_mode
+
+
+def verified_simulation_mode(metadata, frozen_inputs):
+    """Derive mode only from bound inputs; reject contradictory saved claims.
+
+    Older records omit the field. Return their resolved value without changing
+    the metadata or frozen configuration on disk or in memory.
+    """
+    expected = resolve_simulation_mode(frozen_inputs)
+    if 'simulation_mode' in metadata:
+        try:
+            actual = json.dumps(metadata['simulation_mode'], sort_keys=True, allow_nan=False,
+                                separators=(',', ':'))
+            canonical = json.dumps(expected, sort_keys=True, allow_nan=False, separators=(',', ':'))
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError('Recorded simulation mode is malformed.') from None
+        if actual != canonical:
+            raise ValueError('Recorded simulation mode contradicts the frozen inputs.')
+    return expected
 
 
 def file_hash(path):
@@ -44,6 +64,7 @@ def write_run_evidence(simulation, csv_path, *, kind='full'):
         'schema_version': 1, 'run_id': simulation.run_id,
         'config_sha256': simulation._evidence_config_hash,
         'frozen_inputs': simulation._evidence_inputs,
+        'simulation_mode': resolve_simulation_mode(simulation._evidence_inputs),
         'software': simulation._evidence_software,
         'project_binding': getattr(simulation, '_evidence_project_binding', None),
         'log_sha256': file_hash(path), 'log_kind': kind,

@@ -772,8 +772,15 @@ Steering, pivoting and omnidirectional permission presets are available in the
 robot editor for existing detailed settings. Each state remains independently
 editable; presets supply no physical parameters. The editor preserves detailed
 movement/manoeuvring settings and extensions when other robot fields change.
-Complete numerical authoring, Simple/Detailed mode migration and general
-manoeuvre search remain open.
+Simple/Detailed mode selection now changes the model fields explicitly in one
+undoable edit and preserves dormant inputs. Detailed requires complete explicit
+movement, separate clearances, turning reference and initial placement inputs;
+incomplete selections remain editable but cannot run. Historical geometric
+studies remain a separately identified comparison mode. Frozen run manifests and
+evidence record and verify the resolved mode; saved-run review displays it.
+Complete numerical authoring and general manoeuvre search remain open. Mode
+selection does not remove the existing restrictions on geometric lifts, bays,
+people, scenarios, batching or general recovery/deadlock detection.
 The full application guide is
 also unfinished.
 Continue with:

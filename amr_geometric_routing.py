@@ -24,6 +24,19 @@ def geometry_enabled(config):
 
 
 def geometry_input_findings(config):
+    # JsonStore uses None to initialise a new empty project. Keep that established
+    # editor sentinel separate from malformed supplied configuration objects.
+    if config is None:
+        return []
+    from amr_simulation_modes import mode_input_findings
+    findings = mode_input_findings(config)
+    for finding in _geometry_input_findings(config):
+        if finding not in findings:
+            findings.append(finding)
+    return findings
+
+
+def _geometry_input_findings(config):
     if not isinstance(config,dict):
         return []
     findings = []

@@ -149,6 +149,7 @@ def summarize_batteries(rows, *, complete=False, capabilities=(), expected_amrs=
 
 def read_energy_evidence(path):
     """Verify bound coverage while streaming only the energy ledger into memory."""
+    from amr_run_evidence import verified_simulation_mode
     path = Path(path)
     def digest():
         with path.open('rb') as stream:
@@ -162,7 +163,15 @@ def read_energy_evidence(path):
             ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
         if (candidate.get('schema_version') == 1 and candidate.get('log_sha256') == original
                 and candidate.get('config_sha256') == frozen_hash):
-            metadata = candidate
+            try:
+                verified_simulation_mode(candidate, candidate.get('frozen_inputs'))
+            except ValueError:
+                if 'simulation_mode' in candidate:
+                    raise
+                # Old logs with an unknown mode remain readable as untrusted
+                # observations, without granting complete energy coverage.
+            else:
+                metadata = candidate
     complete = bool(metadata.get('run_status') == 'finished' and metadata.get('logging_enabled')
                     and not metadata.get('reduced_logging') and metadata.get('log_kind') == 'full')
     with path.open(newline='', encoding='utf-8-sig') as stream:
