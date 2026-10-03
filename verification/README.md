@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Hybrid demand](HYBRID_DEMAND_REVIEW.md):
+The latest checkpoint is [Direct-event volume outcomes](DIRECT_EVENT_VOLUME_REVIEW.md):
+scheduled-waste and sporadic volumes reconcile across pending, completed and
+failed tasks, with physical pickup evidence for failure phases and explicit
+separation from accumulated waste pools.
+The preceding correction is [Hybrid demand](HYBRID_DEMAND_REVIEW.md):
 discrete event volume no longer funds both a direct task and another threshold
 collection. Mode help and active editor controls explain the two components.
 The preceding checkpoint is [Sporadic planning](SPORADIC_PREVIEW_REVIEW.md):

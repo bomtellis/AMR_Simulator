@@ -1,5 +1,9 @@
 # Results investigation checkpoint — 2 October 2026
 
+Separate scheduled/sporadic task volumes now have linked outcome metrics. See
+[Direct-event volume outcomes](DIRECT_EVENT_VOLUME_REVIEW.md) for definitions,
+scope, failure-phase evidence and independent reference calculations.
+
 Version 2 accumulated-waste evidence now covers legacy collection outcomes as
 well as dynamic pools. See [Legacy waste outcomes](LEGACY_WASTE_BALANCE_REVIEW.md)
 for scope, compatibility and failure/retry reference calculations.

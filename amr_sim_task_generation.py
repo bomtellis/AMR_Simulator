@@ -550,6 +550,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self.scheduled_emitted = set()
         self.runtime: Dict[str, dict] = {}
         self.item_runtime: Dict[str, dict] = {}
+        self.direct_volume_requests: Dict[str, dict] = {}
         self.release_spacing_active: Dict[str, str] = {}
         self.deferred_release_queues: Dict[str, List[GeneratedTaskRecord]] = {}
         self.instances = self._build_instances()
@@ -1692,6 +1693,12 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     ) -> List[GeneratedTaskRecord]:
         if outbound is None:
             return []
+        component = getattr(outbound, 'generator_direct_volume_component', '')
+        if component and not getattr(outbound, 'is_return_task', False):
+            self.direct_volume_requests.setdefault(outbound.id, {
+                'task_id': outbound.id, 'rule_id': instance['key'], 'component': component,
+                'volume_m3': outbound.generated_volume_m3, 'status': 'pending',
+            })
         if getattr(outbound, 'tracked_item_exchange', False) and not getattr(outbound, 'generator_item_key', ''):
             self._register_scheduled_tracked_request(outbound, instance)
         record = self._record_for_task(
@@ -2189,6 +2196,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         cfg.get("volume_per_event_m3", 0.0), 0.0
                     )
                     task.waste_volume_m3 = task.generated_volume_m3
+                    task.generator_direct_volume_component = 'scheduled'
                 records.extend(
                     self._records_for_outbound(
                         task,
@@ -2283,6 +2291,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         )
                         task.generated_volume_m3 = generated_volume
                         task.waste_volume_m3 = generated_volume
+                        task.generator_direct_volume_component = 'sporadic'
                     event_records.extend(
                         self._records_for_outbound(
                             task,
@@ -2308,6 +2317,22 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         contributors[contributor_key] = now
         return records
+
+    def direct_volume_balance(self):
+        groups = {}
+        for request in self.direct_volume_requests.values():
+            groups.setdefault((request['rule_id'], request['component']), []).append(request)
+        result = []
+        for (rule, component), requests in sorted(groups.items()):
+            row = {'rule_id': rule, 'component': component,
+                   'requested_m3': sum(r['volume_m3'] for r in requests),
+                   'requests': [dict(r) for r in requests]}
+            for state in ('pending', 'completed', 'failed_before_pickup', 'unconfirmed'):
+                row[state + '_m3'] = sum(r['volume_m3'] for r in requests if r['status'] == state)
+            row['difference_m3'] = row['requested_m3'] - sum(row[state + '_m3'] for state in
+                ('pending', 'completed', 'failed_before_pickup', 'unconfirmed'))
+            result.append(row)
+        return result
 
     def _tracked_resource_locations(self, instance):
         locations = [location for location in instance.get('final_destination_locations', [])
@@ -2505,6 +2530,13 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     ) -> List[GeneratedTaskRecord]:
         """Release generation locks and any task waiting on a return pickup."""
         state = _clean_text(state).lower()
+        direct = self.direct_volume_requests.get(task.id)
+        if direct and direct['status'] == 'pending' and not getattr(task, 'is_return_task', False):
+            if state == 'completed':
+                direct['status'] = 'completed'
+            elif state == 'failed':
+                direct['status'] = ('unconfirmed' if getattr(task, 'payload_instance_picked_up', False)
+                                    else 'failed_before_pickup')
         item_key = _clean_text(getattr(task, 'generator_item_key', ''))
         item_runtime = self.item_runtime.get(item_key)
         if item_runtime and not getattr(task, 'is_return_task', False):
@@ -2958,6 +2990,10 @@ class TaskGenerationManager:
         return [row for generator in self.generators
                 if isinstance(generator, DynamicCategoryTaskGenerator)
                 for row in generator.tracked_item_balance()]
+
+    def direct_volume_balance(self):
+        return [row for generator in self.generators if isinstance(generator, DynamicCategoryTaskGenerator)
+                for row in generator.direct_volume_balance()]
 
     def tracked_item_requests(self):
         return [{'rule_id': rule, 'task_id': task_id, **request, 'quantities': dict(request['quantities'])}

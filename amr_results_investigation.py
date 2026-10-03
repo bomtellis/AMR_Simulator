@@ -14,6 +14,7 @@ from report.amr_energy_evidence import summarize_energy
 from amr_lift_evidence import check_lift_movements
 from amr_waste_evidence import summarize_waste_volume
 from amr_tracked_stock_evidence import summarize_tracked_stock
+from amr_direct_volume_evidence import summarize_direct_volume
 
 COMPLETED = {'task_complete', 'multi_stop_task_complete'}
 ASSIGNED = {'task_assigned', 'multi_stop_task_assigned'}
@@ -400,6 +401,24 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
         'definition': 'Checks recorded group totals, task allocations, generated volumes and terminal outcomes. A completed collection is not evidence of physical disposal or decontamination.',
         'event_ids': waste['event_ids']})
     findings.extend(waste['issues'])
+    direct = summarize_direct_volume(events, complete=complete_evidence,
+                                     capabilities=metadata.get('event_capabilities', []))
+    direct_definition = ('Volume explicitly attached to generated scheduled waste and sporadic tasks, including hybrid direct events. '
+        'Requested = pending + completed + failed before pickup + unconfirmed after pickup. '
+        'Task completion is not proof of staff handoff, physical disposal or decontamination. '
+        'This volume is separate from accumulated waste pools; failed direct events are not automatically retried.')
+    for field, title in [('requested_m3', 'requested'), ('pending_m3', 'pending'),
+                         ('completed_m3', 'completed tasks'), ('failed_before_pickup_m3', 'failed before pickup'),
+                         ('unconfirmed_m3', 'unconfirmed after pickup')]:
+        metrics.append({'key': 'direct_event_' + field, 'title': f'Direct-event volume: {title} (m³)',
+            'value': direct['totals'][field], 'observed_count': direct['totals'][field],
+            'coverage': 'recorded task-volume accounting' if direct['known'] else 'missing or incomplete evidence',
+            'definition': direct_definition, 'event_ids': direct['event_ids']})
+    metrics.append({'key': 'direct_event_volume_balance', 'title': 'Direct-event volume reconciliation',
+        'value': ('Reconciled' if direct['matches'] else 'Conflict') if direct['known'] else None,
+        'observed_count': None, 'coverage': 'recorded task-volume accounting' if direct['known'] else 'missing or incomplete evidence',
+        'definition': direct_definition, 'event_ids': direct['event_ids']})
+    findings.extend(direct['issues'])
     stock = summarize_tracked_stock(events, complete=complete_evidence,
                                    capabilities=metadata.get('event_capabilities', []))
     metrics.append({'key': 'tracked_stock_reconciliation', 'title': 'Tracked stock reconciliation',
@@ -435,7 +454,7 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
             'tasks': tasks, 'events': events, 'metrics': metrics, 'payload_movements': payload_moves,
             'payload_tracking_findings': payload_anomalies,
             'journeys': list(journeys.values()), 'reconciliation': reconciliation, 'energy': energy,
-            'lift_checks': lift_checks, 'tracked_stock': stock,
+            'lift_checks': lift_checks, 'tracked_stock': stock, 'direct_event_volume': direct,
             'limitations': ['Wait intervals can overlap and are not summed into an additive delay breakdown.',
                             'Route-plan segments may be logged ahead of execution; completion is established only by terminal events.',
                             'Missing events, reasons or physical identifiers are not reconstructed from the current project.',

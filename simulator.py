@@ -12486,6 +12486,7 @@ class Simulation:
             event_time=task.release_time,
             event_type=record.event_type,
             task_id=task.id,
+            generation_component=str(getattr(task, 'generator_direct_volume_component', '') or ''),
             dropoff_zone=str(getattr(task, 'dropoff_zone', '') or ''),
             details=record.details,
             from_location=pickup_location_name,
@@ -13588,6 +13589,7 @@ class Simulation:
             "department_id",
             "waste_stream",
             "waste_volume_m3",
+            "generation_component",
             "container_type",
             "pending_reason",
             "tracked_item_exchange",
@@ -13823,6 +13825,7 @@ class Simulation:
         department_id: str = "",
         waste_stream: str = "",
         waste_volume_m3: float = 0.0,
+        generation_component: str = "",
         container_type: str = "",
         pending_reason: str = "",
         payload_slot: str = "",
@@ -14086,6 +14089,7 @@ class Simulation:
                 ),
                 "multi_stop_pickup_count": int(multi_stop_pickup_count or 0),
                 "multi_stop_dropoff_count": int(multi_stop_dropoff_count or 0),
+                "generation_component": generation_component,
                 "tracked_item_exchange": bool(tracked_item_exchange),
                 "dropoff_zone": dropoff_zone,
                 "exchange_mode": exchange_mode,
@@ -14524,6 +14528,21 @@ class Simulation:
                             task_id=allocation['task_id'], status=allocation['status'],
                             waste_volume_m3=allocation['volume_m3'],
                             details=json.dumps({'group': group['group'], **allocation}))
+        if (self.verbose and self._evidence_run_status in ('finished', 'cancelled')
+                and not getattr(self, '_direct_volume_summary_written', False)
+                and not (self.scenario_mode and not self.scenario_enhanced_logging)):
+            self._direct_volume_summary_written = True
+            self._evidence_event_capabilities.append('direct_event_volume_v1')
+            groups = self.task_generation_manager.direct_volume_balance()
+            self.log_step(event_time=self.current_time, event_type='direct_event_volume_coverage', status='summary',
+                details=json.dumps({'schema_version': 1, 'scope': 'generated_direct_event_volume',
+                    'group_count': len(groups), 'request_count': sum(len(g['requests']) for g in groups)}))
+            for group in groups:
+                self.log_step(event_time=self.current_time, event_type='direct_event_volume_summary', status='summary',
+                    details=json.dumps({key: value for key, value in group.items() if key != 'requests'}))
+                for request in group['requests']:
+                    self.log_step(event_time=self.current_time, event_type='direct_event_volume_request',
+                        task_id=request['task_id'], status=request['status'], details=json.dumps(request))
         self._append_location_space_recommendation_rows()
         if (self.verbose and self._evidence_run_status in ('finished', 'cancelled')
                 and not getattr(self, '_tracked_stock_summary_written', False)
@@ -14793,6 +14812,7 @@ class Simulation:
             "pending_tasks": len(self._live_pending_task_items()),
             "failed_tasks": self.failed_tasks,
             "waste_volume_balance": self.task_generation_manager.waste_volume_balance(),
+            "direct_event_volume_balance": self.task_generation_manager.direct_volume_balance(),
             "tracked_item_balance": self.task_generation_manager.tracked_item_balance(),
             "scenario": {
                 "enabled": bool(self.scenario_mode),

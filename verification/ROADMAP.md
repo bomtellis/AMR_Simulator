@@ -225,6 +225,13 @@ full transport and four editor paths. Shared mode help explains the result chang
 active threshold inputs are exposed. Separate direct-event outcome accounting and
 mixed-service inventory remain open.
 
+**Slice 2W:** [Direct-event volume outcomes](DIRECT_EVENT_VOLUME_REVIEW.md) adds
+separate accounting for generated scheduled-waste and sporadic task volumes,
+including hybrid discrete events. Thirteen references cover outcomes, physical
+pickup failure evidence, pool separation, old logs and corrupt/incomplete records.
+Results Investigation links the new metrics to contributing events. This does
+not prove disposal/staff handoff or complete mixed-service inventory accounting.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -474,8 +481,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2V's hybrid demand correction, then continue the remaining audit.
-Extend outcome accounting to separate scheduled/sporadic components,
+Review slice 2W's direct-event outcomes, then consolidate remaining configuration
+dispositions against implemented acceptance evidence and continue inventory gaps,
 preserving the explicit seed compatibility boundary and inventory-space limitations.
 Retain explicit limits on staffing capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through
