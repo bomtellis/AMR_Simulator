@@ -618,7 +618,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     completed_groups.add('drawings')
     from amr_payload_inputs import inventory_space_dimensions
     from amr_inventory_inputs import inventory_space_is_amr
-    from amr_department_inputs import department_reference_findings
+    from amr_department_inputs import department_reference_findings, department_location_reference_findings
+    for path, name in department_location_reference_findings(config):
+        error(path, f'Unknown department service or drop-off-zone location {name!r}; resolve this assignment.', 'departments', code='DEPARTMENT_LOCATION_REFERENCE')
     for path, identity in department_reference_findings(config):
         add('DEPARTMENT_REFERENCE', 'warning', path, identity,
             f'No department matches {identity!r}; this assignment generates no department work.',

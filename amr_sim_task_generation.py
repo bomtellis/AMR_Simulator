@@ -678,9 +678,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self, dept: dict, category_key: str
     ) -> List[str]:
         category_locations = dept.get("task_generation_locations", {}) or {}
-        entry = category_locations.get(category_key, {}) or {}
-        values = entry.get("pickup_dropoff_locations", [])
-        return _unique_clean(values)
+        from amr_department_inputs import department_location_names
+        return department_location_names(category_locations.get(category_key, {}))
 
     def _department_dropoff_zone_locations(
         self, dept: dict, category_key: str
@@ -692,13 +691,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         the AMR leg to an intermediate location.
         """
         category_locations = dept.get("task_generation_locations", {}) or {}
-        entry = category_locations.get(category_key, {}) or {}
-        if not isinstance(entry, dict):
-            return []
-        values = entry.get(
-            "dropoff_zone_locations", entry.get("drop_off_zone_locations", [])
-        )
-        return _unique_clean(values)
+        from amr_department_inputs import department_location_names
+        return department_location_names(category_locations.get(category_key, {}), zones=True)
 
     def _dropoff_locations_from_cfg(self, cfg: dict) -> List[str]:
         values = []

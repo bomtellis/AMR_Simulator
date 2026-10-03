@@ -1352,7 +1352,6 @@ class AMRGraphEditor(QMainWindow):
 
         self.set_status("Department location placement cancelled")
 
-    @undoable("Edit department locations")
     def finish_department_location_placement(self, x, y, floor):
         if not self.department_location_placement_active:
             return False
@@ -1368,13 +1367,7 @@ class AMRGraphEditor(QMainWindow):
         self.department_location_placement_callback = None
         self.department_location_placement_return_dialog = None
 
-        payload = {
-            "category": category_key,
-            "name": location_name,
-            "floor": int(floor),
-            "x": round(float(x), 3),
-            "y": round(float(y), 3),
-        }
+        payload = dict(category=category_key, name=location_name, floor=floor, x=x, y=y)
 
         if location_name in self.store.names_in_use():
             QMessageBox.critical(
@@ -1388,13 +1381,6 @@ class AMRGraphEditor(QMainWindow):
                 dialog.activateWindow()
             return True
 
-        self.store.add_location(
-            location_name,
-            int(floor),
-            round(float(x), 3),
-            round(float(y), 3),
-        )
-
         if callable(callback):
             callback(category_key, payload)
 
@@ -1403,7 +1389,7 @@ class AMRGraphEditor(QMainWindow):
             dialog.raise_()
             dialog.activateWindow()
 
-        self.set_status(f"Created location {location_name}")
+        self.set_status(f"Location {location_name} is provisional until the department is saved")
         self.refresh_canvas()
         return True
 
@@ -1430,26 +1416,6 @@ class AMRGraphEditor(QMainWindow):
         return collect_department_dropoff_zone_names(
             self.store.data.get("departments", [])
         )
-
-    @undoable("Edit department locations")
-    def create_department_generated_locations(self, department_result):
-        created = 0
-
-        for item in department_result.get("_create_locations", []):
-            name = str(item.get("name", "")).strip()
-            if not name or name in self.store.names_in_use():
-                continue
-
-            self.store.add_location(
-                name,
-                int(item.get("floor", department_result.get("floor", 0))),
-                float(item.get("x", department_result.get("x", 0.0))),
-                float(item.get("y", department_result.get("y", 0.0))),
-            )
-            created += 1
-
-        department_result.pop("_create_locations", None)
-        return created
 
     def on_floor_changed(self, *_):
         self._clear_corridor_drawing()
@@ -2545,7 +2511,6 @@ class AMRGraphEditor(QMainWindow):
                 occupied_names.update(f"{lift['id']}-F{floor}" for floor in lift.get('floor_locations', {}))
             if proposed.get('name') in occupied_names:
                 raise ValueError('Department name conflicts with a graph location or corridor node.')
-            self.create_department_generated_locations(proposed)
             self.store.upsert_department(proposed, previous_id=previous_id)
         except ValueError as exc:
             self.store.data = before

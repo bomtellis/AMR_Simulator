@@ -547,22 +547,8 @@ class Simulation:
         # defines at least one valid inventory space. Locations with no
         # inventory_spaces, an empty inventory_spaces list, or no valid spaces keep
         # the previous unlimited-storage behaviour.
-        self.dropoff_zone_location_names = {
-            str(zone_name).strip()
-            for department in config.get("departments", []) or []
-            if isinstance(department, dict)
-            for category_locations in (
-                department.get("task_generation_locations", {}) or {}
-            ).values()
-            if isinstance(category_locations, dict)
-            for zone_name in _config_string_list(
-                category_locations.get(
-                    "dropoff_zone_locations",
-                    category_locations.get("drop_off_zone_locations", []),
-                )
-            )
-            if str(zone_name).strip()
-        }
+        from amr_department_inputs import department_zone_names
+        self.dropoff_zone_location_names = department_zone_names(config)
         self.inventory_spaces_by_location: Dict[str, List[dict]] = {}
         self._init_inventory_spaces(config.get("locations", []))
 

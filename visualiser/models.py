@@ -620,6 +620,7 @@ class JsonStore:
         )
 
     def ensure_department_defaults(self) -> None:
+        from amr_department_inputs import department_location_names
         for dept in self.data.setdefault("departments", []):
             dept.setdefault("enabled", True)
             dept.setdefault("operating_start_time", "00:00")
@@ -633,21 +634,13 @@ class JsonStore:
             category_locations = dept.get("task_generation_locations", {}) or {}
             if isinstance(category_locations, dict):
                 for key, raw_entry in list(category_locations.items()):
+                    destinations = department_location_names(raw_entry)
+                    zones = department_location_names(raw_entry, zones=True)
                     if not isinstance(raw_entry, dict):
-                        continue
-                    zones = raw_entry.get(
-                        "dropoff_zone_locations",
-                        raw_entry.get("drop_off_zone_locations", []),
-                    )
-                    if isinstance(zones, str):
-                        zones = [zones]
-                    raw_entry["dropoff_zone_locations"] = list(
-                        dict.fromkeys(
-                            str(value).strip()
-                            for value in (zones or [])
-                            if str(value).strip()
-                        )
-                    )
+                        raw_entry = {}
+                        category_locations[key] = raw_entry
+                    raw_entry['pickup_dropoff_locations'] = destinations
+                    raw_entry['dropoff_zone_locations'] = zones
 
     def ensure_mass_collection_defaults(self) -> None:
         clean = []
@@ -770,23 +763,8 @@ class JsonStore:
             if isinstance(payload, dict)
             and str(payload.get("name", "") or "").strip()
         }
-        dropoff_zone_names = {
-            str(zone_name).strip()
-            for department in self.data.get("departments", []) or []
-            if isinstance(department, dict)
-            for category_locations in (
-                department.get("task_generation_locations", {}) or {}
-            ).values()
-            if isinstance(category_locations, dict)
-            for zone_name in (
-                category_locations.get(
-                    "dropoff_zone_locations",
-                    category_locations.get("drop_off_zone_locations", []),
-                )
-                or []
-            )
-            if str(zone_name).strip()
-        }
+        from amr_department_inputs import department_zone_names
+        dropoff_zone_names = department_zone_names(self.data)
         for location in self.data.setdefault("locations", []):
             location.setdefault("wash_cycle_required", False)
             location.setdefault("wash_cycle_duration_sec", 300.0)
@@ -1294,14 +1272,8 @@ class JsonStore:
         validate_inventory_inputs({"locations": [{"inventory_spaces": spaces}]})
         lx, ly = float(location.get("x", 0.0)), float(location.get("y", 0.0))
         payloads = {p["name"]: p for p in self.data.get("payloads", []) if "name" in p}
-        dropoffs = {
-            str(name).strip()
-            for department in self.data.get('departments', []) or []
-            if isinstance(department, dict)
-            for category in (department.get('task_generation_locations', {}) or {}).values()
-            if isinstance(category, dict)
-            for name in (category.get('dropoff_zone_locations', category.get('drop_off_zone_locations', [])) or [])
-        }
+        from amr_department_inputs import department_zone_names
+        dropoffs = department_zone_names(self.data)
         clean_spaces = []
         for idx, space in enumerate(spaces, start=1):
             clean = deepcopy(space)
@@ -1482,6 +1454,8 @@ class JsonStore:
                                 new_name if str(value) == old_name else value
                                 for value in entry[key]
                             ]
+                        elif isinstance(entry.get(key), str) and entry[key].strip() == old_name:
+                            entry[key] = new_name
         for task in self.data.get("tasks", []):
             if task.get("pickup") == old_name:
                 task["pickup"] = new_name
@@ -1629,27 +1603,8 @@ class JsonStore:
                                 )
                                 removed_here += removed
 
-                        # Keep the two supported list keys synchronised when either exists.
-                        primary = entry.get("pickup_dropoff_locations")
-                        legacy = entry.get("locations")
-                        if isinstance(primary, list) or isinstance(legacy, list):
-                            merged = []
-                            seen = set()
-                            for value in (primary if isinstance(primary, list) else []):
-                                text = str(value).strip()
-                                if text and text not in seen:
-                                    merged.append(value)
-                                    seen.add(text)
-                            for value in (legacy if isinstance(legacy, list) else []):
-                                text = str(value).strip()
-                                if text and text not in seen:
-                                    merged.append(value)
-                                    seen.add(text)
-                            entry["pickup_dropoff_locations"] = list(merged)
-                            entry["locations"] = list(merged)
-
-                        if removed_here and not self._entry_has_location_references(entry):
-                            remove_categories.append(category_key)
+                        # Keep explicit empty modern values and metadata. Merging aliases
+                        # would revive destinations that the modern value had overridden.
                     else:
                         cleaned, removed_here = self._remove_location_name_from_value(entry, location_name)
                         if removed_here:

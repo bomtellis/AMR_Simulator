@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 from amr_location_inputs import location_outline_metrics
 from amr_payload_inputs import inventory_space_dimensions, payload_dimensions as resolved_payload_dimensions
 from amr_inventory_inputs import inventory_space_is_amr
+from amr_department_inputs import department_location_names
 try:
     from .amr_energy_evidence import read_energy_evidence
 except ImportError:  # Standalone report CLI.
@@ -2284,7 +2285,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         for category, cfg in task_locations.items():
             category_key = str(category).strip().lower()
             category_label = category_labels.get(category_key, str(category).title())
-            for loc_name in (cfg or {}).get("pickup_dropoff_locations", []) or []:
+            for loc_name in department_location_names(cfg):
                 if not loc_name:
                     continue
                 loc_text = str(loc_name).strip()
@@ -2351,21 +2352,13 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
         dept_name = str(dept.get("name") or dept.get("id") or "-").strip() or "-"
         task_locations = dept.get("task_generation_locations", {}) or {}
         for category, cfg in task_locations.items():
-            cfg = cfg if isinstance(cfg, dict) else {
-                "pickup_dropoff_locations": cfg
-            }
             category_name = str(category).title()
-            for loc_name in cfg.get("pickup_dropoff_locations", []) or []:
+            for loc_name in department_location_names(cfg):
                 if not loc_name:
                     continue
                 location_to_department[str(loc_name)] = dept_name
                 location_to_category[str(loc_name)] = category_name
-            zone_locations = cfg.get(
-                "dropoff_zone_locations",
-                cfg.get("drop_off_zone_locations", []),
-            )
-            if isinstance(zone_locations, str):
-                zone_locations = [zone_locations]
+            zone_locations = department_location_names(cfg, zones=True)
             for loc_name in zone_locations or []:
                 zone_name = str(loc_name or "").strip()
                 if not zone_name:

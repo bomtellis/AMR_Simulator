@@ -5,6 +5,7 @@ import math
 from typing import Any, List, Optional
 from amr_generation_inputs import generation_mode_explanation
 from amr_inventory_inputs import inventory_space_is_amr
+from amr_department_inputs import department_location_names
 
 from advanced_dialogs import MultiSelectPicker
 from inventory_spaces_manager import LocationSpacesManagerDialog
@@ -9796,28 +9797,9 @@ class DepartmentWasteStreamItemDialog(QDialog):
 
 def collect_department_dropoff_zone_names(departments):
     """Return every zone already assigned to any department category."""
-    names = set()
-    for department in departments or []:
-        if not isinstance(department, dict):
-            continue
-        category_locations = department.get("task_generation_locations", {}) or {}
-        if not isinstance(category_locations, dict):
-            continue
-        for entry in category_locations.values():
-            if not isinstance(entry, dict):
-                continue
-            raw_names = entry.get(
-                "dropoff_zone_locations",
-                entry.get("drop_off_zone_locations", []),
-            )
-            if isinstance(raw_names, str):
-                raw_names = [raw_names]
-            names.update(
-                str(value or "").strip()
-                for value in (raw_names or [])
-                if str(value or "").strip()
-            )
-    return sorted(names)
+    return sorted({name for department in departments or [] if isinstance(department, dict)
+                   for entry in (department.get('task_generation_locations', {}) or {}).values()
+                   for name in department_location_names(entry, zones=True)})
 
 
 class DepartmentDropoffZoneCreationDialog(QDialog):
@@ -10035,7 +10017,9 @@ class DepartmentEditorDialog(QDialog):
         self.category_dropoff_zone_summaries = {}
         self.category_suffix_edits = {}
         self.category_place_location_buttons = {}
-        self.category_pending_locations = {}
+        self.category_pending_locations = {
+            item['name']: deepcopy(item) for item in self.seed.get('_create_locations', [])
+        }
         self.pending_dropoff_zone_creation = None
 
         self.selected_waste_streams = self._normalise_department_waste_streams(
@@ -10367,7 +10351,6 @@ class DepartmentEditorDialog(QDialog):
         location_payload = dict(location_payload or {})
         location_payload["dropoff_zone_categories"] = list(category_keys)
         self.category_pending_locations[location_name] = location_payload
-        self._register_placed_dropoff_zone(category_keys, location_payload)
 
         self.show()
         self.raise_()
@@ -10430,17 +10413,8 @@ class DepartmentEditorDialog(QDialog):
             self.location_names.append(location_name)
             self.location_names = sorted(set(self.location_names))
 
-        # Keep a copy of the placed location in the dialog result path.  The
-        # main editor normally creates the location immediately when the scene
-        # is clicked, but this pending list makes the department save robust if
-        # the location is created by a deferred/dialog-driven path.
+        # Keep placement provisional until the owning department/list is saved.
         self.category_pending_locations[location_name] = dict(location_payload)
-
-        # Persist immediately into every backing model that might own this editor:
-        # 1) DepartmentListDialog.items when opened from Departments.
-        # 2) AMRGraphEditor.store.data when opened directly from the canvas.
-        # This prevents OK/reopen from rebuilding the dialog from stale data.
-        self._register_placed_category_location(category_key, location_payload)
 
         self._refresh_category_location_summary(category_key)
 
@@ -10460,189 +10434,6 @@ class DepartmentEditorDialog(QDialog):
         self.category_location_selections[category_key] = sorted(
             {str(x).strip() for x in selected if str(x).strip()}
         )
-
-    def _candidate_department_ids_for_placement(self):
-        candidates = []
-        for value in (
-            self.id_edit.text().strip(),
-            getattr(self, "original_department_id", ""),
-            self.seed.get("id", "") if isinstance(self.seed, dict) else "",
-        ):
-            text = str(value or "").strip()
-            if text and text not in candidates:
-                candidates.append(text)
-        return candidates
-
-    def _candidate_department_names_for_placement(self):
-        candidates = []
-        for value in (
-            self.name_edit.text().strip(),
-            getattr(self, "original_department_name", ""),
-            self.seed.get("name", "") if isinstance(self.seed, dict) else "",
-        ):
-            text = str(value or "").strip()
-            if text and text not in candidates:
-                candidates.append(text)
-        return candidates
-
-    @staticmethod
-    def _ensure_category_location_entry(dept, category_key, location_name):
-        if not isinstance(dept, dict):
-            return False
-        category_key = str(category_key or "").strip()
-        location_name = str(location_name or "").strip()
-        if not category_key or not location_name:
-            return False
-
-        category_locations = dept.setdefault("task_generation_locations", {})
-        if not isinstance(category_locations, dict):
-            category_locations = {}
-            dept["task_generation_locations"] = category_locations
-
-        entry = category_locations.setdefault(category_key, {})
-        if not isinstance(entry, dict):
-            entry = {"pickup_dropoff_locations": list(entry or [])}
-            category_locations[category_key] = entry
-
-        selected = entry.get("pickup_dropoff_locations", entry.get("locations", []))
-        if isinstance(selected, str):
-            selected = [selected]
-        elif not isinstance(selected, list):
-            selected = list(selected or [])
-
-        cleaned = []
-        seen = set()
-        for item in selected + [location_name]:
-            text = str(item or "").strip()
-            if text and text not in seen:
-                cleaned.append(text)
-                seen.add(text)
-
-        entry["pickup_dropoff_locations"] = cleaned
-        entry["locations"] = list(cleaned)
-        return True
-
-    @staticmethod
-    def _ensure_category_dropoff_zone_entry(dept, category_key, location_name):
-        if not isinstance(dept, dict):
-            return False
-        category_key = str(category_key or "").strip()
-        location_name = str(location_name or "").strip()
-        if not category_key or not location_name:
-            return False
-
-        category_locations = dept.setdefault("task_generation_locations", {})
-        if not isinstance(category_locations, dict):
-            category_locations = {}
-            dept["task_generation_locations"] = category_locations
-
-        entry = category_locations.setdefault(category_key, {})
-        if not isinstance(entry, dict):
-            entry = {"pickup_dropoff_locations": list(entry or [])}
-            category_locations[category_key] = entry
-
-        selected = entry.get(
-            "dropoff_zone_locations",
-            entry.get("drop_off_zone_locations", []),
-        )
-        if isinstance(selected, str):
-            selected = [selected]
-        elif not isinstance(selected, list):
-            selected = list(selected or [])
-
-        cleaned = []
-        seen = set()
-        for item in selected + [location_name]:
-            text = str(item or "").strip()
-            if text and text not in seen:
-                cleaned.append(text)
-                seen.add(text)
-        entry["dropoff_zone_locations"] = cleaned
-        entry.pop("drop_off_zone_locations", None)
-        return True
-
-    def _register_placed_dropoff_zone(self, category_keys, location_payload):
-        location_payload = dict(location_payload or {})
-        location_name = str(location_payload.get("name", "") or "").strip()
-        category_keys = [
-            str(value or "").strip()
-            for value in (category_keys or [])
-            if str(value or "").strip()
-        ]
-        if not location_name or not category_keys:
-            return
-
-        dept_ids = self._candidate_department_ids_for_placement()
-        dept_names = self._candidate_department_names_for_placement()
-        parent = self.parent()
-        while parent is not None:
-            if hasattr(parent, "register_placed_department_dropoff_zone"):
-                for dept_id in dept_ids:
-                    try:
-                        parent.register_placed_department_dropoff_zone(
-                            dept_id,
-                            category_keys,
-                            location_payload,
-                        )
-                    except Exception:
-                        pass
-
-            store = getattr(parent, "store", None)
-            data = getattr(store, "data", None) if store is not None else None
-            if isinstance(data, dict):
-                for dept in data.get("departments", []) or []:
-                    current_id = str(dept.get("id", "") or "").strip()
-                    current_name = str(dept.get("name", "") or "").strip()
-                    if (current_id and current_id in dept_ids) or (
-                        current_name and current_name in dept_names
-                    ):
-                        for category_key in category_keys:
-                            self._ensure_category_dropoff_zone_entry(
-                                dept,
-                                category_key,
-                                location_name,
-                            )
-
-            parent = parent.parent() if hasattr(parent, "parent") else None
-
-    def _register_placed_category_location(self, category_key, location_payload):
-        location_payload = dict(location_payload or {})
-        location_name = str(location_payload.get("name", "") or "").strip()
-        if not location_name:
-            return
-
-        dept_ids = self._candidate_department_ids_for_placement()
-        dept_names = self._candidate_department_names_for_placement()
-
-        parent = self.parent()
-        while parent is not None:
-            if hasattr(parent, "register_placed_department_location"):
-                for dept_id in dept_ids:
-                    try:
-                        parent.register_placed_department_location(
-                            dept_id,
-                            category_key,
-                            location_payload,
-                        )
-                    except Exception:
-                        pass
-
-            store = getattr(parent, "store", None)
-            data = getattr(store, "data", None) if store is not None else None
-            if isinstance(data, dict):
-                for dept in data.get("departments", []) or []:
-                    current_id = str(dept.get("id", "") or "").strip()
-                    current_name = str(dept.get("name", "") or "").strip()
-                    if (current_id and current_id in dept_ids) or (
-                        current_name and current_name in dept_names
-                    ):
-                        self._ensure_category_location_entry(
-                            dept,
-                            category_key,
-                            location_name,
-                        )
-
-            parent = parent.parent() if hasattr(parent, "parent") else None
 
     def _next_category_location_name(self, category_key):
         dept_id = self.id_edit.text().strip()
@@ -10665,41 +10456,12 @@ class DepartmentEditorDialog(QDialog):
             counter += 1
 
     def _normalise_task_generation_locations(self):
-        result = {}
-
-        existing = self.seed.get("task_generation_locations", {})
-        if isinstance(existing, dict):
-            for category_key, item in existing.items():
-                if isinstance(item, dict):
-                    locations = item.get(
-                        "pickup_dropoff_locations", item.get("locations", [])
-                    )
-                else:
-                    locations = item
-
-                result[str(category_key)] = [
-                    str(x).strip() for x in locations or [] if str(x).strip()
-                ]
-
-        return result
+        return {str(key): department_location_names(entry)
+                for key, entry in self.seed.get('task_generation_locations', {}).items()}
 
     def _normalise_task_generation_dropoff_zones(self):
-        result = {}
-        existing = self.seed.get("task_generation_locations", {})
-        if isinstance(existing, dict):
-            for category_key, item in existing.items():
-                if not isinstance(item, dict):
-                    continue
-                locations = item.get(
-                    "dropoff_zone_locations",
-                    item.get("drop_off_zone_locations", []),
-                )
-                if isinstance(locations, str):
-                    locations = [locations]
-                result[str(category_key)] = [
-                    str(x).strip() for x in (locations or []) if str(x).strip()
-                ]
-        return result
+        return {str(key): department_location_names(entry, zones=True)
+                for key, entry in self.seed.get('task_generation_locations', {}).items()}
 
     def _refresh_category_location_summary(self, category_key):
         summary = self.category_location_summaries.get(category_key)
@@ -10840,42 +10602,6 @@ class DepartmentEditorDialog(QDialog):
             self.selected_waste_streams = list(dialog.result)
             self._refresh_waste_summary()
 
-    def _normalise_task_generation_locations(self):
-        result = {}
-
-        existing = self.seed.get("task_generation_locations", {})
-        if isinstance(existing, dict):
-            for category_key, item in existing.items():
-                if isinstance(item, dict):
-                    locations = item.get(
-                        "pickup_dropoff_locations", item.get("locations", [])
-                    )
-                else:
-                    locations = item
-
-                result[str(category_key)] = [
-                    str(x).strip() for x in (locations or []) if str(x).strip()
-                ]
-
-        # Legacy migration from old waste fields
-        legacy = []
-
-        for value in self.seed.get("waste_pickup_locations", []):
-            text = str(value).strip()
-            if text and text not in legacy:
-                legacy.append(text)
-
-        waste_cfg = self.seed.get("waste", {}) or {}
-        for key in ["pickup_location", "dropoff_location"]:
-            text = str(waste_cfg.get(key, "")).strip()
-            if text and text not in legacy:
-                legacy.append(text)
-
-        if legacy and "waste" not in result:
-            result["waste"] = legacy
-
-        return result
-
     def _location_summary_text(self, locations):
         if not locations:
             return "None selected"
@@ -10981,7 +10707,11 @@ class DepartmentEditorDialog(QDialog):
                 "days_active": days_active,
                 "waste_streams": [dict(x) for x in self.selected_waste_streams],
                 "task_generation_locations": {
+                    **deepcopy(self.seed.get('task_generation_locations', {})),
+                    **{
                     category_key: {
+                        **(deepcopy(self.seed.get('task_generation_locations', {}).get(category_key, {}))
+                           if isinstance(self.seed.get('task_generation_locations', {}).get(category_key, {}), dict) else {}),
                         "pickup_dropoff_locations": [
                             str(x).strip()
                             for x in self.category_location_selections.get(
@@ -10998,8 +10728,12 @@ class DepartmentEditorDialog(QDialog):
                         ],
                     }
                     for category_key, *_ in self.task_generation_categories
+                    },
                 },
-                "task_generation_location_suffixes": location_suffixes,
+                "task_generation_location_suffixes": {
+                    **deepcopy(self.seed.get('task_generation_location_suffixes', {})),
+                    **location_suffixes,
+                },
                 "_create_locations": create_locations,
                 "x": float(self.x_edit.text()),
                 "y": float(self.y_edit.text()),
@@ -13156,218 +12890,13 @@ class DepartmentListDialog(QDialog):
             ),
         )
 
-    def _find_department_index_by_id(self, department_id):
-        department_id = str(department_id or "").strip()
-        if not department_id:
-            return None
-        for idx, item in enumerate(self.items):
-            current_id = str(item.get("id", "") or "").strip()
-            if current_id == department_id:
-                return idx
-        # Placement can happen after the user edits the ID in the open editor;
-        # in that case use the visible department name as a fallback where possible.
-        for idx, item in enumerate(self.items):
-            current_name = str(item.get("name", "") or "").strip()
-            if current_name and current_name == department_id:
-                return idx
-        return None
-
-    def register_placed_department_location(
-        self, department_id, category_key, location_payload
-    ):
-        """Immediately record a placed category location against the department list model.
-
-        The graphical placement callback occurs while DepartmentEditorDialog is hidden.
-        Updating self.items here means reopening the editor before pressing the list
-        Save button still shows the selected location.
-        """
-        department_id = str(department_id or "").strip()
-        category_key = str(category_key or "").strip()
-        location_name = str((location_payload or {}).get("name", "") or "").strip()
-        if not department_id or not category_key or not location_name:
-            return
-
-        idx = self._find_department_index_by_id(department_id)
-        if idx is None:
-            return
-
-        dept = self.items[idx]
-        category_locations = dept.setdefault("task_generation_locations", {})
-        entry = category_locations.setdefault(category_key, {})
-        if not isinstance(entry, dict):
-            entry = {"pickup_dropoff_locations": list(entry or [])}
-            category_locations[category_key] = entry
-
-        selected = entry.setdefault(
-            "pickup_dropoff_locations",
-            entry.get("locations", []),
-        )
-        if not isinstance(selected, list):
-            selected = [selected] if selected else []
-            entry["pickup_dropoff_locations"] = selected
-
-        existing = {str(x).strip() for x in selected if str(x).strip()}
-        if location_name not in existing:
-            selected.append(location_name)
-
-        # Keep legacy key in step for code that still reads locations.
-        entry["locations"] = list(entry.get("pickup_dropoff_locations", []))
-
-        if location_name not in self.location_names:
-            self.location_names.append(location_name)
-            self.location_names = sorted(set(self.location_names))
-
-        # Keep a pending create payload on the department item as a fallback.
-        pending = dept.setdefault("_create_locations", [])
-        if isinstance(pending, list):
-            if not any(
-                str(x.get("name", "") or "").strip() == location_name
-                for x in pending
-                if isinstance(x, dict)
-            ):
-                pending.append(dict(location_payload or {}))
-
-        self._refresh_table()
-
-    def register_placed_department_dropoff_zone(
-        self, department_id, category_keys, location_payload
-    ):
-        """Record a newly placed zone against every selected department category."""
-        department_id = str(department_id or "").strip()
-        location_name = str((location_payload or {}).get("name", "") or "").strip()
-        category_keys = [
-            str(value or "").strip()
-            for value in (category_keys or [])
-            if str(value or "").strip()
-        ]
-        if not department_id or not location_name or not category_keys:
-            return
-
-        idx = self._find_department_index_by_id(department_id)
-        if idx is None:
-            return
-
-        dept = self.items[idx]
-        for category_key in category_keys:
-            DepartmentEditorDialog._ensure_category_dropoff_zone_entry(
-                dept,
-                category_key,
-                location_name,
-            )
-
-        if location_name not in self.location_names:
-            self.location_names.append(location_name)
-            self.location_names = sorted(set(self.location_names))
-
-        pending = dept.setdefault("_create_locations", [])
-        if isinstance(pending, list) and not any(
-            str(item.get("name", "") or "").strip() == location_name
-            for item in pending
-            if isinstance(item, dict)
-        ):
-            pending.append(dict(location_payload or {}))
-
-        self._refresh_table()
-
-    def _merge_existing_category_locations_into_result(self, result):
-        """Do not allow a stale editor result to erase direct placement registrations."""
-        result = dict(result or {})
-        idx = self._find_department_index_by_id(result.get("id", ""))
-        if idx is None:
-            return result
-
-        existing_locations = self.items[idx].get("task_generation_locations", {}) or {}
-        result_locations = result.setdefault("task_generation_locations", {})
-        if not isinstance(result_locations, dict):
-            result_locations = {}
-            result["task_generation_locations"] = result_locations
-
-        for category_key, existing_entry in existing_locations.items():
-            target_entry = result_locations.setdefault(str(category_key), {})
-            if not isinstance(target_entry, dict):
-                target_entry = {"pickup_dropoff_locations": list(target_entry or [])}
-                result_locations[str(category_key)] = target_entry
-
-            for target_key, legacy_key in (
-                ("pickup_dropoff_locations", "locations"),
-                ("dropoff_zone_locations", "drop_off_zone_locations"),
-            ):
-                if isinstance(existing_entry, dict):
-                    existing_raw = existing_entry.get(
-                        target_key,
-                        existing_entry.get(legacy_key, []),
-                    )
-                elif target_key == "pickup_dropoff_locations":
-                    existing_raw = existing_entry
-                else:
-                    existing_raw = []
-                if isinstance(existing_raw, str):
-                    existing_raw = [existing_raw]
-                existing_names = [
-                    str(x).strip()
-                    for x in (existing_raw or [])
-                    if str(x).strip()
-                ]
-                if not existing_names:
-                    continue
-
-                target = target_entry.setdefault(
-                    target_key,
-                    target_entry.get(legacy_key, []),
-                )
-                if not isinstance(target, list):
-                    target = [target] if target else []
-                    target_entry[target_key] = target
-                present = {str(x).strip() for x in target if str(x).strip()}
-                for name in existing_names:
-                    if name not in present:
-                        target.append(name)
-                        present.add(name)
-
-            target_entry["locations"] = list(
-                target_entry.get("pickup_dropoff_locations", [])
-            )
-
-        return result
-
     def _commit_department_editor_result(self, result):
-        result = self._merge_existing_category_locations_into_result(result)
-
-        parent = self.parent()
-        if parent is not None and hasattr(
-            parent, "create_department_generated_locations"
-        ):
-            parent.create_department_generated_locations(result)
-        else:
-            result.pop("_create_locations", None)
-
-        for category_entry in (
-            result.get("task_generation_locations", {}) or {}
-        ).values():
-            if isinstance(category_entry, dict):
-                raw_location_groups = (
-                    category_entry.get(
-                        "pickup_dropoff_locations",
-                        category_entry.get("locations", []),
-                    ),
-                    category_entry.get(
-                        "dropoff_zone_locations",
-                        category_entry.get("drop_off_zone_locations", []),
-                    ),
-                )
-            else:
-                raw_location_groups = (category_entry,)
-
-            for raw_locations in raw_location_groups:
-                if isinstance(raw_locations, str):
-                    raw_locations = [raw_locations]
-                for location_name in raw_locations or []:
-                    location_name = str(location_name or "").strip()
-                    if location_name and location_name not in self.location_names:
-                        self.location_names.append(location_name)
-
+        # Child OK updates only this list's draft; project changes happen on Save.
+        result = deepcopy(result)
+        for entry in result.get('task_generation_locations', {}).values():
+            for zones in (False, True):
+                self.location_names.extend(department_location_names(entry, zones=zones))
         self.location_names = sorted(set(self.location_names))
-        result.pop("_create_locations", None)
         return result
 
     def _category_location_text_for_export(self, dept, category_key):
@@ -13487,14 +13016,6 @@ class DepartmentListDialog(QDialog):
                 f"Could not export departments CSV:\n{exc}",
             )
 
-    def _clean_department_items_for_save(self):
-        cleaned = []
-        for item in self.items:
-            clean = dict(item)
-            clean.pop("_create_locations", None)
-            cleaned.append(clean)
-        return cleaned
-
     def add_item(self):
         dialog = DepartmentEditorDialog(
             self,
@@ -13598,14 +13119,13 @@ class DepartmentListDialog(QDialog):
 
     def save_items(self):
         try:
-            self.items = self._clean_department_items_for_save()
             from amr_department_inputs import department_identity
             present = {department_identity(row) for row in self.items}
             changes = {old: new for old, new in self.department_id_changes.items() if new in present}
             if changes:
-                self.on_save(self.items, id_changes=changes)
+                self.on_save(deepcopy(self.items), id_changes=changes)
             else:
-                self.on_save(self.items)
+                self.on_save(deepcopy(self.items))
         except ValueError as exc:
             QMessageBox.critical(self, 'Invalid departments', str(exc))
             return

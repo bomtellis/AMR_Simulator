@@ -335,6 +335,15 @@ fallback, incomplete drafts, protected deletion and graph-label collisions.
 Category-location aliases, modal staleness and separate placement transactions
 remain open alongside broader workspace and report coverage.
 
+**Slice 2AK:** [Department location contracts and provisional placement](DEPARTMENT_LOCATION_REVIEW.md)
+unifies service/zone aliases across generation, editing and reports. Explicit empty
+modern assignments remain authoritative after clearing/deletion. Malformed values
+reject; effective missing destinations block managed preflight. Placement remains
+provisional through child OK, commits atomically with department Save and supports
+one-step undo/redo. Fifteen tests cover these contracts and nested cancellation,
+retry and reopening. General stale edits, provisional-owner sharing/deletion and
+broader workspace/report acceptance remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -584,8 +593,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AJ's department identity changes. Continue department category-location
-references/aliases and generated-location editing transactions, then remaining workspace gates.
+Review slice 2AK's department location and provisional placement changes. Close
+remaining configuration contracts and provisional-owner/stale-edit cases, then
+the remaining workspace gates.
 Retain full report event-coverage/stock reconciliation,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
