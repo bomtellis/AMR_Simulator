@@ -246,21 +246,14 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         for i, row in enumerate(config[section]):
             if required not in row:
                 error(f'/{section}/{i}/{required}', f'{required} is required.', section, row.get('id', row.get('name', '')))
-    sim = config.get("simulation", {})
+    from amr_simulation_inputs import simulation_input_findings, DEFAULTS
+    for path, message in simulation_input_findings(config):
+        error(path, message, 'simulation', code='RUN_PERIOD')
     dates = {}
-    for key in ("start_datetime", "end_datetime"):
-        if key == "start_datetime" or sim.get(key):
-            try:
-                dates[key] = datetime.fromisoformat(sim[key])
-            except (KeyError, TypeError, ValueError):
-                error(f"/simulation/{key}", f"{key} must be an ISO date and time.", "simulation", code="RUN_PERIOD")
-    if len(dates) == 2:
-        try:
-            if dates["end_datetime"] <= dates["start_datetime"]:
-                raise ValueError
-        except (TypeError, ValueError):
-            error("/simulation/end_datetime", "End must follow start and both dates must use compatible timezone offsets.", "simulation", code="RUN_PERIOD")
-
+    try:
+        dates['start_datetime'] = datetime.fromisoformat(config['simulation'].get('start_datetime', DEFAULTS['start_datetime']))
+    except (TypeError, ValueError):
+        pass
     completed_groups.add('values')
     from amr_robot_inputs import robot_input_findings
     completed_groups.add('robots')

@@ -1,0 +1,2 @@
+# PDF offsets are byte-sensitive, including ASCII-encoded ReportLab documents.
+*.pdf binary

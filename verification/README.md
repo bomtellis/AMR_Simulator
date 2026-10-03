@@ -8,11 +8,19 @@ graph-focused visual direction and the workflows still requiring review.
 
 This gate establishes repeatable evidence and fixes defects reproduced by small
 reference cases. It does **not** complete the feature audit or certify the simulator.
-The next stage starts only after the user's review of this checkpoint.
+Current work follows the user's reprioritisation toward geometry, CAD workflows
+and learning materials; workflow approvals and final release gates remain open.
 
 ## Review these results
 
-The latest checkpoint is [Initial fleet and charger allocation](FLEET_ALLOCATION_REVIEW.md):
+The current checkpoint is [Explicit trajectories and geometry workbench](GEOMETRY_WORKBENCH_REVIEW.md):
+draw and inspect radius-constrained routes, permitted pivots and loaded swept
+clearance in a working graph-dominant prototype. An illustrated reference tutorial
+is included. Simulator/traffic integration and production UI workflow approval
+remain open. [Run-control preservation](RUN_CONTROLS_REVIEW.md) closes the fixes
+already in progress when the user changed priorities.
+
+Earlier checkpoints include [Initial fleet and charger allocation](FLEET_ALLOCATION_REVIEW.md):
 distinct matching replaces greedy initial placement and per-type charger counting.
 Shared/instance-restricted bays count once; charging references agree across tools.
 Fifteen tests include an exhaustive small-graph reference. Physical parking and

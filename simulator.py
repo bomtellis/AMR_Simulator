@@ -27,6 +27,8 @@ from amr_location_inputs import validate_location_inputs
 from amr_fleet_allocation import (validate_charge_inputs, configured_charge_locations,
                                   maximum_bay_assignment, amr_bay_compatible)
 from amr_generation_inputs import validate_generation_inputs
+from amr_simulation_inputs import (validate_simulation_inputs, resolved_simulation_settings,
+                                   simulation_horizon_seconds)
 from amr_staff_policy import resolve_staff_requirement
 
 from amr_sim_energy import (
@@ -137,6 +139,7 @@ class Simulation:
         verbose: bool = False,
         verbose_csv_path: Optional[str] = None,
     ):
+        validate_simulation_inputs(config)
         validate_routing_inputs(config)
         validate_lift_inputs(config, require_speed=True, require_complete=True)
         validate_robot_inputs(config, require_complete=True)
@@ -164,7 +167,7 @@ class Simulation:
             str(task.get('id', '')): {'source_rule_id': f'static:{i}', 'source_rule_path': f'/tasks/{i}',
                                     'route_profile': task.get('route_profile', '') or ('dirty' if 'dirty' in task.get('labels', []) else '')}
             for i, task in enumerate(config.get('tasks', []))}
-        sim_cfg = config.get("simulation", {})
+        sim_cfg = resolved_simulation_settings(config.get("simulation", {}))
         scenario_cfg = config.get("scenario_testing", {}) or {}
         self.scenario_mode = bool(scenario_cfg.get("enabled", False))
         self.scenario_name = str(scenario_cfg.get("active_scenario", "Normal operation") or "Normal operation")
@@ -1504,32 +1507,7 @@ class Simulation:
         return False
 
     def _task_generation_horizon_seconds(self, config: dict) -> float:
-        sim_cfg = config.get("simulation", {}) or {}
-        if sim_cfg.get("end_datetime"):
-            try:
-                return max(
-                    0.0,
-                    (
-                        parse_datetime(sim_cfg["end_datetime"])
-                        - self.clock.start_datetime
-                    ).total_seconds(),
-                )
-            except Exception:
-                pass
-        if sim_cfg.get("duration_hours") is not None:
-            return max(0.0, float(sim_cfg.get("duration_hours", 0.0)) * 3600.0)
-        if sim_cfg.get("duration_days") is not None:
-            return max(0.0, float(sim_cfg.get("duration_days", 0.0)) * 86400.0)
-
-        latest = 0.0
-        for task in config.get("tasks", []):
-            try:
-                latest = max(
-                    latest, parse_release_time(dict(task), self.clock.start_datetime)
-                )
-            except Exception:
-                continue
-        return max(latest + 86400.0, 86400.0)
+        return simulation_horizon_seconds(config)
 
     def _normalise_configured_payload_slots(self, amr_type: dict) -> List[dict]:
         return normalise_amr_payload_slots(amr_type)

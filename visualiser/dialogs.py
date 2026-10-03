@@ -8640,8 +8640,8 @@ class SimulationSettingsDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(
             _dialog_intro(
-                "Set the simulated period and initial conditions. Performance controls normally "
-                "do not change the result; they limit how much scheduling work is done in one UI cycle."
+                "Set the demand period and initial conditions. Scheduling limits and release spacing "
+                "can change assignment choices and simulated waiting times."
             )
         )
         tabs = QTabWidget()
@@ -8658,7 +8658,7 @@ class SimulationSettingsDialog(QDialog):
         self.start_datetime_edit.setDateTime(
             self._datetime_from_text(simulation.get("start_datetime"), "2026-01-05T06:00:00")
         )
-        self.use_end_datetime_check = QCheckBox("Stop at a fixed end date and time")
+        self.use_end_datetime_check = QCheckBox("End generated demand at a fixed date and time")
         self.use_end_datetime_check.setChecked(bool(str(simulation.get("end_datetime", "") or "").strip()))
         self.end_datetime_edit = QDateTimeEdit()
         self.end_datetime_edit.setCalendarPopup(True)
@@ -8678,7 +8678,8 @@ class SimulationSettingsDialog(QDialog):
         self.tick_rate_spin.setValue(max(0.001, float(simulation.get("tick_rate", 1000) or 1000)))
         self.tick_rate_spin.setSuffix("×")
         self.tick_rate_spin.setToolTip(
-            "Simulation speed multiplier. This controls playback/processing speed, not AMR travel speed."
+            "Retained metadata for compatibility. The current event-driven simulator does not use "
+            "this value to pace execution or change AMR travel speed. Playback has separate controls."
         )
         self.generated_stagger_spin = QDoubleSpinBox()
         self.generated_stagger_spin.setRange(0.0, 3600.0)
@@ -8693,7 +8694,7 @@ class SimulationSettingsDialog(QDialog):
         period_form.addRow("Starts", self.start_datetime_edit)
         period_form.addRow("End condition", self.use_end_datetime_check)
         period_form.addRow("Ends", self.end_datetime_edit)
-        period_form.addRow("Simulation rate", self.tick_rate_spin)
+        period_form.addRow("Legacy rate (metadata)", self.tick_rate_spin)
         period_form.addRow("Same-time task release spacing", self.generated_stagger_spin)
         self.max_task_deferral_minutes_spin = QDoubleSpinBox()
         self.max_task_deferral_minutes_spin.setRange(0, 525600)
@@ -8711,8 +8712,9 @@ class SimulationSettingsDialog(QDialog):
         period_layout.addWidget(period_box)
         period_layout.addWidget(
             _dialog_intro(
-                "Leave the fixed end option clear when another configured stopping condition controls the run. "
-                "The end date must be later than the start date."
+                "Released tasks and returns can finish after the demand end. Without a fixed end, "
+                "duration_hours takes precedence over duration_days; otherwise demand extends one day "
+                "past the latest static release (at least one day)."
             )
         )
         period_layout.addStretch(1)
@@ -8740,7 +8742,7 @@ class SimulationSettingsDialog(QDialog):
         scheduling_box = QGroupBox("Scheduling workload limits")
         scheduling_form = QFormLayout(scheduling_box)
         self.max_multi_stop_candidate_tasks_spin = QSpinBox()
-        self.max_multi_stop_candidate_tasks_spin.setRange(1, 1000000)
+        self.max_multi_stop_candidate_tasks_spin.setRange(2, 1000000)
         self.max_multi_stop_candidate_tasks_spin.setValue(
             max(1, int(float(simulation.get("max_multi_stop_candidate_tasks", 8) or 8)))
         )
@@ -8750,12 +8752,13 @@ class SimulationSettingsDialog(QDialog):
             max(1, int(float(simulation.get("max_single_candidate_tasks", 8) or 8)))
         )
         self.max_assignments_per_tick_spin = QSpinBox()
-        self.max_assignments_per_tick_spin.setRange(1, 1000000)
+        self.max_assignments_per_tick_spin.setRange(0, 1000000)
+        self.max_assignments_per_tick_spin.setSpecialValueText("Unlimited")
         self.max_assignments_per_tick_spin.setValue(
-            max(1, int(float(simulation.get("max_assignments_per_tick", 25) or 25)))
+            int(simulation['max_assignments_per_tick'])
         )
         self.assignment_continue_delay_spin = QDoubleSpinBox()
-        self.assignment_continue_delay_spin.setRange(0.0, 60.0)
+        self.assignment_continue_delay_spin.setRange(0.001, 60.0)
         self.assignment_continue_delay_spin.setDecimals(6)
         self.assignment_continue_delay_spin.setValue(
             max(0.0, float(simulation.get("assignment_continue_delay_sec", 0.001) or 0.0))
@@ -8764,7 +8767,7 @@ class SimulationSettingsDialog(QDialog):
         scheduling_form.addRow("Multi-stop tasks considered together", self.max_multi_stop_candidate_tasks_spin)
         scheduling_form.addRow("Single tasks considered together", self.max_single_candidate_tasks_spin)
         scheduling_form.addRow("Assignments processed per cycle", self.max_assignments_per_tick_spin)
-        scheduling_form.addRow("Pause before continuing assignments", self.assignment_continue_delay_spin)
+        scheduling_form.addRow("Simulated delay before next assignment cycle", self.assignment_continue_delay_spin)
         performance_layout.addWidget(scheduling_box)
         performance_layout.addWidget(
             _dialog_intro(
@@ -8790,18 +8793,18 @@ class SimulationSettingsDialog(QDialog):
             "Released work takes priority over starting a new opportunity charge."
         )
         self.opportunity_charging_idle_minutes_spin = QDoubleSpinBox()
-        self.opportunity_charging_idle_minutes_spin.setRange(0.1, 10080.0)
-        self.opportunity_charging_idle_minutes_spin.setDecimals(1)
+        self.opportunity_charging_idle_minutes_spin.setRange(0.0, 10080.0)
+        self.opportunity_charging_idle_minutes_spin.setDecimals(6)
         self.opportunity_charging_idle_minutes_spin.setSingleStep(1.0)
         self.opportunity_charging_idle_minutes_spin.setSuffix(" min")
         self.opportunity_charging_idle_minutes_spin.setValue(
             max(
-                0.1,
+                0.0,
                 float(
                     simulation.get(
                         "opportunity_charging_idle_period_sec", 900.0
                     )
-                    or 900.0
+                    or 0.0
                 )
                 / 60.0,
             )
@@ -8872,6 +8875,10 @@ class SimulationSettingsDialog(QDialog):
         )
         initial_layout.addStretch(1)
 
+        # Preserve unedited precision, timezone offsets, omissions and metadata.
+        # Controls may display fewer digits or a narrower range than imported JSON.
+        self._initial_control_values = self._control_values()
+
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -8887,38 +8894,38 @@ class SimulationSettingsDialog(QDialog):
         return parsed
 
     def _normalise_simulation(self, simulation):
-        result = dict(simulation or {})
-        result.setdefault("start_datetime", "2026-01-05T06:00:00")
-        result.setdefault("end_datetime", "2026-01-06T06:00:00")
-        result.setdefault("tick_rate", 1000)
-        result.setdefault("generated_task_release_stagger_sec", 0.25)
-        result.setdefault("max_task_deferral_minutes", 0.0)
-        result.setdefault("precompute_static_routes", True)
-        result.setdefault("route_precompute_max_pairs", 100000)
-        result.setdefault("max_multi_stop_candidate_tasks", 8)
-        result.setdefault("max_single_candidate_tasks", 8)
-        result.setdefault("max_assignments_per_tick", 25)
-        result.setdefault("assignment_continue_delay_sec", 0.001)
-        result.setdefault("enable_opportunity_charging", False)
-        result.setdefault("opportunity_charging_idle_period_sec", 900.0)
-        result.setdefault("seed_waste_stream_containers_at_start", False)
-        result.setdefault("disable_inventory_spaces", False)
-        return result
+        from amr_simulation_inputs import validate_simulation_inputs, resolved_simulation_settings
+        validate_simulation_inputs({'simulation': simulation or {}})
+        return resolved_simulation_settings(simulation or {})
 
     def accept(self):
         start = self.start_datetime_edit.dateTime()
         end = self.end_datetime_edit.dateTime()
-        if self.use_end_datetime_check.isChecked() and end <= start:
+        if self.use_end_datetime_check.isChecked() and end < start:
             QMessageBox.warning(
                 self,
                 "Check simulation period",
-                "The simulation end date and time must be later than the start.",
+                "The demand end date and time must not precede the start.",
             )
             return
 
         result = dict(self.simulation)
-        result.update(
-            {
+        for key, value in self._control_values().items():
+            if value != self._initial_control_values[key]:
+                result[key] = value
+        from amr_simulation_inputs import validate_simulation_inputs
+        try:
+            validate_simulation_inputs({'simulation': result})
+        except ValueError as exc:
+            QMessageBox.warning(self, "Check simulation settings", str(exc))
+            return
+        self.result = result
+        super().accept()
+
+    def _control_values(self):
+        start = self.start_datetime_edit.dateTime()
+        end = self.end_datetime_edit.dateTime()
+        return {
                 "start_datetime": start.toString(Qt.ISODate),
                 "end_datetime": end.toString(Qt.ISODate)
                 if self.use_end_datetime_check.isChecked()
@@ -8939,9 +8946,6 @@ class SimulationSettingsDialog(QDialog):
                 "seed_waste_stream_containers_at_start": self.seed_waste_containers_check.isChecked(),
                 "disable_inventory_spaces": self.disable_inventory_spaces_check.isChecked(),
             }
-        )
-        self.result = result
-        super().accept()
 
 
 class WasteStreamEditorDialog(QDialog):

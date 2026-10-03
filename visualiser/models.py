@@ -529,6 +529,8 @@ DEFAULT_JSON = {
 
 class JsonStore:
     def __init__(self, data: Optional[dict] = None):
+        from amr_simulation_inputs import validate_simulation_inputs
+        validate_simulation_inputs(data)
         from amr_routing_inputs import validate_routing_inputs
         validate_routing_inputs(data)
         from amr_lift_inputs import validate_lift_inputs
@@ -557,67 +559,12 @@ class JsonStore:
         self.ensure_scenario_defaults()
 
     def ensure_simulation_defaults(self) -> None:
+        from amr_simulation_inputs import resolved_simulation_settings
         simulation = self.data.setdefault("simulation", {})
-        default_simulation = DEFAULT_JSON.get("simulation", {})
-        simulation.setdefault(
-            "start_datetime",
-            default_simulation.get("start_datetime", "2026-01-05T06:00:00"),
-        )
-        simulation.setdefault(
-            "end_datetime",
-            default_simulation.get("end_datetime", "2026-01-06T06:00:00"),
-        )
-        simulation.setdefault("tick_rate", default_simulation.get("tick_rate", 1000))
-        simulation.setdefault(
-            "generated_task_release_stagger_sec",
-            default_simulation.get("generated_task_release_stagger_sec", 0.25),
-        )
-        simulation.setdefault(
-            "precompute_static_routes",
-            default_simulation.get("precompute_static_routes", True),
-        )
-        simulation.setdefault(
-            "route_precompute_max_pairs",
-            default_simulation.get("route_precompute_max_pairs", 100000),
-        )
-        simulation.setdefault(
-            "max_multi_stop_candidate_tasks",
-            default_simulation.get("max_multi_stop_candidate_tasks", 8),
-        )
-        simulation.setdefault(
-            "max_single_candidate_tasks",
-            default_simulation.get("max_single_candidate_tasks", 8),
-        )
-        simulation.setdefault(
-            "max_assignments_per_tick",
-            default_simulation.get("max_assignments_per_tick", 25),
-        )
-        simulation.setdefault(
-            "assignment_continue_delay_sec",
-            default_simulation.get("assignment_continue_delay_sec", 0.001),
-        )
-        simulation.setdefault(
-            "enable_opportunity_charging",
-            default_simulation.get("enable_opportunity_charging", False),
-        )
-        simulation.setdefault(
-            "max_task_deferral_minutes",
-            default_simulation.get("max_task_deferral_minutes", 0.0),
-        )
-        simulation.setdefault(
-            "opportunity_charging_idle_period_sec",
-            default_simulation.get(
-                "opportunity_charging_idle_period_sec", 900.0
-            ),
-        )
-        simulation.setdefault(
-            "seed_waste_stream_containers_at_start",
-            default_simulation.get("seed_waste_stream_containers_at_start", False),
-        )
-        simulation.setdefault(
-            "disable_inventory_spaces",
-            default_simulation.get("disable_inventory_spaces", False),
-        )
+        for key, value in resolved_simulation_settings(simulation).items():
+            simulation.setdefault(key, value)
+        # Imported omission retains the runtime's duration/static-release fallback.
+        # A new project already has explicit dates in DEFAULT_JSON.
 
     def ensure_department_defaults(self) -> None:
         from amr_department_inputs import department_location_names

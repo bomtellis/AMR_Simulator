@@ -13,10 +13,18 @@ behaviour and complete user workflows still need review before production UI
 implementation. The images illustrate proposed controls and sample data; they
 are not screenshots of working features or engineering validation evidence.
 
-Delivery order remains **core features → approved UI rework → tutorial and guide
-→ final release validation**, as defined in the [roadmap](../../verification/ROADMAP.md).
-Implementation is paused. The overnight/0700 GMT note does not schedule a restart;
-continuation requires the user's instruction.
+The user subsequently resumed work and prioritised geometric traffic/manoeuvres,
+the graph-dominant CAD UI and learning materials. Geometry and runnable workflow
+prototypes now proceed ahead of the remaining exhaustive option audit, as recorded
+in the [roadmap](../../verification/ROADMAP.md). Production workflow approval and
+the full release gates remain required.
+
+The first [runnable geometry workbench](../../verification/GEOMETRY_WORKBENCH_REVIEW.md)
+demonstrates route/obstacle drawing, typed coordinates, radius and pivot controls,
+loaded-footprint clearance, undo and collapsed supporting panels. It is a separate
+planning prototype with an illustrated reference tutorial, not the completed A2
+project application. Review its actual interactions before adopting them in the
+production editor.
 
 Open the [image gallery](index.html) for a convenient visual comparison.
 

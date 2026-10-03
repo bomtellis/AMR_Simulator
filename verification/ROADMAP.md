@@ -617,12 +617,32 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AN's legacy stock/reference and location naming changes. Audit
-simulation run controls (dates, scheduling limits and inventory/charging switches)
-with independently calculated outcomes, then remaining generation/workspace gates.
-Retain full report event-coverage/stock reconciliation,
-preserving generation's remaining calendar, staffing and mixed-stock limitations.
-Use latest/audit-backlog.json to select exact gaps; do not equate its count with
-missing features. Complete the workspace gates after the core audit.
-Keep geometry, approved CAD UI,
-tutorial and final release work in their planned order.
+The user reprioritised active work on 3 October 2026: make tangible progress on
+geometric traffic and manoeuvres, the graph-dominant CAD UI, and the tutorial and
+illustrated guide. Do not continue the exhaustive option audit as the default
+next task. Existing unresolved verification items remain open release requirements;
+this priority change does not turn them into completed work.
+
+The run-control correction is complete. The first shared forward-trajectory
+engine, drawable geometry workbench and illustrated prototype tutorial are now
+implemented; see [the checkpoint](GEOMETRY_WORKBENCH_REVIEW.md). They are planning
+tools, not the production geometric simulator or completed CAD application.
+Continue with:
+
+1. Extend the shared explicit trajectory model from its verified forward-turn,
+   pivot and loaded-footprint reference scope to versioned project inputs and
+   simulator route integration. Retain legacy comparison and explicit failures.
+2. Integrate verified trajectories into simulation timing, reservations and saved
+   playback; add directional lanes, narrow sections and junction conflict cases.
+   Extend to reversing and bounded multi-point manoeuvres without fallback paths.
+3. Demonstrate A2's graph-dominant layout and CAD drawing workflow in a runnable
+   prototype for user approval, then integrate approved interactions into the
+   project editor. Prototype work can proceed alongside geometry; do not claim it
+   completes the simulator or release gates.
+4. Develop a reproducible reference tutorial alongside completed workflows, then
+   produce the illustrated guide and LTN example using the delivered UI.
+
+Retain the other requirements above, including report/stock reconciliation,
+calendars, staffing, project reliability and final release validation. Return to
+those audits when needed by these workflows and before final release. Preserve
+the user's uncommitted LTN edits and the explicit UI workflow approval checkpoint.

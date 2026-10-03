@@ -15,6 +15,7 @@ from decimal import Decimal
 from amr_sim_task_generation import DynamicCategoryTaskGenerator, _scheduled_times_from_cfg, _instance_requires_staff
 from amr_sim_time_utils import parse_release_time
 from amr_generation_inputs import generation_mode_explanation
+from amr_simulation_inputs import DEFAULTS, simulation_horizon_seconds
 from visualiser.project_checks import check_project, config_fingerprint
 
 MAX_DAYS = 31
@@ -158,8 +159,9 @@ def build_demand_preview(config, *, end_datetime=None):
     if errors:
         raise ValueError('Correct Project checks errors first: ' + '; '.join(f.message for f in errors[:4]))
     _guard_sizes(frozen)
-    start = datetime.fromisoformat(frozen['simulation']['start_datetime'])
-    end = datetime.fromisoformat(end_datetime or frozen['simulation'].get('end_datetime') or (start + timedelta(days=1)).isoformat())
+    start = datetime.fromisoformat(frozen['simulation'].get('start_datetime', DEFAULTS['start_datetime']))
+    end = (datetime.fromisoformat(end_datetime) if end_datetime else
+           start + timedelta(seconds=simulation_horizon_seconds(frozen)))
     duration = (end - start).total_seconds()
     if not 0 < duration <= MAX_DAYS * 86400:
         raise ValueError(f'Preview must cover more than zero and at most {MAX_DAYS} days from simulation start.')
