@@ -643,11 +643,20 @@ class GlobalStaffConfigDialog(QDialog):
         layout.addWidget(intro)
 
         self.enabled_check = QCheckBox("Enable global staff working patterns")
+        self.enabled_check.setToolTip(
+            "When disabled, generated staff tasks use one team with all-day availability. "
+            "Custom weekly hours still apply. This does not disable required staff handling."
+        )
         self.enabled_check.setChecked(bool(self.config.get("enabled", True)))
         layout.addWidget(self.enabled_check)
 
         self.spread_check = QCheckBox(
             "Evenly space staff-assisted timeframe tasks across working hours"
+        )
+        self.spread_check.setToolTip(
+            "Spread timeframe releases across the overlap with global or custom staff hours. "
+            "Turning this off releases tasks at the timeframe start; runtime staff still "
+            "observe their working hours. Fixed scheduled times are unchanged."
         )
         self.spread_check.setChecked(
             bool(self.config.get("spread_timeframe_tasks", True))

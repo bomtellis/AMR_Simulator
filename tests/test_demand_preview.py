@@ -50,6 +50,7 @@ class DemandPreviewTests(unittest.TestCase):
         self.assertEqual([30], [r.task.release_time for r in records])
 
     def test_timeframe_multiple_has_three_records(self):
+        self.category['requires_staff'] = False  # Unspaced independent-count reference.
         self.category.update(generation_mode='timeframe', timeframe_start='00:02', timeframe_end='00:08', timeframe_payload_multiple=3)
         p = self.preview()
         self.assertEqual([120, 120, 120], [t['release_seconds'] for t in p['tasks']])

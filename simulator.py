@@ -18,6 +18,7 @@ from typing import Dict, List, Optional, Tuple
 from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
 from amr_route_reservations import RouteReservationTransaction
 from amr_routing_inputs import validate_routing_inputs
+from amr_staff_policy import resolve_staff_requirement
 
 from amr_sim_energy import (
     energy_for_travel_kwh,
@@ -5196,19 +5197,10 @@ class Simulation:
     def _task_is_stores_delivery(self, task: Optional[Task]) -> bool:
         if task is None or bool(getattr(task, "is_return_task", False)):
             return False
-        labels = {
-            str(label).strip().lower()
-            for label in (getattr(task, "labels", []) or [])
-            if str(label).strip()
-        }
-        if "stores" in labels:
-            return True
-        task_id = str(getattr(task, "id", "") or "").strip().upper()
-        if task_id.startswith("GEN_STORES_"):
-            return True
-        source = str(getattr(task, "task_source", "") or "").strip().lower()
-        payload = normalise_payload_name(getattr(task, "payload", ""))
-        return source == "stores" or payload == "stores"
+        return resolve_staff_requirement(
+            labels=getattr(task, "labels", []), task_id=getattr(task, "id", ""),
+            source=getattr(task, "task_source", ""), payload=getattr(task, "payload", ""),
+        )
 
     def _staff_pool_for_category(
         self,
@@ -5317,12 +5309,10 @@ class Simulation:
         requirement = getattr(task, "requires_staff", None)
         if requirement is None:
             requirement = getattr(task, "staff_required", None)
-        if requirement is None:
-            # Backward-compatible default for older configs created before the
-            # editor exposed staff settings. An explicit false is authoritative.
-            requires_staff = self._task_is_stores_delivery(task)
-        else:
-            requires_staff = bool(requirement)
+        requires_staff = resolve_staff_requirement(
+            requirement, labels=getattr(task, "labels", []), task_id=getattr(task, "id", ""),
+            source=getattr(task, "task_source", ""), payload=getattr(task, "payload", ""),
+        )
         if not requires_staff:
             return None
         category_key = self._task_category_key(task) or "staff"

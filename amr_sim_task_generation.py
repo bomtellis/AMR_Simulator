@@ -12,6 +12,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from amr_sim_models import Location, PayloadType, Task
 from amr_sim_time_utils import SimulationClock
 from amr_generation_provenance import RuleTrace
+from amr_staff_policy import resolve_staff_requirement
 
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 SCHEDULED_MODES = {"scheduled", "scheduled_threshold", "scheduled_sporadic"}
@@ -94,6 +95,21 @@ def _as_bool(value, default: bool = False) -> bool:
     if text in {"0", "false", "no", "n", "off", "disabled", "disable"}:
         return False
     return bool(default)
+
+
+def _task_id_component(value: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in str(value).upper()).strip("_")
+
+
+def _instance_requires_staff(instance: dict) -> bool:
+    cfg = instance.get("cfg", {}) or {}
+    requirement = _as_bool(cfg["requires_staff"], False) if "requires_staff" in cfg else None
+    return resolve_staff_requirement(
+        requirement,
+        labels=[instance.get("category_key", ""), instance.get("department_id", "")],
+        task_id=f"GEN_{_task_id_component(instance.get('category_key', ''))}_",
+        source=cfg.get("task_source", "task_generation"), payload=cfg.get("payload", ""),
+    )
 
 
 def _unique_clean(values: Iterable[str]) -> List[str]:
@@ -522,12 +538,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
     def _next_task_id(self, category_key: str, department_id: str = "") -> str:
         self.task_counter += 1
-        safe_cat = "".join(
-            c if c.isalnum() else "_" for c in category_key.upper()
-        ).strip("_")
-        safe_dept = "".join(
-            c if c.isalnum() else "_" for c in department_id.upper()
-        ).strip("_")
+        safe_cat = _task_id_component(category_key)
+        safe_dept = _task_id_component(department_id)
         if safe_dept:
             return f"GEN_{safe_cat}_{safe_dept}_{self.task_counter:05d}"
         return f"GEN_{safe_cat}_{self.task_counter:05d}"
@@ -1103,9 +1115,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             instance["_timeframe_group_key"] = (
                 _clean_text(instance.get("category_key", "")).lower(),
                 _clean_text(cfg.get("staff_resource_name", "")).lower(),
-                _normalise_staff_shift_pattern(
-                    cfg.get("staff_shift_pattern", "none")
-                ),
+                self._staff_shift_definition(cfg)[0],
                 bool(
                     _as_bool(cfg.get("staff_use_custom_working_hours", False), False)
                 ),
@@ -1119,9 +1129,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 _clean_text(cfg.get("timeframe_end", "")),
             )
             instance["_generation_mode"] = generation_mode
-            instance["_requires_staff"] = _as_bool(
-                cfg.get("requires_staff", False), False
-            )
+            instance["_requires_staff"] = _instance_requires_staff(instance)
             instance["_payload_name"] = payload_name
             instance["_enabled"] = _as_bool(cfg.get("enabled", False), False)
             instance["_active_days"] = active_days
@@ -1175,7 +1183,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         return (
             _clean_text(instance.get("category_key", "")).lower(),
             _clean_text(cfg.get("staff_resource_name", "")).lower(),
-            _normalise_staff_shift_pattern(cfg.get("staff_shift_pattern", "none")),
+            self._staff_shift_definition(cfg)[0],
             bool(_as_bool(cfg.get("staff_use_custom_working_hours", False), False)),
             bool(
                 _as_bool(cfg.get("staff_department_fallback_enabled", False), False)
@@ -1271,6 +1279,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         return self._timeframe_allocation_cache.get(cache_key, (0, total))
 
     def _staff_shift_definition(self, cfg: dict) -> Tuple[str, dict]:
+        if not _as_bool(self.staff_config.get("enabled", True), True):
+            # Disabling shared patterns leaves staff available without a global
+            # calendar or rotating team. Custom weekly hours still take priority.
+            return "none", {"start_time": "00:00", "end_time": "24:00",
+                            "days_active": DAY_KEYS, "work_days": 0, "rest_days": 0}
         pattern_key = _normalise_staff_shift_pattern(
             cfg.get("staff_shift_pattern", "none")
         )
@@ -1281,8 +1294,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     def _staff_shift_window_for_day(
         self, cfg: dict, base_day: datetime
     ) -> Optional[Tuple[datetime, datetime]]:
-        if not _as_bool(cfg.get("requires_staff", False), False):
-            return None
         use_custom_hours = _as_bool(
             cfg.get("staff_use_custom_working_hours", False), False
         )
@@ -1362,8 +1373,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     ) -> Tuple[datetime, datetime, bool, bool]:
         cfg = instance.get("cfg", {}) or {}
         staff_spread_enabled = bool(
-            _as_bool(cfg.get("requires_staff", False), False)
-            and _as_bool(self.staff_config.get("enabled", True), True)
+            _instance_requires_staff(instance)
+            and (_as_bool(self.staff_config.get("enabled", True), True)
+                 or _as_bool(cfg.get("staff_use_custom_working_hours", False), False))
             and _as_bool(self.staff_config.get("spread_timeframe_tasks", True), True)
         )
         if not staff_spread_enabled:

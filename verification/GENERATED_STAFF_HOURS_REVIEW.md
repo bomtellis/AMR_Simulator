@@ -75,6 +75,10 @@ LTN acceptance.
 
 ## Boundaries and next work
 
+Follow-up: [Checkpoint 2I](STAFF_CALENDAR_REVIEW.md) aligns the global switches
+and effective legacy staff choice used for timeframe release spreading. The
+remaining broader calendar and validation limitations below stay explicit.
+
 Existing projects relying on the accidental all-day treatment can now wait for
 staff hours and return later. Keep frozen historical runs for comparison. This
 correction does not rewrite saved input, materialise an omitted staff flag, move

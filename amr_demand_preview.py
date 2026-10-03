@@ -11,7 +11,7 @@ import json
 from collections import Counter
 from datetime import datetime, timedelta
 
-from amr_sim_task_generation import DynamicCategoryTaskGenerator, _scheduled_times_from_cfg
+from amr_sim_task_generation import DynamicCategoryTaskGenerator, _scheduled_times_from_cfg, _instance_requires_staff
 from amr_sim_time_utils import parse_release_time
 from visualiser.project_checks import check_project, config_fingerprint
 
@@ -66,7 +66,7 @@ def _independent_schedule_count(instance, start, end):
             return None
         times = sorted(set(times))
         multiple = 1
-    elif mode == 'timeframe' and not cfg.get('requires_staff'):
+    elif mode == 'timeframe' and not _instance_requires_staff(instance):
         if cfg.get('timeframe_end', '') <= cfg.get('timeframe_start', ''):
             return None
         times = [cfg.get('timeframe_start', '')]
