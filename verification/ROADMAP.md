@@ -746,7 +746,10 @@ stationary occupancy with validated initial placements. These do not complete
 detailed traffic. Verified taskless yielding now supports parked empty blockers,
 reverse and permitted lateral graph paths, nearest fitting graph anchors in drawn
 passing places, and ordinary safe graph anchors when places are absent. Shared
-joint-plan occupancy validation is implemented, but runtime coordinated admission,
+joint-plan occupancy validation now supports atomic runtime admission of one
+requester and one parked empty blocker, including cases needing both old tails
+to be replaced. Failed admission restores both robots and resource claims before
+any events or streamed evidence are published. General multi-robot negotiation,
 moving/loaded yielding, multi-point manoeuvres, reference offsets and proven
 deadlock detection remain open. Explicit blocked/search-limit stops now preserve
 verified partial runs, elapsed geometric activity and bounded playback. These

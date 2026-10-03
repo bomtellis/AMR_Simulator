@@ -8975,6 +8975,7 @@ class Simulation:
                 self.geometric_occupancy = update.ledger
                 amr.geometry_parked_loaded = claims[-1]['loaded']
                 self._invalidate_route_estimate_cache()
+            return claims
         except TrajectoryError as exc:
             raise LocalManoeuvreError(exc.reason, str(exc)) from exc
 
@@ -10917,7 +10918,7 @@ class Simulation:
                             'required_energy_kwh': corridor_energy_kwh}
                 return None
             self._annotate_geometric_headings(amr, segments)
-            self._check_geometric_occupancy(amr, segments, task_start_time, amr_loc,
+            geometry_claims = self._check_geometric_occupancy(amr, segments, task_start_time, amr_loc,
                 departure_heading, payload=payload, orientation=task.payload_orientation, reserve=reserve)
             projected_battery_soc_after = (
                 100.0
@@ -10957,6 +10958,7 @@ class Simulation:
                 "battery_soc_after": battery_soc_after,
                 "corridor_energy_kwh": corridor_energy_kwh,
                 "geometry_end_heading": planning_heading,
+                "geometry_occupancy_claims": geometry_claims,
                 "amr_energy_kwh": corridor_energy_kwh,
                 "lift_energy_kwh": lift_energy_kwh,
                 "lift_empty_sec_total": lift_empty_sec_total,
@@ -11766,12 +11768,11 @@ class Simulation:
         )
 
     def _try_geometric_yield(self, now):
-        """Move one parked blocker only after verifying the waiting task can pass.
+        """Admit one parked blocker's retreat and its waiting task together.
 
-        Recovery planning is serial, after all parallel assignment estimates
-        have returned. The transaction exposes a proposed immutable ledger only
-        during the beneficiary estimate; rejection restores it and the robot.
-        An accepted recovery is a taskless journey, not a payload movement.
+        Conditional planning views may replace the partners' parked tails, but
+        only full joint validation against the original ledger can admit them.
+        Return the committed task plan for ordinary dispatch to publish once.
         """
         if not self.geometric_traffic:
             return False
@@ -11802,11 +11803,19 @@ class Simulation:
                     # Fixed task urgency: do not move a robot held for an equally
                     # or more urgent released, locked task to clear lower urgency.
                     if any(p <= _priority and other is not task and when <= now
+                           and not self._pending_task_removed(other)
                            and getattr(other,'locked_amr_id','')==identity
                            for p,when,_counter,other in self.pending_tasks):
                         continue
                     try:
-                        candidates, failures = retreat_candidates(self,robot,now)
+                        original_ledger = self.geometric_occupancy
+                        try:
+                            self.geometric_occupancy = original_ledger.provisional_without_parked_tail(requester.id,now)
+                            self._invalidate_route_estimate_cache()
+                            candidates, failures = retreat_candidates(self,robot,now)
+                        finally:
+                            self.geometric_occupancy = original_ledger
+                            self._invalidate_route_estimate_cache()
                     except TrajectoryError as exc:
                         self.geometric_recovery_outcomes.append(dict(time=now,amr_id=identity,task_id=task.id,
                             reason=exc.reason,detail=str(exc)))
@@ -11814,21 +11823,55 @@ class Simulation:
                     self.geometric_recovery_outcomes.append(dict(time=now,amr_id=identity,task_id=task.id,
                         reason='candidates_checked',candidates=len(candidates),failures=failures))
                     for plan in candidates:
-                        with RouteReservationTransaction(self,robot,[]) as transaction:
-                            self._check_geometric_occupancy(robot,plan['segments'],now,plan['start'],
-                                robot.rotation_deg,reserve=True)
-                            beneficiary = self._estimate_task_for_amr(requester,task,reserve=False)
-                            if beneficiary is None or beneficiary.get('_requires_route_charge'):
-                                continue
-                            robot.consume_energy(plan['energy'])
-                            robot.location_name = plan['target'].name
-                            robot.rotation_deg = plan['heading']
-                            robot.available_time = now+plan['duration']
-                            robot.total_busy_time += plan['duration']
-                            transaction.committed = True
+                        try:
+                            beneficiary = self._commit_geometric_yield(requester,task,robot,plan,now)
+                        except (TrajectoryError, LocalManoeuvreError) as exc:
+                            self.geometric_recovery_outcomes.append(dict(time=now,amr_id=identity,task_id=task.id,
+                                reason=exc.reason,detail=str(exc)))
+                            self.geometric_candidate_outcomes.setdefault((requester.id,task.id),outcome)
+                            continue
+                        if beneficiary is None:
+                            # A rejected commit may have cleared the initial
+                            # estimate diagnostic. Retain its unresolved blocker
+                            # until a real assignment succeeds or the task fails.
+                            self.geometric_candidate_outcomes.setdefault((requester.id,task.id),outcome)
+                            continue
                         self._record_geometric_yield(robot,task,plan,now)
-                        return True
+                        return requester,task,beneficiary
         return False
+
+    def _commit_geometric_yield(self, requester, task, blocker, plan, now):
+        """Reserve both plans without publishing events, logs or pending changes."""
+        original = self.geometric_occupancy
+        with RouteReservationTransaction(self,requester,[task]) as transaction:
+            transaction.remember_dict(vars(blocker))
+            transaction.remember_immutable_attribute(self,'geometric_occupancy')
+            self.geometric_occupancy = original.provisional_replace_plan(
+                blocker.id,now,plan['occupancy_claims'])
+            self._invalidate_route_estimate_cache()
+            self._traffic_commit_blocked_tasks.discard(task.id)
+            committed = self._estimate_task_for_amr_impl(requester,task,reserve=True)
+            if (committed is None or committed.get('_retry_after_charge')
+                    or committed.get('_requires_route_charge')):
+                return None
+            # Use the actual reserved segments: readonly estimates cannot prove
+            # resource availability, payload claims or battery admission.
+            update = original.replace_plans({
+                blocker.id:(now,plan['occupancy_claims']),
+                requester.id:(committed['task_start_time'],committed['geometry_occupancy_claims'])})
+            if not update.accepted:
+                return None
+            self.geometric_occupancy = update.ledger
+            requester.rotation_deg = committed.get('geometry_end_heading',requester.rotation_deg)
+            blocker.consume_energy(plan['energy'])
+            blocker.location_name = plan['target'].name
+            blocker.rotation_deg = plan['heading']
+            blocker.available_time = now+plan['duration']
+            blocker.total_busy_time += plan['duration']
+            blocker.geometry_parked_loaded = plan['occupancy_claims'][-1]['loaded']
+            self._invalidate_route_estimate_cache()
+            transaction.committed = True
+        return committed
 
     def _record_geometric_yield(self, robot, task, plan, now):
         self._evidence_journey_sequence += 1
@@ -11987,11 +12030,13 @@ class Simulation:
             self._purge_idle_returns_blocked_by_locked_work()
             queue_idle_returns_when_needed()
 
+            precommitted_plan = None
             choice = self._select_best_assignment()
             if choice is None:
-                if self._try_geometric_yield(self.current_time):
-                    processed_this_tick += 1
-                    continue
+                choice = self._try_geometric_yield(self.current_time)
+                if choice:
+                    precommitted_plan = choice[2]
+            if not choice:
                 if self._stop_unresolved_geometry(search_limit_only=True):
                     return
                 # If the scheduler cannot find any assignment, fail one released
@@ -12140,7 +12185,8 @@ class Simulation:
                 continue
 
             task = task_or_tasks
-            committed = self._estimate_task_for_amr(amr, task, reserve=True, return_charge_request=True)
+            committed = (precommitted_plan if precommitted_plan is not None else
+                         self._estimate_task_for_amr(amr, task, reserve=True, return_charge_request=True))
 
             if committed and committed.get('_requires_route_charge'):
                 if self._dispatch_required_route_charge(amr, task, committed):

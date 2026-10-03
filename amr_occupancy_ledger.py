@@ -138,6 +138,51 @@ class OccupancyLedger:
         """Immutable rollback snapshot: restore by assigning this ledger reference."""
         return self
 
+    def provisional_without_parked_tail(self, owner, departure):
+        """Return a PROPOSAL-ONLY view with one parked future omitted.
+
+        Never publish this view as committed occupancy: the nominated owner has
+        no occupancy after departure. Use it only to construct the partner's
+        candidate, then admit BOTH complete plans through replace_plans on the
+        original authoritative ledger. Physical history, instantaneous boundary
+        events and every third-party claim remain intact. This API cannot remove
+        a moving interval or a future tail before its robot finishes travelling;
+        the caller separately establishes that the nominated robot is empty.
+        """
+        if not isinstance(owner, str) or not owner:
+            raise TrajectoryError('invalid_input', 'A provisional omission needs a nonempty owner id.')
+        departure = _finite(departure, 'Provisional departure', nonnegative=True)
+        tails = [claim for claim in self._claims if claim.owner == owner and math.isinf(claim.end)]
+        if len(tails) != 1 or tails[0].occupancy_kind != 'stationary':
+            raise TrajectoryError('invalid_input', 'A provisional omission needs exactly one infinite stationary tail.')
+        tail = tails[0]
+        if departure < tail.start:
+            raise TrajectoryError('invalid_input', 'Cannot omit a parked tail before its committed arrival.')
+        retained = []
+        for claim in self._claims:
+            if claim is not tail:
+                retained.append(claim)
+            elif tail.start < departure:
+                retained.append(OccupancyClaim(tail.owner, tail.floor, tail.start, departure,
+                    tail.polygon, tail.envelope, tail.robot_clearance_m, tail.occupancy_kind, tail.source_id))
+        return OccupancyLedger(tuple(retained))
+
+    def provisional_replace_plan(self, owner, departure, claims):
+        """Construct a PROPOSAL-ONLY view containing a partner's tentative route.
+
+        Perform the same ownership, complete-time-coverage and history-preserving
+        validation as replace_plan, but deliberately do NOT accept/reject its
+        cross-owner collisions. This permits a requester to plan waiting against
+        the blocker's actual proposed movement while retaining its own departure
+        tail for origin validation. Never publish this view or consume energy on
+        its strength. Admit both complete plans through replace_plans on the
+        original authoritative ledger before committing either movement.
+        """
+        if not isinstance(owner, str) or not owner:
+            raise TrajectoryError('invalid_input', 'A provisional plan needs a nonempty owner id.')
+        return self._replace({owner: (departure, claims)}, allow_new=False,
+                             max_pair_checks=MAX_PAIR_CHECKS, check_conflicts=False).ledger
+
     def initialise(self, *, owner, floor, pose, start, length_m, width_m,
                    robot_clearance_m=0, max_pair_checks=MAX_PAIR_CHECKS):
         if any(claim.owner == owner for claim in self._claims):
@@ -183,7 +228,7 @@ class OccupancyLedger:
             raise TrajectoryError('invalid_input', 'A plan needs a nonempty owner id.')
         return self._replace({owner: (departure, rows)}, allow_new=allow_new, max_pair_checks=max_pair_checks)
 
-    def _replace(self, plans, *, allow_new, max_pair_checks):
+    def _replace(self, plans, *, allow_new, max_pair_checks, check_conflicts=True):
         if not isinstance(plans, dict) or not plans:
             raise TrajectoryError('invalid_input', 'Provide a nonempty owner-to-plan mapping.')
         if any(not isinstance(owner, str) or not owner for owner in plans):
@@ -232,6 +277,8 @@ class OccupancyLedger:
                     claim.polygon, claim.envelope, claim.robot_clearance_m, claim.occupancy_kind, claim.source_id))
         conflicts, checks = [], 0
         all_claims = tuple(history)+proposed
+        if not check_conflicts:
+            return PlanUpdate(True, OccupancyLedger(all_claims))
         for candidate in proposed:
             # A relative cell with start=0 permits the existing traffic scheduler
             # to enforce the same conservative SAT and max(A,B) pair clearance.

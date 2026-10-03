@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from simulator import Simulation
+from amr_occupancy_ledger import OccupancyLedger, PlanUpdate
 from tests.test_geometric_yielding import yielding_config
 from tests.test_motion_dynamics_simulation import dynamics_config
 
@@ -55,6 +56,21 @@ class GeometricStopTests(unittest.TestCase):
         self.assertEqual('search_limit', evidence['run_status'])
         self.assertEqual(0, evidence['termination']['stop_time_sec'])
         self.assertIn('no deadlock', evidence['termination']['message'])
+
+    def test_rejected_joint_admission_keeps_blockage_evidence(self):
+        original = OccupancyLedger.replace_plans
+        rejected = []
+        def reject_joint(ledger, plans, **kwargs):
+            if len(plans) == 2:
+                rejected.append(True)
+                return PlanUpdate(False, ledger)
+            return original(ledger, plans, **kwargs)
+        with patch.object(OccupancyLedger, 'replace_plans', reject_joint):
+            sim, rows, evidence = self.run_saved(yielding_config())
+        self.assertTrue(rejected)
+        self.assertEqual('blocked', evidence['run_status'])
+        self.assertFalse(sim.completed_task_records)
+        self.assertFalse(any(row['event_type'] == 'geometric_yield_started' for row in rows))
 
     def test_known_future_event_is_processed_before_blocked_decision(self):
         def configure(sim):

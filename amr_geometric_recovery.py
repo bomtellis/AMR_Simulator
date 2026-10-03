@@ -47,13 +47,14 @@ def retreat_candidates(sim, robot, now):
                     if fitting is None:
                         continue
                     place_id = fitting['area_id']
-                sim._check_geometric_occupancy(robot,segments,now,start,robot.rotation_deg,reserve=False)
+                occupancy_claims = sim._check_geometric_occupancy(robot,segments,now,start,robot.rotation_deg,reserve=False)
                 energy = sim._charge_motor_energy_kwh(robot,segments)
                 if robot.battery_energy_kwh()-energy < robot.min_reserve_energy_kwh()-1e-12:
                     failures.append(dict(target=target.name,movement=movement,reason='insufficient_energy'))
                     continue
                 result.append(dict(segments=segments,duration=duration,distance=distance,energy=energy,
-                    start=start,target=target,heading=heading,movement=movement,passing_place=place_id))
+                    start=start,target=target,heading=heading,movement=movement,passing_place=place_id,
+                    occupancy_claims=occupancy_claims))
             except (TrajectoryError, ValueError) as exc:
                 reason = getattr(exc,'reason','invalid_input')
                 if reason == 'search_limit':
