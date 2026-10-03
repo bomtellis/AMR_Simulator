@@ -139,7 +139,8 @@ retained. Cross-rule shared stock, partial deliveries, expiry, shortages at supp
 sources and complete mixed-source routes remain open. Legacy/direct task sources
 outside the dynamic generator are not connected to these per-rule balances.
 
-Next: reconcile recorded tracked-stock balances with generated requests and actual
-delivery/handoff events in Results Investigation, then continue the remaining
-legacy/scheduled demand and inventory interaction audit. The later geometry,
+Follow-up: [slice 2S](TRACKED_STOCK_EVIDENCE_REVIEW.md) adds recorded tracked-stock
+reconciliation against requests, confirmed receipts and physical arrivals in
+Results Investigation. Continue the remaining legacy/scheduled demand and
+inventory interaction audit. The later geometry,
 approved CAD workflows, tutorial and release-validation gates remain unchanged.

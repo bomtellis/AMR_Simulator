@@ -2506,14 +2506,22 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     list(item_runtime['resource_quantities']), items)
                 location = request['resource']
                 if delivered:
+                    removed = {}
                     for name, supplied in request['quantities'].items():
                         balance = item_runtime['balances'][location][name]
                         quantities = item_runtime['resource_quantities'][location]
+                        removed[name] = 0.0
                         if request['mode'] == 'full_exchange':
+                            removed[name] = quantities[name]
                             balance['removed'] += quantities[name]
                             quantities[name] = 0.0
                         quantities[name] += supplied
                         balance['delivered'] += supplied
+                    task.generator_item_delivery_receipt = {
+                        'rule_id': item_key, 'resource': location, 'mode': request['mode'],
+                        'quantities': dict(request['quantities']), 'removed': removed,
+                        'confirmation': state, 'consumption_time': item_runtime['last_update_time'],
+                    }
                 request['status'] = 'delivered' if delivered else 'failed'
                 pending = item_runtime['pending_resources'].get(location, set())
                 pending.discard(task.id)

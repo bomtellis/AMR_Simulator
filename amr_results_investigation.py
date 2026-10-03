@@ -13,6 +13,7 @@ from amr_run_evidence import config_hash, file_hash
 from report.amr_energy_evidence import summarize_energy
 from amr_lift_evidence import check_lift_movements
 from amr_waste_evidence import summarize_waste_volume
+from amr_tracked_stock_evidence import summarize_tracked_stock
 
 COMPLETED = {'task_complete', 'multi_stop_task_complete'}
 ASSIGNED = {'task_assigned', 'multi_stop_task_assigned'}
@@ -396,6 +397,24 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
         'definition': 'Checks recorded group totals, task allocations, generated volumes and terminal outcomes. A completed collection is not evidence of physical disposal or decontamination.',
         'event_ids': waste['event_ids']})
     findings.extend(waste['issues'])
+    stock = summarize_tracked_stock(events, complete=complete_evidence,
+                                   capabilities=metadata.get('event_capabilities', []))
+    metrics.append({'key': 'tracked_stock_reconciliation', 'title': 'Tracked stock reconciliation',
+        'value': ('Reconciled' if stock['matches'] else 'Conflict') if stock['known'] else None,
+        'observed_count': None, 'coverage': 'recorded item balances and delivery receipts' if stock['known'] else 'missing or incomplete evidence',
+        'definition': 'Checks each item/resource balance, generated request quantities, confirmed delivery/handoff receipts and physical arrivals. Different item units are never added together. Older snapshots without delivery receipts remain unknown.',
+        'event_ids': stock['event_ids']})
+    for index, record in enumerate(stock['records']):
+        identity = f"{record['rule_id']} / {record['location'] or 'pooled'} / {record['item']}"
+        definition = (f"Initial {record['initial']:g} + supplied {record['delivered']:g} = consumed {record['consumed']:g} "
+            f"+ removed {record['removed']:g} + remaining {record['remaining']:g}. Unmet consumption {record['unmet']:g} is separate. "
+            'Logical item units; initially full stock and configured-source supply assumptions apply. This validates recorded accounting, not an independent recalculation of every consumption interval.')
+        for field, label in [('remaining', 'Remaining stock'), ('unmet', 'Unmet consumption'), ('matches', 'Stock balance')]:
+            metrics.append({'key': f'tracked_stock_{index}_{field}', 'title': f'{label}: {identity}',
+                'value': ('Reconciled' if record['matches'] else 'Conflict') if field == 'matches' else record[field],
+                'observed_count': None if field == 'matches' else record[field], 'coverage': 'recorded item accounting',
+                'definition': definition, 'event_ids': record['event_ids']})
+    findings.extend(stock['issues'])
     if payload_gaps:
         findings.append('Payload movement evidence has missing identifiers/times, repeated exits or unpaired exits; transfer totals may be incomplete.')
         findings.extend(a['reason'] for a in payload_anomalies)
@@ -413,7 +432,7 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
             'tasks': tasks, 'events': events, 'metrics': metrics, 'payload_movements': payload_moves,
             'payload_tracking_findings': payload_anomalies,
             'journeys': list(journeys.values()), 'reconciliation': reconciliation, 'energy': energy,
-            'lift_checks': lift_checks,
+            'lift_checks': lift_checks, 'tracked_stock': stock,
             'limitations': ['Wait intervals can overlap and are not summed into an additive delay breakdown.',
                             'Route-plan segments may be logged ahead of execution; completion is established only by terminal events.',
                             'Missing events, reasons or physical identifiers are not reconstructed from the current project.',

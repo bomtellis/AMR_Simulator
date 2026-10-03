@@ -197,6 +197,13 @@ cover top-up, full content exchange, replace-empty, pending/failed supply, sched
 orders, confirmed handoffs and persisted item/request evidence. Dedicated recorded
 stock reconciliation and distinct physical content-handling workflows remain open.
 
+**Slice 2S:** [Tracked-stock results evidence](TRACKED_STOCK_EVIDENCE_REVIEW.md)
+adds per-item Results Investigation balances, explicit delivery/handoff receipts,
+physical-arrival and request reconciliation, and missing-evidence handling. Ten
+references cover saved runs, corrupt/incomplete records and metric navigation.
+This closes the dedicated stock metrics gap from 2R within recorded-accounting
+scope; independent interval recalculation and physical handling limits remain.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -446,8 +453,7 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2R's tracked-stock references, then reconcile recorded item balances
-with generated requests and actual delivery/handoff events in Results Investigation.
+Review slice 2S's tracked-stock results references, then continue the remaining audit.
 Extend outcome accounting to legacy and separate scheduled/sporadic components,
 preserving the explicit seed compatibility boundary and inventory-space limitations.
 Retain explicit limits on staffing capacity and broader calendar combinations.

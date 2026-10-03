@@ -138,7 +138,8 @@ class Simulation:
         self._evidence_config_hash = config_hash(self._evidence_inputs)
         self._evidence_software = software_snapshot() if verbose else None
         self._evidence_event_capabilities = ['payload_service_arrivals', 'staged_payload_recovery',
-                                             'segment_energy_sources_v1', 'charge_cycle_arrivals_v1']
+                                             'segment_energy_sources_v1', 'charge_cycle_arrivals_v1',
+                                             'tracked_stock_delivery_v1']
         self._evidence_run_status = 'incomplete'
         self._evidence_sequence = 0
         self._evidence_journey_sequence = 0
@@ -6909,6 +6910,14 @@ class Simulation:
             consumption_time = self.current_time if event_time is None else event_time
             consumption_time = min(consumption_time, self.task_generation_horizon_sec)
             released_records = manager.task_state_changed(task, state, event_time=consumption_time) or []
+            receipt = getattr(task, 'generator_item_delivery_receipt', None)
+            if receipt is not None and not getattr(task, '_tracked_receipt_logged', False):
+                task._tracked_receipt_logged = True
+                self._tracked_delivery_count = getattr(self, '_tracked_delivery_count', 0) + 1
+                self.log_step(event_time=self.current_time if event_time is None else event_time,
+                    event_type='tracked_stock_delivery_confirmed', task_id=task.id,
+                    payload_instance_id=str(getattr(task, 'payload_instance_id', '') or ''),
+                    status='confirmed', details=json.dumps(receipt))
             for record in released_records:
                 self._schedule_generated_task_record(
                     record,
@@ -12477,6 +12486,7 @@ class Simulation:
             event_time=task.release_time,
             event_type=record.event_type,
             task_id=task.id,
+            dropoff_zone=str(getattr(task, 'dropoff_zone', '') or ''),
             details=record.details,
             from_location=pickup_location_name,
             to_location=dropoff_location_name,
@@ -13581,6 +13591,7 @@ class Simulation:
             "container_type",
             "pending_reason",
             "tracked_item_exchange",
+            "dropoff_zone",
             "exchange_mode",
             "tracked_item_source_payload",
             "tracked_items",
@@ -13824,6 +13835,7 @@ class Simulation:
         exchange_mode: str = "",
         tracked_item_source_payload: str = "",
         tracked_items: Optional[dict] = None,
+        dropoff_zone: str = "",
         battery_soc_before: Optional[float] = None,
         battery_soc_after: Optional[float] = None,
         is_charging: Optional[bool] = None,
@@ -14075,6 +14087,7 @@ class Simulation:
                 "multi_stop_pickup_count": int(multi_stop_pickup_count or 0),
                 "multi_stop_dropoff_count": int(multi_stop_dropoff_count or 0),
                 "tracked_item_exchange": bool(tracked_item_exchange),
+                "dropoff_zone": dropoff_zone,
                 "exchange_mode": exchange_mode,
                 "tracked_item_source_payload": tracked_item_source_payload,
                 "tracked_items": (
@@ -14521,7 +14534,8 @@ class Simulation:
             requests = self.task_generation_manager.tracked_item_requests()
             self.log_step(event_time=self.current_time, event_type='tracked_stock_coverage', status='summary',
                 details=json.dumps({'schema_version': 1, 'scope': 'dynamic_tracked_stock',
-                                    'balance_count': len(balances), 'request_count': len(requests)}))
+                                    'balance_count': len(balances), 'request_count': len(requests),
+                                    'delivery_count': getattr(self, '_tracked_delivery_count', 0)}))
             for balance in balances:
                 self.log_step(event_time=self.current_time, event_type='tracked_stock_balance_summary', status='summary',
                               details=json.dumps(balance))

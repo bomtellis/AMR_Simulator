@@ -1,5 +1,10 @@
 # Results investigation checkpoint — 2 October 2026
 
+Later stock metrics and receipt reconciliation are documented in
+[Tracked-stock results evidence](TRACKED_STOCK_EVIDENCE_REVIEW.md). Open a new
+fully logged run to inspect remaining stock, unmet consumption and delivery
+evidence per item; older runs without receipts retain unknown stock reconciliation.
+
 Update: D008 below was subsequently resolved by the payload service checkpoint.
 See `PAYLOAD_SERVICE_REVIEW.md` for the new evidence; the old log is retained as
 the historical defect reproduction and is not repaired retrospectively.

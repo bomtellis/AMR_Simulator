@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Tracked stock](TRACKED_STOCK_REVIEW.md):
+The latest checkpoint is [Tracked-stock results evidence](TRACKED_STOCK_EVIDENCE_REVIEW.md):
+item balances reconcile against requests, confirmed delivery/handoff receipts and
+physical arrivals. Results Investigation links each metric to supporting records;
+incomplete or older evidence remains unknown.
+The preceding correction is [Tracked stock](TRACKED_STOCK_REVIEW.md):
 consumption survives closing polls, supply requires confirmed delivery/handoff,
 and failed/pending replenishment no longer creates phantom stock.
 The preceding correction is [Accumulated waste balance](WASTE_BALANCE_REVIEW.md):
