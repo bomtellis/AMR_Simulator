@@ -7,7 +7,6 @@ separate complete sets; legacy values must be migrated explicitly by the caller.
 """
 from dataclasses import dataclass, field
 import math
-from collections.abc import Mapping
 
 
 class MotionProfileError(ValueError):
@@ -179,9 +178,12 @@ class MotionSettings:
     # Geometry may use the separately explicit manoeuvring radius when omitted.
     # Timing does not invent or substitute a radius for a requested arc.
     minimum_radius_m: float | None = None
+    # Unversioned configurations and direct callers historically allowed reverse.
+    # Versioned input contracts require an explicit value in each load state.
+    reverse_allowed: bool = True
 
     def __post_init__(self):
-        for name in ('pivot_allowed', 'lateral_allowed'):
+        for name in ('pivot_allowed', 'lateral_allowed', 'reverse_allowed'):
             if not isinstance(getattr(self, name), bool):
                 raise MotionProfileError(f'{name} must be an explicit boolean.')
         required = ['forward_speed_m_per_sec', 'reverse_speed_m_per_sec',
@@ -193,7 +195,7 @@ class MotionSettings:
             required.extend(('rotation_speed_deg_per_sec', 'angular_acceleration_deg_per_sec2',
                              'angular_braking_deg_per_sec2'))
         for name in self.__dataclass_fields__:
-            if name in ('pivot_allowed', 'lateral_allowed'):
+            if name in ('pivot_allowed', 'lateral_allowed', 'reverse_allowed'):
                 continue
             value = getattr(self, name)
             if value is not None or name in required:
@@ -205,21 +207,14 @@ def select_motion_settings(movement, *, loaded):
 
     Both sets are validated, so a malformed unused set cannot silently survive
     input checks. Additional movement geometry belongs outside these sets.
+    Legacy reverse permission is resolved by amr_movement_inputs; its resolver
+    exposes the compatibility decisions for checks and explicit migration.
     """
     if not isinstance(loaded, bool):
         raise MotionProfileError('loaded must be an explicit boolean.')
-    if not isinstance(movement, Mapping):
-        raise MotionProfileError('movement must contain explicit empty and loaded settings.')
-    sets = {}
-    for state in ('empty', 'loaded'):
-        values = movement.get(state)
-        if not isinstance(values, Mapping):
-            raise MotionProfileError(f'movement.{state} must be an explicit settings mapping.')
-        try:
-            sets[state] = MotionSettings(**values)
-        except (TypeError, ValueError) as exc:
-            raise MotionProfileError(f'movement.{state}: {exc}') from None
-    return sets['loaded' if loaded else 'empty']
+    from amr_movement_inputs import resolve_movement_inputs
+    resolved = resolve_movement_inputs(movement)['movement']
+    return MotionSettings(**resolved['loaded' if loaded else 'empty'])
 
 
 def profile_for_movement(settings, *, movement, distance, start_speed=0, end_speed=0,
@@ -236,6 +231,8 @@ def profile_for_movement(settings, *, movement, distance, start_speed=0, end_spe
     if movement == 'forward':
         speed = settings.forward_speed_m_per_sec
     elif movement == 'reverse':
+        if not settings.reverse_allowed:
+            raise MotionProfileError('This movement state does not permit reversing.', 'infeasible_motion')
         speed = settings.reverse_speed_m_per_sec
     elif movement == 'lateral' and settings.lateral_allowed:
         speed = settings.lateral_speed_m_per_sec

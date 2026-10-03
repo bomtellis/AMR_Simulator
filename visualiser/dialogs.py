@@ -5497,7 +5497,7 @@ class AMRPayloadSlotDialog(QDialog):
 class AMREditorDialog(QDialog):
     def __init__(self, parent, location_names, seed=None, default_amr_id="AMR-1"):
         super().__init__(parent)
-        self.seed = dict(seed or {})
+        self.seed = deepcopy(seed or {})
         self.setWindowTitle("Edit AMR type" if self.seed else "Add AMR type")
         self.resize(820, 690)
         self.setMinimumSize(700, 560)
@@ -5569,6 +5569,13 @@ class AMREditorDialog(QDialog):
         physical_form.addRow("Travel motor power", self.motor_power_edit)
         general_layout.addWidget(physical_box)
         general_layout.addStretch(1)
+
+        from visualiser.movement_capabilities import MovementCapabilities
+        self.movement_capabilities = MovementCapabilities(self.seed.get('movement'))
+        movement_scroll = QScrollArea()
+        movement_scroll.setWidgetResizable(True)
+        movement_scroll.setWidget(self.movement_capabilities)
+        tabs.addTab(movement_scroll, 'Detailed capabilities')
 
         battery_page = QWidget()
         tabs.addTab(battery_page, "Battery and charging")
@@ -5795,7 +5802,8 @@ class AMREditorDialog(QDialog):
             multi_stop_enabled = bool(
                 self.multi_stop_check.isChecked() and len(payload_slots) > 1
             )
-            self.result = {
+            movement = self.movement_capabilities.changed_movement()
+            self.result = {**deepcopy(self.seed),
                 "id": amr_id,
                 "quantity": int(self.quantity_edit.value()),
                 "payload_slots": payload_slots,
@@ -5816,6 +5824,8 @@ class AMREditorDialog(QDialog):
                 "recharge_threshold_percent": float(self.recharge_threshold_edit.value()),
                 "battery_soc_percent": float(self.battery_soc_edit.value()),
             }
+            if movement is not None:
+                self.result['movement'] = movement
             super().accept()
         except Exception as exc:
             QMessageBox.warning(self, "Check AMR details", str(exc))

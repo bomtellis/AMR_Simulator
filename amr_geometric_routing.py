@@ -167,10 +167,18 @@ def validate_geometry_inputs(config):
 def route_trajectory(sim, amr, route, start, end, payload, orientation, start_heading_deg=None, movement='forward'):
     from amr_reference_trajectories import plan_reference_trajectory, plan_reference_lateral_trajectory
     parameters = amr.manoeuvring
-    reference_options = reference_point_options(parameters)
-    clearances = resolved_clearances(sim.config,parameters)
     loaded = payload is not None and not is_empty_payload_name(payload.name)
     settings = select_motion_settings(amr.movement,loaded=loaded) if getattr(amr,'movement',None) is not None else None
+    if movement not in ('forward', 'reverse', 'lateral'):
+        raise TrajectoryError('invalid_input', 'Unknown requested movement type.')
+    if movement != 'forward' and settings is None:
+        raise TrajectoryError('invalid_input', 'Recovery needs explicit empty and loaded movement settings.')
+    if settings is not None and ((movement == 'reverse' and not settings.reverse_allowed)
+                                 or (movement == 'lateral' and not settings.lateral_allowed)):
+        state = 'loaded' if loaded else 'empty'
+        raise TrajectoryError('infeasible_motion', f'This robot does not permit {movement} movement while {state}.')
+    reference_options = reference_point_options(parameters)
+    clearances = resolved_clearances(sim.config,parameters)
     radius = (settings.minimum_radius_m or parameters['minimum_radius_m']) if settings else parameters['minimum_radius_m']
     pivot_allowed = settings.pivot_allowed if settings else parameters['pivot_allowed']
     pivot_speed = (settings.rotation_speed_deg_per_sec or parameters['pivot_speed_deg_per_sec']) if settings else parameters['pivot_speed_deg_per_sec']
@@ -180,10 +188,6 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
     names = [start.name]+[edge['to'] for edge in route['edges']]
     points = [(float(nodes[name]['x']),float(nodes[name]['y'])) for name in names]
     heading = amr.rotation_deg if start_heading_deg is None else start_heading_deg
-    if movement not in ('forward', 'reverse', 'lateral'):
-        raise TrajectoryError('invalid_input', 'Unknown requested movement type.')
-    if movement != 'forward' and settings is None:
-        raise TrajectoryError('invalid_input', 'Recovery needs explicit empty and loaded movement settings.')
     static = len(points)==1
     if static:
         pose=Pose(*points[0],math.radians(heading))

@@ -9,6 +9,7 @@ import math
 
 from amr_geometric_occupancy import automatic_stop_areas, select_passing_place
 from amr_clearances import resolved_clearances
+from amr_motion_profiles import select_motion_settings
 from amr_sim_models import Location
 from amr_trajectories import Pose, TrajectoryError
 
@@ -23,14 +24,25 @@ def retreat_candidates(sim, robot, now):
     points = {p['name']:p for p in sim.config.get('corridors',{}).get('nodes',[])}
     points.update({p['name']:p for p in sim.config['locations']})
     targets = [p for p in points.values() if p['floor']==start.floor and p['name']!=start.name]
-    if len(targets)*3 > MAX_RECOVERY_CANDIDATES:
+    # Recovery is restricted by the caller to parked, empty robots. Resolve the
+    # empty permissions before budgeting so forbidden directions neither consume
+    # search effort nor turn an otherwise bounded search into "search_limit".
+    settings = select_motion_settings(robot.movement, loaded=False)
+    movements = (('forward',)
+                 + (('reverse',) if settings.reverse_allowed else ())
+                 + (('lateral',) if settings.lateral_allowed else ()))
+    if len(targets)*len(movements) > MAX_RECOVERY_CANDIDATES:
         raise TrajectoryError('search_limit', 'Recovery candidate budget exhausted; no infeasibility or deadlock is inferred.')
     separation = resolved_clearances(sim.config, robot.manoeuvring)
     places = floor.get('passing_places', [])
     result, failures = [], []
     for point in sorted(targets,key=lambda p:p['name']):
         target = Location(name=point['name'],floor=point['floor'],x=point['x'],y=point['y'])
-        for movement in ('forward','reverse','lateral'):
+        for movement in ('reverse', 'lateral'):
+            if movement not in movements:
+                failures.append(dict(target=target.name, movement=movement,
+                    reason='infeasible_route', detail=f'Empty movement permission forbids {movement} recovery.'))
+        for movement in movements:
             try:
                 route = sim._same_floor_segments(robot,start,target,start_time_value=now,movement=movement)
                 if route is None or not route[0] or route[2] <= 0:

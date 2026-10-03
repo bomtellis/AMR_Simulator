@@ -191,7 +191,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             'travel speed, arc radius and translational distance refer to that point. Pivot axis is explicit; '
             'body footprints remain centred. Connector manoeuvres for some offset heading changes remain unsupported.'+
             (' Configured motion profiles enforce translational and angular speed, acceleration and braking. Circular curvature changes require a momentary stop, without added dwell; steering actuator time and jerk are not modelled.'
-             if any(isinstance(robot,dict) and 'movement' in robot for robot in config.get('amrs',[])) else ''),
+             if any(isinstance(robot,dict) and 'movement' in robot for robot in config.get('amrs',[])) else '')+
+            ' Movement schema 2 requires explicit reverse permissions for empty and loaded states. '
+            'Legacy settings with omitted reverse permissions retain reversing; capability presets only change permissions and supply no physical parameters.',
             'Review explicit geometry and acknowledge the current traffic scope.', section='simulation', kind='assumption')
     if any(f.severity == 'error' for f in findings):
         return finish()

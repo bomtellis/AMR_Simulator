@@ -103,6 +103,8 @@ def retime_trajectory(trajectory, settings):
             raise MotionProfileError('Unsupported movement type for this primitive.')
         if motion.movement == 'lateral' and not settings.lateral_allowed:
             raise MotionProfileError('This robot does not permit lateral movement.', 'infeasible_motion')
+        if motion.movement == 'reverse' and not settings.reverse_allowed:
+            raise MotionProfileError('This robot does not permit reverse movement.', 'infeasible_motion')
         if motion.kind == 'pivot':
             _validate_pivot(motion, settings)
         elif motion.length_m <= 0:

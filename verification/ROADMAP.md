@@ -750,7 +750,7 @@ joint-plan occupancy validation now supports atomic runtime admission of one
 requester and one parked empty blocker, including cases needing both old tails
 to be replaced. Failed admission restores both robots and resource claims before
 any events or streamed evidence are published. General multi-robot negotiation,
-moving/loaded yielding, multi-point manoeuvres, reference offsets and proven
+moving/loaded yielding, multi-point manoeuvres and proven
 deadlock detection remain open. Explicit blocked/search-limit stops now preserve
 verified partial runs, elapsed geometric activity and bounded playback. These
 stops do not establish deadlock; complete partial stock/battery reconciliation
@@ -765,6 +765,15 @@ evidence and partial results distinguish reference translation from body travel;
 zero offsets preserve legacy geometry. Workbench controls and playback markers
 expose the point. Additional connector and multi-point searches remain open,
 including some reference-axis initial heading corrections and reversals.
+Movement schema 2 now requires explicit empty/loaded reverse permissions, enforced
+by trajectory planning, timing and recovery search. Legacy omissions keep their
+previous reverse permission; explicit migration preserves numerical inputs.
+Steering, pivoting and omnidirectional permission presets are available in the
+robot editor for existing detailed settings. Each state remains independently
+editable; presets supply no physical parameters. The editor preserves detailed
+movement/manoeuvring settings and extensions when other robot fields change.
+Complete numerical authoring, Simple/Detailed mode migration and general
+manoeuvre search remain open.
 The full application guide is
 also unfinished.
 Continue with:
