@@ -124,12 +124,16 @@ class CadWorkbench(QObject):
     def _menus(self):
         editor = self.editor
         self.file_menu = editor.menuBar().addMenu('&File')
+        self.new_action = self.action('New project', editor.new_project, 'project',
+                                     'Start a new project after reviewing unsaved changes.', QKeySequence.New)
+        self.file_menu.addAction(self.new_action)
         self.open_action = self.action('Open project / JSON…', editor.open_json, 'project',
                                       'Open a saved project or import a JSON configuration.', QKeySequence.Open)
         self.file_menu.addAction(self.open_action)
         self.file_menu.addAction(self.save_action)
-        self.file_menu.addAction(self.action('Save project as…', lambda: editor.save_project(save_as=True), 'save',
-                                            'Save a new project file.'))
+        self.save_as_action = self.action('Save project as…', lambda: editor.save_project(save_as=True), 'save',
+                                         'Save a new project file.', QKeySequence.SaveAs)
+        self.file_menu.addAction(self.save_as_action)
         self.file_menu.addAction(self.action('Export JSON…', editor.export_project_json, 'project',
                                             'Export the current project configuration as JSON.'))
         self.file_menu.addSeparator()

@@ -641,6 +641,11 @@ class AMRGraphEditor(QMainWindow):
         return not hasattr(self, 'properties_panel') or self.properties_panel.apply()
 
     def _confirm_unsaved_changes(self):
+        if self.route_profile_selection_active or self.department_location_placement_active:
+            QMessageBox.information(self, 'Finish drawing selection first',
+                'Finish or cancel the route-profile selection or department placement before changing projects or closing. '
+                'Use the canvas right-click controls to return to its editor.')
+            return False
         if not self._finish_property_draft():
             return False
         if hasattr(self, 'report_panel') and self.report_panel.running():
@@ -3583,6 +3588,17 @@ class AMRGraphEditor(QMainWindow):
                 f"Validation could not complete. The file was opened for editing, but some editor features may need missing fields to be repaired first: {exc}"
             ]
 
+        return self._replace_document(store, path, project=project, cache=cache,
+                                      load_drawings=load_drawings, validation_errors=validation_errors)
+
+    def new_project(self):
+        """Start a fresh authoring document after protecting the current one."""
+        if not self._confirm_unsaved_changes():
+            return False
+        return self._replace_document(JsonStore(), None)
+
+    def _replace_document(self, store, path, *, project=None, cache=None,
+                          load_drawings=True, validation_errors=()):
         if hasattr(self, 'playback_panel'):
             self.playback_panel.reset()
         if hasattr(self, 'properties_panel'):
@@ -3607,9 +3623,18 @@ class AMRGraphEditor(QMainWindow):
         self.selected_edge_keys.clear()
         self.dragging_point_name = None
         self.drag_mode_active = False
+        self.selected_for_edge = None
+        self.edge_delete_start = None
+        self.bounding_box_location_name = None
+        self.bounding_box_points = []
+        self.dragging_bounding_box_point_index = None
+        self._clear_corridor_drawing()
         self._clear_dxf_cache()
         self._pdf_pixmap_cache.clear()
         self._pdf_render_errors.clear()
+        if path is None:
+            self.floor_spin.setValue(0)
+        self._set_edit_mode('select_move')
         current_floor = self.floor_spin.value()
         self._pending_fit_after_load = load_drawings and bool(self.get_floor_dxf_path(current_floor))
         self._queue_all_floor_dxf_loads(active_floor=current_floor, force_reload=False)
@@ -3618,9 +3643,11 @@ class AMRGraphEditor(QMainWindow):
                 f"Opened {Path(path).name} with {len(validation_errors)} validation issue(s)"
             )
             self._show_config_validation_warning(path, validation_errors)
-        else:
+        elif path is not None:
             suffix = " without drawings" if not load_drawings else ""
             self.set_status(f"Opened {Path(path).name}{suffix}")
+        else:
+            self.set_status('New project. Draw the layout, configure robots and demand, then run Project checks before simulation.')
         self.refresh_canvas()
         self.fit_view()
         self._reset_edit_history()
@@ -3647,7 +3674,7 @@ class AMRGraphEditor(QMainWindow):
         if not self._finish_property_draft():
             return False
         self._commit_history()
-        if self.project is not None:
+        if self.project is not None or (not self.current_json_path and not self._recovered_work):
             return self.save_project()
         path = self.current_json_path
         if not path:
@@ -4671,11 +4698,13 @@ class AMRGraphEditor(QMainWindow):
             return_window.activateWindow()
 
 
-def main():
+def main(project_path=None, *, load_drawings=True):
     app = QApplication.instance() or QApplication(sys.argv)
     from appearance import controller, user_settings
     controller(app, settings=user_settings())
     install_application_theme(app)
     window = AMRGraphEditor()
     window.show()
+    if project_path is not None:
+        window.load_json_file(str(project_path), load_drawings=load_drawings)
     return app.exec()

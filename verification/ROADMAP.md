@@ -748,6 +748,19 @@ Keep engineering test evidence current throughout.
 
 ## Next action when resumed
 
+The operational UI checkpoint adds a standalone workbench entry point with
+optional project/JSON loading, File New with unsaved-work protection, portable
+first saves and standard Save As. Opening another document clears drawing and
+selection state; running simulations/reports still block document switching.
+Acceptance is in `tests/test_workbench_lifecycle.py`, alongside recovery, undo,
+workspace and child-process run regressions. On 3 October 2026, 116 focused tests
+passed, including native startup from another working directory; the separate
+verification-evidence checks also passed. Logs are in
+`verification/latest/workbench-operational-tests.txt` and
+`verification/latest/workbench-evidence-tests.txt`. The full pack was not rerun
+for this checkpoint. This does not complete the installer,
+editing locks, broader traffic model or final human workflow acceptance.
+
 The user's latest priority on 3 October 2026 is production UI features and user
 interactions. Continue the graph-dominant CAD UI next; the tutorial and illustrated
 guide follow the delivered UI. Do not resume the exhaustive option audit or core

@@ -1,5 +1,26 @@
 # Autonomous Mobile Robot Simulator
 
+## Open the engineering workbench
+
+From an existing environment with the project dependencies installed:
+
+```powershell
+.\.venv\Scripts\python.exe amr_app.py
+.\.venv\Scripts\python.exe amr_app.py "path\to\project.amrproj"
+```
+
+The launch command also accepts JSON. Add `--without-drawings` to inspect or
+repair a configuration without loading its drawing underlays. Absolute paths to
+the Python executable and `amr_app.py` work from another folder. The previous
+`visualiser/amr_editor_main.py` entry point remains available.
+
+Use **File → New project** (`Ctrl+N`) to start again, with Save/Discard/Cancel for
+unsaved work. Fresh workspaces save as compressed `.amrproj` files by default;
+opened JSON configurations retain JSON saves. **Save project as** (`Ctrl+Shift+S`)
+converts an imported configuration to a portable project. Simulation outputs stay
+external. New projects require layout, robot and demand configuration before
+**Check → Simulate → Review → Report**. Offline installation remains release work.
+
 ## Engineering verification
 
 The editor now opens compressed `.amrproj` files containing configuration,
