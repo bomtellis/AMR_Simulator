@@ -1247,43 +1247,30 @@ class JsonStore:
         )
 
     def set_location_bounding_box(self, location_name: str, points: list) -> None:
+        from amr_location_inputs import location_outline_points, validate_location_inputs
         for item in self.data.get("locations", []):
             if item.get("name") == location_name:
+                candidate = dict(item, bounding_box=deepcopy(points))
+                validate_location_inputs({'locations': [candidate]})
+                absolute = location_outline_points(candidate)
                 lx = float(item.get("x", 0.0))
                 ly = float(item.get("y", 0.0))
-                item["bounding_box"] = [
-                    {
-                        "dx": round(float(p["x"]) - lx, 3),
-                        "dy": round(float(p["y"]) - ly, 3),
-                    }
-                    for p in points
-                ]
+                normalized = []
+                for original, point in zip(points, absolute):
+                    stored = deepcopy(original)
+                    if 'dx' not in original or 'dy' not in original:
+                        stored.update(dx=point['x'] - lx, dy=point['y'] - ly)
+                    stored.pop('x', None)
+                    stored.pop('y', None)
+                    normalized.append(stored)
+                candidate['bounding_box'] = normalized
+                validate_location_inputs({'locations': [candidate]})
+                item['bounding_box'] = normalized
                 return
 
     def location_bounding_box_metrics(self, location_name: str) -> dict:
-        points = self.get_location_bounding_box_points(location_name)
-        if len(points) < 3:
-            return {"length": 0.0, "width": 0.0, "area": 0.0}
-
-        xs = [float(p["x"]) for p in points]
-        ys = [float(p["y"]) for p in points]
-
-        length = max(xs) - min(xs)
-        width = max(ys) - min(ys)
-
-        area = 0.0
-        for i, p1 in enumerate(points):
-            p2 = points[(i + 1) % len(points)]
-            area += (float(p1["x"]) * float(p2["y"])) - (
-                float(p2["x"]) * float(p1["y"])
-            )
-        area = abs(area) / 2.0
-
-        return {
-            "length": round(length, 3),
-            "width": round(width, 3),
-            "area": round(area, 3),
-        }
+        from amr_location_inputs import location_outline_metrics
+        return location_outline_metrics(self.get_location(location_name) or {})
 
     def remove_location_bounding_box(self, location_name: str) -> None:
         for item in self.data.get("locations", []):
@@ -1292,31 +1279,8 @@ class JsonStore:
                 return
 
     def get_location_bounding_box_points(self, location_name: str) -> list:
-        for item in self.data.get("locations", []):
-            if item.get("name") == location_name:
-                lx = float(item.get("x", 0.0))
-                ly = float(item.get("y", 0.0))
-
-                points = []
-                for p in item.get("bounding_box", []):
-                    if "dx" in p and "dy" in p:
-                        points.append(
-                            {
-                                "x": round(lx + float(p["dx"]), 3),
-                                "y": round(ly + float(p["dy"]), 3),
-                            }
-                        )
-                    else:
-                        # Backwards compatibility for old absolute boxes
-                        points.append(
-                            {
-                                "x": round(float(p["x"]), 3),
-                                "y": round(float(p["y"]), 3),
-                            }
-                        )
-                return points
-
-        return []
+        from amr_location_inputs import location_outline_points
+        return location_outline_points(self.get_location(location_name) or {})
 
     def get_location(self, location_name: str) -> Optional[dict]:
         for item in self.data.get("locations", []):

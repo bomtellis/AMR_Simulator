@@ -617,6 +617,11 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     from amr_inventory_inputs import inventory_space_is_amr
     payload_definitions = {row['name']: row for row in config.get('payloads', [])}
     for index, location in enumerate(config.get('locations', [])):
+        if location.get('bounding_box'):
+            add('LOCATION_OUTLINE_SCOPE', 'info', f'/locations/{index}/bounding_box', location.get('name', ''),
+                'Location outlines guide drawing, storage arrangement and reported plan measurements; they are not simulation walls.',
+                'The simulator does not enforce room containment or swept clearance. Storage arrangement uses the outline envelope, which may extend outside a concave outline. Short or self-intersecting outlines are not verified room polygons.',
+                'Use explicit graph restrictions and inventory bays for supported constraints; verify physical geometry separately.', 'locations', kind='unsupported')
         if location.get('people_area_type', '').strip().lower() not in {'', 'none'}:
             add('LOCATION_MODEL_SCOPE', 'info', f'/locations/{index}/people_area_type', location.get('name', ''),
                 'Location people-area classification is stored metadata; current people routing checks corridor-edge classifications.',

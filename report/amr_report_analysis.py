@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 import json
+# The report CLI is also launched directly from this subdirectory.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from amr_location_inputs import location_outline_metrics
 try:
     from .amr_energy_evidence import read_energy_evidence
 except ImportError:  # Standalone report CLI.
@@ -2374,9 +2380,8 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
         name = str(loc.get("name", "")).strip()
         if not name:
             continue
-        bbox = loc.get("bounding_box", []) or []
-        length, width = polygon_dimensions(bbox)
-        area = polygon_area(bbox)
+        outline_metrics = location_outline_metrics(loc)
+        length, width, area = (outline_metrics[key] for key in ('length', 'width', 'area'))
         spaces = loc.get("inventory_spaces", None)
         spaces_list = spaces if isinstance(spaces, list) else []
         explicit_spaces = spaces is not None

@@ -3798,18 +3798,12 @@ class SimulationVisualizer(QMainWindow):
             return True
 
         bbox_points = [(lx, ly)]
-        for point in location.get("bounding_box", []) or []:
-            if not isinstance(point, dict):
-                continue
-            try:
-                bbox_points.append(
-                    (
-                        lx + float(point.get("dx", point.get("x", 0.0)) or 0.0),
-                        ly + float(point.get("dy", point.get("y", 0.0)) or 0.0),
-                    )
-                )
-            except Exception:
-                pass
+        from amr_location_inputs import location_outline_points
+        try:
+            bbox_points.extend((p['x'], p['y']) for p in location_outline_points(location))
+        except ValueError:
+            # Older result layouts may predate input validation; retain their location marker.
+            pass
 
         for space in location.get("inventory_spaces", []) or []:
             bbox_points.extend(self._space_points_world(location, space))

@@ -302,6 +302,14 @@ Fifteen tests include 4,096 exhaustive small-graph/charger cases. Two charging
 option dispositions and shared location resolution cover list/CSV/legacy inputs.
 Physical parking, live fleet rematching and charging throughput remain open.
 
+**Slice 2AG:** [Location outline coordinates and model scope](LOCATION_OUTLINE_REVIEW.md)
+fixes editor rounding, large-origin area cancellation, legacy absolute playback
+offsets and mixed-coordinate report measurements. Twelve tests cover coordinate
+contracts, independent area/timing references, JSON/project persistence and
+boundary undo/redo/cancel. Nonempty outlines expose their drawing/arrangement-only
+scope in Project Checks. Physical wall containment and polygon validity remain
+open for the geometry phase; these measurements are not swept-clearance proof.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -551,8 +559,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AF's initial fleet/charger matching and reference changes. Finish
-location outlines and remaining input contracts, then continue the department inventory,
+Review slice 2AG's location-outline changes. Continue remaining input contracts,
+including storage/report reconciliation, then continue the department inventory,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

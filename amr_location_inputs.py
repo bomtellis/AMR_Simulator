@@ -2,6 +2,62 @@
 import math
 
 
+def _outline_number(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError('Outline coordinates must be finite numbers in metres.') from exc
+    if isinstance(value, bool) or not math.isfinite(number):
+        raise ValueError('Outline coordinates must be finite numbers in metres; booleans are invalid.')
+    return number
+
+
+def location_outline_points(location, *, local=False):
+    """Resolve each complete local pair before legacy absolute pairs, without rounding."""
+    points = location.get('bounding_box', [])
+    if not isinstance(points, list):
+        raise ValueError('Location bounding_box must be a list of point objects.')
+    lx, ly = (_outline_number(location.get(key, 0)) for key in ('x', 'y'))
+    result = []
+    for index, point in enumerate(points):
+        if not isinstance(point, dict):
+            raise ValueError(f'Outline point {index} must be an object.')
+        if 'dx' in point and 'dy' in point:
+            x, y = (_outline_number(point[key]) for key in ('dx', 'dy'))
+            world = x + lx, y + ly
+            resolved = (x, y) if local else world
+        elif 'x' in point and 'y' in point:
+            world = tuple(_outline_number(point[key]) for key in ('x', 'y'))
+            resolved = (world[0] - lx, world[1] - ly) if local else world
+        else:
+            raise ValueError(f'Outline point {index} needs a complete dx/dy or x/y pair.')
+        if not all(math.isfinite(value) for value in (*world, *resolved)):
+            raise ValueError(f'Outline point {index} overflows after coordinate conversion.')
+        result.append(dict(zip(('x', 'y'), resolved)))
+    return result
+
+
+def location_outline_metrics(location):
+    """Plan envelope and algebraic polygon area; not a containment/validity test."""
+    points = location_outline_points(location, local=True)
+    if len(points) < 3:
+        return dict(length=0., width=0., area=0.)
+    # Translate before the shoelace products to avoid cancellation at large origins.
+    origin = points[0]
+    coordinates = [(p['x'] - origin['x'], p['y'] - origin['y']) for p in points]
+    xs, ys = zip(*coordinates)
+    length, width = max(xs) - min(xs), max(ys) - min(ys)
+    try:
+        area = abs(math.fsum(x * coordinates[(i + 1) % len(points)][1]
+                             - coordinates[(i + 1) % len(points)][0] * y
+                             for i, (x, y) in enumerate(coordinates))) / 2
+    except (ValueError, OverflowError) as exc:
+        raise ValueError('Outline metrics overflow; use representable geometry.') from exc
+    if not all(math.isfinite(v) for v in (length, width, area)):
+        raise ValueError('Outline metrics overflow; use representable geometry.')
+    return dict(length=length, width=width, area=area)
+
+
 def location_input_findings(config, *, require_complete=False):
     if not isinstance(config, dict):
         return
@@ -60,6 +116,11 @@ def location_input_findings(config, *, require_complete=False):
             value = row['people_area_type']
             if not isinstance(value, str) or value.strip().lower() not in {'', 'none', 'staff', 'public', 'both'}:
                 yield path + '/people_area_type', 'People area must be none, staff, public or both; an empty string retains none.'
+        if 'bounding_box' in row:
+            try:
+                location_outline_metrics(row)
+            except ValueError as exc:
+                yield path + '/bounding_box', str(exc)
 
 
 def validate_location_inputs(config, *, require_complete=False):
