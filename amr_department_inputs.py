@@ -7,6 +7,12 @@ def department_identity(row):
     return str(row.get('id', '') or '').strip() or str(row.get('name', '') or '').strip()
 
 
+def department_stream_items(values):
+    """Canonical names without materialising overrides or discarding extension fields."""
+    return [dict(deepcopy(item), name=item['name'].strip()) if isinstance(item, dict)
+            else {'name': item.strip()} for item in values or []]
+
+
 def department_location_names(entry, *, zones=False):
     """Resolve modern keys before aliases; a scalar is one literal location name."""
     if isinstance(entry, dict):
@@ -77,6 +83,18 @@ def department_input_findings(config, *, require_identity=False):
                 valid = False
             if not valid:
                 yield path + '/' + key, 'Use a finite coordinate in metres or whole floor number; booleans are invalid.'
+        streams = row.get('waste_streams', [])
+        if isinstance(streams, list):
+            seen_streams = set()
+            for stream_index, stream in enumerate(streams):
+                name = stream.get('name') if isinstance(stream, dict) else stream
+                stream_path = f'{path}/waste_streams/{stream_index}'
+                if not isinstance(name, str) or not name.strip():
+                    yield stream_path, 'A waste-stream assignment requires a nonblank string name.'
+                elif name.strip() in seen_streams:
+                    yield stream_path, 'A waste stream may be assigned only once per department; combine its settings explicitly.'
+                else:
+                    seen_streams.add(name.strip())
         assignments = row.get('task_generation_locations', {})
         if not isinstance(assignments, dict):
             yield path + '/task_generation_locations', 'Category location assignments must be an object.'

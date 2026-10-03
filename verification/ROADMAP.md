@@ -352,6 +352,14 @@ including a replacement project with identical contents. Ten tests cover those
 cases. General modal recovery, merge workflows and final CAD preview remain outside
 this checkpoint.
 
+**Slice 2AM:** [Preserve department waste-stream overrides](DEPARTMENT_WASTE_REVIEW.md)
+prevents no-op department/stream edits from replacing inherited demand with zero
+rates or dropping payload/capacity/extension fields. Single controls expose
+inheritance; bulk edits apply only changed fields. Fourteen tests include independent
+one-hour volume/count expectations, schedule/empty precedence, sparse patches and
+malformed-input rejection. Legacy pickup/seeding references and remaining option
+dispositions remain open alongside the broader workspace/report gates.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -601,9 +609,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AL's shared provisional locations and stale department drafts.
-Continue department waste-stream and task-generation option contracts with
-independent expected demand, then the remaining workspace gates.
+Review slice 2AM's waste-stream inheritance and sparse editing changes.
+Audit legacy waste pickup/seeding references and department naming suffixes, then
+continue generation option dispositions with independent expected demand and the
+remaining workspace gates.
 Retain full report event-coverage/stock reconciliation,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with

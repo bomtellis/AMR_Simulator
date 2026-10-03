@@ -5,7 +5,7 @@ import math
 from typing import Any, List, Optional
 from amr_generation_inputs import generation_mode_explanation
 from amr_inventory_inputs import inventory_space_is_amr
-from amr_department_inputs import department_location_names
+from amr_department_inputs import department_location_names, department_stream_items
 
 from advanced_dialogs import MultiSelectPicker
 from inventory_spaces_manager import LocationSpacesManagerDialog
@@ -9478,6 +9478,7 @@ class DepartmentWasteStreamSettingsDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
+        "timeframe",
     ]
 
     def __init__(self, parent, waste_stream_names, items=None):
@@ -9486,7 +9487,7 @@ class DepartmentWasteStreamSettingsDialog(QDialog):
         self.resize(900, 520)
 
         self.waste_stream_names = list(waste_stream_names)
-        self.items = [dict(x) for x in (items or [])]
+        self.items = department_stream_items(items)
         self.result = None
 
         layout = QVBoxLayout(self)
@@ -9542,13 +9543,13 @@ class DepartmentWasteStreamSettingsDialog(QDialog):
 
             values = [
                 item.get("name", ""),
-                item.get("generation_mode", "threshold"),
-                item.get("frequency_per_day", 0.0),
-                item.get("volume_per_event_m3", 0.0),
-                item.get("threshold_volume_m3", 0.0),
-                item.get("base_daily_volume_m3", 0.0),
-                ", ".join(item.get("scheduled_times", [])),
-                "Yes" if item.get("initial_container_present", True) else "No",
+                item.get("generation_mode", "Inherit"),
+                item.get("frequency_per_day", "Inherit"),
+                item.get("volume_per_event_m3", "Inherit"),
+                item.get("threshold_volume_m3", "Inherit"),
+                item.get("base_daily_volume_m3", "Inherit"),
+                ", ".join(item["scheduled_times"]) if "scheduled_times" in item else "Inherit",
+                ("Yes" if item["initial_container_present"] else "No") if "initial_container_present" in item else "Inherit",
                 item.get("shared_container_group", "")
                 or ("Shared by pickup" if item.get("shared_container", False) else ""),
             ]
@@ -9620,6 +9621,7 @@ class DepartmentWasteStreamItemDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
+        "timeframe",
     ]
 
     def __init__(self, parent, waste_stream_names, seed=None):
@@ -9627,42 +9629,43 @@ class DepartmentWasteStreamItemDialog(QDialog):
         self.setWindowTitle("Waste stream generation settings")
         self.resize(520, 420)
 
-        self.seed = seed or {}
+        self.seed = deepcopy(seed or {})
         self.result = None
         self.scheduled_times = list(self.seed.get("scheduled_times", []))
+        self._schedule_explicit = "scheduled_times" in self.seed
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
         layout.addLayout(form)
 
         self.name_combo = QComboBox()
-        self.name_combo.addItems([""] + list(waste_stream_names))
+        self.name_combo.addItems([""] + sorted(set(waste_stream_names) | ({self.seed["name"]} if self.seed.get("name") else set())))
         self.name_combo.setCurrentText(str(self.seed.get("name", "")))
 
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(self.MODES)
+        self.mode_combo.addItems(["Inherit", "Default (scheduled)"] + self.MODES)
         self.mode_combo.setCurrentText(
-            str(self.seed.get("generation_mode", "threshold"))
+            str(self.seed.get("generation_mode", "Inherit")).strip() or "Default (scheduled)"
         )
 
-        self.frequency_edit = QLineEdit(str(self.seed.get("frequency_per_day", 0.0)))
-        self.volume_edit = QLineEdit(str(self.seed.get("volume_per_event_m3", 0.0)))
-        self.threshold_edit = QLineEdit(str(self.seed.get("threshold_volume_m3", 0.0)))
+        self.frequency_edit = QLineEdit(str(self.seed.get("frequency_per_day", "")))
+        self.volume_edit = QLineEdit(str(self.seed.get("volume_per_event_m3", "")))
+        self.threshold_edit = QLineEdit(str(self.seed.get("threshold_volume_m3", "")))
         self.base_daily_edit = QLineEdit(
-            str(self.seed.get("base_daily_volume_m3", 0.0))
+            str(self.seed.get("base_daily_volume_m3", ""))
         )
         self.initial_container_check = QCheckBox(
             "Container/bin is present at the department when simulation starts"
         )
-        self.initial_container_check.setChecked(
-            bool(self.seed.get("initial_container_present", True))
-        )
+        self.initial_container_check.setTristate(True)
+        self.initial_container_check.setCheckState(Qt.PartiallyChecked if 'initial_container_present' not in self.seed
+                                                  else Qt.Checked if self.seed['initial_container_present'] else Qt.Unchecked)
         self.shared_container_check = QCheckBox(
             "Share this physical bin/container with other departments"
         )
-        self.shared_container_check.setChecked(
-            bool(self.seed.get("shared_container", False))
-        )
+        self.shared_container_check.setTristate(True)
+        self.shared_container_check.setCheckState(Qt.PartiallyChecked if 'shared_container' not in self.seed
+                                                 else Qt.Checked if self.seed['shared_container'] else Qt.Unchecked)
         self.shared_container_group_edit = QLineEdit(
             str(
                 self.seed.get(
@@ -9680,6 +9683,8 @@ class DepartmentWasteStreamItemDialog(QDialog):
 
         edit_times_btn = QPushButton("Edit times...")
         clear_times_btn = QPushButton("Clear")
+        inherit_times_btn = QPushButton("Inherit")
+        inherit_times_btn.clicked.connect(self.inherit_times)
 
         edit_times_btn.clicked.connect(self.edit_times)
         clear_times_btn.clicked.connect(self.clear_times)
@@ -9690,7 +9695,16 @@ class DepartmentWasteStreamItemDialog(QDialog):
         schedule_row.addWidget(self.schedule_summary, 1)
         schedule_row.addWidget(edit_times_btn)
         schedule_row.addWidget(clear_times_btn)
+        schedule_row.addWidget(inherit_times_btn)
 
+        for edit in (self.frequency_edit, self.volume_edit, self.threshold_edit, self.base_daily_edit):
+            edit.setPlaceholderText('Inherit (leave blank)')
+        hint = QLabel('Blank numeric fields and partially checked boxes inherit the effective rule settings. '
+                      'Use Demand Preview to inspect the resolved values. '
+                      'These generation overrides apply to modern Waste rules; legacy department waste '
+                      'uses demographic rates and global stream definitions.')
+        hint.setWordWrap(True)
+        form.addRow(hint)
         form.addRow("Waste stream", self.name_combo)
         form.addRow("Generation mode", self.mode_combo)
         form.addRow("Frequency per day", self.frequency_edit)
@@ -9698,6 +9712,9 @@ class DepartmentWasteStreamItemDialog(QDialog):
         form.addRow("Threshold volume m³", self.threshold_edit)
         form.addRow("Base daily volume m³", self.base_daily_edit)
         form.addRow("Scheduled times", schedule_row)
+        form.addRow(self.initial_container_check)
+        form.addRow(self.shared_container_check)
+        form.addRow("Shared bin group", self.shared_container_group_edit)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -9714,15 +9731,24 @@ class DepartmentWasteStreamItemDialog(QDialog):
     def edit_times(self):
         dialog = ScheduledTimesDialog(self, self.scheduled_times)
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self._schedule_explicit = True
             self.scheduled_times = list(dialog.result)
             self.refresh_schedule_summary()
 
     def clear_times(self):
+        self._schedule_explicit = True
+        self.scheduled_times = []
+        self.refresh_schedule_summary()
+
+    def inherit_times(self):
+        self._schedule_explicit = False
         self.scheduled_times = []
         self.refresh_schedule_summary()
 
     def refresh_schedule_summary(self):
-        if not self.scheduled_times:
+        if not self._schedule_explicit:
+            self.schedule_summary.setText('Inherited schedule')
+        elif not self.scheduled_times:
             self.schedule_summary.setText("No times selected")
         elif len(self.scheduled_times) <= 6:
             self.schedule_summary.setText(", ".join(self.scheduled_times))
@@ -9731,6 +9757,8 @@ class DepartmentWasteStreamItemDialog(QDialog):
 
     def update_field_state(self):
         mode = self.mode_combo.currentText().strip()
+        if mode == "Default (scheduled)":
+            mode = "scheduled"
         self.mode_combo.setToolTip(generation_mode_explanation(mode))
 
         uses_schedule = mode in {
@@ -9757,6 +9785,8 @@ class DepartmentWasteStreamItemDialog(QDialog):
         # Threshold mode can still accumulate volume from discrete events, so
         # frequency/volume must remain editable for threshold streams as well
         # as sporadic streams.  Scheduled streams can use volume/event too.
+        if mode == 'Inherit':
+            uses_schedule = uses_threshold = uses_continuous = uses_sporadic = True
         uses_event_volume = uses_sporadic or uses_threshold or uses_schedule
 
         self.schedule_summary.setEnabled(uses_schedule)
@@ -9768,7 +9798,7 @@ class DepartmentWasteStreamItemDialog(QDialog):
         self.frequency_edit.setEnabled(uses_sporadic or uses_threshold)
         self.volume_edit.setEnabled(uses_event_volume)
         self.shared_container_group_edit.setEnabled(
-            self.shared_container_check.isChecked()
+            self.shared_container_check.checkState() != Qt.Unchecked
         )
 
     def accept(self):
@@ -9777,18 +9807,35 @@ class DepartmentWasteStreamItemDialog(QDialog):
             if not name:
                 raise ValueError("Waste stream is required")
 
-            self.result = {
-                "name": name,
-                "generation_mode": self.mode_combo.currentText().strip(),
-                "frequency_per_day": float(self.frequency_edit.text() or 0.0),
-                "volume_per_event_m3": float(self.volume_edit.text() or 0.0),
-                "threshold_volume_m3": float(self.threshold_edit.text() or 0.0),
-                "base_daily_volume_m3": float(self.base_daily_edit.text() or 0.0),
-                "scheduled_times": list(self.scheduled_times),
-                "initial_container_present": self.initial_container_check.isChecked(),
-                "shared_container": self.shared_container_check.isChecked(),
-                "shared_container_group": self.shared_container_group_edit.text().strip(),
-            }
+            candidate = deepcopy(self.seed)
+            candidate['name'] = name
+            mode = self.mode_combo.currentText().strip()
+            if mode == 'Inherit':
+                candidate.pop('generation_mode', None)
+            else:
+                candidate['generation_mode'] = '' if mode == 'Default (scheduled)' else mode
+            for key, edit in [('frequency_per_day', self.frequency_edit), ('volume_per_event_m3', self.volume_edit),
+                              ('threshold_volume_m3', self.threshold_edit), ('base_daily_volume_m3', self.base_daily_edit)]:
+                if edit.text().strip():
+                    candidate[key] = float(edit.text())
+                else:
+                    candidate.pop(key, None)
+            if self._schedule_explicit:
+                candidate['scheduled_times'] = list(self.scheduled_times)
+            else:
+                candidate.pop('scheduled_times', None)
+            for key, checkbox in [('initial_container_present', self.initial_container_check), ('shared_container', self.shared_container_check)]:
+                if checkbox.checkState() == Qt.PartiallyChecked:
+                    candidate.pop(key, None)
+                else:
+                    candidate[key] = checkbox.isChecked()
+            group = self.shared_container_group_edit.text().strip()
+            original = str(self.seed.get('shared_container_group', self.seed.get('shared_container_id', ''))).strip()
+            if group != original:
+                candidate['shared_container_group'] = group
+            from amr_generation_inputs import validate_generation_inputs
+            validate_generation_inputs({'departments': [{'waste_streams': [candidate]}]})
+            self.result = candidate
 
             super().accept()
         except Exception as exc:
@@ -10550,61 +10597,7 @@ class DepartmentEditorDialog(QDialog):
             self._refresh_dropoff_zone_summary(category_key)
 
     def _normalise_department_waste_streams(self, value):
-        result = []
-
-        for item in value or []:
-            if isinstance(item, dict):
-                name = str(item.get("name", "")).strip()
-                if not name:
-                    continue
-                result.append(
-                    {
-                        "name": name,
-                        "generation_mode": str(
-                            item.get("generation_mode", "threshold")
-                        ),
-                        "frequency_per_day": float(item.get("frequency_per_day", 0.0)),
-                        "volume_per_event_m3": float(
-                            item.get("volume_per_event_m3", 0.0)
-                        ),
-                        "threshold_volume_m3": float(
-                            item.get("threshold_volume_m3", 0.0)
-                        ),
-                        "base_daily_volume_m3": float(
-                            item.get("base_daily_volume_m3", 0.0)
-                        ),
-                        "scheduled_times": list(item.get("scheduled_times", [])),
-                        "initial_container_present": bool(
-                            item.get("initial_container_present", True)
-                        ),
-                        "shared_container": bool(item.get("shared_container", False)),
-                        "shared_container_group": str(
-                            item.get(
-                                "shared_container_group",
-                                item.get("shared_container_id", ""),
-                            )
-                        ).strip(),
-                    }
-                )
-            else:
-                name = str(item).strip()
-                if name:
-                    result.append(
-                        {
-                            "name": name,
-                            "generation_mode": "threshold",
-                            "frequency_per_day": 0.0,
-                            "volume_per_event_m3": 0.0,
-                            "threshold_volume_m3": 0.0,
-                            "base_daily_volume_m3": 0.0,
-                            "scheduled_times": [],
-                            "initial_container_present": True,
-                            "shared_container": False,
-                            "shared_container_group": "",
-                        }
-                    )
-
-        return result
+        return department_stream_items(value)
 
     def _refresh_waste_summary(self):
         names = [
@@ -10792,6 +10785,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         "hybrid",
         "scheduled_threshold",
         "scheduled_sporadic",
+        "timeframe",
     ]
 
     DEFAULT_STREAM_SETTINGS = {
@@ -10836,8 +10830,9 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             "Untick a stream to remove it from all selected departments. "
             "A partially ticked stream is currently assigned to only some departments; "
             "leave it partially ticked to make no assignment/settings change. "
-            "For checked streams, the generation settings below are applied to every "
-            "selected department at the same time. Deleted/orphaned streams are shown "
+            "For checked streams, only fields you edit are applied to all selected departments. "
+            "Blank untouched fields mean unchanged. Clearing an edited numeric field restores inheritance. "
+            "New assignments inherit the effective rule unless you supply overrides. Deleted/orphaned streams are shown "
             "so they can be unchecked and removed. If selected departments use different "
             "shared bin groups, those groups are preserved unless you edit that field."
         )
@@ -10908,51 +10903,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         return names
 
     def _normalise_stream_item(self, item):
-        if isinstance(item, dict):
-            name = str(item.get("name", "")).strip()
-            if not name:
-                return None
-            return {
-                "name": name,
-                "generation_mode": str(
-                    item.get(
-                        "generation_mode",
-                        self.DEFAULT_STREAM_SETTINGS["generation_mode"],
-                    )
-                    or self.DEFAULT_STREAM_SETTINGS["generation_mode"]
-                ),
-                "frequency_per_day": float(item.get("frequency_per_day", 0.0) or 0.0),
-                "volume_per_event_m3": float(
-                    item.get("volume_per_event_m3", 0.0) or 0.0
-                ),
-                "threshold_volume_m3": float(
-                    item.get("threshold_volume_m3", 0.0) or 0.0
-                ),
-                "base_daily_volume_m3": float(
-                    item.get("base_daily_volume_m3", 0.0) or 0.0
-                ),
-                "scheduled_times": list(item.get("scheduled_times", []) or []),
-                "initial_container_present": bool(
-                    item.get("initial_container_present", True)
-                ),
-                "shared_container": bool(item.get("shared_container", False)),
-                "shared_container_group": str(
-                    item.get(
-                        "shared_container_group", item.get("shared_container_id", "")
-                    )
-                ).strip(),
-            }
-
-        name = str(item).strip()
-        if not name:
-            return None
-        return {
-            "name": name,
-            **self.DEFAULT_STREAM_SETTINGS,
-            "initial_container_present": True,
-            "shared_container": False,
-            "shared_container_group": "",
-        }
+        return department_stream_items([item])[0]
 
     def _first_settings_for_stream(self, stream_name):
         """Use the first existing department settings as the edit seed."""
@@ -10963,7 +10914,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                     continue
                 if str(normalised.get("name", "")).strip() == stream_name:
                     return normalised
-        return {"name": stream_name, **self.DEFAULT_STREAM_SETTINGS}
+        return {"name": stream_name}
 
     def _shared_groups_for_stream(self, stream_name):
         groups = set()
@@ -10981,6 +10932,9 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         widgets = self._row_widgets.get(stream_name)
         if widgets is not None:
             widgets["shared_group_edited"] = True
+
+    def _mark_field_edited(self, stream_name, field):
+        self._row_widgets[stream_name]['edited_fields'].add(field)
 
     def _make_number_edit(self, value):
         edit = QLineEdit(str(value))
@@ -11023,7 +10977,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                         "Preserve or remove"
                         if is_orphan
                         else (
-                            "Apply settings to all"
+                            "Apply edited fields only"
                             if assigned_count == dept_count and dept_count > 0
                             else (
                                 "Assign/update all"
@@ -11063,20 +11017,13 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
 
             seed = self._first_settings_for_stream(stream_name)
             mode_combo = QComboBox()
-            mode_combo.addItems(self.MODES)
-            mode = str(seed.get("generation_mode", "threshold") or "threshold")
-            if mode not in self.MODES:
-                mode = "threshold"
-            mode_combo.setCurrentText(mode)
-
-            frequency_edit = self._make_number_edit(seed.get("frequency_per_day", 0.0))
-            volume_edit = self._make_number_edit(seed.get("volume_per_event_m3", 0.0))
-            threshold_edit = self._make_number_edit(
-                seed.get("threshold_volume_m3", 0.0)
-            )
-            base_daily_edit = self._make_number_edit(
-                seed.get("base_daily_volume_m3", 0.0)
-            )
+            mode_combo.addItems(['Unchanged', 'Inherit'] + self.MODES)
+            frequency_edit = self._make_number_edit('')
+            volume_edit = self._make_number_edit('')
+            threshold_edit = self._make_number_edit('')
+            base_daily_edit = self._make_number_edit('')
+            for edit in (frequency_edit, volume_edit, threshold_edit, base_daily_edit):
+                edit.setPlaceholderText('Unchanged')
             initial_container_check = QCheckBox("Present")
             initial_container_check.setChecked(
                 bool(seed.get("initial_container_present", True))
@@ -11117,6 +11064,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             schedule_row.addWidget(clear_times_btn)
 
             self._row_widgets[stream_name] = {
+                "edited_fields": set(),
+                "removed_fields": set(),
                 "mode_combo": mode_combo,
                 "frequency_edit": frequency_edit,
                 "volume_edit": volume_edit,
@@ -11149,6 +11098,11 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                 lambda _value, name=stream_name: self._mark_shared_group_edited(name)
             )
 
+            for field, edit in [('frequency_per_day', frequency_edit), ('volume_per_event_m3', volume_edit),
+                                ('threshold_volume_m3', threshold_edit), ('base_daily_volume_m3', base_daily_edit)]:
+                edit.textChanged.connect(lambda _value, name=stream_name, field=field: self._mark_field_edited(name, field))
+            mode_combo.currentTextChanged.connect(lambda _value, name=stream_name: self._mark_field_edited(name, 'generation_mode'))
+            initial_container_check.toggled.connect(lambda _value, name=stream_name: self._mark_field_edited(name, 'initial_container_present'))
             self.table.setItemWidget(item, 4, mode_combo)
             self.table.setItemWidget(item, 5, frequency_edit)
             self.table.setItemWidget(item, 6, volume_edit)
@@ -11210,11 +11164,13 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         widgets = self._row_widgets.get(stream_name, {})
         dialog = ScheduledTimesDialog(self, widgets.get("scheduled_times", []))
         if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self._mark_field_edited(stream_name, "scheduled_times")
             widgets["scheduled_times"] = list(dialog.result)
             self._refresh_schedule_summary(stream_name)
 
     def _clear_times_for_stream(self, stream_name):
         widgets = self._row_widgets.get(stream_name, {})
+        self._mark_field_edited(stream_name, "scheduled_times")
         widgets["scheduled_times"] = []
         self._refresh_schedule_summary(stream_name)
 
@@ -11249,6 +11205,8 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         # Threshold waste streams can be filled by event counts
         # (frequency_per_day × volume_per_event_m3), so these fields are not
         # sporadic-only.  Scheduled streams may also use volume per event.
+        if mode in {'Unchanged', 'Inherit'}:
+            uses_schedule = uses_threshold = uses_continuous = uses_sporadic = True
         uses_event_volume = uses_sporadic or uses_threshold or uses_schedule
 
         for key in ("schedule_label", "edit_times_btn", "clear_times_btn"):
@@ -11266,24 +11224,33 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             widgets["volume_edit"].setEnabled(uses_event_volume)
 
     def _settings_for_stream(self, stream_name):
-        widgets = self._row_widgets.get(stream_name, {})
-        settings = {
-            "generation_mode": widgets["mode_combo"].currentText().strip(),
-            "frequency_per_day": float(widgets["frequency_edit"].text() or 0.0),
-            "volume_per_event_m3": float(widgets["volume_edit"].text() or 0.0),
-            "threshold_volume_m3": float(widgets["threshold_edit"].text() or 0.0),
-            "base_daily_volume_m3": float(widgets["base_daily_edit"].text() or 0.0),
-            "scheduled_times": list(widgets.get("scheduled_times", []) or []),
-            "initial_container_present": widgets["initial_container_check"].isChecked(),
-        }
-        # A blank field represents multiple existing values until the user edits
-        # it.  Omitting these keys lets each department retain its own auto group.
-        if not widgets.get("shared_group_mixed", False) or widgets.get(
-            "shared_group_edited", False
-        ):
-            shared_group = widgets["shared_group_edit"].text().strip()
-            settings["shared_container"] = bool(shared_group)
-            settings["shared_container_group"] = shared_group
+        widgets = self._row_widgets[stream_name]
+        edited = widgets['edited_fields']
+        removed = widgets['removed_fields'] = set()
+        settings = {}
+        for key, widget_key in [('frequency_per_day', 'frequency_edit'), ('volume_per_event_m3', 'volume_edit'),
+                                ('threshold_volume_m3', 'threshold_edit'), ('base_daily_volume_m3', 'base_daily_edit')]:
+            if key in edited:
+                text = widgets[widget_key].text().strip()
+                if text:
+                    settings[key] = float(text)
+                else:
+                    removed.add(key)
+        if 'generation_mode' in edited:
+            mode = widgets['mode_combo'].currentText()
+            if mode == 'Inherit':
+                removed.add('generation_mode')
+            elif mode != 'Unchanged':
+                settings['generation_mode'] = mode
+        if 'scheduled_times' in edited:
+            settings['scheduled_times'] = list(widgets['scheduled_times'])
+        if 'initial_container_present' in edited:
+            settings['initial_container_present'] = widgets['initial_container_check'].isChecked()
+        if widgets.get('shared_group_edited', False):
+            group = widgets['shared_group_edit'].text().strip()
+            settings.update(shared_container=bool(group), shared_container_group=group)
+        from amr_generation_inputs import validate_generation_inputs
+        validate_generation_inputs({'departments': [{'waste_streams': [dict(settings, name=stream_name)]}]})
         return settings
 
     def accept(self):
@@ -11291,6 +11258,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         remove_streams = []
         unchanged_streams = []
         update_stream_settings = {}
+        remove_stream_settings = {}
 
         try:
             for idx in range(self.table.topLevelItemCount()):
@@ -11312,6 +11280,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
                         update_stream_settings[stream_name] = self._settings_for_stream(
                             stream_name
                         )
+                        remove_stream_settings[stream_name] = sorted(self._row_widgets[stream_name]['removed_fields'])
                 elif state == Qt.Unchecked:
                     remove_streams.append(stream_name)
                 else:
@@ -11325,6 +11294,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             "remove_streams": remove_streams,
             "unchanged_streams": unchanged_streams,
             "update_stream_settings": update_stream_settings,
+            "remove_stream_settings": remove_stream_settings,
         }
         super().accept()
 
@@ -12728,72 +12698,7 @@ class DepartmentListDialog(QDialog):
         )
 
     def _normalise_department_waste_streams(self, value):
-        result = []
-        for item in value or []:
-            if isinstance(item, dict):
-                name = str(item.get("name", "")).strip()
-                if not name:
-                    continue
-                result.append(
-                    {
-                        "name": name,
-                        "generation_mode": str(
-                            item.get("generation_mode", "threshold")
-                        ),
-                        "frequency_per_day": float(
-                            item.get("frequency_per_day", 0.0) or 0.0
-                        ),
-                        "volume_per_event_m3": float(
-                            item.get("volume_per_event_m3", 0.0) or 0.0
-                        ),
-                        "threshold_volume_m3": float(
-                            item.get("threshold_volume_m3", 0.0) or 0.0
-                        ),
-                        "base_daily_volume_m3": float(
-                            item.get("base_daily_volume_m3", 0.0) or 0.0
-                        ),
-                        "scheduled_times": list(item.get("scheduled_times", []) or []),
-                        "initial_container_present": bool(
-                            item.get("initial_container_present", True)
-                        ),
-                        "shared_container": bool(item.get("shared_container", False)),
-                        "shared_container_group": str(
-                            item.get(
-                                "shared_container_group",
-                                item.get("shared_container_id", ""),
-                            )
-                        ).strip(),
-                    }
-                )
-                continue
-
-            name = str(item).strip()
-            if name:
-                result.append(
-                    {
-                        "name": name,
-                        "generation_mode": "threshold",
-                        "frequency_per_day": 0.0,
-                        "volume_per_event_m3": 0.0,
-                        "threshold_volume_m3": 0.0,
-                        "base_daily_volume_m3": 0.0,
-                        "scheduled_times": [],
-                        "initial_container_present": True,
-                        "shared_container": False,
-                        "shared_container_group": "",
-                    }
-                )
-
-        # De-duplicate while preserving the first existing settings for each stream.
-        seen = set()
-        clean = []
-        for item in result:
-            name = str(item.get("name", "")).strip()
-            if not name or name in seen:
-                continue
-            seen.add(name)
-            clean.append(item)
-        return clean
+        return department_stream_items(value)
 
     def manage_waste_streams_for_selected_departments(self):
         rows = self._selected_department_indexes()
@@ -12858,7 +12763,8 @@ class DepartmentListDialog(QDialog):
             if str(name).strip()
         }
 
-        if not add_streams and not remove_streams and not update_stream_settings:
+        remove_stream_settings = dialog.result.get('remove_stream_settings', {})
+        if not add_streams and not remove_streams and not update_stream_settings and not remove_stream_settings:
             return
 
         added_count = 0
@@ -12885,9 +12791,11 @@ class DepartmentListDialog(QDialog):
                     removed_count += 1
                     continue
 
-                if name in update_stream_settings:
+                if name in update_stream_settings or name in remove_stream_settings:
                     updated_item = dict(item)
-                    updated_item.update(update_stream_settings[name])
+                    updated_item.update(update_stream_settings.get(name, {}))
+                    for key in remove_stream_settings.get(name, []):
+                        updated_item.pop(key, None)
                     updated_item["name"] = name
                     filtered_items.append(updated_item)
                     updated_count += 1
@@ -12902,7 +12810,7 @@ class DepartmentListDialog(QDialog):
                 settings = dict(
                     update_stream_settings.get(
                         stream_name,
-                        BulkDepartmentWasteStreamControlDialog.DEFAULT_STREAM_SETTINGS,
+                        {},
                     )
                 )
                 filtered_items.append({"name": stream_name, **settings})
