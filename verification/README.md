@@ -12,7 +12,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Routing input validation](ROUTING_INPUT_REVIEW.md):
+The latest slice is [Generation contracts and return import parity](GENERATION_CONTRACTS_REVIEW.md):
+effective rules, completion-relative returns and preserved imported staff settings.
+Earlier [Routing input validation](ROUTING_INPUT_REVIEW.md) covers:
 ambiguous flags are rejected and positive widths retain their physical values.
 The preceding audit is [Routing and door option contracts](ROUTING_CONTRACTS_REVIEW.md):
 individual defaults, import behaviour, validation limits and acceptance links.

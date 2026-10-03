@@ -403,11 +403,23 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
                 )
             elif isinstance(incoming, dict):
                 merged["categories"][key].update(incoming)
+            if isinstance(incoming, dict):
+                # New-project category templates may require staff (Stores),
+                # but an imported rule without that option uses runtime false.
+                # Do not introduce a shift/handling delay merely by opening it.
+                merged["categories"][key]["requires_staff"] = incoming.get(
+                    "requires_staff", incoming.get("staff_required", False))
+                merged["categories"][key]["staff_handling_minutes"] = incoming.get(
+                    "staff_handling_minutes", 0.0)
 
     # Support older experiments where categories were stored directly under task_generation.
     for key, _label in LOGISTICS_TASK_GENERATION_CATEGORIES:
         if isinstance(value.get(key), dict):
             merged["categories"][key].update(value[key])
+            merged["categories"][key]["requires_staff"] = value[key].get(
+                "requires_staff", value[key].get("staff_required", False))
+            merged["categories"][key]["staff_handling_minutes"] = value[key].get(
+                "staff_handling_minutes", 0.0)
 
     for category in merged["categories"].values():
         if not isinstance(category, dict):

@@ -116,6 +116,10 @@ individual source/default/validation/acceptance traceability. See
 flags and invalid widths before import/simulation, and preserves positive widths
 below 0.1 m. Wider schema coverage and interactive width-entry consistency remain
 open, as do the full inventory and checkpoint 2 gate.
+**Slice 2C:** [Generation contracts and return import parity](GENERATION_CONTRACTS_REVIEW.md)
+adds 22 generation-field contracts and corrects the two imported staff defaults
+that changed the reference return timing. Full import parity, staff semantics,
+runtime waste/return interactions and the remainder of the inventory stay open.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -366,7 +370,7 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2B's routing input correction.
+Review slice 2C's generation and return-import correction.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.
