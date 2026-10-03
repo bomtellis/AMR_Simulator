@@ -8923,6 +8923,15 @@ class SimulationSettingsDialog(QDialog):
             'If a local inventory-bay path fails, use direct movement and mark its event details as unverified. '
             'Travel time and distance are retained. Corridor, door and traffic restrictions still apply.')
         inventory_layout.addWidget(self.ignore_invalid_local_manoeuvres_check)
+        self.spawn_payloads_when_empty_check = QCheckBox('Spawn payloads when pickup stock is exhausted')
+        self.spawn_payloads_when_empty_check.setChecked(
+            run_control_bool(simulation.get('spawn_payloads_when_empty', False)))
+        self.spawn_payloads_when_empty_check.setToolTip(
+            'Supply a new payload at pickup when no eligible unreserved stock remains. '
+            'Additions are recorded in payload population evidence. Exact container IDs, '
+            'staged recovery and reserved empty-bin exchanges still require their physical stock.')
+        inventory_layout.addWidget(self.spawn_payloads_when_empty_check)
+
         initial_layout.addWidget(inventory_box)
         initial_layout.addWidget(
             _dialog_intro(
@@ -9044,6 +9053,7 @@ class SimulationSettingsDialog(QDialog):
                 ),
                 "seed_waste_stream_containers_at_start": self.seed_waste_containers_check.isChecked(),
                 "disable_inventory_spaces": self.disable_inventory_spaces_check.isChecked(),
+                "spawn_payloads_when_empty": self.spawn_payloads_when_empty_check.isChecked(),
                 "ignore_invalid_local_manoeuvres": self.ignore_invalid_local_manoeuvres_check.isChecked(),
             }
 

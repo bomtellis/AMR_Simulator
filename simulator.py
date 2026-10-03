@@ -197,6 +197,8 @@ class Simulation:
                                     'route_profile': task.get('route_profile', '') or ('dirty' if 'dirty' in task.get('labels', []) else '')}
             for i, task in enumerate(config.get('tasks', []))}
         sim_cfg = resolved_simulation_settings(config.get("simulation", {}))
+        self.spawn_payloads_when_empty = sim_cfg['spawn_payloads_when_empty']
+        self.source_payload_additions = defaultdict(int)
         self.ignore_invalid_local_manoeuvres = sim_cfg['ignore_invalid_local_manoeuvres']
         scenario_cfg = config.get("scenario_testing", {}) or {}
         self.scenario_mode = bool(scenario_cfg.get("enabled", False))
@@ -1295,6 +1297,8 @@ class Simulation:
                                 key=self._record_is_available_empty_container)
             record = next((record for record in candidates
                            if record.instance_id not in used), None)
+            if record is None and self._can_spawn_source_payload(task):
+                continue  # Provision only at physical pickup, never during route planning.
             if record is None:
                 self._set_task_pending_reason(task, self._pickup_instance_pending_reason(task))
                 return False
@@ -2616,6 +2620,15 @@ class Simulation:
             getattr(task, "requires_existing_payload_instance", False)
         )
 
+    def _can_spawn_source_payload(self, task: Task) -> bool:
+        """A shortage may supply an unnamed object, never clone an exact identity."""
+        return (self.spawn_payloads_when_empty
+                and normalise_payload_name(task.payload) in self.payloads
+                and task.pickup in self.locations
+                and not str(getattr(task, 'payload_instance_id', '') or '').strip()
+                and not getattr(task, 'recover_staged_payload', False)
+                and not getattr(task, 'returns_same_payload_instance', False))
+
     def _pickup_instance_available(self, task: Task) -> bool:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
         if not payload_name:
@@ -2626,7 +2639,8 @@ class Simulation:
             return False
         if not self._task_requires_existing_payload_instance(task):
             return True
-        return next(self._pickup_instance_candidates(task), None) is not None
+        return (next(self._pickup_instance_candidates(task), None) is not None
+                or self._can_spawn_source_payload(task))
 
     @staticmethod
     def _pickup_requires_empty_container(task: Task) -> bool:
@@ -2700,37 +2714,32 @@ class Simulation:
             and not instance_id
             and self._task_requires_existing_payload_instance(task)
         ):
-            if (
-                bool(getattr(task, "is_return_task", False))
-                and str(getattr(task, "task_source", "") or "")
-                == "task_generation_return"
-                and not bool(getattr(task, "returns_same_payload_instance", False))
-            ):
-                candidate = next(
-                    (
-                        item
-                        for item in self.payload_instance_store.records_at(task.pickup)
-                        if item.payload == payload_name
-                        and self._record_is_available_empty_container(item)
-                    ),
-                    None,
-                )
-                if candidate is not None:
-                    record = self.payload_instance_store.pickup(
-                        task.pickup,
-                        payload_name=payload_name,
-                        instance_id=candidate.instance_id,
-                        reservation_owner=str(getattr(task, "id", "") or ""),
-                    )
-            else:
+            candidate = next(self._pickup_instance_candidates(task), None)
+            if candidate is not None:
                 record = self.payload_instance_store.pickup(
-                    task.pickup,
-                    payload_name=payload_name,
-                    reservation_owner=str(getattr(task, "id", "") or ""),
-                )
+                    task.pickup, payload_name=payload_name, instance_id=candidate.instance_id,
+                    reservation_owner=str(task.id))
             if record is None:
-                raise RuntimeError(self._pickup_instance_pending_reason(task))
-            instance_id = record.instance_id
+                if not self._can_spawn_source_payload(task):
+                    raise RuntimeError(self._pickup_instance_pending_reason(task))
+                instance_id = self.payload_instance_store.ensure_task_instance_id(task)
+                metadata = {'source_replenishment': True, 'source_location': task.pickup}
+                if self._pickup_requires_empty_container(task):
+                    metadata['container_state'] = 'empty'
+                self.payload_instance_store.register_instance(
+                    payload_name, instance_id, source_task_id=task.id,
+                    location_name=task.pickup, metadata=metadata)
+                self.source_payload_additions[payload_name] += 1
+                if self.verbose:
+                    when = self.current_time if event_time is None else event_time
+                    self._append_verbose_row({
+                        'sim_time_sec': round(when, 3), 'sim_datetime': self.clock.format_sim_time(when),
+                        'event_type': 'payload_source_spawned', 'task_id': task.id,
+                        'payload': payload_name, 'payload_instance_id': instance_id,
+                        'from_location': task.pickup, 'status': 'supplied',
+                        'details': 'Additional payload supplied because eligible pickup stock was exhausted.'})
+            else:
+                instance_id = record.instance_id
 
         if record is None and not instance_id:
             # Normal outbound tasks can create a new physical object at the source.
@@ -3119,8 +3128,9 @@ class Simulation:
                     "status": "summary",
                     "details": (
                         f"Runtime payload population for {payload_name}: peak={peak_count}; "
-                        f"known_instances={known_count}"
+                        f"known_instances={known_count}; source_additions={self.source_payload_additions.get(payload_name, 0)}"
                     ),
+                    "payload_source_additions": self.source_payload_additions.get(payload_name, 0),
                     "payload_runtime_population": peak_count,
                     "payload_known_instances": known_count,
                     "payload_population_basis": "physical_lifecycle_v1",
@@ -13902,6 +13912,7 @@ class Simulation:
             "event_type",
             "payload",
             "payload_instance_id",
+            "payload_source_additions",
             "payload_runtime_population",
             "payload_known_instances",
             "payload_population_basis",

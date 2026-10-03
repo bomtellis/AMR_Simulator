@@ -862,3 +862,5 @@ Retain the other requirements above, including report/stock reconciliation,
 calendars, staffing, project reliability and final release validation. Return to
 those audits when needed by these workflows and before final release. Preserve
 the user's uncommitted LTN edits and the explicit UI workflow approval checkpoint.
+
+- Optional depleted-source supply: default off; unique objects supplied at pickup, with addition events and counts. Exact identities and reserved empty exchanges retain stock requirements. Tests: `test_source_payload_replenishment`.

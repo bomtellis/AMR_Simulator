@@ -500,3 +500,16 @@ maximum across all configured zones.
 
 Static tasks can opt into the same workflow by supplying both `dropoff_zone` and
 `final_destination`; the simulator routes their AMR leg to `dropoff_zone`.
+
+### Payload supply at depleted sources
+
+Simulation settings > Initial conditions > **Spawn payloads when pickup stock is exhausted**
+(`simulation.spawn_payloads_when_empty`, default false) reuses eligible unreserved stock
+first, then supplies a unique payload at actual pickup. Route estimates create no stock.
+Exact IDs, same-container returns, staged recovery and reserved empty-bin exchanges
+still require physical stock. Ordinary outbound creation rules are unchanged.
+
+Verbose evidence records `payload_source_spawned` with task, source, time and identity.
+Population summaries include `payload_source_additions` alongside peak active population.
+Counts remain available as `Simulation.source_payload_additions` without verbose logging.
+These are scenario supply requirements, not proof of a globally minimum container fleet.
