@@ -170,6 +170,7 @@ class Simulation:
         self._traffic_commit_blocked_tasks = set()
         self.geometric_candidate_outcomes = {}
         self.geometric_recovery_outcomes = []
+        self.geometric_termination = None
         self.run_id = uuid.uuid4().hex
         self._evidence_inputs = json.loads(json.dumps(config))
         self._evidence_config_hash = config_hash(self._evidence_inputs)
@@ -11856,6 +11857,42 @@ class Simulation:
             end_location=plan['target'].name,energy_kwh=plan['energy'],beneficiary_task_id=task.id,
             x=plan['target'].x,y=plan['target'].y,floor=plan['target'].floor,heading=plan['heading']))
 
+    def _stop_unresolved_geometry(self, *, search_limit_only=False):
+        """Record a bounded-search stop or an unresolved end-of-queue blockage.
+
+        An exhausted recovery search does not prove deadlock. A general blocked
+        stop is made only after the event queue is drained, so known releases and
+        completed journeys have had an opportunity to resolve the obstruction.
+        """
+        if not self.geometric_traffic or self.geometric_termination is not None:
+            return False
+        pending = {task.id for _,release,_,task in self.pending_tasks
+                   if release<=self.current_time and not self._pending_task_removed(task)}
+        candidates = [(robot_id,task_id,outcome) for (robot_id,task_id),outcome
+                      in sorted(self.geometric_candidate_outcomes.items()) if task_id in pending]
+        recovery_limits = [r for r in self.geometric_recovery_outcomes
+                           if r['task_id'] in pending and r['reason']=='search_limit']
+        limited = recovery_limits or any(o['reason']=='search_limit' for _,_,o in candidates)
+        if search_limit_only and not limited:
+            return False
+        if not candidates and not recovery_limits:
+            return False
+        reason = 'search_limit' if limited else 'blocked'
+        robots = {identity for identity,_,_ in candidates}
+        for _,_,outcome in candidates:
+            robots.update(outcome.get('blocking_owners',[]))
+            robots.update(c['blocking_owner'] for c in outcome.get('conflicts',[]))
+        robots.update(r['amr_id'] for r in recovery_limits)
+        record = dict(schema_version=1,reason=reason,stop_time_sec=float(self.current_time),
+            message=('Geometric search budget exhausted; no deadlock or infeasibility is inferred.' if limited else
+                     'No known event remains to resolve this geometric blockage. Supported recovery did not produce a usable plan; deadlock is not proven.'),
+            amr_ids=sorted(robots),task_ids=sorted(pending))
+        event_id = self.log_step(event_time=self.current_time,event_type='geometric_simulation_stopped',
+            start_time=self.current_time,end_time=self.current_time,status=reason,details=json.dumps(record,sort_keys=True))
+        record['event_id'] = event_id
+        self.geometric_termination = record
+        return True
+
     def _defer_transient_commit_failure(self, task: Task, amr: AMR) -> None:
         if task.id in self._traffic_commit_blocked_tasks:
             self._traffic_commit_blocked_tasks.discard(task.id)
@@ -11955,6 +11992,8 @@ class Simulation:
                 if self._try_geometric_yield(self.current_time):
                     processed_this_tick += 1
                     continue
+                if self._stop_unresolved_geometry(search_limit_only=True):
+                    return
                 # If the scheduler cannot find any assignment, fail one released
                 # task that is terminally impossible.  This prevents invalid
                 # locations, missing payloads, impossible route restrictions,
@@ -12920,14 +12959,17 @@ class Simulation:
 
                 self._print_progress()
 
-                if self.stop_requested:
+                if self.stop_requested or self.geometric_termination is not None:
                     break
         finally:
             if self.routing_executor is not None:
                 self.routing_executor.shutdown(wait=True, cancel_futures=False)
                 self.routing_executor = None
 
-        self._evidence_run_status = 'cancelled' if self.stop_requested else 'finished'
+        if not self.stop_requested and self.geometric_termination is None and not self.events:
+            self._stop_unresolved_geometry()
+        self._evidence_run_status = ('cancelled' if self.stop_requested else
+                                    self.geometric_termination['reason'] if self.geometric_termination else 'finished')
         if self.geometric_motion:
             for recovery in self.geometric_recovery_outcomes:
                 self.log_step(event_time=recovery['time'],event_type='geometric_recovery_search',
@@ -13971,7 +14013,7 @@ class Simulation:
         for task in tasks:
             self._task_journeys[task.id] = journey_id
 
-    def _append_verbose_row(self, row: dict) -> None:
+    def _append_verbose_row(self, row: dict):
         """Append a verbose row and stream a bounded chunk to disk when full."""
         if not self.verbose:
             return
@@ -13988,6 +14030,7 @@ class Simulation:
                 and len(self.verbose_rows) >= self.verbose_row_buffer_size
             ):
                 self._flush_verbose_rows_to_csv()
+            return row['event_id']
 
     def _flush_verbose_rows_to_csv(self) -> int:
         """Write the current verbose row buffer without rebuilding the CSV."""
@@ -14245,7 +14288,7 @@ class Simulation:
                 if amr_rotation_end_deg is None:
                     amr_rotation_end_deg = amr_rotation_deg
 
-        self._append_verbose_row(
+        return self._append_verbose_row(
             {
                 # Existing schema
                 "sim_time_sec": round(event_time, 3),

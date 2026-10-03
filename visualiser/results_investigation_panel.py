@@ -8,6 +8,9 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
 from PySide6.QtCore import Qt
 
 from amr_results_investigation import load_investigation
+from amr_run_review import verified_inputs
+from amr_project_runs import read_json, OUTPUTS
+from amr_run_evidence import file_hash
 from visualiser.demand_preview_panel import DemandPreviewPanel
 
 
@@ -17,6 +20,30 @@ def display(value):
     if isinstance(value, float):
         return f'{value:.9g}'
     return str(value) if value != '' else '—'
+
+
+def load_review(source):
+    """Managed partial runs require the same bound evidence as project playback."""
+    path = Path(source)
+    directory = path if path.is_dir() else path.parent
+    manifest_path = directory / 'run_manifest.json'
+    manifest = None
+    managed = path.is_dir() or path.name == OUTPUTS['steps_csv']
+    if managed and manifest_path.is_file() and 'project_binding' in read_json(manifest_path):
+        manifest_hash = file_hash(manifest_path)
+        manifest, _config, _csv, _checksum = verified_inputs(directory, allow_partial=True)
+    result = load_investigation(source)
+    if manifest and manifest['status'] == 'partial':
+        _current, _config, _csv, checksum = verified_inputs(directory, allow_partial=True)
+        if checksum != _checksum or file_hash(manifest_path) != manifest_hash:
+            raise ValueError('Run evidence changed during investigation loading.')
+        result['termination'] = manifest['termination']
+        result['findings'].append('Stopped run: segment records are plans, including activity beyond the stop. '
+                                  'Full-run aggregate metrics are withheld; use bounded playback to inspect the stop.')
+        for metric in result['metrics']:
+            metric.update(value=None, observed_count=None, coverage='Withheld for partial run')
+        result['lift_checks']['records'] = []
+    return result
 
 
 class ResultSignals(QObject):
@@ -31,7 +58,7 @@ class ResultJob(QRunnable):
 
     def run(self):
         try:
-            self.signals.finished.emit(load_investigation(self.source), '')
+            self.signals.finished.emit(load_review(self.source), '')
         except Exception as exc:
             self.signals.finished.emit(None, str(exc))
 
@@ -140,6 +167,9 @@ class ResultsInvestigationPanel(QWidget):
             self.evidence.clear()
             return
         coverage = 'Full saved log verified against its run evidence' if result['complete_evidence'] else 'Partial or legacy evidence — missing activity is not zero'
+        if result.get('termination'):
+            stop = result['termination']
+            coverage = f"Verified partial run — {stop['reason']} at {stop['stop_time_sec']:.9g} s: {stop['message']}"
         self.summary.setText(f"{coverage}\n{len(result['tasks'])} tasks · {len(result['events'])} events · {len(result['findings'])} evidence findings · {result['source']}")
         self.events_by_id = {e['id']: e for e in result['events']}
         self.populate_tasks()

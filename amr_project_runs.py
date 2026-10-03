@@ -1,7 +1,9 @@
 """Project-bound external runs; prepared inputs are verified again before execution."""
 from datetime import datetime, timezone
 import argparse
+import csv
 import json
+import math
 from pathlib import Path
 import shutil
 import tempfile
@@ -11,6 +13,8 @@ from amr_project import Project, atomic_write, configuration_bytes, digest
 from amr_run_evidence import config_hash, file_hash, software_snapshot
 
 MANIFEST = "run_manifest.json"
+PARTIAL_EXIT_CODE = 2
+PARTIAL_REASONS = frozenset(('blocked', 'search_limit', 'deadlock'))
 OUTPUTS = {"steps_csv": "simulation_steps.csv", "visualiser_csv": "visualiser_steps.csv",
            "failed_tasks_csv": "failed_tasks.csv", "transport_matrix_csv": "transport_matrix.csv",
            "route_lengths_csv": "route_lengths.csv", "charger_estimate_csv": "charger_estimate.csv",
@@ -27,6 +31,65 @@ def write_json(path, value):
 
 def timestamp():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def verified_termination(evidence, csv_path):
+    """Verify a structured geometric stop against its full, hash-bound event log.
+
+    A valid stop preserves partial evidence; it never establishes completion or
+    upgrades an exhausted search to proof of deadlock. Producers own that proof.
+    """
+    termination = evidence.get('termination')
+    if not isinstance(termination, dict):
+        raise ValueError('Partial run evidence requires a structured termination record.')
+    if type(termination.get('schema_version')) is not int or termination['schema_version'] != 1:
+        raise ValueError('Unsupported termination schema.')
+    reason = termination.get('reason')
+    if not isinstance(reason, str) or reason not in PARTIAL_REASONS or evidence.get('run_status') != reason:
+        raise ValueError('Termination reason must match the partial run status.')
+    stop = termination.get('stop_time_sec')
+    if type(stop) not in (int, float) or not math.isfinite(stop) or stop < 0:
+        raise ValueError('Termination time must be finite and nonnegative.')
+    for key in ('event_id', 'message'):
+        if not isinstance(termination.get(key), str) or not termination[key].strip():
+            raise ValueError(f'Termination {key} must be a nonempty string.')
+    for key in ('amr_ids', 'task_ids'):
+        rows = termination.get(key)
+        if (not isinstance(rows, list) or any(not isinstance(item, str) or not item.strip() for item in rows)
+                or len(rows) != len(set(rows))):
+            raise ValueError(f'Termination {key} must be a list of unique nonempty ids.')
+    def finite_json(value):
+        if value is None or isinstance(value, (str, bool)):
+            return True
+        if isinstance(value, (int, float)):
+            return math.isfinite(value)
+        if isinstance(value, list):
+            return all(finite_json(item) for item in value)
+        return isinstance(value, dict) and all(isinstance(key, str) and finite_json(item) for key, item in value.items())
+    if not finite_json(termination):
+        raise ValueError('Termination geometry and details must contain finite JSON values.')
+    if (evidence.get('log_kind') != 'full' or evidence.get('logging_enabled') is not True
+            or evidence.get('reduced_logging') is not False):
+        raise ValueError('Partial investigation requires full event logging.')
+    with Path(csv_path).open(encoding='utf-8-sig', newline='') as stream:
+        stop_rows = [row for row in csv.DictReader(stream)
+                     if row.get('event_type') == 'geometric_simulation_stopped'
+                     or row.get('event_id') == termination['event_id']]
+    if len(stop_rows) != 1:
+        raise ValueError('Termination needs one unambiguous matching stop event.')
+    event = stop_rows[0]
+    try:
+        logged_time = float(event.get('sim_time_sec', ''))
+        logged_details = json.loads(event.get('details', ''))
+    except (ValueError, TypeError) as exc:
+        raise ValueError('Termination event has invalid time or details.') from exc
+    details_without_id = {key: value for key, value in termination.items() if key != 'event_id'}
+    if (event.get('event_id') != termination['event_id'] or event.get('run_id') != evidence.get('run_id')
+            or event.get('event_type') != 'geometric_simulation_stopped' or event.get('status') != reason
+            or not math.isfinite(logged_time) or logged_time != round(stop, 3)
+            or config_hash(logged_details) not in (config_hash(termination), config_hash(details_without_id))):
+        raise ValueError('Termination details do not match the recorded stop event.')
+    return termination
 
 
 class PreparedRun:
@@ -138,22 +201,33 @@ def finish_run(directory, exit_code, *, cancelled=False, error=""):
     manifest.update(status="cancelled" if cancelled else "failed", completed_at=timestamp(), exit_code=exit_code)
     if error:
         manifest["error"] = error
-    if exit_code == 0 and not cancelled:
+    if exit_code in (0, PARTIAL_EXIT_CODE) and not cancelled:
         try:
             validated, _ = validate_run_inputs(directory)
             evidence = read_json(directory / (OUTPUTS["steps_csv"] + ".run.json"))
-            if (evidence.get("schema_version") != 1 or evidence.get("project_binding") != manifest["project_binding"] or
+            if (type(evidence.get("schema_version")) is not int or evidence.get("schema_version") != 1 or evidence.get("project_binding") != manifest["project_binding"] or
                     evidence.get("config_sha256") != manifest["config_object_sha256"] or
                     config_hash(evidence.get("frozen_inputs")) != manifest["config_object_sha256"] or
                     configuration_bytes(evidence.get("frozen_inputs")) != configuration_bytes(read_json(directory / "config.json")) or
                     evidence.get("software", {}).get("sha256") != manifest["software"]["sha256"] or
-                    evidence.get("log_sha256") != file_hash(directory / OUTPUTS["steps_csv"]) or
-                    evidence.get("run_status") != "finished"):
+                    evidence.get("log_sha256") != file_hash(directory / OUTPUTS["steps_csv"])):
                 raise ValueError("Simulation evidence does not match this prepared run")
-            manifest.update(status="complete", simulation_run_id=evidence["run_id"],
+            status = evidence.get('run_status')
+            if status in PARTIAL_REASONS:
+                termination = verified_termination(evidence, directory / OUTPUTS['steps_csv'])
+                manifest.update(status='partial', termination=termination,
+                    termination_sha256=config_hash(termination), termination_reason=termination['reason'],
+                    stop_time_sec=termination['stop_time_sec'])
+            elif status == 'finished' and exit_code == 0 and evidence.get('termination') is None:
+                manifest['status'] = 'complete'
+            else:
+                raise ValueError('Simulation evidence does not establish completion or a verified partial stop.')
+            manifest.pop('error', None)
+            manifest.update(simulation_run_id=evidence["run_id"],
                             completed_tasks=len(evidence["summary"]["completed_task_ids"]),
                             failed_tasks=len(evidence["summary"]["failed_task_ids"]))
         except Exception as exc:
+            manifest['status'] = 'failed'
             manifest["error"] = str(exc)
     write_json(directory / MANIFEST, manifest)
     return manifest
@@ -202,9 +276,14 @@ def execute(directory):
                         ("write_scenario_impact_csv", "scenario_impact_csv")):
         getattr(simulation, method)(str(directory / OUTPUTS[key]))
     result = finish_run(directory, 0)
-    if result["status"] != "complete":
+    if result['status'] == 'partial':
+        print(f"Run stopped (partial): {result['termination_reason']} at {result['stop_time_sec']:.6g} s; "
+              f"{result['completed_tasks']} completed tasks, {result['failed_tasks']} failed tasks. "
+              f"{result['termination']['message']}", flush=True)
+    elif result["status"] != "complete":
         raise ValueError(result.get("error", "Run did not finish"))
-    print(f"Run complete: {result['completed_tasks']} completed tasks, {result['failed_tasks']} failed tasks", flush=True)
+    else:
+        print(f"Run complete: {result['completed_tasks']} completed tasks, {result['failed_tasks']} failed tasks", flush=True)
     return simulation
 
 
@@ -214,6 +293,7 @@ def main():
     args = parser.parse_args()
     try:
         execute(args.directory)
+        return PARTIAL_EXIT_CODE if read_json(args.directory / MANIFEST)['status'] == 'partial' else 0
     except Exception as exc:
         # An attempted replay must not relabel an already completed run.
         path = args.directory / MANIFEST
@@ -223,4 +303,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -1,5 +1,7 @@
 """Read-only, revision-bound playback inside the project workspace."""
 from pathlib import Path
+from datetime import datetime, timedelta
+from dataclasses import replace
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, QTimer, Signal, Slot, Qt, QPointF
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QDialog, QMainWindow, QDockWidget, QScrollArea, QComboBox, QCheckBox
@@ -11,17 +13,67 @@ from amr_sim_visualiser_pyside6 import (LayoutModel, SimulationLog, SimulationVi
     AuxiliaryTimelineWindow, LiftMonitorDialog)
 
 
+class PartialSimulationLog(SimulationLog):
+    """Bound displayed activity while retaining original motion timing."""
+    def bound(self, origin, termination):
+        self.termination = dict(termination)
+        self.stop_time = origin + timedelta(seconds=termination['stop_time_sec'])
+        kept = []
+        for event in self.events:
+            if event.start_time > self.stop_time:
+                continue
+            row = dict(event.row)
+            if (event.start_time == self.stop_time and event.end_time > event.start_time
+                    and str(row.get('event_type', '')).startswith(('segment_', 'multi_stop_segment_'))):
+                continue
+            if event.end_time > self.stop_time:
+                row['_partial_planned_end_time'] = event.end_time.isoformat()
+                row['_partial_planned_duration_sec'] = row.get('duration_sec', '')
+                row['status'] = 'partial'
+                row['end_time'] = self.stop_time.isoformat(sep=' ')
+                row['duration_sec'] = str(max(0, (self.stop_time-event.start_time).total_seconds()))
+                event = replace(event, end_time=self.stop_time, row=row)
+            kept.append(event)
+        self.events = kept
+        self._rebuild_event_index()
+        self.start_time, self.end_time = origin, self.stop_time
+
+    def state_at(self, current_time, layout):
+        return super().state_at(min(current_time, self.stop_time) if current_time else current_time, layout)
+
+    def _refresh_state_position(self, state, current_time):
+        original = state.get('raw', {}).get('_partial_planned_end_time')
+        end = state.get('end_time')
+        if original:
+            state['end_time'] = datetime.fromisoformat(original)
+        try:
+            super()._refresh_state_position(state, min(current_time, getattr(self, 'stop_time', current_time)))
+        finally:
+            state['end_time'] = end
+
+
+def partial_notice(termination):
+    return (f"Partial run — {termination['reason']} at {termination['stop_time_sec']:.9g} s: "
+            f"{termination['message']} Playback ends at this stop; later planned activity is not executed evidence.")
+
+
 def load_playback(directory):
     """Build data off the GUI thread, rejecting inputs changed during loading."""
     directory = Path(directory).resolve()
     names = ('run_manifest.json', 'config.json', 'project_configuration.json',
              'project_checks.json', OUTPUTS['steps_csv'], OUTPUTS['steps_csv'] + '.run.json')
     hashes = {name: file_hash(directory / name) for name in names}
-    manifest, config, csv, _checksum = verified_inputs(directory)
-    layout, log = LayoutModel(), SimulationLog()
+    manifest, config, csv, _checksum = verified_inputs(directory, allow_partial=True)
+    partial = manifest['status'] == 'partial'
+    layout, log = LayoutModel(), PartialSimulationLog() if partial else SimulationLog()
     layout.load_data(config)
     log.load(str(csv), parallel=False)
-    verified_inputs(directory)
+    if partial:
+        origin = layout.simulation_start_time
+        if origin is None:
+            raise ValueError('Partial playback requires a recorded simulation start time.')
+        log.bound(origin, manifest['termination'])
+    verified_inputs(directory, allow_partial=True)
     if any(file_hash(directory / name) != value for name, value in hashes.items()):
         raise ValueError('Run inputs changed during playback loading. Select the run again.')
     return directory, manifest, layout, log
@@ -67,6 +119,22 @@ class LocalTimeline(AuxiliaryTimelineWindow):
 
 class BoundVisualizer(SimulationVisualizer):
     embedded = True
+
+    def _sync_timeline_from_layout_and_csv(self):
+        if isinstance(self.sim_log, PartialSimulationLog):
+            original_end = self.layout_model.simulation_end_time
+            self.layout_model.simulation_end_time = self.sim_log.stop_time
+            try:
+                super()._sync_timeline_from_layout_and_csv()
+            finally:
+                self.layout_model.simulation_end_time = original_end
+        else:
+            super()._sync_timeline_from_layout_and_csv()
+
+    def update_time_display(self):
+        if isinstance(self.sim_log, PartialSimulationLog) and self.current_time:
+            self.current_time = min(self.current_time, self.sim_log.stop_time)
+        super().update_time_display()
 
     def __init__(self, parent):
         self.local_timeline = None
@@ -244,7 +312,7 @@ class ProjectPlaybackPanel(QWidget):
         self.requested_project = None
         self.requested_binding = None
         self.layout = QVBoxLayout(self)
-        self.summary = QLabel('Select a completed run in Simulate, then choose Playback selected run.')
+        self.summary = QLabel('Select a completed or stopped run in Simulate, then choose Playback selected run.')
         self.summary.setWordWrap(True)
         self.layout.addWidget(self.summary)
         buttons = QHBoxLayout()
@@ -294,7 +362,8 @@ class ProjectPlaybackPanel(QWidget):
         self.viewer = viewer
         self.layout.addWidget(viewer, 1)
         self.summary.setText(f"{manifest['name']} | revision {binding['revision_id'][:8]} | {len(log.events):,} recorded events\n"
-            'Saved run geometry and events; current edits do not affect playback. Positions are interpolated, not verified swept paths. Drawing underlays are not shown.')
+            + (partial_notice(manifest['termination']) if manifest['status']=='partial' else
+            'Saved run geometry and events; current edits do not affect playback. Positions follow recorded motion. Drawing underlays are not shown.'))
 
     def pause(self):
         if self.viewer is not None:
@@ -309,7 +378,7 @@ class ProjectPlaybackPanel(QWidget):
             self.viewer.deleteLater()
             self.viewer = None
         self.directory = None
-        self.summary.setText('Select a completed run in Simulate, then choose Playback selected run.')
+        self.summary.setText('Select a completed or stopped run in Simulate, then choose Playback selected run.')
 
     def investigate(self):
         if self.directory is not None:

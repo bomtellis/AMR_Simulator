@@ -1,4 +1,5 @@
 """Versioned evidence metadata stored beside simulation logs."""
+import csv
 import hashlib
 import json
 import os
@@ -56,8 +57,17 @@ def write_run_evidence(simulation, csv_path, *, kind='full'):
                     'lift_movement_counts': booked_movement_counts(simulation)},
         'scope': 'Recorded inputs and source fingerprint; no claim of tamper-proof audit or certification.',
     }
+    termination = getattr(simulation, 'geometric_termination', None)
+    if termination is not None:
+        data['termination'] = dict(termination)
+        if kind == 'full':
+            from amr_partial_run import derive_partial_run
+            with path.open(newline='', encoding='utf-8-sig') as stream:
+                data['partial_run'] = derive_partial_run(
+                    list(csv.DictReader(stream)), simulation._evidence_inputs,
+                    stop_time=termination['stop_time_sec'])
     target = Path(str(path) + '.run.json')
     temporary = target.with_suffix(target.suffix + '.tmp')
-    temporary.write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
+    temporary.write_text(json.dumps(data, indent=2, allow_nan=False) + '\n', encoding='utf-8')
     os.replace(temporary, target)
     return target

@@ -747,8 +747,11 @@ detailed traffic. Verified taskless yielding now supports parked empty blockers,
 reverse and permitted lateral graph paths, nearest fitting graph anchors in drawn
 passing places, and ordinary safe graph anchors when places are absent. Shared
 joint-plan occupancy validation is implemented, but runtime coordinated admission,
-moving/loaded yielding, multi-point manoeuvres, reference offsets and deadlock
-stop/partial-run handling remain open. The full application guide is
+moving/loaded yielding, multi-point manoeuvres, reference offsets and proven
+deadlock detection remain open. Explicit blocked/search-limit stops now preserve
+verified partial runs, elapsed geometric activity and bounded playback. These
+stops do not establish deadlock; complete partial stock/battery reconciliation
+and partial report exports remain open. The full application guide is
 also unfinished.
 Continue with:
 
