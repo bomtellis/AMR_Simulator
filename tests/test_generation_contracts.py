@@ -71,6 +71,9 @@ class GenerationContractTests(unittest.TestCase):
             for profile, seconds in [(None, 9), ('', 4.5), ('dirty', 11)]:
                 with self.subTest(editor=normalise, profile=profile):
                     cfg = return_config()
+                    # Isolate completion-relative delay and route choice from
+                    # staff working hours, which have separate acceptance cases.
+                    cfg['task_generation']['categories']['stores']['requires_staff'] = False
                     if profile is not None:
                         cfg['task_generation']['categories']['stores']['return_route_profile'] = profile
                     if normalise:
@@ -94,8 +97,8 @@ class GenerationContractTests(unittest.TestCase):
 
     def test_import_does_not_add_staff_but_new_project_template_retains_it(self):
         cfg = return_config()
-        self.assertFalse(self.records(cfg)[0].task.requires_staff)
-        self.assertFalse(self.records(JsonStore(cfg).data)[0].task.requires_staff)
+        self.assertIsNone(self.records(cfg)[0].task.requires_staff)
+        self.assertIsNone(self.records(JsonStore(cfg).data)[0].task.requires_staff)
         self.assertEqual(0, self.records(JsonStore(cfg).data)[0].task.staff_handling_minutes)
         self.assertTrue(JsonStore().data['task_generation']['categories']['stores']['requires_staff'])
         self.assertEqual(15, JsonStore().data['task_generation']['categories']['stores']['staff_handling_minutes'])

@@ -1498,17 +1498,20 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 "allow_temporary_overflow",
             }:
                 task.dropoff_zone_capacity_policy = "allow_temporary_overflow"
-        if bool(getattr(task, "requires_staff", False)):
-            pattern_key, pattern = self._staff_shift_definition(cfg)
-            task.staff_shift_pattern = pattern_key
-            task.staff_shift_start_time = _clean_text(pattern.get("start_time", ""))
-            task.staff_shift_end_time = _clean_text(pattern.get("end_time", ""))
-            task.staff_shift_days_active = list(pattern.get("days_active", []) or [])
-            task.staff_shift_work_days = max(0, _as_int(pattern.get("work_days", 0), 0))
-            task.staff_shift_rest_days = max(0, _as_int(pattern.get("rest_days", 0), 0))
-            task.staff_timeframe_spacing_enabled = _as_bool(
-                self.staff_config.get("spread_timeframe_tasks", True), True
-            )
+        # Carry the effective definition independently of the staff choice.
+        # Unspecified legacy Stores tasks acquire staff at runtime; dropping
+        # these fields here incorrectly gives them all-day availability. Merely
+        # carrying metadata does not enable staff on an explicit false choice.
+        pattern_key, pattern = self._staff_shift_definition(cfg)
+        task.staff_shift_pattern = pattern_key
+        task.staff_shift_start_time = _clean_text(pattern.get("start_time", ""))
+        task.staff_shift_end_time = _clean_text(pattern.get("end_time", ""))
+        task.staff_shift_days_active = list(pattern.get("days_active", []) or [])
+        task.staff_shift_work_days = max(0, _as_int(pattern.get("work_days", 0), 0))
+        task.staff_shift_rest_days = max(0, _as_int(pattern.get("rest_days", 0), 0))
+        task.staff_timeframe_spacing_enabled = _as_bool(
+            self.staff_config.get("spread_timeframe_tasks", True), True
+        )
         if bool(cfg.get("return_enabled", False)) or bool(task.dropoff_zone):
             return_payload = _clean_text(cfg.get("return_payload", ""))
             if not return_payload and task.dropoff_zone:

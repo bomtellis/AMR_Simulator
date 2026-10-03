@@ -78,6 +78,9 @@ patterns despite the stored fields.
 
 ## Next reproduced issue
 
+Follow-up: [Checkpoint 2H](GENERATED_STAFF_HOURS_REVIEW.md) corrects the missing
+generated shift metadata described below and verifies the changed return timing.
+
 Generated legacy Stores tasks with `requires_staff` omitted correctly receive
 staff under the compatibility fallback, but do not receive generated shift-time
 metadata. In the return reference, requesting 60 s of staff work at t=60 gives:
