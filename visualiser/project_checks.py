@@ -259,6 +259,14 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             error("/simulation/end_datetime", "End must follow start and both dates must use compatible timezone offsets.", "simulation", code="RUN_PERIOD")
 
     completed_groups.add('values')
+    from amr_robot_inputs import robot_input_findings
+    completed_groups.add('robots')
+    invalid_paths = {f.path for f in findings if f.severity == 'error'}
+    for path, message in robot_input_findings(config, require_complete=True):
+        if path not in invalid_paths:
+            error(path, message, path.split('/')[1], code='ROBOT_INPUT')
+    if any(f.severity == 'error' for f in findings):
+        return finish()
     names = {}
     by_collection = {}
     for section, rows, field_name in [(key, config.get(key, []), "id" if key in {"amrs", "lifts", "tasks", "departments"} else "name")
@@ -521,7 +529,8 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                 if int(amr.get("quantity", 1)) <= 0:
                     continue
                 for slot in normalise_amr_payload_slots(copy.deepcopy(amr)):
-                    for orientation in (payload.get("allowed_carry_orientations", ["lengthways", "sideways"]) or ['lengthways']):
+                    from amr_robot_inputs import normalise_orientations
+                    for orientation in normalise_orientations(payload.get("allowed_carry_orientations", ["lengthways", "sideways"])):
                         if orientation not in slot.get("allowed_payload_orientations", ["lengthways", "sideways"]):
                             continue
                         legacy_size = payload.get('size_units', 1)
@@ -566,6 +575,18 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                         f"Drawing is unavailable: {value}", "The background cannot be displayed; explicit graph routes can still be simulated.",
                         "Relink the drawing or acknowledge a run without it.", section)
     completed_groups.add('drawings')
+    for index, robot in enumerate(config.get('amrs', [])):
+        for field, message in (
+                ('start_location', 'Per-type start_location is ignored; initial robots use configured compatible charging spaces.'),
+                ('weight_kg', 'Robot weight is report metadata; robot own mass is not included in the current lift energy equation.')):
+            if field in robot:
+                add('ROBOT_MODEL_SCOPE', 'info', f'/amrs/{index}/{field}', robot.get('id', ''), message,
+                    'This field does not change the stated simulation behaviour.',
+                    'Review the robot and energy model contracts.', 'amrs', kind='unsupported')
+        if 'manual_task_compatible' in robot and robot['manual_task_compatible'] != (len(normalise_amr_payload_slots(robot)) == 1):
+            add('ROBOT_MODEL_SCOPE', 'info', f'/amrs/{index}/manual_task_compatible', robot.get('id', ''),
+                'Manual-task compatibility metadata is derived from having exactly one payload slot; an explicit value does not override it.',
+                'Import and simulation recompute this metadata.', 'Review the slot definition.', 'amrs', kind='assumption')
     add("MODEL_SCOPE", "info", "/corridors", "Movement model", "Lane capacity and turn drawings remain approximations.",
         "This check does not verify keep-right lane geometry, swept turns or physical contamination control.",
         "Consult the verification feature inventory before making physical clearance claims.", "corridors", kind="assumption")

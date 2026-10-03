@@ -19,6 +19,7 @@ from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
 from amr_route_reservations import RouteReservationTransaction
 from amr_routing_inputs import validate_routing_inputs
 from amr_lift_inputs import validate_lift_inputs
+from amr_robot_inputs import validate_robot_inputs, normalise_amr_payload_slots, normalise_orientations
 from amr_generation_inputs import validate_generation_inputs
 from amr_staff_policy import resolve_staff_requirement
 
@@ -132,6 +133,7 @@ class Simulation:
     ):
         validate_routing_inputs(config)
         validate_lift_inputs(config, require_speed=True, require_complete=True)
+        validate_robot_inputs(config, require_complete=True)
         validate_generation_inputs(config)
         self.location_reservations = defaultdict(list)
         self.config = config
@@ -609,11 +611,8 @@ class Simulation:
                 size_units=legacy_size,
                 track_items=bool(p.get("track_items", False)),
                 items=clean_items,
-                allowed_carry_orientations=[
-                    str(x).strip().lower()
-                    for x in (p.get("allowed_carry_orientations", ["lengthways", "sideways"]) or ["lengthways"])
-                    if str(x).strip().lower() in {"lengthways", "sideways"}
-                ] or ["lengthways"],
+                allowed_carry_orientations=normalise_orientations(
+                    p.get('allowed_carry_orientations', ['lengthways', 'sideways'])),
             )
             # Optional payload-level preference from the visualiser payload dialog.
             # Kept as a runtime attribute so older amr_sim_models.PayloadType
@@ -1547,68 +1546,7 @@ class Simulation:
         return max(latest + 86400.0, 86400.0)
 
     def _normalise_configured_payload_slots(self, amr_type: dict) -> List[dict]:
-        raw_slots = (
-            amr_type.get("payload_slots", []) if isinstance(amr_type, dict) else []
-        )
-        slots = []
-        if isinstance(raw_slots, list):
-            for index, slot in enumerate(raw_slots, start=1):
-                if not isinstance(slot, dict):
-                    continue
-                slots.append(
-                    {
-                        "name": str(slot.get("name", "")).strip() or f"Slot {index}",
-                        "payload_capacity_kg": float(
-                            slot.get("payload_capacity_kg", 0.0) or 0.0
-                        ),
-                        "payload_length_capacity_m": float(
-                            slot.get("payload_length_capacity_m", 0.0) or 0.0
-                        ),
-                        "payload_width_capacity_m": float(
-                            slot.get("payload_width_capacity_m", 0.0) or 0.0
-                        ),
-                        "payload_height_capacity_m": float(
-                            slot.get("payload_height_capacity_m", 0.0) or 0.0
-                        ),
-                        "allowed_payload_orientations": [
-                            str(x).strip().lower()
-                            for x in (slot.get("allowed_payload_orientations", ["lengthways", "sideways"]) or ["lengthways"])
-                            if str(x).strip().lower() in {"lengthways", "sideways"}
-                        ] or ["lengthways"],
-                    }
-                )
-        if not slots:
-            slots.append(
-                {
-                    "name": "Slot 1",
-                    "payload_capacity_kg": float(
-                        amr_type.get("payload_capacity_kg", 100.0) or 100.0
-                    ),
-                    "payload_length_capacity_m": float(
-                        amr_type.get(
-                            "payload_length_capacity_m",
-                            amr_type.get("payload_size_capacity", 1.0),
-                        )
-                        or 1.0
-                    ),
-                    "payload_width_capacity_m": float(
-                        amr_type.get(
-                            "payload_width_capacity_m",
-                            amr_type.get("payload_size_capacity", 1.0),
-                        )
-                        or 1.0
-                    ),
-                    "payload_height_capacity_m": float(
-                        amr_type.get(
-                            "payload_height_capacity_m",
-                            amr_type.get("payload_size_capacity", 1.0),
-                        )
-                        or 1.0
-                    ),
-                    "allowed_payload_orientations": ["lengthways", "sideways"],
-                }
-            )
-        return slots
+        return normalise_amr_payload_slots(amr_type)
 
     def _space_points_dimensions(self, points: list) -> Tuple[float, float]:
         if not points:

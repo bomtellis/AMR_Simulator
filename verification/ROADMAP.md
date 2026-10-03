@@ -255,6 +255,13 @@ collision protection. Eight structural contracts retain partial status. Floor-ma
 labels are canonicalised in the inventory. Valid rename/floor-removal migration,
 editor precision and physical shaft/clearance claims remain open.
 
+**Slice 2AA:** [Robot and slot contracts](ROBOT_CONTRACT_REVIEW.md) unifies raw and
+editor capacity/orientation resolution, preserving legacy dimensional fallbacks
+and rejecting empty or unknown permissions. Fifteen references cover exact bounds,
+flags, unit balances and import parity, with 29 explicit dispositions. Combined
+deck packing, aggregate structural mass, physical payload input checks beyond
+orientation and complete editor precision preservation remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -504,9 +511,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2Z's lift floor definitions. Next audit robot configuration and
-physical payload compatibility against existing resource, energy and route
-references, then continue the location and department inventory,
+Review slice 2AA's robot capacity and orientation behaviour. Next audit physical
+payload inputs and location compatibility/storage fields against the existing
+stock and conservation references, then continue the department inventory,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

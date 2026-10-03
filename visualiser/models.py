@@ -78,60 +78,9 @@ def calculated_operating_hours_per_day(dept: dict) -> float:
 
 
 def normalise_amr_payload_slots(amr: dict) -> list:
-    """Return payload slot definitions, migrating legacy single-capacity AMRs."""
-    if not isinstance(amr, dict):
-        amr = {}
-
-    slots = amr.get("payload_slots", [])
-    clean = []
-
-    if isinstance(slots, list):
-        for idx, slot in enumerate(slots, start=1):
-            if not isinstance(slot, dict):
-                continue
-            clean_slot = {
-                "name": str(slot.get("name", "")).strip() or f"Slot {idx}",
-                "payload_capacity_kg": float(
-                    slot.get("payload_capacity_kg", 0.0) or 0.0
-                ),
-                "payload_length_capacity_m": float(
-                    slot.get("payload_length_capacity_m", 0.0) or 0.0
-                ),
-                "payload_width_capacity_m": float(
-                    slot.get("payload_width_capacity_m", 0.0) or 0.0
-                ),
-                "payload_height_capacity_m": float(
-                    slot.get("payload_height_capacity_m", 0.0) or 0.0
-                ),
-                "allowed_payload_orientations": [
-                    str(x).strip().lower()
-                    for x in (slot.get("allowed_payload_orientations") or ["lengthways", "sideways"])
-                    if str(x).strip().lower() in {"lengthways", "sideways"}
-                ] or ["lengthways"],
-            }
-            clean.append(clean_slot)
-
-    if not clean:
-        clean = [
-            {
-                "name": "Slot 1",
-                "payload_capacity_kg": float(
-                    amr.get("payload_capacity_kg", 100) or 100
-                ),
-                "payload_length_capacity_m": float(
-                    amr.get("payload_length_capacity_m", 1.0) or 1.0
-                ),
-                "payload_width_capacity_m": float(
-                    amr.get("payload_width_capacity_m", 1.0) or 1.0
-                ),
-                "payload_height_capacity_m": float(
-                    amr.get("payload_height_capacity_m", 1.0) or 1.0
-                ),
-                "allowed_payload_orientations": ["lengthways", "sideways"],
-            }
-        ]
-
-    return clean
+    """Shared runtime/editor resolution of explicit and legacy capacities."""
+    from amr_robot_inputs import normalise_amr_payload_slots as resolve
+    return resolve(amr)
 
 
 def amr_supports_manual_tasks(amr: dict) -> bool:
@@ -592,6 +541,8 @@ class JsonStore:
         validate_routing_inputs(data)
         from amr_lift_inputs import validate_lift_inputs
         validate_lift_inputs(data)
+        from amr_robot_inputs import validate_robot_inputs
+        validate_robot_inputs(data)
         from amr_generation_inputs import validate_generation_inputs
         validate_generation_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
@@ -809,14 +760,9 @@ class JsonStore:
                 }
 
             payload["items"] = clean
-            orientations = payload.get("allowed_carry_orientations", ["lengthways", "sideways"])
-            if isinstance(orientations, str):
-                orientations = [x.strip() for x in orientations.split(",")]
-            payload["allowed_carry_orientations"] = [
-                str(x).strip().lower()
-                for x in (orientations or [])
-                if str(x).strip().lower() in {"lengthways", "sideways"}
-            ] or ["lengthways"]
+            from amr_robot_inputs import normalise_orientations
+            payload['allowed_carry_orientations'] = normalise_orientations(
+                payload.get('allowed_carry_orientations', ['lengthways', 'sideways']))
 
     def ensure_location_defaults(self) -> None:
         payload_by_name = {
@@ -1034,16 +980,12 @@ class JsonStore:
             # Keep the legacy top-level fields populated from the first slot so older
             # simulator/reporting code continues to read a sensible single-slot value.
             primary = slots[0]
-            amr["payload_capacity_kg"] = float(primary.get("payload_capacity_kg", 0.0))
-            amr["payload_length_capacity_m"] = float(
-                primary.get("payload_length_capacity_m", 0.0)
-            )
-            amr["payload_width_capacity_m"] = float(
-                primary.get("payload_width_capacity_m", 0.0)
-            )
-            amr["payload_height_capacity_m"] = float(
-                primary.get("payload_height_capacity_m", 0.0)
-            )
+            from amr_robot_inputs import CAPACITIES
+            for field in CAPACITIES:
+                if field in primary:
+                    amr[field] = float(primary[field])
+            # Missing draft fields stay missing; fabricating zero would make
+            # the saved draft fail explicit-value validation on reopening.
             amr["manual_task_compatible"] = len(slots) == 1
             amr["multi_stop_enabled"] = bool(
                 amr.get("multi_stop_enabled", len(slots) > 1) and len(slots) > 1

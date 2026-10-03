@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Lift floor definitions](LIFT_STRUCTURE_REVIEW.md):
+The latest checkpoint is [Robot and slot contracts](ROBOT_CONTRACT_REVIEW.md):
+shared slot resolution preserves legacy dimensional fallbacks across import,
+orientation permissions agree between raw/editor inputs, and malformed robot
+settings are rejected. Fifteen references accompany 29 explicit dispositions.
+The preceding checkpoint is [Lift floor definitions](LIFT_STRUCTURE_REVIEW.md):
 shared structural checks prevent mismatched editor/simulation graphs, reject
 invalid floors and coordinates, and protect invalid saves and rename collisions.
 The preceding checkpoint is [Lift contracts](LIFT_CONTRACT_REVIEW.md):

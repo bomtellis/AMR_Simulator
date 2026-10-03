@@ -12,6 +12,7 @@ GROUPS = {
     'structure': ('Section structure', ('*',)),
     'generation': ('Generation input contracts', ('task_generation', 'departments', 'tasks', 'waste_streams', 'payloads')),
     'lifts': ('Lift input contracts', ('lifts', 'locations', 'corridors')),
+    'robots': ('Robot and orientation inputs', ('amrs', 'payloads')),
     'shared_containers': ('Shared container definitions', ('task_generation', 'departments', 'waste_streams', 'payloads', 'locations')),
     'values': ('Numbers and schedules', ('*',)),
     'references': ('Identifiers and references', ('*',)),
@@ -35,6 +36,10 @@ def input_names(keys):
 def dependencies(finding):
     code, section = finding.code, finding.section
     local = (section,) if section and section != 'project' else ('*',)
+    if code == 'ROBOT_INPUT':
+        return GROUPS['robots'][1]
+    if code == 'ROBOT_MODEL_SCOPE':
+        return ('amrs', 'building', 'locations')
     if code == 'LIFT_INPUT':
         return GROUPS['lifts'][1]
     if code == 'LIFT_LEGACY_CAPACITY':
