@@ -140,8 +140,11 @@ def inventory_input_findings(config, *, check_references=False):
                 if 'rotation_deg' in slot and not _number_valid(slot['rotation_deg']):
                     yield slot_path + '/rotation_deg', 'Template rotation must be finite degrees; booleans are invalid.'
             try:
-                dimensions = inventory_space_dimensions(space, definitions)
-            except (TypeError, ValueError, OverflowError, AttributeError):
+                dimensions = inventory_space_dimensions(space, definitions, location)
+            except ValueError as exc:
+                yield space_path, f'The bay envelope cannot be resolved: {exc}'
+                continue
+            except (TypeError, OverflowError, AttributeError):
                 continue  # Explicit malformed inputs have their own findings above.
             if not all(math.isfinite(value) for value in dimensions):
                 yield space_path, 'The resolved bay envelope must be finite; outline coordinates overflow the dimensional calculation.'

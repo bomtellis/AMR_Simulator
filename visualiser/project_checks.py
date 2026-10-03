@@ -631,7 +631,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         if isinstance(spaces, list):
             for space_index, space in enumerate(spaces):
                 bay_path = f'/locations/{index}/inventory_spaces/{space_index}'
-                length, width, height = inventory_space_dimensions(space, payload_definitions)
+                length, width, height = inventory_space_dimensions(space, payload_definitions, location)
                 if length <= 0 or width <= 0:
                     add('INVENTORY_ENVELOPE', 'warning', bay_path, space.get('name', ''),
                         'The resolved bay has zero plan length or width; it cannot hold a normal positive-size payload or AMR.',

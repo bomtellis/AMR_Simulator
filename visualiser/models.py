@@ -815,7 +815,7 @@ class JsonStore:
                     space.setdefault("has_charger", False)
                 else:
                     from amr_payload_inputs import inventory_space_dimensions
-                    length, width, height = inventory_space_dimensions(space, payload_by_name)
+                    length, width, height = inventory_space_dimensions(space, payload_by_name, location)
                     for field, value in zip(('length_m', 'width_m', 'height_m'), (length, width, height)):
                         space.setdefault(field, value)
                     space.setdefault('flexible', space.get('flexible_payloads',
@@ -1339,7 +1339,7 @@ class JsonStore:
                 item.pop("y", None)
                 slots.append(item)
             clean["payload_slots"] = slots
-            length, width, height = inventory_space_dimensions(clean, payloads)
+            length, width, height = inventory_space_dimensions(clean, payloads, location)
             clean.update(length_m=length, width_m=width, height_m=height)
             clean["flexible"] = space.get("flexible", space.get("flexible_payloads", location_name in dropoffs))
             slot_amr_type = next((slot.get('amr_type', '') for slot in slots
@@ -2081,7 +2081,7 @@ class JsonStore:
             return False
         from amr_payload_inputs import inventory_space_dimensions
         payloads = {p['name']: p for p in self.data.get('payloads', []) if 'name' in p}
-        length_m, width_m, height_m = inventory_space_dimensions(space, payloads)
+        length_m, width_m, height_m = inventory_space_dimensions(space, payloads, location)
         amr_length = float(amr_type.get("length_m", 0.8) or 0.8)
         amr_width = float(amr_type.get("width_m", 0.6) or 0.6)
         amr_height = float(amr_type.get("height_m", 1.2) or 1.2)

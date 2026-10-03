@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from amr_location_inputs import location_outline_metrics
+from amr_payload_inputs import inventory_space_dimensions, payload_dimensions as resolved_payload_dimensions
+from amr_inventory_inputs import inventory_space_is_amr
 try:
     from .amr_energy_evidence import read_energy_evidence
 except ImportError:  # Standalone report CLI.
@@ -1937,9 +1939,7 @@ def load_payload_dimensions(json_path: Path) -> pd.DataFrame:
         name = str(item.get("name", "")).strip()
         if not name:
             continue
-        length = _to_float(item.get("length_m"))
-        width = _to_float(item.get("width_m"))
-        height = _to_float(item.get("height_m"))
+        length, width, height = resolved_payload_dimensions(item)
         rows.append(
             {
                 "payload": name,
@@ -2341,10 +2341,8 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
     location_to_category: Dict[str, str] = {}
     dropoff_zone_departments: Dict[str, set] = {}
     dropoff_zone_categories: Dict[str, set] = {}
-    payload_height_by_name = {
-        str(payload.get("name", "") or "").strip(): _to_float(
-            payload.get("height_m"), 0.0
-        )
+    payload_definitions = {
+        str(payload.get("name", "") or "").strip(): payload
         for payload in data.get("payloads", []) or []
         if isinstance(payload, dict)
         and str(payload.get("name", "") or "").strip()
@@ -2386,56 +2384,29 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
         spaces_list = spaces if isinstance(spaces, list) else []
         explicit_spaces = spaces is not None
         space_definitions = []
-        for space in spaces_list:
+        payload_area = 0.0
+        for space_index, space in enumerate(spaces_list, start=1):
             if not isinstance(space, dict):
                 continue
-            is_amr_space = (
-                bool(space.get("stores_amr", False))
-                or str(space.get("space_type", "") or "").strip().lower() == "amr"
-                or bool(str(space.get("amr_type", "") or "").strip())
-                or any(
-                    isinstance(slot, dict)
-                    and (
-                        str(slot.get("slot_type", "") or "").strip().lower()
-                        == "amr"
-                        or bool(str(slot.get("amr_type", "") or "").strip())
-                    )
-                    for slot in space.get("payload_slots", []) or []
-                )
-            )
-            if is_amr_space:
+            if inventory_space_is_amr(space):
                 continue
-            point_length, point_width = polygon_dimensions(
-                space.get("points", []) or []
-            )
+            bay_length, bay_width, bay_height = inventory_space_dimensions(space, payload_definitions, loc)
+            payload_area += location_outline_metrics(dict(x=loc.get('x', 0), y=loc.get('y', 0),
+                bounding_box=space.get('points', [])))['area']
             allowed_payloads = sorted(
                 {
                     str(slot.get("payload", "") or "").strip()
                     for slot in space.get("payload_slots", []) or []
                     if isinstance(slot, dict)
                     and str(slot.get("payload", "") or "").strip()
-                }
-            )
-            inferred_height = max(
-                (
-                    payload_height_by_name.get(payload_name, 0.0)
-                    for payload_name in allowed_payloads
-                    if payload_height_by_name.get(payload_name, 0.0) > 0.0
-                ),
-                default=999999.0,
+                } | ({str(space.get('payload', '')).strip()} & payload_definitions.keys())
             )
             space_definitions.append(
                 {
-                    "name": str(space.get("name", "") or "").strip(),
-                    "length_m": _to_float(
-                        space.get("length_m", point_length), point_length
-                    ),
-                    "width_m": _to_float(
-                        space.get("width_m", point_width), point_width
-                    ),
-                    "height_m": _to_float(
-                        space.get("height_m", inferred_height), inferred_height
-                    ),
+                    "name": str(space.get("name", "") or "").strip() or f'Space {space_index}',
+                    "length_m": bay_length,
+                    "width_m": bay_width,
+                    "height_m": bay_height,
                     "flexible": _to_bool(
                         space.get(
                             "flexible",
@@ -2446,9 +2417,6 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
                     "allowed_payloads": allowed_payloads,
                 }
             )
-        inventory_area = sum(
-            polygon_area((space or {}).get("points", []) or []) for space in spaces_list
-        )
         rows.append(
             {
                 "location": name,
@@ -2469,9 +2437,11 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
                 "length_m": round(length, 2),
                 "width_m": round(width, 2),
                 "area_m2": round(area, 2),
-                "inventory_spaces_current": len(spaces_list),
+                "inventory_spaces_current": len(space_definitions),
+                "inventory_spaces_total": len(spaces_list),
+                "amr_spaces_current": sum(inventory_space_is_amr(space) for space in spaces_list),
                 "inventory_space_definitions": space_definitions,
-                "inventory_area_m2": round(inventory_area, 2),
+                "inventory_area_m2": round(payload_area, 2),
                 "inventory_spaces_defined": explicit_spaces,
             }
         )
@@ -3136,6 +3106,7 @@ def build_dropoff_zone_peak_occupancy(
         "peak_occupancy_pct",
         "peak_area_used_m2",
         "peak_volume_m3",
+        "capacity_basis",
     ]
     summary_columns = ["metric", "value"]
     if (
@@ -3222,6 +3193,7 @@ def build_dropoff_zone_peak_occupancy(
     )
     detail["peak_area_used_m2"] = detail["peak_area_used_m2"].round(2)
     detail["peak_volume_m3"] = detail["peak_volume_m3"].round(2)
+    detail['capacity_basis'] = 'Count only (no compatible-bay evidence)'
     if "department" not in detail.columns:
         detail["department"] = "-"
     if "category" not in detail.columns:
@@ -3298,16 +3270,21 @@ def build_dropoff_zone_peak_occupancy(
         )
         return (fits_normal or fits_rotated) and payload_height <= height_m + eps
 
-    def maximum_compatible_assignments(zone: str, payload_names: List[str]) -> int:
+    def maximum_compatible_assignments(zone: str, payload_names: List[str]):
         spaces = zone_space_definitions.get(zone, [])
-        if not spaces or not payload_dimension_lookup:
+        geometry_known = bool(spaces) and all(
+            all(key in space and math.isfinite(_to_float(space[key], float('nan')))
+                and _to_float(space[key], -1) >= 0 for key in ('length_m', 'width_m', 'height_m'))
+            for space in spaces) and all(
+            name in payload_dimension_lookup and all(math.isfinite(value) and value > 0
+                for value in payload_dimension_lookup[name]) for name in payload_names)
+        if not geometry_known:
             return min(
                 len(payload_names), zone_configured_counts.get(zone, len(spaces))
-            )
-        matched_payload_by_space: Dict[int, int] = {}
-
-        def assign(payload_index: int, visited: set) -> bool:
-            payload_name = payload_names[payload_index]
+            ), 'Count only (missing bay or payload dimensions)'
+        from amr_fleet_allocation import maximum_bay_assignment
+        candidates = {}
+        for payload_index, payload_name in enumerate(payload_names):
             compatible_space_indexes = [
                 index
                 for index, space in enumerate(spaces)
@@ -3320,23 +3297,8 @@ def build_dropoff_zone_peak_occupancy(
                     index,
                 )
             )
-            for space_index in compatible_space_indexes:
-                if space_index in visited:
-                    continue
-                visited.add(space_index)
-                previous_payload_index = matched_payload_by_space.get(space_index)
-                if previous_payload_index is None or assign(
-                    previous_payload_index, visited
-                ):
-                    matched_payload_by_space[space_index] = payload_index
-                    return True
-            return False
-
-        return sum(
-            1
-            for payload_index in range(len(payload_names))
-            if assign(payload_index, set())
-        )
+            candidates[payload_index] = compatible_space_indexes
+        return len(maximum_bay_assignment(candidates)), 'Nominal compatible dimensions'
     if location_source is not None and not movement_rows.empty:
         movement_rows["_zone_location"] = movement_rows[location_source].map(
             lambda value: str(value or "").strip()
@@ -3399,7 +3361,7 @@ def build_dropoff_zone_peak_occupancy(
 
             for zone, live in live_by_zone.items():
                 payload_names = list(live.values())
-                matched = maximum_compatible_assignments(zone, payload_names)
+                matched, basis = maximum_compatible_assignments(zone, payload_names)
                 state = {
                     "payload_count": len(payload_names),
                     "matched_spaces": matched,
@@ -3407,6 +3369,7 @@ def build_dropoff_zone_peak_occupancy(
                     "free_spaces": max(
                         0, zone_configured_counts.get(zone, 0) - matched
                     ),
+                    "capacity_basis": basis,
                 }
                 previous = zone_dimensional_peaks.get(zone)
                 if previous is None or (
@@ -3427,6 +3390,7 @@ def build_dropoff_zone_peak_occupancy(
             detail.at[index, "space_shortfall_at_peak"] = int(
                 state.get("shortfall", row["space_shortfall_at_peak"])
             )
+            detail.at[index, 'capacity_basis'] = state['capacity_basis']
 
     configured_spaces = int(detail["configured_spaces"].sum())
     single_zone_peak = int(detail["peak_occupied_spaces"].max() or 0)
@@ -3448,7 +3412,10 @@ def build_dropoff_zone_peak_occupancy(
             "value": single_zone_peak,
         },
         {"metric": "Configured drop-off zones", "value": len(detail)},
-        {"metric": "Configured flexible spaces across zones", "value": configured_spaces},
+        {"metric": "Configured payload spaces across zones", "value": configured_spaces},
+        {"metric": "Capacity comparison basis", "value": '; '.join(
+            f'{zone}: {basis}' for zone, basis in zip(detail['location'], detail['capacity_basis']))},
+        {"metric": "Capacity interpretation", "value": 'Nominal configured payload bays; count-only comparisons do not establish dimensional fit. Excludes AMR bays. Does not prove live availability, parking access or swept clearance.'},
     ]
     return detail, pd.DataFrame(summary_rows, columns=summary_columns)
 

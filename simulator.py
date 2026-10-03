@@ -3183,7 +3183,7 @@ class Simulation:
                     continue
 
                 points = list(raw_space.get("points", []) or [])
-                length_m, width_m, height_m = inventory_space_dimensions(raw_space, payload_definitions)
+                length_m, width_m, height_m = inventory_space_dimensions(raw_space, payload_definitions, loc)
 
                 name = str(raw_space.get("name", "")).strip() or f"Space {index}"
                 occupied = bool(raw_space.get("occupied", False))

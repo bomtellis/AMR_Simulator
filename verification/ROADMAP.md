@@ -310,6 +310,14 @@ boundary undo/redo/cancel. Nonempty outlines expose their drawing/arrangement-on
 scope in Project Checks. Physical wall containment and polygon validity remain
 open for the geometry phase; these measurements are not swept-clearance proof.
 
+**Slice 2AH:** [Storage report reconciliation](STORAGE_REPORT_REVIEW.md)
+aligns payload-bay counts, AMR classification, alias/zero dimensions, payload
+defaults and nominal compatible capacity with simulation. Mixed absolute/local
+bay envelopes now resolve at the parent origin across runtime, editor, fleet
+checks and reports. Twelve tests include independent dimensional, capacity and
+overflow references. Count-only capacity comparisons are explicitly labelled;
+full event coverage, live availability and physical access remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -559,8 +567,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AG's location-outline changes. Continue remaining input contracts,
-including storage/report reconciliation, then continue the department inventory,
+Review slice 2AH's storage-report changes. Continue the department input inventory
+and remaining workspace contracts, retaining full report event-coverage/stock reconciliation,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

@@ -9,14 +9,19 @@ def payload_dimensions(payload):
     return tuple(float(payload.get(axis + '_m', size)) for axis in ('length', 'width', 'height'))
 
 
-def inventory_space_dimensions(space, payloads):
+def inventory_space_dimensions(space, payloads, location=None):
     """Retain runtime alias/default semantics without import-time rounding.
 
     This is an axis-aligned envelope, not a swept polygon clearance check.
     Explicit zero bay dimensions retain the legacy inferred-value fallback.
     """
     xs, ys = [], []
-    for point in space.get('points', []) or []:
+    points = space.get('points', []) or []
+    if location is not None:
+        from amr_location_inputs import location_outline_points
+        points = location_outline_points(dict(x=location.get('x', 0), y=location.get('y', 0),
+                                             bounding_box=points), local=True)
+    for point in points:
         if not isinstance(point, dict):
             continue
         keys = ('dx', 'dy') if 'dx' in point and 'dy' in point else ('x', 'y')

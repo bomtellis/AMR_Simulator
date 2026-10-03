@@ -117,7 +117,7 @@ def configured_fleet_bay_plan(config):
         if not location_bays and name in locations:
             legacy_locations.append(name)
         for index, bay in location_bays:
-            bays[(name, bay.get('name') or f'Space {index+1}')] = (bay, inventory_space_dimensions(bay, payloads))
+            bays[(name, bay.get('name') or f'Space {index+1}')] = (bay, inventory_space_dimensions(bay, payloads, locations[name]))
     candidates, chargers = {}, {}
     for robot in config.get('amrs', []):
         for index in range(int(robot.get('quantity', 1))):
