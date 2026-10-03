@@ -9795,6 +9795,34 @@ class DepartmentWasteStreamItemDialog(QDialog):
             QMessageBox.critical(self, "Invalid waste stream settings", str(exc))
 
 
+def _department_draft_snapshots(parent):
+    """Capture owners before opening a modal draft, including a parent list draft."""
+    from layout_properties import fingerprint
+    snapshots = []
+    while parent is not None:
+        store = getattr(parent, 'store', None)
+        if store is not None and isinstance(getattr(store, 'data', None), dict):
+            snapshots.append((parent, store, fingerprint(store.data)))
+        if isinstance(parent, DepartmentListDialog):
+            snapshots.append((parent, None, fingerprint(parent.items)))
+        parent = parent.parent() if hasattr(parent, 'parent') else None
+    return snapshots
+
+
+def _check_department_draft_snapshots(snapshots):
+    from layout_properties import fingerprint
+    for owner, store, expected in snapshots:
+        if store is None:
+            current = fingerprint(owner.items)
+        elif owner.store is not store:
+            current = None
+        else:
+            current = fingerprint(store.data)
+        if current != expected:
+            raise ValueError('The project or department list changed while this draft was open. '
+                             'Your draft is retained here; cancel and reopen to use the current data.')
+
+
 def collect_department_dropoff_zone_names(departments):
     """Return every zone already assigned to any department category."""
     return sorted({name for department in departments or [] if isinstance(department, dict)
@@ -9991,7 +10019,8 @@ class DepartmentEditorDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Department")
         self.result = None
-        self.seed = seed or {}
+        self.seed = deepcopy(seed or {})
+        self._draft_snapshots = _department_draft_snapshots(parent)
         self.location_names = sorted(location_names)
         self.waste_stream_names = sorted(waste_stream_names)
         self.group_resolver = group_resolver or (lambda item: "Other")
@@ -10740,6 +10769,7 @@ class DepartmentEditorDialog(QDialog):
             }
             from amr_generation_inputs import validate_generation_inputs
             validate_generation_inputs({'departments': [candidate]})
+            _check_department_draft_snapshots(self._draft_snapshots)
             self.result = candidate
             super().accept()
         except Exception as exc:
@@ -12109,6 +12139,8 @@ class DepartmentListDialog(QDialog):
         self.setWindowTitle("Departments")
         self.resize(1080, 560)
         self.items = deepcopy(items)
+        self._draft_snapshots = _department_draft_snapshots(parent)
+        self._existing_location_names = set(location_names)
         self.department_id_changes = {}
         from amr_department_inputs import department_identity
         self.original_department_ids = {department_identity(row) for row in items}
@@ -12212,6 +12244,9 @@ class DepartmentListDialog(QDialog):
         return collect_department_dropoff_zone_names(self.items)
 
     def _refresh_table(self):
+        self.location_names = sorted(self._existing_location_names | {
+            point['name'] for row in self.items for point in row.get('_create_locations', [])
+        })
         self.table.clear()
         self._tree_item_to_index = {}
         self._index_to_tree_item = {}
@@ -13111,14 +13146,17 @@ class DepartmentListDialog(QDialog):
         ):
             return
 
-        for idx in reversed(indexes):
-            if 0 <= idx < len(self.items):
-                del self.items[idx]
-
+        from amr_department_inputs import remove_department_drafts
+        try:
+            self.items = remove_department_drafts(self.items, indexes)
+        except ValueError as exc:
+            QMessageBox.critical(self, 'Invalid department drafts', str(exc))
+            return
         self._refresh_table()
 
     def save_items(self):
         try:
+            _check_department_draft_snapshots(self._draft_snapshots)
             from amr_department_inputs import department_identity
             present = {department_identity(row) for row in self.items}
             changes = {old: new for old, new in self.department_id_changes.items() if new in present}

@@ -91,6 +91,10 @@ deleting their originating draft and general stale modal edits require further
 review. Provisional positions are not yet drawn as a persistent canvas overlay.
 The supported dialog path reports their provisional status and retains selections.
 
+Follow-up: [slice 2AL](DEPARTMENT_DRAFT_REVIEW.md) closes shared provisional-owner
+deletion and stale department-dialog acceptance with additional tests. Other modal
+workflows and provisional canvas overlays remain outside these checkpoints.
+
 Continue the remaining configuration audit and workspace gaps, retaining full
 report event-coverage/stock reconciliation, calendar/staffing and mixed-stock
 limitations. Geometry, approved CAD UI, tutorial and final release gates remain

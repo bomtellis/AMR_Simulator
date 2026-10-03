@@ -344,6 +344,14 @@ one-step undo/redo. Fifteen tests cover these contracts and nested cancellation,
 retry and reopening. General stale edits, provisional-owner sharing/deletion and
 broader workspace/report acceptance remain open.
 
+**Slice 2AL:** [Shared provisional locations and stale department drafts](DEPARTMENT_DRAFT_REVIEW.md)
+transfers pending point creation to a surviving user when its originating draft is
+deleted, discards unused provisional points and rejects conflicting placements.
+Department dialogs retain their input and reject stale project/parent-list state,
+including a replacement project with identical contents. Ten tests cover those
+cases. General modal recovery, merge workflows and final CAD preview remain outside
+this checkpoint.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -593,9 +601,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AK's department location and provisional placement changes. Close
-remaining configuration contracts and provisional-owner/stale-edit cases, then
-the remaining workspace gates.
+Review slice 2AL's shared provisional locations and stale department drafts.
+Continue department waste-stream and task-generation option contracts with
+independent expected demand, then the remaining workspace gates.
 Retain full report event-coverage/stock reconciliation,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with

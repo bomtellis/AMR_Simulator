@@ -186,3 +186,30 @@ def _commit_generated_locations(candidate):
                 bounding_box=[], inventory_spaces=[], wash_cycle_required=False,
                 wash_cycle_duration_sec=300.0, wash_location='', people_area_type='none'))
             occupied.add(name)
+
+
+def remove_department_drafts(rows, indexes):
+    """Discard selected drafts, transferring shared provisional points to survivors."""
+    removed = set(indexes)
+    survivors = deepcopy([row for index, row in enumerate(rows) if index not in removed])
+    pending = {}
+    for index, row in enumerate(rows):
+        if index in removed:
+            for point in row.get('_create_locations', []):
+                name = point['name']
+                if name in pending and pending[name] != point:
+                    raise ValueError(f'Conflicting provisional placements for {name!r}; resolve them before deleting.')
+                pending[name] = point
+    for name, point in pending.items():
+        target = next((row for row in survivors
+                       if any(name in department_location_names(entry, zones=zones)
+                              for entry in row.get('task_generation_locations', {}).values()
+                              for zones in (False, True))), None)
+        if target is None:
+            continue
+        existing = [item for row in survivors for item in row.get('_create_locations', []) if item['name'] == name]
+        if any(item != point for item in existing):
+            raise ValueError(f'Conflicting provisional placements for {name!r}; resolve them before deleting.')
+        if not existing:
+            target.setdefault('_create_locations', []).append(deepcopy(point))
+    return survivors
