@@ -211,6 +211,13 @@ saved results and old-log compatibility. Version 2 accumulated-waste evidence
 includes dynamic and legacy generators; version 1 retains its narrower scope.
 Ordinary scheduled/sporadic accounting and mixed-service inventory remain open.
 
+**Slice 2U:** [Sporadic planning](SPORADIC_PREVIEW_REVIEW.md) adds deterministic
+sporadic and scheduled-sporadic releases to Demand Preview, with event fractions,
+mode explanations and independent bounded rate counts. Events with no valid route
+pair are retained. Thirteen references plus a provenance check cover calendars,
+poll boundaries, route multiplicity, saved simulation parity and limits. Hybrid
+interactions, completed-volume outcomes for these modes and mixed inventory remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -460,8 +467,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2T's legacy waste outcome references, then continue the remaining audit.
-Extend outcome accounting to separate scheduled/sporadic components,
+Review slice 2U's deterministic sporadic planning, then continue the remaining audit.
+Audit hybrid mode interactions and extend outcome accounting to separate scheduled/sporadic components,
 preserving the explicit seed compatibility boundary and inventory-space limitations.
 Retain explicit limits on staffing capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through

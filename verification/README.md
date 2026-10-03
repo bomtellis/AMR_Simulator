@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Legacy waste outcomes](LEGACY_WASTE_BALANCE_REVIEW.md):
+The latest checkpoint is [Sporadic planning](SPORADIC_PREVIEW_REVIEW.md):
+Demand Preview now shows deterministic sporadic and combined scheduled-sporadic
+releases, with event fractions and bounded independent counts. Unrepresented
+sporadic events are retained instead of discarded.
+The preceding correction is [Legacy waste outcomes](LEGACY_WASTE_BALANCE_REVIEW.md):
 pre-pickup collection failures restore accrued fill once; post-pickup failures
 remain unconfirmed. Versioned Results Investigation evidence covers legacy and
 dynamic accumulated waste while preserving older logs' narrower scope.

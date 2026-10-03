@@ -135,13 +135,20 @@ class GenerationProvenanceTests(unittest.TestCase):
         self.assertEqual('allow_temporary_overflow', field['value'])
 
     def test_runtime_modes_keep_unknown_totals_with_provenance(self):
-        for mode in ('threshold', 'continuous', 'sporadic', 'hybrid', 'scheduled_threshold'):
+        for mode in ('threshold', 'continuous', 'hybrid', 'scheduled_threshold'):
             with self.subTest(mode=mode):
                 config = waste_config()
                 config['task_generation']['categories']['waste']['generation_mode'] = mode
                 rule = active_rule(config)
                 self.assertIsNone(rule['total_demand'])
                 self.assertEqual('Category default', rule['field_provenance']['generation_mode']['source'])
+
+    def test_zero_sporadic_rate_has_known_zero_with_provenance(self):
+        config = waste_config()
+        config['task_generation']['categories']['waste'].update(generation_mode='sporadic', frequency_per_day=0)
+        rule = active_rule(config)
+        self.assertEqual(0, rule['total_demand'])
+        self.assertEqual('Category default', rule['field_provenance']['generation_mode']['source'])
 
     def test_trace_is_complete_serialisable_and_does_not_mutate_input(self):
         config = waste_config()

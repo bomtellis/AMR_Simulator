@@ -2270,9 +2270,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             sporadic_accumulators[contributor_key] = _as_float(
                 sporadic_accumulators.get(contributor_key, 0.0), 0.0
             ) + (elapsed_days * freq_per_day)
+            accrued = runtime.setdefault('sporadic_accrued_events', {})
+            accrued[contributor_key] = accrued.get(contributor_key, 0.0) + elapsed_days * freq_per_day
             whole_events = _whole_event_count(sporadic_accumulators[contributor_key]) if category_active and department_open else 0
-            sporadic_accumulators[contributor_key] = max(0.0, sporadic_accumulators[contributor_key] - whole_events)
             for _ in range(whole_events):
+                event_records = []
                 for pickup, dropoff in self._pick_pairs(instance):
                     task = self._base_task(
                         instance, pickup, dropoff, payload_name, now, "sporadic"
@@ -2283,13 +2285,19 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         )
                         task.generated_volume_m3 = generated_volume
                         task.waste_volume_m3 = generated_volume
-                    records.extend(
+                    event_records.extend(
                         self._records_for_outbound(
                             task,
                             instance,
                             f"Generated sporadic {instance['category_key']} task",
                         )
                     )
+                if not event_records:
+                    break  # No represented work: retain this event and later demand.
+                sporadic_accumulators[contributor_key] = max(0.0, sporadic_accumulators[contributor_key] - 1)
+                emitted = runtime.setdefault('sporadic_emitted_events', {})
+                emitted[contributor_key] = emitted.get(contributor_key, 0) + 1
+                records.extend(event_records)
 
         if mode in THRESHOLD_MODES and category_active and department_open:
             records.extend(

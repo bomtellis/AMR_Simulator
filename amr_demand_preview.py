@@ -10,6 +10,7 @@ import hashlib
 import json
 from collections import Counter
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from amr_sim_task_generation import DynamicCategoryTaskGenerator, _scheduled_times_from_cfg, _instance_requires_staff
 from amr_sim_time_utils import parse_release_time
@@ -17,6 +18,7 @@ from visualiser.project_checks import check_project, config_fingerprint
 
 MAX_DAYS = 31
 MAX_ROWS = 20000
+MAX_POLL_EVALUATIONS = 100000
 PRECEDENCE = [
     'Global task generation enabled gates all automatic generators.',
     'Category defaults are overlaid by a group payload or an individual department override.',
@@ -60,7 +62,19 @@ def _independent_schedule_count(instance, start, end):
     if dept and (dept.get('days_active') or dept.get('operating_start_time', '00:00') != '00:00'
                  or dept.get('operating_end_time', '24:00') != '24:00' or float(dept.get('hours_operated_per_day', 24)) != 24):
         return None
-    if mode == 'scheduled':
+    sporadic_count = 0
+    if mode in {'sporadic', 'scheduled_sporadic'}:
+        if cfg.get('days_active') or cfg.get('run_every_fortnight'):
+            return None
+        accrued = (Decimal(str(cfg.get('frequency_per_day', 0))) *
+                   Decimal(str((end - start).total_seconds())) / Decimal(86400))
+        nearest = accrued.to_integral_value()
+        sporadic_count = int(nearest if abs(accrued - nearest) <= Decimal('1e-10') else accrued)
+        if dept and not dept.get('enabled', True):
+            sporadic_count = 0
+        if mode == 'sporadic':
+            return sporadic_count
+    if mode in {'scheduled', 'scheduled_sporadic'}:
         times = cfg.get('scheduled_times', cfg.get('schedule_times', []))
         if not isinstance(times, list):
             return None
@@ -97,14 +111,44 @@ def _independent_schedule_count(instance, start, end):
                     continue
             count += multiple
         day += timedelta(days=1)
-    return count
+    return count + sporadic_count
+
+
+def _sporadic_plan(generator, instance, duration, interval):
+    """Use the runtime's polling cadence without dispatching or completing tasks."""
+    cfg = instance['cfg']
+    mode = cfg.get('generation_mode')
+    schedules = (generator._schedule_calendar(instance, duration)['entries']
+                 if mode == 'scheduled_sporadic' else [])
+    pairs = len(instance['pickup_locations']) * len(instance['dropoff_locations'])
+    bound = (float(cfg.get('frequency_per_day', 0)) * duration / 86400 + len(schedules) + 1) * pairs
+    if bound > MAX_ROWS:
+        raise ValueError(f"Rule {instance['key']} exceeds the preview limit; shorten the period or reduce demand.")
+    polls, now = {0.0}, 0.0
+    while now < duration:
+        now = min(now + interval, duration)
+        polls.add(now)
+    records = []
+    for now in sorted(polls | {entry[0] for entry in schedules if 0 <= entry[0] <= duration}):
+        records.extend(generator._schedule_records(instance, now))
+        if now in polls:
+            records.extend(generator._volume_records(instance, now))
+    runtime = generator._runtime_for_volume_key(instance)
+    key = instance['key']
+    return records, {
+        'accrued_events': runtime.get('sporadic_accrued_events', {}).get(key, 0),
+        'emitted_events': runtime.get('sporadic_emitted_events', {}).get(key, 0),
+        'retained_events': runtime.get('sporadic_accumulator', {}).get(key, 0),
+        'poll_interval_seconds': interval,
+        'basis': 'Deterministic occurrences per 24 eligible hours; each emitted occurrence uses the resolved route pairs. Fractions and whole events waiting for an open/valid poll are retained. These are generator decisions, not independent expected counts.'}
 
 
 def build_demand_preview(config, *, end_datetime=None):
     """Return a JSON-serialisable snapshot. End is inclusive, matching generation.
 
-    Scheduled/timeframe components use daily generator sweeps. Release times are
-    planned times, not promises about runtime polling, dispatch or completion.
+    Scheduled/timeframe components use daily sweeps; sporadic modes use the
+    configured generation polls. Release times precede runtime staggering,
+    dispatch and completion.
     Runtime-dependent components have unknown totals, not zero totals.
     """
     frozen = copy.deepcopy(config)
@@ -127,6 +171,7 @@ def build_demand_preview(config, *, end_datetime=None):
     runtime_input.setdefault('lifts', [])
     simulation = Simulation(runtime_input)
     rules, tasks = [], []
+    poll_evaluations = 0
 
     def row(task, rule, reason, *, deferred=False, static=False):
         release = float(task['release_time'])
@@ -171,7 +216,7 @@ def build_demand_preview(config, *, end_datetime=None):
             mode = cfg.get('generation_mode', 'scheduled')
             path = instance.get('rule_path', '')
             active_paths.add(path)
-            runtime_dependent = mode not in {'scheduled', 'timeframe'} or bool(cfg.get('tracked_item_exchange'))
+            runtime_dependent = mode not in {'scheduled', 'timeframe', 'sporadic', 'scheduled_sporadic'} or bool(cfg.get('tracked_item_exchange'))
             rule = {'id': instance['key'], 'path': path, 'category': instance['category_key'],
                     'department': instance.get('department_id', ''), 'status': 'runtime-dependent' if runtime_dependent else 'planned',
                     'explanation': '', 'effective_config': cfg, 'field_sources': instance.get('field_sources', {}),
@@ -183,7 +228,7 @@ def build_demand_preview(config, *, end_datetime=None):
                     'returns': 'Return tasks depend on outbound progress and are not counted in this preview.' if cfg.get('return_enabled') else 'No configured return.',
                     'unknown_additional_demand': runtime_dependent or bool(cfg.get('return_enabled') or instance.get('dropoff_zone_locations'))}
             rule['expected_fixed_records'] = _independent_schedule_count(instance, start, end)
-            rule['reconciliation_basis'] = ('Independent schedule arithmetic for one distinct route pair and unrestricted department hours.'
+            rule['reconciliation_basis'] = ('Independent schedule/rate arithmetic for one distinct route pair and unrestricted department hours; sporadic rate arithmetic additionally requires unrestricted category dates.'
                                            if rule['expected_fixed_records'] is not None else
                                            'No independent count claimed for this mode/calendar; inspect resolved settings and the reference tests.')
             rules.append(rule)
@@ -195,9 +240,26 @@ def build_demand_preview(config, *, end_datetime=None):
             if not any(a != b for a in valid_pickups for b in valid_dropoffs):
                 rule.update(status='no-work', unknown_additional_demand=False, explanation='No valid distinct pickup/dropoff pair after department location resolution.')
                 continue
-            # Include only the fixed schedule component of mixed scheduled/sporadic
-            # modes. Threshold collections and tracked-item replenishment stay unknown.
-            fixed = mode in {'scheduled', 'scheduled_sporadic', 'timeframe'}
+            if mode in {'sporadic', 'scheduled_sporadic'}:
+                interval = max(60.0, simulation.task_generation_interval_sec)
+                poll_evaluations += int(duration / interval) + 2
+                if poll_evaluations > MAX_POLL_EVALUATIONS:
+                    raise ValueError('Sporadic polling exceeds the preview limit; shorten the period or increase the update interval.')
+                records, accounting = _sporadic_plan(generator, instance, duration, interval)
+                for record in records:
+                    row(vars(record.task), rule, record.details, deferred=record.deferred)
+                rule['sporadic_accounting'] = accounting
+                rule['explanation'] = (f"Deterministic sporadic demand: {accounting['accrued_events']:g} events accrued, "
+                    f"{accounting['emitted_events']} emitted and {accounting['retained_events']:g} retained. "
+                    'There is no random arrival sampling. Planned releases follow generation polls, including the final partial interval. '
+                    + ('Clock-scheduled records are also shown. ' if mode == 'scheduled_sporadic' else '')
+                    + ('Additional tracked-stock demand remains runtime-dependent. ' if runtime_dependent else '')
+                    + 'Dispatch, physical availability and returns are not simulated.')
+                if not records and not runtime_dependent:
+                    rule['status'] = 'no-work'
+                continue
+            # Threshold collections and tracked-item replenishment stay unknown.
+            fixed = mode in {'scheduled', 'timeframe'}
             if not fixed:
                 rule['explanation'] = ('Continuous mode accumulates volume but does not trigger volume collections by itself. '
                                        'Tracked-item exchange, when enabled, uses separate consumption rules. '

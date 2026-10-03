@@ -39,6 +39,13 @@ def rule_explanation(rule):
                       f"excluded: {accounting['excluded_records']}; emitted: {accounting['emitted_records']}",
                       f"Emitted minus eligible: {accounting['count_difference']}",
                       'Exclusions: ' + readable(accounting['exclusions']), accounting['basis']])
+    accounting = rule.get('sporadic_accounting')
+    if accounting:
+        lines.extend(['', 'Sporadic event accounting:',
+                      f"Accrued events: {accounting['accrued_events']:g}",
+                      f"Emitted events: {accounting['emitted_events']}",
+                      f"Retained events: {accounting['retained_events']:g}",
+                      f"Poll interval: {accounting['poll_interval_seconds']:g} seconds", accounting['basis']])
     lines.extend(['', 'Resolved rule settings (task-specific adjustments appear above when a task is selected):'])
     for key, value in rule['effective_config'].items():
         if key in {'departments', 'department_groups'}:

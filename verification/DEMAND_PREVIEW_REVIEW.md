@@ -1,5 +1,9 @@
 # Demand preview checkpoint — 2 October 2026
 
+Later update: [Sporadic planning](SPORADIC_PREVIEW_REVIEW.md) adds deterministic
+sporadic and combined scheduled-sporadic task records, event accounting and a
+100,000 poll-evaluation limit. The historical totals below are not current totals.
+
 Open **Home → Demand preview → Build preview** in the editor. The workspace
 uses a frozen copy of the project and runs its calculation in the background.
 It does not dispatch robots or change inventory. The default period comes from
