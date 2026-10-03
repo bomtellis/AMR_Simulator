@@ -14487,6 +14487,27 @@ class Simulation:
         if not (self.scenario_mode and not self.scenario_enhanced_logging):
             self._append_payload_population_summary_rows()
             self._append_battery_balance_rows()
+            if (not getattr(self, '_waste_volume_summary_written', False) and self.verbose
+                    and self._evidence_run_status in ('finished', 'cancelled')):
+                self._waste_volume_summary_written = True
+                self._evidence_event_capabilities.append('waste_volume_balance_v1')
+                groups = self.task_generation_manager.waste_volume_balance()
+                self.log_step(event_time=self.current_time, event_type='waste_volume_balance_coverage',
+                    status='summary', details=json.dumps({
+                        'schema_version': 1,
+                        'scope': 'dynamic_accumulated_waste_only',
+                        'group_count': len(groups),
+                        'allocation_count': sum(len(group['collections']) for group in groups),
+                    }))
+                for group in groups:
+                    self.log_step(event_time=self.current_time, event_type='waste_volume_balance_summary',
+                        status='summary', details=json.dumps({key: value for key, value in group.items()
+                                                             if key != 'collections'}))
+                    for allocation in group['collections']:
+                        self.log_step(event_time=self.current_time, event_type='waste_volume_allocation',
+                            task_id=allocation['task_id'], status=allocation['status'],
+                            waste_volume_m3=allocation['volume_m3'],
+                            details=json.dumps({'group': group['group'], **allocation}))
         self._append_location_space_recommendation_rows()
         self._flush_verbose_rows_to_csv()
         self._ensure_verbose_csv_header()
@@ -14738,6 +14759,7 @@ class Simulation:
             "completed_tasks": len(self.completed_task_records),
             "pending_tasks": len(self._live_pending_task_items()),
             "failed_tasks": self.failed_tasks,
+            "waste_volume_balance": self.task_generation_manager.waste_volume_balance(),
             "scenario": {
                 "enabled": bool(self.scenario_mode),
                 "name": self.scenario_name,

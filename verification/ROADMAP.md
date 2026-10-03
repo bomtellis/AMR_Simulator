@@ -185,6 +185,12 @@ pickup/group/presence settings, disabled contributors, full automatic shared
 multi-pickup cycles and unavailable inventory space. Legacy/custom seeding remains
 an explicit compatibility adapter; threshold failure-volume reconciliation is next.
 
+**Slice 2Q:** [Accumulated waste balance](WASTE_BALANCE_REVIEW.md) fixes duplicated
+threshold volume across route pairs and lost allocations after pre-pickup failure.
+Thirteen references cover pending/completed/restored/unconfirmed balances, shared
+and scheduled fill, and recorded Results Investigation reconciliation. Legacy,
+ordinary scheduled/sporadic and tracked-item accounting remain outside this balance.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -434,10 +440,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2P's resolved-seeding references, then reconcile threshold volume
-with failed, completed and pending physical collections and residual stock.
-Audit multiple route pairs and tracked-item consumption, preserving the explicit
-legacy/custom seed compatibility boundary and remaining inventory-space limitations.
+Review slice 2Q's recorded accumulated-waste balance, then audit tracked-item
+consumption and return/exchange resets against independent stock calculations.
+Extend outcome accounting to legacy and separate scheduled/sporadic components,
+preserving the explicit seed compatibility boundary and inventory-space limitations.
 Retain explicit limits on staffing capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger

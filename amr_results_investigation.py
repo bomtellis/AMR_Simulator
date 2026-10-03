@@ -12,6 +12,7 @@ from pathlib import Path
 from amr_run_evidence import config_hash, file_hash
 from report.amr_energy_evidence import summarize_energy
 from amr_lift_evidence import check_lift_movements
+from amr_waste_evidence import summarize_waste_volume
 
 COMPLETED = {'task_complete', 'multi_stop_task_complete'}
 ASSIGNED = {'task_assigned', 'multi_stop_task_assigned'}
@@ -379,6 +380,22 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
             findings.append(f"Battery accounting mismatch for {record['amr_id']}: inspect charge, movement and summary evidence.")
     if not battery['known']:
         findings.append('Complete battery balance is not established; applied charging and final model state require bound accounting evidence.')
+    waste = summarize_waste_volume(events, complete=complete_evidence,
+                                  capabilities=metadata.get('event_capabilities', []))
+    for field, title in [('accrued_m3', 'accrued'), ('residual_m3', 'remaining unallocated'),
+                         ('pending_m3', 'allocated to pending collections'), ('completed_m3', 'completed collections'),
+                         ('unconfirmed_m3', 'unconfirmed after pickup'), ('restored_after_failure_m3', 'restored after failed attempts')]:
+        metrics.append({'key': 'waste_' + field, 'title': f'Accumulated waste: {title} (m³)',
+            'value': waste['totals'][field], 'observed_count': waste['totals'][field],
+            'coverage': 'recorded model balance' if waste['known'] else 'missing or incomplete evidence',
+            'definition': 'Dynamic accumulated waste only. Accrued = remaining unallocated + pending + completed + unconfirmed. Restored volume is already included in residual or later allocations and must not be added again. Ordinary scheduled/sporadic waste and legacy generators are outside this balance.',
+            'event_ids': waste['event_ids']})
+    metrics.append({'key': 'waste_volume_balance', 'title': 'Accumulated waste reconciliation',
+        'value': ('Reconciled' if waste['matches'] else 'Conflict') if waste['known'] else None,
+        'observed_count': None, 'coverage': 'recorded model balance' if waste['known'] else 'missing or incomplete evidence',
+        'definition': 'Checks recorded group totals, task allocations, generated volumes and terminal outcomes. A completed collection is not evidence of physical disposal or decontamination.',
+        'event_ids': waste['event_ids']})
+    findings.extend(waste['issues'])
     if payload_gaps:
         findings.append('Payload movement evidence has missing identifiers/times, repeated exits or unpaired exits; transfer totals may be incomplete.')
         findings.extend(a['reason'] for a in payload_anomalies)

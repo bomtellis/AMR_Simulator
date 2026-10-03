@@ -12,7 +12,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Resolved initial bins](WASTE_SEED_REVIEW.md):
+The latest correction is [Accumulated waste balance](WASTE_BALANCE_REVIEW.md):
+thresholds allocate one collection each, pre-pickup failures restore volume once,
+and Results Investigation reconciles recorded allocations and outcomes.
+The preceding correction is [Resolved initial bins](WASTE_SEED_REVIEW.md):
 modern Waste seeding follows effective pickup, shared identity and initial-presence
 settings; disabled contributors no longer choose stock or cause false conflicts.
 The preceding correction is [Shared-bin lifecycle](SHARED_BIN_REVIEW.md):

@@ -1801,24 +1801,56 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         records: List[GeneratedTaskRecord] = []
         while (runtime["volume"] >= threshold_volume or
                math.isclose(runtime["volume"], threshold_volume, rel_tol=1e-12, abs_tol=0)):
-            collection_records = []
-            for pickup, dropoff in self._pick_pairs(instance):
-                task = self._base_task(
-                    instance, pickup, dropoff, payload_name, release_time, "threshold"
-                )
-                if task is not None:
-                    # This is the amount being collected from the bin, not the
-                    # individual fill-event volume.  Using volume_per_event_m3
-                    # here made threshold collections look like nearly empty bin
-                    # swaps in the CSV/visualiser.
-                    task.generated_volume_m3 = threshold_volume
-                    task.waste_volume_m3 = threshold_volume
-                collection_records.extend(self._records_for_outbound(task, instance, details))
+            pairs = self._pick_pairs(instance)
+            if not pairs:
+                break
+            # This runtime holds one pooled volume. Each threshold funds one
+            # collection, not a full-volume copy for every candidate route.
+            pair_index = int(runtime.get('threshold_pair_index', 0))
+            pickup, dropoff = pairs[pair_index % len(pairs)]
+            task = self._base_task(instance, pickup, dropoff, payload_name, release_time, "threshold")
+            if task is not None:
+                task.generated_volume_m3 = threshold_volume
+                task.waste_volume_m3 = threshold_volume
+            collection_records = self._records_for_outbound(task, instance, details)
             if not collection_records:
                 break  # No represented collection: retain the accumulated demand.
+            runtime['threshold_pair_index'] = pair_index + 1
+            if self._is_waste_instance(instance):
+                task.generator_volume_key = instance.get('volume_key', instance['key'])
+                task.generator_collection_task_id = task.id
+                task.generator_threshold_volume_m3 = threshold_volume
+                runtime.setdefault('volume_collections', {})[task.id] = {
+                    'task_id': task.id, 'rule_id': instance['key'], 'volume_m3': threshold_volume,
+                    'status': 'pending', 'requested_pickup': pickup, 'requested_dropoff': dropoff,
+                }
             runtime["volume"] = max(0.0, runtime["volume"] - threshold_volume)
             records.extend(collection_records)
         return records
+
+    def _accrue_volume(self, instance, runtime, amount):
+        runtime['volume'] = _as_float(runtime.get('volume', 0.0)) + amount
+        if self._is_waste_instance(instance):
+            runtime['accrued_volume_m3'] = runtime.get('accrued_volume_m3', 0.0) + amount
+
+    def waste_volume_balance(self):
+        """Accumulated dynamic waste only; ordinary scheduled/sporadic demand is separate."""
+        rows = []
+        for key, runtime in sorted(self.runtime.items()):
+            if 'accrued_volume_m3' not in runtime:
+                continue
+            collections = list(runtime.get('volume_collections', {}).values())
+            def total(status):
+                return sum(row['volume_m3'] for row in collections if row['status'] == status)
+            row = {'group': key, 'accrued_m3': runtime['accrued_volume_m3'],
+                   'residual_m3': runtime['volume'], 'pending_m3': total('pending'),
+                   'completed_m3': total('completed'), 'unconfirmed_m3': total('unconfirmed'),
+                   'restored_after_failure_m3': total('restored'),
+                   'collections': [dict(item) for item in collections]}
+            row['difference_m3'] = row['accrued_m3'] - sum(row[field] for field in
+                ('residual_m3', 'pending_m3', 'completed_m3', 'unconfirmed_m3'))
+            rows.append(row)
+        return rows
 
     def _timeframe_records(
         self, instance: dict, now: float, *, wake_times: Optional[set] = None,
@@ -2124,9 +2156,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 # Only create a collection task when the accumulated fill reaches
                 # the threshold.
                 runtime = self._runtime_for_volume_key(instance)
-                runtime["volume"] = _as_float(runtime.get("volume", 0.0), 0.0) + max(
-                    0.0, _as_float(cfg.get("volume_per_event_m3", 0.0), 0.0)
-                )
+                self._accrue_volume(instance, runtime, max(
+                    0.0, _as_float(cfg.get("volume_per_event_m3", 0.0), 0.0)))
                 records.extend(
                     self._threshold_collection_records(
                         instance,
@@ -2201,9 +2232,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         contributors[contributor_key] = now
 
         if mode in CONTINUOUS_MODES:
-            runtime["volume"] += max(
-                0.0, elapsed_days * _as_float(cfg.get("base_daily_volume_m3", 0.0), 0.0)
-            )
+            self._accrue_volume(instance, runtime, max(
+                0.0, elapsed_days * _as_float(cfg.get("base_daily_volume_m3", 0.0), 0.0)))
 
         # For threshold-based waste streams, frequency_per_day and
         # volume_per_event_m3 represent bin-fill events.  The previous dynamic
@@ -2223,7 +2253,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 ) + (elapsed_days * event_frequency)
                 whole_events = _whole_event_count(volume_event_accumulators[contributor_key])
                 if whole_events > 0:
-                    runtime["volume"] += whole_events * event_volume
+                    self._accrue_volume(instance, runtime, whole_events * event_volume)
                     volume_event_accumulators[contributor_key] = max(0.0, volume_event_accumulators[contributor_key] - whole_events)
 
         if mode in SPORADIC_MODES:
@@ -2482,44 +2512,27 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 self._release_next_deferred_record(spacing_key, "")
             )
 
-        # Existing physical-container generation group handling.
+        # Collection allocations are separate from return cycles and attempts.
+        # Never count a return as fresh volume, or restore uncertain in-transit
+        # waste to a source where it is no longer known to exist.
         volume_key = _clean_text(getattr(task, "generator_volume_key", ""))
-        if not volume_key:
+        if not volume_key or bool(getattr(task, 'is_return_task', False)):
             return released
         runtime = self.runtime.get(volume_key)
         if not runtime:
             return released
 
-        outstanding = runtime.setdefault("outstanding_collection_task_ids", set())
-
-        if state == "failed":
-            # A failed return, or a failure after the physical container was
-            # picked up, leaves the container cycle unresolved. Keep the group
-            # blocked rather than generating a second task for the same bin.
-            if bool(getattr(task, "is_return_task", False)) or bool(
-                getattr(task, "payload_instance_picked_up", False)
-            ):
-                return released
-
-            threshold = _as_float(
-                getattr(task, "generator_threshold_volume_m3", 0.0), 0.0
-            )
-            if collection_id in outstanding and threshold > 0.0:
-                runtime["volume"] = (
-                    _as_float(runtime.get("volume", 0.0), 0.0) + threshold
-                )
-            outstanding.discard(collection_id)
+        allocation = runtime.get('volume_collections', {}).get(task.id)
+        if not allocation or allocation['status'] != 'pending':
             return released
-
-        if state != "completed":
-            return released
-
-        if bool(getattr(task, "is_return_task", False)):
-            outstanding.discard(collection_id)
-            return released
-
-        if not bool(getattr(task, "generator_waits_for_return", False)):
-            outstanding.discard(collection_id)
+        if state == 'completed':
+            allocation['status'] = 'completed'
+        elif state == 'failed':
+            if bool(getattr(task, 'payload_instance_picked_up', False)):
+                allocation['status'] = 'unconfirmed'
+            else:
+                runtime['volume'] += allocation['volume_m3']
+                allocation['status'] = 'restored'
         return released
 
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
@@ -2830,6 +2843,11 @@ class TaskGenerationManager:
 
     def _task_generation_cfg(self) -> dict:
         return self.config.get("task_generation", {}) or {}
+
+    def waste_volume_balance(self):
+        return [row for generator in self.generators
+                if isinstance(generator, DynamicCategoryTaskGenerator)
+                for row in generator.waste_volume_balance()]
 
     def initial_waste_container_definitions(self):
         """Resolved modern Waste stock, or None for the legacy seed adapter.
