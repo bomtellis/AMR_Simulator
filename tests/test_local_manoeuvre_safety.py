@@ -62,6 +62,8 @@ class LocalManoeuvreSafetyTests(unittest.TestCase):
 
     def test_real_obstacles_do_not_create_completed_payload_movement(self):
         cfg = storage_config()
+        # Obstacle templates are real configured payload types, not unresolved names.
+        cfg['payloads'].append(dict(cfg['payloads'][0], name='Other'))
         cfg['tasks'] = [dict(id='T', pickup='A', dropoff='B', payload='Box')]
         spaces = cfg['locations'][1]['inventory_spaces']
         spaces[0]['points'] = [dict(dx=3.5, dy=-.5), dict(dx=4.5, dy=-.5),

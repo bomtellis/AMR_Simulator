@@ -271,6 +271,12 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     for path, message in payload_input_findings(config, require_complete=True):
         if path not in invalid_paths:
             error(path, message, 'payloads', code='PAYLOAD_INPUT')
+    from amr_inventory_inputs import inventory_input_findings
+    completed_groups.add('inventory')
+    invalid_paths = {f.path for f in findings if f.severity == 'error'}
+    for path, message in inventory_input_findings(config, check_references=True):
+        if path not in invalid_paths:
+            error(path, message, 'locations', code='INVENTORY_INPUT')
     if any(f.severity == 'error' for f in findings):
         return finish()
     names = {}
@@ -585,6 +591,11 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         spaces = location.get('inventory_spaces', [])
         if isinstance(spaces, list):
             for space_index, space in enumerate(spaces):
+                if isinstance(space, dict) and space.get('occupied'):
+                    add('INVENTORY_OCCUPANCY_SCOPE', 'info', f'/locations/{index}/inventory_spaces/{space_index}/occupied',
+                        space.get('name', ''), 'Initial bay occupancy is a blocking marker, not an initial physical-stock declaration.',
+                        'The marker alone does not add payload instances or storage volume; AMR allocation can clear stale robot occupancy.',
+                        'Use the supported stock-generation rules to initialise physical stock and review blocked bays.', 'locations')
                 if isinstance(space, dict) and 'capacity_volume_m3' in space:
                     add('STORAGE_MODEL_SCOPE', 'info', f'/locations/{index}/inventory_spaces/{space_index}/capacity_volume_m3',
                         space.get('name', ''), 'Inventory capacity_volume_m3 is unused; fit uses the bay envelope and each bay holds one payload instance.',

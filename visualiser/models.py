@@ -545,6 +545,8 @@ class JsonStore:
         validate_robot_inputs(data)
         from amr_payload_inputs import validate_payload_inputs
         validate_payload_inputs(data)
+        from amr_inventory_inputs import validate_inventory_inputs
+        validate_inventory_inputs(data)
         from amr_generation_inputs import validate_generation_inputs
         validate_generation_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
@@ -1333,110 +1335,58 @@ class JsonStore:
         location = self.get_location(location_name)
         if not location:
             return
+        from amr_inventory_inputs import validate_inventory_inputs
+        from amr_payload_inputs import inventory_space_dimensions
 
-        lx = float(location.get("x", 0.0))
-        ly = float(location.get("y", 0.0))
-
+        # Validate the proposed input before normalisation can discard malformed data.
+        validate_inventory_inputs({"locations": [{"inventory_spaces": spaces}]})
+        lx, ly = float(location.get("x", 0.0)), float(location.get("y", 0.0))
+        payloads = {p["name"]: p for p in self.data.get("payloads", []) if "name" in p}
+        dropoffs = {
+            str(name).strip()
+            for department in self.data.get('departments', []) or []
+            if isinstance(department, dict)
+            for category in (department.get('task_generation_locations', {}) or {}).values()
+            if isinstance(category, dict)
+            for name in (category.get('dropoff_zone_locations', category.get('drop_off_zone_locations', [])) or [])
+        }
         clean_spaces = []
         for idx, space in enumerate(spaces, start=1):
-            name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+            clean = deepcopy(space)
+            clean["name"] = space.get("name", "") or f"Space {idx}"
             points = []
-
-            for p in space.get("points", []):
-                if "dx" in p and "dy" in p:
-                    points.append(
-                        {
-                            "dx": round(float(p["dx"]), 3),
-                            "dy": round(float(p["dy"]), 3),
-                        }
-                    )
+            for point in space.get("points", []):
+                if "dx" in point and "dy" in point:
+                    points.append({"dx": float(point["dx"]), "dy": float(point["dy"])})
                 else:
-                    points.append(
-                        {
-                            "dx": round(float(p["x"]) - lx, 3),
-                            "dy": round(float(p["y"]) - ly, 3),
-                        }
-                    )
-
-            payload_slots = []
+                    points.append({"dx": float(point["x"]) - lx, "dy": float(point["y"]) - ly})
+            clean["points"] = points
+            slots = []
             for slot in space.get("payload_slots", []):
-                if not isinstance(slot, dict):
-                    continue
-                slot_type = str(slot.get("slot_type", "") or "").strip().lower()
-                clean_slot = {
-                    "rotation_deg": round(
-                        float(slot.get("rotation_deg", 0.0) or 0.0), 3
-                    ),
-                }
-                if slot_type == "amr" or str(slot.get("amr_type", "") or "").strip():
-                    amr_type = str(slot.get("amr_type", slot.get("amr", "")) or "").strip()
-                    if not amr_type:
-                        continue
-                    clean_slot["slot_type"] = "amr"
-                    clean_slot["amr_type"] = amr_type
-                else:
-                    payload_name = str(slot.get("payload", "")).strip()
-                    if not payload_name:
-                        continue
-                    clean_slot["payload"] = payload_name
+                item = deepcopy(slot)
+                if str(slot.get('slot_type', '')).lower() == 'amr' or slot.get('amr_type'):
+                    item['slot_type'] = 'amr'
+                    item['amr_type'] = slot.get('amr_type', slot.get('amr', ''))
+                item["rotation_deg"] = float(slot.get("rotation_deg", 0))
                 if "dx" in slot and "dy" in slot:
-                    clean_slot["dx"] = round(float(slot.get("dx", 0.0)), 3)
-                    clean_slot["dy"] = round(float(slot.get("dy", 0.0)), 3)
+                    item.update(dx=float(slot["dx"]), dy=float(slot["dy"]))
                 else:
-                    clean_slot["dx"] = round(float(slot.get("x", lx)) - lx, 3)
-                    clean_slot["dy"] = round(float(slot.get("y", ly)) - ly, 3)
-                payload_slots.append(clean_slot)
-
-            if len(points) >= 3:
-                point_length = abs(
-                    max(float(point.get("dx", 0.0)) for point in points)
-                    - min(float(point.get("dx", 0.0)) for point in points)
-                )
-                point_width = abs(
-                    max(float(point.get("dy", 0.0)) for point in points)
-                    - min(float(point.get("dy", 0.0)) for point in points)
-                )
-                clean_space = {
-                    "name": name,
-                    "points": points,
-                    "payload_slots": payload_slots,
-                    "length_m": round(
-                        float(space.get("length_m", point_length) or point_length),
-                        3,
-                    ),
-                    "width_m": round(
-                        float(space.get("width_m", point_width) or point_width),
-                        3,
-                    ),
-                    "height_m": round(
-                        float(space.get("height_m", 999999.0) or 999999.0),
-                        3,
-                    ),
-                    "flexible": bool(space.get("flexible", False)),
-                }
-                slot_amr_type = ""
-                for slot in payload_slots:
-                    if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
-                        slot_amr_type = str(slot.get("amr_type", "") or "").strip()
-                        break
-                is_amr_space = (
-                    bool(space.get("stores_amr", False))
-                    or str(space.get("space_type", "") or "").strip().lower() == "amr"
-                    or bool(str(space.get("amr_type", "") or "").strip())
-                    or bool(slot_amr_type)
-                )
-                if is_amr_space:
-                    clean_space["space_type"] = "amr"
-                    clean_space["stores_amr"] = True
-                    amr_type = str(space.get("amr_type", "") or "").strip() or slot_amr_type
-                    if amr_type:
-                        clean_space["amr_type"] = amr_type
-                    clean_space["has_charger"] = bool(space.get("has_charger", False))
-                for runtime_key in ("amr_id", "occupied", "reserved_by_amr", "timestamp"):
-                    if runtime_key in space:
-                        clean_space[runtime_key] = space.get(runtime_key)
-                clean_spaces.append(clean_space)
-
+                    item.update(dx=float(slot.get("x", lx)) - lx, dy=float(slot.get("y", ly)) - ly)
+                item.pop("x", None)
+                item.pop("y", None)
+                slots.append(item)
+            clean["payload_slots"] = slots
+            length, width, height = inventory_space_dimensions(clean, payloads)
+            clean.update(length_m=length, width_m=width, height_m=height)
+            clean["flexible"] = space.get("flexible", space.get("flexible_payloads", location_name in dropoffs))
+            slot_amr_type = next((slot.get('amr_type', '') for slot in slots
+                                  if slot.get('slot_type') == 'amr'), '')
+            if (space.get('stores_amr') or str(space.get('space_type', '')).lower() == 'amr'
+                    or space.get('amr_type') or slot_amr_type):
+                clean.update(space_type='amr', stores_amr=True,
+                             has_charger=space.get('has_charger', False))
+                clean['amr_type'] = space.get('amr_type') or slot_amr_type
+            clean_spaces.append(clean)
         location["inventory_spaces"] = clean_spaces
 
     def inventory_space_points_absolute(self, location_name: str, space: dict) -> list:

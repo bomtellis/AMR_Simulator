@@ -12,7 +12,12 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Physical payloads and storage envelopes](PAYLOAD_CONTRACT_REVIEW.md):
+The latest checkpoint is [Storage bay inputs and preservation](INVENTORY_INPUT_REVIEW.md):
+unknown bay references block running, duplicate and malformed inputs are rejected,
+and bay edits preserve dimension-only storage, precision and occupancy metadata.
+Initial occupancy is explained separately from physical stock. Thirteen new
+option dispositions remain partial; location and geometric contracts remain open.
+The preceding checkpoint is [Physical payloads and storage envelopes](PAYLOAD_CONTRACT_REVIEW.md):
 payload inputs are checked before import/run, inferred bay heights follow effective
 payload dimensions, and bay precision and legacy aliases survive import.
 Thirteen references accompany 18 partial/unsupported dispositions.

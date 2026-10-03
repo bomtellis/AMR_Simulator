@@ -269,6 +269,15 @@ aliases. Thirteen references and 18 dispositions cover the stated cases. Full ba
 input/reference validation, zero-as-inference policy, missing-template height and
 swept geometry remain open.
 
+**Slice 2AC:** [Storage bay inputs and preservation](INVENTORY_INPUT_REVIEW.md)
+blocks unknown bay payload/AMR references at run time and rejects malformed
+inputs and duplicate resolved names before coercion. Bay edits retain dimension-only
+storage, legacy short outlines, precision and occupancy metadata. Twelve references
+and 13 new partial dispositions cover the stated input and preservation cases.
+Initial occupancy is explicitly distinguished from seeded stock. Location inputs,
+mixed bay classification, legacy slot aliases, zero-dimension policy and full
+physical geometry remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -518,9 +527,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AB's physical payload and bay inference changes. Next complete
-location/bay input and reference/occupancy checks against the existing stock and
-conservation references, then continue the department inventory,
+Review slice 2AC's bay reference and edit-preservation changes. Next audit
+location dimensions, washing/concurrency inputs and references; resolve remaining
+bay classification, legacy slot aliases and zero-dimension policy against the
+stock/conservation references, then continue the department inventory,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

@@ -21,6 +21,7 @@ from amr_routing_inputs import validate_routing_inputs
 from amr_lift_inputs import validate_lift_inputs
 from amr_robot_inputs import validate_robot_inputs, normalise_amr_payload_slots, normalise_orientations
 from amr_payload_inputs import validate_payload_inputs, payload_dimensions, inventory_space_dimensions
+from amr_inventory_inputs import validate_inventory_inputs
 from amr_generation_inputs import validate_generation_inputs
 from amr_staff_policy import resolve_staff_requirement
 
@@ -136,6 +137,7 @@ class Simulation:
         validate_lift_inputs(config, require_speed=True, require_complete=True)
         validate_robot_inputs(config, require_complete=True)
         validate_payload_inputs(config, require_complete=True)
+        validate_inventory_inputs(config, check_references=True)
         validate_generation_inputs(config)
         self.location_reservations = defaultdict(list)
         self.config = config
