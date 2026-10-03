@@ -8652,6 +8652,14 @@ class SimulationSettingsDialog(QDialog):
         period_layout = QVBoxLayout(period_page)
         period_box = QGroupBox("Simulation dates and speed")
         period_form = QFormLayout(period_box)
+        self.motion_model_combo = QComboBox()
+        self.motion_model_combo.addItem('Legacy graph model', 'legacy')
+        self.motion_model_combo.addItem('Geometric trajectories v1', 'geometric_v1')
+        self.motion_model_combo.setCurrentIndex(max(0,self.motion_model_combo.findData(simulation.get('motion_model','legacy'))))
+        self.motion_model_combo.setToolTip('Geometric mode requires explicit floor geometry and robot manoeuvring parameters. '
+            'Import an exported geometry-workbench project, run Project Checks and review its limitations. '
+            'Legacy mode preserves graph-based comparison; changing this selection does not infer a geometry migration.')
+        period_form.addRow('Motion model', self.motion_model_combo)
         self.start_datetime_edit = QDateTimeEdit()
         self.start_datetime_edit.setCalendarPopup(True)
         self.start_datetime_edit.setDisplayFormat("dd MMM yyyy HH:mm:ss")
@@ -8926,6 +8934,7 @@ class SimulationSettingsDialog(QDialog):
         start = self.start_datetime_edit.dateTime()
         end = self.end_datetime_edit.dateTime()
         return {
+                'motion_model': self.motion_model_combo.currentData(),
                 "start_datetime": start.toString(Qt.ISODate),
                 "end_datetime": end.toString(Qt.ISODate)
                 if self.use_end_datetime_check.isChecked()

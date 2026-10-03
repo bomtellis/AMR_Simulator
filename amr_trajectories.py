@@ -74,6 +74,16 @@ class Trajectory:
     def duration_sec(self):
         return sum(m.duration_sec for m in self.motions)
 
+    def pose_at_time(self, seconds):
+        elapsed = _number(seconds, 'seconds')
+        if not self.motions:
+            raise TrajectoryError('invalid_input', 'An empty trajectory has no pose.')
+        for motion in self.motions:
+            if elapsed <= motion.duration_sec:
+                return motion.pose_at(min(1, elapsed / motion.duration_sec))
+            elapsed -= motion.duration_sec
+        return self.motions[-1].end
+
     def to_dict(self):
         return {'schema_version': 1, 'model': 'forward_fillet_v1',
                 'minimum_radius_m': self.minimum_radius_m, 'pivot_allowed': self.pivot_allowed,
@@ -94,7 +104,8 @@ class Trajectory:
         return result
 
 
-def plan_trajectory(points, *, minimum_radius_m, speed_m_per_sec, pivot_allowed, pivot_speed_deg_per_sec):
+def plan_trajectory(points, *, minimum_radius_m, speed_m_per_sec, pivot_allowed, pivot_speed_deg_per_sec,
+                    start_heading_deg=None):
     """Fillet a requested polyline; never shorten the specified minimum radius.
 
     If allowed, a turn that cannot fit becomes an explicit stationary pivot.
@@ -178,7 +189,81 @@ def plan_trajectory(points, *, minimum_radius_m, speed_m_per_sec, pivot_allowed,
     line_to(route[-1], headings[-1])
     if not all(math.isfinite(x) for m in motions for x in (m.length_m, m.duration_sec, m.end.x, m.end.y)):
         raise TrajectoryError('invalid_input', 'Trajectory arithmetic overflowed.')
+    if start_heading_deg is not None:
+        try:
+            heading = math.radians(float(start_heading_deg))
+            if isinstance(start_heading_deg, bool) or not math.isfinite(heading):
+                raise ValueError
+        except (ValueError, TypeError, OverflowError):
+            raise TrajectoryError('invalid_input', 'Initial heading must be finite.') from None
+        delta = math.atan2(math.sin(headings[0]-heading), math.cos(headings[0]-heading))
+        if abs(delta) > EPS:
+            if not pivot_allowed:
+                raise TrajectoryError('infeasible_route', 'Initial heading needs a pivot or a different approach path.')
+            initial = Pose(*route[0], heading)
+            motions.insert(0, Motion('pivot', initial, Pose(*route[0], heading+delta), 0,
+                                     abs(delta)/angular_speed, delta))
     return Trajectory(tuple(motions), radius, pivot_allowed)
+
+
+def trajectory_from_dict(data):
+    """Decode recorded motions; malformed new evidence must not become a line."""
+    try:
+        if data['schema_version'] != 1 or data['model'] != 'forward_fillet_v1':
+            raise ValueError('Unsupported trajectory version/model.')
+        radius = _number(data['minimum_radius_m'], 'minimum_radius_m', positive=True)
+        if not isinstance(data['pivot_allowed'], bool):
+            raise ValueError('Invalid pivot permission.')
+        if not isinstance(data['motions'], list) or not 1 <= len(data['motions']) <= 30000:
+            raise ValueError('Invalid motion list.')
+        motions = []
+        close = lambda a,b: math.isclose(a,b,rel_tol=1e-9,abs_tol=1e-8)
+        same_heading = lambda a,b: abs(math.atan2(math.sin(a-b),math.cos(a-b))) < 1e-8
+        for row in data['motions']:
+            start, end = (Pose(**row[key]) for key in ('start','end'))
+            if not all(isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v)
+                       for pose in (start,end) for v in (pose.x,pose.y,pose.heading)):
+                raise ValueError('Invalid pose.')
+            kind = row['kind']
+            length = _number(row['length_m'], 'length_m')
+            duration = _number(row['duration_sec'], 'duration_sec', positive=True)
+            sweep = float(row.get('sweep_rad',0))
+            r = _number(row.get('radius_m',0),'radius_m')
+            centre = tuple(row.get('centre',()))
+            if not math.isfinite(sweep) or abs(sweep) > math.pi + EPS or not same_heading(end.heading,start.heading+sweep):
+                raise ValueError('Invalid heading sweep.')
+            if kind == 'line':
+                if not close(length,math.hypot(end.x-start.x,end.y-start.y)) or length <= 0 or sweep != 0:
+                    raise ValueError('Inconsistent line.')
+                if not same_heading(start.heading,math.atan2(end.y-start.y,end.x-start.x)):
+                    raise ValueError('Line heading does not follow travel.')
+            elif kind == 'arc':
+                if r < radius-EPS or not close(length,r*abs(sweep)) or abs(sweep) <= EPS or len(centre) != 2:
+                    raise ValueError('Inconsistent arc.')
+                if not all(isinstance(v,(int,float)) and math.isfinite(v) for v in centre):
+                    raise ValueError('Invalid arc centre.')
+                angle = math.atan2(start.y-centre[1],start.x-centre[0])
+                if (not close(math.hypot(start.x-centre[0],start.y-centre[1]),r)
+                        or not close(end.x,centre[0]+r*math.cos(angle+sweep))
+                        or not close(end.y,centre[1]+r*math.sin(angle+sweep))
+                        or not same_heading(start.heading,angle+(math.pi/2 if sweep>0 else -math.pi/2))):
+                    raise ValueError('Arc endpoints/tangents do not agree.')
+            elif kind == 'pivot':
+                if not data['pivot_allowed'] or length != 0 or not close(start.x,end.x) or not close(start.y,end.y):
+                    raise ValueError('Inconsistent pivot.')
+            else:
+                raise ValueError('Unknown motion kind.')
+            if motions:
+                previous = motions[-1].end
+                if not close(start.x,previous.x) or not close(start.y,previous.y) or not same_heading(start.heading,previous.heading):
+                    raise ValueError('Discontinuous recorded trajectory.')
+            motions.append(Motion(kind,start,end,length,duration,sweep,r,centre))
+        result = Trajectory(tuple(motions),radius,data['pivot_allowed'])
+        if not close(result.length_m,float(data['length_m'])) or not close(result.duration_sec,float(data['duration_sec'])):
+            raise ValueError('Trajectory totals disagree.')
+        return result
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise TrajectoryError('invalid_evidence', str(exc)) from None
 
 
 def footprint(pose, length_m, width_m, margin_m=0):

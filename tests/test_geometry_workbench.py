@@ -127,6 +127,26 @@ class GeometryWorkbenchTests(unittest.TestCase):
                 warning.assert_called_once()
         self.assertEqual(before, w.study)
 
+    def test_export_creates_separate_runnable_project_and_blocks_unfinished_drawing(self):
+        from tests.test_geometric_simulation import GeometricSimulationTests
+        w = self.window
+        before = copy.deepcopy(w.study)
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder)/'simulation.json')
+            with patch('visualiser.geometry_workbench.QFileDialog.getSaveFileName',return_value=(path,'')) as choose:
+                w.begin_drawing('route')
+                w.add_point([0,0])
+                w.export_simulation()
+                choose.assert_not_called()
+                w.cancel_drawing()
+                w.export_simulation()
+                choose.assert_called_once()
+            config = json.loads(Path(path).read_text())
+            self.assertEqual('geometric_v1',config['simulation']['motion_model'])
+            sim = GeometricSimulationTests().run_case(config)
+            self.assertAlmostEqual(12+math.pi,sim.current_time)
+        self.assertEqual(before,w.study)
+
 
 if __name__ == '__main__':
     unittest.main()

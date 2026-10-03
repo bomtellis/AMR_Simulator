@@ -40,6 +40,8 @@ def input_names(keys):
 
 def dependencies(finding):
     code, section = finding.code, finding.section
+    if code in {'GEOMETRY_INPUT', 'GEOMETRY_SCOPE'}:
+        return ('simulation','geometry','amrs','locations','corridors','lifts','people_movements','scenario_testing')
     local = (section,) if section and section != 'project' else ('*',)
     if code in {'CHARGE_INPUT', 'CHARGE_START_CAPACITY', 'CHARGE_LEGACY_LAYOUT'}:
         return GROUPS['charging'][1]

@@ -29,6 +29,9 @@ from amr_fleet_allocation import (validate_charge_inputs, configured_charge_loca
 from amr_generation_inputs import validate_generation_inputs
 from amr_simulation_inputs import (validate_simulation_inputs, resolved_simulation_settings,
                                    simulation_horizon_seconds)
+from amr_geometric_routing import (validate_geometry_inputs, geometry_enabled,
+                                   route_trajectory, first_route_slot)
+from amr_trajectories import TrajectoryError
 from amr_staff_policy import resolve_staff_requirement
 
 from amr_sim_energy import (
@@ -140,6 +143,7 @@ class Simulation:
         verbose_csv_path: Optional[str] = None,
     ):
         validate_simulation_inputs(config)
+        validate_geometry_inputs(config)
         validate_routing_inputs(config)
         validate_lift_inputs(config, require_speed=True, require_complete=True)
         validate_robot_inputs(config, require_complete=True)
@@ -152,6 +156,8 @@ class Simulation:
         validate_department_inputs(config, require_identity=True)
         self.location_reservations = defaultdict(list)
         self.config = config
+        self.geometric_motion = geometry_enabled(config)
+        self.geometric_route_reservations = defaultdict(list)
         self.run_id = uuid.uuid4().hex
         self._evidence_inputs = json.loads(json.dumps(config))
         self._evidence_config_hash = config_hash(self._evidence_inputs)
@@ -159,6 +165,8 @@ class Simulation:
         self._evidence_event_capabilities = ['payload_service_arrivals', 'staged_payload_recovery',
                                              'segment_energy_sources_v1', 'charge_cycle_arrivals_v1',
                                              'tracked_stock_delivery_v1']
+        if self.geometric_motion:
+            self._evidence_event_capabilities.append('geometric_trajectories_v1')
         self._evidence_run_status = 'incomplete'
         self._evidence_sequence = 0
         self._evidence_journey_sequence = 0
@@ -766,6 +774,9 @@ class Simulation:
                     is_charging=False,
                 )
                 amr.payload_slots = payload_slots
+                if self.geometric_motion:
+                    amr.manoeuvring = dict(amr_type['manoeuvring'])
+                    amr.rotation_deg = float(amr.manoeuvring['initial_heading_deg'])
                 amr.multi_stop_enabled = bool(
                     amr_type.get("multi_stop_enabled", len(payload_slots) > 1)
                     and len(payload_slots) > 1
@@ -4159,7 +4170,8 @@ class Simulation:
                     self._remember_route_object(space)
                     space["reserved_by_amr"] = ""
         setattr(amr, "inventory_space_name", "")
-        setattr(amr, "rotation_deg", 0.0)
+        if not self.geometric_motion:
+            setattr(amr, "rotation_deg", 0.0)
         if not keep_target_reservation:
             setattr(amr, "target_inventory_space_name", "")
 
@@ -8766,7 +8778,16 @@ class Simulation:
             duration = float(segment.get("duration", 0.0))
             seg_type = segment.get("type", "")
 
-            if seg_type == "corridor":
+            if seg_type == 'corridor' and segment.get('motion_model') == 'geometric_v1':
+                floor = segment['from_floor']
+                transaction = getattr(self, '_route_reservation_transaction', None)
+                if transaction is not None:
+                    transaction.remember_mapping(self.geometric_route_reservations, floor)
+                self.geometric_route_reservations[floor].append({
+                    'start': t, 'end': t + duration, 'owner': amr.id,
+                    'envelope': tuple(segment['reservation_envelope'])})
+                self._invalidate_route_estimate_cache()
+            elif seg_type == "corridor":
                 self._reserve_edge(
                     segment["from"],
                     segment["to"],
@@ -8794,6 +8815,12 @@ class Simulation:
             t += duration
 
     def _travel_same_floor(self, amr: AMR, start: Location, end: Location) -> float:
+        if self.geometric_motion:
+            try:
+                route = self._same_floor_segments(amr, start, end, collect_segments=False)
+                return math.inf if route is None else route[1]
+            except LocalManoeuvreError:
+                return math.inf
         route = self._shortest_path_same_floor(
             start.floor, start.name, end.name,
             minimum_width_m=self._required_corridor_width(amr),
@@ -8810,7 +8837,20 @@ class Simulation:
         width = float(getattr(amr, "width_m", 0.0) or 0.0)
         if payload is not None and not is_empty_payload_name(payload.name):
             width = max(width, self._payload_orientation_dimensions(payload, orientation)[1])
+        if self.geometric_motion:
+            width += 2 * amr.manoeuvring['clearance_m']
         return width
+
+    def _annotate_geometric_headings(self, amr, segments):
+        if not self.geometric_motion:
+            return
+        heading = float(amr.rotation_deg)
+        for segment in segments:
+            segment.setdefault('amr_rotation_start_deg', heading)
+            if segment.get('motion_model') == 'geometric_v1':
+                heading = segment['amr_rotation_end_deg']
+            segment.setdefault('amr_rotation_end_deg', heading)
+            segment.setdefault('amr_rotation_deg', heading)
 
     def _same_floor_segments(
         self,
@@ -8822,6 +8862,7 @@ class Simulation:
         payload: Optional[PayloadType] = None,
         orientation: str = "lengthways",
         collect_segments: bool = True,
+        start_heading_deg: Optional[float] = None,
     ) -> Optional[Tuple[List[dict], float, float]]:
         route = self._shortest_path_same_floor(
             start.floor, start.name, end.name, rules=rules,
@@ -8829,6 +8870,36 @@ class Simulation:
         )
         if route is None:
             return None
+        if self.geometric_motion:
+            try:
+                trajectory, envelope, clearance, dimensions, names = route_trajectory(
+                    self, amr, route, start, end, payload, orientation, start_heading_deg)
+                if trajectory is None:
+                    return [], 0.0, 0.0
+                requested = self.current_time if start_time_value is None else start_time_value
+                ready = first_route_slot(self.geometric_route_reservations.get(start.floor, []),
+                    envelope, requested, trajectory.duration_sec, amr.id, self.node_clearance_time_sec)
+            except TrajectoryError as exc:
+                raise LocalManoeuvreError(exc.reason, str(exc)) from exc
+            wait = ready - requested
+            segments = []
+            if collect_segments:
+                if wait > 0:
+                    segments.append({'type': 'wait_for_geometry', 'from': start.name, 'to': start.name,
+                        'duration': wait, 'distance_m': 0.0, 'from_x': start.x, 'from_y': start.y,
+                        'to_x': start.x, 'to_y': start.y, 'from_floor': start.floor, 'to_floor': start.floor,
+                        'reason': 'Overlapping moving-route envelope reservation'})
+                segments.append({'type': 'corridor', 'motion_model': 'geometric_v1',
+                    'from': start.name, 'to': end.name, 'from_x': start.x, 'from_y': start.y,
+                    'to_x': end.x, 'to_y': end.y, 'from_floor': start.floor, 'to_floor': end.floor,
+                    'duration': trajectory.duration_sec, 'distance_m': trajectory.length_m,
+                    'trajectory': trajectory.to_dict(), 'clearance_result': clearance,
+                    'loaded_length_m': dimensions[0], 'loaded_width_m': dimensions[1],
+                    'route_nodes': names, 'reservation_envelope': envelope,
+                    'reservation_policy': 'whole_route_envelope', 'payload_orientation': orientation,
+                    'amr_rotation_start_deg': math.degrees(trajectory.motions[0].start.heading),
+                    'amr_rotation_end_deg': math.degrees(trajectory.motions[-1].end.heading)})
+            return segments, wait + trajectory.duration_sec, trajectory.length_m
         segments: List[dict] = []
         total_duration = 0.0
         current = start_time_value
@@ -9553,6 +9624,7 @@ class Simulation:
     def _finalise_charge_travel(self, amr, plan, start_time, *, reserve):
         if plan is None:
             return None
+        self._annotate_geometric_headings(amr, plan['segments'])
         motor_energy = self._charge_motor_energy_kwh(amr, plan['segments'])
         if motor_energy > amr.battery_energy_kwh() + 1e-12:
             return None
@@ -9569,6 +9641,10 @@ class Simulation:
         plan['battery_soc_after'] = max(0.0, amr.battery_energy_kwh() - motor_energy) / max(amr.battery_capacity_kwh, 1e-9) * 100
         if reserve:
             self._reserve_corridor_segments(amr, plan['segments'], start_time)
+            if self.geometric_motion:
+                for segment in plan['segments']:
+                    if segment.get('motion_model') == 'geometric_v1':
+                        amr.rotation_deg = segment['amr_rotation_end_deg']
             amr.consume_energy(motor_energy)
             self._record_committed_segment_impacts(plan['segments'])
         return plan
@@ -9610,10 +9686,13 @@ class Simulation:
                 return None
 
         if current_loc.floor == charge_loc.floor:
-            route = self._same_floor_segments(
-                amr, current_loc, charge_loc, start_time_value=current_time_value,
-                payload=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation="lengthways"
-            )
+            try:
+                route = self._same_floor_segments(
+                    amr, current_loc, charge_loc, start_time_value=current_time_value,
+                    payload=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation="lengthways"
+                )
+            except LocalManoeuvreError:
+                return None
             if route is None:
                 return None
             segments, travel_sec, distance_m = route
@@ -10030,6 +10109,8 @@ class Simulation:
                     retry = bool(result and result.get('_retry_after_charge'))
                     transaction.committed = (result is not None and not retry
                                              and not result.get('_requires_route_charge'))
+                    if transaction.committed and self.geometric_motion:
+                        amr.rotation_deg = result.get('geometry_end_heading', amr.rotation_deg)
             else:
                 result = self._estimate_task_for_amr_impl(
                     amr, task, reserve=False, force_charge=force_charge)
@@ -10202,11 +10283,12 @@ class Simulation:
                 payload_for_leg: Optional[PayloadType] = None,
                 orientation_for_leg: str = "lengthways",
             ) -> Tuple[float, Location, Optional[List[dict]], float]:
-                nonlocal total
+                nonlocal total, planning_heading
 
                 if location_a.floor == location_b.floor:
                     if (
                         not reserve
+                        and not self.geometric_motion
                         and bool(getattr(self, "fast_assignment_estimates", True))
                     ):
                         route = self._shortest_path_same_floor(
@@ -10243,11 +10325,15 @@ class Simulation:
                         payload=payload_for_leg,
                         orientation=orientation_for_leg,
                         collect_segments=True,
+                        start_heading_deg=planning_heading,
                     )
                     if route is None:
                         return math.inf, location_b, None, 0.0
 
                     same_segments, route_duration, _ = route
+                    for segment in same_segments:
+                        if segment.get('motion_model') == 'geometric_v1':
+                            planning_heading = segment['amr_rotation_end_deg']
                     total += route_duration
 
                     if reserve:
@@ -10393,6 +10479,7 @@ class Simulation:
                 )
 
             travel_to_pickup_sec = 0.0
+            planning_heading = float(getattr(amr, 'rotation_deg', 0.0))
             t, current_location, new_segments, seg_time = move_between(
                 current_location, pickup_loc, t, rules=pre_pickup_rules,
                 payload_for_leg=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation_for_leg="lengthways"
@@ -10625,6 +10712,7 @@ class Simulation:
                     return {'_requires_route_charge': True,
                             'required_energy_kwh': corridor_energy_kwh}
                 return None
+            self._annotate_geometric_headings(amr, segments)
             projected_battery_soc_after = (
                 100.0
                 * max(0.0, available_energy - corridor_energy_kwh)
@@ -10662,6 +10750,7 @@ class Simulation:
                 "energy_kwh": actual_energy_kwh,
                 "battery_soc_after": battery_soc_after,
                 "corridor_energy_kwh": corridor_energy_kwh,
+                "geometry_end_heading": planning_heading,
                 "amr_energy_kwh": corridor_energy_kwh,
                 "lift_energy_kwh": lift_energy_kwh,
                 "lift_empty_sec_total": lift_empty_sec_total,
@@ -12482,6 +12571,12 @@ class Simulation:
             self.directed_edge_reservation_max_duration,
         )
         prune_mapping(self.node_reservations, self.node_reservation_max_duration)
+        for floor, rows in list(self.geometric_route_reservations.items()):
+            kept = [row for row in rows if row['end'] >= cutoff]
+            if kept:
+                self.geometric_route_reservations[floor] = kept
+            else:
+                self.geometric_route_reservations.pop(floor, None)
 
     def run(self):
         self.wall_start_time = time.time()
@@ -12513,6 +12608,15 @@ class Simulation:
                 self.routing_executor = None
 
         self._evidence_run_status = 'cancelled' if self.stop_requested else 'finished'
+        if self.geometric_motion:
+            for _priority, _release, _counter, task in self.pending_tasks:
+                reason = str(getattr(task, 'pending_reason', '') or '')
+                if reason.startswith('Local manoeuvre '):
+                    outcome = reason.split(':', 1)[0].removeprefix('Local manoeuvre ')
+                    self.log_step(event_time=self.current_time, event_type='task_geometry_unresolved',
+                        task_id=task.id, payload_name=task.payload, status=outcome,
+                        details=reason, pending_reason=reason, from_location=task.pickup,
+                        to_location=task.dropoff)
         self._print_progress_complete()
         self.print_short_summary()
         print()
@@ -13387,6 +13491,7 @@ class Simulation:
             "task_release_time_sec",
             "task_target_time_sec",
             "details",
+            "motion_model", "trajectory_json",
             "task_source",
             "department_id",
             "waste_stream",
@@ -13491,6 +13596,7 @@ class Simulation:
             "task_release_time_sec",
             "task_target_time_sec",
             "details",
+            "motion_model", "trajectory_json",
             "task_source",
             "department_id",
             "waste_stream",
@@ -13824,6 +13930,8 @@ class Simulation:
                 "amr_location_before": amr_location_before,
                 "amr_location_after": amr_location_after,
                 "details": details,
+                "motion_model": segment_meta.get('motion_model', ''),
+                "trajectory_json": json.dumps(segment_meta['trajectory']) if 'trajectory' in segment_meta else '',
                 # New schema
                 "segment_type": segment_type,
                 "start_time": self._format_sim_time_cached(start_time),

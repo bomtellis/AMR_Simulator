@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDockWidget, QDoubleSpin
 
 from amr_trajectories import Pose, TrajectoryError, check_clearance, footprint, plan_trajectory
 from amr_project_runs import write_json
+from amr_geometric_routing import simulation_project_from_study
 
 SCALE = 60
 EXAMPLE = {'schema_version': 1, 'kind': 'amr_geometry_study',
@@ -137,7 +138,7 @@ class GeometryWorkbench(QMainWindow):
         for label, callback in [('Example', self.load_example), ('Draw route', lambda: self.begin_drawing('route')),
                                 ('Draw obstacle', lambda: self.begin_drawing('obstacle')), ('Finish', self.finish_drawing),
                                 ('Cancel', self.cancel_drawing), ('Fit', self.fit), ('Open study', self.open_study),
-                                ('Save study', self.save_study)]:
+                                ('Save study', self.save_study), ('Export simulation', self.export_simulation)]:
             toolbar.addAction(label, callback)
         undo = self.undo_stack.createUndoAction(self, 'Undo')
         undo.setShortcut('Ctrl+Z')
@@ -176,7 +177,7 @@ class GeometryWorkbench(QMainWindow):
         self.pivots = QCheckBox('Permit stationary pivots when a turn cannot fit')
         self.pivots.toggled.connect(self.apply_parameters)
         form.addRow(self.pivots)
-        note = QLabel('Load and robot share a centred rectangular envelope.\nDrawn rectangles are explicit obstacles.\nNo traffic, reversing or simulator integration yet.')
+        note = QLabel('Load and robot share a centred rectangular envelope.\nDrawn rectangles are explicit obstacles.\nExport simulation creates a separate geometric project.\nDirectional lanes and reversing remain pending.')
         note.setWordWrap(True)
         form.addRow(note)
         self.properties.setWidget(form_widget)
@@ -195,7 +196,11 @@ class GeometryWorkbench(QMainWindow):
           each). Click Finish: a 2 m radius cannot fit. Enable stationary pivots: the path is
           2 m plus a 90° pivot; at 1 m/s and 45°/s this takes 4 seconds.</li>
           <li>Draw obstacle uses two opposite corners. Undo/redo restores each completed operation.
-          Save study retains inputs and inspectable trajectory/check results.</li></ol>
+          Save study retains inputs and inspectable trajectory/check results.</li>
+          <li>Export simulation creates a new JSON project for the main editor or simulator. It has one
+          delivery, the same motion parameters, explicit physical floor bounds and 2-second pickup/dropoff.
+          The reference finishes at <b>15.141593 s</b>. Open Project Checks and acknowledge the geometric
+          model scope before a managed run. Results use recorded curves and pivots.</li></ol>
           <p><b>Gestures:</b> wheel zoom; drag to pan in inspection mode; Shift constrains a new
           drawing point horizontally/vertically; Enter finishes; Escape cancels an unfinished drawing.</p>
           <p>Dashed grey is the requested polyline. Blue is the radius-constrained path. Orange
@@ -347,7 +352,7 @@ class GeometryWorkbench(QMainWindow):
         self.canvas.fitInView(self.canvas.sceneRect(), Qt.KeepAspectRatio)
 
     def export_data(self):
-        return {**copy.deepcopy(self.study), 'scope': 'Geometry study only; no traffic or simulator integration.',
+        return {**copy.deepcopy(self.study), 'scope': 'Geometry study only; no traffic is simulated here. Export simulation creates a separate runnable project.',
                 'trajectory': self.trajectory.to_dict() if self.trajectory else None,
                 'planning_result': self.planning_result,
                 'clearance_result': self.clearance_result}
@@ -376,6 +381,24 @@ class GeometryWorkbench(QMainWindow):
         self.cancel_drawing()
         self.undo_stack.push(StudyEdit(self, after, 'Open geometry study'))
         self.fit()
+
+    def export_simulation(self):
+        if self.mode != 'inspect':
+            self.statusBar().showMessage('Finish or cancel the current drawing before exporting.')
+            return
+        try:
+            project = simulation_project_from_study(self.study)
+        except (ValueError,KeyError,TypeError) as exc:
+            QMessageBox.warning(self,'Could not export project',str(exc))
+            return
+        path,_ = QFileDialog.getSaveFileName(self,'Export geometric simulation project','geometric-project.json','JSON project (*.json)')
+        if path:
+            try:
+                write_json(path,project)
+            except OSError as exc:
+                QMessageBox.warning(self,'Could not export project',str(exc))
+                return
+            self.statusBar().showMessage('Exported a separate geometric project. Import it in the main application, check and run; the study is unchanged.')
 
 
 def main():

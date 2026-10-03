@@ -895,6 +895,8 @@ class SimulationLog:
 
     def _refresh_state_position(self, state: dict, current_time: datetime) -> None:
         row = state.get("raw", {}) or {}
+        state.pop('geometry_heading', None)
+        state.pop('geometry_error', None)
         start_x = self._float_or_none(row.get("start_x"))
         start_y = self._float_or_none(row.get("start_y"))
         start_floor = self._int_or_none(row.get("start_floor"))
@@ -936,6 +938,19 @@ class SimulationLog:
             state["floor"] = end_floor if end_floor is not None else start_floor
             state["path"] = None
             state["segment_fraction"] = 1.0
+        if row.get('motion_model') == 'geometric_v1':
+            from amr_trajectories import trajectory_from_dict, TrajectoryError
+            encoded = row.get('trajectory_json', '')
+            try:
+                if state.get('_trajectory_encoded') != encoded:
+                    state['_trajectory'] = trajectory_from_dict(json.loads(encoded))
+                    state['_trajectory_encoded'] = encoded
+                trajectory = state['_trajectory']
+                pose = trajectory.pose_at_time(state['segment_fraction'] * trajectory.duration_sec)
+                state.update(x=pose.x, y=pose.y, geometry_heading=pose.heading, path=None)
+            except (ValueError, TypeError, KeyError, TrajectoryError) as exc:
+                # Missing/malformed geometric evidence never becomes straight interpolation.
+                state.update(x=None, y=None, path=None, geometry_error=str(exc))
         task_id = state.get("task_id")
         assignment_start = state.get("_assignment_start") or start_dt
         state["task_runtime_sec"] = (
@@ -6118,6 +6133,8 @@ class SimulationVisualizer(QMainWindow):
         return float(start_deg) + (delta * frac)
 
     def _amr_heading_radians_for_state(self, state: dict) -> float:
+        if state.get('geometry_heading') is not None:
+            return state['geometry_heading']
         raw = state.get("raw", {}) or {}
         start_rot = state.get("amr_rotation_start_deg")
         end_rot = state.get("amr_rotation_end_deg")

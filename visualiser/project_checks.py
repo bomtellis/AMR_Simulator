@@ -140,7 +140,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
 
     lists = {"locations", "payloads", "amrs", "lifts", "tasks", "departments", "waste_streams",
              "mass_collections", "people_movements", "floor_dxf_files", "floor_pdf_underlays"}
-    maps = {"simulation", "building", "corridors", "route_profiles", "task_generation", "scenario_testing"}
+    maps = {"simulation", "building", "corridors", "route_profiles", "task_generation", "scenario_testing", "geometry"}
     for key in sorted(lists | maps):
         if key not in config:
             if key in {"simulation", "building", "locations", "payloads", "amrs"}:
@@ -173,6 +173,16 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         return finish()
 
     from amr_generation_inputs import generation_input_findings
+    from amr_geometric_routing import geometry_input_findings, geometry_enabled
+    for path, message in geometry_input_findings(config):
+        error(path, message, path.split('/')[1], code='GEOMETRY_INPUT')
+    if geometry_enabled(config):
+        add('GEOMETRY_SCOPE', 'warning', '/simulation/motion_model', 'Geometric motion',
+            'Forward planar trajectories use explicit bounds/obstacles and centred loaded rectangles. Moving routes reserve their entire spatial envelopes.',
+            'This is conservative moving-route exclusion, not directional lanes or full parked/waiting robot collision analysis. Graph widths remain access restrictions; physical openings must be modelled as obstacles.',
+            'Review explicit geometry and acknowledge the current traffic scope.', section='simulation', kind='assumption')
+    if any(f.severity == 'error' for f in findings):
+        return finish()
     from amr_lift_inputs import lift_input_findings
     completed_groups.add('lifts')
     for path, message in lift_input_findings(config, require_speed=True, require_complete=True):

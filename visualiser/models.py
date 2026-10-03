@@ -531,6 +531,8 @@ class JsonStore:
     def __init__(self, data: Optional[dict] = None):
         from amr_simulation_inputs import validate_simulation_inputs
         validate_simulation_inputs(data)
+        from amr_geometric_routing import validate_geometry_inputs
+        validate_geometry_inputs(data)
         from amr_routing_inputs import validate_routing_inputs
         validate_routing_inputs(data)
         from amr_lift_inputs import validate_lift_inputs
