@@ -12,7 +12,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Lift contracts](LIFT_CONTRACT_REVIEW.md):
+The latest checkpoint is [Lift floor definitions](LIFT_STRUCTURE_REVIEW.md):
+shared structural checks prevent mismatched editor/simulation graphs, reject
+invalid floors and coordinates, and protect invalid saves and rename collisions.
+The preceding checkpoint is [Lift contracts](LIFT_CONTRACT_REVIEW.md):
 lift displays agree with runtime speed, saves preserve unit-conversion precision,
 omitted cabin/boarding defaults agree, and malformed scalar inputs are rejected.
 Independent timing, envelope and reservation references accompany 20 dispositions.

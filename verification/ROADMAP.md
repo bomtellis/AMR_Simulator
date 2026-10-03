@@ -248,6 +248,13 @@ retain unit-conversion precision and use runtime boarding/cabin defaults. Floor
 identities, served-floor/coordinate structure and all precision round trips remain
 open, as do the stated physical and reliability limitations.
 
+**Slice 2Z:** [Lift floor definitions](LIFT_STRUCTURE_REVIEW.md) adds shared
+identity, served-floor, starting-floor and coordinate checks, with twelve
+references including negative-floor timing, atomic invalid edits and rename
+collision protection. Eight structural contracts retain partial status. Floor-map
+labels are canonicalised in the inventory. Valid rename/floor-removal migration,
+editor precision and physical shaft/clearance claims remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -497,9 +504,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2Y's lift references and result changes. Next audit lift floor
-identities, served-floor membership, starting floor and coordinates against the
-graph and editor. Then continue the robot, location and department inventory,
+Review slice 2Z's lift floor definitions. Next audit robot configuration and
+physical payload compatibility against existing resource, energy and route
+references, then continue the location and department inventory,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

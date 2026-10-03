@@ -175,7 +175,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     from amr_generation_inputs import generation_input_findings
     from amr_lift_inputs import lift_input_findings
     completed_groups.add('lifts')
-    for path, message in lift_input_findings(config, require_speed=True):
+    for path, message in lift_input_findings(config, require_speed=True, require_complete=True):
         error(path, message, 'lifts', code='LIFT_INPUT')
     if any(f.severity == 'error' for f in findings):
         return finish()

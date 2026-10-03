@@ -11,7 +11,7 @@ GRAPH = ('locations', 'corridors', 'lifts')
 GROUPS = {
     'structure': ('Section structure', ('*',)),
     'generation': ('Generation input contracts', ('task_generation', 'departments', 'tasks', 'waste_streams', 'payloads')),
-    'lifts': ('Lift scalar contracts', ('lifts',)),
+    'lifts': ('Lift input contracts', ('lifts', 'locations', 'corridors')),
     'shared_containers': ('Shared container definitions', ('task_generation', 'departments', 'waste_streams', 'payloads', 'locations')),
     'values': ('Numbers and schedules', ('*',)),
     'references': ('Identifiers and references', ('*',)),
@@ -35,7 +35,9 @@ def input_names(keys):
 def dependencies(finding):
     code, section = finding.code, finding.section
     local = (section,) if section and section != 'project' else ('*',)
-    if code in {'LIFT_INPUT', 'LIFT_LEGACY_CAPACITY'}:
+    if code == 'LIFT_INPUT':
+        return GROUPS['lifts'][1]
+    if code == 'LIFT_LEGACY_CAPACITY':
         return ('lifts',)
     if code == 'LIFT_SPEED_METADATA':
         return ('lifts', 'building')

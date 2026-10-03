@@ -131,7 +131,7 @@ class Simulation:
         verbose_csv_path: Optional[str] = None,
     ):
         validate_routing_inputs(config)
-        validate_lift_inputs(config, require_speed=True)
+        validate_lift_inputs(config, require_speed=True, require_complete=True)
         validate_generation_inputs(config)
         self.location_reservations = defaultdict(list)
         self.config = config

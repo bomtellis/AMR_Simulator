@@ -5132,7 +5132,7 @@ class LiftEditorDialog(QDialog):
             if start_floor not in floors:
                 raise ValueError("The starting floor must be included in the floors served.")
             positions = self._build_floor_locations(floors)
-            self.result = {
+            result = {
                 "id": lift_id,
                 "served_floors": floors,
                 "speed_m_per_sec": float(self.speed_edit.value()),
@@ -5156,6 +5156,16 @@ class LiftEditorDialog(QDialog):
                 "start_floor": start_floor,
                 "floor_locations": positions,
             }
+            # Validate before callbacks can delete a renamed lift or its links.
+            from amr_lift_inputs import validate_lift_inputs
+            data = getattr(getattr(self.parent(), 'store', None), 'data', {})
+            old_id = self.lift.get('id')
+            candidate = {**result,
+                'speed_floors_per_sec': result['speed_m_per_sec'] / self._floor_height_m(),
+                'floor_locations': {str(f): {'x': x, 'y': y} for f, (x, y) in positions.items()}}
+            lifts = [row for row in data.get('lifts', []) if old_id is None or row.get('id') != old_id]
+            validate_lift_inputs({**data, 'lifts': lifts + [candidate]}, require_speed=True, require_complete=True)
+            self.result = result
             super().accept()
         except Exception as exc:
             QMessageBox.warning(self, "Check lift details", str(exc))

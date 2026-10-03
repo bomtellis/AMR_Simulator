@@ -17,6 +17,7 @@ MAP_PATHS = {
     "task_generation.categories.*.departments",
     "departments[].task_generation_locations", "payloads[].items",
     "task_generation.staff_config.shift_patterns",
+    "lifts[].floor_locations",
 }
 
 

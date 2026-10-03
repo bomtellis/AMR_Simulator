@@ -2050,7 +2050,10 @@ class JsonStore:
             },
         }
         from amr_lift_inputs import validate_lift_inputs
-        validate_lift_inputs({'lifts': [payload]}, require_speed=True)
+        candidates = [payload if row is lift else row for row in self.data['lifts']]
+        if lift is None:
+            candidates.append(payload)
+        validate_lift_inputs({**self.data, 'lifts': candidates}, require_speed=True, require_complete=True)
         if lift is None:
             self.data["lifts"].append(payload)
         else:

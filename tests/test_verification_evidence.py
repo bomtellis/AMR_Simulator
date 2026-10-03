@@ -12,10 +12,13 @@ from verification.run import EvidenceResult, write_junit
 class VerificationEvidenceTests(unittest.TestCase):
     def test_config_paths_canonicalise_named_profiles_and_group_fields(self):
         values = dict(fields({"route_profiles": {"clean": {"allowed_nodes": ["A"]}},
-                              "amrs": [{"width_m": 0.6}]}))
+                              "amrs": [{"width_m": 0.6}],
+                              "lifts": [{"floor_locations": {"-2": {"x": 1, "y": 2}}}]}))
         self.assertIn("route_profiles.*.allowed_nodes", values)
         self.assertEqual(0.6, values["amrs[].width_m"])
         self.assertNotIn("route_profiles.clean", values)
+        self.assertIn('lifts[].floor_locations.*.x', values)
+        self.assertNotIn('lifts[].floor_locations.-2', values)
 
     def test_partial_status_is_not_promoted_by_passing_tests(self):
         features = [{"id": "F", "status": "partial", "tests": ["test_a.*"]}]
