@@ -151,6 +151,15 @@ DAY_OPTIONS = [
 ]
 
 
+TRACKED_STOCK_HELP = (
+    "Stock is replenished only after confirmed delivery or staff handoff. "
+    "Top up: order the deficit, allowing for pending supplies. Full exchange: "
+    "replace all tracked contents and account for removed stock. Replace empty: "
+    "request supply only at zero stock. Consumption continues while supply waits; "
+    "shortages are recorded as unmet demand."
+)
+
+
 class DayOfWeekSelector(QWidget):
     """Compact day selector used by scheduling dialogs."""
 
@@ -1057,6 +1066,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.exchange_mode_combo.setCurrentText(
             str(self.base_category.get("exchange_mode", "top_up_only"))
         )
+        self.exchange_mode_combo.setToolTip(TRACKED_STOCK_HELP)
 
         self.route_profile_combo = QComboBox()
         self.route_profile_combo.addItems([""] + self.profile_names)
@@ -2213,6 +2223,7 @@ class TaskGenerationSettingsDialog(QDialog):
                 "replace_empty",
             ]
         )
+        self.exchange_mode_combo.setToolTip(TRACKED_STOCK_HELP)
 
         self.route_profile_combo = QComboBox()
         self.route_profile_combo.addItems([""] + self.profile_names)

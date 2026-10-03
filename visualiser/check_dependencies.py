@@ -10,7 +10,7 @@ from pathlib import Path
 GRAPH = ('locations', 'corridors', 'lifts')
 GROUPS = {
     'structure': ('Section structure', ('*',)),
-    'generation': ('Generation input contracts', ('task_generation', 'departments', 'tasks', 'waste_streams')),
+    'generation': ('Generation input contracts', ('task_generation', 'departments', 'tasks', 'waste_streams', 'payloads')),
     'shared_containers': ('Shared container definitions', ('task_generation', 'departments', 'waste_streams', 'payloads', 'locations')),
     'values': ('Numbers and schedules', ('*',)),
     'references': ('Identifiers and references', ('*',)),

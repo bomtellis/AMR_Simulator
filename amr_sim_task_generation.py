@@ -65,7 +65,7 @@ class BaseTaskGenerator:
         return []
 
     def task_state_changed(
-        self, task: Task, state: str
+        self, task: Task, state: str, event_time: Optional[float] = None
     ) -> List[GeneratedTaskRecord]:
         """Receive completion/failure notifications for generated tasks."""
         return []
@@ -1678,6 +1678,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
     ) -> List[GeneratedTaskRecord]:
         if outbound is None:
             return []
+        if getattr(outbound, 'tracked_item_exchange', False) and not getattr(outbound, 'generator_item_key', ''):
+            self._register_scheduled_tracked_request(outbound, instance)
         record = self._record_for_task(
             outbound,
             instance,
@@ -2295,6 +2297,79 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         contributors[contributor_key] = now
         return records
 
+    def _tracked_resource_locations(self, instance):
+        locations = [location for location in instance.get('final_destination_locations', [])
+                     if location in self.locations]
+        if not locations:
+            role = _clean_text(instance.get('department_location_role', ''))
+            if role and role != 'pickup':
+                locations = [location for location in instance.get('dropoff_locations', [])
+                             if location in self.locations]
+        return _unique_clean(locations) or ['']
+
+    def _register_scheduled_tracked_request(self, task, instance):
+        items = _payload_tracked_items(self.payloads.get(_clean_text(instance['cfg'].get('payload'))))
+        if not items:
+            return
+        resources = self._tracked_resource_locations(instance)
+        location = _clean_text(getattr(task, 'final_destination', '') or task.dropoff)
+        location = location if location in resources else resources[0]
+        runtime = self._advance_tracked_stock(instance, task.release_time, resources, items)
+        quantities = runtime['resource_quantities'][location]
+        mode = _clean_text(getattr(task, 'exchange_mode', 'top_up_only')) or 'top_up_only'
+        pending = [request for request in runtime['requests'].values()
+                   if request['resource'] == location and request['status'] == 'pending']
+        ordered = {}
+        for name, item in items.items():
+            incoming = sum(request['quantities'].get(name, 0) for request in pending)
+            ordered[name] = (item['target_quantity'] if mode == 'full_exchange' else
+                0.0 if mode == 'replace_empty' and quantities[name] > 0 else
+                max(0.0, item['target_quantity'] - quantities[name] - incoming))
+        task.tracked_items = {name: {**item, 'current_quantity': quantities[name],
+                                    'delivery_quantity': ordered[name]} for name, item in items.items()}
+        task.generator_item_key = instance['key']
+        runtime['requests'][task.id] = {'resource': location, 'mode': mode, 'quantities': ordered, 'status': 'pending'}
+        runtime['pending_resources'].setdefault(location, set()).add(task.id)
+
+    def _advance_tracked_stock(self, instance, now, resource_locations, items):
+        runtime = self.item_runtime.setdefault(instance['key'], {
+            'last_update_time': 0.0, 'resource_quantities': {}, 'balances': {},
+            'pending_resources': {}, 'requests': {},
+        })
+        for location in resource_locations:
+            quantities = runtime['resource_quantities'].setdefault(location, {})
+            balances = runtime['balances'].setdefault(location, {})
+            for name, item in items.items():
+                quantities.setdefault(name, item['target_quantity'])
+                balances.setdefault(name, {'initial': item['target_quantity'], 'consumed': 0.0,
+                    'unmet': 0.0, 'delivered': 0.0, 'removed': 0.0})
+        last_time = runtime['last_update_time']
+        if now <= last_time:
+            return runtime
+        elapsed_days = self._generation_active_elapsed_seconds(instance, last_time, now) / 86400.0
+        for location in resource_locations:
+            quantities = runtime['resource_quantities'][location]
+            for name, item in items.items():
+                requested = max(0.0, item['consumption_per_day']) * elapsed_days / len(resource_locations)
+                consumed = min(quantities[name], requested)
+                quantities[name] -= consumed
+                runtime['balances'][location][name]['consumed'] += consumed
+                runtime['balances'][location][name]['unmet'] += requested - consumed
+        runtime['last_update_time'] = now
+        return runtime
+
+    def tracked_item_balance(self):
+        rows = []
+        for rule, runtime in sorted(self.item_runtime.items()):
+            for location, items in runtime.get('balances', {}).items():
+                for name, balance in items.items():
+                    remaining = runtime['resource_quantities'][location][name]
+                    rows.append({'rule_id': rule, 'location': location, 'item': name,
+                                 **balance, 'remaining': remaining,
+                                 'difference': balance['initial'] + balance['delivered'] - balance['consumed']
+                                               - balance['removed'] - remaining})
+        return rows
+
     def _tracked_item_records(
         self, instance: dict, now: float
     ) -> List[GeneratedTaskRecord]:
@@ -2311,97 +2386,37 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         # locations (for example, two clean-linen trolleys).  The configured
         # consumption_per_day is department demand, so divide it between those
         # resources and retain an independent stock balance for each one.
-        resource_locations = [
-            location
-            for location in instance.get("final_destination_locations", [])
-            if location in self.locations
-        ]
-        if not resource_locations:
-            role = _clean_text(instance.get("department_location_role", ""))
-            if role and role != "pickup":
-                resource_locations = [
-                    location
-                    for location in instance.get("dropoff_locations", [])
-                    if location in self.locations
-                ]
-        resource_locations = _unique_clean(resource_locations) or [""]
+        resource_locations = self._tracked_resource_locations(instance)
 
-        def full_quantities() -> Dict[str, float]:
-            return {
-                name: item["target_quantity"] for name, item in items.items()
-            }
-
+        runtime = self._advance_tracked_stock(instance, now, resource_locations, items)
         if not self._instance_is_active(instance, now):
-            runtime = self.item_runtime.setdefault(
-                instance["key"],
-                {
-                    "last_update_time": now,
-                    "resource_quantities": {
-                        location: full_quantities()
-                        for location in resource_locations
-                    },
-                },
-            )
-            runtime["last_update_time"] = now
             return []
-
-        runtime = self.item_runtime.setdefault(
-            instance["key"],
-            {
-                "last_update_time": 0.0,
-                "resource_quantities": {
-                    location: full_quantities() for location in resource_locations
-                },
-            },
-        )
-        resource_quantities = runtime.setdefault("resource_quantities", {})
-        legacy_quantities = runtime.pop("quantities", None)
-        for index, location in enumerate(resource_locations):
-            quantities = resource_quantities.setdefault(
-                location,
-                dict(legacy_quantities) if index == 0 and legacy_quantities else {},
-            )
-            for name, item in items.items():
-                quantities.setdefault(name, item["target_quantity"])
-
-        last_time = _as_float(runtime.get("last_update_time", 0.0), 0.0)
-        if now <= last_time:
-            return []
-
-        elapsed_days = (
-            self._instance_active_elapsed_seconds(instance, last_time, now) / 86400.0
-        )
+        resource_quantities = runtime['resource_quantities']
+        exchange_mode = _clean_text(cfg.get('exchange_mode', 'top_up_only')) or 'top_up_only'
         triggered_by_resource: Dict[str, Dict[str, dict]] = {}
-        resource_count = max(1, len(resource_locations))
         for location in resource_locations:
+            if location in runtime['pending_resources']:
+                continue
             quantities = resource_quantities[location]
             triggered: Dict[str, dict] = {}
             for name, item in items.items():
-                consumption = (
-                    max(0.0, item.get("consumption_per_day", 0.0))
-                    * elapsed_days
-                    / resource_count
-                )
-                quantities[name] = max(
-                    0.0,
-                    _as_float(
-                        quantities.get(name, item["target_quantity"]),
-                        item["target_quantity"],
-                    )
-                    - consumption,
-                )
-                if quantities[name] <= item["trigger_quantity"]:
+                trigger = 0.0 if exchange_mode == 'replace_empty' else item['trigger_quantity']
+                at_trigger = quantities[name] <= trigger or math.isclose(
+                    quantities[name], trigger, rel_tol=1e-12, abs_tol=item['target_quantity'] * 1e-12)
+                if quantities[name] < item['target_quantity'] and at_trigger:
                     triggered[name] = {
                         **item,
                         "current_quantity": round(quantities[name], 3),
                         "target_quantity": item["target_quantity"],
+                        'delivery_quantity': item['target_quantity'] - quantities[name],
                     }
-                    # Assume an exchange/top-up request resets this resource to full.
-                    quantities[name] = item["target_quantity"]
             if triggered:
+                if exchange_mode == 'full_exchange':
+                    triggered = {name: {**item, 'current_quantity': quantities[name],
+                                        'delivery_quantity': item['target_quantity']}
+                                 for name, item in items.items()}
                 triggered_by_resource[location] = triggered
 
-        runtime["last_update_time"] = now
         if not triggered_by_resource:
             return []
 
@@ -2451,6 +2466,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 task.exchange_mode = exchange_mode
                 task.tracked_item_source_payload = payload_name
                 task.tracked_items = triggered
+                task.generator_item_key = instance['key']
+                runtime['requests'][task.id] = {'resource': resource_location, 'mode': exchange_mode,
+                    'quantities': {name: item['delivery_quantity'] for name, item in triggered.items()},
+                    'status': 'pending'}
+                runtime['pending_resources'].setdefault(resource_location, set()).add(task.id)
                 records.extend(
                     self._records_for_outbound(
                         task,
@@ -2464,14 +2484,41 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         ),
                     )
                 )
+                break  # One stock deficit funds one replenishment for this resource.
 
         return records
 
     def task_state_changed(
-        self, task: Task, state: str
+        self, task: Task, state: str, event_time: Optional[float] = None
     ) -> List[GeneratedTaskRecord]:
         """Release generation locks and any task waiting on a return pickup."""
         state = _clean_text(state).lower()
+        item_key = _clean_text(getattr(task, 'generator_item_key', ''))
+        item_runtime = self.item_runtime.get(item_key)
+        if item_runtime and not getattr(task, 'is_return_task', False):
+            request = item_runtime['requests'].get(task.id)
+            delivered = state == 'tracked_items_delivered' or (state == 'completed' and not getattr(task, 'dropoff_zone', ''))
+            if request and request['status'] == 'pending' and (delivered or state == 'failed'):
+                instance = next(instance for instance in self.instances if instance['key'] == item_key)
+                items = _payload_tracked_items(self.payloads.get(_clean_text(instance['cfg'].get('payload'))))
+                self._advance_tracked_stock(instance,
+                    item_runtime['last_update_time'] if event_time is None else event_time,
+                    list(item_runtime['resource_quantities']), items)
+                location = request['resource']
+                if delivered:
+                    for name, supplied in request['quantities'].items():
+                        balance = item_runtime['balances'][location][name]
+                        quantities = item_runtime['resource_quantities'][location]
+                        if request['mode'] == 'full_exchange':
+                            balance['removed'] += quantities[name]
+                            quantities[name] = 0.0
+                        quantities[name] += supplied
+                        balance['delivered'] += supplied
+                request['status'] = 'delivered' if delivered else 'failed'
+                pending = item_runtime['pending_resources'].get(location, set())
+                pending.discard(task.id)
+                if not pending:
+                    item_runtime['pending_resources'].pop(location, None)
         spacing_key = _clean_text(
             getattr(task, "generator_release_spacing_key", "")
         )
@@ -2849,6 +2896,17 @@ class TaskGenerationManager:
                 if isinstance(generator, DynamicCategoryTaskGenerator)
                 for row in generator.waste_volume_balance()]
 
+    def tracked_item_balance(self):
+        return [row for generator in self.generators
+                if isinstance(generator, DynamicCategoryTaskGenerator)
+                for row in generator.tracked_item_balance()]
+
+    def tracked_item_requests(self):
+        return [{'rule_id': rule, 'task_id': task_id, **request, 'quantities': dict(request['quantities'])}
+                for generator in self.generators if isinstance(generator, DynamicCategoryTaskGenerator)
+                for rule, runtime in generator.item_runtime.items()
+                for task_id, request in runtime.get('requests', {}).items()]
+
     def initial_waste_container_definitions(self):
         """Resolved modern Waste stock, or None for the legacy seed adapter.
 
@@ -2987,10 +3045,10 @@ class TaskGenerationManager:
         return generated
 
     def task_state_changed(
-        self, task: Task, state: str
+        self, task: Task, state: str, event_time: Optional[float] = None
     ) -> List[GeneratedTaskRecord]:
         """Forward task completion/failure state to every runtime generator."""
         released: List[GeneratedTaskRecord] = []
         for generator in self.generators:
-            released.extend(generator.task_state_changed(task, state) or [])
+            released.extend(generator.task_state_changed(task, state, event_time=event_time) or [])
         return released

@@ -76,6 +76,9 @@ def generation_input_findings(config):
         if row is None:
             return
         flags(row, path, FLAGS)
+        if 'exchange_mode' in row and (not isinstance(row['exchange_mode'], str)
+                or row['exchange_mode'] not in {'top_up_only', 'full_exchange', 'replace_empty', ''}):
+            error(pointer(path, 'exchange_mode'), 'exchange_mode must be top_up_only, full_exchange or replace_empty.')
         for name in sorted(COUNTS):
             number(row, path, name, minimum=1, integer=True)
         for name in sorted(DURATIONS):
@@ -190,6 +193,42 @@ def generation_input_findings(config):
             for name in sorted(LEGACY_CATEGORIES | {'department_waste'}):
                 if name in generation:
                     category(generation[name], pointer(path, name))
+    payloads = config.get('payloads', [])
+    if isinstance(payloads, list):
+        for index, payload in enumerate(payloads):
+            if not isinstance(payload, dict):
+                continue
+            path = f'/payloads/{index}'
+            flags(payload, path, {'track_items'})
+            if 'items' not in payload:
+                continue
+            items = obj(payload['items'], pointer(path, 'items'))
+            if items is None:
+                continue
+            for name, value in items.items():
+                item_path = pointer(pointer(path, 'items'), name)
+                item = obj(value, item_path)
+                if item is None:
+                    continue
+                number(item, item_path, 'max', positive=True)
+                number(item, item_path, 'top_up_threshold')
+                number(item, item_path, 'consumption_per_day')
+                try:
+                    if 'top_up_threshold' in item and float(item['top_up_threshold']) > float(item.get('max', 100)):
+                        error(pointer(item_path, 'top_up_threshold'), 'top_up_threshold must not exceed max.')
+                except (TypeError, ValueError, OverflowError):
+                    pass
+                if payload.get('track_items') and item.get('usage_rate') not in (None, '', 'continuous'):
+                    findings.append(('warning', pointer(item_path, 'usage_rate'),
+                        'Tracked consumption uses a continuous consumption_per_day rate during active hours. '
+                        'The usage_rate label does not implement a separate schedule or stochastic process.'))
+            if payload.get('track_items'):
+                for field in ('source_location', 'exchange_payload'):
+                    values = {str(item.get(field) or '').strip() for item in items.values() if isinstance(item, dict)} - {''}
+                    if len(values) > 1:
+                        findings.append(('warning', pointer(path, 'items'),
+                            f'A replenishment containing several {field} values does not visit or load all of them. '
+                            'Mixed-source/mixed-payload routing is not implemented; use separate modeled services.'))
     streams = config.get('waste_streams', [])
     if isinstance(streams, list):
         for index, stream in enumerate(streams):

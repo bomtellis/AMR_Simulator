@@ -191,6 +191,12 @@ Thirteen references cover pending/completed/restored/unconfirmed balances, share
 and scheduled fill, and recorded Results Investigation reconciliation. Legacy,
 ordinary scheduled/sporadic and tracked-item accounting remain outside this balance.
 
+**Slice 2R:** [Tracked stock](TRACKED_STOCK_REVIEW.md) fixes generation-time refills,
+lost/overcounted calendar consumption and threshold rounding. Seventeen references
+cover top-up, full content exchange, replace-empty, pending/failed supply, scheduled
+orders, confirmed handoffs and persisted item/request evidence. Dedicated recorded
+stock reconciliation and distinct physical content-handling workflows remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -440,8 +446,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2Q's recorded accumulated-waste balance, then audit tracked-item
-consumption and return/exchange resets against independent stock calculations.
+Review slice 2R's tracked-stock references, then reconcile recorded item balances
+with generated requests and actual delivery/handoff events in Results Investigation.
 Extend outcome accounting to legacy and separate scheduled/sporadic components,
 preserving the explicit seed compatibility boundary and inventory-space limitations.
 Retain explicit limits on staffing capacity and broader calendar combinations.

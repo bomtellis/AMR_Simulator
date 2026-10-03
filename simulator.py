@@ -6788,6 +6788,7 @@ class Simulation:
                     ),
                 )
                 self._record_location_storage_peak(final_destination)
+                self._notify_task_generation_state(task, 'tracked_items_delivered', event_time=event_time)
                 if is_exchange:
                     if returned_empty_record is None:
                         implicit_empty_id = self.payload_instance_store.make_instance_id(
@@ -6905,7 +6906,9 @@ class Simulation:
     ) -> None:
         manager = getattr(self, "task_generation_manager", None)
         if manager is not None:
-            released_records = manager.task_state_changed(task, state) or []
+            consumption_time = self.current_time if event_time is None else event_time
+            consumption_time = min(consumption_time, self.task_generation_horizon_sec)
+            released_records = manager.task_state_changed(task, state, event_time=consumption_time) or []
             for record in released_records:
                 self._schedule_generated_task_record(
                     record,
@@ -14509,6 +14512,22 @@ class Simulation:
                             waste_volume_m3=allocation['volume_m3'],
                             details=json.dumps({'group': group['group'], **allocation}))
         self._append_location_space_recommendation_rows()
+        if (self.verbose and self._evidence_run_status in ('finished', 'cancelled')
+                and not getattr(self, '_tracked_stock_summary_written', False)
+                and not (self.scenario_mode and not self.scenario_enhanced_logging)):
+            self._tracked_stock_summary_written = True
+            self._evidence_event_capabilities.append('tracked_stock_balance_v1')
+            balances = self.task_generation_manager.tracked_item_balance()
+            requests = self.task_generation_manager.tracked_item_requests()
+            self.log_step(event_time=self.current_time, event_type='tracked_stock_coverage', status='summary',
+                details=json.dumps({'schema_version': 1, 'scope': 'dynamic_tracked_stock',
+                                    'balance_count': len(balances), 'request_count': len(requests)}))
+            for balance in balances:
+                self.log_step(event_time=self.current_time, event_type='tracked_stock_balance_summary', status='summary',
+                              details=json.dumps(balance))
+            for request in requests:
+                self.log_step(event_time=self.current_time, event_type='tracked_stock_request',
+                              task_id=request['task_id'], status=request['status'], details=json.dumps(request))
         self._flush_verbose_rows_to_csv()
         self._ensure_verbose_csv_header()
         write_run_evidence(self, self.verbose_csv_path)
@@ -14760,6 +14779,7 @@ class Simulation:
             "pending_tasks": len(self._live_pending_task_items()),
             "failed_tasks": self.failed_tasks,
             "waste_volume_balance": self.task_generation_manager.waste_volume_balance(),
+            "tracked_item_balance": self.task_generation_manager.tracked_item_balance(),
             "scenario": {
                 "enabled": bool(self.scenario_mode),
                 "name": self.scenario_name,
