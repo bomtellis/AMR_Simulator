@@ -5,7 +5,8 @@ physical space. Route envelope claims precede the later directional-lane model.
 """
 import math
 from copy import deepcopy
-from amr_trajectories import Motion, Pose, Trajectory, TrajectoryError, plan_trajectory, check_clearance
+from amr_trajectories import (Motion, Pose, Trajectory, TrajectoryError, plan_trajectory, check_clearance,
+                              plan_reverse_trajectory, plan_lateral_trajectory)
 from amr_sim_payload_instances import is_empty_payload_name
 from amr_geometric_traffic import TRAFFIC_MODEL, traffic_enabled, lane_trajectory
 from amr_clearances import clearance_input_findings, resolved_clearances
@@ -152,7 +153,7 @@ def validate_geometry_inputs(config):
         raise ValueError('Invalid geometric model: '+'; '.join(f'{p}: {m}' for p,m in findings))
 
 
-def route_trajectory(sim, amr, route, start, end, payload, orientation, start_heading_deg=None):
+def route_trajectory(sim, amr, route, start, end, payload, orientation, start_heading_deg=None, movement='forward'):
     parameters = amr.manoeuvring
     clearances = resolved_clearances(sim.config,parameters)
     loaded = payload is not None and not is_empty_payload_name(payload.name)
@@ -166,13 +167,31 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
     names = [start.name]+[edge['to'] for edge in route['edges']]
     points = [(float(nodes[name]['x']),float(nodes[name]['y'])) for name in names]
     heading = amr.rotation_deg if start_heading_deg is None else start_heading_deg
+    if movement not in ('forward', 'reverse', 'lateral'):
+        raise TrajectoryError('invalid_input', 'Unknown requested movement type.')
+    if movement != 'forward' and settings is None:
+        raise TrajectoryError('invalid_input', 'Recovery needs explicit empty and loaded movement settings.')
     static = len(points)==1
     if static:
         pose=Pose(*points[0],math.radians(heading))
         # A unit-duration stationary envelope is used only by the clearance checker.
         trajectory=Trajectory((Motion('pivot',pose,pose,0,1),),parameters['minimum_radius_m'],parameters['pivot_allowed'])
+    elif movement == 'lateral':
+        # A lateral leg must follow one straight graph alignment; do not cut
+        # across an intermediate graph corner by joining its endpoints.
+        distance = math.hypot(end.x-start.x, end.y-start.y)
+        dx,dy = end.x-start.x,end.y-start.y
+        projections = [((x-start.x)*dx+(y-start.y)*dy)/distance for x,y in points] if distance>0 else []
+        if (not projections or any(abs((x-start.x)*dy-(y-start.y)*dx)/distance>1e-8 for x,y in points)
+                or any(b<a-1e-8 for a,b in zip(projections,projections[1:]))):
+            raise TrajectoryError('infeasible_route', 'Lateral recovery needs a straight graph alignment.')
+        trajectory = plan_lateral_trajectory(Pose(start.x,start.y,math.radians(heading)),points[-1],
+            speed_m_per_sec=settings.lateral_speed_m_per_sec or speed,lateral_allowed=settings.lateral_allowed)
     else:
-        trajectory = plan_trajectory(points, minimum_radius_m=radius,
+        planner = plan_reverse_trajectory if movement == 'reverse' else plan_trajectory
+        if movement == 'reverse':
+            speed = settings.reverse_speed_m_per_sec
+        trajectory = planner(points, minimum_radius_m=radius,
             speed_m_per_sec=speed, pivot_allowed=pivot_allowed,
             pivot_speed_deg_per_sec=pivot_speed, start_heading_deg=heading)
     length,width = amr.length_m,amr.width_m
@@ -180,7 +199,7 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
         pl,pw,_ = sim._payload_orientation_dimensions(payload,orientation)
         length,width = max(length,pl),max(width,pw)
     lane_sections = []
-    if not static and traffic_enabled(sim.config):
+    if not static and traffic_enabled(sim.config) and movement == 'forward':
         trajectory,lane_sections = lane_trajectory(trajectory,points,route['edges'],
             loaded_width_m=width,clearance_m=clearances['wall_m'],speed_m_per_sec=speed,
             robot_clearance_m=clearances['robot_m'] if clearances['explicit'] else None)

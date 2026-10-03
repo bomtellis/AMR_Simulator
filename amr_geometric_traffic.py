@@ -125,7 +125,10 @@ def swept_cells(trajectory, *, length_m, width_m, clearance_m, max_cells=MAX_CEL
             mid = motion.pose_at((lo+hi)/2)
             if motion.kind == 'line':
                 # Fixed heading: elongation is the exact swept rectangle.
-                polygon = footprint(mid,length_m+motion.length_m*(hi-lo),width_m,clearance_m)
+                if getattr(motion, 'movement', 'forward') == 'lateral':
+                    polygon = footprint(mid,length_m,width_m+motion.length_m*(hi-lo),clearance_m)
+                else:
+                    polygon = footprint(mid,length_m+motion.length_m*(hi-lo),width_m,clearance_m)
             else:
                 # Every corner stays within this Euclidean radius of its midpoint.
                 bound = 2*(motion.radius_m+corner)*math.sin(abs(motion.sweep_rad)*(hi-lo)/4)

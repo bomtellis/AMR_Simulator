@@ -1,9 +1,9 @@
-"""Explicit planar forward trajectories for engineering planning and display.
+"""Explicit planar directional trajectories for engineering planning and display.
 
 Metres, seconds and radians internally. No graph routing, automatic obstacle
-avoidance, reversing or traffic claims are implied by a successful trajectory.
+avoidance or traffic claims are implied by a successful trajectory.
 """
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import math
 
 EPS = 1e-10
@@ -43,6 +43,7 @@ class Motion:
     radius_m: float = 0.0
     centre: tuple = ()
     profile: dict | None = None
+    movement: str = 'forward'
 
     def fraction_at_time(self, seconds):
         """Time progression is separate from geometric pose_at fractions."""
@@ -93,10 +94,16 @@ class Trajectory:
         return self.motions[-1].end
 
     def to_dict(self):
-        return {'schema_version': 1, 'model': 'forward_fillet_v1',
+        directional = any(m.movement != 'forward' for m in self.motions)
+        rows = [asdict(m) for m in self.motions]
+        if not directional:
+            for row in rows:
+                row.pop('movement')  # Preserve the existing forward evidence shape.
+        return {'schema_version': 2 if directional else 1,
+                'model': 'directional_fillet_v1' if directional else 'forward_fillet_v1',
                 'minimum_radius_m': self.minimum_radius_m, 'pivot_allowed': self.pivot_allowed,
                 'length_m': self.length_m, 'duration_sec': self.duration_sec,
-                'motions': [asdict(m) for m in self.motions]}
+                'motions': rows}
 
     def poses(self, step_m=0.1, step_rad=math.radians(5)):
         step_m = _number(step_m, 'step_m', positive=True)
@@ -214,12 +221,75 @@ def plan_trajectory(points, *, minimum_radius_m, speed_m_per_sec, pivot_allowed,
     return Trajectory(tuple(motions), radius, pivot_allowed)
 
 
+def plan_reverse_trajectory(points, *, minimum_radius_m, speed_m_per_sec,
+                            pivot_allowed, pivot_speed_deg_per_sec, start_heading_deg=None):
+    """Follow the requested polyline backwards with body heading opposite travel.
+
+    Radius is the path radius; this does not infer an offset steering reference.
+    An already correctly aligned robot reverses without an invented 180° pivot.
+    Any actual heading mismatch still needs explicit pivot permission.
+    """
+    travel_heading = None
+    if start_heading_deg is not None:
+        try:
+            value = float(start_heading_deg)
+            if isinstance(start_heading_deg, bool) or not math.isfinite(value):
+                raise ValueError
+            travel_heading = value - 180
+        except (TypeError, ValueError, OverflowError):
+            raise TrajectoryError('invalid_input', 'Initial heading must be finite.') from None
+    path = plan_trajectory(points, minimum_radius_m=minimum_radius_m,
+                           speed_m_per_sec=speed_m_per_sec, pivot_allowed=pivot_allowed,
+                           pivot_speed_deg_per_sec=pivot_speed_deg_per_sec,
+                           start_heading_deg=travel_heading)
+    motions = tuple(replace(m, start=replace(m.start, heading=m.start.heading + math.pi),
+                            end=replace(m.end, heading=m.end.heading + math.pi),
+                            movement='forward' if m.kind == 'pivot' else 'reverse')
+                    for m in path.motions)
+    return replace(path, motions=motions)
+
+
+def plan_lateral_trajectory(start, end_xy, *, speed_m_per_sec, lateral_allowed):
+    """Translate perpendicular to a fixed body heading, with explicit capability.
+
+    There is no turning radius for this purely lateral line, so the directional
+    trajectory records minimum_radius_m=0. Mixed curved routes must supply their
+    separately configured positive radius when composing trajectories.
+    """
+    speed = _number(speed_m_per_sec, 'speed_m_per_sec', positive=True)
+    if type(lateral_allowed) is not bool:
+        raise TrajectoryError('invalid_input', 'Lateral permission must be an explicit boolean.')
+    if not lateral_allowed:
+        raise TrajectoryError('infeasible_route', 'This robot does not permit lateral movement.')
+    if (not isinstance(start, Pose) or any(isinstance(v, bool) or not isinstance(v, (int, float))
+            or not math.isfinite(v) for v in (start.x, start.y, start.heading))):
+        raise TrajectoryError('invalid_input', 'Start must be a finite body Pose.')
+    if (not isinstance(end_xy, (list, tuple)) or len(end_xy) != 2
+            or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                   or abs(v) > 1e9 for v in (*end_xy, start.x, start.y))):
+        raise TrajectoryError('invalid_input', 'Lateral endpoints must be finite x/y coordinates within ±1e9 m.')
+    dx, dy = end_xy[0] - start.x, end_xy[1] - start.y
+    distance = math.hypot(dx, dy)
+    if distance <= EPS:
+        raise TrajectoryError('invalid_input', 'Lateral endpoints must be distinct.')
+    along = dx * math.cos(start.heading) + dy * math.sin(start.heading)
+    if abs(along) > max(EPS, distance * 1e-10):
+        raise TrajectoryError('infeasible_route', 'Lateral travel must be perpendicular to the body heading.')
+    end = Pose(*end_xy, start.heading)
+    duration = distance / speed
+    if not math.isfinite(duration) or duration <= 0:
+        raise TrajectoryError('invalid_input', 'Lateral duration exceeds numeric range.')
+    return Trajectory((Motion('line', start, end, distance, duration, movement='lateral'),), 0., False)
+
+
 def trajectory_from_dict(data):
     """Decode recorded motions; malformed new evidence must not become a line."""
     try:
-        if data['schema_version'] != 1 or data['model'] != 'forward_fillet_v1':
+        directional = data['schema_version'] == 2 and data['model'] == 'directional_fillet_v1'
+        if type(data['schema_version']) is not int or not (directional or
+                (data['schema_version'] == 1 and data['model'] == 'forward_fillet_v1')):
             raise ValueError('Unsupported trajectory version/model.')
-        radius = _number(data['minimum_radius_m'], 'minimum_radius_m', positive=True)
+        radius = _number(data['minimum_radius_m'], 'minimum_radius_m', positive=not directional)
         if not isinstance(data['pivot_allowed'], bool):
             raise ValueError('Invalid pivot permission.')
         if not isinstance(data['motions'], list) or not 1 <= len(data['motions']) <= 30000:
@@ -233,6 +303,12 @@ def trajectory_from_dict(data):
                        for pose in (start,end) for v in (pose.x,pose.y,pose.heading)):
                 raise ValueError('Invalid pose.')
             kind = row['kind']
+            movement = row.get('movement', 'forward')
+            if (movement not in ('forward', 'reverse', 'lateral')
+                    or (not directional and movement != 'forward')
+                    or (kind == 'pivot' and movement != 'forward')
+                    or (kind == 'arc' and movement == 'lateral')):
+                raise ValueError('Invalid movement type for the recorded motion/model.')
             length = _number(row['length_m'], 'length_m')
             duration = _number(row['duration_sec'], 'duration_sec', positive=True)
             sweep = float(row.get('sweep_rad',0))
@@ -243,10 +319,14 @@ def trajectory_from_dict(data):
             if kind == 'line':
                 if not close(length,math.hypot(end.x-start.x,end.y-start.y)) or length <= 0 or sweep != 0:
                     raise ValueError('Inconsistent line.')
-                if not same_heading(start.heading,math.atan2(end.y-start.y,end.x-start.x)):
+                tangent = math.atan2(end.y-start.y,end.x-start.x)
+                expected = tangent + (math.pi if movement == 'reverse' else 0)
+                aligned = (abs(math.cos(start.heading-tangent)) <= 1e-8 if movement == 'lateral'
+                           else same_heading(start.heading, expected))
+                if not aligned:
                     raise ValueError('Line heading does not follow travel.')
             elif kind == 'arc':
-                if r < radius-EPS or not close(length,r*abs(sweep)) or abs(sweep) <= EPS or len(centre) != 2:
+                if radius <= 0 or r < radius-EPS or not close(length,r*abs(sweep)) or abs(sweep) <= EPS or len(centre) != 2:
                     raise ValueError('Inconsistent arc.')
                 if not all(isinstance(v,(int,float)) and math.isfinite(v) for v in centre):
                     raise ValueError('Invalid arc centre.')
@@ -254,7 +334,8 @@ def trajectory_from_dict(data):
                 if (not close(math.hypot(start.x-centre[0],start.y-centre[1]),r)
                         or not close(end.x,centre[0]+r*math.cos(angle+sweep))
                         or not close(end.y,centre[1]+r*math.sin(angle+sweep))
-                        or not same_heading(start.heading,angle+(math.pi/2 if sweep>0 else -math.pi/2))):
+                        or not same_heading(start.heading,angle+(math.pi/2 if sweep>0 else -math.pi/2)
+                                            +(math.pi if movement == 'reverse' else 0))):
                     raise ValueError('Arc endpoints/tangents do not agree.')
             elif kind == 'pivot':
                 if not data['pivot_allowed'] or length != 0 or not close(start.x,end.x) or not close(start.y,end.y):
@@ -271,7 +352,7 @@ def trajectory_from_dict(data):
                 timing = MotionProfile(**profile)
                 if not close(timing.distance,abs(sweep) if kind=='pivot' else length) or not close(timing.duration_sec,duration):
                     raise ValueError('Motion profile disagrees with recorded distance or duration.')
-            motions.append(Motion(kind,start,end,length,duration,sweep,r,centre,profile))
+            motions.append(Motion(kind,start,end,length,duration,sweep,r,centre,profile,movement))
         result = Trajectory(tuple(motions),radius,data['pivot_allowed'])
         if not close(result.length_m,float(data['length_m'])) or not close(result.duration_sec,float(data['duration_sec'])):
             raise ValueError('Trajectory totals disagree.')

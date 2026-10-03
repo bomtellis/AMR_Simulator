@@ -162,34 +162,68 @@ class OccupancyLedger:
         """
         return self._propose(owner, departure, claims, allow_new=False, max_pair_checks=max_pair_checks)
 
+    def replace_plans(self, plans, *, max_pair_checks=MAX_PAIR_CHECKS):
+        """Atomically replace several owners' futures for a coordinated movement.
+
+        ``plans`` is {owner: (absolute_departure, complete_claim_list)}. All owners
+        must already be initialised. Validate every plan before checking any
+        geometry, then check all proposed claims against retained history and
+        every other owner's proposed claims. Superseded parked tails cannot cause
+        an intermediate rejection. There is one shared comparison budget for the
+        complete batch; exhaustion raises search_limit without changing anything.
+
+        Pose/kinematic feasibility and priority are caller responsibilities, as
+        for replace_plan. This method does not permit an unsafe joint movement
+        merely because each individual route is valid in otherwise empty space.
+        """
+        return self._replace(plans, allow_new=False, max_pair_checks=max_pair_checks)
+
     def _propose(self, owner, departure, rows, *, allow_new, max_pair_checks):
         if not isinstance(owner, str) or not owner:
             raise TrajectoryError('invalid_input', 'A plan needs a nonempty owner id.')
-        departure = _finite(departure, 'Departure', nonnegative=True)
-        if not isinstance(rows, (list, tuple)) or not rows:
-            raise TrajectoryError('invalid_input', 'A plan needs contiguous claims and a terminal stationary tail.')
+        return self._replace({owner: (departure, rows)}, allow_new=allow_new, max_pair_checks=max_pair_checks)
+
+    def _replace(self, plans, *, allow_new, max_pair_checks):
+        if not isinstance(plans, dict) or not plans:
+            raise TrajectoryError('invalid_input', 'Provide a nonempty owner-to-plan mapping.')
+        if any(not isinstance(owner, str) or not owner for owner in plans):
+            raise TrajectoryError('invalid_input', 'Every plan needs a nonempty owner id.')
         if not isinstance(max_pair_checks, int) or isinstance(max_pair_checks, bool) or max_pair_checks < 1:
             raise TrajectoryError('invalid_input', 'Conflict comparison budget must be a positive integer.')
-        proposed = tuple(_claim(row) for row in rows)
-        if any(claim.owner != owner for claim in proposed):
-            raise TrajectoryError('invalid_input', 'All replacement claims must belong to the selected owner.')
-        if abs(proposed[0].start-departure) > EPS:
-            raise TrajectoryError('invalid_input', 'A replacement must start exactly at departure.')
-        if not math.isinf(proposed[-1].end) or proposed[-1].occupancy_kind != 'stationary':
-            raise TrajectoryError('invalid_input', 'A plan must finish with an infinite stationary tail.')
-        for previous, current in zip(proposed, proposed[1:]):
-            if math.isinf(previous.end) or abs(previous.end-current.start) > EPS:
-                raise TrajectoryError('invalid_input', 'Replacement claims must be ordered and contiguous without overlap or gaps.')
-        previous_owner = [claim for claim in self._claims if claim.owner == owner]
-        if not allow_new and not previous_owner:
-            raise TrajectoryError('invalid_input', 'Initialise an explicit stationary pose before replacing a plan.')
-        if previous_owner and departure < min(claim.start for claim in previous_owner)-EPS:
-            raise TrajectoryError('invalid_input', 'A replacement cannot precede the owner\'s initial occupancy.')
+        departures, proposed_list = {}, []
+        # Stable owner order makes evidence independent of mapping insertion order.
+        for owner in sorted(plans):
+            spec = plans[owner]
+            if not isinstance(spec, (list, tuple)) or len(spec) != 2:
+                raise TrajectoryError('invalid_input', 'Each owner plan must contain departure and claim list.')
+            departure, rows = spec
+            departure = _finite(departure, 'Departure', nonnegative=True)
+            if not isinstance(rows, (list, tuple)) or not rows:
+                raise TrajectoryError('invalid_input', 'A plan needs contiguous claims and a terminal stationary tail.')
+            proposed_owner = tuple(_claim(row) for row in rows)
+            if any(claim.owner != owner for claim in proposed_owner):
+                raise TrajectoryError('invalid_input', 'All replacement claims must belong to the selected owner.')
+            if abs(proposed_owner[0].start-departure) > EPS:
+                raise TrajectoryError('invalid_input', 'A replacement must start exactly at departure.')
+            if not math.isinf(proposed_owner[-1].end) or proposed_owner[-1].occupancy_kind != 'stationary':
+                raise TrajectoryError('invalid_input', 'A plan must finish with an infinite stationary tail.')
+            for previous, current in zip(proposed_owner, proposed_owner[1:]):
+                if math.isinf(previous.end) or abs(previous.end-current.start) > EPS:
+                    raise TrajectoryError('invalid_input', 'Replacement claims must be ordered and contiguous without overlap or gaps.')
+            previous_owner = [claim for claim in self._claims if claim.owner == owner]
+            if not allow_new and not previous_owner:
+                raise TrajectoryError('invalid_input', 'Initialise an explicit stationary pose before replacing a plan.')
+            if previous_owner and departure < min(claim.start for claim in previous_owner)-EPS:
+                raise TrajectoryError('invalid_input', 'A replacement cannot precede the owner\'s initial occupancy.')
+            departures[owner] = departure
+            proposed_list.extend(proposed_owner)
+        proposed = tuple(proposed_list)
         history = []
         for claim in self._claims:
+            departure = departures.get(claim.owner)
             # Retain an instantaneous completion at the next departure boundary:
             # its physically present load must not disappear when a new task starts.
-            if claim.owner != owner or claim.end <= departure:
+            if departure is None or claim.end <= departure:
                 history.append(claim)
             elif claim.start < departure:
                 if claim.occupancy_kind != 'stationary':
@@ -197,13 +231,14 @@ class OccupancyLedger:
                 history.append(OccupancyClaim(claim.owner, claim.floor, claim.start, departure,
                     claim.polygon, claim.envelope, claim.robot_clearance_m, claim.occupancy_kind, claim.source_id))
         conflicts, checks = [], 0
+        all_claims = tuple(history)+proposed
         for candidate in proposed:
             # A relative cell with start=0 permits the existing traffic scheduler
             # to enforce the same conservative SAT and max(A,B) pair clearance.
             cell = candidate.row()
             cell['start'], cell['end'] = 0, candidate.end-candidate.start
-            for other in history:
-                if other.owner == owner or other.floor != candidate.floor:
+            for other in all_claims:
+                if other.owner == candidate.owner or other.floor != candidate.floor:
                     continue
                 instant = candidate.occupancy_kind == 'instantaneous' or other.occupancy_kind == 'instantaneous'
                 if instant:
@@ -228,10 +263,10 @@ class OccupancyLedger:
                             max(candidate.robot_clearance_m, other.robot_clearance_m)):
                         continue
                 else:
-                    earliest, _ = first_traffic_slot([other.row()], [cell], candidate.start, owner, 0)
+                    earliest, _ = first_traffic_slot([other.row()], [cell], candidate.start, candidate.owner, 0)
                     if earliest <= candidate.start+EPS:
                         continue
-                conflicts.append(OccupancyConflict(owner, other.owner, candidate.floor,
+                conflicts.append(OccupancyConflict(candidate.owner, other.owner, candidate.floor,
                     max(candidate.start, other.start), min(candidate.end, other.end),
                     candidate.occupancy_kind, other.occupancy_kind,
                     other.end if math.isfinite(other.end) else None,
@@ -240,4 +275,4 @@ class OccupancyLedger:
             finite = [c.blocking_release for c in conflicts if c.blocking_release is not None]
             return PlanUpdate(False, self, tuple(conflicts), min(finite) if finite else None,
                               tuple(sorted({c.blocking_owner for c in conflicts if c.permanent})))
-        return PlanUpdate(True, OccupancyLedger(tuple(history)+proposed))
+        return PlanUpdate(True, OccupancyLedger(all_claims))

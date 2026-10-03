@@ -837,7 +837,10 @@ class SimulationLog:
     ) -> None:
         row = event.row
         amr_id = (row.get("amr_id") or "").strip()
-        if not amr_id:
+        if not amr_id or row.get('event_type') in (
+                'battery_balance_summary', 'geometric_recovery_search', 'task_geometry_unresolved'):
+            # A run-level accounting record has no physical pose. In particular
+            # it must not erase a taskless trajectory starting at time zero.
             recent_events.append(
                 {"timestamp": min(current_time, event.end_time), "row": row}
             )

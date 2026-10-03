@@ -184,7 +184,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             ('Keep-right lanes use tangent transitions, single-file narrow sections and swept-time moving-route reservations.' if traffic else
              'Moving routes reserve their entire spatial envelopes.'),
             ('Complete committed plans include explicit initial placements, handling, waiting, charging and parked footprints. '
-             'Unknown parked departures block admission; automatic yielding and deadlock recovery remain unimplemented.' if traffic else
+             'Parked empty robots can yield to verified graph stopping points; coordinated/loaded recovery and proven deadlock termination remain unimplemented.' if traffic else
              'This is conservative moving-route exclusion, not directional lanes or full parked/waiting robot collision analysis.')+
             ' Graph widths remain access restrictions; physical openings must be modelled as obstacles.'+
             (' Configured motion profiles include acceleration/braking and pivot angular dynamics; circular line/arc joins do not yet enforce finite steering angular acceleration.'

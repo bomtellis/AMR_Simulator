@@ -35,9 +35,9 @@ def _same_pose(a, b):
 def retime_trajectory(trajectory, settings):
     """Return a Trajectory with profile-backed durations on the same geometry.
 
-    The currently supported geometry consists of forward lines, tangent arcs
-    and explicit stationary pivots. This does not create reversing or lateral
-    paths. Input poses/clearance remain authoritative and are never replaced.
+    Forward/reverse tangent lines/arcs and fixed-heading lateral lines retain
+    their geometry. Direction changes and pivots stop translation. This does
+    not search for paths. Input poses/clearance are never replaced.
     """
     if not isinstance(trajectory, Trajectory) or not trajectory.motions:
         raise MotionProfileError('Provide a nonempty geometric Trajectory.')
@@ -55,6 +55,12 @@ def retime_trajectory(trajectory, settings):
             raise MotionProfileError('Adjacent motions do not share a continuous pose.', 'infeasible_motion')
         if motion.kind not in ('line', 'arc', 'pivot'):
             raise MotionProfileError(f'Unsupported motion kind {motion.kind!r}.')
+        if (motion.movement not in ('forward', 'reverse', 'lateral')
+                or (motion.kind == 'pivot' and motion.movement != 'forward')
+                or (motion.kind == 'arc' and motion.movement == 'lateral')):
+            raise MotionProfileError('Unsupported movement type for this primitive.')
+        if motion.movement == 'lateral' and not settings.lateral_allowed:
+            raise MotionProfileError('This robot does not permit lateral movement.', 'infeasible_motion')
         if motion.kind == 'pivot':
             if motion.length_m != 0 or motion.sweep_rad == 0 or not settings.pivot_allowed:
                 raise MotionProfileError('Pivot requires permission, zero length and a nonzero sweep.', 'infeasible_motion')
@@ -66,6 +72,14 @@ def retime_trajectory(trajectory, settings):
             raise MotionProfileError('An arc requires positive reference radius and nonzero sweep.')
 
     output = []
+
+    def direction_key(m):
+        if m.movement == 'lateral':
+            side = ((m.end.y - m.start.y) * math.cos(m.start.heading)
+                    - (m.end.x - m.start.x) * math.sin(m.start.heading))
+            return (m.movement, 1 if side > 0 else -1)
+        return (m.movement, 0)
+
     i = 0
     while i < len(motions):
         motion = motions[i]
@@ -75,13 +89,17 @@ def retime_trajectory(trajectory, settings):
             i += 1
             continue
         end = i
-        while end < len(motions) and motions[end].kind != 'pivot':
+        while (end < len(motions) and motions[end].kind != 'pivot'
+               and direction_key(motions[end]) == direction_key(motion)):
             end += 1
         chain = motions[i:end]
-        caps = [min(settings.forward_speed_m_per_sec,
+        speed = {'forward': settings.forward_speed_m_per_sec,
+                 'reverse': settings.reverse_speed_m_per_sec,
+                 'lateral': settings.lateral_speed_m_per_sec}[motion.movement]
+        caps = [min(speed,
                     turn_speed_limit(settings.maximum_turn_speed_m_per_sec,
                                      settings.lateral_acceleration_m_per_sec2, m.radius_m))
-                if m.kind == 'arc' else settings.forward_speed_m_per_sec for m in chain]
+                if m.kind == 'arc' else speed for m in chain]
         speeds = [0.0] + [min(a, b) for a, b in zip(caps, caps[1:])] + [0.0]
         for j, m in enumerate(chain):
             speeds[j + 1] = min(speeds[j + 1], _reachable(speeds[j], settings.acceleration_m_per_sec2, m.length_m))

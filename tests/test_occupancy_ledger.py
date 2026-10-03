@@ -31,6 +31,18 @@ def instantaneous(owner, x, time, *, length=1, gap=0, floor=0):
     return row
 
 
+def path_plan(owner, points, start):
+    path = plan_trajectory(points, minimum_radius_m=.5, speed_m_per_sec=1,
+                          pivot_allowed=True, pivot_speed_deg_per_sec=45, start_heading_deg=0)
+    cells = [{**cell, 'owner': owner, 'floor': 0,
+              'start': start+cell['start'], 'end': start+cell['end'], 'occupancy_kind': 'moving'}
+             for cell in swept_cells(path, length_m=1, width_m=1, clearance_m=0)]
+    pose = path.motions[-1].end
+    tail = stationary_claim(pose, start=start+path.duration_sec, end=math.inf,
+                            owner=owner, length_m=1, width_m=1)
+    return cells+[{**tail, 'floor': 0}]
+
+
 def initialise(ledger, owner, x, *, floor=0, gap=0, start=0, y=0):
     result = ledger.initialise(owner=owner, floor=floor, pose=Pose(x, y, 0), start=start,
                                length_m=1, width_m=1, robot_clearance_m=gap)
@@ -308,6 +320,109 @@ class OccupancyLedgerTests(unittest.TestCase):
             row = {**instantaneous('A', 0, 0), **update}
             with self.subTest(update=update), self.assertRaises(TrajectoryError):
                 ledger.replace_plan('A', 0, [row, stationary('A', 0, 0)])
+
+    def test_atomic_disjoint_exchange_succeeds_although_each_single_plan_is_blocked(self):
+        ledger = initialise(OccupancyLedger(), 'A', 0)
+        ledger = initialise(ledger, 'B', 6)
+        # One uses the upper route, the other the lower route. Both vacate their
+        # former parked tails, which must not survive as phantom blockers.
+        a = path_plan('A', [(0, 0), (0, 3), (6, 3), (6, 0)], 2)
+        b = path_plan('B', [(6, 0), (6, -3), (0, -3), (0, 0)], 2)
+        self.assertFalse(ledger.replace_plan('A', 2, a).accepted)
+        self.assertFalse(ledger.replace_plan('B', 2, b).accepted)
+        plans = {'A': (2, a), 'B': (2, b)}
+        original = copy.deepcopy(plans)
+        result = ledger.replace_plans(plans)
+        self.assertTrue(result.accepted)
+        self.assertEqual(original, plans)
+        self.assertEqual(2, len(ledger.rows()))  # original remains a rollback snapshot
+        history = [r for r in result.ledger.rows() if r['end'] == 2]
+        self.assertEqual({'A', 'B'}, {r['owner'] for r in history})
+        self.assertTrue(all(r['start'] == 0 and r['occupancy_kind'] == 'stationary' for r in history))
+        self.assertEqual(result.ledger.rows(), ledger.replace_plans({'B': (2, b), 'A': (2, a)}).ledger.rows())
+
+    def test_joint_crossing_conflict_rejects_whole_batch_without_erasing_tails(self):
+        ledger = initialise(OccupancyLedger(), 'A', 0)
+        ledger = initialise(ledger, 'B', 6)
+        a = moving('A', 0, 6, 0)+[stationary('A', 6, 6)]
+        b = moving('B', 6, 0, 0)+[stationary('B', 0, 6)]
+        before = ledger.rows()
+        result = ledger.replace_plans({'A': (0, a), 'B': (0, b)})
+        self.assertFalse(result.accepted)
+        self.assertIs(ledger, result.ledger)
+        self.assertEqual(before, ledger.rows())
+        self.assertEqual({'A', 'B'}, {c.owner for c in result.conflicts})
+        self.assertTrue(all(c.proposed_kind == c.blocking_kind == 'moving' for c in result.conflicts))
+        self.assertEqual((), result.permanent_blockers)
+
+    def test_joint_replacement_keeps_other_owner_history_until_its_later_departure(self):
+        ledger = initialise(OccupancyLedger(), 'A', 0)
+        ledger = initialise(ledger, 'B', 6)
+        # A tries to reach B before B departs. Replacing B's future at 10 must
+        # leave [0,10) occupied, even though both owners occur in this batch.
+        a = moving('A', 0, 6, 0)+[stationary('A', 6, 6)]
+        b = path_plan('B', [(6, 0), (6, -3), (0, -3), (0, 0)], 10)
+        result = ledger.replace_plans({'A': (0, a), 'B': (10, b)})
+        self.assertFalse(result.accepted)
+        retained = [c for c in result.conflicts if c.owner == 'A' and c.blocking_kind == 'stationary'
+                    and c.blocking_release == 10]
+        self.assertTrue(retained)
+        self.assertIs(ledger, result.ledger)
+
+    def test_joint_plan_checks_unchanged_third_robot_and_preserves_its_snapshot(self):
+        ledger = initialise(OccupancyLedger(), 'A', 0)
+        ledger = initialise(ledger, 'B', 6)
+        ledger = initialise(ledger, 'C', 3, y=3)
+        plans = {'A': (0, path_plan('A', [(0, 0), (0, 3), (6, 3), (6, 0)], 0)),
+                 'B': (0, path_plan('B', [(6, 0), (6, -3), (0, -3), (0, 0)], 0))}
+        result = ledger.replace_plans(plans)
+        self.assertFalse(result.accepted)
+        self.assertEqual(('C',), result.permanent_blockers)
+        self.assertIs(ledger, result.ledger)
+        self.assertEqual(3, len(ledger.rows()))
+
+    def test_joint_instantaneous_loads_and_larger_pair_gap_are_checked(self):
+        ledger = initialise(OccupancyLedger(), 'A', 0)
+        ledger = initialise(ledger, 'B', 4)
+        a = [instantaneous('A', 0, 5, length=4, gap=.2), stationary('A', 0, 5)]
+        # B's loaded left edge=2.1: gap .1 to A's loaded right edge=2.
+        b = [instantaneous('B', 4, 5, length=3.8, gap=.05), stationary('B', 4, 5)]
+        result = ledger.replace_plans({'A': (5, a), 'B': (5, b)})
+        self.assertFalse(result.accepted)
+        self.assertEqual(2, len(result.conflicts))
+        self.assertTrue(all(c.start == c.end == 5 and c.proposed_kind == c.blocking_kind == 'instantaneous'
+                            for c in result.conflicts))
+        b[0] = instantaneous('B', 4, 5, length=3.6, gap=.05)  # exact required gap=.2
+        self.assertTrue(ledger.replace_plans({'A': (5, a), 'B': (5, b)}).accepted)
+
+    def test_joint_invalid_second_plan_does_not_partially_accept_first(self):
+        ledger = initialise(OccupancyLedger(), 'A', 0)
+        ledger = initialise(ledger, 'B', 6)
+        original = ledger.rows()
+        for bad in ({}, [], {'A': None}, {'A': (0, [])}, {None: (0, [])},
+                    {'A': (0, [stationary('A', 0, 0)]), 'Unknown': (0, [stationary('Unknown', 9, 0)])},
+                    {'A': (0, [stationary('A', 0, 0)]), 'B': (0, [stationary('B', 6, 1)])}):
+            with self.subTest(plans=bad), self.assertRaises(TrajectoryError) as error:
+                ledger.replace_plans(bad)
+            self.assertEqual('invalid_input', error.exception.reason)
+            self.assertEqual(original, ledger.rows())
+
+    def test_joint_cannot_cut_existing_moving_cell_and_search_budget_is_atomic(self):
+        ledger = initialise(OccupancyLedger(), 'A', 0)
+        ledger = initialise(ledger, 'B', 6)
+        ledger = ledger.replace_plan('A', 0, moving('A', 0, 2, 0)+[stationary('A', 2, 2)]).ledger
+        original = ledger.rows()
+        with self.assertRaises(TrajectoryError) as error:
+            ledger.replace_plans({'A': (.1, [stationary('A', .1, .1)]),
+                                  'B': (0, [stationary('B', 6, 0)])})
+        self.assertEqual('invalid_input', error.exception.reason)
+        self.assertEqual(original, ledger.rows())
+        plans = {'A': (2, [stationary('A', 2, 2, 3), stationary('A', 2, 3)]),
+                 'B': (2, [stationary('B', 6, 2, 3), stationary('B', 6, 3)])}
+        with self.assertRaises(TrajectoryError) as error:
+            ledger.replace_plans(plans, max_pair_checks=1)
+        self.assertEqual('search_limit', error.exception.reason)
+        self.assertEqual(original, ledger.rows())
 
 
 if __name__ == '__main__':

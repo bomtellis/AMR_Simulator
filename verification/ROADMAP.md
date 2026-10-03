@@ -743,8 +743,12 @@ implemented; see [the checkpoint](GEOMETRY_WORKBENCH_REVIEW.md). Subsequent comm
 opt-in keep-right moving-traffic model. The subsequent core checkpoints add
 separate clearances, motion dynamics, urgency and complete committed moving/
 stationary occupancy with validated initial placements. These do not complete
-detailed traffic: yielding, joint admission, the remaining Q&A manoeuvres and
-deadlock stop/partial-run handling remain open. The full application guide is
+detailed traffic. Verified taskless yielding now supports parked empty blockers,
+reverse and permitted lateral graph paths, nearest fitting graph anchors in drawn
+passing places, and ordinary safe graph anchors when places are absent. Shared
+joint-plan occupancy validation is implemented, but runtime coordinated admission,
+moving/loaded yielding, multi-point manoeuvres, reference offsets and deadlock
+stop/partial-run handling remain open. The full application guide is
 also unfinished.
 Continue with:
 
