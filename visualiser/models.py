@@ -1114,7 +1114,7 @@ class JsonStore:
 
         for dept in self.data.get("departments", []):
             name = str(dept.get("name", "")).strip()
-            if not name:
+            if not name or name in result:
                 continue
             try:
                 floor = int(dept.get("floor", 0))
@@ -1396,6 +1396,7 @@ class JsonStore:
         ]
 
     def set_point_position(self, name: str, x: float, y: float) -> None:
+        original_x, original_y = x, y
         x = round(x, 3)
         y = round(y, 3)
         for item in self.data.get("locations", []):
@@ -1410,8 +1411,11 @@ class JsonStore:
                 return
         for item in self.data.get("departments", []):
             if str(item.get("name", "")) == name:
-                item["x"] = x
-                item["y"] = y
+                from amr_department_inputs import validate_department_inputs
+                proposed = dict(item, x=original_x, y=original_y)
+                validate_department_inputs({'departments': [proposed]})
+                item["x"] = float(original_x)
+                item["y"] = float(original_y)
                 return
 
         if "-F" in name:
@@ -1763,8 +1767,9 @@ class JsonStore:
         next_num = (max(nums) + 1) if nums else 1
         return f"D{next_num}"
 
-    def upsert_department(self, payload: dict) -> None:
+    def upsert_department(self, payload: dict, *, previous_id=None) -> None:
         from amr_generation_inputs import validate_generation_inputs
+        from amr_department_inputs import department_identity
         validate_generation_inputs({'departments': [payload]})
         payload = dict(payload or {})
         payload.setdefault("operating_start_time", "00:00")
@@ -1772,24 +1777,34 @@ class JsonStore:
             calculated_operating_hours_per_day(payload)
         payload["hours_operated_per_day"] = calculated_operating_hours_per_day(payload)
         payload.setdefault("days_active", ["mon", "tue", "wed", "thu", "fri"])
-        items = self.data.setdefault("departments", [])
-        dept_id = str(payload.get("id", "")).strip()
+        items = deepcopy(self.data.get("departments", []))
+        dept_id = department_identity(payload)
+        original = previous_id if previous_id is not None else dept_id
         existing = next(
-            (x for x in items if str(x.get("id", "")).strip() == dept_id),
+            (x for x in items if department_identity(x) == original),
             None,
         )
+        if previous_id is not None and existing is None:
+            raise ValueError('The original department no longer exists; reopen the editor.')
         if existing is None:
             items.append(payload)
         else:
             existing.clear()
             existing.update(payload)
+        changes = {original: dept_id} if previous_id is not None and original != dept_id else {}
+        self.replace_departments(items, id_changes=changes)
+
+    def replace_departments(self, items, *, id_changes=None):
+        from amr_department_inputs import replace_departments
+        self.data = replace_departments(self.data, items, id_changes)
 
     def delete_department(self, dept_id: str) -> None:
-        self.data["departments"] = [
+        from amr_department_inputs import department_identity
+        self.replace_departments([
             x
             for x in self.data.get("departments", [])
-            if str(x.get("id", "")).strip() != str(dept_id).strip()
-        ]
+            if department_identity(x) != str(dept_id).strip()
+        ])
 
     def upsert_waste_stream(self, payload: dict) -> None:
         items = self.data.setdefault("waste_streams", [])

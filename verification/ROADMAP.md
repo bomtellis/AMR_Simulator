@@ -326,6 +326,15 @@ nonfinite demographic inputs and overflowing combined waste rates. Twelve tests
 cover independent intervals, waste arithmetic, atomic rejection and dialog
 preservation. Identity/reference/floor/coordinate and complete editing remain open.
 
+**Slice 2AJ:** [Department identity and reference editing](DEPARTMENT_IDENTITY_REVIEW.md)
+replaces edited identities atomically while retaining group/override/static-task
+references and one-task demand. List cancellation preserves nested project data,
+successive renames track the original ID and canvas rename supports undo/redo.
+Fifteen tests cover malformed/duplicate identities, coordinate precision, name
+fallback, incomplete drafts, protected deletion and graph-label collisions.
+Category-location aliases, modal staleness and separate placement transactions
+remain open alongside broader workspace and report coverage.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -575,8 +584,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AI's department schedule changes. Continue department identity,
-reference, floor/coordinate and editing contracts, then remaining workspace gates.
+Review slice 2AJ's department identity changes. Continue department category-location
+references/aliases and generated-location editing transactions, then remaining workspace gates.
 Retain full report event-coverage/stock reconciliation,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with

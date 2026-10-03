@@ -668,7 +668,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         return merged
 
     def _department_id(self, dept: dict) -> str:
-        return _clean_text(dept.get("id")) or _clean_text(dept.get("name"))
+        from amr_department_inputs import department_identity
+        return department_identity(dept)
 
     def _department_name(self, dept: dict) -> str:
         return _clean_text(dept.get("name")) or self._department_id(dept)
@@ -2679,7 +2680,8 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
         self.runtime = {}
 
         for dept in self.departments:
-            dept_id = str(dept.get("id", "")).strip()
+            from amr_department_inputs import department_identity
+            dept_id = department_identity(dept)
             if not dept_id:
                 continue
 
@@ -2745,7 +2747,8 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
         release_time: float,
         waste_volume_m3: float,
     ) -> Optional[GeneratedTaskRecord]:
-        dept_id = str(dept.get("id", "")).strip()
+        from amr_department_inputs import department_identity
+        dept_id = department_identity(dept)
         dept_name = str(dept.get("name", dept_id)).strip()
         stream_cfg = dict(self.waste_streams.get(stream_name, {}))
         waste_cfg = dict(dept.get("waste", {}) or {})
@@ -2834,7 +2837,8 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
         generated: List[GeneratedTaskRecord] = []
 
         for dept in self.departments:
-            dept_id = str(dept.get("id", "")).strip()
+            from amr_department_inputs import department_identity
+            dept_id = department_identity(dept)
             if not dept_id:
                 continue
 
@@ -2946,6 +2950,8 @@ class TaskGenerationManager:
         self.generators: List[BaseTaskGenerator] = []
         from amr_generation_inputs import validate_generation_inputs
         validate_generation_inputs(config)
+        from amr_department_inputs import validate_department_inputs
+        validate_department_inputs(config, require_identity=True)
         self._build_generators(prepare_runtime=prepare_runtime)
         conflicts = shared_container_conflicts(
             instance for generator in self.generators

@@ -300,6 +300,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         by_collection[section] = seen
         for i, row in enumerate(rows):
             name = row.get(field_name, row.get('name') if section == 'departments' else None)
+            if section == 'departments':
+                from amr_department_inputs import department_identity
+                name = department_identity(row)
             path = f"/{section}/{i}/{field_name}"
             if not isinstance(name, str) or not name.strip():
                 error(path, f"A non-empty {field_name} is required.", section, code="IDENTIFIER")
@@ -615,7 +618,19 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     completed_groups.add('drawings')
     from amr_payload_inputs import inventory_space_dimensions
     from amr_inventory_inputs import inventory_space_is_amr
+    from amr_department_inputs import department_reference_findings
+    for path, identity in department_reference_findings(config):
+        add('DEPARTMENT_REFERENCE', 'warning', path, identity,
+            f'No department matches {identity!r}; this assignment generates no department work.',
+            'Other valid assignments may still generate tasks. This can be an intentional future rule.',
+            'Choose an existing department identity, remove the assignment, or acknowledge the incomplete scenario.', 'task_generation')
+    graph_names = {row['name'] for row in config.get('locations', [])}
+    graph_names.update(row['name'] for row in config.get('corridors', {}).get('nodes', []))
+    for lift in config.get('lifts', []):
+        graph_names.update(f"{lift['id']}-F{floor}" for floor in lift.get('floor_locations', {}))
     for index, department in enumerate(config.get('departments', [])):
+        if department.get('name') in graph_names:
+            error(f'/departments/{index}/name', 'Department name conflicts with a graph point; rename the department before running. The graph point remains visible in the editor.', 'departments', code='DEPARTMENT_NAME_COLLISION')
         if any(float(department.get(key, 0)) for key in ('bed_count', 'staff_count', 'patient_turnover')):
             add('DEPARTMENT_DEMAND_SCOPE', 'info', f'/departments/{index}', department.get('name', department.get('id', '')),
                 'Bed, staff and turnover values feed the legacy department-waste coefficient formula.',

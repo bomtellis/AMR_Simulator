@@ -3,6 +3,7 @@ AMR Simulator app
 """
 
 import json
+from copy import deepcopy
 import math
 import sys
 import tempfile
@@ -2430,10 +2431,8 @@ class AMRGraphEditor(QMainWindow):
                     self, "Duplicate name", "Department name already exists"
                 )
                 return
-            created_locations = self.create_department_generated_locations(
-                dialog.result
-            )
-            self.store.upsert_department(dialog.result)
+            if not self._commit_department_edit(dialog.result):
+                return
             self.set_status(f"Added department {dialog.result['name']}")
             self.refresh_canvas()
 
@@ -2463,10 +2462,8 @@ class AMRGraphEditor(QMainWindow):
                     self, "Duplicate name", "Department name already exists"
                 )
                 return
-            created_locations = self.create_department_generated_locations(
-                dialog.result
-            )
-            self.store.upsert_department(dialog.result)
+            if not self._commit_department_edit(dialog.result):
+                return
             self.selected_point_name = dept_name
             self.set_status(f"Added department {dept_name}")
             self.refresh_canvas()
@@ -2526,16 +2523,35 @@ class AMRGraphEditor(QMainWindow):
             old_name = str(dept.get("name", "")).strip()
             new_name = str(dialog.result.get("name", "")).strip()
 
-            created_locations = self.create_department_generated_locations(
-                dialog.result
-            )
-            self.store.upsert_department(dialog.result)
-
-            if old_name and new_name and old_name != new_name:
-                self.store.rename_point(old_name, new_name)
+            from amr_department_inputs import department_identity
+            if not self._commit_department_edit(dialog.result, previous_id=department_identity(dept)):
+                return
+            self.selected_point_name = new_name
 
             self.set_status(f"Edited department {new_name}")
             self.refresh_canvas()
+
+    def _commit_department_edit(self, result, *, previous_id=None):
+        from amr_department_inputs import department_identity
+        before = deepcopy(self.store.data)
+        proposed = deepcopy(result)
+        try:
+            if previous_id is None and any(department_identity(row) == department_identity(proposed)
+                    for row in before.get('departments', [])):
+                raise ValueError('Department ID already exists.')
+            occupied_names = {p['name'] for p in before.get('locations', [])}
+            occupied_names.update(p['name'] for p in before.get('corridors', {}).get('nodes', []))
+            for lift in before.get('lifts', []):
+                occupied_names.update(f"{lift['id']}-F{floor}" for floor in lift.get('floor_locations', {}))
+            if proposed.get('name') in occupied_names:
+                raise ValueError('Department name conflicts with a graph location or corridor node.')
+            self.create_department_generated_locations(proposed)
+            self.store.upsert_department(proposed, previous_id=previous_id)
+        except ValueError as exc:
+            self.store.data = before
+            QMessageBox.critical(self, 'Invalid department', str(exc))
+            return False
+        return True
 
     @undoable("Edit layout")
     def on_left_click(self, event, sx, sy):
@@ -3094,7 +3110,12 @@ class AMRGraphEditor(QMainWindow):
                         None,
                     )
                     if dept:
-                        self.store.delete_department(dept.get("id", ""))
+                        from amr_department_inputs import department_identity
+                        try:
+                            self.store.delete_department(department_identity(dept))
+                        except ValueError as exc:
+                            QMessageBox.critical(self, 'Department is in use', str(exc))
+                            return
                         self.set_status(f"Deleted department {picked}")
                         self.refresh_canvas()
                 return
@@ -4280,8 +4301,8 @@ class AMRGraphEditor(QMainWindow):
         dialog.exec()
 
     @undoable("Edit department locations")
-    def _save_departments(self, items):
-        self.store.data["departments"] = items
+    def _save_departments(self, items, *, id_changes=None):
+        self.store.replace_departments(items, id_changes=id_changes)
         self.set_status("Departments updated")
         self.refresh_canvas()
 

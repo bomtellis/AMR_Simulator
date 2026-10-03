@@ -12374,7 +12374,10 @@ class DepartmentListDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Departments")
         self.resize(1080, 560)
-        self.items = [dict(x) for x in items]
+        self.items = deepcopy(items)
+        self.department_id_changes = {}
+        from amr_department_inputs import department_identity
+        self.original_department_ids = {department_identity(row) for row in items}
         self.location_names = sorted(location_names)
         self.waste_stream_names = sorted(waste_stream_names)
         self.current_floor = int(current_floor)
@@ -13561,7 +13564,15 @@ class DepartmentListDialog(QDialog):
                     )
                     return
 
+            from amr_department_inputs import department_identity
+            old_id = department_identity(self.items[row])
+            original_id = next((original for original, current in self.department_id_changes.items()
+                                if current == old_id), old_id)
             self.items[row] = self._commit_department_editor_result(dialog.result)
+            if original_id != new_id and original_id in self.original_department_ids:
+                self.department_id_changes[original_id] = new_id
+            else:
+                self.department_id_changes.pop(original_id, None)
             self._refresh_table()
 
     def delete_item(self):
@@ -13586,8 +13597,18 @@ class DepartmentListDialog(QDialog):
         self._refresh_table()
 
     def save_items(self):
-        self.items = self._clean_department_items_for_save()
-        self.on_save(self.items)
+        try:
+            self.items = self._clean_department_items_for_save()
+            from amr_department_inputs import department_identity
+            present = {department_identity(row) for row in self.items}
+            changes = {old: new for old, new in self.department_id_changes.items() if new in present}
+            if changes:
+                self.on_save(self.items, id_changes=changes)
+            else:
+                self.on_save(self.items)
+        except ValueError as exc:
+            QMessageBox.critical(self, 'Invalid departments', str(exc))
+            return
         self.accept()
 
 

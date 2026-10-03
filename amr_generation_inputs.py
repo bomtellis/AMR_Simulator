@@ -71,6 +71,8 @@ def generation_input_findings(config):
     findings = []
     if not isinstance(config, dict):
         return findings
+    from amr_department_inputs import department_input_findings
+    findings.extend(('error', path, message) for path, message in department_input_findings(config))
 
     def pointer(path, key):
         return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
@@ -171,6 +173,13 @@ def generation_input_findings(config):
                 for index, group in enumerate(groups):
                     group_path = pointer(groups_path, index)
                     group = obj(group, group_path)
+                    if group is not None and 'departments' in group:
+                        members = group['departments']
+                        if (not isinstance(members, list) or any(not isinstance(member, str) or not member
+                                or member != member.strip() for member in members)):
+                            error(pointer(group_path, 'departments'), 'Group departments must be a list of nonblank department identities.')
+                        elif len(set(members)) != len(members):
+                            error(pointer(group_path, 'departments'), 'A department may occur only once within a group; separate groups can represent separate services.')
                     if group is not None and 'payload' in group:
                         rule(group['payload'], pointer(group_path, 'payload'))
 

@@ -145,6 +145,8 @@ class Simulation:
         validate_location_inputs(config, require_complete=True)
         validate_charge_inputs(config, check_references=True)
         validate_generation_inputs(config)
+        from amr_department_inputs import validate_department_inputs
+        validate_department_inputs(config, require_identity=True)
         self.location_reservations = defaultdict(list)
         self.config = config
         self.run_id = uuid.uuid4().hex

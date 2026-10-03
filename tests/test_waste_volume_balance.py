@@ -112,7 +112,7 @@ class WasteVolumeBalanceTests(unittest.TestCase):
         config['task_generation']['categories']['waste']['base_daily_volume_m3'] = 7.2
         config['waste_streams'][0].update(container_capacity_m3=1, full_threshold_fraction=0.5)
         config['departments'][0]['waste_streams'][0]['shared_container_group'] = 'BIN'
-        other = copy.deepcopy(config['departments'][0]); other['id'] = 'E'
+        other = copy.deepcopy(config['departments'][0]); other.update(id='E', name='Other department')
         config['departments'].append(other)
         config['task_generation']['categories']['waste']['department_groups'][0]['departments'].append('E')
         manager = Simulation(config).task_generation_manager
