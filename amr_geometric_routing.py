@@ -7,6 +7,7 @@ import math
 from copy import deepcopy
 from amr_trajectories import Motion, Pose, Trajectory, TrajectoryError, plan_trajectory, check_clearance
 from amr_sim_payload_instances import is_empty_payload_name
+from amr_geometric_traffic import TRAFFIC_MODEL, traffic_enabled, lane_trajectory
 
 MODEL = 'geometric_v1'
 PARAMETERS = ('minimum_radius_m','pivot_speed_deg_per_sec','clearance_m','initial_heading_deg')
@@ -52,6 +53,8 @@ def geometry_input_findings(config):
     if not isinstance(geometry,dict) or geometry.get('schema_version') != 1:
         error('/geometry/schema_version','Geometric mode needs an explicit version 1 physical-space model.')
         return findings
+    if geometry.get('traffic_model','whole_route_v1') not in ('whole_route_v1',TRAFFIC_MODEL):
+        error('/geometry/traffic_model','Select whole_route_v1 or keep_right_v1 explicitly.')
     floors = geometry.get('floors')
     if not isinstance(floors,list) or not floors:
         error('/geometry/floors','Provide at least one modelled floor with bounds and obstacles.')
@@ -110,6 +113,8 @@ def geometry_input_findings(config):
             if row.get('inventory_spaces'):
                 error(f'/{section}/{index}/inventory_spaces','Geometric bay entry/exit is not integrated yet; remove bays for this mode or retain legacy mode.')
     for index, edge in enumerate(config.get('corridors',{}).get('edges',[])):
+        if isinstance(edge,dict) and edge.get('traffic_mode','keep_right') not in ('keep_right','single_file'):
+            error(f'/corridors/edges/{index}/traffic_mode','Use keep_right or single_file.')
         if not isinstance(edge,dict) or 'distance_m' not in edge:
             continue
         a,b = points.get(edge.get('from'),{}),points.get(edge.get('to'),{})
@@ -153,6 +158,10 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
     if payload is not None and not is_empty_payload_name(payload.name):
         pl,pw,_ = sim._payload_orientation_dimensions(payload,orientation)
         length,width = max(length,pl),max(width,pw)
+    lane_sections = []
+    if not static and traffic_enabled(sim.config):
+        trajectory,lane_sections = lane_trajectory(trajectory,points,route['edges'],
+            loaded_width_m=width,clearance_m=parameters['clearance_m'],speed_m_per_sec=amr.speed_m_per_sec)
     floor = next(row for row in sim.config['geometry']['floors'] if row['floor']==start.floor)
     a,b,c,d = floor['bounds']
     walls = [(-1e9,-1e9,a,1e9),(c,-1e9,1e9,1e9),(a,-1e9,c,b),(a,d,c,1e9)]
@@ -171,7 +180,7 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
         else:
             xs.extend([motion.start.x,motion.end.x]);ys.extend([motion.start.y,motion.end.y])
     envelope = (min(xs)-pad,min(ys)-pad,max(xs)+pad,max(ys)+pad)
-    return None if static else trajectory, envelope, result, (length,width), names
+    return None if static else trajectory, envelope, result, (length,width), names,lane_sections
 
 
 def envelopes_overlap(a,b):

@@ -32,6 +32,7 @@ from amr_simulation_inputs import (validate_simulation_inputs, resolved_simulati
 from amr_geometric_routing import (validate_geometry_inputs, geometry_enabled,
                                    route_trajectory, first_route_slot)
 from amr_trajectories import TrajectoryError
+from amr_geometric_traffic import traffic_enabled, swept_cells, first_traffic_slot
 from amr_staff_policy import resolve_staff_requirement
 
 from amr_sim_energy import (
@@ -157,6 +158,7 @@ class Simulation:
         self.location_reservations = defaultdict(list)
         self.config = config
         self.geometric_motion = geometry_enabled(config)
+        self.geometric_traffic = self.geometric_motion and traffic_enabled(config)
         self.geometric_route_reservations = defaultdict(list)
         self.run_id = uuid.uuid4().hex
         self._evidence_inputs = json.loads(json.dumps(config))
@@ -167,6 +169,8 @@ class Simulation:
                                              'tracked_stock_delivery_v1']
         if self.geometric_motion:
             self._evidence_event_capabilities.append('geometric_trajectories_v1')
+        if self.geometric_traffic:
+            self._evidence_event_capabilities.append('geometric_traffic_v1')
         self._evidence_run_status = 'incomplete'
         self._evidence_sequence = 0
         self._evidence_journey_sequence = 0
@@ -7018,6 +7022,7 @@ class Simulation:
             width_m: Optional[float] = None,
             people_area_type: str = "none",
             people_profile_ids: Optional[List[str]] = None,
+            traffic_mode: Optional[str] = None,
         ):
             a = self.graph_nodes[a_name]
             b = self.graph_nodes[b_name]
@@ -7046,6 +7051,8 @@ class Simulation:
                 "people_profile_ids": profile_ids,
             }
             self.floor_graphs[a.floor][a_name].append(edge_data)
+            if traffic_mode is not None:
+                edge_data['traffic_mode'] = traffic_mode
             reverse_data = dict(edge_data)
             reverse_data["to"] = a_name
             self.floor_reverse_graphs[a.floor][b_name].append(reverse_data)
@@ -7058,6 +7065,7 @@ class Simulation:
             width_m: Optional[float] = None,
             people_area_type: str = "none",
             people_profile_ids: Optional[List[str]] = None,
+            traffic_mode: Optional[str] = None,
         ):
             if a_name not in self.graph_nodes or b_name not in self.graph_nodes:
                 raise ValueError(
@@ -7082,6 +7090,7 @@ class Simulation:
                 width_m=width_m,
                 people_area_type=people_area_type,
                 people_profile_ids=people_profile_ids,
+                traffic_mode=traffic_mode,
             )
             if bidirectional:
                 add_directed_edge(
@@ -7092,6 +7101,7 @@ class Simulation:
                     width_m=width_m,
                     people_area_type=people_area_type,
                     people_profile_ids=people_profile_ids,
+                    traffic_mode=traffic_mode,
                 )
 
         for edge in corridor_cfg.get("edges", []):
@@ -7103,6 +7113,7 @@ class Simulation:
                 edge.get("width_m", self.default_corridor_width_m),
                 edge.get("people_area_type", "none"),
                 edge.get("people_profile_ids", []),
+                edge.get('traffic_mode'),
             )
 
         # Optional: connect locations/lifts to nearby graph nodes when explicit edges are not supplied
@@ -8783,9 +8794,14 @@ class Simulation:
                 transaction = getattr(self, '_route_reservation_transaction', None)
                 if transaction is not None:
                     transaction.remember_mapping(self.geometric_route_reservations, floor)
-                self.geometric_route_reservations[floor].append({
-                    'start': t, 'end': t + duration, 'owner': amr.id,
-                    'envelope': tuple(segment['reservation_envelope'])})
+                if segment.get('reservation_policy') == 'swept_time_v1':
+                    self.geometric_route_reservations[floor].extend({
+                        **cell,'start':t+cell['start'],'end':t+cell['end'],'owner':amr.id}
+                        for cell in segment['traffic_cells'])
+                else:
+                    self.geometric_route_reservations[floor].append({
+                        'start': t, 'end': t + duration, 'owner': amr.id,
+                        'envelope': tuple(segment['reservation_envelope'])})
                 self._invalidate_route_estimate_cache()
             elif seg_type == "corridor":
                 self._reserve_edge(
@@ -8872,13 +8888,20 @@ class Simulation:
             return None
         if self.geometric_motion:
             try:
-                trajectory, envelope, clearance, dimensions, names = route_trajectory(
+                trajectory, envelope, clearance, dimensions, names, lane_sections = route_trajectory(
                     self, amr, route, start, end, payload, orientation, start_heading_deg)
                 if trajectory is None:
                     return [], 0.0, 0.0
                 requested = self.current_time if start_time_value is None else start_time_value
-                ready = first_route_slot(self.geometric_route_reservations.get(start.floor, []),
-                    envelope, requested, trajectory.duration_sec, amr.id, self.node_clearance_time_sec)
+                cells,blockers = [],[]
+                if self.geometric_traffic:
+                    cells = swept_cells(trajectory,length_m=dimensions[0],width_m=dimensions[1],
+                                        clearance_m=amr.manoeuvring['clearance_m'])
+                    ready,blockers = first_traffic_slot(self.geometric_route_reservations.get(start.floor,[]),
+                        cells,requested,amr.id,self.node_clearance_time_sec)
+                else:
+                    ready = first_route_slot(self.geometric_route_reservations.get(start.floor, []),
+                        envelope, requested, trajectory.duration_sec, amr.id, self.node_clearance_time_sec)
             except TrajectoryError as exc:
                 raise LocalManoeuvreError(exc.reason, str(exc)) from exc
             wait = ready - requested
@@ -8888,7 +8911,9 @@ class Simulation:
                     segments.append({'type': 'wait_for_geometry', 'from': start.name, 'to': start.name,
                         'duration': wait, 'distance_m': 0.0, 'from_x': start.x, 'from_y': start.y,
                         'to_x': start.x, 'to_y': start.y, 'from_floor': start.floor, 'to_floor': start.floor,
-                        'reason': 'Overlapping moving-route envelope reservation'})
+                        'traffic_blockers':blockers,
+                        'reason': ('Swept traffic conflict with '+', '.join(blockers)) if self.geometric_traffic
+                                  else 'Overlapping moving-route envelope reservation'})
                 segments.append({'type': 'corridor', 'motion_model': 'geometric_v1',
                     'from': start.name, 'to': end.name, 'from_x': start.x, 'from_y': start.y,
                     'to_x': end.x, 'to_y': end.y, 'from_floor': start.floor, 'to_floor': end.floor,
@@ -8896,7 +8921,8 @@ class Simulation:
                     'trajectory': trajectory.to_dict(), 'clearance_result': clearance,
                     'loaded_length_m': dimensions[0], 'loaded_width_m': dimensions[1],
                     'route_nodes': names, 'reservation_envelope': envelope,
-                    'reservation_policy': 'whole_route_envelope', 'payload_orientation': orientation,
+                    'reservation_policy': 'swept_time_v1' if self.geometric_traffic else 'whole_route_envelope',
+                    'traffic_cells':cells,'lane_sections':lane_sections,'payload_orientation': orientation,
                     'amr_rotation_start_deg': math.degrees(trajectory.motions[0].start.heading),
                     'amr_rotation_end_deg': math.degrees(trajectory.motions[-1].end.heading)})
             return segments, wait + trajectory.duration_sec, trajectory.length_m
@@ -13491,7 +13517,7 @@ class Simulation:
             "task_release_time_sec",
             "task_target_time_sec",
             "details",
-            "motion_model", "trajectory_json",
+            "motion_model", "trajectory_json", "traffic_json",
             "task_source",
             "department_id",
             "waste_stream",
@@ -13596,7 +13622,7 @@ class Simulation:
             "task_release_time_sec",
             "task_target_time_sec",
             "details",
-            "motion_model", "trajectory_json",
+            "motion_model", "trajectory_json", "traffic_json",
             "task_source",
             "department_id",
             "waste_stream",
@@ -13932,6 +13958,9 @@ class Simulation:
                 "details": details,
                 "motion_model": segment_meta.get('motion_model', ''),
                 "trajectory_json": json.dumps(segment_meta['trajectory']) if 'trajectory' in segment_meta else '',
+                "traffic_json": json.dumps({key:segment_meta[key] for key in
+                    ('reservation_policy','lane_sections','loaded_length_m','loaded_width_m','traffic_blockers')
+                    if key in segment_meta}) if ('reservation_policy' in segment_meta or 'traffic_blockers' in segment_meta) else '',
                 # New schema
                 "segment_type": segment_type,
                 "start_time": self._format_sim_time_cached(start_time),

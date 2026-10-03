@@ -174,12 +174,18 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
 
     from amr_generation_inputs import generation_input_findings
     from amr_geometric_routing import geometry_input_findings, geometry_enabled
+    from amr_geometric_traffic import traffic_enabled
     for path, message in geometry_input_findings(config):
         error(path, message, path.split('/')[1], code='GEOMETRY_INPUT')
     if geometry_enabled(config):
+        traffic = traffic_enabled(config)
         add('GEOMETRY_SCOPE', 'warning', '/simulation/motion_model', 'Geometric motion',
-            'Forward planar trajectories use explicit bounds/obstacles and centred loaded rectangles. Moving routes reserve their entire spatial envelopes.',
-            'This is conservative moving-route exclusion, not directional lanes or full parked/waiting robot collision analysis. Graph widths remain access restrictions; physical openings must be modelled as obstacles.',
+            'Forward planar trajectories use explicit bounds/obstacles and centred loaded rectangles. '+
+            ('Keep-right lanes use tangent transitions, single-file narrow sections and swept-time moving-route reservations.' if traffic else
+             'Moving routes reserve their entire spatial envelopes.'),
+            ('Moving-route conflicts include lanes and junctions; parked/waiting robot occupancy remains unverified.' if traffic else
+             'This is conservative moving-route exclusion, not directional lanes or full parked/waiting robot collision analysis.')+
+            ' Graph widths remain access restrictions; physical openings must be modelled as obstacles.',
             'Review explicit geometry and acknowledge the current traffic scope.', section='simulation', kind='assumption')
     if any(f.severity == 'error' for f in findings):
         return finish()
