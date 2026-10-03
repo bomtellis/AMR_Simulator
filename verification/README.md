@@ -12,7 +12,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Staff calendar switches](STAFF_CALENDAR_REVIEW.md):
+The latest slice is [Generation input validation](GENERATION_INPUT_REVIEW.md):
+malformed values are rejected before coercion and unsupported staff cycles have visible findings.
+The preceding correction is [Staff calendar switches](STAFF_CALENDAR_REVIEW.md):
 global/custom hours, runtime handling and timeframe release rules now agree in the reference cases.
 The preceding correction is [Generated legacy staff hours](GENERATED_STAFF_HOURS_REVIEW.md):
 omitted Stores staff choices now observe configured hours, with verified return timing.

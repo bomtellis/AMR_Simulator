@@ -147,6 +147,11 @@ pattern disablement and custom-hour precedence across generation/runtime; shared
 staff-choice resolution includes legacy omissions in timeframe spreading. Nine
 reference tests and two switch contracts cover the declared scope. Broader
 calendar interactions and generation input validation remain open.
+**Slice 2J:** [Generation input validation](GENERATION_INPUT_REVIEW.md) adds shared
+raw checks before import/runtime, precise structured errors and acknowledgeable
+unsupported-cycle findings. Ten tests cover rejection, non-mutation, retained
+legacy forms and stale acknowledgements. Complete schema and calendar/mode
+acceptance remain open.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -397,9 +402,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2I's staff calendar correction, then continue the broader configuration
-audit with generation input checks and visible findings for malformed or unsupported
-options. Retain explicit limits on pooled calendar intersections and staffing capacity.
+Review slice 2J's generation-input checks, then continue the generation/calendar
+acceptance audit with no-work rules and out-of-hours behavior. Establish independent
+expectations before changing policy. Retain explicit limits on pooled calendar
+intersections and staffing capacity.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

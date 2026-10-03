@@ -378,6 +378,9 @@ def default_task_generation_config() -> dict:
 
 
 def merge_task_generation_defaults(value: Optional[dict]) -> dict:
+    from amr_generation_inputs import validate_generation_inputs
+    if value is not None:
+        validate_generation_inputs({'task_generation': value})
     merged = default_task_generation_config()
     if not isinstance(value, dict):
         return merged
@@ -594,6 +597,8 @@ class JsonStore:
     def __init__(self, data: Optional[dict] = None):
         from amr_routing_inputs import validate_routing_inputs
         validate_routing_inputs(data)
+        from amr_generation_inputs import validate_generation_inputs
+        validate_generation_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
         self.ensure_simulation_defaults()
         self.ensure_task_generation_defaults()

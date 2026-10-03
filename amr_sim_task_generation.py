@@ -2708,6 +2708,8 @@ class TaskGenerationManager:
         self.locations = locations
         self.payloads = payloads
         self.generators: List[BaseTaskGenerator] = []
+        from amr_generation_inputs import validate_generation_inputs
+        validate_generation_inputs(config)
         self._build_generators()
 
     def _task_generation_cfg(self) -> dict:

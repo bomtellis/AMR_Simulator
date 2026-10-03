@@ -10,6 +10,7 @@ from pathlib import Path
 GRAPH = ('locations', 'corridors', 'lifts')
 GROUPS = {
     'structure': ('Section structure', ('*',)),
+    'generation': ('Generation input contracts', ('task_generation', 'departments', 'tasks')),
     'values': ('Numbers and schedules', ('*',)),
     'references': ('Identifiers and references', ('*',)),
     'graph': ('Graph connectivity', (*GRAPH, 'tasks', 'route_profiles')),
@@ -32,7 +33,7 @@ def input_names(keys):
 def dependencies(finding):
     code, section = finding.code, finding.section
     local = (section,) if section and section != 'project' else ('*',)
-    if code in {'NUMBER', 'INTEGER', 'SCHEDULE', 'IDENTIFIER'}:
+    if code in {'NUMBER', 'INTEGER', 'SCHEDULE', 'IDENTIFIER', 'GENERATION_INPUT', 'GENERATION_UNSUPPORTED'}:
         return local
     if code == 'RUN_PERIOD':
         return ('simulation',)

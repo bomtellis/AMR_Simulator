@@ -172,6 +172,20 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     if findings:
         return finish()
 
+    from amr_generation_inputs import generation_input_findings
+    completed_groups.add('generation')
+    for severity, path, message in generation_input_findings(config):
+        section = path.split('/')[1]
+        if severity == 'error':
+            error(path, message, section, code='GENERATION_INPUT')
+        else:
+            add('GENERATION_UNSUPPORTED', 'warning', path, path, message,
+                'The run uses the supported fixed cycle instead of this setting.',
+                'Use the supported cycle or acknowledge this limitation.',
+                section=section, kind='unsupported')
+    if any(f.severity == 'error' for f in findings):
+        return finish()
+
     # Detect invalid numeric values before JsonStore normalisation can clamp them.
     positive = {"length_m", "width_m", "height_m", "door_clear_width_m", "default_corridor_width_m",
                 "default_door_clear_width_m", "speed_m_per_sec", "walking_speed_m_per_sec", "battery_capacity_kwh",
