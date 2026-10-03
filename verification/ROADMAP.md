@@ -232,6 +232,14 @@ pickup failure evidence, pool separation, old logs and corrupt/incomplete record
 Results Investigation links the new metrics to contributing events. This does
 not prove disposal/staff handoff or complete mixed-service inventory accounting.
 
+**Slice 2X:** [Configuration audit consolidation](CONFIG_AUDIT_REVIEW.md) records
+31 group/department bindings to reviewed generation contracts, retaining partial
+dispositions and shared-resolution exceptions. Representative layer tests cover
+rates, returns, stock, disable flags, invalid inputs and category capacity policy.
+Source links now resolve qualified definitions; the pack publishes an exact
+remaining audit by family. Neither passing tests nor a reviewed partial contract
+closes the feature or release gate.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -245,9 +253,9 @@ not prove disposal/staff handoff or complete mixed-service inventory accounting.
 - Extend existing independent reference tests; do not replace useful passing tests.
   Cover normal, boundary, invalid and interacting inputs. Test outcome consistency,
   payload conservation and resource capacity, including unsuccessful route commits.
-- Decide and document intended waste behaviour before changing it: fallback
-  thresholds currently use global stream capacity/fraction, and department stream
-  values can override the restored category policy. Separate bug fixes from explicit
+- Preserve reviewed effective waste threshold derivation. Department stream values
+  can still override the restored category capacity policy; decide and document
+  intended behaviour before changing that exception. Separate bug fixes from explicit
   policy changes and provide migration/result explanations where required.
 - Establish a representative LTN regression matrix and baseline runtime, memory,
   project size and save/load measurements. Agree measurable acceptance thresholds
@@ -481,10 +489,11 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2W's direct-event outcomes, then consolidate remaining configuration
-dispositions against implemented acceptance evidence and continue inventory gaps,
-preserving the explicit seed compatibility boundary and inventory-space limitations.
-Retain explicit limits on staffing capacity and broader calendar combinations.
-Continue the configuration inventory and independent acceptance audit through
-generation precedence, schedules, returns and resource contention. Keep the larger
-geometry and UI work in their planned order.
+Review slice 2X's audit and layer evidence. Next audit lift configuration against
+existing movement/resource tests and independent timing and capacity references,
+recording defaults, units, invalid inputs and interactions. This broadens coverage
+beyond task generation while preserving its remaining calendar, staffing and
+mixed-stock limitations. Use latest/audit-backlog.json to select exact gaps; do not
+equate its count with missing features. Then continue robot, location and department
+contracts and complete the workspace gates. Keep geometry, approved CAD UI,
+tutorial and final release work in their planned order.

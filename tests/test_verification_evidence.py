@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from verification.inventory import ROOT, fields, link_evidence, link_option_evidence, source_key_candidates
+from verification.inventory import (ROOT, fields, link_evidence, link_option_evidence,
+                                    link_option_sources, summarize_option_audit, source_key_candidates)
 from verification.run import EvidenceResult, write_junit
 
 
@@ -41,6 +42,10 @@ class VerificationEvidenceTests(unittest.TestCase):
         reviewed = [contract for contract in contracts.values() if 'support_status' in contract]
         self.assertTrue(reviewed)
         for contract in reviewed:
+            if contract.get('related_contract'):
+                base = contracts[contract['related_contract']]
+                self.assertTrue(base.get('support_status'))
+                self.assertEqual('partial', contract['support_status'])
             self.assertIn(contract['support_status'], ('verified_reference_scope', 'partial', 'unsupported', 'defective'))
             for key in ('runtime_default', 'editor_behaviour', 'units', 'meaning', 'precedence',
                         'validation', 'limitations', 'source_symbols', 'tests', 'review_date'):
@@ -48,7 +53,29 @@ class VerificationEvidenceTests(unittest.TestCase):
             for reference in contract['source_symbols']:
                 source, symbol = reference.split(':', 1)
                 self.assertTrue((ROOT / source).is_file(), source)
-                self.assertTrue(symbol.split('.')[-1] in (ROOT / source).read_text(encoding='utf-8-sig'), reference)
+        linked = link_option_sources([{'source_symbols': c['source_symbols']} for c in reviewed])
+        self.assertTrue(all(e['resolved'] for row in linked for e in row['source_evidence']), linked)
+
+    def test_source_links_resolve_qualified_definitions_not_comments_or_other_classes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'sample.py').write_text('# Missing.fake\nclass Real:\n    def method(self): pass\nasync def work(): pass\n')
+            refs = ['sample.py:Real.method', 'sample.py:work', 'sample.py:Wrong.method',
+                    'sample.py:Missing.fake', 'missing.py:work']
+            linked, = link_option_sources([{'source_symbols': refs}], root)
+            self.assertEqual([True, True, False, False, False], [e['resolved'] for e in linked['source_evidence']])
+            self.assertEqual(3, linked['source_evidence'][0]['line'])
+
+    def test_audit_counts_keep_partial_and_unreviewed_dispositions_distinct(self):
+        options = [dict(path='robot.width', disposition='reviewed_contract', support_status='partial', evidence_passed=True),
+                   dict(path='robot.speed', disposition='semantic_review_required', evidence_passed=True),
+                   dict(path='layout', disposition='documented_contract', evidence_passed=False)]
+        audit = summarize_option_audit(options)
+        self.assertEqual({'partial': 1}, audit['reviewed_statuses'])
+        self.assertEqual(['layout', 'robot.speed'], [o['path'] for o in audit['backlog']])
+        robot = next(r for r in audit['families'] if r['family'] == 'robot')
+        self.assertEqual((2, 1, 1, 1), tuple(robot[k] for k in
+            ['total', 'reviewed', 'unreviewed', 'reviewed_with_passing_evidence']))
 
     def test_failed_subtest_is_not_reported_as_passed(self):
         class DeliberateFailure(unittest.TestCase):

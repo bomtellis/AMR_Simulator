@@ -8,7 +8,7 @@ from __future__ import annotations
 import ast
 import fnmatch
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,6 +103,7 @@ def build_inventory():
             "source_symbols": contract.get("source_symbols", []),
             "tests": contract.get("tests", []),
             "review_date": contract.get("review_date"),
+            "related_contract": contract.get("related_contract"),
             "feature_ids": feature_ids,
             "observed_in": sorted(seen),
             "observed_type": type(sample).__name__ if seen else "not_observed",
@@ -136,3 +137,67 @@ def link_evidence(features, cases):
 def link_option_evidence(options, cases):
     """Attach real test outcomes without promoting a reviewed support disposition."""
     return link_evidence(options, cases)
+
+
+def link_option_sources(options, root=ROOT):
+    """Resolve qualified Python definitions, not matching words in source text."""
+    cache = {}
+    result = []
+    root = Path(root).resolve()
+    for option in options:
+        item = dict(option)
+        item['source_evidence'] = []
+        for reference in option.get('source_symbols', []):
+            source, separator, symbol = reference.partition(':')
+            path = (root / source).resolve()
+            if path not in cache:
+                definitions = {}
+                if path.is_relative_to(root) and path.suffix == '.py' and path.is_file():
+                    try:
+                        tree = ast.parse(path.read_text(encoding='utf-8-sig'))
+                        class Definitions(ast.NodeVisitor):
+                            def __init__(self):
+                                self.scope = []
+
+                            def visit_definition(self, node):
+                                self.scope.append(node.name)
+                                definitions['.'.join(self.scope)] = node.lineno
+                                self.generic_visit(node)
+                                self.scope.pop()
+
+                            visit_ClassDef = visit_definition
+                            visit_FunctionDef = visit_definition
+                            visit_AsyncFunctionDef = visit_definition
+                        Definitions().visit(tree)
+                    except (OSError, SyntaxError, UnicodeError):
+                        pass
+                cache[path] = definitions
+            line = cache[path].get(symbol) if separator else None
+            item['source_evidence'].append({'reference': reference, 'resolved': line is not None, 'line': line})
+        result.append(item)
+    return result
+
+
+def summarize_option_audit(options):
+    """Expose remaining review work without equating linked tests with support."""
+    families = {}
+    backlog = []
+    reviewed_statuses = Counter()
+    for option in options:
+        family = option['path'].split('.')[0].removesuffix('[]')
+        row = families.setdefault(family, {'family': family, 'total': 0, 'reviewed': 0,
+            'unreviewed': 0, 'reviewed_with_passing_evidence': 0, 'broken_source_links': 0})
+        row['total'] += 1
+        row['broken_source_links'] += sum(not s['resolved'] for s in option.get('source_evidence', []))
+        if option['disposition'] == 'reviewed_contract':
+            row['reviewed'] += 1
+            reviewed_statuses[option['support_status']] += 1
+            row['reviewed_with_passing_evidence'] += bool(option.get('evidence_passed'))
+        else:
+            row['unreviewed'] += 1
+            backlog.append({'path': option['path'], 'disposition': option['disposition'],
+                'observed_type': option.get('observed_type'), 'feature_ids': option.get('feature_ids', [])})
+    return {'scope': 'Observed/documented options only; passing linked tests never promote a support disposition or establish a release gate.',
+            'reviewed_statuses': dict(sorted(reviewed_statuses.items())),
+            'families': sorted(families.values(), key=lambda row: (-row['unreviewed'], row['family'])),
+            'backlog': sorted(backlog, key=lambda row: row['path'])}

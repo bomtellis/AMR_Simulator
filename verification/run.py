@@ -143,15 +143,20 @@ def write_report(path, report):
         f'<td>{esc(o["meaning"])}<br>{esc(o["precedence"])}'
         f'<details><summary>Contract and acceptance evidence</summary>'
         f'<p>Support: {esc(o.get("support_status", "not individually reviewed"))}</p>'
+        f'<p>Related field contract: {esc(o.get("related_contract") or "None")}</p>'
         f'<p>Runtime default: {esc(o.get("runtime_default", "not reviewed"))}</p>'
         f'<p>Editor/import: {esc(o.get("editor_behaviour", "not reviewed"))}</p>'
         f'<p>Validation: {esc(o.get("validation", "not reviewed"))}</p>'
         f'<p>Limitations: {esc(o.get("limitations", "not reviewed"))}</p>'
-        f'<p>Source: {esc("; ".join(o.get("source_symbols", [])))}</p>'
+        f'<p>Source definitions: {esc("; ".join(s["reference"] + (" at line " + str(s["line"]) if s["resolved"] else " — UNRESOLVED") for s in o.get("source_evidence", [])))}</p>'
         f'<p>Tests: {esc("; ".join(c["status"] + " — " + c["id"] for c in o.get("evidence", [])))}</p>'
         f'</details></td></tr>'
         for o in report["options"])
     counts = report["counts"]
+    audit_rows = ''.join(f'<tr><td>{esc(row["family"])}</td><td>{row["total"]}</td>'
+        f'<td>{row["reviewed"]}</td><td>{row["unreviewed"]}</td>'
+        f'<td>{row["reviewed_with_passing_evidence"]}</td></tr>'
+        for row in report['option_audit']['families'])
     path.write_text(f'''<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>AMR engineering verification</title>
 <style>body{{font:17px/1.5 system-ui,sans-serif;background:#f5f7fa;color:#172635;max-width:1150px;margin:auto;padding:24px}}
@@ -165,6 +170,11 @@ input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer
 <p>Rollback commit: 07a059a · tested source fingerprint: <code>{esc(report["source"]["sha256"])}</code></p>
 <p>{len(report["options"])} observed/documented option paths; {counts["unreviewed_options"]} require individual semantic review.</p>
 <p><a href="evidence.json">Complete machine-readable evidence</a> · <a href="tests.txt">Test log</a> · <a href="options.json">Option inventory</a> · <a href="source-key-candidates.json">Additional source-key candidates</a> · <a href="source-snapshot.zip">Tested source snapshot</a></p></div>
+<div class="panel"><h2>Configuration audit remaining</h2>
+<p>{esc(report['option_audit']['scope'])}</p>
+<p>Reviewed dispositions: {esc(report['option_audit']['reviewed_statuses'])}. A partial contract stays partial when its references pass.</p>
+<p><a href="audit-backlog.json">Exact remaining option paths and family counts</a></p>
+<table><thead><tr><th>Family</th><th>Total paths</th><th>Reviewed</th><th>Unreviewed</th><th>Reviewed with passing linked tests</th></tr></thead><tbody>{audit_rows}</tbody></table></div>
 <div class="panel"><h2>Changes to review</h2><ul>
 <li>Routing and door option contracts now include runtime defaults, editor/import behaviour, validation limits, source symbols and linked acceptance results. New-project defaults are distinguished from omitted values in imported projects. Partial support is retained even when its reference tests pass.</li>
 <li>Local route failures preserve endpoints and reject blocked straight fallbacks. Prepared runs fingerprint all root and visualiser/report Python modules; older results retain an explicit source-coverage warning.</li>
@@ -228,12 +238,14 @@ def main(argv=None):
         result = unittest.TextTestRunner(stream=log, verbosity=2, resultclass=EvidenceResult).run(suite)
     cases = result.cases
     features = link_evidence(inventory["features"], cases)
-    from verification.inventory import link_option_evidence
-    options = link_option_evidence(inventory["options"], cases)
+    from verification.inventory import link_option_evidence, link_option_sources, summarize_option_audit
+    options = link_option_sources(link_option_evidence(inventory["options"], cases))
     broken_links = [f'{feature["id"]}: {pattern}' for feature in features
                     for pattern in feature["unmatched_test_patterns"]]
     broken_links.extend(f'{option["path"]}: {pattern}' for option in options
                         for pattern in option["unmatched_test_patterns"])
+    broken_links.extend(f'{option["path"]}: unresolved source {source["reference"]}' for option in options
+                        for source in option['source_evidence'] if not source['resolved'])
     packages = {}
     for name in ("PySide6", "numpy", "pandas", "reportlab", "pypdf", "ezdxf"):
         try:
@@ -253,11 +265,13 @@ def main(argv=None):
         "counts": {"total": len(cases), "passed": sum(c["status"] == "passed" for c in cases),
                    "unreviewed_options": sum(o["disposition"] != "reviewed_contract" for o in options)},
         "test_cases": cases, "features": features, "options": options,
+        "option_audit": summarize_option_audit(options),
         "inventory_scope": inventory["scope"], "broken_evidence_links": broken_links, "ltn": ltn,
     }
     write_json(output / "evidence.json", report)
     write_json(output / 'ltn-project-checks.json', ltn.get('project_checks', {'error': 'Checks did not complete'}))
     write_json(output / "options.json", options)
+    write_json(output / 'audit-backlog.json', report['option_audit'])
     write_json(output / "source-key-candidates.json", inventory["source_key_candidates"])
     write_json(output / "editor_defaults.json", inventory["editor_defaults"])
     write_junit(output / "junit.xml", cases)

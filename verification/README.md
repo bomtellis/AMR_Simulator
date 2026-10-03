@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Direct-event volume outcomes](DIRECT_EVENT_VOLUME_REVIEW.md):
+The latest checkpoint is [Configuration audit consolidation](CONFIG_AUDIT_REVIEW.md):
+group and department contracts have explicit partial dispositions and representative
+layer tests. The pack resolves qualified source definitions and publishes the
+remaining audit by option path and configuration family.
+The preceding checkpoint is [Direct-event volume outcomes](DIRECT_EVENT_VOLUME_REVIEW.md):
 scheduled-waste and sporadic volumes reconcile across pending, completed and
 failed tasks, with physical pickup evidence for failure phases and explicit
 separation from accumulated waste pools.
