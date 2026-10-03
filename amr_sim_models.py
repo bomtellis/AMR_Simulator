@@ -115,7 +115,8 @@ class Task:
     generator_scheduled_release_time: float = 0.0
     generator_deferred_by_task_id: str = ""
     generator_deferred_by_return_task_id: str = ""
-    requires_staff: bool = False
+    # None preserves the legacy category fallback; explicit False disables it.
+    requires_staff: Optional[bool] = None
     staff_initial_count: int = 1
     staff_resource_name: str = ""
     staff_category_key: str = ""

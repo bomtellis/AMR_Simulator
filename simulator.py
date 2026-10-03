@@ -5314,14 +5314,15 @@ class Simulation:
     def _task_staff_handling_config(self, task: Optional[Task]) -> Optional[dict]:
         if task is None or bool(getattr(task, "is_return_task", False)):
             return None
-        requires_staff = bool(
-            getattr(task, "requires_staff", False)
-            or getattr(task, "staff_required", False)
-        )
-        if not requires_staff and self._task_is_stores_delivery(task):
+        requirement = getattr(task, "requires_staff", None)
+        if requirement is None:
+            requirement = getattr(task, "staff_required", None)
+        if requirement is None:
             # Backward-compatible default for older configs created before the
-            # editor exposed category staff settings.
-            requires_staff = True
+            # editor exposed staff settings. An explicit false is authoritative.
+            requires_staff = self._task_is_stores_delivery(task)
+        else:
+            requires_staff = bool(requirement)
         if not requires_staff:
             return None
         category_key = self._task_category_key(task) or "staff"

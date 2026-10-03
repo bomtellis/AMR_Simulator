@@ -120,6 +120,9 @@ open, as do the full inventory and checkpoint 2 gate.
 adds 22 generation-field contracts and corrects the two imported staff defaults
 that changed the reference return timing. Full import parity, staff semantics,
 runtime waste/return interactions and the remainder of the inventory stay open.
+**Slice 2D:** [Explicit staff choice](STAFF_CHOICE_REVIEW.md) makes false suppress
+legacy Stores staffing while omission preserves the fallback across editor
+roundtrips. Staff capacity/queue semantics and wider scalar validation remain open.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -370,7 +373,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2C's generation and return-import correction.
+Review slice 2D's explicit staff-choice correction, then audit staff resource
+contention and capacity semantics.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

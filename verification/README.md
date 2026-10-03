@@ -12,7 +12,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest slice is [Generation contracts and return import parity](GENERATION_CONTRACTS_REVIEW.md):
+The latest correction is [Explicit staff choice](STAFF_CHOICE_REVIEW.md):
+false now suppresses legacy staff fallback while omission retains it.
+The preceding slice is [Generation contracts and return import parity](GENERATION_CONTRACTS_REVIEW.md):
 effective rules, completion-relative returns and preserved imported staff settings.
 Earlier [Routing input validation](ROUTING_INPUT_REVIEW.md) covers:
 ambiguous flags are rejected and positive widths retain their physical values.

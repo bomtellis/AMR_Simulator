@@ -394,6 +394,7 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
     if isinstance(value.get("department_waste"), dict):
         merged["department_waste"].update(value.get("department_waste", {}))
 
+    unspecified_staff = set()
     incoming_categories = value.get("categories", {})
     if isinstance(incoming_categories, dict):
         for key, incoming in incoming_categories.items():
@@ -404,6 +405,8 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
             elif isinstance(incoming, dict):
                 merged["categories"][key].update(incoming)
             if isinstance(incoming, dict):
+                if 'requires_staff' not in incoming and 'staff_required' not in incoming:
+                    unspecified_staff.add(key)
                 # New-project category templates may require staff (Stores),
                 # but an imported rule without that option uses runtime false.
                 # Do not introduce a shift/handling delay merely by opening it.
@@ -415,13 +418,17 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
     # Support older experiments where categories were stored directly under task_generation.
     for key, _label in LOGISTICS_TASK_GENERATION_CATEGORIES:
         if isinstance(value.get(key), dict):
+            if 'requires_staff' not in value[key] and 'staff_required' not in value[key]:
+                unspecified_staff.add(key)
+            else:
+                unspecified_staff.discard(key)
             merged["categories"][key].update(value[key])
             merged["categories"][key]["requires_staff"] = value[key].get(
                 "requires_staff", value[key].get("staff_required", False))
             merged["categories"][key]["staff_handling_minutes"] = value[key].get(
                 "staff_handling_minutes", 0.0)
 
-    for category in merged["categories"].values():
+    for category_key, category in merged["categories"].items():
         if not isinstance(category, dict):
             continue
         dropoff_locations = category.get("dropoff_locations")
@@ -444,6 +451,9 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
         category["requires_staff"] = bool(
             category.get("requires_staff", category.get("staff_required", False))
         )
+        if category_key in unspecified_staff:
+            # Omission carries legacy semantics and must survive save/reopen.
+            category.pop("requires_staff")
         try:
             category["staff_initial_count"] = max(
                 1, int(float(category.get("staff_initial_count", 1) or 1))

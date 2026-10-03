@@ -1,6 +1,9 @@
 # Checkpoint 2C — generation precedence and return import parity
 
 Review date: 3 October 2026. Baseline: `b496a4b`.
+Follow-up: [slice 2D](STAFF_CHOICE_REVIEW.md) distinguishes omitted staff choice
+from explicit false, preserving omission across import rather than filling false.
+It corrects the legacy-fallback limitation recorded in this historical review.
 
 ## Fixed import drift
 
