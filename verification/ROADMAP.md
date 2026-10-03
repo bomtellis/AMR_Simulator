@@ -132,6 +132,11 @@ omitted exchanges, overridden recorded counts and reclassified Linen assignments
 adds recorded busy handling and evidence notes. Boundary review found that travel
 deferred into a new four-day block can retain the previous team. Its reproduction
 is recorded for the next simulator fix; full staff utilisation remains open.
+**Slice 2G:** [Staff team boundaries](STAFF_SHIFT_REVIEW.md) fixes travel and
+overnight bookings crossing into the wrong four-day roster; rejected candidates
+do not alter outgoing reservations. Nine reference tests and two pattern contracts
+cover the bounded scope. Generated legacy Stores tasks still bypass global hours
+when the staff requirement is omitted; that reproduction is next.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -382,9 +387,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2F's staff report correction, then fix the reproduced roster-selection
-defect when travel defers service across a four-day team boundary. Extend the
-staff schedule and evidence audit without claiming full utilisation coverage.
+Review slice 2G's team-boundary correction, then reconcile generated legacy staff
+requirements with shift metadata so omitted Stores requirements observe configured
+hours. Verify return timing, explicit false and forced zone handoffs.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

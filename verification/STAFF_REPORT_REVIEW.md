@@ -59,6 +59,10 @@ The source `ltn.json` and its unrelated local changes were preserved.
 
 ## Remaining defect found during boundary review
 
+Follow-up: [Checkpoint 2G](STAFF_SHIFT_REVIEW.md) corrects the travel/team defect
+below and extends acceptance to overnight and non-midnight-origin boundaries.
+The reproduction remains here as historical evidence.
+
 Travel can defer a booking into another four-day team block while the allocator
 retains the roster chosen for its original baseline time. Reproduction with the
 10 m A–B reference and 1.2 m/s walking speed:

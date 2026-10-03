@@ -12,7 +12,9 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Staff report reconciliation](STAFF_REPORT_REVIEW.md):
+The latest correction is [Staff team boundaries](STAFF_SHIFT_REVIEW.md):
+travel and handling are replanned with the correct roster across four-day blocks.
+The preceding correction is [Staff report reconciliation](STAFF_REPORT_REVIEW.md):
 recorded staffing and exchanges, separate task/busy handling time, and explicit evidence gaps.
 The preceding correction is [Staff contention and batch safety](STAFF_CONTENTION_REVIEW.md):
 batch sharing respects later bookings and working periods, with explicit staffing-sizing limits.

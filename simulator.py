@@ -5459,7 +5459,8 @@ class Simulation:
         person_available_time: float,
         travel_duration_sec: float,
         handling_duration_sec: float,
-    ) -> dict:
+        roster_bounds: Optional[Tuple[float, float]] = None,
+    ) -> Optional[dict]:
         requested = max(0.0, float(requested_handling_start or 0.0))
         available = max(0.0, float(person_available_time or 0.0))
         travel = max(0.0, float(travel_duration_sec or 0.0))
@@ -5474,6 +5475,11 @@ class Simulation:
             if period is None:
                 continue
             period_start, period_end = period
+            if roster_bounds is not None:
+                period_start = max(period_start, roster_bounds[0])
+                period_end = min(period_end, roster_bounds[1])
+                if period_start >= period_end:
+                    continue
             earliest_travel_start = max(available, period_start)
             earliest_arrival = earliest_travel_start + travel
             handling_start = max(requested, earliest_arrival)
@@ -5492,6 +5498,10 @@ class Simulation:
                     "work_period_start": period_start,
                     "work_period_end": period_end,
                 }
+        if roster_bounds is not None:
+            # This team cannot fit the full walk and service in its current block.
+            # Let the allocator try the incoming roster, without reserving anyone.
+            return None
         # Invalid schedules should not make the simulation unusable. This fallback
         # preserves chronological movement and is exposed in assignment metadata.
         travel_start = max(available, requested - travel)
@@ -5776,144 +5786,183 @@ class Simulation:
             staff_cfg["resource_name"],
             staff_cfg["shift_pattern"],
         )
-        baseline_window = self._next_staff_assignment_window(
-            task, requested_start, 0.0, 0.0, duration
-        )
-        baseline_start = float(baseline_window["start_time"] or requested_start)
-        roster = self._staff_shift_roster(pool, baseline_start)
-        available_times = roster.setdefault("available_times", [])
-        last_locations = roster.setdefault(
-            "last_locations", ["" for _ in range(len(available_times))]
-        )
-        while len(last_locations) < len(available_times):
-            last_locations.append("")
-        shift_team = str(roster.get("shift_team", "") or "")
-        shift_pattern = str(pool.get("shift_pattern", "none") or "none")
-        shift_multiplier = float(pool.get("shift_multiplier", 1.0) or 1.0)
-        location_name = str(getattr(task, "dropoff", "") or "").strip()
-        movement_policy = str(
-            staff_cfg.get("movement_policy", "batch_same_location") or ""
-        ).strip().lower()
-        active_batches = roster.setdefault("active_location_batches", {})
-        active_assignment = (
-            active_batches.get(location_name)
-            if movement_policy in {"batch_same_location", "minimise_movement"}
-            else None
-        )
-        if location_name and active_assignment is not None:
-            active_start = float(active_assignment["start_time"])
-            active_finish = float(active_assignment.get("finish_time", 0.0) or 0.0)
-            batch_finish = max(baseline_start + duration, active_finish)
-            period_end = baseline_window.get("work_period_end")
-            # Share only a service already in progress at the requested window.
-            # A future booking is not a reason to postpone an earlier delivery,
-            # and inheriting a batch finish must respect this task's work hours.
+        selection_start = requested_start
+        roster_search_deadline = requested_start + 35 * 24 * 60 * 60
+        while True:
+            roster_search_exhausted = selection_start >= roster_search_deadline
+            baseline_window = self._next_staff_assignment_window(
+                task, selection_start, 0.0, 0.0, duration
+            )
+            if roster_search_exhausted:
+                # Retain the existing explicitly flagged schedule fallback for
+                # impossible working/travel combinations; never loop forever.
+                baseline_window["working_hours_fallback"] = True
+            baseline_start = float(baseline_window["start_time"])
+            roster_bounds = None
             if (
-                active_start <= baseline_start + 1e-9
-                and active_finish > baseline_start + 1e-9
-                and (period_end is None or batch_finish <= period_end + 1e-9)
+                pool.get("shift_pattern") == "four_on_four_off_12h"
+                and not baseline_window.get("working_hours_fallback")
             ):
-                person_index = max(
-                    0, int(active_assignment.get("person_index", 1) or 1) - 1
+                block_length = 4 * 24 * 60 * 60
+                block_start = math.floor(baseline_start / block_length) * block_length
+                roster_bounds = (block_start, block_start + block_length)
+                if baseline_window["finish_time"] > roster_bounds[1] + 1e-9:
+                    selection_start = roster_bounds[1]
+                    continue
+                # Shared batches must respect the same roster limit as separate jobs.
+                baseline_window["work_period_end"] = min(
+                    baseline_window["work_period_end"], roster_bounds[1]
                 )
-                actual_start = max(
-                    baseline_start, float(active_assignment.get("start_time", baseline_start) or baseline_start)
-                )
-                finish_time = max(actual_start + duration, active_finish)
-                if person_index < len(available_times):
-                    available_times[person_index] = max(
-                        float(available_times[person_index] or 0.0), finish_time
+            roster = self._staff_shift_roster(pool, baseline_start)
+            available_times = roster.setdefault("available_times", [])
+            last_locations = roster.setdefault(
+                "last_locations", ["" for _ in range(len(available_times))]
+            )
+            while len(last_locations) < len(available_times):
+                last_locations.append("")
+            shift_team = str(roster.get("shift_team", "") or "")
+            shift_pattern = str(pool.get("shift_pattern", "none") or "none")
+            shift_multiplier = float(pool.get("shift_multiplier", 1.0) or 1.0)
+            location_name = str(getattr(task, "dropoff", "") or "").strip()
+            movement_policy = str(
+                staff_cfg.get("movement_policy", "batch_same_location") or ""
+            ).strip().lower()
+            active_batches = roster.setdefault("active_location_batches", {})
+            active_assignment = (
+                active_batches.get(location_name)
+                if movement_policy in {"batch_same_location", "minimise_movement"}
+                else None
+            )
+            if location_name and active_assignment is not None:
+                active_start = float(active_assignment["start_time"])
+                active_finish = float(active_assignment.get("finish_time", 0.0) or 0.0)
+                batch_finish = max(baseline_start + duration, active_finish)
+                period_end = baseline_window.get("work_period_end")
+                # Share only a service already in progress at the requested window.
+                # A future booking is not a reason to postpone an earlier delivery,
+                # and inheriting a batch finish must respect this task's work hours.
+                if (
+                    active_start <= baseline_start + 1e-9
+                    and active_finish > baseline_start + 1e-9
+                    and (period_end is None or batch_finish <= period_end + 1e-9)
+                ):
+                    person_index = max(
+                        0, int(active_assignment.get("person_index", 1) or 1) - 1
                     )
-                    last_locations[person_index] = location_name
-                assignment = {
-                    "task_id": str(getattr(task, "id", "") or ""),
-                    "category_key": str(pool["category_key"]),
-                    "resource_name": str(pool.get("resource_name", "") or ""),
-                    "person_id": str(active_assignment.get("person_id", "")),
-                    "person_index": person_index + 1,
-                    "requested_start_time": round(requested_start, 3),
-                    "start_time": round(actual_start, 3),
-                    "finish_time": round(finish_time, 3),
-                    "duration_sec": round(duration, 3),
-                    "location": location_name,
-                    "payload": self._payload_log_name(getattr(task, "payload", "")),
-                    "people_required": self._staff_rostered_count(
-                        self._staff_pool_on_shift_count(pool), shift_multiplier
-                    ),
-                    "staff_on_shift_people_required": self._staff_pool_on_shift_count(pool),
-                    "staff_shift_pattern": shift_pattern,
-                    "staff_shift_team": shift_team,
-                    "staff_shift_multiplier": shift_multiplier,
-                    "staff_initial_on_shift_people": int(pool.get("initial_people", 0) or 0),
-                    "staff_initial_rostered_people": self._staff_rostered_count(
-                        int(pool.get("initial_people", 0) or 0), shift_multiplier
-                    ),
-                    "added_person": False,
-                    "shared_location_batch": True,
-                    "travel_from_location": location_name,
-                    "travel_to_location": location_name,
-                    "travel_duration_sec": 0.0,
-                    "travel_distance_m": 0.0,
-                    "travel_lift_id": "",
-                    "travel_start_time": round(actual_start, 3),
-                    "travel_finish_time": round(actual_start, 3),
-                    "staff_wait_for_travel_sec": round(max(0.0, actual_start - requested_start), 3),
-                    "working_hours_fallback": bool(
-                        baseline_window.get("working_hours_fallback", False)
-                    ),
-                }
-                active_batches[location_name] = assignment
-                pool["assignments"].append(assignment)
-                self.staff_assignments.append(assignment)
-                return assignment
+                    actual_start = max(
+                        baseline_start, float(active_assignment.get("start_time", baseline_start) or baseline_start)
+                    )
+                    finish_time = max(actual_start + duration, active_finish)
+                    if person_index < len(available_times):
+                        available_times[person_index] = max(
+                            float(available_times[person_index] or 0.0), finish_time
+                        )
+                        last_locations[person_index] = location_name
+                    assignment = {
+                        "task_id": str(getattr(task, "id", "") or ""),
+                        "category_key": str(pool["category_key"]),
+                        "resource_name": str(pool.get("resource_name", "") or ""),
+                        "person_id": str(active_assignment.get("person_id", "")),
+                        "person_index": person_index + 1,
+                        "requested_start_time": round(requested_start, 3),
+                        "start_time": round(actual_start, 3),
+                        "finish_time": round(finish_time, 3),
+                        "duration_sec": round(duration, 3),
+                        "location": location_name,
+                        "payload": self._payload_log_name(getattr(task, "payload", "")),
+                        "people_required": self._staff_rostered_count(
+                            self._staff_pool_on_shift_count(pool), shift_multiplier
+                        ),
+                        "staff_on_shift_people_required": self._staff_pool_on_shift_count(pool),
+                        "staff_shift_pattern": shift_pattern,
+                        "staff_shift_team": shift_team,
+                        "staff_shift_multiplier": shift_multiplier,
+                        "staff_initial_on_shift_people": int(pool.get("initial_people", 0) or 0),
+                        "staff_initial_rostered_people": self._staff_rostered_count(
+                            int(pool.get("initial_people", 0) or 0), shift_multiplier
+                        ),
+                        "added_person": False,
+                        "shared_location_batch": True,
+                        "travel_from_location": location_name,
+                        "travel_to_location": location_name,
+                        "travel_duration_sec": 0.0,
+                        "travel_distance_m": 0.0,
+                        "travel_lift_id": "",
+                        "travel_start_time": round(actual_start, 3),
+                        "travel_finish_time": round(actual_start, 3),
+                        "staff_wait_for_travel_sec": round(max(0.0, actual_start - requested_start), 3),
+                        "working_hours_fallback": bool(
+                            baseline_window.get("working_hours_fallback", False)
+                        ),
+                    }
+                    active_batches[location_name] = assignment
+                    pool["assignments"].append(assignment)
+                    self.staff_assignments.append(assignment)
+                    return assignment
 
-        candidates = []
-        preferred_people = roster.setdefault("preferred_people_by_location", {})
-        preferred_index = preferred_people.get(location_name)
-        for idx, available_time in enumerate(available_times):
-            previous_location = str(last_locations[idx] or "")
-            travel_duration, travel_distance, lift_id = self._staff_travel_between_locations(
-                previous_location, location_name
-            )
-            window = self._next_staff_assignment_window(
-                task, requested_start, float(available_time or 0.0), travel_duration, duration
-            )
-            preference_rank = 0 if (
-                movement_policy == "minimise_movement"
-                and isinstance(preferred_index, int)
-                and preferred_index == idx
-            ) else 1
-            candidates.append(
-                {
-                    "person_index": idx,
-                    "available_time": float(available_time or 0.0),
-                    "previous_location": previous_location,
-                    "travel_duration_sec": travel_duration,
-                    "travel_distance_m": travel_distance,
-                    "travel_lift_id": lift_id,
-                    "window": window,
-                    "sort_key": (
-                        float(window["start_time"]),
-                        preference_rank,
-                        travel_duration,
-                        idx,
-                    ),
-                }
-            )
-        candidates.sort(key=lambda item: item["sort_key"])
+            candidates = []
+            free_person_needs_next_block = False
+            preferred_people = roster.setdefault("preferred_people_by_location", {})
+            preferred_index = preferred_people.get(location_name)
+            for idx, available_time in enumerate(available_times):
+                previous_location = str(last_locations[idx] or "")
+                travel_duration, travel_distance, lift_id = self._staff_travel_between_locations(
+                    previous_location, location_name
+                )
+                window = self._next_staff_assignment_window(
+                    task, selection_start, float(available_time or 0.0), travel_duration, duration,
+                    roster_bounds=roster_bounds,
+                )
+                if window is None:
+                    if float(available_time or 0.0) <= baseline_start + 1e-9:
+                        free_person_needs_next_block = True
+                    continue
+                if roster_search_exhausted:
+                    window["working_hours_fallback"] = True
+                preference_rank = 0 if (
+                    movement_policy == "minimise_movement"
+                    and isinstance(preferred_index, int)
+                    and preferred_index == idx
+                ) else 1
+                candidates.append(
+                    {
+                        "person_index": idx,
+                        "available_time": float(available_time or 0.0),
+                        "previous_location": previous_location,
+                        "travel_duration_sec": travel_duration,
+                        "travel_distance_m": travel_distance,
+                        "travel_lift_id": lift_id,
+                        "window": window,
+                        "sort_key": (
+                            float(window["start_time"]),
+                            preference_rank,
+                            travel_duration,
+                            idx,
+                        ),
+                    }
+                )
+            candidates.sort(key=lambda item: item["sort_key"])
 
-        chosen = None
-        if candidates and candidates[0]["window"]["start_time"] <= baseline_start + 1e-9:
-            chosen = candidates[0]
-        else:
-            free_before_baseline = [
-                item for item in candidates
-                if item["available_time"] <= baseline_start + 1e-9
-            ]
-            if free_before_baseline:
-                # A person is free but must physically travel. Delay the handling
-                # instead of inventing another person at the destination.
-                chosen = min(free_before_baseline, key=lambda item: item["sort_key"])
+            chosen = None
+            if candidates and candidates[0]["window"]["start_time"] <= baseline_start + 1e-9:
+                chosen = candidates[0]
+            else:
+                free_before_baseline = [
+                    item for item in candidates
+                    if item["available_time"] <= baseline_start + 1e-9
+                ]
+                if free_before_baseline:
+                    # A person is free but must physically travel. Delay the handling
+                    # instead of inventing another person at the destination.
+                    chosen = min(free_before_baseline, key=lambda item: item["sort_key"])
+
+            if chosen is None and free_person_needs_next_block:
+                # Preserve the existing free-person travel-wait policy, but replan
+                # using the incoming team rather than carrying an outgoing person
+                # into their off-duty block. No availability/location was committed.
+                selection_start = roster_bounds[1]
+                continue
+            break
 
         added_person = False
         if chosen is None:
