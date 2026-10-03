@@ -197,6 +197,7 @@ class Simulation:
                                     'route_profile': task.get('route_profile', '') or ('dirty' if 'dirty' in task.get('labels', []) else '')}
             for i, task in enumerate(config.get('tasks', []))}
         sim_cfg = resolved_simulation_settings(config.get("simulation", {}))
+        self.ignore_invalid_local_manoeuvres = sim_cfg['ignore_invalid_local_manoeuvres']
         scenario_cfg = config.get("scenario_testing", {}) or {}
         self.scenario_mode = bool(scenario_cfg.get("enabled", False))
         self.scenario_name = str(scenario_cfg.get("active_scenario", "Normal operation") or "Normal operation")
@@ -3785,22 +3786,29 @@ class Simulation:
             float(target_heading_deg),
             float(radius),
         )
+        unverified_reason = None
         waypoints = self._local_manoeuvre_waypoint_cache_get(cache_key)
         if waypoints is None:
             obstacles = self._local_obstacle_bboxes(location_name, space_name)
-            waypoints = self._local_manoeuvre_waypoints(start, end, obstacles)
-            waypoints = self._insert_vehicle_alignment_waypoint(
-                waypoints, target_heading_deg, radius, obstacles
-            )
-            smoothed = self._smooth_vehicle_waypoints(
-                waypoints, initial_heading_deg, target_heading_deg, radius
-            )
-            # Visual corner cutting is optional legacy styling, not permission
-            # to cross an obstacle. Retain the clear polyline when it is unsafe.
-            if all(self._clear_local_segment(a, b, obstacles)
-                   for a, b in zip(smoothed, smoothed[1:])):
-                waypoints = smoothed
-            self._local_manoeuvre_waypoint_cache_set(cache_key, waypoints)
+            try:
+                waypoints = self._local_manoeuvre_waypoints(start, end, obstacles)
+            except LocalManoeuvreError as exc:
+                if (not self.ignore_invalid_local_manoeuvres
+                        or exc.reason not in ('invalid_endpoint', 'search_exhausted')
+                        or not all(math.isfinite(value) for value in (*start, *end))):
+                    raise
+                waypoints = [start, end]
+                unverified_reason = str(exc)
+            if unverified_reason is None:
+                waypoints = self._insert_vehicle_alignment_waypoint(
+                    waypoints, target_heading_deg, radius, obstacles)
+                smoothed = self._smooth_vehicle_waypoints(
+                    waypoints, initial_heading_deg, target_heading_deg, radius)
+                # Optional styling still has to clear the local obstacles.
+                if all(self._clear_local_segment(a, b, obstacles)
+                       for a, b in zip(smoothed, smoothed[1:])):
+                    waypoints = smoothed
+                self._local_manoeuvre_waypoint_cache_set(cache_key, waypoints)
 
         segments: List[dict] = []
         total_duration = 0.0
@@ -3855,6 +3863,9 @@ class Simulation:
                 }
             )
             previous_body_heading = desired_end_heading
+            if unverified_reason is not None:
+                segments[-1].update(local_manoeuvre_validation='unverified_direct_fallback',
+                                    local_manoeuvre_failure=unverified_reason)
             total_duration += duration
             total_distance += dist
 

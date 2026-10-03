@@ -8915,6 +8915,14 @@ class SimulationSettingsDialog(QDialog):
         )
         inventory_layout.addWidget(self.seed_waste_containers_check)
         inventory_layout.addWidget(self.disable_inventory_spaces_check)
+        from amr_simulation_inputs import run_control_bool
+        self.ignore_invalid_local_manoeuvres_check = QCheckBox('Ignore invalid local manoeuvres (unverified direct movement)')
+        self.ignore_invalid_local_manoeuvres_check.setChecked(
+            run_control_bool(simulation.get('ignore_invalid_local_manoeuvres', False)))
+        self.ignore_invalid_local_manoeuvres_check.setToolTip(
+            'If a local inventory-bay path fails, use direct movement and mark its event details as unverified. '
+            'Travel time and distance are retained. Corridor, door and traffic restrictions still apply.')
+        inventory_layout.addWidget(self.ignore_invalid_local_manoeuvres_check)
         initial_layout.addWidget(inventory_box)
         initial_layout.addWidget(
             _dialog_intro(
@@ -9036,6 +9044,7 @@ class SimulationSettingsDialog(QDialog):
                 ),
                 "seed_waste_stream_containers_at_start": self.seed_waste_containers_check.isChecked(),
                 "disable_inventory_spaces": self.disable_inventory_spaces_check.isChecked(),
+                "ignore_invalid_local_manoeuvres": self.ignore_invalid_local_manoeuvres_check.isChecked(),
             }
 
 

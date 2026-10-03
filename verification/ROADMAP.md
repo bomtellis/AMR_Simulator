@@ -748,6 +748,17 @@ Keep engineering test evidence current throughout.
 
 ## Next action when resumed
 
+The next correction adds the user-confirmed opt-in direct fallback for failed
+local inventory-bay manoeuvres. The default remains rejection; non-finite
+coordinates and corridor/traffic errors are not bypassed. Fallback segments retain
+distance/time and an explicit unverified flag and failure reason in event details;
+Project checks record an enabled-option warning. The independent reference run
+completes in 11 seconds (nine seconds transport/handling plus two seconds direct
+bay travel). Playback retains the original robot body and heading display, with
+the added oversized reference cross removed. The focused 63-test run passed;
+see `verification/latest/local-manoeuvre-option-tests.txt`. Full release
+verification and the existing geometric-traffic limitations remain open.
+
 The subsequent CAD correction retains drawing caches on ordinary undo/redo,
 reuses unchanged DXF graphics on scene refresh and coalesces drag redraws while
 preserving the final model position. Graph tools bypass native DXF hover picking;

@@ -19,6 +19,7 @@ DEFAULTS = {
     'opportunity_charging_idle_period_sec': 900.0,
     'seed_waste_stream_containers_at_start': False,
     'reservation_prune_interval_sec': 300.0,
+    'ignore_invalid_local_manoeuvres': False,
 }
 ALIASES = {'generated_task_release_stagger_sec': 'task_release_stagger_sec',
            'seed_waste_stream_containers_at_start': 'waste_stream_containers_present_at_start'}
@@ -30,6 +31,7 @@ NUMBERS = {'tick_rate': 0, 'generated_task_release_stagger_sec': 0, 'task_releas
            'opportunity_charging_idle_period_sec': 0, 'opportunity_charging_check_interval_sec': 1,
            'reservation_prune_interval_sec': 1, 'reservation_history_retention_sec': 0}
 FLAGS = {'precompute_static_routes', 'enable_opportunity_charging',
+         'ignore_invalid_local_manoeuvres',
          'seed_waste_stream_containers_at_start', 'waste_stream_containers_present_at_start',
          'disable_inventory_spaces', 'scenario_mode', 'scenario_enhanced_logging'}
 

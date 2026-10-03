@@ -59,6 +59,15 @@ The graph nodes and edges are ***explictly*** defined in the json file.
     Use --verbose-csv path_to_file.csv to name file
 ```
 
+## Local manoeuvre override
+
+In **Simulation settings → Initial conditions → Inventory and container state**,
+**Ignore invalid local manoeuvres** optionally replaces a failed local inventory-bay
+path with direct movement. It defaults to off. Distance and travel time remain
+included, and movement event details record `unverified_direct_fallback` plus the
+original failure reason. Project checks warn when it is enabled. This option
+does not bypass corridor, door, traffic or malformed-coordinate checks.
+
 ## Limiting task deferral
 
 In **Simulation settings → Run period**, set **Maximum task deferral** in minutes

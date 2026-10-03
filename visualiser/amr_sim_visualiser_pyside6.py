@@ -6242,13 +6242,6 @@ class SimulationVisualizer(QMainWindow):
         sx0, sy0 = self.world_to_scene(x, y)
         sx1, sy1 = self.world_to_scene(front_x, front_y)
         self.draw_line_item(sx0, sy0, sx1, sy1, "#858585", 0.0, dynamic=True)
-        reference = self._amr_reference_position_for_state(state)
-        if reference is not None:
-            rx, ry = self.world_to_scene(*reference)
-            self.draw_line_item(rx-3, ry, rx+3, ry, '#ffffff', 3, dynamic=True)
-            self.draw_line_item(rx, ry-3, rx, ry+3, '#ffffff', 3, dynamic=True)
-            self.draw_line_item(rx-3, ry, rx+3, ry, '#222222', 1, dynamic=True)
-            self.draw_line_item(rx, ry-3, rx, ry+3, '#222222', 1, dynamic=True)
 
     def build_lift_monitor_state(self) -> List[dict]:
         current_time = self.current_time

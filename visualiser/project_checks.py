@@ -273,6 +273,16 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     from amr_simulation_inputs import simulation_input_findings, DEFAULTS
     for path, message in simulation_input_findings(config):
         error(path, message, 'simulation', code='RUN_PERIOD')
+    from amr_simulation_inputs import run_control_bool
+    try:
+        ignore_local = run_control_bool(config.get('simulation', {}).get('ignore_invalid_local_manoeuvres', False))
+    except ValueError:
+        ignore_local = False
+    if ignore_local:
+        add('UNVERIFIED_LOCAL_MOVEMENT', 'warning', '/simulation/ignore_invalid_local_manoeuvres',
+            'Local manoeuvres', 'Invalid local inventory-bay paths may use unverified direct movement.',
+            'These movements may cross local obstacles; their distance and time are estimates, not validated paths.',
+            'Disable this option for local manoeuvre validation. Inspect flagged movement event details.', 'simulation')
     dates = {}
     try:
         dates['start_datetime'] = datetime.fromisoformat(config['simulation'].get('start_datetime', DEFAULTS['start_datetime']))
