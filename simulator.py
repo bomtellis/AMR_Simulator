@@ -6196,6 +6196,8 @@ class Simulation:
             staff_shift_multiplier=float(assignment.get("staff_shift_multiplier", 1.0) or 1.0),
             staff_initial_on_shift_people=int(assignment.get("staff_initial_on_shift_people", 0) or 0),
             staff_initial_rostered_people=int(assignment.get("staff_initial_rostered_people", 0) or 0),
+            staff_working_hours_fallback=bool(assignment.get("working_hours_fallback", False)),
+            staff_resource_tracked=bool(assignment.get("tracked_staff_resource", True)),
         )
 
     def _schedule_configured_return_task(
@@ -13553,6 +13555,8 @@ class Simulation:
             "staff_initial_on_shift_people",
             "staff_initial_rostered_people",
             "staff_wait_for_travel_sec",
+            "staff_working_hours_fallback",
+            "staff_resource_tracked",
             "location_inventory_spaces_disabled",
             "location_configured_inventory_area_m2",
             "location_peak_payload_count",
@@ -13799,6 +13803,8 @@ class Simulation:
         staff_initial_on_shift_people: int = 0,
         staff_initial_rostered_people: int = 0,
         staff_wait_for_travel_sec: float = 0.0,
+        staff_working_hours_fallback: Optional[bool] = None,
+        staff_resource_tracked: Optional[bool] = None,
     ):
         if not self.verbose:
             return
@@ -14055,6 +14061,8 @@ class Simulation:
                 "staff_wait_for_travel_sec": round(
                     float(staff_wait_for_travel_sec or 0.0), 3
                 ),
+                "staff_working_hours_fallback": staff_working_hours_fallback,
+                "staff_resource_tracked": staff_resource_tracked,
                 "scenario_mode": bool(self.scenario_mode),
                 "scenario_name": self.scenario_name if self.scenario_mode else "Normal operation",
                 "scenario_delay_sec": round(scenario_delay_value, 3),

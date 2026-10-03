@@ -1664,17 +1664,22 @@ def build_report(
             )
         )
     else:
+        staff_evidence = staff_df.reindex(columns=[
+            "category", "recorded_busy_time_s", "evidence_notes"
+        ]).copy()
+        staff_df = staff_df[["category", "handling_tasks", "people_required",
+                             "initial_people", "added_people", "total_handling_time_s"]]
         staff_df["total_handling_time_s"] = staff_df["total_handling_time_s"].map(
             lambda x: fmt_duration(x) if isinstance(x, (int, float)) else x
         )
         staff_df = staff_df.rename(
             columns={
                 "category": "Category",
-                "handling_tasks": "Handled payloads",
+                "handling_tasks": "Handling records",
                 "people_required": "People required",
                 "initial_people": "Initial",
                 "added_people": "Added",
-                "total_handling_time_s": "Handling time",
+                "total_handling_time_s": "Task handling time",
             }
         )
         story.append(
@@ -1685,6 +1690,24 @@ def build_report(
                 right_align=[1, 2, 3, 4],
             )
         )
+        story.append(Paragraph(
+            "Task handling time sums the handling and exchange records. Shared "
+            "batches can overlap, so this is not staff busy time or a count of unique "
+            "physical payloads. Recorded busy handling time merges overlapping "
+            "intervals for each person, then sums across people. It excludes travel "
+            "and covers only the supplied records; no utilisation percentage is inferred.",
+            styles["BodyText"],
+        ))
+        staff_evidence["recorded_busy_time_s"] = staff_evidence["recorded_busy_time_s"].map(
+            lambda value: "Unknown" if pd.isna(value) else fmt_duration(value)
+        )
+        staff_evidence["evidence_notes"] = staff_evidence["evidence_notes"].fillna("Evidence unavailable")
+        story.append(table_from_df(
+            staff_evidence.rename(columns={"category": "Category",
+                                           "recorded_busy_time_s": "Recorded busy handling",
+                                           "evidence_notes": "Evidence and limits"}),
+            [38 * mm, 28 * mm, 110 * mm], styles,
+        ))
 
     payload_timetable_df = results.get("payload_handling_timetable", pd.DataFrame()).copy()
     ward_collection_df = results.get("linen_ward_collection", pd.DataFrame()).copy()

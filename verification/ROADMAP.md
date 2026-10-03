@@ -127,6 +127,11 @@ roundtrips. Staff capacity/queue semantics and wider scalar validation remain op
 verifies the existing staffing-sizing rules and fixes three unsafe batch-sharing
 cases. Six staff option contracts and dialog help clarify automatic growth.
 Staff report reconciliation, shift boundaries and wider input validation remain open.
+**Slice 2F:** [Staff report reconciliation](STAFF_REPORT_REVIEW.md) corrects
+omitted exchanges, overridden recorded counts and reclassified Linen assignments;
+adds recorded busy handling and evidence notes. Boundary review found that travel
+deferred into a new four-day block can retain the previous team. Its reproduction
+is recorded for the next simulator fix; full staff utilisation remains open.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -377,8 +382,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2E's staff contention correction, then reconcile assignment intervals
-with reported staffing/utilisation metrics and audit shift-team boundaries.
+Review slice 2F's staff report correction, then fix the reproduced roster-selection
+defect when travel defers service across a four-day team boundary. Extend the
+staff schedule and evidence audit without claiming full utilisation coverage.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

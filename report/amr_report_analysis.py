@@ -4137,7 +4137,7 @@ def _staff_handling_event_mask(df: pd.DataFrame) -> pd.Series:
     """
     event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
     return event_text.str.fullmatch(
-        r"(?:segment_)?(?:[a-z0-9]+(?:_[a-z0-9]+)*)_payload_handling",
+        r"(?:segment_)?(?:[a-z0-9]+(?:_[a-z0-9]+)*)_payload_(?:handling|exchange)",
         case=False,
         na=False,
     )
@@ -4648,32 +4648,8 @@ def build_payload_handling_timetable(
                 "shift_team": shift_team,
                 "task_id": task_id,
             }
-            staff_hours = _record_staff_hours(metadata, category_key, department_id, ready_start, ctx.has_datetime)
-            if (
-                category_key == "linen"
-                and staff_hours
-                and not _within_staff_hours(
-                    ready_start, ready_end, staff_hours, ctx.has_datetime
-                )
-            ):
-                ward_collection_rows.append(
-                    {
-                        "date": _event_date_label(ready_start, ctx.has_datetime),
-                        "day": day,
-                        "delivery_time": _event_time_hhmm(ready_start, ctx.has_datetime),
-                        "handling_finish": _event_time_hhmm(ready_end, ctx.has_datetime),
-                        "department": department,
-                        "location": location,
-                        "payload": payload,
-                        "task_id": task_id,
-                        "linen_staff_hours": f"{staff_hours[0]}-{staff_hours[1]}",
-                        "collection_by": "Ward staff",
-                        "reason": _ward_collection_reason(
-                            ready_start, ready_end, staff_hours, ctx.has_datetime
-                        ),
-                    }
-                )
-                continue
+            # Explicit events describe the recorded assignment; configuration
+            # hours must not reassign it to a different team after the run.
             records.append(record)
 
     # Supplement explicit staff rows with the legacy completed-to-return window
@@ -4886,6 +4862,47 @@ def build_payload_handling_timetable(
     return pd.DataFrame(rows, columns=columns)
 
 
+def _staff_resource_is_tracked(row: pd.Series) -> bool:
+    value = row.get("staff_resource_tracked")
+    if _clean_optional_text(value):
+        return _to_bool(value, True)
+    # Older simulator logs used this explicit sentinel before the boolean column.
+    return not _clean_optional_text(row.get("person_id")).endswith("-team-untracked")
+
+
+def _recorded_staff_busy_seconds(group: pd.DataFrame) -> Optional[float]:
+    """Union logged handling intervals per person; never fill missing evidence.
+
+    This excludes walking and covers only the supplied handling records. It is
+    not a utilisation percentage or a claim that the log covers the whole run.
+    """
+    intervals = {}
+    for _, row in group.iterrows():
+        person = _clean_optional_text(row.get("person_id"))
+        if not person or not _staff_resource_is_tracked(row):
+            return None
+        start, end = row.get("start_time"), row.get("end_time")
+        if pd.isna(start) or pd.isna(end) or start is None or end is None:
+            return None
+        try:
+            start, end = float(start), float(end)
+        except (TypeError, ValueError):
+            try:
+                start, end = pd.Timestamp(start).timestamp(), pd.Timestamp(end).timestamp()
+            except (TypeError, ValueError):
+                return None
+        if not math.isfinite(start) or not math.isfinite(end) or end < start:
+            return None
+        intervals.setdefault(person, []).append((start, end))
+    total = 0.0
+    for bookings in intervals.values():
+        finish = float('-inf')
+        for start, end in sorted(bookings):
+            total += max(0.0, end - max(start, finish))
+            finish = max(finish, end)
+    return total
+
+
 def build_staff_handling_summary(
     df: pd.DataFrame,
     ctx: Context,
@@ -4898,6 +4915,9 @@ def build_staff_handling_summary(
         "initial_people",
         "added_people",
         "total_handling_time_s",
+        "recorded_busy_time_s",
+        "evidence_notes",
+        "event_ids",
     ]
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
@@ -4946,28 +4966,6 @@ def build_staff_handling_summary(
         axis=1,
     )
 
-    def include_staff_row(row: pd.Series) -> bool:
-        category_key = str(row.get("_staff_category_key", "") or "").strip().lower()
-        if category_key != "linen":
-            return True
-        department_id = _clean_optional_text(row.get("department_id", ""))
-        start_value = row.get(ctx.time_col)
-        hours = _record_staff_hours(
-            metadata, category_key, department_id, start_value, ctx.has_datetime
-        )
-        if not hours:
-            return True
-        end_value = add_seconds_to_event_time(
-            start_value,
-            _to_float(row.get("_report_handling_duration_s"), 0.0),
-            ctx.has_datetime,
-        )
-        return _within_staff_hours(start_value, end_value, hours, ctx.has_datetime)
-
-    staff_rows = staff_rows[staff_rows.apply(include_staff_row, axis=1)].copy()
-    if staff_rows.empty:
-        return pd.DataFrame(columns=columns)
-
     rows = []
     for category_key, group in staff_rows.groupby("_staff_category_key", sort=True):
         category_key = str(category_key or "staff").strip().lower()
@@ -5012,17 +5010,10 @@ def build_staff_handling_summary(
             people_required = on_shift_people_required or len(person_ids)
         shift_multiplier = configured_shift_multiplier.get(category_key, 1.0)
         if "staff_shift_multiplier" in group.columns:
-            shift_multiplier = max(
-                shift_multiplier,
-                float(
-                    pd.to_numeric(
-                        group.get("staff_shift_multiplier", 1.0), errors="coerce"
-                    )
-                    .fillna(1.0)
-                    .max()
-                    or 1.0
-                ),
-            )
+            recorded_multiplier = pd.to_numeric(group["staff_shift_multiplier"], errors="coerce")
+            positive_multiplier = recorded_multiplier[recorded_multiplier > 0]
+            if not positive_multiplier.empty:
+                shift_multiplier = max(1.0, float(positive_multiplier.max()))
         if (
             "staff_on_shift_people_required" in group.columns
             and shift_multiplier > 1.0
@@ -5038,20 +5029,24 @@ def build_staff_handling_summary(
             )
         initial_people = max(1, int(configured_initial.get(category_key, 1) or 1))
         if "staff_initial_rostered_people" in group.columns:
-            initial_people = max(
-                initial_people,
-                int(
-                    pd.to_numeric(
-                        group.get("staff_initial_rostered_people", 0),
-                        errors="coerce",
-                    )
-                    .fillna(0)
-                    .max()
-                    or 0
-                ),
-            )
+            recorded_initial = pd.to_numeric(group["staff_initial_rostered_people"], errors="coerce")
+            positive_initial = recorded_initial[recorded_initial > 0]
+            if not positive_initial.empty:
+                initial_people = int(positive_initial.max())
         elif shift_multiplier > 1.0:
             initial_people = int(math.ceil(initial_people * shift_multiplier))
+        untracked = ~group.apply(_staff_resource_is_tracked, axis=1)
+        if untracked.all():
+            people_required = initial_people = 0
+        busy_seconds = _recorded_staff_busy_seconds(group)
+        notes = ["Recorded handling intervals only; excludes travel"]
+        if busy_seconds is None:
+            notes.append("Busy time unknown: missing person/interval evidence or untracked staff")
+        fallback = group.get("staff_working_hours_fallback", pd.Series(None, index=group.index, dtype=object))
+        if fallback.map(lambda value: False if pd.isna(value) else _to_bool(value, False)).any():
+            notes.append("Working-hours fallback: capacity against the schedule is not established")
+        if fallback.isna().any() or fallback.map(lambda value: _clean_optional_text(value) == '').any():
+            notes.append("Working-hours fallback status unavailable in legacy records")
         duration = pd.to_numeric(
             group.get("_report_handling_duration_s", 0.0),
             errors="coerce",
@@ -5064,6 +5059,12 @@ def build_staff_handling_summary(
                 "initial_people": initial_people,
                 "added_people": max(0, people_required - initial_people),
                 "total_handling_time_s": float(duration.sum()),
+                "recorded_busy_time_s": busy_seconds,
+                "evidence_notes": "; ".join(notes),
+                "event_ids": ", ".join(dict.fromkeys(
+                    value for value in group.get("event_id", pd.Series(dtype=str)).map(_clean_optional_text)
+                    if value
+                )),
             }
         )
 
