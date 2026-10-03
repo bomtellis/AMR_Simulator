@@ -6,6 +6,7 @@ Automatic task generation for the AMR simulator.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from datetime import datetime, time as dt_time, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -20,6 +21,12 @@ THRESHOLD_MODES = {"threshold", "hybrid", "scheduled_threshold"}
 CONTINUOUS_MODES = {"continuous", "hybrid", "threshold", "scheduled_threshold"}
 SPORADIC_MODES = {"sporadic", "hybrid", "scheduled_sporadic"}
 TIMEFRAME_MODES = {"timeframe"}
+
+
+def _whole_event_count(value: float) -> int:
+    """Ignore arithmetic noise within 1e-10 of a whole accumulated event."""
+    nearest = round(value)
+    return max(0, nearest if math.isclose(value, nearest, rel_tol=0, abs_tol=1e-10) else int(value))
 
 
 @dataclass
@@ -598,6 +605,18 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             self.clock.sim_seconds_to_datetime(start_sec),
             self.clock.sim_seconds_to_datetime(end_sec),
         )
+
+    def _generation_active_elapsed_seconds(self, instance: dict, start_sec: float, end_sec: float) -> float:
+        """Integrate category eligibility and department opening over the interval."""
+        cursor = self.clock.sim_seconds_to_datetime(start_sec)
+        end = self.clock.sim_seconds_to_datetime(end_sec)
+        total = 0.0
+        while cursor < end:
+            boundary = min(end, cursor.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1))
+            if self._category_is_active(instance['cfg'], (cursor - self.clock.start_datetime).total_seconds()):
+                total += _department_active_seconds_between(self._instance_department(instance), cursor, boundary)
+            cursor = boundary
+        return total
 
     def _adjust_release_to_department_open(
         self, instance: dict, release_time: float
@@ -1777,10 +1796,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         runtime = self._runtime_for_volume_key(instance)
         records: List[GeneratedTaskRecord] = []
-        while _as_float(runtime.get("volume", 0.0), 0.0) >= threshold_volume:
-            runtime["volume"] = (
-                _as_float(runtime.get("volume", 0.0), 0.0) - threshold_volume
-            )
+        while (runtime["volume"] >= threshold_volume or
+               math.isclose(runtime["volume"], threshold_volume, rel_tol=1e-12, abs_tol=0)):
+            runtime["volume"] = max(0.0, runtime["volume"] - threshold_volume)
             for pickup, dropoff in self._pick_pairs(instance):
                 task = self._base_task(
                     instance, pickup, dropoff, payload_name, release_time, "threshold"
@@ -2150,19 +2168,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         ) is None or _department_is_open_at_datetime(
             self._instance_department(instance), self.clock.sim_seconds_to_datetime(now)
         )
-        if not category_active:
-            runtime = self.runtime.setdefault(
-                instance.get("volume_key", instance["key"]),
-                {
-                    "volume": 0.0,
-                    "contributors": {},
-                    "sporadic_accumulator": {},
-                    "volume_event_accumulator": {},
-                },
-            )
-            runtime.setdefault("contributors", {})[instance["key"]] = now
-            return []
-
         volume_key = instance.get("volume_key", instance["key"])
         runtime = self.runtime.setdefault(
             volume_key,
@@ -2179,16 +2184,14 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         if now <= last_time:
             return []
 
-        elapsed_seconds = self._instance_active_elapsed_seconds(
+        elapsed_seconds = self._generation_active_elapsed_seconds(
             instance, last_time, now
         )
         elapsed_days = elapsed_seconds / 86400.0
-        elapsed_hours = elapsed_seconds / 3600.0
         records: List[GeneratedTaskRecord] = []
-
-        if elapsed_seconds <= 0.0 or not department_open:
-            contributors[contributor_key] = now
-            return records
+        # Integrate the whole elapsed interval before checking release eligibility.
+        # A poll at closing must retain demand from the preceding open hours.
+        contributors[contributor_key] = now
 
         if mode in CONTINUOUS_MODES:
             runtime["volume"] += max(
@@ -2211,10 +2214,10 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                 volume_event_accumulators[contributor_key] = _as_float(
                     volume_event_accumulators.get(contributor_key, 0.0), 0.0
                 ) + (elapsed_days * event_frequency)
-                whole_events = int(volume_event_accumulators[contributor_key])
+                whole_events = _whole_event_count(volume_event_accumulators[contributor_key])
                 if whole_events > 0:
                     runtime["volume"] += whole_events * event_volume
-                    volume_event_accumulators[contributor_key] -= whole_events
+                    volume_event_accumulators[contributor_key] = max(0.0, volume_event_accumulators[contributor_key] - whole_events)
 
         if mode in SPORADIC_MODES:
             freq_per_day = max(0.0, _as_float(cfg.get("frequency_per_day", 0.0), 0.0))
@@ -2222,8 +2225,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             sporadic_accumulators[contributor_key] = _as_float(
                 sporadic_accumulators.get(contributor_key, 0.0), 0.0
             ) + (elapsed_days * freq_per_day)
-            while sporadic_accumulators[contributor_key] >= 1.0:
-                sporadic_accumulators[contributor_key] -= 1.0
+            whole_events = _whole_event_count(sporadic_accumulators[contributor_key]) if category_active and department_open else 0
+            sporadic_accumulators[contributor_key] = max(0.0, sporadic_accumulators[contributor_key] - whole_events)
+            for _ in range(whole_events):
                 for pickup, dropoff in self._pick_pairs(instance):
                     task = self._base_task(
                         instance, pickup, dropoff, payload_name, now, "sporadic"
@@ -2242,7 +2246,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         )
                     )
 
-        if mode in THRESHOLD_MODES:
+        if mode in THRESHOLD_MODES and category_active and department_open:
             records.extend(
                 self._threshold_collection_records(
                     instance,

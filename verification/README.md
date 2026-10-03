@@ -12,7 +12,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Timeframe allocation](TIMEFRAME_ALLOCATION_REVIEW.md):
+The latest correction is [Accumulated demand](ACCUMULATION_REVIEW.md):
+closed-time polls retain accrued demand, inactive dates contribute none, and decimal
+threshold/event boundaries have independent conservation checks.
+The preceding correction is [Timeframe allocation](TIMEFRAME_ALLOCATION_REVIEW.md):
 actual release dates control pool membership across midnight; weekend import parity and
 inspectable candidate-slot exclusions now accompany the reference results.
 The preceding correction is [Timeframe working periods](TIMEFRAME_WINDOWS_REVIEW.md):

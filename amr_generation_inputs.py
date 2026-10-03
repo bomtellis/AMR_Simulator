@@ -77,6 +77,8 @@ def generation_input_findings(config):
             number(row, path, name, minimum=1, integer=True)
         for name in sorted(DURATIONS):
             number(row, path, name)
+        for name in ('base_daily_volume_m3', 'threshold_volume_m3', 'frequency_per_day', 'volume_per_event_m3'):
+            number(row, path, name)
         if 'generation_mode' in row:
             mode = row['generation_mode']
             if not isinstance(mode, str) or (mode.strip() and mode.strip() not in MODES):

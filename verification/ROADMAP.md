@@ -162,6 +162,10 @@ active-day/fortnight pool membership across midnight and preserves unrestricted
 imported category/department weekdays. Twelve references cover differing
 department windows, excluded slots and dialog display. Preview slot accounting
 explains outcomes without claiming an independent expectation or staff capacity.
+**Slice 2M:** [Accumulated demand](ACCUMULATION_REVIEW.md) fixes lost demand at
+closed-time polls, inactive-date overcounting and decimal threshold/event boundaries.
+Twelve references and eight option contracts cover dynamic single-pair accumulation.
+Shared/legacy waste pools and tracked-item consumption remain open.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -412,10 +416,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2L's allocation and import corrections, then audit continuous,
-threshold and sporadic demand calculations with independent arithmetic and
-configured-versus-generated reconciliation. Retain explicit limits on staffing
-capacity and broader calendar combinations.
+Review slice 2M's accumulation corrections, then audit shared waste accumulation
+and collection thresholds, department overrides and the legacy generator path.
+Reconcile accrued, collected and remaining demand with independent arithmetic.
+Retain explicit limits on staffing capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

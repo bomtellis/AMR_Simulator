@@ -199,7 +199,10 @@ def build_demand_preview(config, *, end_datetime=None):
             # modes. Threshold collections and tracked-item replenishment stay unknown.
             fixed = mode in {'scheduled', 'scheduled_sporadic', 'timeframe'}
             if not fixed:
-                rule['explanation'] = f'{mode}: demand depends on accumulation, inventory or runtime events. Total is unknown before simulation.'
+                rule['explanation'] = ('Continuous mode accumulates volume but does not trigger volume collections by itself. '
+                                       'Tracked-item exchange, when enabled, uses separate consumption rules. '
+                                       'Use threshold or hybrid mode for volume-triggered collections.' if mode == 'continuous' else
+                                       f'{mode}: demand depends on accumulation, inventory or runtime events. Total is unknown before simulation.')
                 continue
             times = _scheduled_times_from_cfg(cfg) if mode != 'timeframe' else []
             if mode != 'timeframe' and not times:
