@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Location inputs and wash capacity](LOCATION_CONTRACT_REVIEW.md):
+The latest checkpoint is [Bay classification and dimension policy](INVENTORY_CLASSIFICATION_REVIEW.md):
+AMR markers and legacy aliases resolve consistently across storage and charging,
+zero dimensions share inference across runtime/preflight, and unresolved or mixed
+bay definitions have explicit findings. Fleet-to-bay allocation remains under audit.
+The preceding checkpoint is [Location inputs and wash capacity](LOCATION_CONTRACT_REVIEW.md):
 wash service now reserves location capacity, invalid targets block running,
 location inputs reject malformed values, and wash controls preserve their settings.
 Sixteen new references and nine dispositions retain explicit model limitations.

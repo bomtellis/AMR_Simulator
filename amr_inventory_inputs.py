@@ -1,5 +1,32 @@
 """Nonmutating storage-bay checks shared by import, editing and preflight."""
 import math
+from amr_payload_inputs import inventory_space_dimensions
+
+
+def inventory_slot_amr_type(slot):
+    """Modern key wins, including an explicit empty value, over the legacy alias."""
+    return str(slot.get('amr_type', slot.get('amr', '')) or '').strip()
+
+
+def inventory_slot_is_amr(slot):
+    return isinstance(slot, dict) and (str(slot.get('slot_type', '')).strip().lower() == 'amr'
+                                      or bool(inventory_slot_amr_type(slot)))
+
+
+def inventory_space_is_amr(space):
+    """Any AMR marker makes the bay AMR-only; a charger flag alone does not."""
+    return isinstance(space, dict) and bool(
+        space.get('stores_amr', False) or str(space.get('space_type', '')).strip().lower() == 'amr'
+        or str(space.get('amr_type', '') or '').strip()
+        or any(inventory_slot_is_amr(slot) for slot in space.get('payload_slots', []) or []))
+
+
+def inventory_space_amr_types(space):
+    """Parent and slot restrictions form the existing union of allowed identities."""
+    values = {str(space.get('amr_type', '') or '').strip()}
+    values.update(inventory_slot_amr_type(slot) for slot in space.get('payload_slots', []) or []
+                  if inventory_slot_is_amr(slot))
+    return values - {''}
 
 
 def _number_valid(value, *, nonnegative=False):
@@ -28,8 +55,9 @@ def _point_findings(point, path, *, optional=False):
 def inventory_input_findings(config, *, check_references=False):
     if not isinstance(config, dict) or not isinstance(config.get('locations', []), list):
         return
-    payloads = {row.get('name') for row in config.get('payloads', [])
-                if isinstance(row, dict) and isinstance(row.get('name'), str)} if isinstance(config.get('payloads', []), list) else set()
+    definitions = {row['name']: row for row in config.get('payloads', [])
+                   if isinstance(row, dict) and isinstance(row.get('name'), str)} if isinstance(config.get('payloads', []), list) else {}
+    payloads = set(definitions)
     robots = {}
     for robot in config.get('amrs', []) if isinstance(config.get('amrs', []), list) else []:
         if isinstance(robot, dict) and isinstance(robot.get('id'), str):
@@ -79,6 +107,9 @@ def inventory_input_findings(config, *, check_references=False):
             for key in ('stores_amr', 'has_charger', 'occupied', 'flexible', 'flexible_payloads'):
                 if key in space and type(space[key]) is not bool:
                     yield space_path + '/' + key, f'{key} must be a JSON boolean.'
+            if 'space_type' in space and (not isinstance(space['space_type'], str)
+                    or space['space_type'].strip().lower() not in {'', 'payload', 'amr'}):
+                yield space_path + '/space_type', 'Space type must be payload, amr or empty (infer from other markers).'
             for key in ('length', 'width', 'height', 'length_m', 'width_m', 'height_m'):
                 if key in space and not _number_valid(space[key], nonnegative=True):
                     yield space_path + '/' + key, f'{key} must be finite and nonnegative; zero retains legacy envelope inference.'
@@ -99,10 +130,21 @@ def inventory_input_findings(config, *, check_references=False):
                     yield slot_path, 'Each bay template must be an object.'
                     continue
                 yield from _point_findings(slot, slot_path, optional=True)
+                if 'slot_type' in slot and (not isinstance(slot['slot_type'], str)
+                        or slot['slot_type'].strip().lower() not in {'', 'payload', 'amr'}):
+                    yield slot_path + '/slot_type', 'Slot type must be payload, amr or empty (infer from its reference).'
                 for key, kind in (('payload', 'payload'), ('amr_type', 'AMR')):
                     yield from reference_findings(slot, slot_path, key, kind)
+                if 'amr_type' not in slot:
+                    yield from reference_findings(slot, slot_path, 'amr', 'AMR')
                 if 'rotation_deg' in slot and not _number_valid(slot['rotation_deg']):
                     yield slot_path + '/rotation_deg', 'Template rotation must be finite degrees; booleans are invalid.'
+            try:
+                dimensions = inventory_space_dimensions(space, definitions)
+            except (TypeError, ValueError, OverflowError, AttributeError):
+                continue  # Explicit malformed inputs have their own findings above.
+            if not all(math.isfinite(value) for value in dimensions):
+                yield space_path, 'The resolved bay envelope must be finite; outline coordinates overflow the dimensional calculation.'
 
 
 def validate_inventory_inputs(config, *, check_references=False):

@@ -3,6 +3,7 @@ import json
 import math
 from typing import Any, List, Optional
 from amr_generation_inputs import generation_mode_explanation
+from amr_inventory_inputs import inventory_space_is_amr
 
 from advanced_dialogs import MultiSelectPicker
 from inventory_spaces_manager import LocationSpacesManagerDialog
@@ -14057,22 +14058,7 @@ class InventorySpacesDialog(QDialog):
         self._update_bulk_controls()
 
     def _space_is_amr_space(self, space):
-        if not isinstance(space, dict):
-            return False
-        if bool(space.get("stores_amr", False)):
-            return True
-        if str(space.get("space_type", "") or "").strip().lower() == "amr":
-            return True
-        if str(space.get("amr_type", "") or "").strip():
-            return True
-        for slot in space.get("payload_slots", []) or []:
-            if not isinstance(slot, dict):
-                continue
-            if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
-                return True
-            if str(slot.get("amr_type", "") or "").strip():
-                return True
-        return False
+        return inventory_space_is_amr(space)
 
     def _selected_space_rows(self):
         rows = set(self.selected_space_indices or set())

@@ -1,3 +1,5 @@
+from amr_inventory_inputs import (inventory_space_is_amr, inventory_space_amr_types,
+                                  inventory_slot_is_amr, inventory_slot_amr_type)
 import json
 import os
 import tempfile
@@ -803,10 +805,10 @@ class JsonStore:
             for space in location.setdefault("inventory_spaces", []):
                 if not isinstance(space, dict):
                     continue
-                is_amr = bool(space.get("stores_amr", False)) or str(space.get("space_type", "")).lower() == "amr"
-                for slot in space.get("payload_slots", []) or []:
-                    if isinstance(slot, dict) and (str(slot.get("slot_type", "")).lower() == "amr" or str(slot.get("amr_type", "")).strip()):
-                        is_amr = True
+                is_amr = inventory_space_is_amr(space)
+                for slot in space.get('payload_slots', []) or []:
+                    if inventory_slot_is_amr(slot) and 'amr' in slot:
+                        slot.setdefault('amr_type', inventory_slot_amr_type(slot))
                 if is_amr:
                     space.setdefault("has_charger", False)
                 else:
@@ -1366,9 +1368,9 @@ class JsonStore:
             slots = []
             for slot in space.get("payload_slots", []):
                 item = deepcopy(slot)
-                if str(slot.get('slot_type', '')).lower() == 'amr' or slot.get('amr_type'):
+                if inventory_slot_is_amr(slot):
                     item['slot_type'] = 'amr'
-                    item['amr_type'] = slot.get('amr_type', slot.get('amr', ''))
+                    item['amr_type'] = inventory_slot_amr_type(slot)
                 item["rotation_deg"] = float(slot.get("rotation_deg", 0))
                 if "dx" in slot and "dy" in slot:
                     item.update(dx=float(slot["dx"]), dy=float(slot["dy"]))
@@ -1383,8 +1385,7 @@ class JsonStore:
             clean["flexible"] = space.get("flexible", space.get("flexible_payloads", location_name in dropoffs))
             slot_amr_type = next((slot.get('amr_type', '') for slot in slots
                                   if slot.get('slot_type') == 'amr'), '')
-            if (space.get('stores_amr') or str(space.get('space_type', '')).lower() == 'amr'
-                    or space.get('amr_type') or slot_amr_type):
+            if inventory_space_is_amr(clean):
                 clean.update(space_type='amr', stores_amr=True,
                              has_charger=space.get('has_charger', False))
                 clean['amr_type'] = space.get('amr_type') or slot_amr_type
@@ -2100,23 +2101,18 @@ class JsonStore:
     def _inventory_space_accepts_amr_type(self, location: dict, space: dict, amr_type: dict) -> bool:
         if not isinstance(space, dict):
             return False
-        stores_amr = bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr"
-        slot_amr_type = str(space.get("amr_type", "") or "").strip()
-        for slot in space.get("payload_slots", []) or []:
-            if not isinstance(slot, dict):
-                continue
-            if str(slot.get("slot_type", "") or "").strip().lower() == "amr" or str(slot.get("amr_type", "") or "").strip():
-                stores_amr = True
-                slot_amr_type = slot_amr_type or str(slot.get("amr_type", "") or "").strip()
-        if not stores_amr:
+        if not inventory_space_is_amr(space):
             return False
+        allowed = inventory_space_amr_types(space)
         amr_id = str(amr_type.get("id", "") or "").strip()
-        if slot_amr_type and slot_amr_type != amr_id:
+        quantity = int(amr_type.get("quantity", 1))
+        instance_allowed = any(value.startswith(amr_id + "-") and value[len(amr_id)+1:].isdecimal()
+                               and 1 <= int(value[len(amr_id)+1:]) <= quantity for value in allowed)
+        if allowed and amr_id not in allowed and not instance_allowed:
             return False
-        point_length, point_width = self._space_points_dimensions_for_location(location, space)
-        length_m = float(space.get("length_m", space.get("length", point_length)) or point_length or 0.0)
-        width_m = float(space.get("width_m", space.get("width", point_width)) or point_width or 0.0)
-        height_m = float(space.get("height_m", space.get("height", 999999.0)) or 999999.0)
+        from amr_payload_inputs import inventory_space_dimensions
+        payloads = {p['name']: p for p in self.data.get('payloads', []) if 'name' in p}
+        length_m, width_m, height_m = inventory_space_dimensions(space, payloads)
         amr_length = float(amr_type.get("length_m", 0.8) or 0.8)
         amr_width = float(amr_type.get("width_m", 0.6) or 0.6)
         amr_height = float(amr_type.get("height_m", 1.2) or 1.2)
@@ -2157,7 +2153,7 @@ class JsonStore:
         for amr_type in self.data.get("amrs", []) or []:
             amr_id = str(amr_type.get("id", "") or "").strip() or "AMR"
             try:
-                required = max(0, int(float(amr_type.get("quantity", 1) or 1)))
+                required = max(0, int(amr_type.get("quantity", 1)))
             except Exception:
                 required = 1
             compatible = 0
@@ -2168,17 +2164,7 @@ class JsonStore:
             for location in charge_location_dicts:
                 location_name = str(location.get("name", "") or "").strip()
                 for space in location.get("inventory_spaces", []) or []:
-                    slot_mentions_amr = False
-                    for slot in space.get("payload_slots", []) or []:
-                        if not isinstance(slot, dict):
-                            continue
-                        if (
-                            str(slot.get("slot_type", "") or "").strip().lower() == "amr"
-                            or str(slot.get("amr_type", "") or "").strip()
-                        ):
-                            slot_mentions_amr = True
-                            break
-                    if bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr" or slot_mentions_amr:
+                    if inventory_space_is_amr(space):
                         configured_slots_by_location[location_name] = configured_slots_by_location.get(location_name, 0) + 1
                     if self._inventory_space_accepts_amr_type(location, space, amr_type):
                         compatible += 1

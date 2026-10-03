@@ -286,6 +286,14 @@ seconds; nine dispositions expose the unused location people classification.
 Physical wash efficacy, queue geometry, local-service timing alignment, general
 rename/delete coverage and the complete location model remain open.
 
+**Slice 2AE:** [Bay classification and dimension policy](INVENTORY_CLASSIFICATION_REVIEW.md)
+unifies AMR markers, legacy aliases and restriction unions across runtime/editor
+storage and charging. Numeric/string zero bay dimensions share inference and pass
+the same preflight policy; unresolved extents, unbounded height and mixed markers
+have explicit warnings. Thirteen tests and five additional partial dispositions
+cover the stated cases. Fleet-to-bay matching, instance-specific charger allocation
+and complete physical geometry remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -535,10 +543,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AD's location and wash-capacity changes. Next resolve remaining
-bay classification, legacy slot aliases and zero-dimension policy against the
-stock/conservation references, finish location outlines and remaining input
-contracts, then continue the department inventory,
+Review slice 2AE's bay classification and dimension changes. Next verify global
+fleet-to-bay/charger allocation, instance restrictions and the distinction between
+charging constraints and malformed inputs. Finish location outlines and remaining
+input contracts, then continue the department inventory,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

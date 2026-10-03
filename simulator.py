@@ -21,7 +21,8 @@ from amr_routing_inputs import validate_routing_inputs
 from amr_lift_inputs import validate_lift_inputs
 from amr_robot_inputs import validate_robot_inputs, normalise_amr_payload_slots, normalise_orientations
 from amr_payload_inputs import validate_payload_inputs, payload_dimensions, inventory_space_dimensions
-from amr_inventory_inputs import validate_inventory_inputs
+from amr_inventory_inputs import (validate_inventory_inputs, inventory_space_is_amr,
+                                  inventory_space_amr_types, inventory_slot_amr_type, inventory_slot_is_amr)
 from amr_location_inputs import validate_location_inputs
 from amr_generation_inputs import validate_generation_inputs
 from amr_staff_policy import resolve_staff_requirement
@@ -3197,21 +3198,15 @@ class Simulation:
                 name = str(raw_space.get("name", "")).strip() or f"Space {index}"
                 occupied = bool(raw_space.get("occupied", False))
 
-                slot_type = str(raw_space.get("space_type", "") or "").strip().lower()
-                stores_amr = (
-                    bool(raw_space.get("stores_amr", False)) or slot_type == "amr"
-                )
+                stores_amr = inventory_space_is_amr(raw_space)
                 amr_type = str(raw_space.get("amr_type", "") or "").strip()
                 for slot in raw_space.get("payload_slots", []) or []:
                     if not isinstance(slot, dict):
                         continue
-                    if (
-                        str(slot.get("slot_type", "") or "").strip().lower() == "amr"
-                        or str(slot.get("amr_type", "") or "").strip()
-                    ):
+                    if inventory_slot_is_amr(slot):
                         stores_amr = True
                         amr_type = (
-                            amr_type or str(slot.get("amr_type", "") or "").strip()
+                            amr_type or inventory_slot_amr_type(slot)
                         )
 
                 clean_spaces.append(
@@ -3924,32 +3919,11 @@ class Simulation:
             self.amr_inventory_space_acceptance_cache[cache_key] = bool(value)
             return bool(value)
 
-        amr_type_values = []
         amr_id = str(getattr(amr, "id", "") or "").strip()
         base_id = amr_id.rsplit("-", 1)[0]
-        parent_marks_amr = (
-            bool(space.get("stores_amr", False))
-            or str(space.get("space_type", "") or "").strip().lower() == "amr"
-            or bool(str(space.get("amr_type", "") or "").strip())
-        )
-        if str(space.get("amr_type", "") or "").strip():
-            amr_type_values.append(str(space.get("amr_type", "") or "").strip())
-
-        slot_marks_amr = False
-        for slot in space.get("payload_slots", []) or []:
-            if not isinstance(slot, dict):
-                continue
-            slot_type = str(slot.get("slot_type", "") or "").strip().lower()
-            slot_amr_type = str(slot.get("amr_type", "") or "").strip()
-            if slot_type == "amr" or slot_amr_type:
-                slot_marks_amr = True
-                if slot_amr_type:
-                    amr_type_values.append(slot_amr_type)
-
-        if not (parent_marks_amr or slot_marks_amr):
+        if not inventory_space_is_amr(space):
             return cache_and_return(False)
-
-        clean_amr_types = {x for x in amr_type_values if x}
+        clean_amr_types = inventory_space_amr_types(space)
         if (
             clean_amr_types
             and base_id not in clean_amr_types
@@ -3976,25 +3950,8 @@ class Simulation:
 
     def _location_has_any_amr_inventory_spaces(self, location_name: str) -> bool:
         """Return True if the location contains any AMR bay, regardless of type."""
-        for space in self.inventory_spaces_by_location.get(
-            str(location_name or "").strip(), []
-        ):
-            if not isinstance(space, dict):
-                continue
-            if bool(space.get("stores_amr", False)):
-                return True
-            if str(space.get("space_type", "") or "").strip().lower() == "amr":
-                return True
-            if str(space.get("amr_type", "") or "").strip():
-                return True
-            for slot in space.get("payload_slots", []) or []:
-                if not isinstance(slot, dict):
-                    continue
-                if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
-                    return True
-                if str(slot.get("amr_type", "") or "").strip():
-                    return True
-        return False
+        return any(inventory_space_is_amr(space) for space in
+                   self.inventory_spaces_by_location.get(str(location_name or "").strip(), []))
 
     def _space_name(self, space: dict) -> str:
         return str((space or {}).get("name", "") or "").strip()
@@ -4517,22 +4474,7 @@ class Simulation:
         matched every AMR bay because its dimensions are zero, which caused all
         AMR bays to be reserved by payload-task logic.
         """
-        if not isinstance(space, dict):
-            return False
-        if bool(space.get("stores_amr", False)):
-            return True
-        if str(space.get("space_type", "") or "").strip().lower() == "amr":
-            return True
-        if str(space.get("amr_type", "") or "").strip():
-            return True
-        for slot in space.get("payload_slots", []) or []:
-            if not isinstance(slot, dict):
-                continue
-            if str(slot.get("slot_type", "") or "").strip().lower() == "amr":
-                return True
-            if str(slot.get("amr_type", "") or "").strip():
-                return True
-        return False
+        return inventory_space_is_amr(space)
 
     def _location_has_payload_inventory_spaces(self, location_name: str) -> bool:
         if not self._location_has_inventory_spaces(location_name):
@@ -9869,8 +9811,7 @@ class Simulation:
         spaces = self.inventory_spaces_by_location.get(location_name, []) or []
         amr_spaces = [
             space for space in spaces
-            if bool(space.get("stores_amr", False))
-            or str(space.get("space_type", "") or "").strip().lower() == "amr"
+            if inventory_space_is_amr(space)
         ]
         # Preserve legacy location-level charging only where no AMR bays exist.
         if not amr_spaces:
@@ -14096,7 +14037,7 @@ class Simulation:
         counts: Dict[str, int] = {}
         for location_name in self.charge_location_names:
             spaces = self.inventory_spaces_by_location.get(location_name, [])
-            amr_spaces = [space for space in spaces if bool(space.get("stores_amr", False)) or str(space.get("space_type", "")).lower() == "amr"]
+            amr_spaces = [space for space in spaces if inventory_space_is_amr(space)]
             if amr_spaces:
                 counts[location_name] = sum(1 for space in amr_spaces if self._inventory_space_has_charger(space))
             elif location_name in self.locations:

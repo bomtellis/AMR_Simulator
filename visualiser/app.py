@@ -7,6 +7,7 @@ import math
 import sys
 import tempfile
 import hashlib
+from amr_inventory_inputs import inventory_space_is_amr
 from pathlib import Path
 
 import os
@@ -1962,7 +1963,7 @@ class AMRGraphEditor(QMainWindow):
             chargers = [
                 space for space in spaces
                 if isinstance(space, dict)
-                and bool(space.get("stores_amr", False) or str(space.get("space_type", "")).lower() == "amr")
+                and inventory_space_is_amr(space)
                 and bool(space.get("has_charger", False))
             ]
             if not chargers:

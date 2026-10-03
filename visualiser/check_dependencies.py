@@ -41,7 +41,8 @@ def dependencies(finding):
     local = (section,) if section and section != 'project' else ('*',)
     if code in {'LOCATION_INPUT', 'LOCATION_MODEL_SCOPE'}:
         return ('locations',)
-    if code in {'INVENTORY_INPUT', 'INVENTORY_OCCUPANCY_SCOPE'}:
+    if code in {'INVENTORY_INPUT', 'INVENTORY_OCCUPANCY_SCOPE', 'INVENTORY_ENVELOPE',
+                'INVENTORY_HEIGHT_SCOPE', 'INVENTORY_CLASSIFICATION', 'INVENTORY_CHARGER_SCOPE'}:
         return GROUPS['inventory'][1]
     if code in {'PAYLOAD_INPUT', 'PAYLOAD_MODEL_SCOPE'}:
         return ('payloads',)

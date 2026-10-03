@@ -208,12 +208,15 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                 p = path + "/" + str(key).replace("~", "~0").replace("/", "~1")
                 sec = section if path else str(key)
                 if key in positive | nonnegative:
+                    inferred_bay_dimension = (key in {'length_m', 'width_m', 'height_m'}
+                                              and re.fullmatch(r'/locations/\d+/inventory_spaces/\d+', path))
+                    must_be_positive = key in positive and not inferred_bay_dimension
                     try:
                         number = float(child)
-                        if isinstance(child, bool) or not math.isfinite(number) or number < 0 or (key in positive and number == 0):
+                        if isinstance(child, bool) or not math.isfinite(number) or number < 0 or (must_be_positive and number == 0):
                             raise ValueError
                     except (TypeError, ValueError):
-                        error(p, f"{key} must be a finite {'positive' if key in positive else 'non-negative'} number.", sec, target, "NUMBER")
+                        error(p, f"{key} must be a finite {'positive' if must_be_positive else 'non-negative'} number.", sec, target, "NUMBER")
                 elif isinstance(child, float) and not math.isfinite(child):
                     error(p, "Non-finite numbers are not valid project input.", sec, target, "NUMBER")
                 if key in {"quantity", "max_concurrency", "floor"}:
@@ -593,6 +596,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                         f"Drawing is unavailable: {value}", "The background cannot be displayed; explicit graph routes can still be simulated.",
                         "Relink the drawing or acknowledge a run without it.", section)
     completed_groups.add('drawings')
+    from amr_payload_inputs import inventory_space_dimensions
+    from amr_inventory_inputs import inventory_space_is_amr
+    payload_definitions = {row['name']: row for row in config.get('payloads', [])}
     for index, location in enumerate(config.get('locations', [])):
         if location.get('people_area_type', '').strip().lower() not in {'', 'none'}:
             add('LOCATION_MODEL_SCOPE', 'info', f'/locations/{index}/people_area_type', location.get('name', ''),
@@ -602,6 +608,28 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         spaces = location.get('inventory_spaces', [])
         if isinstance(spaces, list):
             for space_index, space in enumerate(spaces):
+                bay_path = f'/locations/{index}/inventory_spaces/{space_index}'
+                length, width, height = inventory_space_dimensions(space, payload_definitions)
+                if length <= 0 or width <= 0:
+                    add('INVENTORY_ENVELOPE', 'warning', bay_path, space.get('name', ''),
+                        'The resolved bay has zero plan length or width; it cannot hold a normal positive-size payload or AMR.',
+                        'Storage or charging may be unavailable at this bay.',
+                        'Provide dimensions or a usable outline, or acknowledge the deliberately constrained bay.', 'locations')
+                if height >= 999999:
+                    add('INVENTORY_HEIGHT_SCOPE', 'warning', bay_path + '/height_m', space.get('name', ''),
+                        'This bay uses an effectively unbounded height (999999 m or greater).',
+                        'Vertical clearance is not established by this bay definition.',
+                        'Set the actual height, use a known payload template, or acknowledge this legacy approximation.', 'locations')
+                if inventory_space_is_amr(space) and any(slot.get('payload') for slot in space.get('payload_slots', [])):
+                    add('INVENTORY_CLASSIFICATION', 'warning', bay_path, space.get('name', ''),
+                        'AMR markers take precedence: this is an AMR-only bay despite its payload templates.',
+                        'Payloads cannot be stored here. Payload templates can still contribute inferred height.',
+                        'Use separate payload and AMR bays, or acknowledge the legacy mixed definition.', 'locations')
+                if space.get('has_charger') and not inventory_space_is_amr(space):
+                    add('INVENTORY_CHARGER_SCOPE', 'warning', bay_path + '/has_charger', space.get('name', ''),
+                        'The charger flag on this payload bay does not add an AMR charging bay.',
+                        'Only AMR bays supply bay-level chargers; legacy location-level charging may still apply.',
+                        'Mark the bay as AMR storage if intended, or remove the unused charger flag.', 'locations')
                 if isinstance(space, dict) and space.get('occupied'):
                     add('INVENTORY_OCCUPANCY_SCOPE', 'info', f'/locations/{index}/inventory_spaces/{space_index}/occupied',
                         space.get('name', ''), 'Initial bay occupancy is a blocking marker, not an initial physical-stock declaration.',

@@ -35,7 +35,7 @@ def inventory_space_dimensions(space, payloads):
             if payload is not None:
                 heights.append(payload_dimensions(payload)[2])
     height = max((h for h in heights if h > 0), default=999999.0)
-    return tuple(float(space.get(axis + '_m', space.get(axis, inferred)) or inferred or 0)
+    return tuple(float(space.get(axis + '_m', space.get(axis, inferred))) or inferred or 0
                  for axis, inferred in (('length', length), ('width', width), ('height', height)))
 
 

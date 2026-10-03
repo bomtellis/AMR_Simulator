@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import math
+from amr_inventory_inputs import inventory_space_is_amr
 
 from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QColor, QPen, QBrush, QPolygonF
@@ -23,13 +24,7 @@ class InventoryPreviewView(QGraphicsView):
 
 
 def is_amr_space(space):
-    return bool(
-        space.get("stores_amr") or space.get("space_type") == "amr"
-        or space.get("amr_type") or any(
-            slot.get("slot_type") == "amr" or slot.get("amr_type")
-            for slot in space.get("payload_slots", []) if isinstance(slot, dict)
-        )
-    )
+    return inventory_space_is_amr(space)
 
 
 def space_geometry(space, location=None):
