@@ -483,16 +483,53 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
 
     # Resolve active demand rules without running a simulation. Generator setup
     # uses identifier membership only; physical objects are not needed here.
-    from amr_sim_task_generation import TaskGenerationManager, SharedContainerConflictError
+    from amr_sim_task_generation import TaskGenerationManager, SharedContainerConflictError, DepartmentWasteTaskGenerator
     from amr_sim_time_utils import SimulationClock
     try:
-        TaskGenerationManager(copy.deepcopy(config), SimulationClock(dates['start_datetime']),
+        generation_manager = TaskGenerationManager(copy.deepcopy(config), SimulationClock(dates['start_datetime']),
                               {key: None for key in by_collection['locations']},
                               {key: None for key in by_collection['payloads']}, prepare_runtime=False)
+        for generator in generation_manager.generators:
+            if not isinstance(generator, DepartmentWasteTaskGenerator):
+                continue
+            for index, department in enumerate(config.get('departments', [])):
+                if not department.get('enabled', True) or not department.get('waste_streams'):
+                    continue
+                extra_pickups = department.get('waste_pickup_locations') or department.get('waste', {}).get('pickup_locations')
+                if extra_pickups:
+                    add('LEGACY_WASTE_PICKUP_SCOPE', 'info', f'/departments/{index}/waste', department.get('name', ''),
+                        'Legacy collections use the singular waste.pickup_location; additional pickup lists configure initial stock, not extra collection routes.',
+                        'Independent bins can be seeded at additional locations. A shared bin is seeded once, preferring its active collection pickup.',
+                        'Use modern category routing for multiple collection routes; check the intended initial stock separately.', 'departments', kind='assumption')
+                for key in ('pickup_location', 'dropoff_location'):
+                    name = department.get('waste', {}).get(key, '').strip()
+                    path = f'/departments/{index}/waste/{key}'
+                    if name and name not in by_collection['locations']:
+                        error(path, f'Unknown legacy waste route location {name!r}.', 'departments', code='LEGACY_WASTE_REFERENCE')
+                    elif not name:
+                        add('LEGACY_WASTE_NO_ROUTE', 'warning', path, department.get('name', ''),
+                            f'Legacy waste has no {key}; this department cannot create legacy collections.',
+                            'Accrued volume can remain in the pool without dispatched work.',
+                            'Set the singular legacy route or acknowledge this incomplete scenario.', 'departments')
+                for stream_index, item in enumerate(department.get('waste_streams', [])):
+                    if not isinstance(item, dict):
+                        continue
+                    ignored = sorted(set(item) & {'enabled', 'generation_mode', 'frequency_per_day', 'volume_per_event_m3',
+                                                  'threshold_volume_m3', 'base_daily_volume_m3', 'scheduled_times',
+                                                  'payload', 'container_capacity_m3', 'full_threshold_fraction'})
+                    if ignored:
+                        add('LEGACY_WASTE_STREAM_SCOPE', 'warning', f'/departments/{index}/waste_streams/{stream_index}', item['name'],
+                            'Legacy department waste does not use these per-stream overrides: ' + ', '.join(ignored) + '.',
+                            'Legacy rates use department demographic coefficients; payload/capacity use the global stream. Initial presence and shared-bin identity still apply.',
+                            'Configure the global stream and legacy rates, use modern Waste rules, or acknowledge the retained settings.',
+                            'departments', kind='unsupported')
         completed_groups.add('shared_containers')
     except SharedContainerConflictError as exc:
+        modern_waste = TaskGenerationManager._category_has_enabled_rule(
+            config.get('task_generation', {}).get('categories', {}).get('waste', {}))
         for message in exc.conflicts:
-            error('/task_generation/categories/waste', message, 'task_generation', 'waste',
+            error('/task_generation/categories/waste' if modern_waste else '/departments', message,
+                  'task_generation' if modern_waste else 'departments', 'waste',
                   'SHARED_CONTAINER_CONFLICT')
         completed_groups.add('shared_containers')
     except (TypeError, ValueError, KeyError, AttributeError, OverflowError) as exc:
@@ -631,6 +668,11 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     for lift in config.get('lifts', []):
         graph_names.update(f"{lift['id']}-F{floor}" for floor in lift.get('floor_locations', {}))
     for index, department in enumerate(config.get('departments', [])):
+        if department.get('waste', {}).get('dropoff_locations'):
+            add('LEGACY_WASTE_DROPOFF_LIST_SCOPE', 'warning', f'/departments/{index}/waste/dropoff_locations', department.get('name', ''),
+                'Legacy waste.dropoff_locations is stored but does not drive collection routing.',
+                'Legacy collection uses the singular waste.dropoff_location; initial-stock seeding has no drop-off leg.',
+                'Use the singular legacy destination or modern category routing, or acknowledge this retained metadata.', 'departments', kind='unsupported')
         if department.get('name') in graph_names:
             error(f'/departments/{index}/name', 'Department name conflicts with a graph point; rename the department before running. The graph point remains visible in the editor.', 'departments', code='DEPARTMENT_NAME_COLLISION')
         if any(float(department.get(key, 0)) for key in ('bed_count', 'staff_count', 'patient_turnover')):

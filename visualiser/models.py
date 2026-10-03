@@ -1429,15 +1429,16 @@ class JsonStore:
         for item in self.data.get("departments", []):
             if str(item.get("name", "")) == old_name:
                 item["name"] = new_name
-            item["waste_pickup_locations"] = [
-                new_name if x == old_name else x
-                for x in item.get("waste_pickup_locations", [])
-            ]
-            waste_cfg = item.get("waste", {}) or {}
-            if waste_cfg.get("pickup_location") == old_name:
-                waste_cfg["pickup_location"] = new_name
-            if waste_cfg.get("dropoff_location") == old_name:
-                waste_cfg["dropoff_location"] = new_name
+            def renamed(value):
+                if isinstance(value, str):
+                    return new_name if value.strip() == old_name else value
+                return [new_name if name.strip() == old_name else name for name in value]
+            if 'waste_pickup_locations' in item:
+                item['waste_pickup_locations'] = renamed(item['waste_pickup_locations'])
+            waste_cfg = item.get('waste', {})
+            for key in ('pickup_location', 'dropoff_location', 'pickup_locations', 'dropoff_locations'):
+                if key in waste_cfg:
+                    waste_cfg[key] = renamed(waste_cfg[key])
             category_locations = item.get("task_generation_locations", {}) or {}
             if isinstance(category_locations, dict):
                 for entry in category_locations.values():
@@ -2203,7 +2204,8 @@ class JsonStore:
                                 f"Department {dept_name} {category_key} has unknown drop-off zone location: {loc}"
                             )
 
-            for loc in dept.get("waste_pickup_locations", []):
+            from amr_department_inputs import department_location_names
+            for loc in department_location_names(dept.get('waste_pickup_locations', [])):
                 if loc not in location_names:
                     errors.append(
                         f"Department {dept_name} has unknown waste pickup location: {loc}"

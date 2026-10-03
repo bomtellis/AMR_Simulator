@@ -8042,22 +8042,8 @@ class Simulation:
         return result
 
     def _department_waste_pickup_locations_for_seed(self, dept: dict) -> List[str]:
-        locations = []
-        category_locations = dept.get("task_generation_locations", {}) or {}
-        waste_entry = category_locations.get("waste", {}) or {}
-        if isinstance(waste_entry, dict):
-            locations.extend(waste_entry.get("pickup_dropoff_locations", []) or [])
-            locations.extend(waste_entry.get("locations", []) or [])
-        elif isinstance(waste_entry, list):
-            locations.extend(waste_entry)
-
-        waste_cfg = dept.get("waste", {}) or {}
-        if isinstance(waste_cfg, dict):
-            if waste_cfg.get("pickup_location"):
-                locations.append(waste_cfg.get("pickup_location"))
-            locations.extend(waste_cfg.get("pickup_locations", []) or [])
-
-        locations.extend(dept.get("waste_pickup_locations", []) or [])
+        from amr_department_inputs import department_waste_seed_locations
+        locations = department_waste_seed_locations(dept)
 
         clean = []
         seen = set()
@@ -8108,8 +8094,8 @@ class Simulation:
                     yield (definition['department_id'], definition['waste_stream'],
                            definition['payload'], pickup, group)
             return
-        # Retain the raw adapter for legacy/custom services that do not use
-        # modern Waste instances. Their initial-stock contract is independent.
+        # Custom/static services without a resolved active waste rule
+        # retain their independent raw initial-stock adapter.
         for dept in self.departments:
             if not bool(dept.get("enabled", True)):
                 continue

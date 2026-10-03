@@ -12674,7 +12674,11 @@ class DepartmentListDialog(QDialog):
                     continue
 
                 entry = category_locations.setdefault(category_key, {})
-                selected = entry.setdefault("pickup_dropoff_locations", [])
+                selected = department_location_names(entry)
+                if not isinstance(entry, dict):
+                    entry = {}
+                    category_locations[category_key] = entry
+                entry['pickup_dropoff_locations'] = selected
 
                 existing = {str(x).strip() for x in selected if str(x).strip()}
 

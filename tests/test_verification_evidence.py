@@ -19,6 +19,9 @@ class VerificationEvidenceTests(unittest.TestCase):
         self.assertNotIn("route_profiles.clean", values)
         self.assertIn('lifts[].floor_locations.*.x', values)
         self.assertNotIn('lifts[].floor_locations.-2', values)
+        suffixes = dict(fields({'departments': [{'task_generation_location_suffixes': {'custom': '-CUSTOM'}}]}))
+        self.assertIn('departments[].task_generation_location_suffixes.*', suffixes)
+        self.assertNotIn('departments[].task_generation_location_suffixes.custom', suffixes)
 
     def test_partial_status_is_not_promoted_by_passing_tests(self):
         features = [{"id": "F", "status": "partial", "tests": ["test_a.*"]}]

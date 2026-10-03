@@ -360,6 +360,14 @@ one-hour volume/count expectations, schedule/empty precedence, sparse patches an
 malformed-input rejection. Legacy pickup/seeding references and remaining option
 dispositions remain open alongside the broader workspace/report gates.
 
+**Slice 2AN:** [Legacy waste stock, references and location naming](LEGACY_WASTE_SEED_REVIEW.md)
+aligns active legacy bin type, initial-presence policy and group identity with its
+collection tasks while preserving extra/custom stock inputs. Sixteen tests include
+independent two-minute collection/return/physical-ID outcomes, shared definitions,
+scalar references, deletion and suffix assignment. Managed findings explain unused
+legacy overrides and routing-list scope. Suffix category keys are canonicalised in
+the inventory. Wider custom/mixed-service stock and report reconciliation remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -609,10 +617,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AM's waste-stream inheritance and sparse editing changes.
-Audit legacy waste pickup/seeding references and department naming suffixes, then
-continue generation option dispositions with independent expected demand and the
-remaining workspace gates.
+Review slice 2AN's legacy stock/reference and location naming changes. Audit
+simulation run controls (dates, scheduling limits and inventory/charging switches)
+with independently calculated outcomes, then remaining generation/workspace gates.
 Retain full report event-coverage/stock reconciliation,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with

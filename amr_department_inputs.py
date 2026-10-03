@@ -31,6 +31,16 @@ def department_zone_names(config):
             for name in department_location_names(entry, zones=True)}
 
 
+def department_waste_seed_locations(department):
+    """Independent legacy/custom stock inputs; aliases resolve within each source."""
+    waste = department.get('waste', {})
+    names = department_location_names(department.get('task_generation_locations', {}).get('waste', {}))
+    for values in (waste.get('pickup_location', ''), waste.get('pickup_locations', []),
+                   department.get('waste_pickup_locations', [])):
+        names.extend(department_location_names(values))
+    return list(dict.fromkeys(names))
+
+
 def department_location_reference_findings(config):
     known = {row['name'] for row in config.get('locations', [])}
     escape = lambda value: str(value).replace('~', '~0').replace('/', '~1')
@@ -83,6 +93,17 @@ def department_input_findings(config, *, require_identity=False):
                 valid = False
             if not valid:
                 yield path + '/' + key, 'Use a finite coordinate in metres or whole floor number; booleans are invalid.'
+        reference_fields = [('waste_pickup_locations', row, 'waste_pickup_locations', False)]
+        if isinstance(row.get('waste'), dict):
+            reference_fields.extend(('waste/' + key, row['waste'], key, key.endswith('_location'))
+                                    for key in ('pickup_location', 'dropoff_location', 'pickup_locations', 'dropoff_locations'))
+        for field_path, source, key, singular in reference_fields:
+            if key not in source:
+                continue
+            value = source[key]
+            if (not isinstance(value, str) and (singular or not isinstance(value, list)
+                    or any(not isinstance(name, str) for name in value))):
+                yield path + '/' + field_path, 'Use a location name' + (' string.' if singular else ' or a list of location name strings.')
         streams = row.get('waste_streams', [])
         if isinstance(streams, list):
             seen_streams = set()
@@ -95,6 +116,10 @@ def department_input_findings(config, *, require_identity=False):
                     yield stream_path, 'A waste stream may be assigned only once per department; combine its settings explicitly.'
                 else:
                     seen_streams.add(name.strip())
+        if 'task_generation_location_suffixes' in row:
+            suffixes = row['task_generation_location_suffixes']
+            if not isinstance(suffixes, dict) or any(not isinstance(value, str) for value in suffixes.values()):
+                yield path + '/task_generation_location_suffixes', 'Location naming suffixes must be an object of string values.'
         assignments = row.get('task_generation_locations', {})
         if not isinstance(assignments, dict):
             yield path + '/task_generation_locations', 'Category location assignments must be an object.'

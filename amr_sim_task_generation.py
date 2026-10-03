@@ -2705,6 +2705,31 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
                     ),
                 }
 
+    def container_instance(self, dept, stream_name):
+        """One legacy service's physical definition; rates/thresholds stay global/legacy."""
+        from amr_department_inputs import department_identity, department_stream_items, department_waste_seed_locations
+        identity = department_identity(dept)
+        item = next(row for row in department_stream_items(dept.get('waste_streams', [])) if row['name'] == stream_name)
+        stream = self.waste_streams[stream_name]
+        pickup = str(dept.get('waste', {}).get('pickup_location', '')).strip()
+        explicit = _clean_text(item.get('shared_container_group', item.get('shared_container_id', '')))
+        group = (f'shared:{explicit}' if explicit else f'pickup:{stream_name}:{pickup}' if item.get('shared_container', False)
+                 else f'department:{identity}:{stream_name}')
+        capacity = float(stream.get('container_capacity_m3', 0) or 0)
+        return {'key': f'legacy_waste:{identity}:{stream_name}', 'category_key': 'legacy_waste',
+                'department': dept, 'department_id': identity, 'waste_stream': stream_name,
+                'container_group': group, 'pickup_locations': list(dict.fromkeys(
+                    ([pickup] if pickup else []) + department_waste_seed_locations(dept))),
+                'cfg': {'enabled': True, 'payload': str(stream.get('payload', '')).strip(),
+                        'container_capacity_m3': capacity,
+                        'threshold_volume_m3': capacity * float(stream.get('full_threshold_fraction', .8) or .8),
+                        'initial_container_present': item.get('initial_container_present', True)}}
+
+    def container_instances(self):
+        from amr_department_inputs import department_identity
+        return [self.container_instance(dept, stream) for dept in self.departments
+                for stream in self.runtime.get(department_identity(dept), {})]
+
     def _day_key_for_sim_time(self, sim_time_sec: float) -> str:
         dt = self.clock.sim_seconds_to_datetime(sim_time_sec)
         return DAY_KEYS[dt.weekday()]
@@ -2779,6 +2804,10 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
             waste_volume_m3=float(waste_volume_m3),
             container_type=payload_name,
         )
+
+        definition = self.container_instance(dept, stream_name)
+        task.initial_container_present = definition['cfg']['initial_container_present']
+        task.container_group = definition['container_group']
 
         return GeneratedTaskRecord(
             task=task,
@@ -2949,8 +2978,9 @@ class TaskGenerationManager:
         self._build_generators(prepare_runtime=prepare_runtime)
         conflicts = shared_container_conflicts(
             instance for generator in self.generators
-            if isinstance(generator, DynamicCategoryTaskGenerator)
-            for instance in generator.instances
+            for instance in (generator.instances if isinstance(generator, DynamicCategoryTaskGenerator)
+                             else generator.container_instances() if isinstance(generator, DepartmentWasteTaskGenerator)
+                             and self.config.get('simulation', {}).get('seed_waste_stream_containers_at_start', False) else [])
         )
         if conflicts:
             raise SharedContainerConflictError(conflicts)
@@ -2979,15 +3009,27 @@ class TaskGenerationManager:
                 for task_id, request in runtime.get('requests', {}).items()]
 
     def initial_waste_container_definitions(self):
-        """Resolved modern Waste stock, or None for the legacy seed adapter.
+        """Resolved active waste stock, or None for independent custom seed inputs.
 
         An enabled modern rule owns its initial bins, even when the global
         generation switch disables that rule. Do not revive raw department stock
-        in that case. Legacy/custom waste services retain their existing adapter.
+        in that case. Active legacy rules resolve their physical type and prefer
+        their actual collection pickup, retaining configured additional stock.
+        Without an active rule, legacy/custom initial-stock inputs stay independent.
         """
         category = (self._task_generation_cfg().get('categories', {}) or {}).get('waste', {})
         if not self._category_has_enabled_rule(category):
-            return None
+            legacy = [generator for generator in self.generators if isinstance(generator, DepartmentWasteTaskGenerator)]
+            if not legacy:
+                return None
+            return [{'department_id': row['department_id'], 'waste_stream': row['waste_stream'],
+                     'payload': row['cfg']['payload'],
+                     'container_group': (f"pickup:{row['waste_stream']}:{pickup}" if row['container_group'].startswith('pickup:')
+                                         else row['container_group']),
+                     'pickup_locations': [pickup]}
+                    for generator in legacy for row in generator.container_instances()
+                    if row['department'].get('enabled', True) and row['cfg']['initial_container_present']
+                    for pickup in row['pickup_locations']]
         definitions = []
         for generator in self.generators:
             if not isinstance(generator, DynamicCategoryTaskGenerator):

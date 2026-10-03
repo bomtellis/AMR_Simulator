@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MAP_PATHS = {
     "route_profiles", "task_generation.categories",
     "task_generation.categories.*.departments",
-    "departments[].task_generation_locations", "payloads[].items",
+    "departments[].task_generation_locations", "departments[].task_generation_location_suffixes", "payloads[].items",
     "task_generation.staff_config.shift_patterns",
     "lifts[].floor_locations",
 }
