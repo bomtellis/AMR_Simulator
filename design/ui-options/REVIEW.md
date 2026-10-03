@@ -8,9 +8,11 @@ The graph must occupy the majority of the main window; side and bottom panels
 provide additional information without overcrowding it. Common CAD drawing and
 editing interactions are required for line elements, nodes and locations.
 
-This approves the visual direction. Detailed gestures, keyboard mappings, panel
-behaviour and complete user workflows still need review before production UI
-implementation. The images illustrate proposed controls and sample data; they
+The subsequent Q&A confirms left-to-right window selection, right-to-left crossing
+selection, Shift selection changes, Escape cancellation and explicitly opened
+properties. The user has now prioritised UI features and interactions and asked
+for these to be implemented next, ahead of the remaining core work. Additional
+material workflows still need review. The images illustrate controls and sample data; they
 are not screenshots of working features or engineering validation evidence.
 
 The user subsequently resumed work and prioritised geometric traffic/manoeuvres,

@@ -13,7 +13,12 @@ and learning materials; workflow approvals and final release gates remain open.
 
 ## Review these results
 
-The current checkpoint is [Explicit trajectories and geometry workbench](GEOMETRY_WORKBENCH_REVIEW.md):
+The current UI checkpoint is [CAD workspace and interactions](CAD_WORKSPACE_REVIEW.md):
+compact production drawing controls, explicitly opened properties, directional
+selection and typed corridor drawing. This follows the user's latest UI-first
+priority; unfinished geometry and release requirements remain open.
+
+An earlier checkpoint is [Explicit trajectories and geometry workbench](GEOMETRY_WORKBENCH_REVIEW.md):
 draw and inspect radius-constrained routes, permitted pivots and loaded swept
 clearance in a working graph-dominant prototype. An illustrated reference tutorial
 is included. Simulator/traffic integration and production UI workflow approval

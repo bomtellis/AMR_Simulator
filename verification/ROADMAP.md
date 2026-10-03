@@ -5,11 +5,16 @@ Reassessed from implementation and tests on 2 October 2026, at code baseline
 original roadmap. The user resumed checkpoint 1 on 3 October 2026. Work continues
 in bounded checkpoints with a user verification stop after each tested commit.
 
-Sequencing update: the major UI rework and user tutorial follow completion of
-core checkpoints 1–7. Initial concept images can be prepared now for discussion;
-production UI rework requires explicit user approval of the options and workflows.
+Latest priority update — 3 October 2026: the user has made UI features and user
+interactions the main goal and explicitly requested these next. The production
+CAD interaction work now takes priority over the previous core-first sequence.
+Unfinished core requirements retain their open gates; this does not mark them
+complete. The tutorial and illustrated guide still follow the delivered UI.
 The user selected Option A and approved its graph-focused A2 refinement on
-3 October 2026. This sets the visual direction; detailed workflows remain for review.
+3 October 2026. Confirmed Q&A also specifies directional window/crossing selection,
+Shift selection changes, Escape cancellation and explicitly opened properties.
+Implement these agreed interactions and present the working UI for review;
+additional material workflows retain their review gate.
 See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md).
 
 ## Assessment and evidence rules
@@ -509,12 +514,18 @@ outcomes. Unresolved supported-feature defects keep this gate open. Preparing
 concept images is design work and does not satisfy this gate. Visual selection
 does not establish implemented functionality.
 
-### 8. User-approved UI and CAD workflow rework — after core features
+### 8. User-approved UI and CAD workflow rework — current priority
 
-**Entry conditions:** core-feature gate met, plus explicit user approval of the
-proposed UI configuration and workflows. The graph-focused A2 workbench is the
-approved visual direction; detailed interaction workflows remain pending. Stored
-images are design concepts, not evidence of implemented controls or geometry.
+**Updated entry conditions:** the latest user request explicitly brings UI and
+interactions ahead of the remaining core work. The graph-focused A2 workbench and
+the confirmed selection/properties conventions are authorised for implementation.
+Additional material workflows retain their user review gate. Stored images are
+design concepts, not evidence of implemented controls or geometry.
+
+The first production interaction checkpoint is described in
+[CAD workspace review](CAD_WORKSPACE_REVIEW.md): compact commands, collapsed
+properties, directional selection and typed continuous drawing. It does not close
+the full UI or core-feature gate.
 
 **8A — design and workflow approval**
 
@@ -731,11 +742,11 @@ Keep engineering test evidence current throughout.
 
 ## Next action when resumed
 
-The user reprioritised active work on 3 October 2026: make tangible progress on
-geometric traffic and manoeuvres, the graph-dominant CAD UI, and the tutorial and
-illustrated guide. Do not continue the exhaustive option audit as the default
-next task. Existing unresolved verification items remain open release requirements;
-this priority change does not turn them into completed work.
+The user's latest priority on 3 October 2026 is production UI features and user
+interactions. Continue the graph-dominant CAD UI next; the tutorial and illustrated
+guide follow the delivered UI. Do not resume the exhaustive option audit or core
+manoeuvre search as the default next task. Existing unresolved verification and
+core requirements remain open release requirements.
 
 The run-control correction and initial shared trajectory/workbench checkpoint are
 implemented; see [the checkpoint](GEOMETRY_WORKBENCH_REVIEW.md). Subsequent commits
@@ -785,16 +796,20 @@ The full application guide is
 also unfinished.
 Continue with:
 
-1. Complete geometric traffic occupancy, optional drawn passing/no-queuing areas,
+1. Current priority: deliver the confirmed A2 CAD interactions and present the
+   working production UI for review. The first checkpoint adds compact controls,
+   explicitly opened properties, directional selection and typed route drawing;
+   see [CAD workspace review](CAD_WORKSPACE_REVIEW.md). Continue with creation,
+   snapping and property workflows, editing-lock rules, map accessibility and
+   remaining material workflow approvals.
+2. Complete geometric traffic occupancy, optional drawn passing/no-queuing areas,
    automatic door/junction protection, urgency-aware access and deadlock evidence
    against the confirmed Q&A requirements. Retain explicit model choice and legacy
    comparison; moving-route-only tests cannot close the full traffic gate.
-2. Complete configurable turning reference points, movement presets, empty/loaded
+3. Complete configurable turning reference points, movement presets, empty/loaded
    settings, reversing/lateral/multi-point manoeuvres and acceleration/braking.
    Integrate the same trajectories into timing, reservations and playback, without
-   fallback paths, and satisfy the full core-feature gate before UI rework.
-3. Demonstrate and obtain approval for the detailed A2 CAD workflows, then deliver
-   the production UI with the agreed selection/properties and editing-lock rules.
+   fallback paths. The full core-feature gate remains required before release.
    Complete cross-project run comparison, report exports and offline distribution.
 4. Complete the in-app tutorial, illustrated guide, editable Word/Markdown sources
    and LTN example using the delivered UI. Execute final validation and the agreed

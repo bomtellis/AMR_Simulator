@@ -29,6 +29,14 @@ class ProjectWorkspace(QWidget):
         self._configuration_objects = None
         self.selected_configuration = None
         self._navigating = False
+        self._layout_properties_open = False
+        self._configuration_properties_open = False
+        self._project_tree_open = True
+        self._ribbon_open = False
+        self._canvas_focus = False
+        self._focus_restore = None
+        self._stage_sizes = {}
+        self._property_widths = {'layout': 300, 'configuration': 640}
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         split = QSplitter()
@@ -36,6 +44,7 @@ class ProjectWorkspace(QWidget):
         self._property_layout = None
         root.addWidget(split)
         sidebar = QWidget()
+        self.sidebar = sidebar
         nav = QVBoxLayout(sidebar)
         nav.setSizeConstraint(QLayout.SetMinimumSize)
         self.project_label = QLabel('Unsaved project')
@@ -93,8 +102,9 @@ class ProjectWorkspace(QWidget):
         editor.properties_panel = self.properties
         split.addWidget(self.properties)
         split.setStretchFactor(1, 1)
-        split.setSizes([200, 960, 300])
-        sidebar.setMinimumWidth(180)
+        self.properties.hide()
+        split.setSizes([190, 1100, 0])
+        sidebar.setMinimumWidth(150)
         self.tree.currentItemChanged.connect(self.selected)
         self.show_page('layout', canvas)
         self.refresh()
@@ -134,17 +144,18 @@ class ProjectWorkspace(QWidget):
             self.editor._clear_corridor_drawing()
         if self.stage == 'playback' and key != 'playback':
             self.pages['playback'].pause()
+        previous_stage = self.stage
+        if key != previous_stage and not self._canvas_focus:
+            self._stage_sizes[previous_stage] = self.splitter.sizes()
         self.stage = key
         self.stack.setCurrentWidget(widget)
-        self.editor.ribbon_tabs.setVisible(key == 'layout')
-        properties_visible = key == 'layout' or (key == 'configuration' and (self.selected_configuration is not None or self.properties.pending))
-        self.properties.setVisible(properties_visible)
-        property_layout = (key, properties_visible)
-        if property_layout != self._property_layout:
-            self._property_layout = property_layout
-            self.properties.setMaximumWidth(10000 if key == 'configuration' else 410)
-            if properties_visible:
-                self.splitter.setSizes([200, 280, 900] if key == 'configuration' else [200, 960, 300])
+        self.properties.setMaximumWidth(10000 if key == 'configuration' else 410)
+        self._sync_panels()
+        if key != previous_stage and not self._canvas_focus:
+            if key in self._stage_sizes:
+                self.splitter.setSizes(self._stage_sizes[key])
+            elif not self.properties.isHidden():
+                self._expand_properties()
         self._navigating = True
         try:
             self.tree.setCurrentItem(self.items[key])
@@ -154,6 +165,73 @@ class ProjectWorkspace(QWidget):
         self.previous.setEnabled(index > 0)
         self.next.setEnabled(index < len(STAGES) - 1)
         self.refresh()
+
+    def _sync_panels(self):
+        self.sidebar.setVisible(self._project_tree_open and not self._canvas_focus)
+        visible = (self._layout_properties_open if self.stage == 'layout' else
+                   self._configuration_properties_open if self.stage == 'configuration' else False)
+        self.properties.setVisible(visible and not self._canvas_focus)
+        self.editor.ribbon_tabs.setVisible(self.stage == 'layout' and self._ribbon_open and not self._canvas_focus)
+        drawing = self.stage == 'layout' and self.editor._current_edit_mode() == 'corridor_draw'
+        if hasattr(self.editor, 'cad_drawing_input'):
+            self.editor.cad_drawing_input.setVisible(drawing)
+            self.editor.cad_drawing_input.setEnabled(drawing)
+        if hasattr(self.editor, 'finish_route_enter_action'):
+            self.editor.finish_route_enter_action.setEnabled(drawing)
+        toolbar = getattr(self.editor, 'cad_toolbar', None)
+        if toolbar is not None:
+            toolbar.sync_panels()
+
+    def _expand_properties(self):
+        sizes = self.splitter.sizes()
+        total = max(sum(sizes), self.width(), 800)
+        width = self._property_widths.get(self.stage, 300)
+        sidebar = sizes[0] if not self.sidebar.isHidden() else 0
+        self.splitter.setSizes([sidebar, max(200, total-sidebar-width), width])
+
+    def set_properties_visible(self, visible=True):
+        if self.stage not in ('layout', 'configuration'):
+            return
+        if self._canvas_focus:
+            self.set_canvas_focus(False)
+        sizes = self.splitter.sizes()
+        if not self.properties.isHidden() and sizes[2] > 0:
+            self._property_widths[self.stage] = sizes[2]
+        if self.stage == 'layout':
+            self._layout_properties_open = bool(visible)
+        else:
+            self._configuration_properties_open = bool(visible)
+        self._sync_panels()
+        if visible:
+            self.properties.refresh()
+            self._expand_properties()
+            self.properties.setFocus()
+
+    def set_project_tree_visible(self, visible=True):
+        if self._canvas_focus:
+            self.set_canvas_focus(False)
+        self._project_tree_open = bool(visible)
+        self._sync_panels()
+
+    def set_ribbon_visible(self, visible=True):
+        if self._canvas_focus:
+            self.set_canvas_focus(False)
+        self._ribbon_open = bool(visible)
+        self._sync_panels()
+
+    def set_canvas_focus(self, focused=True):
+        focused = bool(focused)
+        if focused == self._canvas_focus:
+            return
+        if focused:
+            self._focus_restore = (self.stage, self.splitter.sizes())
+        self._canvas_focus = focused
+        self._sync_panels()
+        if not focused and self._focus_restore is not None:
+            stage, sizes = self._focus_restore
+            if stage == self.stage:
+                self.splitter.setSizes(sizes)
+            self._focus_restore = None
 
     def step(self, delta):
         if delta == 1 and self.stage == 'playback':
@@ -292,6 +370,7 @@ class ProjectWorkspace(QWidget):
 
     def select_configuration(self, section, key):
         self.selected_configuration = (section, (key,))
+        self._configuration_properties_open = True
         self.configuration()
 
     def filter_objects(self, *_):

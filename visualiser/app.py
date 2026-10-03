@@ -257,7 +257,19 @@ class EditorGraphicsView(QGraphicsView):
             self._middle_panning = True
             self._last_middle_pos = event.position().toPoint()
             self.middleClicked.emit(event)
+        if event.button() == Qt.LeftButton and self._cad_select_mode():
+            event.accept()
+            return
         super().mousePressEvent(event)
+
+    def _cad_select_mode(self):
+        editor = self.window()
+        return (hasattr(editor, '_current_edit_mode') and editor._current_edit_mode() == 'select_move'
+                and not editor.route_profile_selection_active and not editor.department_location_placement_active)
+
+    def set_cad_selection_overlay(self, start=None, end=None):
+        self._cad_selection_overlay = None if start is None else (QPointF(start), QPointF(end))
+        self.viewport().update()
 
     def mouseDoubleClickEvent(self, event):
         scene_pos = self.mapToScene(event.position().toPoint())
@@ -272,6 +284,9 @@ class EditorGraphicsView(QGraphicsView):
             self._middle_panning = False
             self._last_middle_pos = None
             self.middleReleased.emit(event)
+        if event.button() == Qt.LeftButton and self._cad_select_mode():
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
 
     def mouseMoveEvent(self, event):
@@ -281,6 +296,9 @@ class EditorGraphicsView(QGraphicsView):
             self.middleDragged.emit(event)
         if event.buttons() & Qt.LeftButton:
             self.mouseDragged.emit(event, scene_pos.x(), scene_pos.y())
+            if self._cad_select_mode():
+                event.accept()
+                return
         super().mouseMoveEvent(event)
 
     def wheelEvent(self, event):
@@ -297,6 +315,13 @@ class EditorGraphicsView(QGraphicsView):
             painter.save()
             painter.resetTransform()
             self._overlay_provider(painter, self.viewport().rect())
+            painter.restore()
+        overlay = getattr(self, '_cad_selection_overlay', None)
+        if overlay is not None:
+            from cad_selection import paint_rectangle
+            painter.save()
+            painter.resetTransform()
+            paint_rectangle(painter, *overlay)
             painter.restore()
 
 
@@ -869,13 +894,6 @@ class AMRGraphEditor(QMainWindow):
             sync()
         add_group(edit, "History", [undo_button, redo_button], columns=1)
         add_group(edit, "Placement", [("Mode", self.mode_combo)], columns=2)
-        floor_go = button("Go", self.refresh_canvas)
-        floor_widget = QWidget()
-        floor_layout = QHBoxLayout(floor_widget)
-        floor_layout.setContentsMargins(0, 0, 0, 0)
-        floor_layout.addWidget(self.floor_spin)
-        floor_layout.addWidget(floor_go)
-        add_group(edit, "Floor", [("Current floor", floor_widget)], columns=2)
         add_group(
             edit,
             "Drawing behaviour",
@@ -890,10 +908,10 @@ class AMRGraphEditor(QMainWindow):
         ], columns=1)
         add_group(edit, "Draw route", [button("Finish route", self.finish_corridor_drawing,
                   "Finish the current chain (Escape or right-click). Placed segments remain; Undo removes the last step.")], columns=1)
-        self.finish_route_action = QAction("Finish corridor route", self)
+        self.finish_route_action = QAction("Cancel current CAD command", self)
         self.finish_route_action.setShortcut(QKeySequence("Escape"))
-        self.finish_route_action.setEnabled(False)
-        self.finish_route_action.triggered.connect(self.finish_corridor_drawing)
+        self.finish_route_action.setEnabled(True)
+        self.finish_route_action.triggered.connect(self.cancel_cad_command)
         self.addAction(self.finish_route_action)
 
         view = create_page("View")
@@ -1012,7 +1030,12 @@ class AMRGraphEditor(QMainWindow):
 
         from project_workspace import ProjectWorkspace
         self.workspace = ProjectWorkspace(self, self.canvas)
+        from cad_toolbar import CadToolBar
+        self.cad_toolbar = CadToolBar(self)
+        layout.insertWidget(0, self.cad_toolbar)
+        self.workspace._sync_panels()
         layout.addWidget(self.workspace, 1)
+        layout.addWidget(self.ensure_cad_drawing_input())
 
         self.status_label = QLabel("Ready")
         self.status_label.setMinimumWidth(240)
@@ -1034,16 +1057,116 @@ class AMRGraphEditor(QMainWindow):
     def _clear_corridor_drawing(self):
         self.corridor_draw_start = None
         self.corridor_draw_preview = None
+        if hasattr(self, 'cad_drawing_input'):
+            self.cad_drawing_input.coordinate_edit.clear()
+            self.cad_drawing_input.feedback('Click or type a start point. Typed input bypasses grid; object snapping remains active.')
         if hasattr(self, 'canvas'):
             self.canvas.viewport().update()
 
     def on_edit_mode_changed(self, *_):
         self._clear_corridor_drawing()
-        if hasattr(self, 'finish_route_action'):
-            self.finish_route_action.setEnabled(self._current_edit_mode() == 'corridor_draw')
+        drawing = (self._current_edit_mode() == 'corridor_draw'
+                   and getattr(getattr(self, 'workspace', None), 'stage', 'layout') == 'layout')
+        if hasattr(self, 'cad_drawing_input'):
+            self.cad_drawing_input.setVisible(drawing)
+            self.cad_drawing_input.setEnabled(drawing)
+        if hasattr(self, 'finish_route_enter_action'):
+            self.finish_route_enter_action.setEnabled(drawing)
         self.selected_for_edge = None
         self.edge_delete_start = None
         self.refresh_canvas()
+
+    def ensure_cad_drawing_input(self):
+        if not hasattr(self, 'cad_drawing_input'):
+            drawing = (self._current_edit_mode() == 'corridor_draw'
+                       and getattr(getattr(self, 'workspace', None), 'stage', 'layout') == 'layout')
+            from cad_drawing_input import CadDrawingInput
+            self.cad_drawing_input = CadDrawingInput(self)
+            self.cad_drawing_input.submitted.connect(self.submit_corridor_coordinate)
+            self.cad_drawing_input.cancelled.connect(self.cancel_cad_command)
+            self.cad_drawing_input.draftChanged.connect(self.preview_typed_corridor)
+            self.cad_drawing_input.setVisible(drawing)
+            self.cad_drawing_input.setEnabled(drawing)
+            self.cad_drawing_input.feedback('Click or type a start point. Typed input bypasses grid; object snapping remains active.')
+            self.finish_route_enter_action = QAction('Finish corridor route', self.canvas)
+            self.finish_route_enter_action.setShortcuts([QKeySequence('Return'), QKeySequence('Enter')])
+            self.finish_route_enter_action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+            self.finish_route_enter_action.setEnabled(drawing)
+            self.finish_route_enter_action.triggered.connect(self.finish_corridor_drawing)
+            self.canvas.addAction(self.finish_route_enter_action)
+        return self.cad_drawing_input
+
+    def cancel_cad_command(self, *_):
+        cancel_selection = getattr(self, 'cancel_cad_selection', None)
+        if cancel_selection is not None and cancel_selection():
+            return True
+        if self._current_edit_mode() == 'corridor_draw':
+            self.finish_corridor_drawing()
+            return True
+        return False
+
+    def _typed_corridor_target(self, text):
+        from cad_drawing_input import parse_coordinate
+        from corridor_editing import drawing_target
+        start = self.store.all_points().get(self.corridor_draw_start)
+        anchor = (float(start['x']), float(start['y'])) if start else None
+        point = parse_coordinate(text, anchor)
+        if point is None:
+            return None, None
+        target = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
+                                self.floor_spin.value(), *point, snap=False, exact=True)
+        return point, target
+
+    def _corridor_drawing_feedback(self, target, *, typed=False):
+        kind = {'point': 'Object snap: existing point', 'edge': 'Object snap: corridor split',
+                'new': 'Typed exact point' if typed else ('Grid point' if self.snap_check.isChecked() else 'Free point')}[target['kind']]
+        text = f"{kind} | X {target['x']:.12g}, Y {target['y']:.12g} m"
+        start = self.store.all_points().get(self.corridor_draw_start)
+        if start:
+            dx, dy = target['x'] - float(start['x']), target['y'] - float(start['y'])
+            text += f' | {math.hypot(dx,dy):.6g} m at {math.degrees(math.atan2(dy,dx)) % 360:.6g}°'
+        if typed:
+            text += ' | grid bypassed'
+        if hasattr(self, 'cad_drawing_input'):
+            self.cad_drawing_input.feedback(text)
+        return text
+
+    def preview_typed_corridor(self, text):
+        if (self._current_edit_mode() != 'corridor_draw'
+                or getattr(getattr(self, 'workspace', None), 'stage', 'layout') != 'layout'):
+            return
+        try:
+            _, target = self._typed_corridor_target(text)
+            self.corridor_draw_preview = target
+            if target:
+                self._corridor_drawing_feedback(target, typed=True)
+            else:
+                self.cad_drawing_input.feedback('Type a point; blank Enter finishes the route. Escape cancels the draft.')
+        except (ValueError, KeyError, TypeError) as exc:
+            self.corridor_draw_preview = None
+            self.cad_drawing_input.feedback(str(exc), error=True)
+        self.canvas.viewport().update()
+
+    def submit_corridor_coordinate(self):
+        if (self._current_edit_mode() != 'corridor_draw'
+                or getattr(getattr(self, 'workspace', None), 'stage', 'layout') != 'layout'):
+            return False
+        text = self.cad_drawing_input.coordinate_edit.text()
+        try:
+            point, target = self._typed_corridor_target(text)
+        except (ValueError, KeyError, TypeError) as exc:
+            self.cad_drawing_input.feedback(str(exc), error=True)
+            return False
+        if point is None:
+            self.finish_corridor_drawing()
+            return True
+        feedback = self._corridor_drawing_feedback(target, typed=True)
+        if not self.draw_next_corridor(*point, exact=True):
+            self.cad_drawing_input.feedback(self.status_label.text(), error=True)
+            return False
+        self.cad_drawing_input.coordinate_edit.clear()
+        self.cad_drawing_input.feedback('Placed: ' + feedback)
+        return True
 
     def finish_corridor_drawing(self, *_):
         if self._current_edit_mode() != 'corridor_draw':
@@ -1054,25 +1177,31 @@ class AMRGraphEditor(QMainWindow):
     def preview_corridor_drawing(self, sx, sy):
         if self._current_edit_mode() != 'corridor_draw':
             return
+        if hasattr(self, 'cad_drawing_input') and self.cad_drawing_input.coordinate_edit.text().strip():
+            return
         from corridor_editing import drawing_target
         x, y = self.scene_to_world(sx, sy)
         try:
             self.corridor_draw_preview = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
                 self.floor_spin.value(), x, y, self.snap_check.isChecked())
+            self._corridor_drawing_feedback(self.corridor_draw_preview)
         except (ValueError, KeyError, TypeError):
             self.corridor_draw_preview = None
         self.canvas.viewport().update()
 
     @undoable('Draw corridor step')
-    def draw_next_corridor(self, x, y):
+    def draw_next_corridor(self, x, y, *, exact=False):
         try:
             target = self.store.draw_corridor_step(self.corridor_draw_start, self.floor_spin.value(), x, y,
-                snap=self.snap_check.isChecked(), bidirectional=self.bidirectional_check.isChecked())
+                snap=False if exact else self.snap_check.isChecked(),
+                bidirectional=self.bidirectional_check.isChecked(), exact=exact)
         except (ValueError, KeyError, TypeError) as exc:
             self.set_status(f'Route was not changed: {exc}')
             return False
         self.corridor_draw_start = target['name']
         self.corridor_draw_preview = None
+        if not exact and hasattr(self, 'cad_drawing_input'):
+            self.cad_drawing_input.coordinate_edit.clear()
         self.selected_point_name = target['name']
         self.selected_point_names = {target['name']}
         self.selected_edge_keys.clear()
@@ -2563,15 +2692,26 @@ class AMRGraphEditor(QMainWindow):
 
         # Insertion needs a precise endpoint hit; the broad selection radius
         # otherwise consumes every click on corridors shorter than six metres.
-        picked = self.find_nearest_point_name(raw_x, raw_y, floor, radius_world=0.45 if mode == "corridor_node" else 3.0)
-        picked_edge = None if picked else self.find_nearest_edge_key(raw_x, raw_y, floor)
+        if mode == 'select_move':
+            from cad_selection import editor_paths, point_hit
+            viewport_point = QPointF(self.canvas.mapFromScene(QPointF(sx, sy)))
+            hit = point_hit(editor_paths(self), viewport_point)
+            picked = hit[1] if hit and hit[0] == 'point' else None
+            picked_edge = hit[1] if hit and hit[0] == 'edge' else None
+        else:
+            picked = self.find_nearest_point_name(raw_x, raw_y, floor, radius_world=0.45 if mode == "corridor_node" else 3.0)
+            picked_edge = None if picked else self.find_nearest_edge_key(raw_x, raw_y, floor)
 
         if mode == "select_move":
+            self._ensure_cad_selection_connections()
             additive = bool(
                 event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier)
             )
             self.dragging_point_name = None
             self.drag_mode_active = False
+            self._cad_drag_offset = None
+            if picked is None and picked_edge is None:
+                self._begin_cad_selection(event, viewport_point)
             if picked:
                 if not additive:
                     self.selected_point_names.clear()
@@ -2585,6 +2725,8 @@ class AMRGraphEditor(QMainWindow):
                     if not additive:
                         self.dragging_point_name = picked
                         self.drag_mode_active = True
+                        point = self.store.all_points()[picked]
+                        self._cad_drag_offset = (raw_x-float(point['x']), raw_y-float(point['y']))
                 self.set_status(
                     f"Selected {len(self.selected_point_names)} node(s) and "
                     f"{len(self.selected_edge_keys)} corridor(s)"
@@ -2839,8 +2981,68 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Edited {dialog.result['name']}")
             self.refresh_canvas()
 
+    def _begin_cad_selection(self, event, position):
+        self.cancel_cad_selection()
+        self._cad_selection_gesture = dict(start=QPointF(position), end=QPointF(position),
+            points=set(self.selected_point_names), edges=set(self.selected_edge_keys),
+            primary=self.selected_point_name, active=False,
+            toggle=bool(event.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier)))
+        self._ensure_cad_selection_connections()
+
+    def _ensure_cad_selection_connections(self):
+        if not getattr(self, '_cad_selection_signals_connected', False):
+            self.floor_spin.valueChanged.connect(self._cancel_cad_transients)
+            self.mode_combo.currentIndexChanged.connect(self._cancel_cad_transients)
+            self._cad_selection_signals_connected = True
+
+    def _cancel_cad_transients(self, *_):
+        self.cancel_cad_selection()
+        self._cad_drag_offset = None
+        self.dragging_point_name = None
+        self.drag_mode_active = False
+
+    def cancel_cad_selection(self, *_):
+        gesture = getattr(self, '_cad_selection_gesture', None)
+        if gesture is None:
+            return False
+        self._cad_selection_gesture = None
+        self.selected_point_names = set(gesture['points'])
+        self.selected_edge_keys = set(gesture['edges'])
+        self.selected_point_name = gesture['primary']
+        self.canvas.set_cad_selection_overlay()
+        self._cad_drag_offset = None
+        self.dragging_point_name = None
+        self.drag_mode_active = False
+        self.refresh_canvas()
+        self.set_status('Selection cancelled; previous selection restored.')
+        return True
+
+    def _finish_cad_selection(self, event):
+        gesture = getattr(self, '_cad_selection_gesture', None)
+        if gesture is None:
+            return False
+        self._cad_selection_gesture = None
+        self.canvas.set_cad_selection_overlay()
+        if gesture['active']:
+            from cad_selection import editor_paths, rectangle_hits
+            position = event.position()
+            end = QPointF(position) if isinstance(position, (QPoint, QPointF)) else gesture['end']
+            hits = rectangle_hits(editor_paths(self), gesture['start'], end)
+            points = {identity for kind, identity in hits if kind == 'point'}
+            edges = {identity for kind, identity in hits if kind == 'edge'}
+            self.selected_point_names = gesture['points'] ^ points if gesture['toggle'] else points
+            self.selected_edge_keys = gesture['edges'] ^ edges if gesture['toggle'] else edges
+            self.selected_point_name = next(iter(sorted(self.selected_point_names)), None)
+        self.dragging_point_name = None
+        self.drag_mode_active = False
+        self.refresh_canvas()
+        self.set_status(f'Selected {len(self.selected_point_names)} point(s) and {len(self.selected_edge_keys)} corridor(s).')
+        return True
+
     @undoable("Move layout item", capture_before=False)
     def on_left_release(self, event):
+        if self._finish_cad_selection(event):
+            return
         if self.route_profile_selection_active:
             if self.route_profile_selection_rect_item is not None:
                 rect = self.route_profile_selection_rect_item.rect()
@@ -2872,6 +3074,7 @@ class AMRGraphEditor(QMainWindow):
 
         self.dragging_point_name = None
         self.drag_mode_active = False
+        self._cad_drag_offset = None
         self.dragging_bounding_box_point_index = None
         self.last_pan = None
 
@@ -3134,6 +3337,15 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
 
     def on_drag(self, event, sx, sy):
+        gesture = getattr(self, '_cad_selection_gesture', None)
+        if gesture is not None:
+            from cad_selection import DRAG_THRESHOLD_PX
+            gesture['end'] = QPointF(self.canvas.mapFromScene(QPointF(sx, sy)))
+            delta = gesture['end'] - gesture['start']
+            if math.hypot(delta.x(), delta.y()) >= DRAG_THRESHOLD_PX:
+                gesture['active'] = True
+                self.canvas.set_cad_selection_overlay(gesture['start'], gesture['end'])
+            return
         if self.route_profile_selection_active:
             if not (event.modifiers() & Qt.AltModifier):
                 return
@@ -3192,6 +3404,9 @@ class AMRGraphEditor(QMainWindow):
             return
         if mode == "select_move" and self.drag_mode_active and self.dragging_point_name:
             x, y = self.scene_to_world(sx, sy)
+            offset = getattr(self, '_cad_drag_offset', None)
+            if offset is not None:
+                x, y = x-offset[0], y-offset[1]
             x, y = self.snap(x, y)
             self.store.set_point_position(self.dragging_point_name, x, y)
             self.refresh_canvas()

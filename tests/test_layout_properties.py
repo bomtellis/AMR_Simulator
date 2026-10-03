@@ -268,6 +268,8 @@ class LayoutPropertyUiTests(unittest.TestCase):
         self.editor.store.add_corridor_node('UP', 1, 20, 30)
         panel = self.select('UP')
         self.assertEqual(1, self.editor.floor_spin.value())
+        self.assertTrue(panel.isHidden())
+        self.editor.workspace.set_properties_visible(True)
         self.assertFalse(panel.isHidden())
         self.editor.workspace.activate('configuration')
         self.assertTrue(panel.isHidden())
