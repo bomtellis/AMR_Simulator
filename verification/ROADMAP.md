@@ -740,9 +740,12 @@ this priority change does not turn them into completed work.
 The run-control correction and initial shared trajectory/workbench checkpoint are
 implemented; see [the checkpoint](GEOMETRY_WORKBENCH_REVIEW.md). Subsequent commits
 `6f4020c` and `c360a9a` added geometric timing/energy/playback integration and an
-opt-in keep-right moving-traffic model. These do not complete detailed traffic:
-stationary/handling/waiting occupancy, yielding, the Q&A movement constraints and
-deadlock handling remain open. The full application guide is also unfinished.
+opt-in keep-right moving-traffic model. The subsequent core checkpoints add
+separate clearances, motion dynamics, urgency and complete committed moving/
+stationary occupancy with validated initial placements. These do not complete
+detailed traffic: yielding, joint admission, the remaining Q&A manoeuvres and
+deadlock stop/partial-run handling remain open. The full application guide is
+also unfinished.
 Continue with:
 
 1. Complete geometric traffic occupancy, optional drawn passing/no-queuing areas,

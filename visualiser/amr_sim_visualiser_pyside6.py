@@ -399,7 +399,7 @@ class SimulationLog:
         for event in self.events:
             row = event.row
             event_type = str(row.get("event_type", "") or "").strip()
-            if event_type != "initial_amr_charging_location":
+            if event_type not in ("initial_amr_charging_location", "initial_amr_placement"):
                 continue
             amr_id = str(row.get("amr_id", "") or "").strip()
             space_name = str(row.get("amr_inventory_space", "") or "").strip()

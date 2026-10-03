@@ -56,14 +56,17 @@ class GeometricTrafficTests(unittest.TestCase):
         self.assertTrue(all(m.radius_m >= 2 for m in trajectory.motions if m.kind=='arc'))
         self.assertEqual('keep_right',segments[0]['lane_sections'][0]['mode'])
 
-    def test_opposing_wide_corridor_routes_run_concurrently_on_right_lanes(self):
+    def test_opposing_wide_corridor_moving_claims_fit_on_right_lanes(self):
         config = traffic_config()
-        config['amrs'][0]['quantity'] = 2
         sim = Simulation(config)
-        sim.amrs[1].rotation_deg = 180
         first,duration,_ = self.route(sim)
-        sim._reserve_corridor_segments(sim.amrs[0],first,0)
-        second,other_duration,_ = self.route(sim,1,'B','A')
+        sim.amrs[0].rotation_deg = 180
+        second,other_duration,_ = self.route(sim,0,'B','A')
+        # This is the moving-claim component: parked endpoints are separately
+        # enforced by the full-plan integration acceptance tests.
+        ready,_ = first_traffic_slot(reserve_rows(first[0]['traffic_cells'],'opposing'),
+                                     second[0]['traffic_cells'],0,sim.amrs[0].id,0)
+        self.assertEqual(0,ready)
         self.assertAlmostEqual(duration,other_duration)
         self.assertFalse(any(s['type'].startswith('wait') for s in second))
         a,b = [trajectory_from_dict(s[0]['trajectory']) for s in (first,second)]
@@ -74,19 +77,18 @@ class GeometricTrafficTests(unittest.TestCase):
             pa,pb = a.pose_at_time(duration*i/400),b.pose_at_time(duration*i/400)
             self.assertGreater(math.hypot(pa.x-pb.x,pa.y-pb.y),math.hypot(1,.7))
 
-    def test_narrow_opposing_routes_are_serialised(self):
+    def test_narrow_opposing_moving_claims_are_serialised(self):
         config = traffic_config(width=1)
-        config['amrs'][0]['quantity'] = 2
         sim = Simulation(config)
-        sim.amrs[1].rotation_deg = 180
         first,duration,_ = self.route(sim)
-        sim._reserve_corridor_segments(sim.amrs[0],first,0)
-        second,total,_ = self.route(sim,1,'B','A')
+        sim.amrs[0].rotation_deg = 180
+        second,total,_ = self.route(sim,0,'B','A')
+        ready,blockers = first_traffic_slot(reserve_rows(first[0]['traffic_cells'],'opposing'),
+                                           second[0]['traffic_cells'],0,sim.amrs[0].id,0)
         self.assertEqual('single_file',first[0]['lane_sections'][0]['mode'])
-        self.assertEqual('wait_for_geometry',second[0]['type'])
-        self.assertGreaterEqual(second[0]['duration'],duration)
-        self.assertIn(sim.amrs[0].id,second[0]['reason'])
-        self.assertAlmostEqual(10,total-second[0]['duration'])
+        self.assertGreaterEqual(ready,duration)
+        self.assertEqual(['opposing'],blockers)
+        self.assertAlmostEqual(10,total)
 
     def test_crossing_paths_reserve_junction_only_while_occupied(self):
         paths = [plan_trajectory(points,minimum_radius_m=2,speed_m_per_sec=2,
@@ -221,12 +223,12 @@ class GeometricTrafficTests(unittest.TestCase):
         self.assertFalse(sim.completed_task_records)
         self.assertTrue(any(row['status']=='collision' for row in sim.verbose_rows))
 
-    def test_transaction_rolls_back_all_time_cells(self):
+    def test_transaction_does_not_publish_partial_geometric_legs(self):
         sim = Simulation(traffic_config())
         with RouteReservationTransaction(sim,sim.amrs[0],[]):
             segments,_,_ = self.route(sim)
             sim._reserve_corridor_segments(sim.amrs[0],segments,0)
-            self.assertGreater(len(sim.geometric_route_reservations[0]),1)
+            self.assertFalse(sim.geometric_route_reservations)
         self.assertFalse(sim.geometric_route_reservations)
 
     def test_invalid_traffic_policy_rejected_by_run_editor_and_checks(self):

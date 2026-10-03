@@ -12,6 +12,7 @@ from amr_clearances import clearance_input_findings, resolved_clearances
 from amr_geometric_occupancy import area_input_findings
 from amr_motion_profiles import select_motion_settings, MotionProfileError
 from amr_trajectory_dynamics import retime_trajectory
+from amr_initial_placements import initial_placement_findings
 
 MODEL = 'geometric_v1'
 PARAMETERS = ('minimum_radius_m','pivot_speed_deg_per_sec','initial_heading_deg')
@@ -140,6 +141,8 @@ def geometry_input_findings(config):
             error('/'+section, f'{section} interaction with geometric motion is not integrated yet; retain legacy mode for this project.')
     if config.get('scenario_testing',{}).get('enabled'):
         error('/scenario_testing/enabled','Scenario outages/slowdowns are not integrated with geometric trajectories yet.')
+    if not findings:
+        findings.extend(initial_placement_findings(config))
     return findings
 
 

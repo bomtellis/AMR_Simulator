@@ -31,7 +31,10 @@ from amr_simulation_inputs import (validate_simulation_inputs, resolved_simulati
                                    simulation_horizon_seconds)
 from amr_geometric_routing import (validate_geometry_inputs, geometry_enabled,
                                    route_trajectory, first_route_slot)
-from amr_trajectories import TrajectoryError
+from amr_trajectories import TrajectoryError, Pose, footprint
+from amr_initial_placements import resolve_initial_placements
+from amr_occupancy_ledger import OccupancyLedger
+from amr_occupancy_plan import occupancy_plan
 from amr_geometric_traffic import traffic_enabled, swept_cells, first_traffic_slot
 from amr_clearances import resolved_clearances
 from amr_geometric_occupancy import automatic_stop_areas, stopping_findings
@@ -162,6 +165,9 @@ class Simulation:
         self.geometric_motion = geometry_enabled(config)
         self.geometric_traffic = self.geometric_motion and traffic_enabled(config)
         self.geometric_route_reservations = defaultdict(list)
+        self.geometric_occupancy = OccupancyLedger()
+        self._traffic_commit_blocked_tasks = set()
+        self.geometric_candidate_outcomes = {}
         self.run_id = uuid.uuid4().hex
         self._evidence_inputs = json.loads(json.dumps(config))
         self._evidence_config_hash = config_hash(self._evidence_inputs)
@@ -173,6 +179,7 @@ class Simulation:
             self._evidence_event_capabilities.append('geometric_trajectories_v1')
         if self.geometric_traffic:
             self._evidence_event_capabilities.append('geometric_traffic_v1')
+            self._evidence_event_capabilities.append('geometric_occupancy_v1')
         self._evidence_run_status = 'incomplete'
         self._evidence_sequence = 0
         self._evidence_journey_sequence = 0
@@ -794,8 +801,32 @@ class Simulation:
         self.amrs_by_id: Dict[str, AMR] = {amr.id: amr for amr in self.amrs}
         self._initial_battery_energy = {amr.id: amr.battery_energy_kwh() for amr in self.amrs}
         self._battery_summary_written = False
-        self._assign_initial_amrs_to_charge_inventory_spaces()
+        if not self.geometric_traffic:
+            self._assign_initial_amrs_to_charge_inventory_spaces()
         self.amrs_by_id = {amr.id: amr for amr in self.amrs}
+        if self.geometric_traffic:
+            for identity, placement in resolve_initial_placements(config).items():
+                robot = self.amrs_by_id[identity]
+                robot.location_name = placement['location']
+                robot.rotation_deg = placement['heading_deg']
+                robot.home_charge_location = self.charge_location_name
+                robot.home_inventory_space_name = ''
+                update = self.geometric_occupancy.initialise(
+                    owner=identity, floor=placement['floor'],
+                    pose=Pose(placement['x'], placement['y'], math.radians(placement['heading_deg'])),
+                    start=0, length_m=robot.length_m, width_m=robot.width_m,
+                    robot_clearance_m=resolved_clearances(config, robot.manoeuvring)['robot_m'])
+                if not update.accepted:
+                    raise ValueError('Overlapping initial geometric robot placements')
+                self.geometric_occupancy = update.ledger
+                self.log_step(event_time=0.0, event_type='initial_amr_placement',
+                    amr_id=identity, from_location=robot.location_name, to_location=robot.location_name,
+                    start_x=placement['x'], start_y=placement['y'],
+                    end_x=placement['x'], end_y=placement['y'],
+                    start_floor=placement['floor'], end_floor=placement['floor'],
+                    start_time=0.0, end_time=0.0, start_node=robot.location_name, end_node=robot.location_name,
+                    amr_rotation_deg=robot.rotation_deg,
+                    details='Validated initial geometric placement', status='completed')
 
         # Parse tasks from configuration
 
@@ -8795,6 +8826,11 @@ class Simulation:
             if seg_type == 'corridor' and segment.get('motion_model') == 'geometric_v1':
                 floor = segment['from_floor']
                 transaction = getattr(self, '_route_reservation_transaction', None)
+                if self.geometric_traffic and transaction is not None:
+                    # Serial task/charge commits reserve the entire plan once,
+                    # including stationary intervals, in the occupancy ledger.
+                    t += duration
+                    continue
                 if transaction is not None:
                     transaction.remember_mapping(self.geometric_route_reservations, floor)
                 if segment.get('reservation_policy') == 'swept_time_v1':
@@ -8871,6 +8907,72 @@ class Simulation:
             segment.setdefault('amr_rotation_end_deg', heading)
             segment.setdefault('amr_rotation_deg', heading)
 
+    def _check_geometric_occupancy(self, amr, segments, start_time, initial_location,
+                                   initial_heading, *, payload=None, orientation='lengthways', reserve=False):
+        """Validate a complete plan, including handling, waits and its parked tail.
+
+        The caller captures the departure pose before estimating a route. Runtime
+        AMR attributes may already describe the future destination at this point.
+        Only a successful serial reservation replaces the immutable ledger.
+        """
+        if not self.geometric_traffic:
+            return
+        length, width = amr.length_m, amr.width_m
+        if payload is not None and not is_empty_payload_name(payload.name):
+            pl, pw, _ = self._payload_orientation_dimensions(payload, orientation)
+            length, width = max(length, pl), max(width, pw)
+        separation = resolved_clearances(self.config, amr.manoeuvring)
+        try:
+            initial_pose = Pose(initial_location.x, initial_location.y, math.radians(initial_heading))
+            tail = next((r for r in self.geometric_occupancy.rows()
+                         if r['owner']==amr.id and math.isinf(r['end'])), None)
+            initial_polygon = footprint(initial_pose, amr.length_m, amr.width_m, 0)
+            if (tail is None or tail['floor'] != initial_location.floor or start_time < tail['start']-1e-8
+                    or len(tail['polygon']) != len(initial_polygon)
+                    or any(abs(a-b)>1e-8 for old, new in zip(tail['polygon'], initial_polygon)
+                           for a,b in zip(old,new))):
+                raise TrajectoryError('invalid_evidence',
+                    'Departure pose/time does not match the committed parked endpoint; pre-emption or teleportation is not permitted.')
+            claims = occupancy_plan(initial_pose=initial_pose, floor=initial_location.floor, start=start_time,
+                owner=amr.id, robot_length_m=amr.length_m, robot_width_m=amr.width_m,
+                loaded_length_m=length, loaded_width_m=width,
+                robot_clearance_m=separation['robot_m'], segments=segments)
+            for claim in claims:
+                if claim['occupancy_kind'] not in ('stationary', 'instantaneous'):
+                    continue
+                floor = next(f for f in self.config['geometry']['floors'] if f['floor']==claim['floor'])
+                findings = stopping_findings(claim['pose'], length_m=claim['length_m'],
+                    width_m=claim['width_m'], wall_clearance_m=separation['wall_m'], floor=floor,
+                    protected_areas=automatic_stop_areas(self.config, claim['floor']))
+                # Loading/unloading is a service operation; all stationary states
+                # still require physical clearance. Ordinary waits/parking must
+                # additionally respect doors, junctions and drawn keep-clear areas.
+                if claim.get('segment_type') in ('pickup', 'dropoff'):
+                    findings = [f for f in findings if f['code'] in ('floor_clearance', 'obstacle_clearance')]
+                if findings:
+                    raise TrajectoryError('invalid_waiting_position', '; '.join(
+                        f"{f['code']}: {f['area_id']}" for f in findings))
+            update = self.geometric_occupancy.replace_plan(amr.id, start_time, claims)
+            if not update.accepted:
+                owners = sorted({conflict.blocking_owner for conflict in update.conflicts})
+                error = LocalManoeuvreError('traffic_blocked',
+                    'Stationary or moving occupancy conflicts with '+', '.join(owners))
+                error.occupancy_conflicts = [dict(blocking_owner=c.blocking_owner, floor=c.floor,
+                    start=c.start, end=c.end if math.isfinite(c.end) else None,
+                    proposed_kind=c.proposed_kind, blocking_kind=c.blocking_kind,
+                    blocking_release=c.blocking_release, proposed_source_id=c.proposed_source_id,
+                    blocking_source_id=c.blocking_source_id) for c in update.conflicts]
+                raise error
+            if reserve:
+                transaction = getattr(self, '_route_reservation_transaction', None)
+                if transaction is None:
+                    raise RuntimeError('Whole-plan occupancy commits require a route transaction')
+                transaction.remember_immutable_attribute(self, 'geometric_occupancy')
+                self.geometric_occupancy = update.ledger
+                self._invalidate_route_estimate_cache()
+        except TrajectoryError as exc:
+            raise LocalManoeuvreError(exc.reason, str(exc)) from exc
+
     def _same_floor_segments(
         self,
         amr: AMR,
@@ -8901,7 +9003,9 @@ class Simulation:
                     separation = clearance['clearances']
                     cells = swept_cells(trajectory,length_m=dimensions[0],width_m=dimensions[1],
                         clearance_m=0,robot_clearance_m=separation['robot_m'])
-                    ready,blockers = first_traffic_slot(self.geometric_route_reservations.get(start.floor,[]),
+                    reservations = (self.geometric_occupancy.rows(start.floor)
+                                    + self.geometric_route_reservations.get(start.floor, []))
+                    ready,blockers = first_traffic_slot(reservations,
                         cells,requested,amr.id,self.node_clearance_time_sec)
                     if not math.isfinite(ready):
                         raise TrajectoryError('traffic_blocked','No known release for blocking occupancy: '+', '.join(blockers))
@@ -9643,15 +9747,18 @@ class Simulation:
         reserve: bool = False,
         *, destination_name: Optional[str] = None,
     ) -> Optional[dict]:
+        initial_heading = float(getattr(amr, 'rotation_deg', 0.0))
         if not reserve:
             result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value,
                                                       destination_name=destination_name)
-            return self._finalise_charge_travel(amr, result, current_time_value, reserve=False)
+            return self._finalise_charge_travel(amr, result, current_time_value, reserve=False,
+                initial_location=current_loc, initial_heading=initial_heading)
         with RouteReservationTransaction(self, amr, []) as transaction:
             self._free_amr_inventory_space(amr)
             result = self._plan_return_to_charge_impl(amr, current_loc, current_time_value, reserve=True,
                                                       destination_name=destination_name)
-            result = self._finalise_charge_travel(amr, result, current_time_value, reserve=True)
+            result = self._finalise_charge_travel(amr, result, current_time_value, reserve=True,
+                initial_location=current_loc, initial_heading=initial_heading)
             transaction.committed = result is not None
             return result
 
@@ -9663,12 +9770,19 @@ class Simulation:
             float(segment.get('duration', 0)) for segment in segments
             if segment.get('type') == 'corridor'))
 
-    def _finalise_charge_travel(self, amr, plan, start_time, *, reserve):
+    def _finalise_charge_travel(self, amr, plan, start_time, *, reserve,
+                                initial_location=None, initial_heading=None):
         if plan is None:
             return None
         self._annotate_geometric_headings(amr, plan['segments'])
         motor_energy = self._charge_motor_energy_kwh(amr, plan['segments'])
         if motor_energy > amr.battery_energy_kwh() + 1e-12:
+            return None
+        try:
+            self._check_geometric_occupancy(amr, plan['segments'], start_time,
+                initial_location or self.locations[amr.location_name],
+                amr.rotation_deg if initial_heading is None else initial_heading, reserve=reserve)
+        except LocalManoeuvreError:
             return None
         for segment in plan['segments']:
             if segment.get('type') == 'corridor':
@@ -9938,6 +10052,13 @@ class Simulation:
 
         next_times = []
 
+        pending_ids = {task.id for _, _, _, task in self.pending_tasks
+                       if not self._pending_task_removed(task)}
+        for (_robot_id, task_id), outcome in self.geometric_candidate_outcomes.items():
+            if task_id in pending_ids:
+                next_times.extend(conflict['blocking_release'] for conflict in outcome.get('conflicts', [])
+                                  if conflict.get('blocking_release') is not None)
+
         for amr in self.amrs:
             next_times.append(amr.available_time)
 
@@ -10143,6 +10264,8 @@ class Simulation:
         # A charge changes all subsequent resource times. Discard the first
         # attempt before constructing the route again; never shift reservations
         # or reuse a trajectory computed before charging.
+        if reserve:
+            self._traffic_commit_blocked_tasks.discard(task.id)
         for force_charge in (False, True):
             if reserve:
                 with RouteReservationTransaction(self, amr, [task]) as transaction:
@@ -10165,6 +10288,7 @@ class Simulation:
 
     def _estimate_task_for_amr_impl(self, amr: AMR, task: Task, reserve: bool = False,
                                   *, force_charge: bool = False):
+        self.geometric_candidate_outcomes.pop((amr.id, task.id), None)
         try:
             availability_time = max(self.current_time, float(getattr(amr, "available_time", 0.0) or 0.0), float(getattr(task, "release_time", 0.0) or 0.0))
             amr_scenario_state = self._scenario_event_state("amr", amr.id, availability_time)
@@ -10248,6 +10372,7 @@ class Simulation:
                     return None
 
             amr_loc = self.locations[amr.location_name]
+            departure_heading = float(getattr(amr, 'rotation_deg', 0.0))
             pickup_loc = self.locations[task.pickup]
             dropoff_loc = self.locations[task.dropoff]
 
@@ -10755,6 +10880,8 @@ class Simulation:
                             'required_energy_kwh': corridor_energy_kwh}
                 return None
             self._annotate_geometric_headings(amr, segments)
+            self._check_geometric_occupancy(amr, segments, task_start_time, amr_loc,
+                departure_heading, payload=payload, orientation=task.payload_orientation, reserve=reserve)
             projected_battery_soc_after = (
                 100.0
                 * max(0.0, available_energy - corridor_energy_kwh)
@@ -10803,6 +10930,11 @@ class Simulation:
             }
         except LocalManoeuvreError as exc:
             self._set_task_pending_reason(task, str(exc))
+            self.geometric_candidate_outcomes[(amr.id, task.id)] = {
+                'reason': exc.reason, 'detail': str(exc),
+                'conflicts': getattr(exc, 'occupancy_conflicts', [])}
+            if reserve and exc.reason in ('traffic_blocked', 'invalid_waiting_position', 'search_limit'):
+                self._traffic_commit_blocked_tasks.add(task.id)
             return None
         except Exception as exc:
             print(f"_estimate_task_for_amr failed for {task.id} on {amr.id}: {exc}")
@@ -11586,6 +11718,8 @@ class Simulation:
         )
 
     def _task_commit_failure_is_transient(self, task: Task) -> bool:
+        if task.id in self._traffic_commit_blocked_tasks:
+            return True
         if bool(getattr(task, "is_idle_return", False)):
             return True
         return bool(
@@ -11594,6 +11728,10 @@ class Simulation:
         )
 
     def _defer_transient_commit_failure(self, task: Task, amr: AMR) -> None:
+        if task.id in self._traffic_commit_blocked_tasks:
+            self._traffic_commit_blocked_tasks.discard(task.id)
+            self._invalidate_route_estimate_cache()
+            return
         if bool(getattr(task, "is_idle_return", False)):
             self._remove_pending_task(task)
             self._clear_amr_inventory_space_reservations(amr)
@@ -12660,6 +12798,15 @@ class Simulation:
         self._evidence_run_status = 'cancelled' if self.stop_requested else 'finished'
         if self.geometric_motion:
             for _priority, _release, _counter, task in self.pending_tasks:
+                recorded = [(robot_id, outcome) for (robot_id, task_id), outcome
+                            in sorted(self.geometric_candidate_outcomes.items()) if task_id == task.id]
+                if recorded:
+                    for robot_id, outcome in recorded:
+                        self.log_step(event_time=self.current_time, event_type='task_geometry_unresolved',
+                            amr_id=robot_id, task_id=task.id, payload_name=task.payload,
+                            status=outcome['reason'], details=json.dumps(outcome, sort_keys=True),
+                            pending_reason=outcome['detail'], from_location=task.pickup, to_location=task.dropoff)
+                    continue
                 reason = str(getattr(task, 'pending_reason', '') or '')
                 if reason.startswith('Local manoeuvre '):
                     outcome = reason.split(':', 1)[0].removeprefix('Local manoeuvre ')

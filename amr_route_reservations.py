@@ -34,6 +34,12 @@ class RouteReservationTransaction:
             if key not in self.attributes:
                 self.attributes[key] = (value, name, hasattr(value, name), deepcopy(getattr(value, name, None)))
 
+    def remember_immutable_attribute(self, value, name):
+        """Journal a value whose object graph is immutable without copying history."""
+        key = (id(value), name)
+        if key not in self.attributes:
+            self.attributes[key] = (value, name, hasattr(value, name), getattr(value, name, None))
+
     def remember_appends(self, value):
         """Remember the boundary of an append-only operational record list."""
         self.appended_lists.setdefault(id(value), (value, len(value)))
