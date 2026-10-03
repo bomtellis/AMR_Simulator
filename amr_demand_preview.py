@@ -14,6 +14,7 @@ from decimal import Decimal
 
 from amr_sim_task_generation import DynamicCategoryTaskGenerator, _scheduled_times_from_cfg, _instance_requires_staff
 from amr_sim_time_utils import parse_release_time
+from amr_generation_inputs import generation_mode_explanation
 from visualiser.project_checks import check_project, config_fingerprint
 
 MAX_DAYS = 31
@@ -264,7 +265,7 @@ def build_demand_preview(config, *, end_datetime=None):
                 rule['explanation'] = ('Continuous mode accumulates volume but does not trigger volume collections by itself. '
                                        'Tracked-item exchange, when enabled, uses separate consumption rules. '
                                        'Use threshold or hybrid mode for volume-triggered collections.' if mode == 'continuous' else
-                                       f'{mode}: demand depends on accumulation, inventory or runtime events. Total is unknown before simulation.')
+                                       generation_mode_explanation(mode) + ' Demand depends on accumulation, inventory or runtime events. Total is unknown before simulation.')
                 continue
             times = _scheduled_times_from_cfg(cfg) if mode != 'timeframe' else []
             if mode != 'timeframe' and not times:

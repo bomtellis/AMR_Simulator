@@ -218,6 +218,13 @@ pair are retained. Thirteen references plus a provenance check cover calendars,
 poll boundaries, route multiplicity, saved simulation parity and limits. Hybrid
 interactions, completed-volume outcomes for these modes and mixed inventory remain open.
 
+**Slice 2V:** [Hybrid demand](HYBRID_DEMAND_REVIEW.md) fixes discrete event volume
+being both dispatched directly and added to the threshold pool. Twelve references
+cover the two components, retained volume, closing polls, threshold compatibility,
+full transport and four editor paths. Shared mode help explains the result change;
+active threshold inputs are exposed. Separate direct-event outcome accounting and
+mixed-service inventory remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -467,8 +474,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2U's deterministic sporadic planning, then continue the remaining audit.
-Audit hybrid mode interactions and extend outcome accounting to separate scheduled/sporadic components,
+Review slice 2V's hybrid demand correction, then continue the remaining audit.
+Extend outcome accounting to separate scheduled/sporadic components,
 preserving the explicit seed compatibility boundary and inventory-space limitations.
 Retain explicit limits on staffing capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through

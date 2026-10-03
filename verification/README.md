@@ -12,7 +12,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Sporadic planning](SPORADIC_PREVIEW_REVIEW.md):
+The latest correction is [Hybrid demand](HYBRID_DEMAND_REVIEW.md):
+discrete event volume no longer funds both a direct task and another threshold
+collection. Mode help and active editor controls explain the two components.
+The preceding checkpoint is [Sporadic planning](SPORADIC_PREVIEW_REVIEW.md):
 Demand Preview now shows deterministic sporadic and combined scheduled-sporadic
 releases, with event fractions and bounded independent counts. Unrepresented
 sporadic events are retained instead of discarded.

@@ -2,6 +2,7 @@ import csv
 import json
 import math
 from typing import Any, List, Optional
+from amr_generation_inputs import generation_mode_explanation
 
 from advanced_dialogs import MultiSelectPicker
 from inventory_spaces_manager import LocationSpacesManagerDialog
@@ -1455,6 +1456,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
 
         mode = self.mode_combo.currentText().strip()
         is_waste = getattr(self, "is_waste_category", False)
+        self.mode_combo.setToolTip(generation_mode_explanation(mode))
         uses_schedule = mode in {"scheduled", "scheduled_threshold", "scheduled_sporadic"}
         uses_threshold = mode in {"threshold", "hybrid", "scheduled_threshold"}
         uses_continuous = mode in {"continuous", "hybrid"}
@@ -1481,8 +1483,8 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
 
         self._set_form_row_visible(self.schedule_widget, show_generation and uses_schedule)
         self._set_form_row_visible(self.run_every_fortnight_check, show_generation)
-        self._set_form_row_visible(self.frequency_edit, show_generation and uses_sporadic)
-        self._set_form_row_visible(self.volume_per_event_edit, show_generation and uses_sporadic)
+        self._set_form_row_visible(self.frequency_edit, show_generation and (uses_sporadic or uses_threshold))
+        self._set_form_row_visible(self.volume_per_event_edit, show_generation and (uses_sporadic or uses_threshold))
         self._set_form_row_visible(self.threshold_volume_edit, show_generation and uses_threshold)
         self._set_form_row_visible(self.base_daily_volume_edit, show_generation and (uses_continuous or uses_threshold))
         self._set_form_row_visible(self.timeframe_start_edit, show_generation and uses_timeframe)
@@ -4134,6 +4136,7 @@ class TaskGenerationSettingsDialog(QDialog):
 
     def _update_mode_field_state(self, *_):
         mode = self.mode_combo.currentText().strip()
+        self.mode_combo.setToolTip(generation_mode_explanation(mode))
         is_waste = self._is_waste_category()
 
         uses_schedule = mode in {
@@ -4182,8 +4185,8 @@ class TaskGenerationSettingsDialog(QDialog):
             self.base_daily_volume_edit,
             show_generation and (uses_continuous or uses_threshold),
         )
-        self._set_form_row_visible(self.frequency_edit, show_generation and uses_sporadic)
-        self._set_form_row_visible(self.volume_per_event_edit, show_generation and uses_sporadic)
+        self._set_form_row_visible(self.frequency_edit, show_generation and (uses_sporadic or uses_threshold))
+        self._set_form_row_visible(self.volume_per_event_edit, show_generation and (uses_sporadic or uses_threshold))
         self._set_form_row_visible(self.timeframe_start_edit, show_generation and uses_timeframe)
         self._set_form_row_visible(self.timeframe_end_edit, show_generation and uses_timeframe)
         self._set_form_row_visible(self.timeframe_payload_multiple_edit, show_generation and uses_timeframe)
@@ -9714,6 +9717,7 @@ class DepartmentWasteStreamItemDialog(QDialog):
 
     def update_field_state(self):
         mode = self.mode_combo.currentText().strip()
+        self.mode_combo.setToolTip(generation_mode_explanation(mode))
 
         uses_schedule = mode in {
             "scheduled",
@@ -9747,7 +9751,7 @@ class DepartmentWasteStreamItemDialog(QDialog):
 
         self.threshold_edit.setEnabled(uses_threshold)
         self.base_daily_edit.setEnabled(uses_continuous or uses_threshold)
-        self.frequency_edit.setEnabled(uses_event_volume)
+        self.frequency_edit.setEnabled(uses_sporadic or uses_threshold)
         self.volume_edit.setEnabled(uses_event_volume)
         self.shared_container_group_edit.setEnabled(
             self.shared_container_check.isChecked()
@@ -11440,6 +11444,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
             return
 
         mode = mode_combo.currentText().strip()
+        mode_combo.setToolTip(generation_mode_explanation(mode))
         uses_schedule = mode in {
             "scheduled",
             "scheduled_threshold",
@@ -11475,7 +11480,7 @@ class BulkDepartmentWasteStreamControlDialog(QDialog):
         if widgets.get("base_daily_edit") is not None:
             widgets["base_daily_edit"].setEnabled(uses_continuous or uses_threshold)
         if widgets.get("frequency_edit") is not None:
-            widgets["frequency_edit"].setEnabled(uses_event_volume)
+            widgets["frequency_edit"].setEnabled(uses_sporadic or uses_threshold)
         if widgets.get("volume_edit") is not None:
             widgets["volume_edit"].setEnabled(uses_event_volume)
 

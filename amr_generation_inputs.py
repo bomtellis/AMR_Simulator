@@ -22,6 +22,20 @@ DURATIONS = {'return_delay_minutes', 'staff_handling_minutes', 'staff_collection
 DAYS = {'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'}
 
 
+def generation_mode_explanation(mode):
+    """User-facing demand semantics shared by preview and editing controls."""
+    return {
+        'scheduled': 'Clock times create tasks. Frequency does not add work in scheduled mode.',
+        'threshold': 'Continuous volume and whole frequency events fill the pool. Each threshold releases one collection.',
+        'continuous': 'Continuous volume accumulates without dispatching collections by itself.',
+        'sporadic': 'Frequency accumulates deterministic events per 24 eligible hours, not random arrivals. Whole events create tasks at an open generation poll.',
+        'hybrid': 'Continuous volume fills the threshold pool. Sporadic frequency events create separate tasks and contribute their volume only once; they do not also fill the pool.',
+        'scheduled_sporadic': 'Clock-scheduled tasks and deterministic frequency events are separate demand components.',
+        'scheduled_threshold': 'For waste, clock times add one event volume to the pool; continuous volume and frequency fill events also accumulate. Other categories create clock-scheduled tasks plus threshold collections.',
+        'timeframe': 'Configured payload counts are distributed across the timeframe and eligible calendar windows.',
+    }.get(mode, '')
+
+
 def generation_input_findings(config):
     """Return (severity, JSON pointer, explanation) triples, including warnings."""
     findings = []

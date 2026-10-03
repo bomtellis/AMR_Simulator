@@ -1,5 +1,10 @@
 # Checkpoint 2M — accumulated demand across polling boundaries
 
+Later correction: [Hybrid demand](HYBRID_DEMAND_REVIEW.md) prevents discrete
+events from also filling the hybrid threshold pool. Threshold and scheduled-
+threshold event-based filling is retained. The original checkpoint below is
+historical evidence with its stated scope.
+
 Review date: 3 October 2026. Baseline: `827cf9b`.
 
 Dynamic volume/event generation now integrates eligible elapsed time before

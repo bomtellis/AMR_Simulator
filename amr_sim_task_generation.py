@@ -2243,11 +2243,9 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             self._accrue_volume(instance, runtime, max(
                 0.0, elapsed_days * _as_float(cfg.get("base_daily_volume_m3", 0.0), 0.0)))
 
-        # For threshold-based waste streams, frequency_per_day and
-        # volume_per_event_m3 represent bin-fill events.  The previous dynamic
-        # category path only used base_daily_volume_m3, so department stream
-        # settings with event volumes never accumulated to the threshold.
-        if mode in THRESHOLD_MODES:
+        # Threshold modes use discrete events as fill. Hybrid instead dispatches
+        # these events below; adding them to the pool as well duplicates demand.
+        if mode in THRESHOLD_MODES and mode not in SPORADIC_MODES:
             event_frequency = max(
                 0.0, _as_float(cfg.get("frequency_per_day", 0.0), 0.0)
             )
