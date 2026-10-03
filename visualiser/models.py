@@ -60,24 +60,13 @@ def _minutes_to_hhmm(value):
 
 
 def calculated_operating_hours_per_day(dept: dict) -> float:
+    from amr_generation_inputs import department_schedule_minutes
     dept = dept or {}
-    start = _parse_hhmm_to_minutes(dept.get("operating_start_time"), 0)
-    end = _parse_hhmm_to_minutes(dept.get("operating_end_time"), None)
-    if end is None:
-        legacy_hours = max(
-            0.0, min(float(dept.get("hours_operated_per_day", 24.0) or 24.0), 24.0)
-        )
-        if legacy_hours >= 24.0:
-            end = start + (24 * 60)
-            dept["operating_end_time"] = "24:00"
-        else:
-            end = start + int(round(legacy_hours * 60.0))
-            dept["operating_end_time"] = _minutes_to_hhmm(end)
-    if end == start:
-        return 24.0
-    if end < start:
-        end += 24 * 60
-    return round(max(0.0, min((end - start) / 60.0, 24.0)), 4)
+    start, end = department_schedule_minutes(dept)
+    if not str(dept.get('operating_end_time', '') or '').strip():
+        # Only midnight can use 24:00. Later next-day endings must wrap.
+        dept['operating_end_time'] = _minutes_to_hhmm(end if end == 1440 else end % 1440)
+    return (end - start) / 60.0
 
 
 def normalise_amr_payload_slots(amr: dict) -> list:
@@ -1775,6 +1764,8 @@ class JsonStore:
         return f"D{next_num}"
 
     def upsert_department(self, payload: dict) -> None:
+        from amr_generation_inputs import validate_generation_inputs
+        validate_generation_inputs({'departments': [payload]})
         payload = dict(payload or {})
         payload.setdefault("operating_start_time", "00:00")
         if not str(payload.get("operating_end_time", "") or "").strip():

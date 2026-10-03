@@ -330,31 +330,19 @@ def _minutes_to_time(value: int) -> dt_time:
 
 
 def _department_operating_start_minutes(dept: dict) -> int:
-    explicit = _parse_hhmm_to_minutes(dept.get("operating_start_time"), None)
-    if explicit is not None:
-        return explicit
-    return 0
+    from amr_generation_inputs import department_schedule_minutes
+    return department_schedule_minutes(dept)[0]
 
 
 def _department_operating_end_minutes(dept: dict) -> int:
-    explicit = _parse_hhmm_to_minutes(dept.get("operating_end_time"), None)
-    if explicit is not None:
-        return explicit
-    start = _department_operating_start_minutes(dept)
-    hours = _as_float(dept.get("hours_operated_per_day", 24.0), 24.0)
-    if hours >= 24.0:
-        return start + (24 * 60)
-    return start + int(round(max(0.0, hours) * 60.0))
+    from amr_generation_inputs import department_schedule_minutes
+    return department_schedule_minutes(dept)[1]
 
 
 def _department_operating_hours_per_day(dept: dict) -> float:
-    start = _department_operating_start_minutes(dept)
-    end = _department_operating_end_minutes(dept)
-    if end == start:
-        return 24.0
-    if end < start:
-        end += 24 * 60
-    return max(1.0, min((end - start) / 60.0, 24.0))
+    from amr_generation_inputs import department_schedule_minutes
+    start, end = department_schedule_minutes(dept)
+    return (end - start) / 60.0
 
 
 def _department_operating_periods_for_date(
@@ -2740,19 +2728,8 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
         )
 
     def _department_hourly_waste_rate_m3(self, dept: dict) -> float:
-        waste_cfg = dict(dept.get("waste", {}) or {})
-
-        alpha = float(waste_cfg.get("alpha", 0.0) or 0.0)
-        beta = float(waste_cfg.get("beta", 0.0) or 0.0)
-        gamma = float(waste_cfg.get("gamma", 0.0) or 0.0)
-
-        bed_count = float(dept.get("bed_count", 0.0) or 0.0)
-        patient_turnover = float(dept.get("patient_turnover", 0.0) or 0.0)
-        staff_count = float(dept.get("staff_count", 0.0) or 0.0)
-        hours_operated = _department_operating_hours_per_day(dept)
-
-        turnover_per_hour = patient_turnover / hours_operated
-        return (alpha * bed_count) + (beta * turnover_per_hour) + (gamma * staff_count)
+        from amr_generation_inputs import department_waste_hourly_rate
+        return department_waste_hourly_rate(dept)
 
     def _make_task_id(self, dept_id: str, stream_name: str) -> str:
         self.task_counter += 1

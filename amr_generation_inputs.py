@@ -22,6 +22,26 @@ DURATIONS = {'return_delay_minutes', 'staff_handling_minutes', 'staff_collection
 DAYS = {'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'}
 
 
+def department_schedule_minutes(department):
+    """Resolved daily interval; equal clocks (including zero legacy hours) mean 24h.
+
+    Input validation is separate. Retain legacy whole-hour clock strings and
+    minute rounding of the hours fallback; explicit end time takes precedence.
+    """
+    def minutes(value, fallback):
+        if value is None or not str(value).strip():
+            return fallback
+        parts = str(value).strip().split(':')
+        return int(parts[0]) * 60 + (int(parts[1]) if len(parts) > 1 else 0)
+    start = minutes(department.get('operating_start_time'), 0)
+    end = minutes(department.get('operating_end_time'), None)
+    if end is None:
+        end = start + round(float(department.get('hours_operated_per_day', 24)) * 60)
+    if end <= start:
+        end += 24 * 60
+    return start, end
+
+
 def generation_mode_explanation(mode):
     """User-facing demand semantics shared by preview and editing controls."""
     return {
@@ -34,6 +54,16 @@ def generation_mode_explanation(mode):
         'scheduled_threshold': 'For waste, clock times add one event volume to the pool; continuous volume and frequency fill events also accumulate. Other categories create clock-scheduled tasks plus threshold collections.',
         'timeframe': 'Configured payload counts are distributed across the timeframe and eligible calendar windows.',
     }.get(mode, '')
+
+
+def department_waste_hourly_rate(department):
+    """Legacy empirical rate in m3/hour; coefficients are user-supplied."""
+    waste = department.get('waste', {})
+    start, end = department_schedule_minutes(department)
+    hours = (end - start) / 60
+    alpha, beta, gamma = (float(waste.get(key, 0)) for key in ('alpha', 'beta', 'gamma'))
+    beds, turnover, staff = (float(department.get(key, 0)) for key in ('bed_count', 'patient_turnover', 'staff_count'))
+    return alpha * beds + beta * (turnover / hours) + gamma * staff
 
 
 def generation_input_findings(config):
@@ -248,13 +278,41 @@ def generation_input_findings(config):
         for index, stream in enumerate(streams):
             rule(stream, f'/waste_streams/{index}')
     departments = config.get('departments', [])
-    if isinstance(departments, list):
+    if not isinstance(departments, list):
+        error('/departments', 'Departments must be a list of JSON objects.')
+    else:
         for index, department in enumerate(departments):
-            if not isinstance(department, dict):
-                continue
             path = f'/departments/{index}'
+            if obj(department, path) is None:
+                continue
+            flags(department, path, {'enabled'})
+            for key in ('bed_count', 'patient_turnover', 'staff_count'):
+                number(department, path, key)
+            number(department, path, 'hours_operated_per_day', maximum=24)
+            for key in ('operating_start_time', 'operating_end_time'):
+                if key not in department:
+                    continue
+                value = department[key]
+                if not isinstance(value, str) or (value.strip() and not (
+                    re.fullmatch(r'(?:[01]?\d|2[0-3])(?::[0-5]\d)?', value.strip())
+                    or (key == 'operating_end_time' and value.strip() == '24:00'))):
+                    error(pointer(path, key), 'Use a valid hour or HH:MM clock, or blank for the default; 24:00 is allowed only for the end.')
+            if 'days_active' in department:
+                days = department['days_active']
+                if not isinstance(days, list) or any(not isinstance(day, str) or day.strip().lower() not in DAYS for day in days):
+                    error(pointer(path, 'days_active'), 'Use a list of mon, tue, wed, thu, fri, sat, sun; empty means every day.')
             if 'waste' in department:
                 rule(department['waste'], pointer(path, 'waste'))
+                if isinstance(department['waste'], dict):
+                    for coefficient in ('alpha', 'beta', 'gamma'):
+                        number(department['waste'], pointer(path, 'waste'), coefficient)
+                    try:
+                        rate = department_waste_hourly_rate(department)
+                    except (ValueError, TypeError, OverflowError, ZeroDivisionError):
+                        pass  # Malformed scalars and clocks have individual findings above.
+                    else:
+                        if not math.isfinite(rate):
+                            error(pointer(path, 'waste'), 'The combined demographic waste rate must be finite; these values overflow the hourly calculation.')
             streams = department.get('waste_streams', [])
             if isinstance(streams, list):
                 for stream_index, stream in enumerate(streams):

@@ -615,6 +615,12 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     completed_groups.add('drawings')
     from amr_payload_inputs import inventory_space_dimensions
     from amr_inventory_inputs import inventory_space_is_amr
+    for index, department in enumerate(config.get('departments', [])):
+        if any(float(department.get(key, 0)) for key in ('bed_count', 'staff_count', 'patient_turnover')):
+            add('DEPARTMENT_DEMAND_SCOPE', 'info', f'/departments/{index}', department.get('name', department.get('id', '')),
+                'Bed, staff and turnover values feed the legacy department-waste coefficient formula.',
+                'They do not automatically set modern category demand or staff-service capacity.',
+                'Configure category demand rates and staffing explicitly; calibrate waste coefficients against measured data.', 'departments', kind='unsupported')
     payload_definitions = {row['name']: row for row in config.get('payloads', [])}
     for index, location in enumerate(config.get('locations', [])):
         if location.get('bounding_box'):

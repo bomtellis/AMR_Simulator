@@ -318,6 +318,14 @@ checks and reports. Twelve tests include independent dimensional, capacity and
 overflow references. Count-only capacity comparisons are explicitly labelled;
 full event coverage, live availability and physical access remain open.
 
+**Slice 2AI:** [Department schedules and demographic inputs](DEPARTMENT_CONTRACT_REVIEW.md)
+fixes shortened overnight/full-day legacy imports, the subhour waste denominator,
+fractional-value truncation and loss of legacy coefficients on dialog acceptance.
+Shared checks reject malformed department clocks/days/enablement, negative or
+nonfinite demographic inputs and overflowing combined waste rates. Twelve tests
+cover independent intervals, waste arithmetic, atomic rejection and dialog
+preservation. Identity/reference/floor/coordinate and complete editing remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -567,8 +575,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AH's storage-report changes. Continue the department input inventory
-and remaining workspace contracts, retaining full report event-coverage/stock reconciliation,
+Review slice 2AI's department schedule changes. Continue department identity,
+reference, floor/coordinate and editing contracts, then remaining workspace gates.
+Retain full report event-coverage/stock reconciliation,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

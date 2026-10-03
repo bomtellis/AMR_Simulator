@@ -1,5 +1,6 @@
 import csv
 import json
+from copy import deepcopy
 import math
 from typing import Any, List, Optional
 from amr_generation_inputs import generation_mode_explanation
@@ -10959,14 +10960,15 @@ class DepartmentEditorDialog(QDialog):
                 self.operating_end_edit.text(), "Operating end", allow_blank=False
             )
 
-            self.result = {
+            candidate = {
+                **deepcopy(self.seed),
                 "id": dept_id,
                 "name": name,
                 "floor": int(self.floor_label.text()),
                 "enabled": self.enabled_check.isChecked(),
-                "bed_count": int(float(self.bed_count_edit.text())),
+                "bed_count": float(self.bed_count_edit.text()),
                 "patient_turnover": float(self.turnover_edit.text()),
-                "staff_count": int(float(self.staff_count_edit.text())),
+                "staff_count": float(self.staff_count_edit.text()),
                 # Kept in JSON as a derived compatibility field for older reporting/simulator code.
                 "hours_operated_per_day": round(
                     self._calculate_operating_hours_per_day(
@@ -11002,6 +11004,9 @@ class DepartmentEditorDialog(QDialog):
                 "x": float(self.x_edit.text()),
                 "y": float(self.y_edit.text()),
             }
+            from amr_generation_inputs import validate_generation_inputs
+            validate_generation_inputs({'departments': [candidate]})
+            self.result = candidate
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid department", str(exc))
