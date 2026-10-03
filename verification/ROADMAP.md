@@ -262,6 +262,13 @@ flags, unit balances and import parity, with 29 explicit dispositions. Combined
 deck packing, aggregate structural mass, physical payload input checks beyond
 orientation and complete editor precision preservation remain open.
 
+**Slice 2AB:** [Physical payloads and storage envelopes](PAYLOAD_CONTRACT_REVIEW.md)
+adds shared physical input checks and corrects bay height inference from legacy
+payload dimensions. Import preserves inferred precision and dimension/flexibility
+aliases. Thirteen references and 18 dispositions cover the stated cases. Full bay
+input/reference validation, zero-as-inference policy, missing-template height and
+swept geometry remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -511,9 +518,9 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AA's robot capacity and orientation behaviour. Next audit physical
-payload inputs and location compatibility/storage fields against the existing
-stock and conservation references, then continue the department inventory,
+Review slice 2AB's physical payload and bay inference changes. Next complete
+location/bay input and reference/occupancy checks against the existing stock and
+conservation references, then continue the department inventory,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.

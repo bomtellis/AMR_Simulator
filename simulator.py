@@ -20,6 +20,7 @@ from amr_route_reservations import RouteReservationTransaction
 from amr_routing_inputs import validate_routing_inputs
 from amr_lift_inputs import validate_lift_inputs
 from amr_robot_inputs import validate_robot_inputs, normalise_amr_payload_slots, normalise_orientations
+from amr_payload_inputs import validate_payload_inputs, payload_dimensions, inventory_space_dimensions
 from amr_generation_inputs import validate_generation_inputs
 from amr_staff_policy import resolve_staff_requirement
 
@@ -134,6 +135,7 @@ class Simulation:
         validate_routing_inputs(config)
         validate_lift_inputs(config, require_speed=True, require_complete=True)
         validate_robot_inputs(config, require_complete=True)
+        validate_payload_inputs(config, require_complete=True)
         validate_generation_inputs(config)
         self.location_reservations = defaultdict(list)
         self.config = config
@@ -572,6 +574,7 @@ class Simulation:
         self.payloads: Dict[str, PayloadType] = {}
         for p in config["payloads"]:
             legacy_size = float(p.get("size_units", 1.0))
+            payload_length, payload_width, payload_height = payload_dimensions(p)
             raw_items = p.get("items", {}) or {}
             if isinstance(raw_items, list):
                 converted_items = {}
@@ -605,9 +608,9 @@ class Simulation:
             payload_type = PayloadType(
                 name=p["name"],
                 weight_kg=float(p["weight_kg"]),
-                length_m=float(p.get("length_m", legacy_size)),
-                width_m=float(p.get("width_m", legacy_size)),
-                height_m=float(p.get("height_m", legacy_size)),
+                length_m=payload_length,
+                width_m=payload_width,
+                height_m=payload_height,
                 size_units=legacy_size,
                 track_items=bool(p.get("track_items", False)),
                 items=clean_items,
@@ -3167,13 +3170,9 @@ class Simulation:
 
     def _init_inventory_spaces(self, location_dicts: List[dict]) -> None:
         self.inventory_spaces_by_location = {}
-        payload_height_by_name = {
-            str(payload.get("name", "") or "").strip(): float(
-                payload.get("height_m", 0.0) or 0.0
-            )
-            for payload in self.config.get("payloads", []) or []
-            if isinstance(payload, dict)
-            and str(payload.get("name", "") or "").strip()
+        payload_definitions = {
+            payload['name']: payload for payload in self.config.get('payloads', [])
+            if isinstance(payload, dict) and isinstance(payload.get('name'), str)
         }
 
         for loc in location_dicts:
@@ -3189,42 +3188,7 @@ class Simulation:
                     continue
 
                 points = list(raw_space.get("points", []) or [])
-                point_length, point_width = self._space_points_dimensions(points)
-
-                length_m = float(
-                    raw_space.get(
-                        "length_m",
-                        raw_space.get("length", point_length),
-                    )
-                    or point_length
-                    or 0.0
-                )
-                width_m = float(
-                    raw_space.get(
-                        "width_m",
-                        raw_space.get("width", point_width),
-                    )
-                    or point_width
-                    or 0.0
-                )
-                template_heights = [
-                    payload_height_by_name.get(
-                        str(slot.get("payload", "") or "").strip(), 0.0
-                    )
-                    for slot in raw_space.get("payload_slots", []) or []
-                    if isinstance(slot, dict)
-                ]
-                inferred_height = max(
-                    (height for height in template_heights if height > 0.0),
-                    default=999999.0,
-                )
-                height_m = float(
-                    raw_space.get(
-                        "height_m",
-                        raw_space.get("height", inferred_height),
-                    )
-                    or inferred_height
-                )
+                length_m, width_m, height_m = inventory_space_dimensions(raw_space, payload_definitions)
 
                 name = str(raw_space.get("name", "")).strip() or f"Space {index}"
                 occupied = bool(raw_space.get("occupied", False))

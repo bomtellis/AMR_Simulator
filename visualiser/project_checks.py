@@ -265,6 +265,12 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     for path, message in robot_input_findings(config, require_complete=True):
         if path not in invalid_paths:
             error(path, message, path.split('/')[1], code='ROBOT_INPUT')
+    from amr_payload_inputs import payload_input_findings
+    completed_groups.add('payloads')
+    invalid_paths = {f.path for f in findings if f.severity == 'error'}
+    for path, message in payload_input_findings(config, require_complete=True):
+        if path not in invalid_paths:
+            error(path, message, 'payloads', code='PAYLOAD_INPUT')
     if any(f.severity == 'error' for f in findings):
         return finish()
     names = {}
@@ -575,6 +581,21 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                         f"Drawing is unavailable: {value}", "The background cannot be displayed; explicit graph routes can still be simulated.",
                         "Relink the drawing or acknowledge a run without it.", section)
     completed_groups.add('drawings')
+    for index, location in enumerate(config.get('locations', [])):
+        spaces = location.get('inventory_spaces', [])
+        if isinstance(spaces, list):
+            for space_index, space in enumerate(spaces):
+                if isinstance(space, dict) and 'capacity_volume_m3' in space:
+                    add('STORAGE_MODEL_SCOPE', 'info', f'/locations/{index}/inventory_spaces/{space_index}/capacity_volume_m3',
+                        space.get('name', ''), 'Inventory capacity_volume_m3 is unused; fit uses the bay envelope and each bay holds one payload instance.',
+                        'This field does not implement volumetric packing or additional payload capacity.',
+                        'Set explicit bay dimensions and model separate bays where required.', 'locations', kind='unsupported')
+    for index, payload in enumerate(config.get('payloads', [])):
+        if 'volume_m3' in payload:
+            add('PAYLOAD_MODEL_SCOPE', 'info', f'/payloads/{index}/volume_m3', payload.get('name', ''),
+                'Payload volume_m3 is unused by physical fit and storage-volume accounting; those use resolved length × width × height.',
+                'This metadata cannot replace dimensions or configure waste-stream capacity.',
+                'Review physical dimensions and configure waste demand separately.', 'payloads', kind='unsupported')
     for index, robot in enumerate(config.get('amrs', [])):
         for field, message in (
                 ('start_location', 'Per-type start_location is ignored; initial robots use configured compatible charging spaces.'),

@@ -543,6 +543,8 @@ class JsonStore:
         validate_lift_inputs(data)
         from amr_robot_inputs import validate_robot_inputs
         validate_robot_inputs(data)
+        from amr_payload_inputs import validate_payload_inputs
+        validate_payload_inputs(data)
         from amr_generation_inputs import validate_generation_inputs
         validate_generation_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
@@ -804,40 +806,12 @@ class JsonStore:
                 if is_amr:
                     space.setdefault("has_charger", False)
                 else:
-                    point_length, point_width = polygon_dimensions_from_points(
-                        space.get("points", []) or []
-                    )
-                    space.setdefault("length_m", round(point_length, 3))
-                    space.setdefault("width_m", round(point_width, 3))
-                    template_heights = [
-                        float(
-                            payload_by_name.get(
-                                str(slot.get("payload", "") or "").strip(), {}
-                            ).get("height_m", 0.0)
-                            or 0.0
-                        )
-                        for slot in space.get("payload_slots", []) or []
-                        if isinstance(slot, dict)
-                    ]
-                    space.setdefault(
-                        "height_m",
-                        round(
-                            max(
-                                (
-                                    height
-                                    for height in template_heights
-                                    if height > 0.0
-                                ),
-                                default=999999.0,
-                            ),
-                            3,
-                        ),
-                    )
-                    space.setdefault(
-                        "flexible",
-                        str(location.get("name", "") or "").strip()
-                        in dropoff_zone_names,
-                    )
+                    from amr_payload_inputs import inventory_space_dimensions
+                    length, width, height = inventory_space_dimensions(space, payload_by_name)
+                    for field, value in zip(('length_m', 'width_m', 'height_m'), (length, width, height)):
+                        space.setdefault(field, value)
+                    space.setdefault('flexible', space.get('flexible_payloads',
+                        str(location.get('name', '') or '').strip() in dropoff_zone_names))
 
     def ensure_corridor_defaults(self) -> None:
         from amr_routing_inputs import validate_routing_inputs
