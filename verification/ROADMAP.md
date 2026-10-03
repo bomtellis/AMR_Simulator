@@ -123,6 +123,10 @@ runtime waste/return interactions and the remainder of the inventory stay open.
 **Slice 2D:** [Explicit staff choice](STAFF_CHOICE_REVIEW.md) makes false suppress
 legacy Stores staffing while omission preserves the fallback across editor
 roundtrips. Staff capacity/queue semantics and wider scalar validation remain open.
+**Slice 2E:** [Staff contention and batch safety](STAFF_CONTENTION_REVIEW.md)
+verifies the existing staffing-sizing rules and fixes three unsafe batch-sharing
+cases. Six staff option contracts and dialog help clarify automatic growth.
+Staff report reconciliation, shift boundaries and wider input validation remain open.
 
 **Purpose:** close the first release's engineering evidence requirement.
 
@@ -373,8 +377,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2D's explicit staff-choice correction, then audit staff resource
-contention and capacity semantics.
+Review slice 2E's staff contention correction, then reconcile assignment intervals
+with reported staffing/utilisation metrics and audit shift-team boundaries.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger
 geometry and UI work in their planned order.

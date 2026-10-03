@@ -5801,8 +5801,18 @@ class Simulation:
             else None
         )
         if location_name and active_assignment is not None:
+            active_start = float(active_assignment["start_time"])
             active_finish = float(active_assignment.get("finish_time", 0.0) or 0.0)
-            if active_finish > baseline_start + 1e-9:
+            batch_finish = max(baseline_start + duration, active_finish)
+            period_end = baseline_window.get("work_period_end")
+            # Share only a service already in progress at the requested window.
+            # A future booking is not a reason to postpone an earlier delivery,
+            # and inheriting a batch finish must respect this task's work hours.
+            if (
+                active_start <= baseline_start + 1e-9
+                and active_finish > baseline_start + 1e-9
+                and (period_end is None or batch_finish <= period_end + 1e-9)
+            ):
                 person_index = max(
                     0, int(active_assignment.get("person_index", 1) or 1) - 1
                 )
@@ -5927,6 +5937,12 @@ class Simulation:
         finish_time = float(window["finish_time"] or (actual_start + duration))
         available_times[person_index] = finish_time
         last_locations[person_index] = location_name
+        # Planning order need not match service time. Once this person has a new
+        # booking, older location batches cannot be extended across that booking.
+        # This conservative planner does not insert services into calendar gaps.
+        for batch_location, batch in list(active_batches.items()):
+            if int(batch.get("person_index", 0)) == person_index + 1:
+                del active_batches[batch_location]
         category_key = str(pool["category_key"])
         team_prefix = f"shift-{shift_team}-" if shift_team else ""
         assignment = {

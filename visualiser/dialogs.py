@@ -101,6 +101,11 @@ def _selected_staff_shift_pattern_combo(combo: QComboBox) -> str:
 
 def _make_staff_movement_policy_widget(owner, initial_policy) -> QWidget:
     widget = QWidget()
+    widget.setToolTip(
+        "Available first assigns a separate service. Batch same location shares "
+        "overlapping services at one location; minimise movement also prefers "
+        "the previous person when arrival times tie. Busy teams grow automatically."
+    )
     layout = QHBoxLayout(widget)
     layout.setContentsMargins(0, 0, 0, 0)
     owner.staff_movement_policy_checks = {}
@@ -1275,6 +1280,10 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             QDoubleValidator(0.0, 1440.0, 2, self)
         )
         self.staff_initial_count_edit.setValidator(QIntValidator(1, 999999, self))
+        self.staff_initial_count_edit.setToolTip(
+            "Starting people on shift for this category. This is a staffing estimate, "
+            "not a fixed capacity: the simulation adds people when everyone is busy."
+        )
         self.reusable_return_pool_multiplier_edit.setValidator(QDoubleValidator(0.0, 999999.0, 3, self))
         self.reusable_return_pool_max_edit.setValidator(QIntValidator(0, 999999, self))
         self.frequency_edit.setValidator(positive_double_validator)
@@ -2348,6 +2357,10 @@ class TaskGenerationSettingsDialog(QDialog):
             QDoubleValidator(0.0, 1440.0, 2, self)
         )
         self.staff_initial_count_edit.setValidator(QIntValidator(1, 999999, self))
+        self.staff_initial_count_edit.setToolTip(
+            "Starting people on shift for this category. This is a staffing estimate, "
+            "not a fixed capacity: the simulation adds people when everyone is busy."
+        )
         self.reusable_return_pool_multiplier_edit.setValidator(QDoubleValidator(0.0, 999999.0, 3, self))
         self.reusable_return_pool_max_edit.setValidator(QIntValidator(0, 999999, self))
         self.frequency_edit.setValidator(positive_double_validator)
