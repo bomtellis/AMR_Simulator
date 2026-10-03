@@ -16,6 +16,8 @@ GROUPS = {
     'payloads': ('Physical payload inputs', ('payloads',)),
     'inventory': ('Storage bay inputs and references', ('locations', 'payloads', 'amrs')),
     'locations': ('Location inputs and wash references', ('locations',)),
+    'charging': ('Charging locations and initial fleet', ('building', 'locations', 'amrs', 'payloads')),
+    'charge_inputs': ('Charging input references', ('building', 'locations')),
     'shared_containers': ('Shared container definitions', ('task_generation', 'departments', 'waste_streams', 'payloads', 'locations')),
     'values': ('Numbers and schedules', ('*',)),
     'references': ('Identifiers and references', ('*',)),
@@ -39,6 +41,8 @@ def input_names(keys):
 def dependencies(finding):
     code, section = finding.code, finding.section
     local = (section,) if section and section != 'project' else ('*',)
+    if code in {'CHARGE_INPUT', 'CHARGE_START_CAPACITY', 'CHARGE_LEGACY_LAYOUT'}:
+        return GROUPS['charging'][1]
     if code in {'LOCATION_INPUT', 'LOCATION_MODEL_SCOPE'}:
         return ('locations',)
     if code in {'INVENTORY_INPUT', 'INVENTORY_OCCUPANCY_SCOPE', 'INVENTORY_ENVELOPE',

@@ -24,6 +24,8 @@ from amr_payload_inputs import validate_payload_inputs, payload_dimensions, inve
 from amr_inventory_inputs import (validate_inventory_inputs, inventory_space_is_amr,
                                   inventory_space_amr_types, inventory_slot_amr_type, inventory_slot_is_amr)
 from amr_location_inputs import validate_location_inputs
+from amr_fleet_allocation import (validate_charge_inputs, configured_charge_locations,
+                                  maximum_bay_assignment, amr_bay_compatible)
 from amr_generation_inputs import validate_generation_inputs
 from amr_staff_policy import resolve_staff_requirement
 
@@ -141,6 +143,7 @@ class Simulation:
         validate_payload_inputs(config, require_complete=True)
         validate_inventory_inputs(config, check_references=True)
         validate_location_inputs(config, require_complete=True)
+        validate_charge_inputs(config, check_references=True)
         validate_generation_inputs(config)
         self.location_reservations = defaultdict(list)
         self.config = config
@@ -483,20 +486,7 @@ class Simulation:
             config["building"].get("load_unload_time_sec", 20.0)
         )
         self.floor_height_m = float(config["building"].get("floor_height_m", 4.0))
-        configured_charge_locations = config["building"].get("charge_locations")
-        if isinstance(configured_charge_locations, list):
-            self.charge_location_names = [
-                str(x).strip() for x in configured_charge_locations if str(x).strip()
-            ]
-        else:
-            legacy_charge_location = str(
-                config["building"].get("charge_location", "")
-            ).strip()
-            self.charge_location_names = (
-                [legacy_charge_location] if legacy_charge_location else []
-            )
-        if not self.charge_location_names:
-            self.charge_location_names = [config["locations"][0]["name"]]
+        self.charge_location_names = configured_charge_locations(config)
         # Backwards-compatible current charger label used by existing logging paths.
         self.charge_location_name = self.charge_location_names[0]
 
@@ -3919,34 +3909,11 @@ class Simulation:
             self.amr_inventory_space_acceptance_cache[cache_key] = bool(value)
             return bool(value)
 
-        amr_id = str(getattr(amr, "id", "") or "").strip()
-        base_id = amr_id.rsplit("-", 1)[0]
-        if not inventory_space_is_amr(space):
-            return cache_and_return(False)
-        clean_amr_types = inventory_space_amr_types(space)
-        if (
-            clean_amr_types
-            and base_id not in clean_amr_types
-            and amr_id not in clean_amr_types
-        ):
-            return cache_and_return(False)
-
-        length_m = float(space.get("length_m", 0.0) or 0.0)
-        width_m = float(space.get("width_m", 0.0) or 0.0)
-        height_m = float(space.get("height_m", 999999.0) or 999999.0)
-        amr_length = float(getattr(amr, "length_m", 0.0) or 0.0)
-        amr_width = float(getattr(amr, "width_m", 0.0) or 0.0)
-        amr_height = float(getattr(amr, "height_m", 0.0) or 0.0)
-        tolerance_m = 1e-3
-
-        def _fits(required: float, available: float) -> bool:
-            return float(required) <= (float(available) + tolerance_m)
-
-        fits_normal = _fits(amr_length, length_m) and _fits(amr_width, width_m)
-        fits_rotated = _fits(amr_length, width_m) and _fits(amr_width, length_m)
-        return cache_and_return(
-            (fits_normal or fits_rotated) and _fits(amr_height, height_m)
-        )
+        return cache_and_return(amr_bay_compatible(
+            space, str(getattr(amr, 'id', '') or '').strip(),
+            tuple(float(getattr(amr, field, 0) or 0) for field in ('length_m', 'width_m', 'height_m')),
+            (float(space.get('length_m', 0) or 0), float(space.get('width_m', 0) or 0),
+             float(space.get('height_m', 999999) or 999999))))
 
     def _location_has_any_amr_inventory_spaces(self, location_name: str) -> bool:
         """Return True if the location contains any AMR bay, regardless of type."""
@@ -4391,8 +4358,9 @@ class Simulation:
 
         Legacy JSON can still contain start_location on AMR definitions, but the
         runtime now treats charging locations as the initial home positions.  If
-        a compatible AMR inventory space exists at any configured charging
-        location it is occupied; otherwise the AMR starts at the first charging
+        a distinct compatible bay can be allocated, it is occupied. Maximum
+        charger matching is extended with parking without losing occupied chargers.
+        Otherwise the AMR starts at the first charging
         location point so older layouts still run while validation reports the
         missing spaces.
         """
@@ -4403,13 +4371,34 @@ class Simulation:
         if not fallback_charge_location and self.locations:
             fallback_charge_location = next(iter(self.locations.keys()))
 
-        for amr in getattr(self, "amrs", []):
-            location_name, _space = self._find_free_amr_charge_space(amr)
-            if not location_name:
-                location_name = fallback_charge_location
+        candidates, chargers = {}, {}
+        for amr in self.amrs:
+            choices = []
+            for location_index, location_name in enumerate(self.charge_location_names):
+                origin = self.locations[location_name]
+                for space_index, space in enumerate(self.inventory_spaces_by_location.get(location_name, [])):
+                    if not self._inventory_space_accepts_amr(space, amr):
+                        continue
+                    if not self._space_is_available_for_amr(space, amr, location_name):
+                        continue
+                    centre = self._inventory_space_centre_location(location_name, space)
+                    distance = math.hypot(centre.x - origin.x, centre.y - origin.y) if centre else float(space_index)
+                    choices.append((location_index, distance, space_index, (location_name, self._space_name(space)), space))
+            choices.sort(key=lambda item: item[:3])
+            candidates[amr.id] = [item[3] for item in choices]
+            chargers[amr.id] = [item[3] for item in choices if self._inventory_space_has_charger(item[4])]
+        charger_assignment = maximum_bay_assignment(chargers)
+        assignment = maximum_bay_assignment(candidates, charger_assignment)
+
+        for amr in self.amrs:
+            selected = assignment.get(amr.id)
+            location_name = selected[0] if selected else fallback_charge_location
             if location_name:
                 amr.location_name = location_name
-                occupied_space = self._occupy_amr_inventory_space(amr, location_name)
+                occupied_space = None
+                if selected:
+                    amr.target_inventory_space_name = selected[1]
+                    occupied_space = self._occupy_amr_inventory_space(amr, location_name)
                 if occupied_space is not None:
                     setattr(amr, "home_charge_location", location_name)
                     setattr(

@@ -12,7 +12,12 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Bay classification and dimension policy](INVENTORY_CLASSIFICATION_REVIEW.md):
+The latest checkpoint is [Initial fleet and charger allocation](FLEET_ALLOCATION_REVIEW.md):
+distinct matching replaces greedy initial placement and per-type charger counting.
+Shared/instance-restricted bays count once; charging references agree across tools.
+Fifteen tests include an exhaustive small-graph reference. Physical parking and
+operational charging throughput remain open.
+The preceding checkpoint is [Bay classification and dimension policy](INVENTORY_CLASSIFICATION_REVIEW.md):
 AMR markers and legacy aliases resolve consistently across storage and charging,
 zero dimensions share inference across runtime/preflight, and unresolved or mixed
 bay definitions have explicit findings. Fleet-to-bay allocation remains under audit.

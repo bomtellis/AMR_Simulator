@@ -1,5 +1,6 @@
 from amr_inventory_inputs import (inventory_space_is_amr, inventory_space_amr_types,
                                   inventory_slot_is_amr, inventory_slot_amr_type)
+from amr_fleet_allocation import (configured_charge_locations, configured_fleet_bay_plan, validate_charge_inputs)
 import json
 import os
 import tempfile
@@ -551,6 +552,7 @@ class JsonStore:
         validate_inventory_inputs(data)
         from amr_location_inputs import validate_location_inputs
         validate_location_inputs(data)
+        validate_charge_inputs(data)
         from amr_generation_inputs import validate_generation_inputs
         validate_generation_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
@@ -1028,14 +1030,7 @@ class JsonStore:
         return None
 
     def charge_locations(self) -> list:
-        building = self.data.setdefault("building", {})
-        locations = building.get("charge_locations")
-
-        if isinstance(locations, list):
-            return [str(x).strip() for x in locations if str(x).strip()]
-
-        legacy = str(building.get("charge_location", "")).strip()
-        return [legacy] if legacy else []
+        return configured_charge_locations(self.data)
 
     def set_charge_locations(self, locations: list) -> None:
         self.data.setdefault("building", {})["charge_locations"] = [
@@ -1484,6 +1479,16 @@ class JsonStore:
                 item["name"] = new_name
             if item.get('wash_location') == old_name:
                 item['wash_location'] = new_name
+        building = self.data.get('building', {})
+        if str(building.get('charge_location', '')).strip() == old_name:
+            building['charge_location'] = new_name
+        charging = building.get('charge_locations')
+        if isinstance(charging, list):
+            building['charge_locations'] = [new_name if value.strip() == old_name else value for value in charging]
+        elif isinstance(charging, str):
+            parts = charging.split(',')
+            if any(value.strip() == old_name for value in parts):
+                building['charge_locations'] = ','.join(new_name if value.strip() == old_name else value for value in parts)
         for item in self.data.get("corridors", {}).get("nodes", []):
             if item["name"] == old_name:
                 item["name"] = new_name
@@ -2131,59 +2136,16 @@ class JsonStore:
         return (fits_normal or fits_rotated) and _fits(amr_height, height_m)
 
     def _amr_charge_space_validation_errors(self) -> List[str]:
-        errors = []
-        locations = self.data.get("locations", []) or []
-        locations_by_name = {str(loc.get("name", "") or "").strip(): loc for loc in locations}
-        building = self.data.get("building", {}) or {}
-        charge_locations = building.get("charge_locations")
-        if isinstance(charge_locations, str):
-            charge_locations = [x.strip() for x in charge_locations.split(",")]
-        if not isinstance(charge_locations, list) or not charge_locations:
-            legacy = str(building.get("charge_location", "") or "").strip()
-            charge_locations = [legacy] if legacy else []
-        charge_locations = [str(x).strip() for x in charge_locations if str(x).strip()]
-        if not charge_locations:
+        # Kept as an adapter for callers of the historical validation API.
+        from amr_fleet_allocation import charge_input_findings
+        errors = [message for _path, message in charge_input_findings(self.data, check_references=True)]
+        if errors:
             return errors
-
-        for loc_name in charge_locations:
-            if loc_name not in locations_by_name and loc_name not in self.names_in_use():
-                errors.append(f"Charging location not found: {loc_name}")
-
-        charge_location_dicts = [locations_by_name[name] for name in charge_locations if name in locations_by_name]
-        for amr_type in self.data.get("amrs", []) or []:
-            amr_id = str(amr_type.get("id", "") or "").strip() or "AMR"
-            try:
-                required = max(0, int(amr_type.get("quantity", 1)))
-            except Exception:
-                required = 1
-            compatible = 0
-            charger_equipped = 0
-            compatible_by_location = {}
-            charger_equipped_by_location = {}
-            configured_slots_by_location = {}
-            for location in charge_location_dicts:
-                location_name = str(location.get("name", "") or "").strip()
-                for space in location.get("inventory_spaces", []) or []:
-                    if inventory_space_is_amr(space):
-                        configured_slots_by_location[location_name] = configured_slots_by_location.get(location_name, 0) + 1
-                    if self._inventory_space_accepts_amr_type(location, space, amr_type):
-                        compatible += 1
-                        compatible_by_location[location_name] = compatible_by_location.get(location_name, 0) + 1
-                        if bool(space.get("has_charger", False)):
-                            charger_equipped += 1
-                            charger_equipped_by_location[location_name] = (
-                                charger_equipped_by_location.get(location_name, 0) + 1
-                            )
-            if charger_equipped < required:
-                detail_parts = [
-                    f"{name}: {charger_equipped_by_location.get(name, 0)} charger-equipped compatible / {compatible_by_location.get(name, 0)} compatible / {configured_slots_by_location.get(name, 0)} AMR slot(s)"
-                    for name in charge_locations
-                ]
-                detail = "; ".join(detail_parts) if detail_parts else "no configured charging locations"
-                errors.append(
-                    f"AMR type {amr_id} requires {required} compatible charger-equipped AMR space(s), "
-                    f"but only {charger_equipped} found at configured charging location(s). {detail}."
-                )
+        plan = configured_fleet_bay_plan(self.data)
+        matched, required = len(plan['charger_assignment']), len(plan['robot_ids'])
+        if plan['explicit_bays'] and matched < required:
+            errors.append(f"Fleet requires {required} distinct charger-equipped AMR spaces to start every robot on a charger; "
+                          f"only {matched} can be assigned simultaneously. Shared and instance-restricted bays count once.")
         return errors
 
     def people_movements(self) -> list:
@@ -2202,7 +2164,7 @@ class JsonStore:
         self.data["scenario_testing"] = dict(value or {})
         self.ensure_scenario_defaults()
 
-    def validate(self) -> List[str]:
+    def validate(self, *, include_charge_capacity=True) -> List[str]:
         errors = []
         names = self.names_in_use()
 
@@ -2444,7 +2406,8 @@ class JsonStore:
                 errors.append(f"Duplicate PDF underlay mapping for floor {floor}")
             seen_pdf_floors.add(floor)
 
-        errors.extend(self._amr_charge_space_validation_errors())
+        if include_charge_capacity:
+            errors.extend(self._amr_charge_space_validation_errors())
         errors.extend(self._graph_access_validation_errors())
 
         return errors

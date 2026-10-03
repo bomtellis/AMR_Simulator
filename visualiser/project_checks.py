@@ -280,6 +280,10 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     for path, message in location_input_findings(config, require_complete=True):
         if path not in invalid_paths:
             error(path, message, 'locations', code='LOCATION_INPUT')
+    from amr_fleet_allocation import charge_input_findings, configured_fleet_bay_plan
+    completed_groups.add('charge_inputs')
+    for path, message in charge_input_findings(config, check_references=True):
+        error(path, message, 'building', code='CHARGE_INPUT')
     from amr_inventory_inputs import inventory_input_findings
     completed_groups.add('inventory')
     invalid_paths = {f.path for f in findings if f.severity == 'error'}
@@ -568,8 +572,21 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                     "No configured active AMR slot can carry this payload.", "Tasks using it may fail for capacity or dimensions.",
                     "Review payload dimensions, allowed orientation and AMR capacity.", "payloads", payload["name"])
         completed_groups.add('compatibility')
+        charge_plan = configured_fleet_bay_plan(config)
+        completed_groups.add('charging')
+        total, matched = len(charge_plan['robot_ids']), len(charge_plan['charger_assignment'])
+        if charge_plan['explicit_bays'] and matched < total:
+            add('CHARGE_START_CAPACITY', 'warning', '/building/charge_locations', 'Initial fleet',
+                f'Only {matched} of {total} AMRs can occupy distinct compatible charger-equipped bays simultaneously.',
+                'Remaining robots start in compatible parking bays or at the location point; this is not proof of sufficient physical parking or charging throughput.',
+                'Review bay dimensions, type/instance restrictions and fleet size, or acknowledge the constrained start.', 'building')
+        if charge_plan['legacy_locations']:
+            add('CHARGE_LEGACY_LAYOUT', 'info', '/building/charge_locations', 'Legacy charging layout',
+                'Location-level charging without AMR bays remains active at: ' + ', '.join(charge_plan['legacy_locations']),
+                'Initial robots share a location point; distinct physical parking spaces have not been modelled.',
+                'Add explicit AMR bays when testing physical storage capacity.', 'building')
         if include_legacy:
-            for message in JsonStore(copy.deepcopy(config)).validate():
+            for message in JsonStore(copy.deepcopy(config)).validate(include_charge_capacity=False):
                 # Replace the older connectivity diagnostics with graph-aware findings above.
                 if "not connected to the route graph" in message or "separate islands" in message or "not the corridor/lift graph" in message:
                     continue

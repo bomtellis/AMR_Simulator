@@ -294,6 +294,14 @@ have explicit warnings. Thirteen tests and five additional partial dispositions
 cover the stated cases. Fleet-to-bay matching, instance-specific charger allocation
 and complete physical geometry remain open.
 
+**Slice 2AF:** [Initial fleet and charger allocation](FLEET_ALLOCATION_REVIEW.md)
+maximises distinct compatible initial charger occupancy, then parking. Shared
+and instance-restricted bays are counted globally, shortages are explicit
+acknowledgeable constraints, and malformed charging references block running.
+Fifteen tests include 4,096 exhaustive small-graph/charger cases. Two charging
+option dispositions and shared location resolution cover list/CSV/legacy inputs.
+Physical parking, live fleet rematching and charging throughput remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -543,10 +551,8 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2AE's bay classification and dimension changes. Next verify global
-fleet-to-bay/charger allocation, instance restrictions and the distinction between
-charging constraints and malformed inputs. Finish location outlines and remaining
-input contracts, then continue the department inventory,
+Review slice 2AF's initial fleet/charger matching and reference changes. Finish
+location outlines and remaining input contracts, then continue the department inventory,
 preserving generation's remaining calendar, staffing and mixed-stock limitations.
 Use latest/audit-backlog.json to select exact gaps; do not equate its count with
 missing features. Complete the workspace gates after the core audit.
