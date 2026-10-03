@@ -172,6 +172,13 @@ and plain-import legacy settings. Twelve references and ten option contracts cov
 the declared scope. Shared physical collection/return lifecycle and conflicting
 group definitions remain open.
 
+**Slice 2O:** [Shared-bin lifecycle](SHARED_BIN_REVIEW.md) fixes seeded payload
+precedence, wrong-group reservations, discarded return settings and missing returns
+after delayed assignment. Fifteen references cover identity, exact timing,
+failure conservation and structured rejection of incompatible active shared rules.
+Raw seed/resolved-rule parity, multi-location groups and failed collection volume
+reconciliation remain open.
+
 **Purpose:** close the first release's engineering evidence requirement.
 
 - Inventory actual user inputs across configuration, editor, generator and simulator
@@ -421,9 +428,10 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Next action when resumed
 
-Review slice 2N's waste corrections, then verify shared-bin collection and return
-lifecycle, failed pickup, unreturned bins and conflicting group definitions.
-Reconcile accrued demand with physical movements and remaining stock.
+Review slice 2O's physical shared-bin references, then align initial-bin seeding
+with resolved active demand rules, including inherited settings and inactive
+contributors. Reconcile threshold volume with failed/completed physical collection
+and remaining stock; audit multiple route pairs and tracked-item consumption.
 Retain explicit limits on staffing capacity and broader calendar combinations.
 Continue the configuration inventory and independent acceptance audit through
 generation precedence, schedules, returns and resource contention. Keep the larger

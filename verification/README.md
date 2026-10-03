@@ -12,7 +12,10 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest correction is [Waste thresholds and conservation](WASTE_CONSERVATION_REVIEW.md):
+The latest correction is [Shared-bin lifecycle](SHARED_BIN_REVIEW.md):
+seeded payload overrides, group identity, delayed mandatory returns and conflicting
+shared definitions now have physical movement and failure acceptance references.
+The preceding correction is [Waste thresholds and conservation](WASTE_CONSERVATION_REVIEW.md):
 effective department dimensions drive derived thresholds, legacy fill survives closed
 polls and invalid routes, and plain import preserves legacy generator settings.
 The preceding correction is [Accumulated demand](ACCUMULATION_REVIEW.md):

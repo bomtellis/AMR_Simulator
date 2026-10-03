@@ -517,6 +517,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         clock: SimulationClock,
         waste_streams: Optional[Dict[str, dict]] = None,
         waste_stream_paths: Optional[Dict[str, str]] = None,
+        prepare_runtime: bool = True,
     ):
         self.task_generation = task_generation or {}
         self.staff_config = _normalise_global_staff_config(
@@ -538,8 +539,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self.release_spacing_active: Dict[str, str] = {}
         self.deferred_release_queues: Dict[str, List[GeneratedTaskRecord]] = {}
         self.instances = self._build_instances()
-        self._prepare_instance_runtime_fields()
-        self._timeframe_group_members = self._build_timeframe_group_members()
+        # Definition checks must not expand potentially huge requested task
+        # counts. Only runtime/preview generation needs these schedule caches.
+        if prepare_runtime:
+            self._prepare_instance_runtime_fields()
+        self._timeframe_group_members = self._build_timeframe_group_members() if prepare_runtime else {}
         self._timeframe_allocation_cache: Dict[tuple, Tuple[int, int]] = {}
         self._schedule_calendars: Dict[str, dict] = {}
 
@@ -1548,6 +1552,14 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         task.staff_timeframe_spacing_enabled = _as_bool(
             self.staff_config.get("spread_timeframe_tasks", True), True
         )
+        # Seeded waste bins acquire a mandatory same-instance return at runtime,
+        # even when the category has no generic return payload. Keep its timing
+        # and routing policy available for that later decision.
+        task.return_delay_minutes = _as_float(cfg.get("return_delay_minutes", 0.0), 0.0)
+        task.return_route_profile = _clean_text(
+            cfg.get("return_route_profile", cfg.get("route_profile", ""))
+        )
+        task.return_priority = _as_int(cfg.get("return_priority", cfg.get("priority", 100)), 100)
         if bool(cfg.get("return_enabled", False)) or bool(task.dropoff_zone):
             return_payload = _clean_text(cfg.get("return_payload", ""))
             if not return_payload and task.dropoff_zone:
@@ -1555,15 +1567,6 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if return_payload in self.payloads:
                 task.return_enabled = True
                 task.return_payload = return_payload
-                task.return_delay_minutes = _as_float(
-                    cfg.get("return_delay_minutes", 0.0), 0.0
-                )
-                task.return_route_profile = _clean_text(
-                    cfg.get("return_route_profile", cfg.get("route_profile", ""))
-                )
-                task.return_priority = _as_int(
-                    cfg.get("return_priority", cfg.get("priority", 100)), 100
-                )
         if task.release_next_after_return_pickup and task.return_enabled:
             task.generator_release_spacing_key = f"dropoff:{task.dropoff}"
             task.generator_collection_task_id = task.id
@@ -2759,6 +2762,43 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
         return generated
 
 
+class SharedContainerConflictError(ValueError):
+    """Active contributors disagree on the definition of one shared container."""
+
+    def __init__(self, conflicts):
+        self.conflicts = conflicts
+        super().__init__('; '.join(conflicts))
+
+
+def shared_container_conflicts(instances):
+    """Compare resolved rules, so checks and runtime use identical precedence."""
+    groups = {}
+    conflicts = []
+    for instance in instances:
+        cfg = instance.get('cfg', {})
+        group = _clean_text(instance.get('container_group'))
+        if not cfg.get('enabled', False) or not group.startswith(('shared:', 'pickup:')):
+            continue
+        definition = {
+            'payload': _clean_text(cfg.get('payload')),
+            'container_capacity_m3': _as_float(cfg.get('container_capacity_m3', 0)),
+            'threshold_volume_m3': _as_float(cfg.get('threshold_volume_m3', 0)),
+            'initial_container_present': bool(cfg.get('initial_container_present', True)),
+        }
+        if group not in groups:
+            groups[group] = (instance['key'], definition)
+            continue
+        first_key, first_definition = groups[group]
+        for field, value in definition.items():
+            if first_definition[field] != value:
+                conflicts.append(
+                    f"Shared container {group!r} has conflicting {field}: "
+                    f"{first_key} uses {first_definition[field]!r}; {instance['key']} uses {value!r}. "
+                    'Use one container definition or separate group identifiers.'
+                )
+    return conflicts
+
+
 class TaskGenerationManager:
     """Registry and coordinator for all runtime task generators."""
 
@@ -2768,6 +2808,7 @@ class TaskGenerationManager:
         clock: SimulationClock,
         locations: Dict[str, Location],
         payloads: Dict[str, PayloadType],
+        *, prepare_runtime: bool = True,
     ):
         self.config = config or {}
         self.clock = clock
@@ -2776,7 +2817,14 @@ class TaskGenerationManager:
         self.generators: List[BaseTaskGenerator] = []
         from amr_generation_inputs import validate_generation_inputs
         validate_generation_inputs(config)
-        self._build_generators()
+        self._build_generators(prepare_runtime=prepare_runtime)
+        conflicts = shared_container_conflicts(
+            instance for generator in self.generators
+            if isinstance(generator, DynamicCategoryTaskGenerator)
+            for instance in generator.instances
+        )
+        if conflicts:
+            raise SharedContainerConflictError(conflicts)
 
     def _task_generation_cfg(self) -> dict:
         return self.config.get("task_generation", {}) or {}
@@ -2813,7 +2861,7 @@ class TaskGenerationManager:
             for group in groups
         )
 
-    def _build_generators(self) -> None:
+    def _build_generators(self, *, prepare_runtime=True) -> None:
         task_generation = self._task_generation_cfg()
         departments = list(self.config.get("departments", []))
 
@@ -2833,6 +2881,7 @@ class TaskGenerationManager:
                     locations=self.locations,
                     payloads=self.payloads,
                     clock=self.clock,
+                    prepare_runtime=prepare_runtime,
                     waste_streams=waste_streams,
                     waste_stream_paths={str(item.get('name', '')).strip(): f'/waste_streams/{i}'
                                         for i, item in enumerate(self.config.get('waste_streams', []))

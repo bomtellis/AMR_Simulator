@@ -438,6 +438,24 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             "Correct errors and run checks again.", kind="coverage")
         return finish()
 
+    # Resolve active demand rules without running a simulation. Generator setup
+    # uses identifier membership only; physical objects are not needed here.
+    from amr_sim_task_generation import TaskGenerationManager, SharedContainerConflictError
+    from amr_sim_time_utils import SimulationClock
+    try:
+        TaskGenerationManager(copy.deepcopy(config), SimulationClock(dates['start_datetime']),
+                              {key: None for key in by_collection['locations']},
+                              {key: None for key in by_collection['payloads']}, prepare_runtime=False)
+        completed_groups.add('shared_containers')
+    except SharedContainerConflictError as exc:
+        for message in exc.conflicts:
+            error('/task_generation/categories/waste', message, 'task_generation', 'waste',
+                  'SHARED_CONTAINER_CONFLICT')
+        completed_groups.add('shared_containers')
+    except (TypeError, ValueError, KeyError, AttributeError, OverflowError) as exc:
+        error('/task_generation', f'Demand rules could not be resolved: {exc}', 'task_generation',
+              code='GENERATION_RESOLUTION')
+
     def reachable(start, end, profile=None, task=None):
         profile, task = profile or {}, task or {}
         allowed_nodes = set(profile.get("allowed_nodes", [])) | set(task.get("allowed_nodes", []))

@@ -8281,9 +8281,8 @@ class Simulation:
                     continue
                 stream_name = str(stream_item.get("name", "")).strip()
                 stream_cfg = self.waste_streams.get(stream_name, {}) or {}
-                payload_name = str(
-                    stream_cfg.get("payload", stream_item.get("payload", "")) or ""
-                ).strip()
+                payload_name = (str(stream_item.get("payload") or "").strip()
+                                or str(stream_cfg.get("payload") or "").strip())
                 payload = self.payloads.get(payload_name)
                 if payload is None:
                     continue
@@ -8368,19 +8367,18 @@ class Simulation:
         # at the waste destination it must be returned to the department pickup
         # location.  The task-generation category may have an empty return_payload
         # because the payload is resolved from the waste stream, so force the
-        # return to use the same payload and instance when a seeded container was
-        # found.
-        if str(getattr(task, "payload_instance_id", "") or "").strip():
-            task.return_enabled = True
-            task.return_payload = normalise_payload_name(getattr(task, "payload", ""))
-            task.return_same_payload_instance = True
-            task.generator_waits_for_return = True
-            if not getattr(task, "return_priority", 0):
-                task.return_priority = int(getattr(task, "priority", 100) or 100)
-            if not str(getattr(task, "return_route_profile", "") or "").strip():
-                task.return_route_profile = str(
-                    getattr(task, "route_profile", "") or ""
-                ).strip()
+        # return to use the same payload and instance. Establish the policy even
+        # while the bin is away: a task bound later must also return that bin.
+        task.return_enabled = True
+        task.return_payload = normalise_payload_name(getattr(task, "payload", ""))
+        task.return_same_payload_instance = True
+        task.generator_waits_for_return = True
+        if not getattr(task, "return_priority", 0):
+            task.return_priority = int(getattr(task, "priority", 100) or 100)
+        if not str(getattr(task, "return_route_profile", "") or "").strip():
+            task.return_route_profile = str(
+                getattr(task, "route_profile", "") or ""
+            ).strip()
 
     def _assign_available_existing_payload_instance(self, task: Task) -> None:
         payload_name = normalise_payload_name(getattr(task, "payload", ""))
@@ -8392,12 +8390,20 @@ class Simulation:
         if current_instance_id:
             return
 
-        # First try the task's requested pickup.  This is correct for
-        # non-shared bins and for shared bins where all departments point at the
-        # same physical waste room.
+        container_group = str(getattr(task, "container_group", "") or "").strip()
+        # A pickup can hold several independent bins of the same payload type.
+        # Preserve the legacy location suffix on department seeds while matching
+        # generated tasks, whose department group does not include that suffix.
         for record in self.payload_instance_store.records_at(task.pickup):
             if record.payload != payload_name:
                 continue
+            if container_group:
+                actual_group = str((record.metadata or {}).get("container_group", "") or "").strip()
+                matches_group = actual_group == container_group
+                if container_group.startswith("department:"):
+                    matches_group = matches_group or actual_group == f"{container_group}:{record.location}"
+                if not matches_group:
+                    continue
             if not self._record_is_available_empty_container(record):
                 continue
             if not self.payload_instance_store.reserve_instance(
@@ -8413,7 +8419,6 @@ class Simulation:
         # case, move the task pickup to the current physical bin location rather
         # than leaving a generated task pending forever at the contributing
         # department's own pickup point.
-        container_group = str(getattr(task, "container_group", "") or "").strip()
         if not container_group:
             return
 

@@ -11,6 +11,7 @@ GRAPH = ('locations', 'corridors', 'lifts')
 GROUPS = {
     'structure': ('Section structure', ('*',)),
     'generation': ('Generation input contracts', ('task_generation', 'departments', 'tasks', 'waste_streams')),
+    'shared_containers': ('Shared container definitions', ('task_generation', 'departments', 'waste_streams', 'payloads', 'locations')),
     'values': ('Numbers and schedules', ('*',)),
     'references': ('Identifiers and references', ('*',)),
     'graph': ('Graph connectivity', (*GRAPH, 'tasks', 'route_profiles')),
@@ -37,6 +38,8 @@ def dependencies(finding):
         return local
     if code == 'RUN_PERIOD':
         return ('simulation',)
+    if code == 'SHARED_CONTAINER_CONFLICT':
+        return GROUPS['shared_containers'][1]
     if code == 'DUPLICATE':
         return GRAPH if section in GRAPH else local
     if code in {'POSITION', 'CROSS_FLOOR', 'LOCATION_ISOLATED'}:
