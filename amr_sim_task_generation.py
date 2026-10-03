@@ -71,6 +71,20 @@ class BaseTaskGenerator:
         return []
 
 
+def _waste_balance_row(group, generator_type, accrued, residual, collections):
+    """One conserved pool; restored attempts are diagnostic, never extra stock."""
+    def total(status):
+        return sum(item['volume_m3'] for item in collections if item['status'] == status)
+    row = {'group': group, 'generator_type': generator_type, 'accrued_m3': accrued,
+           'residual_m3': residual, 'pending_m3': total('pending'),
+           'completed_m3': total('completed'), 'unconfirmed_m3': total('unconfirmed'),
+           'restored_after_failure_m3': total('restored'),
+           'collections': [dict(item) for item in collections]}
+    row['difference_m3'] = accrued - sum(row[field] for field in
+        ('residual_m3', 'pending_m3', 'completed_m3', 'unconfirmed_m3'))
+    return row
+
+
 def _clean_text(value) -> str:
     return str(value or "").strip()
 
@@ -1842,16 +1856,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             if 'accrued_volume_m3' not in runtime:
                 continue
             collections = list(runtime.get('volume_collections', {}).values())
-            def total(status):
-                return sum(row['volume_m3'] for row in collections if row['status'] == status)
-            row = {'group': key, 'accrued_m3': runtime['accrued_volume_m3'],
-                   'residual_m3': runtime['volume'], 'pending_m3': total('pending'),
-                   'completed_m3': total('completed'), 'unconfirmed_m3': total('unconfirmed'),
-                   'restored_after_failure_m3': total('restored'),
-                   'collections': [dict(item) for item in collections]}
-            row['difference_m3'] = row['accrued_m3'] - sum(row[field] for field in
-                ('residual_m3', 'pending_m3', 'completed_m3', 'unconfirmed_m3'))
-            rows.append(row)
+            rows.append(_waste_balance_row(key, self.generator_type,
+                runtime['accrued_volume_m3'], runtime['volume'], collections))
         return rows
 
     def _timeframe_records(
@@ -2668,6 +2674,7 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
                     "fill_m3": 0.0,
                     "generated_m3_total": 0.0,
                     "tasks_created": 0,
+                    "volume_collections": {},
                     "container_capacity_m3": float(
                         stream_cfg.get("container_capacity_m3", 0.0) or 0.0
                     ),
@@ -2773,7 +2780,37 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
             waste_stream=stream_name,
             waste_volume_m3=float(waste_volume_m3),
             container_type=payload_name,
+            rule_id=f'legacy_waste:{dept_id}:{stream_name}',
         )
+
+    def waste_volume_balance(self):
+        return [_waste_balance_row(f'legacy_waste:{department}:{stream}', self.generator_type,
+                    runtime['generated_m3_total'], runtime['fill_m3'],
+                    list(runtime['volume_collections'].values()))
+                for department, streams in sorted(self.runtime.items())
+                for stream, runtime in sorted(streams.items())]
+
+    def task_state_changed(self, task, state, event_time=None):
+        if getattr(task, 'is_return_task', False):
+            return []
+        key = getattr(task, 'legacy_waste_allocation_key', None)
+        if not key:
+            return []
+        runtime = self.runtime.get(key[0], {}).get(key[1])
+        if runtime is None:
+            return []
+        allocation = runtime['volume_collections'].get(task.id)
+        if not allocation or allocation['status'] != 'pending':
+            return []
+        if state == 'completed':
+            allocation['status'] = 'completed'
+        elif state == 'failed':
+            if getattr(task, 'payload_instance_picked_up', False):
+                allocation['status'] = 'unconfirmed'
+            else:
+                runtime['fill_m3'] += allocation['volume_m3']
+                allocation['status'] = 'restored'
+        return []
 
     def update_until(self, now: float) -> List[GeneratedTaskRecord]:
         if now <= 0 or not self.departments:
@@ -2821,6 +2858,13 @@ class DepartmentWasteTaskGenerator(BaseTaskGenerator):
                             )
                             if record is None:
                                 break  # Retain fill when no collection can be represented.
+                            record.task.legacy_waste_allocation_key = (dept_id, stream_name)
+                            runtime['volume_collections'][record.task.id] = {
+                                'task_id': record.task.id, 'rule_id': record.rule_id,
+                                'volume_m3': trigger_volume_m3, 'status': 'pending',
+                                'requested_pickup': record.task.pickup,
+                                'requested_dropoff': record.task.dropoff,
+                            }
                             generated.append(record)
                             runtime["fill_m3"] = max(0.0, runtime["fill_m3"] - trigger_volume_m3)
                             runtime["tasks_created"] += 1
@@ -2901,7 +2945,7 @@ class TaskGenerationManager:
 
     def waste_volume_balance(self):
         return [row for generator in self.generators
-                if isinstance(generator, DynamicCategoryTaskGenerator)
+                if isinstance(generator, (DynamicCategoryTaskGenerator, DepartmentWasteTaskGenerator))
                 for row in generator.waste_volume_balance()]
 
     def tracked_item_balance(self):

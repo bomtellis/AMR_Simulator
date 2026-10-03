@@ -1,4 +1,4 @@
-"""Read recorded dynamic accumulated-waste balances; never reconstruct missing stock."""
+"""Read recorded accumulated-waste balances; never reconstruct missing stock."""
 import json
 import math
 
@@ -10,16 +10,20 @@ STATUS_FIELDS = {'pending': 'pending_m3', 'completed': 'completed_m3',
 
 def summarize_waste_volume(events, *, complete, capabilities):
     result = {'known': False, 'matches': None, 'totals': {key: None for key in FIELDS},
-              'groups': [], 'event_ids': [], 'issues': []}
+              'groups': [], 'event_ids': [], 'issues': [], 'scope': 'unknown'}
     snapshots = [event for event in events if event['type'] == 'waste_volume_balance_coverage']
-    if not complete or 'waste_volume_balance_v1' not in capabilities or len(snapshots) != 1:
+    if not complete or not {'waste_volume_balance_v1', 'waste_volume_balance_v2'}.intersection(capabilities) or len(snapshots) != 1:
         result['issues'].append('Complete accumulated-waste evidence is unavailable; missing evidence is not zero volume.')
         return result
     snapshot = snapshots[0]
     result['event_ids'] = [snapshot['id']]
     try:
         data = json.loads(snapshot['row'].get('details', ''))
-        if data.get('schema_version') != 1 or data.get('scope') != 'dynamic_accumulated_waste_only':
+        legacy_scope = (data.get('schema_version') == 1 and data.get('scope') == 'dynamic_accumulated_waste_only'
+                        and 'waste_volume_balance_v1' in capabilities)
+        combined_scope = (data.get('schema_version') == 2 and data.get('scope') == 'dynamic_and_legacy_accumulated_waste'
+                          and 'waste_volume_balance_v2' in capabilities)
+        if not (legacy_scope or combined_scope):
             raise ValueError('unsupported scope or schema')
         if any(type(data.get(key)) is not int or data[key] < 0 for key in ('group_count', 'allocation_count')):
             raise ValueError('invalid coverage counts')
@@ -33,6 +37,8 @@ def summarize_waste_volume(events, *, complete, capabilities):
             entry = json.loads(allocation['row'].get('details', ''))
             by_group.setdefault(entry.pop('group'), []).append(entry)
         for group in groups:
+            if combined_scope and group.get('generator_type') not in {'dynamic_category', 'department_waste'}:
+                raise ValueError('unidentified accumulated-waste generator')
             group['collections'] = by_group.pop(group['group'], [])
         if by_group:
             raise ValueError('allocation has no group summary')
@@ -65,7 +71,8 @@ def summarize_waste_volume(events, *, complete, capabilities):
                 seen_tasks.add(task_id)
                 allocated[STATUS_FIELDS[status]] += volume
                 records = evidence_by_task.get(task_id, [])
-                generated = [event for event in records if event['type'] == 'task_generated']
+                generated_type = 'waste_task_generated' if combined_scope and group['generator_type'] == 'department_waste' else 'task_generated'
+                generated = [event for event in records if event['type'] == generated_type]
                 terminal = {event['type'] for event in records
                             if event['type'] in {'task_complete', 'multi_stop_task_complete', 'task_failed'}}
                 if status in {'restored', 'unconfirmed'}:
@@ -79,7 +86,7 @@ def summarize_waste_volume(events, *, complete, capabilities):
                 elif not math.isclose(float(generated[0]['row'].get('waste_volume_m3', 0)), volume, rel_tol=1e-9, abs_tol=1e-6):
                     result['issues'].append(f'{task_id}: generated event volume differs from allocation.')
                 result['event_ids'].extend(event['id'] for event in records
-                    if event['type'] in {'task_generated', 'task_complete', 'multi_stop_task_complete', 'task_failed'})
+                    if event['type'] in {generated_type, 'task_complete', 'multi_stop_task_complete', 'task_failed'})
             for field, value in allocated.items():
                 if not math.isclose(value, group[field], rel_tol=1e-9, abs_tol=1e-10):
                     result['issues'].append(f"{group['group']}: {field} differs from task allocations.")
@@ -92,6 +99,6 @@ def summarize_waste_volume(events, *, complete, capabilities):
     except (ValueError, KeyError, TypeError, AttributeError, OverflowError):
         result['issues'].append('Malformed accumulated-waste summary; its totals cannot be established.')
         return result
-    result.update(known=True, matches=not result['issues'], totals=totals, groups=groups,
+    result.update(known=True, matches=not result['issues'], totals=totals, groups=groups, scope=data['scope'],
                   event_ids=sorted(set(result['event_ids'])))
     return result

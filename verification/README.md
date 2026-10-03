@@ -12,7 +12,11 @@ The next stage starts only after the user's review of this checkpoint.
 
 ## Review these results
 
-The latest checkpoint is [Tracked-stock results evidence](TRACKED_STOCK_EVIDENCE_REVIEW.md):
+The latest correction is [Legacy waste outcomes](LEGACY_WASTE_BALANCE_REVIEW.md):
+pre-pickup collection failures restore accrued fill once; post-pickup failures
+remain unconfirmed. Versioned Results Investigation evidence covers legacy and
+dynamic accumulated waste while preserving older logs' narrower scope.
+The preceding checkpoint is [Tracked-stock results evidence](TRACKED_STOCK_EVIDENCE_REVIEW.md):
 item balances reconcile against requests, confirmed delivery/handoff receipts and
 physical arrivals. Results Investigation links each metric to supporting records;
 incomplete or older evidence remains unknown.

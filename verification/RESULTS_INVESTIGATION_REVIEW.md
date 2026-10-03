@@ -1,5 +1,9 @@
 # Results investigation checkpoint — 2 October 2026
 
+Version 2 accumulated-waste evidence now covers legacy collection outcomes as
+well as dynamic pools. See [Legacy waste outcomes](LEGACY_WASTE_BALANCE_REVIEW.md)
+for scope, compatibility and failure/retry reference calculations.
+
 Later stock metrics and receipt reconciliation are documented in
 [Tracked-stock results evidence](TRACKED_STOCK_EVIDENCE_REVIEW.md). Open a new
 fully logged run to inspect remaining stock, unmet consumption and delivery

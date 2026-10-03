@@ -14506,12 +14506,12 @@ class Simulation:
             if (not getattr(self, '_waste_volume_summary_written', False) and self.verbose
                     and self._evidence_run_status in ('finished', 'cancelled')):
                 self._waste_volume_summary_written = True
-                self._evidence_event_capabilities.append('waste_volume_balance_v1')
+                self._evidence_event_capabilities.append('waste_volume_balance_v2')
                 groups = self.task_generation_manager.waste_volume_balance()
                 self.log_step(event_time=self.current_time, event_type='waste_volume_balance_coverage',
                     status='summary', details=json.dumps({
-                        'schema_version': 1,
-                        'scope': 'dynamic_accumulated_waste_only',
+                        'schema_version': 2,
+                        'scope': 'dynamic_and_legacy_accumulated_waste',
                         'group_count': len(groups),
                         'allocation_count': sum(len(group['collections']) for group in groups),
                     }))
