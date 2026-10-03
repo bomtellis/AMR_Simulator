@@ -182,6 +182,9 @@ class Simulation:
             self._evidence_event_capabilities.append('geometric_trajectories_v1')
             if any(isinstance(robot, dict) and 'movement' in robot for robot in config.get('amrs', [])):
                 self._evidence_event_capabilities.append('finite_angular_motion_v1')
+            if any(isinstance(robot, dict) and 'reference_point' in robot.get('manoeuvring', {})
+                   for robot in config.get('amrs', [])):
+                self._evidence_event_capabilities.append('turning_reference_paths_v1')
         if self.geometric_traffic:
             self._evidence_event_capabilities.append('geometric_traffic_v1')
             self._evidence_event_capabilities.append('geometric_occupancy_v1')

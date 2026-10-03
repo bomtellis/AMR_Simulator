@@ -11,14 +11,16 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QAction, QColor, QPainter, QPainterPath, QPen, QPolygonF, QUndoCommand, QUndoStack
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDockWidget, QDoubleSpinBox,
+from PySide6.QtWidgets import (QApplication, QCheckBox, QComboBox, QDockWidget, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPushButton, QTextBrowser, QToolBar,
     QVBoxLayout, QWidget)
 
-from amr_trajectories import Pose, TrajectoryError, check_clearance, footprint, plan_trajectory
+from amr_trajectories import Pose, TrajectoryError, check_clearance, footprint
 from amr_project_runs import write_json
 from amr_geometric_routing import simulation_project_from_study
+from amr_reference_inputs import DEFAULT_REFERENCE_POINT, reference_point_options
+from amr_reference_trajectories import plan_reference_trajectory
 
 SCALE = 60
 EXAMPLE = {'schema_version': 1, 'kind': 'amr_geometry_study',
@@ -30,19 +32,24 @@ EXAMPLE = {'schema_version': 1, 'kind': 'amr_geometry_study',
                           'payload_length_m': 1.6, 'payload_width_m': .9, 'clearance_m': .05}}
 
 
+def study_trajectory(points, parameters):
+    return plan_reference_trajectory(points,
+        **{key: parameters[key] for key in ('minimum_radius_m', 'speed_m_per_sec', 'pivot_allowed', 'pivot_speed_deg_per_sec')},
+        **reference_point_options(parameters))
+
+
 def validate_study(data):
     if not isinstance(data, dict) or data.get('kind') != 'amr_geometry_study' or data.get('schema_version') != 1:
         raise ValueError('Select a version 1 geometry study, not a simulation project.')
     p = data['parameters']
-    options = {k:p[k] for k in ('minimum_radius_m','speed_m_per_sec','pivot_allowed','pivot_speed_deg_per_sec')}
     try:
-        plan_trajectory(data['points'], **options)
+        study_trajectory(data['points'], p)
     except TrajectoryError as exc:
         if exc.reason != 'infeasible_route':
             raise
     for prefix in ('robot', 'payload'):
         footprint(Pose(0,0,0), p[prefix+'_length_m'], p[prefix+'_width_m'], p['clearance_m'])
-    reference = plan_trajectory([(0,0),(1,0)], **options)
+    reference = study_trajectory([(0,0),(1,0)], p)
     check_clearance(reference, length_m=1, width_m=1, obstacles=data['obstacles'], clearance_m=p['clearance_m'])
     result = {k:copy.deepcopy(data[k]) for k in ('schema_version','kind','points','obstacles','parameters')}
     for key in EXAMPLE['parameters']:
@@ -177,7 +184,26 @@ class GeometryWorkbench(QMainWindow):
         self.pivots = QCheckBox('Permit stationary pivots when a turn cannot fit')
         self.pivots.toggled.connect(self.apply_parameters)
         form.addRow(self.pivots)
-        note = QLabel('Load and robot share a centred rectangular envelope.\nDrawn rectangles are explicit obstacles.\nExport simulation creates a separate geometric project.\nDirectional lanes and reversing remain pending.')
+        self.reference_controls = {}
+        reference = self.study['parameters'].get('reference_point', DEFAULT_REFERENCE_POINT)
+        for key, label in (('longitudinal_mm', 'Reference offset: forwards +'), ('lateral_mm', 'Reference offset: left +')):
+            control = QDoubleSpinBox()
+            control.setDecimals(3)
+            control.setRange(-1000000, 1000000)
+            control.setSuffix(' mm')
+            control.setValue(reference[key])
+            control.setAccessibleName(label + ' in millimetres')
+            control.editingFinished.connect(self.apply_parameters)
+            self.reference_controls[key] = control
+            form.addRow(label, control)
+        self.pivot_axis = QComboBox()
+        self.pivot_axis.addItem('Body centre', 'body_centre')
+        self.pivot_axis.addItem('Turning reference point', 'reference_point')
+        self.pivot_axis.setCurrentIndex(self.pivot_axis.findData(reference['pivot_axis']))
+        self.pivot_axis.currentIndexChanged.connect(self.apply_parameters)
+        form.addRow('Pivot about', self.pivot_axis)
+        form.addRow(QLabel('Radius and travel speed refer to the marked reference point.\nOffsets use the robot body frame; the load remains centred.'))
+        note = QLabel('Load and robot share a centred rectangular envelope.\nDrawn rectangles are explicit obstacles.\nExport simulation creates a separate geometric project.\nThis study previews forward paths and permitted pivots.')
         note.setWordWrap(True)
         form.addRow(note)
         self.properties.setWidget(form_widget)
@@ -213,6 +239,7 @@ class GeometryWorkbench(QMainWindow):
         self.coordinates = QLabel('X 0.00 m    Y 0.00 m')
         self.statusBar().addPermanentWidget(self.coordinates)
         self._display_parameters = self.control_parameters()
+        self._display_reference = self.control_reference()
         self.rebuild()
 
     def set_study(self, study):
@@ -224,17 +251,33 @@ class GeometryWorkbench(QMainWindow):
         self.pivots.blockSignals(True)
         self.pivots.setChecked(self.study['parameters']['pivot_allowed'])
         self.pivots.blockSignals(False)
+        reference = self.study['parameters'].get('reference_point', DEFAULT_REFERENCE_POINT)
+        for key, control in self.reference_controls.items():
+            control.blockSignals(True)
+            control.setValue(reference[key])
+            control.blockSignals(False)
+        self.pivot_axis.blockSignals(True)
+        self.pivot_axis.setCurrentIndex(self.pivot_axis.findData(reference['pivot_axis']))
+        self.pivot_axis.blockSignals(False)
         self._display_parameters = self.control_parameters()
+        self._display_reference = self.control_reference()
         self.rebuild()
 
     def control_parameters(self):
         return {**{k:c.value() for k,c in self.controls.items()}, 'pivot_allowed': self.pivots.isChecked()}
+
+    def control_reference(self):
+        return {**{key: control.value() for key, control in self.reference_controls.items()},
+                'pivot_axis': self.pivot_axis.currentData()}
 
     def apply_parameters(self):
         after = copy.deepcopy(self.study)
         for key, value in self.control_parameters().items():
             if value != self._display_parameters[key]:
                 after['parameters'][key] = value
+        for key, value in self.control_reference().items():
+            if value != self._display_reference[key]:
+                after['parameters'].setdefault('reference_point', copy.deepcopy(DEFAULT_REFERENCE_POINT))[key] = value
         if after != self.study:
             self.undo_stack.push(StudyEdit(self, after, 'Change manoeuvre parameters'))
 
@@ -315,7 +358,7 @@ class GeometryWorkbench(QMainWindow):
             label.setPos(pos + QPointF(8,8))
         self.trajectory, self.clearance_result = None, None
         try:
-            trajectory = plan_trajectory(points, **{k:p[k] for k in ('minimum_radius_m','speed_m_per_sec','pivot_allowed','pivot_speed_deg_per_sec')})
+            trajectory = study_trajectory(points, p)
             length, width = max(p['robot_length_m'], p['payload_length_m']), max(p['robot_width_m'],p['payload_width_m'])
             result = check_clearance(trajectory, length_m=length, width_m=width, clearance_m=p['clearance_m'], obstacles=self.study['obstacles'])
             self.trajectory, self.clearance_result = trajectory, result
@@ -329,20 +372,32 @@ class GeometryWorkbench(QMainWindow):
             for pose in poses[::max(1,len(poses)//20)]:
                 polygon = QPolygonF([screen(point) for point in footprint(pose, length, width, p['clearance_m'])])
                 scene.addPolygon(polygon, QPen(QColor('#829dab'), .8), QColor(63,132,163,12))
+                offsets = reference_point_options(p)
+                dx, dy = offsets['reference_longitudinal_mm']/1000, offsets['reference_lateral_mm']/1000
+                marker = screen((pose.x+dx*math.cos(pose.heading)-dy*math.sin(pose.heading),
+                                 pose.y+dx*math.sin(pose.heading)+dy*math.cos(pose.heading)))
+                scene.addLine(marker.x()-3, marker.y(), marker.x()+3, marker.y(), QPen(QColor('#573577'), 1))
+                scene.addLine(marker.x(), marker.y()-3, marker.x(), marker.y()+3, QPen(QColor('#573577'), 1))
             for motion in trajectory.motions:
                 if motion.kind == 'arc':
                     centre = screen(motion.centre)
-                    start = screen((motion.start.x,motion.start.y))
+                    reference_start = motion.reference_pose_at(0)
+                    start = screen((reference_start.x,reference_start.y))
                     scene.addLine(centre.x(),centre.y(),start.x(),start.y(),QPen(QColor('#006a9c'),1,Qt.DotLine))
                     label = scene.addText(f'R {motion.radius_m:g} m')
                     label.setDefaultTextColor(QColor('#006a9c'))
                     label.setPos(centre)
                 elif motion.kind == 'pivot':
-                    pos = screen((motion.start.x,motion.start.y))
+                    axis = (motion.reference_pose_at(0) if motion.reference and
+                            motion.reference['pivot_axis'] == 'reference_point' else motion.start)
+                    pos = screen((axis.x,axis.y))
                     scene.addEllipse(pos.x()-12,pos.y()-12,24,24,QPen(QColor('#9b5a00'),3))
                     label = scene.addText(f'Pivot {abs(math.degrees(motion.sweep_rad)):g}° / {motion.duration_sec:g} s')
                     label.setPos(pos + QPointF(16,-30))
-            self.statusBar().showMessage(f'GEOMETRY STUDY • {result["status"].replace("_"," ")} • {trajectory.length_m:.6f} m • {trajectory.duration_sec:.6f} s • not a simulation run')
+            distance_label = (f'{trajectory.length_m:.6f} m reference translation / '
+                              f'{sum(m.body_length_m for m in trajectory.motions):.6f} m body travel'
+                              if any(m.reference for m in trajectory.motions) else f'{trajectory.length_m:.6f} m')
+            self.statusBar().showMessage(f'GEOMETRY STUDY • {result["status"].replace("_"," ")} • {distance_label} • {trajectory.duration_sec:.6f} s • not a simulation run')
         except TrajectoryError as exc:
             self.planning_result = {'status': exc.reason, 'message': str(exc)}
             self.statusBar().showMessage(str(exc))

@@ -758,7 +758,13 @@ and partial report exports remain open. Curved motion now applies configured
 angular speed, acceleration and braking, including non-pivoting robots. Existing
 circular paths stop without dwell at curvature discontinuities; unchanged-curvature
 subdivisions preserve timing. This does not model steering-actuator time, jerk or
-continuous-curvature transitions, and reference-point offsets remain open.
+continuous-curvature transitions. Explicit turning-reference offsets now drive
+forward/reverse geometry, selected pivot axis, lane transitions and continuous
+loaded-footprint checks while preserving body-centre endpoints. Saved schema-3
+evidence and partial results distinguish reference translation from body travel;
+zero offsets preserve legacy geometry. Workbench controls and playback markers
+expose the point. Additional connector and multi-point searches remain open,
+including some reference-axis initial heading corrections and reversals.
 The full application guide is
 also unfinished.
 Continue with:

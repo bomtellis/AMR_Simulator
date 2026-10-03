@@ -5,8 +5,7 @@ physical space. Route envelope claims precede the later directional-lane model.
 """
 import math
 from copy import deepcopy
-from amr_trajectories import (Motion, Pose, Trajectory, TrajectoryError, plan_trajectory, check_clearance,
-                              plan_reverse_trajectory, plan_lateral_trajectory)
+from amr_trajectories import Motion, Pose, Trajectory, TrajectoryError, check_clearance
 from amr_sim_payload_instances import is_empty_payload_name
 from amr_geometric_traffic import TRAFFIC_MODEL, traffic_enabled, lane_trajectory
 from amr_clearances import clearance_input_findings, resolved_clearances
@@ -14,6 +13,7 @@ from amr_geometric_occupancy import area_input_findings
 from amr_motion_profiles import select_motion_settings, MotionProfileError
 from amr_trajectory_dynamics import retime_trajectory
 from amr_initial_placements import initial_placement_findings
+from amr_reference_inputs import reference_point_options
 
 MODEL = 'geometric_v1'
 PARAMETERS = ('minimum_radius_m','pivot_speed_deg_per_sec','initial_heading_deg')
@@ -107,6 +107,10 @@ def geometry_input_findings(config):
         if not isinstance(values,dict):
             error(path,'Provide explicit manoeuvring parameters.')
             continue
+        try:
+            reference_point_options(values)
+        except ValueError as exc:
+            error(path+'/reference_point', str(exc))
         for key in PARAMETERS:
             value = values.get(key)
             valid = (isinstance(value,(int,float)) and not isinstance(value,bool) and math.isfinite(value)
@@ -161,7 +165,9 @@ def validate_geometry_inputs(config):
 
 
 def route_trajectory(sim, amr, route, start, end, payload, orientation, start_heading_deg=None, movement='forward'):
+    from amr_reference_trajectories import plan_reference_trajectory, plan_reference_lateral_trajectory
     parameters = amr.manoeuvring
+    reference_options = reference_point_options(parameters)
     clearances = resolved_clearances(sim.config,parameters)
     loaded = payload is not None and not is_empty_payload_name(payload.name)
     settings = select_motion_settings(amr.movement,loaded=loaded) if getattr(amr,'movement',None) is not None else None
@@ -192,15 +198,16 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
         if (not projections or any(abs((x-start.x)*dy-(y-start.y)*dx)/distance>1e-8 for x,y in points)
                 or any(b<a-1e-8 for a,b in zip(projections,projections[1:]))):
             raise TrajectoryError('infeasible_route', 'Lateral recovery needs a straight graph alignment.')
-        trajectory = plan_lateral_trajectory(Pose(start.x,start.y,math.radians(heading)),points[-1],
-            speed_m_per_sec=settings.lateral_speed_m_per_sec or speed,lateral_allowed=settings.lateral_allowed)
+        trajectory = plan_reference_lateral_trajectory(Pose(start.x,start.y,math.radians(heading)),points[-1],
+            speed_m_per_sec=settings.lateral_speed_m_per_sec or speed,lateral_allowed=settings.lateral_allowed,
+            **reference_options)
     else:
-        planner = plan_reverse_trajectory if movement == 'reverse' else plan_trajectory
         if movement == 'reverse':
             speed = settings.reverse_speed_m_per_sec
-        trajectory = planner(points, minimum_radius_m=radius,
+        trajectory = plan_reference_trajectory(points, minimum_radius_m=radius,
             speed_m_per_sec=speed, pivot_allowed=pivot_allowed,
-            pivot_speed_deg_per_sec=pivot_speed, start_heading_deg=heading)
+            pivot_speed_deg_per_sec=pivot_speed, start_heading_deg=heading,
+            movement=movement, **reference_options)
     length,width = amr.length_m,amr.width_m
     if payload is not None and not is_empty_payload_name(payload.name):
         pl,pw,_ = sim._payload_orientation_dimensions(payload,orientation)
@@ -228,9 +235,11 @@ def route_trajectory(sim, amr, route, start, end, payload, orientation, start_he
     pad = math.hypot(length/2+clearances['wall_m'],width/2+clearances['wall_m'])
     xs,ys = [],[]
     for motion in trajectory.motions:
-        if motion.kind=='arc':
-            xs.extend([motion.centre[0]-motion.radius_m,motion.centre[0]+motion.radius_m])
-            ys.extend([motion.centre[1]-motion.radius_m,motion.centre[1]+motion.radius_m])
+        if motion.centre_orbit_radius_m > 0 and motion.kind in ('arc', 'pivot'):
+            centre = (motion.centre if motion.kind == 'arc' else
+                      (motion.reference_pose_at(0).x, motion.reference_pose_at(0).y))
+            xs.extend([centre[0]-motion.centre_orbit_radius_m,centre[0]+motion.centre_orbit_radius_m])
+            ys.extend([centre[1]-motion.centre_orbit_radius_m,centre[1]+motion.centre_orbit_radius_m])
         else:
             xs.extend([motion.start.x,motion.end.x]);ys.extend([motion.start.y,motion.end.y])
     envelope = (min(xs)-pad,min(ys)-pad,max(xs)+pad,max(ys)+pad)
@@ -260,6 +269,7 @@ def simulation_project_from_study(study):
     The exported robot starts aligned with the first segment, at pickup A.
     """
     p = study['parameters']
+    reference_point_options(p)
     points = deepcopy(study['points'])
     obstacles = deepcopy(study['obstacles'])
     names = ['A']+[f'P{i}' for i in range(2,len(points))]+['B']
@@ -289,5 +299,7 @@ def simulation_project_from_study(study):
         'lifts':[], 'tasks':[{'id':'Geometry-reference','pickup':'A','dropoff':'B','payload':'Load'}],
         'task_generation':{'enabled':False},
     }
+    if 'reference_point' in p:
+        result['amrs'][0]['manoeuvring']['reference_point'] = deepcopy(p['reference_point'])
     validate_geometry_inputs(result)
     return result

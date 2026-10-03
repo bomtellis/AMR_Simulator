@@ -1,6 +1,6 @@
 """Apply explicit scalar movement dynamics to an existing geometric trajectory.
 
-Translation and yaw respect finite acceleration/braking on centre-path arcs.
+Translation and yaw respect finite acceleration/braking on reference-path arcs.
 Circular fillets change curvature abruptly, so the robot stops at those joins
 before steering changes. No steering dwell or alternative geometry is invented.
 Equal signed-curvature subdivisions retain continuous speed. Path endpoints,
@@ -11,7 +11,7 @@ import math
 
 from amr_motion_profiles import (MotionProfile, MotionProfileError, MotionSettings,
                                  profile_for_movement)
-from amr_trajectories import Trajectory
+from amr_trajectories import EPS, Trajectory
 
 
 def _reachable(speed, acceleration, distance):
@@ -32,6 +32,46 @@ def _same_pose(a, b):
             and abs(math.remainder(a.heading - b.heading, 2 * math.pi)) <= 1e-8)
 
 
+def _reference_key(motion):
+    """Validate explicit timing/axis semantics before using offset geometry."""
+    reference = motion.reference
+    if reference is None:
+        return None
+    required = {'longitudinal_mm', 'lateral_mm', 'timing_reference', 'pivot_axis'}
+    if not isinstance(reference, dict) or set(reference) != required:
+        raise MotionProfileError('Motion reference requires explicit offsets, timing reference and pivot axis.')
+    offsets = tuple(reference[key] for key in ('longitudinal_mm', 'lateral_mm'))
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+           for v in offsets):
+        raise MotionProfileError('Motion reference offsets must be finite numbers.')
+    if (reference['timing_reference'] != 'turning_reference_point'
+            or reference['pivot_axis'] not in ('body_centre', 'reference_point')):
+        raise MotionProfileError('Motion reference timing or pivot axis is unsupported.')
+    return (*offsets, reference['timing_reference'], reference['pivot_axis'])
+
+
+def _validate_pivot(motion, settings):
+    if (motion.length_m != 0 or motion.radius_m != 0 or motion.sweep_rad == 0
+            or not settings.pivot_allowed):
+        raise MotionProfileError('Pivot requires permission, zero length/radius and a nonzero sweep.',
+                                 'infeasible_motion')
+    if abs(math.remainder(motion.end.heading - motion.start.heading - motion.sweep_rad,
+                          2 * math.pi)) > 1e-8:
+        raise MotionProfileError('Pivot headings disagree with its sweep.', 'infeasible_motion')
+    if motion.reference is not None and motion.reference['pivot_axis'] == 'reference_point':
+        if (not isinstance(motion.centre, (list, tuple)) or len(motion.centre) != 2
+                or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)
+                       for v in motion.centre)):
+            raise MotionProfileError('Reference-axis pivot requires a finite fixed centre.')
+        for fraction in (0., 1.):
+            reference_pose = motion.reference_pose_at(fraction)
+            if math.hypot(reference_pose.x - motion.centre[0], reference_pose.y - motion.centre[1]) > 1e-8:
+                raise MotionProfileError('Reference-axis pivot must preserve its reference point.',
+                                         'infeasible_motion')
+    elif math.hypot(motion.end.x - motion.start.x, motion.end.y - motion.start.y) > 1e-8:
+        raise MotionProfileError('A body-centre pivot cannot translate.', 'infeasible_motion')
+
+
 def retime_trajectory(trajectory, settings):
     """Return a Trajectory with profile-backed durations on the same geometry.
 
@@ -46,6 +86,7 @@ def retime_trajectory(trajectory, settings):
         raise MotionProfileError('Provide validated MotionSettings.')
     motions = trajectory.motions
     for i, motion in enumerate(motions):
+        _reference_key(motion)
         coordinates = (motion.start.x, motion.start.y, motion.start.heading,
                        motion.end.x, motion.end.y, motion.end.heading,
                        motion.length_m, motion.radius_m, motion.sweep_rad)
@@ -63,14 +104,15 @@ def retime_trajectory(trajectory, settings):
         if motion.movement == 'lateral' and not settings.lateral_allowed:
             raise MotionProfileError('This robot does not permit lateral movement.', 'infeasible_motion')
         if motion.kind == 'pivot':
-            if motion.length_m != 0 or motion.sweep_rad == 0 or not settings.pivot_allowed:
-                raise MotionProfileError('Pivot requires permission, zero length and a nonzero sweep.', 'infeasible_motion')
-            if math.hypot(motion.end.x - motion.start.x, motion.end.y - motion.start.y) > 1e-8:
-                raise MotionProfileError('A stationary pivot cannot translate.', 'infeasible_motion')
+            _validate_pivot(motion, settings)
         elif motion.length_m <= 0:
             raise MotionProfileError('Travel motion requires positive length.')
         elif motion.kind == 'arc' and (motion.radius_m <= 0 or motion.sweep_rad == 0):
             raise MotionProfileError('An arc requires positive reference radius and nonzero sweep.')
+        if (motion.kind == 'arc' and motion.reference is not None
+                and motion.centre_orbit_radius_m <= EPS and not settings.pivot_allowed):
+            raise MotionProfileError('A reference arc that rotates in place requires pivot permission.',
+                                     'infeasible_motion')
 
     output = []
 
@@ -78,11 +120,11 @@ def retime_trajectory(trajectory, settings):
         if m.movement == 'lateral':
             side = ((m.end.y - m.start.y) * math.cos(m.start.heading)
                     - (m.end.x - m.start.x) * math.sin(m.start.heading))
-            return (m.movement, 1 if side > 0 else -1)
+            return (m.movement, 1 if side > 0 else -1, _reference_key(m))
         # Exact signed radius avoids treating slightly different curvature as
         # continuous, or reciprocals underflowing to the straight-line key.
         return (m.movement, math.copysign(m.radius_m, m.sweep_rad)
-                if m.kind == 'arc' else 0)
+                if m.kind == 'arc' else 0, _reference_key(m))
 
     i = 0
     while i < len(motions):

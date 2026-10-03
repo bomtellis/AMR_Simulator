@@ -187,6 +187,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
              'One parked empty blocker and one requester can commit jointly to verified graph stopping points; general multi-robot/loaded recovery and proven deadlock detection remain unimplemented.' if traffic else
              'This is conservative moving-route exclusion, not directional lanes or full parked/waiting robot collision analysis.')+
             ' Graph widths remain access restrictions; physical openings must be modelled as obstacles.'+
+            ' Configured turning-reference offsets use forwards-positive/left-positive body coordinates; '
+            'travel speed, arc radius and translational distance refer to that point. Pivot axis is explicit; '
+            'body footprints remain centred. Connector manoeuvres for some offset heading changes remain unsupported.'+
             (' Configured motion profiles enforce translational and angular speed, acceleration and braking. Circular curvature changes require a momentary stop, without added dwell; steering actuator time and jerk are not modelled.'
              if any(isinstance(robot,dict) and 'movement' in robot for robot in config.get('amrs',[])) else ''),
             'Review explicit geometry and acknowledge the current traffic scope.', section='simulation', kind='assumption')

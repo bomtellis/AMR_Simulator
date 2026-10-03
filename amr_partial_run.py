@@ -93,15 +93,16 @@ def _static_pose(row):
 
 
 def _elapsed_geometry(path, elapsed):
-    distance, rotation, remaining = 0., 0., elapsed
+    distance, body_distance, rotation, remaining = 0., 0., 0., elapsed
     for motion in path.motions:
         fraction = motion.fraction_at_time(min(remaining, motion.duration_sec))
         distance += motion.length_m * fraction
+        body_distance += motion.body_length_m * fraction
         rotation += abs(motion.sweep_rad) * fraction
         remaining -= min(remaining, motion.duration_sec)
         if remaining <= 0:
             break
-    return distance, rotation, _pose(path.pose_at_time(elapsed))
+    return distance, body_distance, rotation, _pose(path.pose_at_time(elapsed))
 
 
 def _energy(row, detail, source):
@@ -237,14 +238,20 @@ def derive_partial_run(rows, frozen_inputs, *, stop_time):
             'executed_end_time_sec': start + elapsed if state != 'planned' else None,
             'elapsed_duration_sec': elapsed, 'planned_duration_sec': duration,
             'elapsed_distance_m': None, 'elapsed_rotation_rad': None, 'pose_at_cutoff': None,
+            'distance_reference': None, 'distance_measure': 'translational_primitives_only',
+            'elapsed_body_distance_m': None, 'planned_body_distance_m': None,
             'planned_start_pose': None, 'planned_end_pose': None,
             'planned_model_energy_kwh': None, 'elapsed_model_energy_kwh': None,
             'energy_basis': None, 'missing_evidence': [],
             'handling_state': ('completed' if state == 'executed' else 'interrupted' if state == 'partial' else 'planned')
                               if segment in ('pickup', 'dropoff') else None}
         if path is not None:
-            distance, rotation, pose = _elapsed_geometry(path, elapsed)
+            distance, body_distance, rotation, pose = _elapsed_geometry(path, elapsed)
             record.update(elapsed_distance_m=distance, elapsed_rotation_rad=rotation,
+                          distance_reference=('turning_reference_point' if any(m.reference is not None
+                                              for m in path.motions) else 'body_centre'),
+                          elapsed_body_distance_m=body_distance,
+                          planned_body_distance_m=sum(m.body_length_m for m in path.motions),
                           pose_at_cutoff=pose if state != 'planned' else None,
                           planned_distance_m=path.length_m,
                           planned_start_pose=_pose(path.motions[0].start),
@@ -259,6 +266,7 @@ def derive_partial_run(rows, frozen_inputs, *, stop_time):
         elif segment in ('pickup', 'dropoff', 'charge', 'wash', 'wash_cycle', 'wait') or str(segment).startswith('wait_'):
             pose = _static_pose(row)
             record.update(elapsed_distance_m=0., elapsed_rotation_rad=0., planned_distance_m=0.,
+                          distance_reference='body_centre', elapsed_body_distance_m=0., planned_body_distance_m=0.,
                           pose_at_cutoff=pose if state != 'planned' else None,
                           planned_start_pose=pose, planned_end_pose=pose)
             if pose is None:

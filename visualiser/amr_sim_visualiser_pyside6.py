@@ -6195,6 +6195,24 @@ class SimulationVisualizer(QMainWindow):
             return True
         return False
 
+    def _amr_reference_position_for_state(self, state):
+        """Locate the configured point from the frozen layout and body pose."""
+        from amr_reference_inputs import reference_point_options
+        identity = str(state.get('amr_id') or (state.get('raw') or {}).get('amr_id') or '')
+        for robot in self.layout_model.data.get('amrs', []):
+            base = str(robot.get('id', ''))
+            if identity != base and identity.rsplit('-', 1)[0] != base:
+                continue
+            try:
+                options = reference_point_options(robot.get('manoeuvring', {}))
+            except ValueError:
+                return None
+            dx, dy = options['reference_longitudinal_mm']/1000, options['reference_lateral_mm']/1000
+            heading = self._amr_heading_radians_for_state(state)
+            return (float(state['x'])+dx*math.cos(heading)-dy*math.sin(heading),
+                    float(state['y'])+dx*math.sin(heading)+dy*math.cos(heading))
+        return None
+
     def _draw_amr_box_colored_qt(self, state: dict, fill="#4da3ff"):
         x = float(state["x"])
         y = float(state["y"])
@@ -6224,6 +6242,13 @@ class SimulationVisualizer(QMainWindow):
         sx0, sy0 = self.world_to_scene(x, y)
         sx1, sy1 = self.world_to_scene(front_x, front_y)
         self.draw_line_item(sx0, sy0, sx1, sy1, "#858585", 0.0, dynamic=True)
+        reference = self._amr_reference_position_for_state(state)
+        if reference is not None:
+            rx, ry = self.world_to_scene(*reference)
+            self.draw_line_item(rx-3, ry, rx+3, ry, '#ffffff', 3, dynamic=True)
+            self.draw_line_item(rx, ry-3, rx, ry+3, '#ffffff', 3, dynamic=True)
+            self.draw_line_item(rx-3, ry, rx+3, ry, '#222222', 1, dynamic=True)
+            self.draw_line_item(rx, ry-3, rx, ry+3, '#222222', 1, dynamic=True)
 
     def build_lift_monitor_state(self) -> List[dict]:
         current_time = self.current_time

@@ -73,20 +73,30 @@ def lane_trajectory(trajectory, points, edges, *, loaded_width_m, clearance_m, s
             raise TrajectoryError('infeasible_route',
                 f'Edge {index+1}: keep-right transitions require {2*run:.6g} m of straight; '
                 f'only {motion.length_m:.6g} m is available. Model a single-file section or extend the approach.')
-        start = motion.start
+        reference = getattr(motion, 'reference', None)
+        if reference:
+            from amr_reference_trajectories import reference_motion_to_body
+        def convert(part):
+            body = reference_motion_to_body(part, reference) if reference else part
+            if (reference and body.kind == 'arc' and body.centre_orbit_radius_m <= EPS
+                    and not trajectory.pivot_allowed):
+                raise TrajectoryError('infeasible_route', 'A centre-stationary lane arc requires pivot permission.')
+            return body
+        start = motion.reference_pose_at(0) if reference else motion.start
         for sweep in (-angle,angle):
             arc = _arc(start,radius,sweep,speed_m_per_sec)
-            output.append(arc)
+            output.append(convert(arc))
             start = arc.end
         if straight > EPS:
             end = Pose(start.x+straight*math.cos(start.heading),start.y+straight*math.sin(start.heading),start.heading)
-            output.append(Motion('line',start,end,straight,straight/speed_m_per_sec))
+            output.append(convert(Motion('line',start,end,straight,straight/speed_m_per_sec)))
             start = end
         for sweep in (angle,-angle):
             arc = _arc(start,radius,sweep,speed_m_per_sec)
-            output.append(arc)
+            output.append(convert(arc))
             start = arc.end
-        if math.hypot(start.x-motion.end.x,start.y-motion.end.y) > 1e-7:
+        expected_end = motion.reference_pose_at(1) if reference else motion.end
+        if math.hypot(start.x-expected_end.x,start.y-expected_end.y) > 1e-7:
             raise TrajectoryError('invalid_input','Lane transition endpoints disagree.')
     return Trajectory(tuple(output),trajectory.minimum_radius_m,trajectory.pivot_allowed),sections
 
@@ -130,8 +140,10 @@ def swept_cells(trajectory, *, length_m, width_m, clearance_m, max_cells=MAX_CEL
                 else:
                     polygon = footprint(mid,length_m+motion.length_m*(hi-lo),width_m,clearance_m)
             else:
-                # Every corner stays within this Euclidean radius of its midpoint.
-                bound = 2*(motion.radius_m+corner)*math.sin(abs(motion.sweep_rad)*(hi-lo)/4)
+                # Poses/footprints use the body centre. Its orbit may differ from
+                # the configured reference-point radius, including a reference
+                # pivot whose reference path is zero but whose body translates.
+                bound = 2*(motion.centre_orbit_radius_m+corner)*math.sin(abs(motion.sweep_rad)*(hi-lo)/4)
                 polygon = footprint(mid,length_m,width_m,clearance_m+bound)
             cells.append({'start':elapsed+start_time,'end':elapsed+end_time,
                           'polygon':polygon,'envelope':polygon_bounds(polygon),'robot_clearance_m':robot_clearance_m})

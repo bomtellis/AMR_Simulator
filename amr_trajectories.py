@@ -44,6 +44,29 @@ class Motion:
     centre: tuple = ()
     profile: dict | None = None
     movement: str = 'forward'
+    reference: dict | None = None
+
+    @property
+    def centre_orbit_radius_m(self):
+        """Actual centre orbit, distinct from the timed reference-path radius."""
+        if self.reference is not None and (self.kind == 'arc' or
+                (self.kind == 'pivot' and self.reference['pivot_axis'] == 'reference_point')):
+            return math.hypot(self.start.x - self.centre[0], self.start.y - self.centre[1])
+        return self.radius_m if self.kind == 'arc' else 0.0
+
+    @property
+    def body_length_m(self):
+        return (self.centre_orbit_radius_m * abs(self.sweep_rad)
+                if self.kind in ('arc', 'pivot') else self.length_m)
+
+    def reference_pose_at(self, fraction):
+        pose = self.pose_at(fraction)
+        if self.reference is None:
+            return pose
+        x = self.reference['longitudinal_mm'] / 1000
+        y = self.reference['lateral_mm'] / 1000
+        c, s = math.cos(pose.heading), math.sin(pose.heading)
+        return Pose(pose.x + c*x - s*y, pose.y + s*x + c*y, pose.heading)
 
     def fraction_at_time(self, seconds):
         """Time progression is separate from geometric pose_at fractions."""
@@ -61,10 +84,12 @@ class Motion:
         if f == 1:
             return self.end
         heading = self.start.heading + self.sweep_rad * f
-        if self.kind == 'arc':
+        if self.kind == 'arc' or (self.reference is not None and self.kind == 'pivot'
+                                 and self.reference['pivot_axis'] == 'reference_point'):
             angle = math.atan2(self.start.y - self.centre[1], self.start.x - self.centre[0]) + self.sweep_rad * f
-            return Pose(self.centre[0] + self.radius_m * math.cos(angle),
-                        self.centre[1] + self.radius_m * math.sin(angle), heading)
+            radius = self.centre_orbit_radius_m
+            return Pose(self.centre[0] + radius * math.cos(angle),
+                        self.centre[1] + radius * math.sin(angle), heading)
         return Pose(self.start.x + f * (self.end.x - self.start.x),
                     self.start.y + f * (self.end.y - self.start.y), heading)
 
@@ -94,13 +119,17 @@ class Trajectory:
         return self.motions[-1].end
 
     def to_dict(self):
+        referenced = any(m.reference is not None for m in self.motions)
         directional = any(m.movement != 'forward' for m in self.motions)
         rows = [asdict(m) for m in self.motions]
+        if not referenced:
+            for row in rows:
+                row.pop('reference')
         if not directional:
             for row in rows:
                 row.pop('movement')  # Preserve the existing forward evidence shape.
-        return {'schema_version': 2 if directional else 1,
-                'model': 'directional_fillet_v1' if directional else 'forward_fillet_v1',
+        return {'schema_version': 3 if referenced else (2 if directional else 1),
+                'model': 'reference_offset_v1' if referenced else ('directional_fillet_v1' if directional else 'forward_fillet_v1'),
                 'minimum_radius_m': self.minimum_radius_m, 'pivot_allowed': self.pivot_allowed,
                 'length_m': self.length_m, 'duration_sec': self.duration_sec,
                 'motions': rows}
@@ -285,6 +314,9 @@ def plan_lateral_trajectory(start, end_xy, *, speed_m_per_sec, lateral_allowed):
 def trajectory_from_dict(data):
     """Decode recorded motions; malformed new evidence must not become a line."""
     try:
+        if data.get('schema_version') == 3 and data.get('model') == 'reference_offset_v1':
+            from amr_reference_trajectories import trajectory_from_reference_dict
+            return trajectory_from_reference_dict(data)
         directional = data['schema_version'] == 2 and data['model'] == 'directional_fillet_v1'
         if type(data['schema_version']) is not int or not (directional or
                 (data['schema_version'] == 1 and data['model'] == 'forward_fillet_v1')):
@@ -298,6 +330,8 @@ def trajectory_from_dict(data):
         close = lambda a,b: math.isclose(a,b,rel_tol=1e-9,abs_tol=1e-8)
         same_heading = lambda a,b: abs(math.atan2(math.sin(a-b),math.cos(a-b))) < 1e-8
         for row in data['motions']:
+            if row.get('reference') is not None:
+                raise ValueError('Reference metadata requires the reference_offset_v1 model.')
             start, end = (Pose(**row[key]) for key in ('start','end'))
             if not all(isinstance(v,(int,float)) and not isinstance(v,bool) and math.isfinite(v)
                        for pose in (start,end) for v in (pose.x,pose.y,pose.heading)):
@@ -452,7 +486,7 @@ def check_clearance(trajectory, *, length_m, width_m, obstacles, clearance_m=0,
                 poses = [motion.pose_at(f) for f in (low, mid, high)]
                 if any(_overlaps(footprint(p, length, width, clearance), box) for p in poses):
                     return {'status': 'collision', 'motion': index, 'obstacle': obstacle, 'checks': checks}
-                bound = 2 * (motion.radius_m + corner_radius) * math.sin(abs(motion.sweep_rad) * (high-low) / 4)
+                bound = 2 * (motion.centre_orbit_radius_m + corner_radius) * math.sin(abs(motion.sweep_rad) * (high-low) / 4)
                 if not _overlaps(footprint(poses[1], length, width, clearance + bound), box):
                     continue
                 if bound <= resolution:
