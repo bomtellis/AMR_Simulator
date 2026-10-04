@@ -465,6 +465,8 @@ class AMRGraphEditor(QMainWindow):
         QTimer.singleShot(0, self._announce_recovery)
         self.appearance.changed.connect(self._appearance_changed)
         self.route_styles.changed.connect(self.refresh_canvas)
+        from workspace_preferences import WorkspacePreferences
+        self.workspace_preferences = WorkspacePreferences(self, self.appearance.settings)
 
     def _appearance_changed(self, _value):
         self.refresh_canvas()

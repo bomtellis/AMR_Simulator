@@ -839,6 +839,12 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Workspace preference checkpoint, 4 October 2026: panel visibility and object-name
+choices now persist across windows/restarts in versioned per-user settings without
+changing project data/history. Focus canvas stays temporary. Malformed records and
+write failures are handled explicitly. 59 focused tests pass. Persisting panel
+sizes/window geometry, full layer controls and human acceptance remain open.
+
 Compact input-layout checkpoint, 4 October 2026: actual Qt review exposed a narrow
 rectangle feedback column at large text sizes. Rectangle, corridor and move bars
 now place feedback beneath inputs across the full width. The 1024×768/18-point

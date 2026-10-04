@@ -88,6 +88,22 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Remembered workspace choices, 4 October 2026
+
+Project-tree, layout/configuration properties and More tools visibility now persist
+in the application's per-user settings, alongside object-name visibility/mode.
+The versioned `workspace/v1` record is separate from project configuration, revision
+history and frozen inputs. Focus canvas remains temporary: a new window restores
+the underlying panel choices. Invalid saved values show a warning and remain
+untouched until a view preference changes. Write failures preserve the session view
+and report that preferences could not be saved.
+
+59 focused tests pass, including restoration in a new editor, invalid version/type/
+mode rejection, malformed-record preservation, failed writes, project/history
+isolation and existing workspace/lock workflows. In-memory tests/captures never
+write user preferences. Panel sizes, window geometry, configurable layers and human
+acceptance remain open; this checkpoint persists visibility choices only.
+
 ### Compact drafting controls, 4 October 2026
 
 Rectangle, corridor and numerical-move controls now place feedback across the

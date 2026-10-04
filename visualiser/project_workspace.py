@@ -227,6 +227,9 @@ class ProjectWorkspace(QWidget):
         workbench = getattr(self.editor, 'workbench', None)
         if workbench is not None:
             workbench.refresh()
+        preferences = getattr(self.editor, 'workspace_preferences', None)
+        if preferences is not None:
+            preferences.save()
 
     def _expand_properties(self):
         sizes = self.splitter.sizes()
