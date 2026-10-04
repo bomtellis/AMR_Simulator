@@ -1,12 +1,66 @@
 """Atomic corridor subdivision with directed restrictions and resource references."""
 from copy import deepcopy
 import math
+from itertools import combinations
+
+
+def intersection_target(points, edges, floor, x, y, radius=.45):
+    """Find a nearby connected junction target, considering only local segments."""
+    local = {name: p for name, p in points.items() if int(p['floor']) == int(floor)}
+    segments = {}
+    for edge in edges:
+        key = tuple(sorted((edge['from'], edge['to'])))
+        if key in segments or any(n not in local or local[n].get('kind') == 'department' for n in key):
+            continue
+        a, b = (local[n] for n in key)
+        ax, ay, bx, by = (float(p[k]) for p in (a, b) for k in ('x', 'y'))
+        if not all(math.isfinite(v) for v in (ax, ay, bx, by)):
+            continue
+        if not (min(ax, bx)-radius <= x <= max(ax, bx)+radius and min(ay, by)-radius <= y <= max(ay, by)+radius):
+            continue
+        try:
+            t = min(1., max(0., project_fraction(a, b, x, y)))
+        except ValueError:
+            continue
+        if math.hypot(ax+t*(bx-ax)-x, ay+t*(by-ay)-y) <= radius:
+            segments[key] = (ax, ay, bx-ax, by-ay)
+    candidates = []
+    for (key, (ax, ay, rx, ry)), (other, (cx, cy, sx, sy)) in combinations(segments.items(), 2):
+        cross = rx*sy-ry*sx
+        if abs(cross) <= 1e-12 * max(1., math.hypot(rx, ry)*math.hypot(sx, sy)):
+            continue
+        t = ((cx-ax)*sy-(cy-ay)*sx)/cross
+        u = ((cx-ax)*ry-(cy-ay)*rx)/cross
+        if 0 <= t <= 1 and 0 <= u <= 1:
+            px, py = ax+t*rx, ay+t*ry
+            distance = math.hypot(px-x, py-y)
+            if distance <= radius:
+                candidates.append((distance, key, other, px, py))
+    if not candidates:
+        return None
+    _, _, _, px, py = min(candidates)
+    nearby = [dict(p, name=name) for name, p in local.items()
+              if math.hypot(float(p['x'])-px, float(p['y'])-py) < 1e-6]
+    if len(nearby) > 1 or (nearby and (nearby[0].get('kind') == 'department' or
+            math.hypot(float(nearby[0]['x'])-px, float(nearby[0]['y'])-py) >= 1e-8)):
+        raise ValueError('Resolve overlapping or near-coincident points before joining this intersection.')
+    existing = nearby[0] if nearby else None
+    cuts = {}
+    for key, (ax, ay, rx, ry) in segments.items():
+        t = ((px-ax)*rx+(py-ay)*ry)/(rx*rx+ry*ry)
+        if 0 < t < 1 and math.hypot(ax+t*rx-px, ay+t*ry-py) < 1e-8:
+            cuts[key] = [t]
+    if not cuts:
+        if existing:
+            return dict(kind='point', name=existing['name'], x=px, y=py, snap_label='intersection')
+        raise ValueError('Intersection endpoints must share one graph point.')
+    return dict(kind='junction', x=px, y=py, cuts=cuts, existing=existing, snap_label='intersection')
 
 
 def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_spacing=1.0, object_snap=True,
                    anchor=None, angle_step=None, snap_mode="nearest"):
     """Resolve a drawing click/preview: point, explicit edge, then free grid point."""
-    if snap_mode not in ("nearest", "endpoints", "midpoints", "perpendicular"):
+    if snap_mode not in ("nearest", "endpoints", "midpoints", "perpendicular", "intersections"):
         raise ValueError("Choose a supported object snap mode.")
     x, y = float(x), float(y)
     if not all(math.isfinite(v) for v in (x, y)):
@@ -52,6 +106,10 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
     grid_spacing = float(grid_spacing)
     if not math.isfinite(grid_spacing) or grid_spacing <= 0:
         raise ValueError("Grid spacing must be finite and greater than zero metres.")
+    if object_snap and snap_mode == 'intersections':
+        target = intersection_target(points, edges, floor, x, y)
+        if target:
+            return target
     target = point_at(x, y, .45 if object_snap and snap_mode in ('nearest', 'endpoints') else 1e-6)
     if target:
         return target
@@ -83,7 +141,7 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
                 return dict(kind='point', name=key[int(fraction)], x=px, y=py, snap_label='perpendicular')
             return dict(kind='edge', key=key, fraction=fraction, x=px, y=py,
                         snap_label='perpendicular' if perpendicular else ('midpoint' if midpoint else 'edge'))
-    attract_edge = object_snap and snap_mode != 'endpoints' and (snap_mode != 'perpendicular' or anchor is not None)
+    attract_edge = object_snap and snap_mode not in ('endpoints', 'intersections') and (snap_mode != 'perpendicular' or anchor is not None)
     target = edge_at(x, y, .45, midpoint=snap_mode == 'midpoints', perpendicular=snap_mode == 'perpendicular') if attract_edge else None
     target = target or edge_at(x, y, 1e-6)
     if target:
@@ -122,7 +180,13 @@ def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=Tr
     target = drawing_target(points, config['corridors']['edges'], floor, x, y, snap, exact=exact,
                             grid_spacing=grid_spacing, object_snap=object_snap, anchor=anchor, angle_step=angle_step, snap_mode=snap_mode)
     result = deepcopy(config)
-    if target['kind'] == 'edge':
+    if target['kind'] == 'junction':
+        result, chains = subdivide(config, points, target['cuts'], _join_cuts=True, _existing_cut_node=target['existing'])
+        names = {chain[1] for chain in chains.values()}
+        if len(names) != 1:
+            raise ValueError('Intersection cannot be resolved to one graph point at supported precision.')
+        name = names.pop()
+    elif target['kind'] == 'edge':
         result, chains = subdivide(config, points, {target['key']: [target['fraction']]})
         name = chains[target['key']][1]
     elif target['kind'] == 'point':

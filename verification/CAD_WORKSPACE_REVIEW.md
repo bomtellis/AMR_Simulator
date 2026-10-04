@@ -62,6 +62,31 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Intersection snapping, 4 October 2026
+
+**More tools → Edit → Drawing behaviour → Intersections (connect junction)**
+explicitly joins corridors at a nearby intersection. The preview says **Connect
+intersection**; clicking or submitting the typed point splits all corridors through
+that point and creates one shared identity, or reuses the unique existing point.
+Existing doors retain their width restriction. T-junctions and multi-way crossings
+are supported. The operation is one undoable edit and preserves directed corridor
+attributes, distance overrides and applicable profile/resource references through
+the existing subdivision transaction. Standalone node and door placement use the
+same target. Merely drawing across a corridor still does not insert a junction.
+
+The existing 0.45 m attraction tolerance and direction constraints apply. Distant
+segments are removed before intersection pairs are tested; duplicate directed edge
+records share one physical segment. Ambiguous or near-coincident point identities
+are rejected without mutation. Parallel segments alone have no unique intersection.
+
+118 focused CAD tests pass. References cover independent crossing coordinates and
+distance partitions, profile preservation, three-way crossings, existing doors,
+T-junctions, repeated placement, invalid identities, floors, tolerance, constraints,
+anchor connection, production door placement and undo. A 10,000-distant-corridor
+case verifies only the two local segments enter pair search; this is algorithmic
+evidence, not an LTN runtime benchmark. Automatic insertion at crossings along a
+new route and human workflow acceptance remain open.
+
 ### Selectable object snaps, 4 October 2026
 
 Under **More tools → Edit → Drawing behaviour**, the object target selector offers

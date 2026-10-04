@@ -839,6 +839,14 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Intersection-snap checkpoint, 4 October 2026: explicit intersection snapping now
+creates one shared junction across intersecting corridors, including multi-way
+and T-junctions, with existing identity reuse and atomic undo. Default crossing
+behaviour is unchanged. 118 focused CAD tests pass, including profile/distance
+preservation and filtering distant corridors before pair search. Automatic junction
+insertion along a newly drawn route, human acceptance and full release verification
+remain open.
+
 CAD object-snap checkpoint, 4 October 2026: the drawing behaviour controls now
 offer nearest, endpoints/graph points and corridor midpoint targets for corridors,
 nodes and doors. Preview and placement share resolution; exact overlaps retain

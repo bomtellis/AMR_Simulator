@@ -799,7 +799,7 @@ class AMRGraphEditor(QMainWindow):
         self.object_snap_check.setChecked(True)
         self.object_snap_mode = QComboBox()
         self.object_snap_mode.setAccessibleName('Object snap target')
-        for title, value in [('Nearest point or edge', 'nearest'), ('Endpoints / graph points', 'endpoints'), ('Corridor midpoints', 'midpoints'), ('Perpendicular from route end', 'perpendicular')]:
+        for title, value in [('Nearest point or edge', 'nearest'), ('Endpoints / graph points', 'endpoints'), ('Corridor midpoints', 'midpoints'), ('Perpendicular from route end', 'perpendicular'), ('Intersections (connect junction)', 'intersections')]:
             self.object_snap_mode.addItem(title, value)
         self.object_snap_mode.setToolTip('Choose nearby targets for corridor, node and door placement. Perpendicular requires a current route endpoint and stays within the target corridor. Exact overlaps always reuse or split existing geometry.')
         self.object_snap_mode.currentIndexChanged.connect(self.on_snap_settings_changed)
@@ -1210,7 +1210,7 @@ class AMRGraphEditor(QMainWindow):
         return point, target
 
     def _corridor_drawing_feedback(self, target, *, typed=False):
-        kind = {'point': 'Object snap: existing point', 'edge': 'Object snap: corridor split',
+        kind = {'point': 'Object snap: existing point', 'edge': 'Object snap: corridor split', 'junction': 'Object snap: intersection (connect junction)',
                 'new': 'Typed exact point' if typed else ('Constrained point' if target.get('angle_step') else
                         ('Grid point' if self.snap_check.isChecked() else 'Free point'))}[target['kind']]
         if target.get('snap_label') == 'midpoint':
@@ -2714,7 +2714,7 @@ class AMRGraphEditor(QMainWindow):
                 origin = self.canvas.mapFromScene(self.world_to_scene(start['x'], start['y']))
                 painter.drawLine(origin, endpoint)
             painter.drawEllipse(endpoint, 7, 7)
-            label = {'point': 'Reuse point', 'edge': 'Join corridor', 'new': 'Place node'}[target['kind']]
+            label = {'point': 'Reuse point', 'edge': 'Join corridor', 'junction': 'Connect intersection', 'new': 'Place node'}[target['kind']]
             painter.drawText(endpoint + QPoint(12, -12), label)
         from cad_map_style import compact_legend, scale_bar
         style = self._map_colours
