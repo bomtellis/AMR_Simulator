@@ -501,6 +501,16 @@ maximum across all configured zones.
 Static tasks can opt into the same workflow by supplying both `dropoff_zone` and
 `final_destination`; the simulator routes their AMR leg to `dropoff_zone`.
 
+### Unattended engineering verification
+
+For unattended engineering verification, run
+`python -m verification.run --isolated --output verification/latest/isolated`.
+Each test module runs in a fresh process with a 180-second limit, preventing Qt
+state retained by earlier modules from slowing later UI tests. Module logs,
+stack snapshots and per-test evidence remain under the output folder. Crashes,
+timeouts and missing results fail verification explicitly. Omit `--isolated` to
+retain the shared-process suite for integration diagnostics.
+
 ### Payload supply at depleted sources
 
 Simulation settings > Initial conditions > **Spawn payloads when pickup stock is exhausted**

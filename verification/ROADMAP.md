@@ -839,6 +839,23 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Unattended verification checkpoint, 4 October 2026: `verification.run --isolated`
+runs each test module in a fresh process with a 180-second limit and preserves
+module logs, stack snapshots and per-test outcomes. Crashes, missing evidence,
+empty discovery, fixture errors and timeouts fail explicitly; stale result files
+are removed before each module starts. The in-process runner remains available
+for cross-module diagnostics. CI now selects isolated execution. The first full
+isolated pack ran 1,891 cases with one payload-settings import-path dependency;
+the fixture now supplies the same visualiser path as the desktop entry point and
+passes independently. The clean rerun passed **1,891/1,891 tests**, with zero
+broken evidence links and an unchanged tested-source fingerprint. Review
+`latest/isolated-verified/index.html`; per-module logs, JUnit, frozen source and
+the full evidence JSON are retained beside it. This establishes the exercised
+regression scope, not completion of unimplemented roadmap or human-acceptance
+requirements. The shared-process diagnostic ran 1,887 tests with only the
+already-repaired tree-search assertion failing, then waited during native shutdown;
+its final process was interrupted after its test summary and stack were retained.
+
 Regression diagnosis, 4 October 2026: the full-suite stall was traced to the
 layout-property save test passing a JSON filename to the new-project `.amrproj`
 save workflow and waiting in its error dialog. The test now reopens the saved

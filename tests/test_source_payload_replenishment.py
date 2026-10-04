@@ -94,7 +94,14 @@ class SourceReplenishmentTests(unittest.TestCase):
 
     def test_settings_roundtrip(self):
         import os
+        import sys
+        from pathlib import Path
         os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+        # Match the desktop entry point without depending on another UI test
+        # having bootstrapped its flat visualiser module imports first.
+        visualiser = str(Path(__file__).resolve().parents[1] / 'visualiser')
+        if visualiser not in sys.path:
+            sys.path.insert(0, visualiser)
         from PySide6.QtWidgets import QApplication
         from visualiser.dialogs import SimulationSettingsDialog
         app = QApplication.instance() or QApplication([])

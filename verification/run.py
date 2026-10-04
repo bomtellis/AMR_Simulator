@@ -218,6 +218,7 @@ input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "verification/latest")
+    parser.add_argument('--isolated', action='store_true', help='Run each test module in a fresh process (180 second module limit).')
     args = parser.parse_args(argv)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -234,6 +235,16 @@ def main(argv=None):
             archive.writestr(name, data)
     inventory = build_inventory()
     started = time.perf_counter()
+    if args.isolated:
+        from verification.isolated import run_modules
+        result = run_modules(ROOT / 'tests', output)
+    else:
+        result = run_in_process(output)
+    cases = result.cases
+    return finish_report(output, fingerprint, inventory, started, result, cases, args.isolated)
+
+
+def run_in_process(output):
     with (output / "tests.txt").open("w", encoding="utf-8") as log, \
             (output / "test-stacks.txt").open("w", encoding="utf-8") as stacks:
         suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
@@ -244,7 +255,10 @@ def main(argv=None):
             result = unittest.TextTestRunner(stream=log, verbosity=2, resultclass=EvidenceResult).run(suite)
         finally:
             faulthandler.cancel_dump_traceback_later()
-    cases = result.cases
+    return result
+
+
+def finish_report(output, fingerprint, inventory, started, result, cases, isolated=False):
     features = link_evidence(inventory["features"], cases)
     from verification.inventory import link_option_evidence, link_option_sources, summarize_option_audit
     options = link_option_sources(link_option_evidence(inventory["options"], cases))
@@ -265,6 +279,7 @@ def main(argv=None):
     except Exception as exc:
         ltn = {"findings": [f"Load/check failed: {exc}"]}
     report = {
+        'test_execution': 'isolated_modules' if isolated else 'in_process',
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "python": sys.version, "platform": platform.platform(), "packages": packages,
         "git_commit": git("rev-parse", "HEAD"), "git_status": git("status", "--porcelain"),
