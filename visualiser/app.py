@@ -1095,6 +1095,9 @@ class AMRGraphEditor(QMainWindow):
         from visualiser.cad_move_input import CadMoveInput
         self.cad_move_input = CadMoveInput(self)
         layout.addWidget(self.cad_move_input)
+        from visualiser.rectangle_input import RectangleInput
+        self.rectangle_input = RectangleInput(self)
+        layout.addWidget(self.rectangle_input)
 
         self.status_label = QLabel("Ready")
         self.status_label.setMinimumWidth(240)
@@ -1119,6 +1122,9 @@ class AMRGraphEditor(QMainWindow):
 
     def _clear_corridor_drawing(self):
         self._rectangle_draft = None
+        if hasattr(self, 'rectangle_input'):
+            self.rectangle_input.hide()
+            self.rectangle_input.dimensions.clear()
         self.corridor_draw_start = None
         self.corridor_draw_preview = None
         if hasattr(self, 'cad_drawing_input'):
@@ -1166,6 +1172,7 @@ class AMRGraphEditor(QMainWindow):
     def cancel_cad_command(self, *_):
         if getattr(self, '_rectangle_draft', None):
             self._rectangle_draft = None
+            self.rectangle_input.hide()
             self.canvas.viewport().update()
             self.set_status('Rectangle cancelled; the original location boundary is unchanged.')
             return True
@@ -2435,11 +2442,16 @@ class AMRGraphEditor(QMainWindow):
         self.bounding_box_points = []
         location = self.store.get_location(name)
         self._rectangle_draft = dict(name=name, original=deepcopy(location), first=None, second=None)
+        self.rectangle_input.dimensions.clear()
+        self.rectangle_input.preview()
+        self.rectangle_input.show()
         self.set_status(f'Rectangle for {name}: click the first corner, then the opposite corner. Escape cancels.')
         return True
 
     def preview_location_rectangle(self, sx, sy):
         draft = getattr(self, '_rectangle_draft', None)
+        if hasattr(self, 'rectangle_input') and self.rectangle_input.dimensions.text().strip():
+            return
         if draft and draft['first'] is not None:
             draft['second'] = self.snap(*self.scene_to_world(sx, sy))
             self.canvas.viewport().update()
@@ -2450,8 +2462,12 @@ class AMRGraphEditor(QMainWindow):
         if not draft:
             name = self.find_nearest_point_name(x, y, self.floor_spin.value(), radius_world=.45)
             return self.start_location_rectangle(name) if name else False
+        if self.rectangle_input.dimensions.text().strip():
+            self.set_status('Apply the typed dimensions, or clear them to draw by corners.')
+            return False
         if self.store.get_location(draft['name']) != draft['original']:
             self._rectangle_draft = None
+            self.rectangle_input.hide()
             self.set_status('Location changed while drawing; start the rectangle again.')
             self.canvas.viewport().update()
             return False
@@ -2464,6 +2480,20 @@ class AMRGraphEditor(QMainWindow):
         from visualiser.location_drawing import rectangle_points
         try:
             points = rectangle_points(draft['first'], (x, y))
+        except (ValueError, TypeError) as exc:
+            self.set_status(f'Rectangle was not applied: {exc}')
+            return False
+        return self.apply_location_rectangle(points)
+
+    @undoable('Draw rectangular location boundary')
+    def apply_location_rectangle(self, points):
+        draft = getattr(self, '_rectangle_draft', None)
+        if not draft or self.workspace.stage != 'layout' or self._current_edit_mode() != 'location_rectangle':
+            return False
+        if self.store.get_location(draft['name']) != draft['original']:
+            self.set_status('Location changed; cancel and select it again.')
+            return False
+        try:
             self.store.set_location_bounding_box(draft['name'], points)
         except (ValueError, TypeError) as exc:
             self.set_status(f'Rectangle was not applied: {exc}')
@@ -2648,7 +2678,13 @@ class AMRGraphEditor(QMainWindow):
 
     def draw_overlay_panels(self, painter, viewport_rect):
         draft = getattr(self, '_rectangle_draft', None)
-        if draft and draft['first'] is not None and draft['second'] is not None:
+        if draft and draft.get('numeric_points'):
+            polygon = QPolygonF([QPointF(self.canvas.mapFromScene(self.world_to_scene(p['x'],p['y'])))
+                                 for p in draft['numeric_points']])
+            painter.setPen(QPen(QColor(self._map_colours['accent']), 2, Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPolygon(polygon)
+        elif draft and draft['first'] is not None and draft['second'] is not None:
             first, second = draft['first'], draft['second']
             a = self.canvas.mapFromScene(self.world_to_scene(*first))
             b = self.canvas.mapFromScene(self.world_to_scene(*second))

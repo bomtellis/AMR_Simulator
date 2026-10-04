@@ -842,9 +842,11 @@ Continue with:
 CAD footprint checkpoint, 4 October 2026: locations now support two-corner
 rectangular boundary drawing with live dimensions, nonmutating preview, explicit
 cancellation and atomic undo/redo. Existing polygon editing remains available;
-boundaries retain location-relative storage. 123 focused tests pass. Rotated and
-numerically dimensioned footprint authoring remain open alongside later geometry
-and human-acceptance requirements.
+boundaries retain location-relative storage. The inline bar additionally accepts
+exact width/height and optional rotation, previews the location-centred rectangle,
+and applies it as one undoable edit. 127 focused tests pass, including independent
+rotated geometry expectations. General multi-object rotation, later geometry
+requirements and human acceptance remain open.
 
 CAD existing-junction checkpoint, 4 October 2026: the crossing command now reuses
 a unique existing point and supports T-junctions, preserving door restrictions

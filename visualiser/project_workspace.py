@@ -211,6 +211,8 @@ class ProjectWorkspace(QWidget):
         if self.stage != 'layout' and hasattr(self.editor, 'cad_move_input'):
             self.editor.cad_move_input.hide()
             self.editor._rectangle_draft = None
+            if hasattr(self.editor, 'rectangle_input'):
+                self.editor.rectangle_input.hide()
         if hasattr(self.editor, 'cad_drawing_input'):
             self.editor.cad_drawing_input.setVisible(drawing)
             self.editor.cad_drawing_input.setEnabled(drawing)

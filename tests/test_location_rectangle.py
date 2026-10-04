@@ -2,10 +2,25 @@
 from copy import deepcopy
 import unittest
 from tests import test_corridor_editing as editing
-from visualiser.location_drawing import rectangle_points
+from visualiser.location_drawing import rectangle_points, dimensioned_rectangle
 
 
 class RectangleGeometryTests(unittest.TestCase):
+    def test_dimensions_rotate_about_known_centre_with_preserved_area(self):
+        points, width, height, angle = dimensioned_rectangle((10,20), '4,2,90')
+        self.assertEqual((4,2,90), (width,height,angle))
+        for p, expected in zip(points, [(11,18),(11,22),(9,22),(9,18)]):
+            self.assertAlmostEqual(expected[0], p['x'])
+            self.assertAlmostEqual(expected[1], p['y'])
+        points, *_ = dimensioned_rectangle((10,20), '4,2,45')
+        area = abs(sum(a['x']*b['y']-b['x']*a['y'] for a,b in zip(points,points[1:]+points[:1]))) / 2
+        self.assertAlmostEqual(8, area)
+        self.assertAlmostEqual(10, sum(p['x'] for p in points)/4)
+        self.assertAlmostEqual(20, sum(p['y'] for p in points)/4)
+        self.assertEqual(rectangle_points((-2,-1),(2,1)), dimensioned_rectangle((0,0),'4,2')[0])
+        for text in ('-1,2','0,2','nan,2','4,2,inf','4,','1,2,3,4'):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                dimensioned_rectangle((0,0),text)
     def test_opposite_corner_order_preserves_known_rectangle(self):
         expected = [dict(x=-2,y=-1),dict(x=3,y=-1),dict(x=3,y=4),dict(x=-2,y=4)]
         for first, second in [((-2,-1),(3,4)), ((3,4),(-2,-1)), ((-2,4),(3,-1))]:
@@ -21,6 +36,64 @@ class RectangleUiTests(unittest.TestCase):
     setUpClass = classmethod(editing.CorridorEditingUiTests.setUpClass.__func__)
     setUp = editing.CorridorEditingUiTests.setUp
     tearDown = editing.CorridorEditingUiTests.tearDown
+
+    def test_clearing_dimensions_returns_to_corner_drawing(self):
+        from PySide6.QtCore import QRect
+        self.editor.start_location_rectangle('A')
+        bar = self.editor.rectangle_input
+        self.assertIsInstance(bar.geometry(), QRect)
+        bar.dimensions.setText('4,2,45')
+        bar.dimensions.clear()
+        self.assertNotIn('numeric_points', self.editor._rectangle_draft)
+        self.assertFalse(bar.apply_button.isEnabled())
+        self.assertTrue(self.editor.place_location_rectangle_corner(0, 0))
+        self.assertTrue(self.editor.place_location_rectangle_corner(4, 2))
+        self.assertEqual(rectangle_points((0, 0), (4, 2)),
+                         self.editor.store.get_location_bounding_box_points('A'))
+
+    def test_numeric_preview_applies_exact_rotated_rectangle_with_undo(self):
+        self.editor.grid_spacing_spin.setValue(10)
+        before = deepcopy(self.editor.store.data)
+        self.editor.start_location_rectangle('B')
+        bar = self.editor.rectangle_input
+        self.assertFalse(bar.isHidden())
+        bar.dimensions.setText('4.25,2.5,30')
+        expected = deepcopy(self.editor._rectangle_draft['numeric_points'])
+        self.assertEqual(before, self.editor.store.data)
+        self.assertTrue(bar.apply_button.isEnabled())
+        scene = self.editor.world_to_scene(50,50)
+        self.editor.preview_location_rectangle(scene.x(),scene.y())
+        self.assertEqual(expected, self.editor._rectangle_draft['numeric_points'])
+        self.assertFalse(self.editor.place_location_rectangle_corner(50,50))
+        bar.apply_button.click()
+        actual = self.editor.store.get_location_bounding_box_points('B')
+        for a,b in zip(actual,expected):
+            self.assertAlmostEqual(a['x'],b['x'])
+            self.assertAlmostEqual(a['y'],b['y'])
+        self.assertTrue(bar.isHidden())
+        self.assertEqual(2,len(self.editor.edit_history.entries))
+        self.editor.undo_edit()
+        self.assertEqual(before,self.editor.store.data)
+
+    def test_numeric_invalid_cancel_and_stale_location_preserve_model(self):
+        self.editor.start_location_rectangle('A')
+        bar = self.editor.rectangle_input
+        before = deepcopy(self.editor.store.data)
+        for text in ('0,2','3,nan','4,2,inf'):
+            bar.dimensions.setText(text)
+            self.assertFalse(bar.apply_button.isEnabled())
+            self.assertNotIn('numeric_points',self.editor._rectangle_draft)
+        bar.dimensions.setText('4,2')
+        self.editor.cancel_cad_command()
+        self.assertTrue(bar.isHidden())
+        self.assertEqual(before,self.editor.store.data)
+        self.editor.start_location_rectangle('A')
+        bar.dimensions.setText('4,2')
+        self.editor.store.get_location('A')['x'] = 100
+        changed = deepcopy(self.editor.store.data)
+        bar.apply()
+        self.assertEqual(changed,self.editor.store.data)
+        self.assertIn('changed',bar.explanation.text())
 
     def test_preview_and_first_corner_leave_model_unchanged_then_commit_one_undo(self):
         before = deepcopy(self.editor.store.data)

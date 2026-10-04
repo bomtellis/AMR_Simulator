@@ -77,13 +77,21 @@ must be selected again. Completion is one undoable edit and stores the footprint
 relative to the location so later movement carries it. Preview updates only the
 canvas overlay and does not rebuild drawing underlays.
 
-123 focused tests passed across rectangle geometry, drafting, selection, drawing,
+The inline rectangle bar also accepts `width,height` or `width,height,angle`.
+Dimensions are metres; rotation is counterclockwise degrees from east, defaulting
+to zero. The preview is centred on the location anchor and exact dimensions bypass
+grid snapping. Choose **Apply dimensions** or press Enter to commit; clear the
+entry to return to two-corner drawing. Invalid dimensions disable Apply and explain
+the problem inline. The bar appears only during this command.
+
+127 focused tests passed across rectangle geometry, drafting, selection, drawing,
 properties, workspace and history. References cover opposite corner ordering,
 invalid coordinates, nonmutating preview, replacement cancellation, stale input,
-grid placement, relative storage and undo/redo. Rotation and numerical footprint
-dimensions remain open; this adds an axis-aligned rectangular authoring workflow,
-not robot swept-footprint validation or a new geometry model. The full-suite
-baseline predates this increment.
+grid placement, relative storage and undo/redo. Independent rotated references
+check known corner coordinates, centre and area. Clearing numerical input restores
+corner placement, and stale input cannot overwrite a changed location. General
+multi-object rotation, robot swept-footprint validation and human workflow
+acceptance remain open. The full-suite baseline predates this increment.
 
 ### Existing-point and T-junction checkpoint, 4 October 2026
 
