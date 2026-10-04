@@ -2,7 +2,7 @@
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox, QScrollArea
 from visualiser.dxf_layers import LayerDock
-from visualiser.model_layers import definitions, members, DEFAULT
+from visualiser.model_layers import definitions, members, current_layer, DEFAULT
 
 
 class ModelLayerPanel:
@@ -19,6 +19,11 @@ class ModelLayerPanel:
         self.choice = QComboBox(self.body)
         self.choice.setAccessibleName('Model layer')
         layout.addWidget(self.choice)
+        self.current = QLabel(self.body)
+        self.current.setWordWrap(True)
+        layout.addWidget(self.current)
+        self.use_current = QPushButton('Use for new drawing', self.body)
+        layout.addWidget(self.use_current)
         self.visible = QCheckBox('Visible',self.body)
         self.locked = QCheckBox('Locked against editing',self.body)
         layout.addWidget(self.visible)
@@ -48,7 +53,7 @@ class ModelLayerPanel:
         self.note = QLabel(self.body)
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
-        explanation = QLabel('Layers control display and editing only. Clean/dirty/shared access stays in route profiles. New objects start on Default; assign them here. Undo restores layer edits too.',self.body)
+        explanation = QLabel('Layers control display and editing only. Clean/dirty/shared access stays in route profiles. New drawing uses the current layer; copies and split corridors retain their source layers. Undo restores layer edits too.',self.body)
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
         layout.addStretch(1)
@@ -62,6 +67,7 @@ class ModelLayerPanel:
         self.visible.toggled.connect(self.apply_options)
         self.locked.toggled.connect(self.apply_options)
         self.assign_button.clicked.connect(self.assign)
+        self.use_current.clicked.connect(lambda: self.editor.set_current_model_layer(self.choice.currentText()))
         add.clicked.connect(self.add)
         self.rename_button.clicked.connect(self.rename)
         self.remove_button.clicked.connect(self.remove)
@@ -83,6 +89,8 @@ class ModelLayerPanel:
                 if current in layers:
                     self.choice.setCurrentText(current)
             options = layers[self.choice.currentText()]
+            self.current.setText(f'Current drawing layer: {current_layer(self.editor.store.data)}')
+            self.use_current.setEnabled(options['visible'] and not options['locked'])
             destinations = [n for n in names if n != self.choice.currentText() and not layers[n]['locked']]
             destination = self.destination.currentText()
             self.destination.clear()

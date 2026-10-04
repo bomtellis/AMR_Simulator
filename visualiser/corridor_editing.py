@@ -167,7 +167,8 @@ def connect(config, points, start, finish, bidirectional=True):
     width = float(config.get('building', {}).get('default_corridor_width_m', 2.4))
     if not math.isfinite(width) or width <= 0:
         raise ValueError('Set a positive finite default corridor width before drawing.')
-    config['corridors']['edges'].append({'from': start, 'to': finish, 'bidirectional': bool(bidirectional),
+    from visualiser.model_layers import drawing_attributes
+    config['corridors']['edges'].append({**drawing_attributes(config), 'from': start, 'to': finish, 'bidirectional': bool(bidirectional),
                                         'width_m': width, 'people_area_type': 'none', 'people_profile_ids': []})
     return True
 
@@ -238,7 +239,8 @@ def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=Tr
         while f'C{int(floor)}-{index}' in points:
             index += 1
         name = f'C{int(floor)}-{index}'
-        result['corridors']['nodes'].append(dict(name=name, floor=int(floor), x=target['x'], y=target['y'], has_door=False,
+        from visualiser.model_layers import drawing_attributes
+        result['corridors']['nodes'].append(dict(**drawing_attributes(config), name=name, floor=int(floor), x=target['x'], y=target['y'], has_door=False,
                                                door_clear_width_m=float(config.get('building', {}).get('default_door_clear_width_m', .9) or .9)))
     updated_points = dict(points)
     updated_points.update({p['name']: p for p in result['corridors']['nodes']})

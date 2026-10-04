@@ -1118,6 +1118,8 @@ class JsonStore:
         return edges
 
     def add_corridor_node(self, name: str, floor: int, x: float, y: float) -> None:
+        from visualiser.model_layers import drawing_attributes
+        attributes = drawing_attributes(self.data)
         default_door_width = float(self.data.get("building", {}).get("default_door_clear_width_m", 0.9) or 0.9)
         self.data["corridors"]["nodes"].append(
             {
@@ -1126,6 +1128,7 @@ class JsonStore:
                 "x": round(x, 3),
                 "y": round(y, 3),
                 "has_door": False,
+                **attributes,
                 "door_clear_width_m": default_door_width,
             }
         )
@@ -1159,6 +1162,8 @@ class JsonStore:
         return connect(self.data, self.all_points(), start, finish, bidirectional)
 
     def add_location(self, name: str, floor: int, x: float, y: float) -> None:
+        from visualiser.model_layers import drawing_attributes
+        attributes = drawing_attributes(self.data)
         self.data["locations"].append(
             {
                 "name": name,
@@ -1166,6 +1171,7 @@ class JsonStore:
                 "x": round(x, 3),
                 "y": round(y, 3),
                 "bounding_box": [],
+                **attributes,
                 "wash_cycle_required": False,
                 "wash_cycle_duration_sec": 300.0,
                 "wash_location": "",

@@ -53,6 +53,7 @@ def validate(config):
     if not isinstance(config,dict):
         return
     layers = definitions(config)
+    current_layer(config)
     corridors = config.get('corridors',{})
     edges = corridors.get('edges',[]) if isinstance(corridors,dict) else []
     for row in [row for _,row in point_rows(config)] + (edges if isinstance(edges,list) else []):
@@ -108,7 +109,7 @@ def set_layer(config, name, *, visible=True, locked=False):
     result = deepcopy(config)
     layers = definitions(config)
     layers[name] = dict(visible=visible,locked=locked)
-    result['editor_layers'] = dict(version=1,layers=layers)
+    result['editor_layers'] = dict(config.get('editor_layers') or {},version=1,layers=layers)
     validate(result)
     return result
 
@@ -157,6 +158,33 @@ def reorganize(config, source, target, *, remove=False):
     result['editor_layers'] = dict(version=1, layers={
         (target if name == source else name): options
         for name, options in layers.items() if not (remove and name == source)})
+    if 'current' in (config.get('editor_layers') or {}):
+        current = current_layer(config)
+        result['editor_layers']['current'] = target if current == source else current
     validate(result)
     assert_unlocked_changes(config, result)
     return result
+
+
+def current_layer(config):
+    name = (config.get('editor_layers') or {}).get('current', DEFAULT)
+    if not isinstance(name, str) or name not in definitions(config):
+        raise ValueError('Current drawing layer must name an existing model layer.')
+    return name
+
+
+def set_current(config, name):
+    options = definitions(config).get(name)
+    if options is None or options['locked'] or not options['visible']:
+        raise ValueError('Choose a visible, unlocked drawing layer.')
+    result = set_layer(config, name, **options)
+    result['editor_layers']['current'] = name
+    return result
+
+
+def drawing_attributes(config):
+    name = current_layer(config)
+    options = definitions(config)[name]
+    if options['locked'] or not options['visible']:
+        raise LayerLockedError(f'Drawing layer {name} is hidden or locked. Choose a visible, unlocked drawing layer.')
+    return {'editor_layer': name} if name != DEFAULT else {}

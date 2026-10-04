@@ -10,6 +10,53 @@ from visualiser import model_layers as layers
 
 
 class ModelLayerTests(unittest.TestCase):
+    def test_current_layer_applies_to_new_nodes_locations_and_continuous_routes(self):
+        config = layers.set_current(layers.set_layer(editing.reference_config(), 'Drawing'), 'Drawing')
+        store = editing.JsonStore(config)
+        store.add_location('New room', 0, 30, 30)
+        store.add_corridor_node('New node', 0, 20, 20)
+        self.assertEqual('Drawing', store.all_points()['New room']['editor_layer'])
+        self.assertEqual('Drawing', store.all_points()['New node']['editor_layer'])
+        store.connect_corridor('New room', 'New node')
+        target = store.draw_corridor_step('New node', 0, 25, 20, exact=True)
+        self.assertEqual('Drawing', store.all_points()[target['name']]['editor_layer'])
+        self.assertEqual(['Drawing', 'Drawing'], [e['editor_layer'] for e in store.data['corridors']['edges'][-2:]])
+        self.assertNotIn('editor_layer', store.all_points()['A'])
+        updated, chains = editing.split_config(store.data, {('A', 'Door'): [.5]})
+        node = next(n for n in updated['corridors']['nodes'] if n['name'] == chains[('A', 'Door')][1])
+        self.assertEqual('Default', layers.layer_name(node))
+
+    def test_current_layer_survives_options_rename_remove_and_archive(self):
+        from amr_project import Project
+        config = layers.set_current(layers.set_layer(editing.reference_config(), 'Drawing'), 'Drawing')
+        config = layers.set_layer(config, 'Other')
+        self.assertEqual('Drawing', layers.current_layer(config))
+        renamed = layers.reorganize(config, 'Drawing', 'Routes')
+        self.assertEqual('Routes', layers.current_layer(renamed))
+        merged = layers.reorganize(renamed, 'Routes', 'Other', remove=True)
+        self.assertEqual('Other', layers.current_layer(merged))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'current.amrproj'
+            Project().save(path, merged, base_dir=directory)
+            self.assertEqual('Other', layers.current_layer(Project.open(path).materialize(Path(directory)/'cache')))
+
+    def test_hidden_or_locked_current_layer_blocks_new_drawing_without_mutation(self):
+        config = layers.set_current(layers.set_layer(editing.reference_config(), 'Drawing'), 'Drawing')
+        for options in (dict(visible=False), dict(locked=True)):
+            blocked = layers.set_layer(config, 'Drawing', **options)
+            store = editing.JsonStore(blocked)
+            before = deepcopy(store.data)
+            with self.assertRaises(layers.LayerLockedError):
+                store.add_location('New', 0, 30, 30)
+            with self.assertRaises(layers.LayerLockedError):
+                store.draw_corridor_step('A', 0, 30, 30, exact=True)
+            self.assertEqual(before, store.data)
+            with self.assertRaises(ValueError):
+                layers.set_current(blocked, 'Drawing')
+        config['editor_layers']['current'] = 'Missing'
+        with self.assertRaises(ValueError):
+            editing.JsonStore(config)
+
     def test_rename_and_remove_preserve_objects_and_route_profiles(self):
         config = layers.set_layer(editing.reference_config(), 'Fixtures', visible=False)
         config = layers.assign(config, {'A', 'Door'}, {('A', 'Door')}, 'Fixtures')
@@ -101,6 +148,24 @@ class ModelLayerUiTests(unittest.TestCase):
     setUpClass = classmethod(editing.CorridorEditingUiTests.setUpClass.__func__)
     setUp = editing.CorridorEditingUiTests.setUp
     tearDown = editing.CorridorEditingUiTests.tearDown
+
+    def test_current_layer_control_and_undo(self):
+        e = self.editor
+        e.show_model_layers()
+        e.update_model_layer('New work')
+        panel = e.model_layer_panel
+        panel.choice.setCurrentText('New work')
+        before = deepcopy(e.store.data)
+        panel.use_current.click()
+        self.assertEqual('New work', layers.current_layer(e.store.data))
+        self.assertIn('New work', panel.current.text())
+        self.assertTrue(e.undo_edit())
+        self.assertEqual(before, e.store.data)
+        self.assertIn('Default', panel.current.text())
+        self.assertTrue(e.redo_edit())
+        e.update_model_layer('New work', locked=True)
+        panel.choice.setCurrentText('New work')
+        self.assertFalse(panel.use_current.isEnabled())
 
     def test_panel_rename_and_remove_are_single_undo_operations(self):
         e = self.editor

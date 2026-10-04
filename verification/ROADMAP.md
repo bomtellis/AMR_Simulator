@@ -18,9 +18,16 @@ locked source/destination layers must be unlocked. Each operation is one undo
 entry. Four additional acceptance tests cover preservation, rejection and undo;
 131 related tests pass. The actual panel was rendered and checked.
 
-Remaining layer work: current authoring layer, styles and a
-combined drawing/model layer manager. New objects start on Default, except split
-nodes which inherit an unambiguous parent layer. Hidden topology still participates
+4 October 2026 current-layer drawing follow-up: choose a visible, unlocked layer
+with Use for new drawing. New locations, nodes and explicit corridor connections
+use this project-owned setting. It survives archive save/load, rename and removal,
+and is undoable. Hiding or locking the current layer blocks new drawing with an
+explanation; it does not silently fall back to Default. Copies retain source
+layers and split nodes inherit an unambiguous parent layer. Four additional
+acceptance tests cover authoring, blocked creation, persistence and UI undo.
+
+Remaining layer work: styles and a combined drawing/model layer manager.
+Legacy projects draw on Default. Hidden topology still participates
 in model-aware drawing snaps. Locks protect editor transactions, not external
 file edits. Broader release gates and human UI acceptance remain open.
 

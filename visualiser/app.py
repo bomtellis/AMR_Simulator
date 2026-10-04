@@ -532,6 +532,24 @@ class AMRGraphEditor(QMainWindow):
                         else f'Layer {source} renamed to {target}.')
         return True
 
+    @undoable('Set current drawing layer')
+    def set_current_model_layer(self, name):
+        from visualiser.model_layers import set_current
+        if self.drag_mode_active or self.dragging_bounding_box_point_index is not None:
+            self.set_status('Finish the active drag before changing drawing layers.')
+            return False
+        try:
+            proposed = set_current(self.store.data, name)
+        except ValueError as error:
+            self.set_status(str(error))
+            return False
+        self._cancel_cad_transients()
+        self._clear_corridor_drawing()
+        self.store.data = proposed
+        self.refresh_canvas()
+        self.set_status(f'Current drawing layer: {name}.')
+        return True
+
     def _layout_points_editable(self, names):
         from visualiser.model_layers import locked_points
         locked = set(names) & locked_points(self.store.data)
