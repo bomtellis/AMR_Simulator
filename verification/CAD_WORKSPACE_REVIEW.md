@@ -88,6 +88,20 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Remembered panel proportions, 4 October 2026
+
+User-resized splitter proportions and property-panel widths now persist separately
+for Layout and Configuration. Qt adapts saved proportions to the available window
+space and widget minimums. Focus canvas does not overwrite these sizes. Earlier
+visibility-only preferences remain valid and keep default sizes; invalid stage,
+size/count/type or non-finite width values are rejected. No project fields or
+simulation inputs are added.
+
+46 focused tests pass, including actual splitter proportions in a newly shown
+editor, separate stage sizes, Focus canvas, old preference records, invalid sizes
+and the existing compact/large-text workspace checks. Window geometry, docking,
+full layer controls and human workflow acceptance remain open.
+
 ### Remembered workspace choices, 4 October 2026
 
 Project-tree, layout/configuration properties and More tools visibility now persist

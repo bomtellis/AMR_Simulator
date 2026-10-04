@@ -839,6 +839,12 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Panel-sizing checkpoint, 4 October 2026: user-resized Layout and Configuration
+splitter proportions/property widths persist independently in per-user settings.
+Focus canvas does not overwrite them; earlier visibility-only records remain
+compatible. 46 focused workspace/preference/layout tests pass. Window geometry,
+docking, configurable layers and human workflow acceptance remain open.
+
 Workspace preference checkpoint, 4 October 2026: panel visibility and object-name
 choices now persist across windows/restarts in versioned per-user settings without
 changing project data/history. Focus canvas stays temporary. Malformed records and

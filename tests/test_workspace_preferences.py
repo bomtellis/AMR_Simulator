@@ -92,3 +92,67 @@ class WorkspacePreferenceTests(unittest.TestCase):
         self.assertEqual(original,settings.raw)
         self.assertFalse(self.editor.show_labels_check.isChecked())
         self.assertIn('could not be saved',self.editor.workspace_preferences.warning)
+
+    def test_panel_sizes_restore_and_focus_mode_does_not_replace_them(self):
+        settings = self.preferences()
+        workspace = self.editor.workspace
+        self.editor.resize(1500,920)
+        self.editor.show()
+        workspace.set_properties_visible(True)
+        self.app.processEvents()
+        workspace.splitter.setSizes([230,850,330])
+        workspace.splitter.splitterMoved.emit(230,1)
+        saved = json.loads(settings.value(KEY))
+        sizes = workspace.splitter.sizes()
+        self.assertEqual(sizes,saved['panel_sizes']['layout'])
+        self.assertEqual(sizes[2],saved['property_widths']['layout'])
+        workspace.set_canvas_focus(True)
+        workspace.splitter.splitterMoved.emit(0,1)
+        self.assertEqual(saved,json.loads(settings.value(KEY)))
+        other = editing.AMRGraphEditor()
+        try:
+            other.workspace_preferences = WorkspacePreferences(other,QSettings(settings.fileName(),QSettings.IniFormat))
+            other.resize(1500,920)
+            other.show()
+            self.app.processEvents()
+            self.assertEqual(sizes,other.workspace._stage_sizes['layout'])
+            restored = other.workspace.splitter.sizes()
+            for expected,actual in zip(sizes,restored):
+                self.assertAlmostEqual(expected/sum(sizes),actual/sum(restored),delta=.04)
+        finally:
+            with patch.object(other,'_confirm_unsaved_changes',return_value=True):
+                other.close()
+            other.deleteLater()
+            QCoreApplication.sendPostedEvents(None,QEvent.DeferredDelete)
+
+    def test_optional_panel_fields_migrate_old_preferences_and_reject_invalid_sizes(self):
+        old = json.loads(self.editor.workspace_preferences.snapshot())
+        old.pop('panel_sizes')
+        old.pop('property_widths')
+        self.assertEqual({},validate(old)['panel_sizes'])
+        for sizes in ([1,0,2],[1,-2,3],[1,2],[True,300,200],[1,20001,2]):
+            with self.subTest(sizes=sizes), self.assertRaises(ValueError):
+                validate(dict(old,panel_sizes={'layout':sizes}))
+        with self.assertRaises(ValueError):
+            validate(dict(old,property_widths={'layout':float('nan')}))
+
+    def test_layout_and_configuration_keep_independent_panel_sizes(self):
+        settings = self.preferences()
+        workspace = self.editor.workspace
+        self.editor.resize(1500,920)
+        self.editor.show()
+        workspace.set_properties_visible(True)
+        self.app.processEvents()
+        workspace.splitter.setSizes([200,900,300])
+        workspace.splitter.splitterMoved.emit(200,1)
+        layout = list(workspace.splitter.sizes())
+        workspace.configuration()
+        workspace.set_properties_visible(True)
+        self.app.processEvents()
+        workspace.splitter.setSizes([250,600,550])
+        workspace.splitter.splitterMoved.emit(250,1)
+        config = list(workspace.splitter.sizes())
+        saved = json.loads(settings.value(KEY))
+        self.assertEqual(layout,saved['panel_sizes']['layout'])
+        self.assertEqual(config,saved['panel_sizes']['configuration'])
+        self.assertNotEqual(layout,config)
