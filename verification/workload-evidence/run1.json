@@ -1,0 +1,56 @@
+{
+  "dimensions": {
+    "floors": 10,
+    "robots_per_floor": 6,
+    "tasks_per_day": 1000,
+    "days": 7
+  },
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "input_sha256": "906490b2e29bd7b4a48f95fc813e8a331ac4cc0bbc084545b7e704a6ed20816b",
+  "project_bytes": 45321,
+  "save_seconds": 0.04126859991811216,
+  "open_seconds": 0.020926499972119927,
+  "configuration_roundtrip_matches": true,
+  "execution_and_exports_seconds": 172.27396540017799,
+  "simulated_last_event_sec": 554364.0,
+  "robot_count": 60,
+  "expected_tasks": 7000,
+  "completed_tasks": 6053,
+  "failed_tasks": 457,
+  "pending_tasks": 490,
+  "all_expected_completed": false,
+  "outcome_sha256": "73ec2bcfc118828e1f376b4cb81d813249cecc69b0cc7fd11fed636373337339",
+  "run_directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\workload-scale-run1\\results\\run_20261004_142920_v9dtrayn",
+  "output_bytes": 194435392,
+  "warning_review": "Automatically acknowledged for this controlled benchmark, not human approval.",
+  "limitations": [
+    "Controlled simple-mode workload, not LTN or detailed traffic validation.",
+    "Ten-hour daily release window; every fourth task goes to the next floor when multiple floors exist.",
+    "Two lift banks, 100 m straight floor routes, one payload type, six robot bays per floor at default scale.",
+    "No geometric walls, drawings, staffing or dynamic demand; live GUI responsiveness is not measured.",
+    "No agreed runtime threshold. Each invocation measures one fresh process."
+  ],
+  "reconciliation": [
+    {
+      "outcome": "completed",
+      "recorded_summary_count": 6053,
+      "event_count": 6053,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    },
+    {
+      "outcome": "failed",
+      "recorded_summary_count": 457,
+      "event_count": 457,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    }
+  ],
+  "reconciliation_matches": true,
+  "investigation_seconds": 3.5105636999942362,
+  "peak_working_set_bytes": 869916672,
+  "input_unchanged": true
+}

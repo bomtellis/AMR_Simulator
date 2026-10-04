@@ -1,5 +1,14 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 operating-scale evidence: two controlled 10-floor, 60-robot,
+7,000-task runs reproduce identical outcomes in approximately 172 seconds each.
+Both have 6,053 completed, 457 failed and 490 pending tasks; lift health declines
+below its operational threshold on day six. Completed/failed event reconciliation
+passes, but full workload completion does not. See `WORKLOAD_SCALE_REVIEW.md`
+and retained `workload-evidence` summaries. Investigate pending classification
+and resource availability next; realistic LTN, detailed traffic, GUI performance
+and the broader release gates remain open.
+
 4 October 2026 integrated CAD verification baseline: **2,040/2,040 tests passed**
 across **183 isolated modules** in 434.957137 seconds at `51a0a3a`. The evidence
 has zero broken links and unchanged tested source. This includes layer styling,
