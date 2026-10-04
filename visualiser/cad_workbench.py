@@ -163,6 +163,18 @@ class CadWorkbench(QObject):
         self.view_menu.addAction(editor.cad_toolbar.focus_action)
         self.view_menu.addAction(editor.cad_toolbar.more_action)
         self.view_menu.addSeparator()
+        labels_menu = self.view_menu.addMenu('Object names')
+        self.object_label_actions = {}
+        self.object_label_group = QActionGroup(self)
+        for title, index in [('All names', 0), ('Locations, departments, lifts and doors', 1), ('Selected objects only', 2), ('Hide names', -1)]:
+            action = labels_menu.addAction(title)
+            action.setCheckable(True)
+            self.object_label_group.addAction(action)
+            action.triggered.connect(lambda checked=False, value=index: self.set_object_label_mode(value))
+            self.object_label_actions[index] = action
+        editor.object_label_mode.currentIndexChanged.connect(self.sync_object_labels)
+        editor.show_labels_check.toggled.connect(self.sync_object_labels)
+        self.sync_object_labels()
         self.legend_action = self.action('Map key', self.change_legend, 'layout',
                                          'Show or hide the compact map key.')
         self.legend_action.setCheckable(True)
@@ -174,6 +186,16 @@ class CadWorkbench(QObject):
         self.help_menu.addAction(self.help_action)
         self.help_menu.addAction(self.action('Model scope and checks', editor.show_project_checks, 'checks',
                                             'Review supported features, limitations and current project findings.'))
+
+    def set_object_label_mode(self, index):
+        if index >= 0:
+            self.editor.object_label_mode.setCurrentIndex(index)
+        self.editor.show_labels_check.setChecked(index >= 0)
+
+    def sync_object_labels(self, *_):
+        active = self.editor.object_label_mode.currentIndex() if self.editor.show_labels_check.isChecked() else -1
+        for index, action in self.object_label_actions.items():
+            action.setChecked(index == active)
 
     def drawing_help(self):
         QMessageBox.information(self.editor, 'Drawing controls',

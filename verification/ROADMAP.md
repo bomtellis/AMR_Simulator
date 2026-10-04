@@ -839,6 +839,13 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Dense-label checkpoint, 4 October 2026: View → Object names now filters to key
+locations/doors or selected objects, or hides names without removing graph symbols.
+Selected corridor endpoints are identified, and route labels retain their separate
+control. These session view preferences remain usable during simulation locks and
+do not affect project inputs/history. 87 focused tests pass. Collision-aware labels,
+full layer controls, persisted filters and human acceptance remain open.
+
 Simulation editing-lock checkpoint, 4 October 2026: managed runs now block layout
 and configuration commands, property application, history edits, save/save-as,
 revision restore and run-link/results-root changes. A persistent message explains

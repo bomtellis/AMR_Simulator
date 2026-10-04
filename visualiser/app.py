@@ -853,6 +853,13 @@ class AMRGraphEditor(QMainWindow):
         self.show_pdf_check.setChecked(True)
         self.show_labels_check = QCheckBox("Show labels")
         self.show_labels_check.setChecked(True)
+        self.object_label_mode = QComboBox()
+        self.object_label_mode.setAccessibleName('Graph object name visibility')
+        for title, value in [('All object names', 'all'), ('Locations, departments, lifts and doors', 'key'), ('Selected objects only', 'selected')]:
+            self.object_label_mode.addItem(title, value)
+        self.object_label_mode.setToolTip('Filter graph names without hiding objects. Selected corridor endpoints and selected route-profile points are included. Door symbols and profile labels are separate.')
+        self.object_label_mode.currentIndexChanged.connect(self.refresh_canvas)
+        self.show_labels_check.toggled.connect(self.object_label_mode.setEnabled)
         self.show_location_bounds_check = QCheckBox("Show location bounding boxes")
         self.show_location_bounds_check.setChecked(True)
         self.show_charging_spaces_check = QCheckBox("Show charging spaces")
@@ -1029,6 +1036,7 @@ class AMRGraphEditor(QMainWindow):
                 self.show_pdf_check,
                 self.show_dxf_check,
                 self.show_labels_check,
+                self.object_label_mode,
                 self.show_location_bounds_check,
                 self.show_charging_spaces_check,
             ],
@@ -2630,6 +2638,13 @@ class AMRGraphEditor(QMainWindow):
                 self._item_lookup[arrow] = ('edge', edge)
 
     def draw_points(self, floor):
+        label_mode = self.object_label_mode.currentData()
+        selected_names = set(self.selected_point_names)
+        selected_names.add(self.selected_point_name)
+        selected_names.update(name for key in self.selected_edge_keys for name in key)
+        if self.route_profile_selection_active:
+            selected_names.update(self.route_profile_selected_nodes)
+        self._point_name_labels = {}
         for name, point in self.store.points_for_floor(floor).items():
             pos = self.world_to_scene(point["x"], point["y"])
             selected = name in self.selected_point_names or name == self.selected_point_name
@@ -2715,7 +2730,9 @@ class AMRGraphEditor(QMainWindow):
             item.setZValue(30 if route_selected or selected else 10)
             self._item_lookup[item] = ("point", name)
             self._point_item_lookup[name] = item
-            if self.show_labels_check.isChecked():
+            show_name = (label_mode == 'all' or name in selected_names or
+                         (label_mode == 'key' and (kind != 'corridor_node' or point.get('has_door'))))
+            if self.show_labels_check.isChecked() and show_name:
                 label = name
                 if kind == 'corridor_node' and point.get('has_door') and point.get('door_clear_width_m') is not None:
                     label += f" · {point['door_clear_width_m']} m"
@@ -2728,6 +2745,7 @@ class AMRGraphEditor(QMainWindow):
                 text.setPos(pos.x() + 0.5, pos.y())
                 self.scene.addItem(text)
                 self._item_lookup[text] = ("point_label", name)
+                self._point_name_labels[name] = text
 
     def draw_overlay_panels(self, painter, viewport_rect):
         draft = getattr(self, '_rectangle_draft', None)

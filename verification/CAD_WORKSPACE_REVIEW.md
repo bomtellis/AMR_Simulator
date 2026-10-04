@@ -78,6 +78,22 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Dense-layout object names, 4 October 2026
+
+**View → Object names** offers all names, locations/departments/lifts/doors,
+selected objects only, and hidden names. The same controls appear under the full
+View tool tab. Selected corridor endpoints and active route-profile point
+selections remain named in filtered modes. Graph symbols, door markers, charging
+markers and independently controlled profile labels remain visible. Names retain
+the shared accessible map font size and theme colours.
+
+These session view controls do not change project inputs, history or run checks.
+The View menu remains usable during a simulation editing lock. 87 focused tests
+pass across label filters, floor/selection scoping, preserved graph symbols,
+unchanged configuration/history, locked-run access, shared fonts and existing
+route/selection/drawing behaviour. Collision-aware label placement, persistence of
+these filters across restarts, full layer controls and human acceptance remain open.
+
 ### Simulation-time project editing lock, 4 October 2026
 
 Starting a managed simulation now locks project editing until its child process
