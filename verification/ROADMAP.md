@@ -846,6 +846,13 @@ topology and constraints reject off-direction attraction. 98 focused CAD tests
 pass. Perpendicular/intersection snapping, automatic crossing insertion and human
 workflow acceptance remain open.
 
+Perpendicular snap checkpoint, 4 October 2026: route drawing can snap to the
+perpendicular foot from its current endpoint onto a finite corridor. Preview and
+placement share the anchor, preserve endpoint identities, split interior targets
+atomically and respect active direction constraints. 101 focused CAD tests pass.
+Intersection snapping and automatic crossing insertion remain open; human workflow
+acceptance and the broader release gate are not closed by these tests.
+
 CAD footprint checkpoint, 4 October 2026: locations now support two-corner
 rectangular boundary drawing with live dimensions, nonmutating preview, explicit
 cancellation and atomic undo/redo. Existing polygon editing remains available;

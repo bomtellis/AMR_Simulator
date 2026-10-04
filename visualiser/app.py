@@ -799,9 +799,9 @@ class AMRGraphEditor(QMainWindow):
         self.object_snap_check.setChecked(True)
         self.object_snap_mode = QComboBox()
         self.object_snap_mode.setAccessibleName('Object snap target')
-        for title, value in [('Nearest point or edge', 'nearest'), ('Endpoints / graph points', 'endpoints'), ('Corridor midpoints', 'midpoints')]:
+        for title, value in [('Nearest point or edge', 'nearest'), ('Endpoints / graph points', 'endpoints'), ('Corridor midpoints', 'midpoints'), ('Perpendicular from route end', 'perpendicular')]:
             self.object_snap_mode.addItem(title, value)
-        self.object_snap_mode.setToolTip('Choose nearby targets for corridor, node and door placement. Exact overlaps always reuse or split existing geometry.')
+        self.object_snap_mode.setToolTip('Choose nearby targets for corridor, node and door placement. Perpendicular requires a current route endpoint and stays within the target corridor. Exact overlaps always reuse or split existing geometry.')
         self.object_snap_mode.currentIndexChanged.connect(self.on_snap_settings_changed)
         self.object_snap_check.toggled.connect(self.object_snap_mode.setEnabled)
         self.object_snap_check.setToolTip('Attract corridor, node and door placement to nearby graph points and edges. Exact coincidences still connect to avoid duplicate topology.')
@@ -1206,7 +1206,7 @@ class AMRGraphEditor(QMainWindow):
             return None, None
         target = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
                                 self.floor_spin.value(), *point, snap=False, exact=True,
-                                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData())
+                                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData(), anchor=anchor)
         return point, target
 
     def _corridor_drawing_feedback(self, target, *, typed=False):
@@ -1215,6 +1215,8 @@ class AMRGraphEditor(QMainWindow):
                         ('Grid point' if self.snap_check.isChecked() else 'Free point'))}[target['kind']]
         if target.get('snap_label') == 'midpoint':
             kind = 'Object snap: corridor midpoint (split)'
+        elif target.get('snap_label') == 'perpendicular':
+            kind = 'Object snap: perpendicular ' + ('(split)' if target['kind'] == 'edge' else '(existing endpoint)')
         text = f"{kind} | X {target['x']:.12g}, Y {target['y']:.12g} m"
         start = self.store.all_points().get(self.corridor_draw_start)
         if start:
@@ -1224,6 +1226,8 @@ class AMRGraphEditor(QMainWindow):
             text += ' | grid bypassed; direction constraint bypassed'
         elif target.get('angle_step'):
             text += f" | direction constrained to {target['angle_step']:g}° increments"
+        if self.object_snap_check.isChecked() and self.object_snap_mode.currentData() == 'perpendicular' and not start:
+            text += ' | perpendicular snap needs a route start'
         if hasattr(self, 'cad_drawing_input'):
             self.cad_drawing_input.feedback(text)
         return text

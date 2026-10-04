@@ -39,6 +39,32 @@ class SnapModeGeometryTests(unittest.TestCase):
         self.assertAlmostEqual(4.1, target['y'])
         self.assertNotEqual('midpoint', target.get('snap_label'))
 
+    def test_perpendicular_uses_anchor_projection_and_finite_corridor(self):
+        target = self.target(3.1, 4.1, 'perpendicular', anchor=(7, 1))
+        self.assertEqual((3, 4, 'perpendicular'), (target['x'], target['y'], target['snap_label']))
+        self.assertAlmostEqual(0, (target['x']-7)*6 + (target['y']-1)*8)
+        endpoint = self.target(.1, .1, 'perpendicular', anchor=(-4, 3))
+        self.assertEqual(('point', 'A', 'perpendicular'),
+                         (endpoint['kind'], endpoint['name'], endpoint['snap_label']))
+        for anchor in (None, (-10, -10), (3, 4)):
+            with self.subTest(anchor=anchor):
+                self.assertEqual('new', self.target(3.1, 4.1, 'perpendicular', anchor=anchor)['kind'])
+        self.assertEqual('new', self.target(3.5, 4.5, 'perpendicular', anchor=(7, 1))['kind'])
+        with self.assertRaises(ValueError):
+            self.target(3, 4, 'perpendicular', anchor=(float('nan'), 1))
+
+    def test_perpendicular_cannot_override_direction_or_object_snap_off(self):
+        target = self.target(3.1, 4.1, 'perpendicular', anchor=(7, 1), angle_step=90)
+        self.assertNotEqual('perpendicular', target.get('snap_label'))
+        self.assertAlmostEqual(1, target['y'])
+        target = self.target(3.1, 4.1, 'perpendicular', anchor=(7, 1), object_snap=False)
+        self.assertEqual('new', target['kind'])
+        points = {'A': dict(x=5, y=-2, floor=0), 'B': dict(x=5, y=2, floor=0)}
+        compatible = drawing_target(points, self.edges, 0, 5.1, .1, snap=False,
+                                    snap_mode='perpendicular', anchor=(0, 0), angle_step=90)
+        self.assertEqual((5, 0, 'perpendicular'),
+                         (compatible['x'], compatible['y'], compatible['snap_label']))
+
 
 class SnapModeUiTests(unittest.TestCase):
     @classmethod
@@ -93,3 +119,21 @@ class SnapModeUiTests(unittest.TestCase):
                 self.assertEqual(2, len(self.editor.edit_history.entries))
                 self.assertTrue(self.editor.undo_edit())
                 self.assertEqual(before, self.editor.store.data)
+
+    def test_perpendicular_preview_commit_and_undo_keep_same_anchor(self):
+        self.editor._set_edit_mode('corridor_draw')
+        self.editor.object_snap_mode.setCurrentIndex(self.editor.object_snap_mode.findData('perpendicular'))
+        self.editor.cad_drawing_input.coordinate_edit.setText('5.5,-1')
+        self.assertIn('needs a route start', self.editor.cad_drawing_input.feedback_label.text())
+        self.assertTrue(self.editor.submit_corridor_coordinate())
+        before = deepcopy(self.editor.store.data)
+        self.editor.cad_drawing_input.coordinate_edit.setText('1.6,2.1')
+        target = self.editor.corridor_draw_preview
+        self.assertEqual((1.5, 2, 'perpendicular'), (target['x'], target['y'], target['snap_label']))
+        self.assertIn('perpendicular (split)', self.editor.cad_drawing_input.feedback_label.text())
+        self.assertTrue(self.editor.submit_corridor_coordinate())
+        node = self.editor.store.all_points()[self.editor.corridor_draw_start]
+        self.assertEqual((1.5, 2), (node['x'], node['y']))
+        self.editor.finish_corridor_drawing()
+        self.assertTrue(self.editor.undo_edit())
+        self.assertEqual(before, self.editor.store.data)

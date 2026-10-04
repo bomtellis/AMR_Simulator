@@ -79,6 +79,22 @@ preview/commit parity, door and node placement, and atomic undo. Perpendicular a
 intersection snap choices remain open; explicit crossing-junction creation remains
 available separately. Human workflow approval and the full release gate remain open.
 
+Perpendicular snapping is now available as **Perpendicular from route end**.
+It projects the current route endpoint onto a finite corridor within the existing
+cursor attraction tolerance; it never extends a corridor beyond its endpoints.
+At a projected endpoint it reuses that point, otherwise placement splits the
+corridor with the existing transaction. Without a route start there is no
+perpendicular attraction, and feedback explains the missing anchor. This also
+means standalone nodes and doors have no perpendicular anchor. Exact overlaps
+still preserve topology. Orthogonal/polar constraints take precedence; typed
+coordinates retain their documented constraint override.
+
+101 focused CAD tests pass, including independent diagonal projections, endpoint
+reuse, out-of-range/zero-length projections, finite anchors, compatible/conflicting
+direction constraints, typed preview parity and undo. Intersection snapping and
+automatic crossing insertion remain open. The full verification pack has not been
+rerun for this increment.
+
 ### Rectangular location boundaries, 4 October 2026
 
 Right-click a location in Select mode and choose **Draw rectangular boundary**.

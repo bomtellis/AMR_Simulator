@@ -6,11 +6,15 @@ import math
 def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_spacing=1.0, object_snap=True,
                    anchor=None, angle_step=None, snap_mode="nearest"):
     """Resolve a drawing click/preview: point, explicit edge, then free grid point."""
-    if snap_mode not in ("nearest", "endpoints", "midpoints"):
+    if snap_mode not in ("nearest", "endpoints", "midpoints", "perpendicular"):
         raise ValueError("Choose a supported object snap mode.")
     x, y = float(x), float(y)
     if not all(math.isfinite(v) for v in (x, y)):
         raise ValueError('Choose a finite position on the current floor.')
+    if snap_mode == 'perpendicular' and anchor is not None:
+        anchor = tuple(map(float, anchor))
+        if len(anchor) != 2 or not all(math.isfinite(v) for v in anchor):
+            raise ValueError('Perpendicular snapping requires a finite route endpoint.')
     if angle_step is not None and anchor is not None and not exact:
         step = float(angle_step)
         ax, ay = map(float, anchor)
@@ -26,7 +30,8 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
         distance = max(0., dx * ux + dy * uy)
         px, py = ax + distance * ux, ay + distance * uy
         candidate = drawing_target(points, edges, floor, px, py, False, exact=True,
-                                   grid_spacing=grid_spacing, object_snap=object_snap, snap_mode=snap_mode)
+                                   grid_spacing=grid_spacing, object_snap=object_snap, snap_mode=snap_mode,
+                                   anchor=anchor)
         cx, cy = candidate['x'] - ax, candidate['y'] - ay
         if abs(cx * uy - cy * ux) <= 1e-8 and cx * ux + cy * uy >= -1e-8:
             return dict(candidate, angle_step=step)
@@ -47,10 +52,10 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
     grid_spacing = float(grid_spacing)
     if not math.isfinite(grid_spacing) or grid_spacing <= 0:
         raise ValueError("Grid spacing must be finite and greater than zero metres.")
-    target = point_at(x, y, .45 if object_snap and snap_mode != 'midpoints' else 1e-6)
+    target = point_at(x, y, .45 if object_snap and snap_mode in ('nearest', 'endpoints') else 1e-6)
     if target:
         return target
-    def edge_at(x, y, radius, midpoint=False):
+    def edge_at(x, y, radius, midpoint=False, perpendicular=False):
         candidates = []
         for edge in edges:
             key = tuple(sorted((edge['from'], edge['to'])))
@@ -58,23 +63,28 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
                 continue
             a, b = (local[n] for n in key)
             try:
-                fraction = project_fraction(a, b, x, y)
+                fraction = project_fraction(a, b, *anchor) if perpendicular else project_fraction(a, b, x, y)
                 if midpoint:
                     fraction = .5
             except ValueError:
                 continue
-            if not 0 < fraction < 1:
+            if not (0 <= fraction <= 1 if perpendicular else 0 < fraction < 1):
                 continue
             px = float(a['x']) + fraction * (float(b['x']) - float(a['x']))
             py = float(a['y']) + fraction * (float(b['y']) - float(a['y']))
+            if perpendicular and math.hypot(px-anchor[0], py-anchor[1]) < 1e-6:
+                continue
             distance = math.hypot(px - x, py - y)
             if distance <= radius:
                 candidates.append((distance, key, fraction, px, py))
         if candidates:
             _, key, fraction, px, py = min(candidates)
+            if perpendicular and fraction in (0., 1.):
+                return dict(kind='point', name=key[int(fraction)], x=px, y=py, snap_label='perpendicular')
             return dict(kind='edge', key=key, fraction=fraction, x=px, y=py,
-                        snap_label='midpoint' if midpoint else 'edge')
-    target = edge_at(x, y, .45, midpoint=snap_mode == 'midpoints') if object_snap and snap_mode != 'endpoints' else None
+                        snap_label='perpendicular' if perpendicular else ('midpoint' if midpoint else 'edge'))
+    attract_edge = object_snap and snap_mode != 'endpoints' and (snap_mode != 'perpendicular' or anchor is not None)
+    target = edge_at(x, y, .45, midpoint=snap_mode == 'midpoints', perpendicular=snap_mode == 'perpendicular') if attract_edge else None
     target = target or edge_at(x, y, 1e-6)
     if target:
         return target
