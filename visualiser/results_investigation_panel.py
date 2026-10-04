@@ -96,7 +96,7 @@ class ResultsInvestigationPanel(QWidget):
         self.search.setAccessibleName('Filter result tasks')
         self.search.textChanged.connect(self.populate_tasks)
         self.outcome = QComboBox()
-        self.outcome.addItems(['All outcomes', 'completed', 'failed', 'outcome not recorded', 'conflicting outcomes'])
+        self.outcome.addItems(['All outcomes', 'completed', 'failed', 'pending at stop', 'outcome not recorded', 'conflicting outcomes'])
         self.outcome.currentIndexChanged.connect(self.populate_tasks)
         search_row.addWidget(self.search, 1)
         search_row.addWidget(self.outcome)
@@ -276,6 +276,8 @@ class ResultsInvestigationPanel(QWidget):
             self.details.setPlainText('Missing evidence: ' + (', '.join(task['missing_evidence']) or 'None of the principal lifecycle events')
                                       + '\nOrigin: ' + (task['source_rule_path'] or 'Not recorded')
                                       + '\nSelect a timeline event for recorded reasons, route restrictions and source identity.')
+            if task.get('stop_snapshot'):
+                self.details.appendPlainText('\nPending-state snapshot: ' + task['stop_snapshot'])
             if task['profile_definition'] is not None:
                 profile = task['profile_definition']
                 lines = ['\nProfile restrictions from saved inputs (task allowances can extend these):']

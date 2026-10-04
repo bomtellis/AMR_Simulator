@@ -78,6 +78,8 @@ def write_run_evidence(simulation, csv_path, *, kind='full'):
                     'lift_movement_counts': booked_movement_counts(simulation)},
         'scope': 'Recorded inputs and source fingerprint; no claim of tamper-proof audit or certification.',
     }
+    if hasattr(simulation, '_evidence_pending_task_ids'):
+        data['summary']['pending_task_ids'] = list(simulation._evidence_pending_task_ids)
     termination = getattr(simulation, 'geometric_termination', None)
     if termination is not None:
         data['termination'] = dict(termination)

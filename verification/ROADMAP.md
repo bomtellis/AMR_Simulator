@@ -1,5 +1,16 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 pending-state investigation: new runs record each live pending
+task at stop, reconcile those IDs with the bound summary, and expose a
+"pending at stop" filter plus snapshot explanation in Results investigation.
+Cancellation preserves partial coverage; absent reasons and older logs remain
+explicitly unknown rather than inferred. 129 focused tests pass after this change.
+Before this addition, the scheduler baseline passed 2,049/2,049 isolated tests
+in 441.532938 seconds at `84284b4`, with unchanged source and zero broken links:
+`latest/scheduler-window-verified/index.html`. That full baseline does not include
+the new pending-state feature. Preserved local LTN/simulator edits remain part of
+the tested worktree. Scale completion, performance and wider release gates stay open.
+
 4 October 2026 charging-estimate checkpoint: repeated empty charger approaches
 are reused within a single selection pass, with fresh dispatch checks and
 task-specific onward feasibility. 228 focused tests pass. The full workload's

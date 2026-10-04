@@ -199,10 +199,18 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
     for task_id in sorted(set(by_task) | set(configured)):
         records = by_task[task_id]
         terminal = [e for e in records if e['type'] in COMPLETED | {'task_failed'}]
-        outcomes = {'completed' if e['type'] in COMPLETED else 'failed' for e in terminal}
+        last_outcome = next((e for e in reversed(records)
+                             if e['type'] in COMPLETED | {'task_failed', 'task_pending_at_stop'}), None)
+        # An earlier stop snapshot can precede a later confirmed outcome when
+        # a run is continued. A pending snapshot after completion is a conflict.
+        if last_outcome and last_outcome['type'] == 'task_pending_at_stop':
+            terminal.append(last_outcome)
+        outcomes = {'completed' if e['type'] in COMPLETED else
+                    'pending at stop' if e['type'] == 'task_pending_at_stop' else 'failed'
+                    for e in terminal}
         outcome = 'conflicting outcomes' if len(outcomes) > 1 else next(iter(outcomes)) if outcomes else 'outcome not recorded'
         if len(outcomes) > 1:
-            findings.append(f'{task_id}: both completion and failure are recorded.')
+            findings.append(f'{task_id}: conflicting recorded task outcomes: {", ".join(sorted(outcomes))}.')
         release = next((e for e in records if e['type'] == 'task_released' and e['time_seconds'] is not None), None)
         assignment = next((e for e in records if e['type'] in ASSIGNED and e['time_seconds'] is not None), None)
         finish = next((e for e in reversed(records) if e['type'] in COMPLETED and e['time_seconds'] is not None), None)
@@ -214,6 +222,8 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
         origin = next((e for e in records if e['row'].get('source_rule_path')), None)
         profile = next((e['row']['route_profile'] for e in records if e['row'].get('route_profile')), '')
         tasks.append({'task_id': task_id, 'outcome': outcome,
+                      'stop_snapshot': last_outcome['row'].get('details', '')
+                          if last_outcome and last_outcome['type'] == 'task_pending_at_stop' else '',
                       'release_seconds': release['time_seconds'] if release else None,
                       'assignment_seconds': assignment['time_seconds'] if assignment else None,
                       'completion_seconds': finish['time_seconds'] if finish else None,
@@ -292,9 +302,16 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
         chosen_ids = {t['task_id'] for t in chosen}
         metric(kind, title, len(chosen), [e['id'] for e in events if chosen_ids.intersection(e['task_ids']) and e['type'] in (COMPLETED if kind == 'completed' else {'task_failed'})],
                'Distinct tasks with this terminal outcome. Conflicting outcomes are excluded and flagged.')
+    pending = [t for t in tasks if t['outcome'] == 'pending at stop']
+    pending_ids = {t['task_id'] for t in pending}
+    metric('pending_at_stop', 'Tasks pending at stop', len(pending),
+           [e['id'] for e in events if e['type'] == 'task_pending_at_stop'
+            and pending_ids.intersection(e['task_ids'])],
+           'Tasks explicitly recorded in the pending queue at run stop. This is not a failure or a completion; last candidate reasons are not exhaustive resource diagnoses.',
+           known=complete_evidence and 'pending_tasks_at_stop_v1' in metadata.get('event_capabilities', []))
     metric('unknown_outcome', 'Tasks without a recorded outcome', sum(t['outcome'] == 'outcome not recorded' for t in tasks),
            [eid for t in tasks if t['outcome'] == 'outcome not recorded' for eid in t['event_ids']],
-           'Observed or explicitly configured tasks lacking completion/failure evidence; not automatically classified as pending.')
+           'Observed or explicitly configured tasks lacking completion, failure or explicit pending-at-stop evidence; not automatically classified as pending.')
     for kind, title in [('charge_wait', 'Charging wait observations'), ('charge_cycle_failed', 'Failed charging attempts')]:
         records = [e for e in events if e['type'] == kind]
         metric(kind, title, len(records), [e['id'] for e in records],
@@ -462,7 +479,10 @@ def investigate_events(events, frozen=None, metadata=None, findings=None, *, sou
         findings.extend(a['reason'] for a in payload_anomalies)
     reconciliation = []
     if metadata.get('summary') and complete_evidence:
-        for outcome, key in [('completed', 'completed_task_ids'), ('failed', 'failed_task_ids')]:
+        outcome_keys = [('completed', 'completed_task_ids'), ('failed', 'failed_task_ids')]
+        if 'pending_tasks_at_stop_v1' in metadata.get('event_capabilities', []) and 'pending_task_ids' in metadata['summary']:
+            outcome_keys.append(('pending at stop', 'pending_task_ids'))
+        for outcome, key in outcome_keys:
             expected = set(metadata['summary'].get(key, []))
             observed = {t['task_id'] for t in tasks if t['outcome'] == outcome}
             reconciliation.append({'outcome': outcome, 'recorded_summary_count': len(expected), 'event_count': len(observed),

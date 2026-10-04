@@ -1,5 +1,25 @@
 # Results investigation checkpoint — 2 October 2026
 
+4 October update: new simulation runs emit `task_pending_at_stop` records for
+live tasks remaining in the pending queue. Select **pending at stop** in the
+outcome filter, select a task, and read its snapshot in the details area. The
+snapshot includes run status, remaining scheduled-event count, and the last
+recorded candidate reason, or explicitly states that no reason was recorded.
+The last candidate reason is not a diagnosis of every candidate robot. These
+tasks are not failed or completed, and no completion duration is fabricated.
+
+Full bound logs reconcile pending IDs against their saved summary alongside
+completed and failed IDs. Cancellation and geometric stops retain partial
+coverage. Logs without an explicit snapshot continue to show **outcome not
+recorded**; missing evidence is never automatically interpreted as pending.
+An earlier pending snapshot can be followed by a confirmed completion if a run
+continues; a pending snapshot after a confirmed outcome is flagged as a conflict.
+Repeated exports retain stable IDs without adding duplicate stop records.
+
+Validation: 129 focused tests pass, including seven new evidence/UI cases and
+existing partial-run, project, deferral, battery and payload-accounting checks.
+Previously saved scale-run CSVs are not rewritten to add this new evidence.
+
 Separate scheduled/sporadic task volumes now have linked outcome metrics. See
 [Direct-event volume outcomes](DIRECT_EVENT_VOLUME_REVIEW.md) for definitions,
 scope, failure-phase evidence and independent reference calculations.

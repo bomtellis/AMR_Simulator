@@ -67,6 +67,85 @@ class InvestigationTests(unittest.TestCase):
         self.assertEqual(0, self.metric(report, 'failed')['value'])
         self.assertEqual(sim.run_id, report['run_id'])
 
+    def test_energy_blocked_task_has_explicit_pending_snapshot_and_reconciliation(self):
+        config = reference_config()
+        config['amrs'][0]['battery_capacity_kwh'] = .000001
+        sim, path = self.run_reference(config)
+        report = load_investigation(path)
+        task = next(t for t in report['tasks'] if t['task_id'] == 'T')
+        self.assertEqual('pending at stop', task['outcome'])
+        self.assertEqual(1, self.metric(report, 'pending_at_stop')['value'])
+        self.assertEqual(0, self.metric(report, 'unknown_outcome')['value'])
+        self.assertEqual(0, self.metric(report, 'failed')['value'])
+        check = next(r for r in report['reconciliation'] if r['outcome'] == 'pending at stop')
+        self.assertTrue(check['matches'])
+        snapshot = next(e for e in report['events'] if e['type'] == 'task_pending_at_stop')
+        self.assertIn('Last recorded candidate reason:', snapshot['explanation'])
+        self.assertIn('Run status: finished', snapshot['row']['details'])
+        self.assertIn(snapshot['id'], task['reason_event_ids'])
+        self.assertIsNone(task['completion_seconds'])
+        before = snapshot['id']
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim.write_verbose_csv()
+        repeated = [e for e in load_investigation(path)['events'] if e['type'] == 'task_pending_at_stop']
+        self.assertEqual([before], [e['id'] for e in repeated])
+
+    def test_pending_snapshot_mismatch_is_reported(self):
+        config = reference_config()
+        config['amrs'][0]['battery_capacity_kwh'] = .000001
+        _, path = self.run_reference(config)
+        sidecar = Path(str(path) + '.run.json')
+        data = json.loads(sidecar.read_text())
+        data['summary']['pending_task_ids'] = []
+        sidecar.write_text(json.dumps(data))
+        check = next(r for r in load_investigation(path)['reconciliation'] if r['outcome'] == 'pending at stop')
+        self.assertFalse(check['matches'])
+        self.assertEqual(['T'], check['missing_from_summary'])
+
+    def test_cancelled_run_records_pending_without_claiming_full_coverage(self):
+        config = reference_config()
+        config['amrs'][0]['battery_capacity_kwh'] = .000001
+        config['tasks'] = [dict(id='T',pickup='A',dropoff='B',payload='Box')]
+        path = self.root / 'cancelled.csv'
+        sim = Simulation(config, verbose=True, verbose_csv_path=str(path))
+        sim.request_stop()
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim.run()
+            sim.write_verbose_csv()
+        report = load_investigation(path)
+        self.assertFalse(report['complete_evidence'])
+        self.assertEqual('pending at stop', report['tasks'][0]['outcome'])
+        self.assertIn('Run status: cancelled', report['tasks'][0]['stop_snapshot'])
+        self.assertEqual(1,self.metric(report, 'pending_at_stop')['observed_count'])
+
+    def test_no_pending_reason_is_explicit_and_removed_tasks_are_excluded(self):
+        from amr_pending_evidence import record_pending_at_stop
+        from amr_sim_models import Task
+        config = reference_config()
+        config['tasks'] = []
+        sim = Simulation(config, verbose=True)
+        keep, removed = Task('Waiting','A','B','Box'), Task('Removed','A','B','Box')
+        sim._queue_pending_task(keep)
+        sim._queue_pending_task(removed)
+        sim._remove_pending_task(removed)
+        record_pending_at_stop(sim)
+        self.assertEqual(['Waiting'],sim._evidence_pending_task_ids)
+        row = next(r for r in sim.verbose_rows if r['event_type'] == 'task_pending_at_stop')
+        self.assertEqual('No candidate-specific reason was recorded.',row['pending_reason'])
+
+    def test_legacy_release_does_not_invent_pending_outcome(self):
+        report = load_investigation(self.log([self.event('task_released')]))
+        self.assertEqual('outcome not recorded', report['tasks'][0]['outcome'])
+        self.assertIsNone(self.metric(report, 'pending_at_stop')['value'])
+
+    def test_continued_task_can_complete_after_an_earlier_pending_snapshot(self):
+        report = load_investigation(self.log([self.event('task_pending_at_stop', 1),
+                                             self.event('task_complete', 9)]))
+        self.assertEqual('completed', report['tasks'][0]['outcome'])
+        report = load_investigation(self.log([self.event('task_complete', 1),
+                                             self.event('task_pending_at_stop', 9)]))
+        self.assertEqual('conflicting outcomes', report['tasks'][0]['outcome'])
+
     def test_legacy_source_fingerprint_remains_readable_with_scope_warning(self):
         _, path = self.run_reference()
         sidecar = Path(str(path) + '.run.json')
@@ -271,6 +350,25 @@ class InvestigationUiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_pending_filter_and_stop_explanation_are_visible(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'events.csv'
+            path.write_text('event_type,sim_time_sec,task_id,details\n'
+                            'task_pending_at_stop,1,T,Run status: finished. No candidate-specific reason was recorded.\n'
+                            'task_complete,2,Done,Completed\n')
+            panel = ResultsInvestigationPanel()
+            try:
+                panel.accept_result(load_investigation(path))
+                panel.outcome.setCurrentText('pending at stop')
+                self.assertEqual(1,panel.tasks.rowCount())
+                panel.tasks.selectRow(0)
+                self.assertIn('Pending-state snapshot:',panel.details.toPlainText())
+                self.assertIn('No candidate-specific reason',panel.details.toPlainText())
+                self.assertEqual('T',panel.task_rows[0]['task_id'])
+            finally:
+                panel.deleteLater()
+                self.app.processEvents()
 
     def test_large_timeline_pages_preserve_every_event_and_source_identity(self):
         with tempfile.TemporaryDirectory() as folder:

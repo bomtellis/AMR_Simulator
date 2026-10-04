@@ -13090,6 +13090,8 @@ class Simulation:
                         task_id=task.id, payload_name=task.payload, status=outcome,
                         details=reason, pending_reason=reason, from_location=task.pickup,
                         to_location=task.dropoff)
+        from amr_pending_evidence import record_pending_at_stop
+        record_pending_at_stop(self)
         self._print_progress_complete()
         self.print_short_summary()
         print()
