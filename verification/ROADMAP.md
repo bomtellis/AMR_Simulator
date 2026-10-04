@@ -19,6 +19,18 @@ See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md)
 
 ## Assessment and evidence rules
 
+4 October 2026 selection-rotation checkpoint: Edit and selection context menus
+now expose rotation about editable absolute X,Y with counterclockwise degrees.
+A dashed graph preview shows transformed points, affected edges, boundaries,
+bay outlines and the pivot before Apply. Selected-edge endpoints join the
+selection; attached local/legacy geometry and bay/slot headings rotate together.
+References retain identity, inferred bay dimensions become explicit to preserve
+capacity, and the operation is atomic with undo/redo. Separately authored floor
+geometry and initial robot headings remain fixed; users must recheck routes and
+poses. Eight new acceptance cases plus related CAD/storage/lock tests pass
+(101 tests). Compact large-text rendering is retained in the control preview
+artifacts. Mouse-driven rotation, copy/trim/extend/offset and layers remain open.
+
 4 October 2026 accumulated-UI regression baseline: the full isolated suite at
 `53591f46410c6c4b9c20667b69d26d769d854d11` passed 1,967/1,967 tests across 175 modules
 in 401.285 seconds, with zero broken evidence links and unchanged source during

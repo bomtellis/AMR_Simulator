@@ -30,7 +30,7 @@ class CadInputLayoutTests(unittest.TestCase):
         self.editor.appearance.apply(replace(self.original_appearance, font_size=size))
         self.editor.resize(width,height)
         self.editor.show()
-        for mode in ('rectangle','corridor','move','boundary'):
+        for mode in ('rectangle','corridor','move','boundary','rotate'):
             with self.subTest(mode=mode):
                 self.editor.cancel_cad_command()
                 self.editor.cad_move_input.hide()
@@ -49,6 +49,13 @@ class CadInputLayoutTests(unittest.TestCase):
                     bar = self.editor.boundary_input
                     entry, feedback = bar.coordinate, bar.feedback
                     entry.setText('10,5')
+                elif mode == 'rotate':
+                    self.editor._set_edit_mode('select_move')
+                    self.editor.selected_point_names = {'A', 'B'}
+                    self.editor.show_selection_rotation()
+                    bar = self.editor.cad_rotate_input
+                    entry, feedback = bar.centre, bar.preview
+                    bar.angle.setText('90')
                 else:
                     self.editor._set_edit_mode('select_move')
                     self.editor.selected_point_name = 'A'

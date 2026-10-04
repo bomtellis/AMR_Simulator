@@ -41,7 +41,8 @@ def main():
                 ('rectangle-normal',1500,900,10,'rectangle'),
                 ('rectangle-large-text',1024,768,18,'rectangle'),
                 ('corridor-large-text',1024,768,18,'corridor'),
-                ('boundary-large-text',1024,768,18,'boundary')):
+                ('boundary-large-text',1024,768,18,'boundary'),
+                ('rotation-large-text',1024,768,18,'rotation')):
             editor.cancel_cad_command()
             appearance.apply(replace(Appearance(), font_size=font))
             editor.resize(width,height)
@@ -55,6 +56,11 @@ def main():
                     editor.boundary_input.coordinate.setText(text)
                     editor.boundary_input.submit()
                 editor.boundary_input.coordinate.setText('@-4,0')
+            elif command == 'rotation':
+                editor._set_edit_mode('select_move')
+                editor.selected_point_names = {'Stores', 'West'}
+                editor.show_selection_rotation()
+                editor.cad_rotate_input.angle.setText('90')
             else:
                 editor._set_edit_mode('corridor_draw')
                 editor.corridor_draw_start = 'Stores'

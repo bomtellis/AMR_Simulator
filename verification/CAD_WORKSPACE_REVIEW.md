@@ -7,6 +7,21 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Selection rotation checkpoint (4 October 2026): select points or corridors, then
+choose **Edit → Rotate selected…** (also in selection context menus). The centre
+starts at the selected point extents' midpoint; enter another absolute `X,Y`
+in metres if required. Enter a counterclockwise angle (negative is clockwise).
+Dashed geometry previews the affected graph and attached outlines before Apply;
+Escape cancels. Apply commits one undoable change. Selected-edge endpoints are
+included, while edges to unselected points stretch to their retained endpoint.
+Location boundaries, bay outlines and slot headings rotate; resolved bay
+dimensions are retained to preserve capacity. Existing distance overrides stay
+unchanged. Floor geometry and initial robot headings are separate inputs, so
+recheck routes and initial poses after rotating. Eight independent rotation
+cases and related UI/storage regressions pass (101 tests). The actual compact
+18-point-text capture is `latest/cad-control-preview/rotation-large-text.png`.
+Human workflow acceptance and mouse-driven rotation remain open.
+
 Full regression baseline after the boundary controls (4 October 2026):
 `latest/boundary-ui-verified/index.html` records 1,967 passing tests across 175
 isolated modules, no broken evidence links, and unchanged tested source. Tested

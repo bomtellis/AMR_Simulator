@@ -153,6 +153,9 @@ class CadWorkbench(QObject):
         self.move_action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
         editor.canvas.addAction(self.move_action)
         self.edit_menu.addAction(self.move_action)
+        self.rotate_action = self.action('Rotate selected…', editor.show_selection_rotation, 'select',
+            'Rotate active-floor points, attached boundaries and bays about an explicit centre. Counterclockwise degrees.')
+        self.edit_menu.addAction(self.rotate_action)
         self.edit_menu.addAction(editor.cad_toolbar.properties_action)
         self.edit_menu.addAction(self.action('Clear selection', editor.clear_topology_selection, 'select',
                                             'Clear graph selections without editing objects.'))

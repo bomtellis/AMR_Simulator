@@ -1149,6 +1149,9 @@ class AMRGraphEditor(QMainWindow):
         from visualiser.cad_move_input import CadMoveInput
         self.cad_move_input = CadMoveInput(self)
         layout.addWidget(self.cad_move_input)
+        from visualiser.cad_rotate_input import CadRotateInput
+        self.cad_rotate_input = CadRotateInput(self)
+        layout.addWidget(self.cad_rotate_input)
         from visualiser.rectangle_input import RectangleInput
         self.rectangle_input = RectangleInput(self)
         layout.addWidget(self.rectangle_input)
@@ -1184,6 +1187,8 @@ class AMRGraphEditor(QMainWindow):
             self.mode_combo.setCurrentIndex(index)
 
     def _clear_corridor_drawing(self):
+        if hasattr(self, 'cad_rotate_input'):
+            self.cad_rotate_input.hide()
         self._clear_location_boundary_draft()
         self._rectangle_draft = None
         if hasattr(self, 'rectangle_input'):
@@ -1234,6 +1239,9 @@ class AMRGraphEditor(QMainWindow):
         return self.cad_drawing_input
 
     def cancel_cad_command(self, *_):
+        if hasattr(self, 'cad_rotate_input') and not self.cad_rotate_input.isHidden():
+            self.cad_rotate_input.hide()
+            return True
         if getattr(self, '_boundary_drag_original', None) is not None:
             self.bounding_box_points = self._boundary_drag_original
             self._boundary_drag_original = None
@@ -2324,6 +2332,8 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def refresh_canvas(self, *, update_panels=True):
+        if hasattr(self, 'cad_rotate_input') and not self.cad_rotate_input.isHidden():
+            self.cad_rotate_input.refresh_preview()
         if hasattr(self, 'boundary_input') and not self.boundary_input.isHidden():
             self.boundary_input.refresh()
         if hasattr(self, 'cad_move_input') and not self.cad_move_input.isHidden():
@@ -2852,6 +2862,8 @@ class AMRGraphEditor(QMainWindow):
                 self._point_name_labels[name] = text
 
     def draw_overlay_panels(self, painter, viewport_rect):
+        if hasattr(self, 'cad_rotate_input'):
+            self.cad_rotate_input.paint_preview(painter)
         draft = getattr(self, '_rectangle_draft', None)
         if draft and draft.get('numeric_points'):
             polygon = QPolygonF([QPointF(self.canvas.mapFromScene(self.world_to_scene(p['x'],p['y'])))
@@ -3531,9 +3543,43 @@ class AMRGraphEditor(QMainWindow):
     def show_selection_move(self):
         if self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move' or self.drag_mode_active:
             return
+        self.cad_rotate_input.hide()
         self.cad_move_input.refresh_preview()
         self.cad_move_input.show()
         self.cad_move_input.offset.setFocus()
+
+    def show_selection_rotation(self):
+        if (not self._project_editing_allowed() or self.workspace.stage != 'layout'
+                or self._current_edit_mode() != 'select_move' or self.drag_mode_active
+                or self.route_profile_selection_active or self.department_location_placement_active):
+            return
+        self.cad_move_input.hide()
+        points = self.selection_move_points()
+        if points:
+            xs = [float(point['x']) for point in points.values()]
+            ys = [float(point['y']) for point in points.values()]
+            self.cad_rotate_input.centre.setText(f'{min(xs)/2 + max(xs)/2:.12g},{min(ys)/2 + max(ys)/2:.12g}')
+        self.cad_rotate_input.angle.clear()
+        self.cad_rotate_input.refresh_preview()
+        self.cad_rotate_input.show()
+        self.cad_rotate_input.angle.setFocus()
+        self.set_status('Enter rotation centre and angle. Dashed geometry previews the change; Apply commits, Escape cancels.')
+
+    @undoable('Rotate selected objects')
+    def rotate_selected(self, centre, degrees):
+        if (self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move'
+                or self.drag_mode_active or self.route_profile_selection_active
+                or self.department_location_placement_active or not self._finish_property_draft()):
+            return False
+        from visualiser.selection_rotation import rotate_selection
+        points = self.selection_move_points()
+        staged = rotate_selection(self.store, points, centre, degrees)
+        if staged.data == self.store.data:
+            return False
+        self.store.data = staged.data
+        self.refresh_canvas()
+        self.set_status(f'Rotated {len(points)} selected points by {degrees:g}°. Recheck routes and initial poses.')
+        return True
 
     @undoable('Move selected objects by displacement')
     def move_selected_by(self, dx, dy):
@@ -3707,6 +3753,7 @@ class AMRGraphEditor(QMainWindow):
                 menu = QMenu(self)
                 menu.addAction(self.workbench.delete_action)
                 menu.addAction(self.workbench.move_action)
+                menu.addAction(self.workbench.rotate_action)
                 menu.addAction(self.workbench.fit_selection_action)
                 menu.addSeparator()
                 if picked_edge is not None:
@@ -3850,6 +3897,7 @@ class AMRGraphEditor(QMainWindow):
             menu = QMenu(self)
             menu.addAction(self.workbench.delete_action)
             menu.addAction(self.workbench.move_action)
+            menu.addAction(self.workbench.rotate_action)
             menu.addAction(self.workbench.fit_selection_action)
             menu.addSeparator()
 
