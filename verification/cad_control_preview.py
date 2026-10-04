@@ -40,7 +40,8 @@ def main():
         for name, width, height, font, command in (
                 ('rectangle-normal',1500,900,10,'rectangle'),
                 ('rectangle-large-text',1024,768,18,'rectangle'),
-                ('corridor-large-text',1024,768,18,'corridor')):
+                ('corridor-large-text',1024,768,18,'corridor'),
+                ('boundary-large-text',1024,768,18,'boundary')):
             editor.cancel_cad_command()
             appearance.apply(replace(Appearance(), font_size=font))
             editor.resize(width,height)
@@ -48,6 +49,12 @@ def main():
             if command == 'rectangle':
                 editor.start_location_rectangle('Stores')
                 editor.rectangle_input.dimensions.setText('8,4,30')
+            elif command == 'boundary':
+                editor.start_location_bounding_box_draw('Stores')
+                for text in ('-2,-2', '@4,0', '@3<90'):
+                    editor.boundary_input.coordinate.setText(text)
+                    editor.boundary_input.submit()
+                editor.boundary_input.coordinate.setText('@-4,0')
             else:
                 editor._set_edit_mode('corridor_draw')
                 editor.corridor_draw_start = 'Stores'

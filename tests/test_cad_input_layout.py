@@ -30,7 +30,7 @@ class CadInputLayoutTests(unittest.TestCase):
         self.editor.appearance.apply(replace(self.original_appearance, font_size=size))
         self.editor.resize(width,height)
         self.editor.show()
-        for mode in ('rectangle','corridor','move'):
+        for mode in ('rectangle','corridor','move','boundary'):
             with self.subTest(mode=mode):
                 self.editor.cancel_cad_command()
                 self.editor.cad_move_input.hide()
@@ -43,6 +43,11 @@ class CadInputLayoutTests(unittest.TestCase):
                     self.editor._set_edit_mode('corridor_draw')
                     bar = self.editor.cad_drawing_input
                     entry, feedback = bar.coordinate_edit, bar.feedback_label
+                    entry.setText('10,5')
+                elif mode == 'boundary':
+                    self.editor.start_location_bounding_box_draw('A')
+                    bar = self.editor.boundary_input
+                    entry, feedback = bar.coordinate, bar.feedback
                     entry.setText('10,5')
                 else:
                     self.editor._set_edit_mode('select_move')

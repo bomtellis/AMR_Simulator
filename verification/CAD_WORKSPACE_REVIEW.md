@@ -7,6 +7,21 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Exact polygon entry checkpoint (4 October 2026): drawing a location boundary now
+opens a compact inline bar. Enter `X,Y`, `@dx,dy` or `@length<angle` in metres and
+degrees counterclockwise from east; relative input starts at the last added
+vertex, including mouse-placed vertices. Typed values bypass snapping. Enter or
+Add point adds a draft vertex; Undo point removes the last draft vertex. Finish
+(or blank Enter) closes and saves the existing vertices in one undo step; add
+any pending coordinate before finishing. Escape cancels. Feedback shows the
+vertex count, proposed coordinates and segment length. Tests cover invalid and
+stale inputs, mixed mouse/keyboard drafts, corner-drag and run-lock guards,
+undo and compact layouts: 48 focused tests pass. Actual 1024×768 rendering at
+18-point text retains a 763×385 graph viewport; capture script:
+`python -m verification.cad_control_preview`, output
+`latest/cad-control-preview/boundary-large-text.png`. Human workflow approval and
+full CAD transforms/layers remain open.
+
 Boundary draft lifecycle checkpoint (4 October 2026): polygon corner dragging
 changes only the draft until Finish. Escape during a drag restores that corner;
 Escape after release cancels the whole draft. Changing floor, tool or workspace

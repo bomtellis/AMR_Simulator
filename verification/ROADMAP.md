@@ -19,6 +19,14 @@ See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md)
 
 ## Assessment and evidence rules
 
+4 October 2026 exact polygon-entry checkpoint: location boundary drafts now offer
+inline absolute/relative/polar coordinates, last-point removal and explicit
+Finish/Cancel controls. Mouse and keyboard input share a draft and final history
+entry. Forty-eight focused tests pass, including large-font compact layout,
+stale input and interaction locks; the actual UI capture is recorded in
+`CAD_WORKSPACE_REVIEW.md`. General copy/rotation, layers and full release gates
+remain open.
+
 4 October 2026 boundary-editing checkpoint: polygon drafts now support Escape
 cancellation, reversible corner drags, cancellation on floor/tool/workspace
 changes and rejection of stale location edits. Invalid inputs remain editable

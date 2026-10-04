@@ -1152,6 +1152,9 @@ class AMRGraphEditor(QMainWindow):
         from visualiser.rectangle_input import RectangleInput
         self.rectangle_input = RectangleInput(self)
         layout.addWidget(self.rectangle_input)
+        from visualiser.boundary_input import BoundaryInput
+        self.boundary_input = BoundaryInput(self)
+        layout.addWidget(self.boundary_input)
 
         self.run_lock_label = QLabel('Simulation running — project editing is locked. Stop the run in Simulate or wait for it to finish.')
         self.run_lock_label.setWordWrap(True)
@@ -2321,6 +2324,8 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def refresh_canvas(self, *, update_panels=True):
+        if hasattr(self, 'boundary_input') and not self.boundary_input.isHidden():
+            self.boundary_input.refresh()
         if hasattr(self, 'cad_move_input') and not self.cad_move_input.isHidden():
             self.cad_move_input.refresh_preview()
         from route_display import populate_choices
@@ -2565,9 +2570,12 @@ class AMRGraphEditor(QMainWindow):
         self._boundary_original = deepcopy(self.store.get_location(location_name))
         self._boundary_drag_original = None
         self.bounding_box_points = [dict(p) for p in existing] if keep_existing else []
+        self.boundary_input.coordinate.clear()
+        self.boundary_input.show()
+        self.boundary_input.coordinate.setFocus()
         self.show_location_bounds_check.setChecked(True)
         self.set_status(
-            f"Drawing bounding box for {location_name}. Left-click points, right-click empty space to finish."
+            f"Drawing boundary for {location_name}. Click or type vertices; Finish saves, Escape cancels."
         )
         self.refresh_canvas()
         return True
@@ -2674,6 +2682,9 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def _clear_location_boundary_draft(self):
+        if hasattr(self, 'boundary_input'):
+            self.boundary_input.hide()
+            self.boundary_input.coordinate.clear()
         self.bounding_box_location_name = None
         self.bounding_box_points = []
         self.dragging_bounding_box_point_index = None
