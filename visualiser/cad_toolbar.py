@@ -106,6 +106,6 @@ class CadToolBar(QToolBar):
         layout = workspace.stage == 'layout'
         self.setVisible(layout)
         for action in (*self.mode_actions.values(), self.more_action):
-            action.setEnabled(layout)
+            action.setEnabled(layout and not self.editor.project_editing_locked())
         self.focus_action.setEnabled(layout or workspace._canvas_focus)
         self.properties_action.setEnabled(workspace.stage in ('layout', 'configuration'))

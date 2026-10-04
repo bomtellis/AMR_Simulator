@@ -41,7 +41,7 @@ class ProjectHistoryPanel(QWidget):
         self.changes.clear()
         project = self.editor.project
         self.compare_button.setEnabled(project is not None)
-        self.restore_button.setEnabled(project is not None)
+        self.restore_button.setEnabled(project is not None and not self.editor.project_editing_locked())
         self.summary.setText("Save as an AMR project to start revision history." if project is None else
             f"{len(project.revisions)} saved revision(s). Restore saves your current edits first. Simulation results remain external. Differences are a snapshot; compare again after editing.")
         if project is not None:
@@ -57,6 +57,8 @@ class ProjectHistoryPanel(QWidget):
             QMessageBox.critical(self, "Comparison failed", str(exc))
 
     def restore(self):
+        if not self.editor._project_editing_allowed():
+            return
         if self.editor._history_busy():
             QMessageBox.information(self, "Finish editing first", "Finish or close the active editor before restoring a revision.")
             return

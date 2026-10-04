@@ -207,6 +207,9 @@ class ProjectPropertiesPanel(QWidget):
     def apply(self):
         if not self.pending:
             return True
+        if self.editor.project_editing_locked():
+            self.note.setText('Project editing is locked while simulation runs. Stop the run or wait for it to finish.')
+            return False
         if self.editor._history_busy():
             self.note.setText('Finish the active editor or drag before applying these properties.')
             return False

@@ -200,6 +200,9 @@ class ProjectWorkspace(QWidget):
         self.refresh()
 
     def _sync_panels(self):
+        editing = not self.editor.project_editing_locked()
+        self.properties.setEnabled(editing)
+        self.editor.ribbon_tabs.setEnabled(editing)
         self.sidebar.setVisible(self._project_tree_open and not self._canvas_focus)
         visible = (self._layout_properties_open if self.stage == 'layout' else
                    self._configuration_properties_open if self.stage == 'configuration' else False)
@@ -215,7 +218,7 @@ class ProjectWorkspace(QWidget):
                 self.editor.rectangle_input.hide()
         if hasattr(self.editor, 'cad_drawing_input'):
             self.editor.cad_drawing_input.setVisible(drawing)
-            self.editor.cad_drawing_input.setEnabled(drawing)
+            self.editor.cad_drawing_input.setEnabled(drawing and editing)
         if hasattr(self.editor, 'finish_route_enter_action'):
             self.editor.finish_route_enter_action.setEnabled(drawing)
         toolbar = getattr(self.editor, 'cad_toolbar', None)

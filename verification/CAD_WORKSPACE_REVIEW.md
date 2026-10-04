@@ -78,6 +78,29 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Simulation-time project editing lock, 4 October 2026
+
+Starting a managed simulation now locks project editing until its child process
+finishes, is stopped, or fails to start. A persistent message explains the lock
+and points users to Stop in Simulate. Layout/configuration commands share a guard,
+including keyboard-invoked edits, undo/redo, property application, save/save-as,
+revision restore and run-link/results-root changes. Properties and drawing command
+controls are disabled; native canvas events cannot move PDF underlays around the
+guard. Existing frozen input/revision binding remains in force.
+
+View zoom, middle-button pan, floor and workflow navigation, saved-run inspection
+and Stop remain available. Pending property drafts are retained on a blocked apply.
+Opening active modeless/modal editing sessions already prevents starting a run.
+This is an application workflow lock, not filesystem locking or protection from
+external programs modifying files or Python callers mutating raw dictionaries.
+
+131 focused tests pass across the lock, actual child-process success/cancellation/
+startup failure, saved runs, properties, history, workspace lifecycle, PDF and CAD
+interaction. The synthetic double-click fixture explicitly releases its button so
+it cannot leave later tests waiting for an active mouse operation. The full-suite
+1,927-test baseline predates this increment. Broader accessibility, human acceptance
+and remaining CAD/traffic requirements are still open.
+
 ### Intersection snapping, 4 October 2026
 
 **More tools → Edit → Drawing behaviour → Intersections (connect junction)**

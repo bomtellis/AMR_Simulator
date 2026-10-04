@@ -70,6 +70,8 @@ class ProjectRunsPanel(QWidget):
         self.editor._recovery_last_state = None
 
     def choose_results_root(self):
+        if not self.editor._project_editing_allowed():
+            return
         if self.editor.project is None:
             QMessageBox.information(self, "Save a project first", "Save as an AMR project before selecting its results location.")
             return
@@ -195,6 +197,7 @@ class ProjectRunsPanel(QWidget):
         self.process.errorOccurred.connect(self.process_error)
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
+        self.editor.sync_project_editing_lock()
         self.process.start(sys.executable, ['-u', str(Path(__file__).resolve().parents[1] / 'amr_project_runs.py'), str(directory)])
 
     def read_output(self):
@@ -222,6 +225,7 @@ class ProjectRunsPanel(QWidget):
         except Exception as exc:
             self.log.appendPlainText(f"Could not record final run status: {exc}")
         process.deleteLater()
+        self.editor.sync_project_editing_lock()
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.refresh_runs()
@@ -232,6 +236,8 @@ class ProjectRunsPanel(QWidget):
             self.process.kill()
 
     def link_run(self, path, *, expected_run_key=None):
+        if not self.editor._project_editing_allowed():
+            return False
         if self.editor.project is None:
             raise ValueError("Open the saved project first")
         directory = Path(path).resolve()

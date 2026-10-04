@@ -839,6 +839,15 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Simulation editing-lock checkpoint, 4 October 2026: managed runs now block layout
+and configuration commands, property application, history edits, save/save-as,
+revision restore and run-link/results-root changes. A persistent message explains
+the lock. Native PDF dragging is also guarded. Pan, zoom, floor/workflow navigation,
+saved-run investigation and Stop remain available. All 131 focused lifecycle/CAD
+tests pass, including unlock on success, cancellation and failed startup. This
+closes the identified simulation-time application editing gap within those paths;
+it does not imply filesystem locking or full release/human acceptance.
+
 Full regression checkpoint, 4 October 2026: the isolated pack at
 `verification/latest/cad-snaps-verified/index.html` passes 1,927/1,927 tests across
 167 modules, with zero broken evidence links and unchanged tested source

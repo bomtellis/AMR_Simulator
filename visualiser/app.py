@@ -265,6 +265,11 @@ class EditorGraphicsView(QGraphicsView):
         painter.restore()
 
     def mousePressEvent(self, event):
+        editor = self.window()
+        if event.button() != Qt.MiddleButton and getattr(editor, 'project_editing_locked', lambda: False)():
+            editor._project_editing_allowed()
+            event.accept()
+            return
         scene_pos = self.mapToScene(event.position().toPoint())
         if event.button() == Qt.LeftButton:
             self.leftClicked.emit(event, scene_pos.x(), scene_pos.y())
@@ -289,6 +294,10 @@ class EditorGraphicsView(QGraphicsView):
         self.viewport().update()
 
     def mouseDoubleClickEvent(self, event):
+        editor = self.window()
+        if getattr(editor, 'project_editing_locked', lambda: False)():
+            event.accept()
+            return
         scene_pos = self.mapToScene(event.position().toPoint())
         if event.button() == Qt.LeftButton:
             self.leftDoubleClicked.emit(event, scene_pos.x(), scene_pos.y())
@@ -311,6 +320,9 @@ class EditorGraphicsView(QGraphicsView):
         self.pointerMoved.emit(scene_pos.x(), scene_pos.y())
         if self._middle_panning and self._last_middle_pos is not None:
             self.middleDragged.emit(event)
+        if getattr(self.window(), 'project_editing_locked', lambda: False)():
+            event.accept()
+            return
         if event.buttons() & Qt.LeftButton:
             self.mouseDragged.emit(event, scene_pos.x(), scene_pos.y())
             if self._cad_select_mode():
@@ -487,8 +499,28 @@ class AMRGraphEditor(QMainWindow):
         # Persistent saves and recovery still reject non-finite JSON values.
         return json.dumps(self.store.data, ensure_ascii=False)
 
+    def project_editing_locked(self):
+        panel = getattr(self, 'project_runs_panel', None)
+        return panel is not None and panel.running()
+
+    def _project_editing_allowed(self):
+        if self.project_editing_locked():
+            self.set_status('Project editing is locked while simulation runs. Stop the run or wait for it to finish.')
+            return False
+        return True
+
+    def sync_project_editing_lock(self):
+        locked = self.project_editing_locked()
+        if locked:
+            self._cancel_cad_transients()
+            self._clear_corridor_drawing()
+            self.cad_move_input.hide()
+        self.run_lock_label.setVisible(locked)
+        self.workspace._sync_panels()
+        self._update_history_actions()
+
     def _history_busy(self):
-        return (self._edit_depth > 0 or QApplication.activeModalWidget() is not None or
+        return (self.project_editing_locked() or self._edit_depth > 0 or QApplication.activeModalWidget() is not None or
                 QApplication.mouseButtons() != Qt.NoButton or self.drag_mode_active or
                 bool(self.dragging_point_name) or bool(self.bounding_box_location_name) or bool(getattr(self, '_rectangle_draft', None)) or
                 self.department_location_placement_active or self.route_profile_selection_active or
@@ -519,6 +551,8 @@ class AMRGraphEditor(QMainWindow):
         self._update_history_actions()
 
     def _apply_history(self, redo=False):
+        if not self._project_editing_allowed():
+            return False
         if self._history_busy():
             self.set_status("Finish or close the active editor before undo/redo.")
             return False
@@ -1105,6 +1139,12 @@ class AMRGraphEditor(QMainWindow):
         from visualiser.rectangle_input import RectangleInput
         self.rectangle_input = RectangleInput(self)
         layout.addWidget(self.rectangle_input)
+
+        self.run_lock_label = QLabel('Simulation running — project editing is locked. Stop the run in Simulate or wait for it to finish.')
+        self.run_lock_label.setWordWrap(True)
+        self.run_lock_label.setAccessibleName('Simulation project editing lock')
+        self.run_lock_label.hide()
+        layout.addWidget(self.run_lock_label)
 
         self.status_label = QLabel("Ready")
         self.status_label.setMinimumWidth(240)
@@ -3341,6 +3381,8 @@ class AMRGraphEditor(QMainWindow):
         self.drag_mode_active = False
 
     def _begin_point_drag(self, anchor, raw_x, raw_y):
+        if not self._project_editing_allowed():
+            return False
         points = self.store.all_points()
         selected = self.selection_move_points()
         selected[anchor] = points[anchor]
@@ -3757,6 +3799,8 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
 
     def on_drag(self, event, sx, sy):
+        if self.project_editing_locked():
+            return
         gesture = getattr(self, '_cad_selection_gesture', None)
         if gesture is not None:
             from cad_selection import DRAG_THRESHOLD_PX
@@ -4034,6 +4078,8 @@ class AMRGraphEditor(QMainWindow):
         self.fit_view()
 
     def save_json(self):
+        if not self._project_editing_allowed():
+            return False
         if not self._finish_property_draft():
             return False
         self._commit_history()
@@ -4075,6 +4121,8 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def save_project(self, *, save_as=False):
+        if not self._project_editing_allowed():
+            return False
         if not self._finish_property_draft():
             return False
         self._commit_history()

@@ -254,8 +254,12 @@ class ProjectRunsUiTests(unittest.TestCase):
         with patch('project_runs_panel.RunChecksDialog', self.dialog()):
             self.panel.start_run()
         self.assertIsNotNone(self.panel.process)
-        # Main document can be edited while the subprocess uses its frozen copy.
-        self.editor.store.data['amrs'][0]['speed_m_per_sec'] = 99
+        self.assertTrue(self.editor.project_editing_locked())
+        self.assertFalse(self.editor.run_lock_label.isHidden())
+        updated = json.loads(json.dumps(self.editor.store.data))
+        updated['amrs'][0]['speed_m_per_sec'] = 99
+        self.assertFalse(self.editor.apply_layout_properties(updated))
+        self.assertNotEqual(99, self.editor.store.data['amrs'][0]['speed_m_per_sec'])
         loop = QEventLoop()
         timer = QTimer()
         timer.setInterval(20)
@@ -269,6 +273,8 @@ class ProjectRunsUiTests(unittest.TestCase):
         timer.stop()
         timeout.stop()
         self.assertFalse(self.panel.running(), self.panel.log.toPlainText())
+        self.assertFalse(self.editor.project_editing_locked())
+        self.assertTrue(self.editor.run_lock_label.isHidden())
         self.assertEqual(1, self.panel.runs.count())
         manifest = inspect_run(self.panel.run_dir, self.editor.project)
         self.assertEqual('complete', manifest['status'], manifest.get('error'))
@@ -313,6 +319,8 @@ class ProjectRunsUiTests(unittest.TestCase):
         process.waitForFinished(5000)
         self.assertFalse(self.panel.running())
         self.assertEqual('cancelled', read_json(self.panel.run_dir / MANIFEST)['status'])
+        self.assertFalse(self.editor.project_editing_locked())
+        self.assertTrue(self.editor.run_lock_label.isHidden())
 
     def test_start_failure_is_recorded(self):
         from PySide6.QtCore import QProcess
@@ -321,6 +329,8 @@ class ProjectRunsUiTests(unittest.TestCase):
         self.panel.process_error(QProcess.FailedToStart)
         self.assertFalse(self.panel.running())
         self.assertEqual('failed', read_json(self.panel.run_dir / MANIFEST)['status'])
+        self.assertFalse(self.editor.project_editing_locked())
+        self.assertTrue(self.editor.run_lock_label.isHidden())
 
 
 if __name__ == '__main__':

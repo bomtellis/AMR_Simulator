@@ -84,6 +84,9 @@ def undoable(label, *, capture_before=True):
     def decorate(method):
         @wraps(method)
         def wrapped(self, *args, **kwargs):
+            allowed = getattr(self, '_project_editing_allowed', None)
+            if allowed is not None and not allowed():
+                return False
             if not hasattr(self, "edit_history"):
                 return method(self, *args, **kwargs)
             outer = self._edit_depth == 0
