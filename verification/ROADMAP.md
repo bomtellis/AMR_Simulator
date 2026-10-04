@@ -839,6 +839,14 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Automatic crossing checkpoint, 4 October 2026: the default-off Connect crossings
+while drawing corridors option previews junction positions and creates them along
+the new segment in one atomic undo step. Existing door identities, directed
+attributes and applicable references are retained; failed later crossings roll
+back the entire edit, and collinear overlaps are explicitly rejected. 87 focused
+CAD tests pass. Human acceptance and geometric/traffic validation of junctions
+remain separate open requirements.
+
 Selection navigation checkpoint, 4 October 2026: Zoom to selection is available
 from View and the Select context menu. It fits active-floor points, selected
 corridor endpoints and location boundaries without including/reloading underlays

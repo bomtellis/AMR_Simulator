@@ -847,6 +847,9 @@ class AMRGraphEditor(QMainWindow):
         self.chain_edges_check.setChecked(True)
         self.bidirectional_check = QCheckBox("Bidirectional edges")
         self.bidirectional_check.setChecked(True)
+        self.connect_crossings_check = QCheckBox('Connect crossings while drawing corridors')
+        self.connect_crossings_check.setToolTip('Create shared junctions at crossings along each new segment. Previewed junctions and corridor splits form one undoable edit. Off leaves crossings unconnected.')
+        self.connect_crossings_check.toggled.connect(self.on_snap_settings_changed)
         self.show_dxf_check = QCheckBox("Show DXF")
         self.show_dxf_check.setChecked(True)
         self.show_pdf_check = QCheckBox("Show PDF underlay")
@@ -999,7 +1002,7 @@ class AMRGraphEditor(QMainWindow):
         add_group(
             edit,
             "Drawing behaviour",
-            [self.snap_check, ("Spacing", self.grid_spacing_spin), self.object_snap_check, self.object_snap_mode, self.bidirectional_check, self.chain_edges_check],
+            [self.snap_check, ("Spacing", self.grid_spacing_spin), self.object_snap_check, self.object_snap_mode, self.bidirectional_check, self.chain_edges_check, self.connect_crossings_check],
             columns=1,
         )
         add_group(edit, "Corridor sections", [
@@ -1255,7 +1258,16 @@ class AMRGraphEditor(QMainWindow):
         target = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
                                 self.floor_spin.value(), *point, snap=False, exact=True,
                                 grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData(), anchor=anchor)
-        return point, target
+        return point, self._preview_route_crossings(target)
+
+    def _preview_route_crossings(self, target):
+        if self.connect_crossings_check.isChecked() and self.corridor_draw_start is not None:
+            from corridor_editing import route_crossings
+            points = self.store.all_points()
+            start = points[self.corridor_draw_start]
+            target['crossings'] = route_crossings(points, self.store.data['corridors']['edges'],
+                self.floor_spin.value(), (start['x'],start['y']), (target['x'],target['y']))
+        return target
 
     def _corridor_drawing_feedback(self, target, *, typed=False):
         kind = {'point': 'Object snap: existing point', 'edge': 'Object snap: corridor split', 'junction': 'Object snap: intersection (connect junction)',
@@ -1276,6 +1288,8 @@ class AMRGraphEditor(QMainWindow):
             text += f" | direction constrained to {target['angle_step']:g}° increments"
         if self.object_snap_check.isChecked() and self.object_snap_mode.currentData() == 'perpendicular' and not start:
             text += ' | perpendicular snap needs a route start'
+        if self.connect_crossings_check.isChecked():
+            text += f" | connect crossings: {len(target.get('crossings', []))} junction position(s)"
         if hasattr(self, 'cad_drawing_input'):
             self.cad_drawing_input.feedback(text)
         return text
@@ -1336,9 +1350,11 @@ class AMRGraphEditor(QMainWindow):
                 self.floor_spin.value(), x, y, self.snap_check.isChecked(),
                 grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData(),
                 anchor=(start['x'], start['y']) if start else None, angle_step=self.corridor_angle_step())
+            self._preview_route_crossings(self.corridor_draw_preview)
             self._corridor_drawing_feedback(self.corridor_draw_preview)
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError) as exc:
             self.corridor_draw_preview = None
+            self.cad_drawing_input.feedback(str(exc), error=True)
         self.canvas.viewport().update()
 
     @undoable('Draw corridor step')
@@ -1348,7 +1364,7 @@ class AMRGraphEditor(QMainWindow):
                 snap=False if exact else self.snap_check.isChecked(),
                 bidirectional=self.bidirectional_check.isChecked(), exact=exact,
                 grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData(),
-                angle_step=self.corridor_angle_step())
+                angle_step=self.corridor_angle_step(), connect_crossings=self.connect_crossings_check.isChecked())
         except (ValueError, KeyError, TypeError) as exc:
             self.set_status(f'Route was not changed: {exc}')
             return False
@@ -2818,6 +2834,10 @@ class AMRGraphEditor(QMainWindow):
                 origin = self.canvas.mapFromScene(self.world_to_scene(start['x'], start['y']))
                 painter.drawLine(origin, endpoint)
             painter.drawEllipse(endpoint, 7, 7)
+            for x, y in target.get('crossings', []):
+                junction = self.canvas.mapFromScene(self.world_to_scene(x, y))
+                painter.drawRect(QRect(junction.x()-5, junction.y()-5, 10, 10))
+                painter.drawText(junction + QPoint(8, -8), 'J')
             label = {'point': 'Reuse point', 'edge': 'Join corridor', 'junction': 'Connect intersection', 'new': 'Place node'}[target['kind']]
             painter.drawText(endpoint + QPoint(12, -12), label)
         from cad_map_style import compact_legend, scale_bar

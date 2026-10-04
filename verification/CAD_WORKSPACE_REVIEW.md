@@ -78,6 +78,30 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Connect crossings while drawing, 4 October 2026
+
+**More tools → Edit → Drawing behaviour → Connect crossings while drawing
+corridors** is an explicit, default-off option. With it enabled, typed and mouse
+previews mark intersection positions with square **J** markers and show their
+count. Placing the segment joins each crossing on the active floor, reusing an
+existing point/door where unique and splitting all corridors meeting there.
+Positions at already connected endpoints can appear in the preview count; the
+count is junction positions, not a claim that each creates a new node.
+
+The new segment and all splits are one undoable edit. Widths, directions, distance
+overrides and applicable profile/resource references use the existing subdivision
+transaction. Any failed crossing leaves the original configuration untouched.
+Collinear overlapping routes are rejected with guidance to use existing links or
+subdivision. Other-floor crossings are ignored. Turning the option off retains
+ordinary unconnected crossings; explicit endpoint/intersection snaps still apply.
+
+87 focused tests pass across ordered multiple crossings, independent distance
+partitions, profile preservation, existing door identity, failed-later-crossing
+rollback, defaults, floor/overlap handling, preview parity and atomic undo, plus
+existing corridor/snap/lock workflows. This is graph-topology editing; it does not
+verify robot turning clearance or traffic feasibility at the created junctions.
+Human drawing acceptance remains open.
+
 ### Zoom to selection, 4 October 2026
 
 **View → Zoom to selection** and the Select-mode context menu fit selected graph

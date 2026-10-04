@@ -172,13 +172,55 @@ def connect(config, points, start, finish, bidirectional=True):
     return True
 
 
-def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True, angle_step=None, snap_mode="nearest"):
+def route_crossings(points, edges, floor, anchor, finish):
+    """Ordered unique intersections for a proposed finite segment; no mutation."""
+    ax, ay = map(float, anchor)
+    bx, by = map(float, finish)
+    rx, ry = bx-ax, by-ay
+    if not all(math.isfinite(v) for v in (ax, ay, bx, by)):
+        raise ValueError('Route coordinates must be finite.')
+    if math.hypot(rx, ry) < 1e-6:
+        return []
+    candidates, seen = [], set()
+    for edge in edges:
+        key = tuple(sorted((edge['from'], edge['to'])))
+        if key in seen or any(n not in points or int(points[n]['floor']) != int(floor) for n in key):
+            continue
+        seen.add(key)
+        c, d = (points[n] for n in key)
+        cx, cy, dx, dy = (float(p[k]) for p in (c,d) for k in ('x','y'))
+        if not all(math.isfinite(v) for v in (cx, cy, dx, dy)):
+            continue
+        if max(ax,bx) < min(cx,dx) or min(ax,bx) > max(cx,dx) or max(ay,by) < min(cy,dy) or min(ay,by) > max(cy,dy):
+            continue
+        sx, sy = dx-cx, dy-cy
+        cross = rx*sy-ry*sx
+        if abs(cross) <= 1e-12*max(1., math.hypot(rx,ry)*math.hypot(sx,sy)):
+            if abs((cx-ax)*ry-(cy-ay)*rx) < 1e-8 and math.hypot(sx,sy) > 1e-6:
+                ts = sorted((((cx-ax)*rx+(cy-ay)*ry)/(rx*rx+ry*ry),
+                             ((dx-ax)*rx+(dy-ay)*ry)/(rx*rx+ry*ry)))
+                if min(1.,ts[1])-max(0.,ts[0]) > 1e-8:
+                    raise ValueError('The new route overlaps a corridor. Use its existing links or subdivision instead.')
+            continue
+        t = ((cx-ax)*sy-(cy-ay)*sx)/cross
+        u = ((cx-ax)*ry-(cy-ay)*rx)/cross
+        if 0 <= t <= 1 and 0 <= u <= 1:
+            candidates.append((t, ax+t*rx, ay+t*ry))
+    result = []
+    for _, x, y in sorted(candidates):
+        if not result or math.hypot(x-result[-1][0], y-result[-1][1]) >= 1e-8:
+            result.append((x,y))
+    return result
+
+
+def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True, angle_step=None, snap_mode="nearest", connect_crossings=False):
     """Atomically place/reuse/split a target and connect it to the current anchor."""
     if start is not None and (start not in points or int(points[start]['floor']) != int(floor)):
         raise ValueError('Finish this route before starting on another floor or layout.')
     anchor = (points[start]['x'], points[start]['y']) if start is not None else None
     target = drawing_target(points, config['corridors']['edges'], floor, x, y, snap, exact=exact,
                             grid_spacing=grid_spacing, object_snap=object_snap, anchor=anchor, angle_step=angle_step, snap_mode=snap_mode)
+    crossings = route_crossings(points, config['corridors']['edges'], floor, anchor, (target['x'],target['y'])) if connect_crossings and anchor is not None else []
     result = deepcopy(config)
     if target['kind'] == 'junction':
         result, chains = subdivide(config, points, target['cuts'], _join_cuts=True, _existing_cut_node=target['existing'])
@@ -201,7 +243,17 @@ def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=Tr
     updated_points = dict(points)
     updated_points.update({p['name']: p for p in result['corridors']['nodes']})
     connected = connect(result, updated_points, start, name, bidirectional) if start is not None and start != name else False
-    return result, dict(target, name=name, connected=connected)
+    if connected:
+        for px, py in crossings:
+            junction = intersection_target(updated_points, result['corridors']['edges'], floor, px, py, radius=1e-7)
+            if junction is None:
+                raise ValueError('A previewed crossing could not be resolved; the route was not changed.')
+            if junction['kind'] == 'junction':
+                result, chains = subdivide(result, updated_points, junction['cuts'], _join_cuts=True, _existing_cut_node=junction['existing'])
+                if len({chain[1] for chain in chains.values()}) != 1:
+                    raise ValueError('Crossing cannot be resolved to one graph point at supported precision.')
+                updated_points.update({p['name']: p for p in result['corridors']['nodes']})
+    return result, dict(target, name=name, connected=connected, crossings=crossings)
 
 
 def project_fraction(a, b, x, y):
