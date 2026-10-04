@@ -62,6 +62,23 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Selectable object snaps, 4 October 2026
+
+Under **More tools → Edit → Drawing behaviour**, the object target selector offers
+the existing nearest point/edge behaviour, endpoints/graph points, or corridor
+midpoints. It applies to corridor drawing, standalone nodes and doors. Switching
+the selector refreshes typed previews without changing project data. Object snap
+off disables attraction and the selector; exact overlaps still reuse points or
+split edges to preserve topology. The existing 0.45 m attraction tolerance applies.
+Midpoint feedback explicitly identifies the split, and direction constraints still
+take precedence. These are session editing preferences.
+
+98 focused tests passed, covering independent diagonal midpoint geometry, endpoint
+attraction, tolerance/floor boundaries, exact overlap, constrained direction,
+preview/commit parity, door and node placement, and atomic undo. Perpendicular and
+intersection snap choices remain open; explicit crossing-junction creation remains
+available separately. Human workflow approval and the full release gate remain open.
+
 ### Rectangular location boundaries, 4 October 2026
 
 Right-click a location in Select mode and choose **Draw rectangular boundary**.
@@ -207,12 +224,12 @@ Ninety focused CAD tests passed, including independent grid arithmetic, exact
 input, invalid spacing, object attraction, undo/redo and existing drawing, door,
 workspace and deletion workflows. The full verification pack and human visual
 acceptance have not been rerun for this checkpoint. Separate endpoint/midpoint
-snap choices and automatic crossing junctions remain
+perpendicular/intersection snap choices and automatic crossing junctions remain
 open; this checkpoint does not claim those capabilities.
 
 This is working interaction infrastructure, not the final A2 appearance. The map
 still uses its existing dark palette and legend; dense LTN labels need better
-display controls. Selectable snap types, full
+display controls. Remaining snap types, full
 location/door footprint drawing, arcs/fillets and multi-object transforms remain.
 Layers, run-time editing locks, complete keyboard and custom-rendering
 accessibility, numerical engineering input authoring and advanced dialog rework

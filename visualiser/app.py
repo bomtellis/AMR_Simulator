@@ -797,6 +797,13 @@ class AMRGraphEditor(QMainWindow):
         self.grid_spacing_spin.setToolTip('Placement grid spacing; typed coordinates bypass this grid. The display grid adapts to zoom independently.')
         self.object_snap_check = QCheckBox('Object snap')
         self.object_snap_check.setChecked(True)
+        self.object_snap_mode = QComboBox()
+        self.object_snap_mode.setAccessibleName('Object snap target')
+        for title, value in [('Nearest point or edge', 'nearest'), ('Endpoints / graph points', 'endpoints'), ('Corridor midpoints', 'midpoints')]:
+            self.object_snap_mode.addItem(title, value)
+        self.object_snap_mode.setToolTip('Choose nearby targets for corridor, node and door placement. Exact overlaps always reuse or split existing geometry.')
+        self.object_snap_mode.currentIndexChanged.connect(self.on_snap_settings_changed)
+        self.object_snap_check.toggled.connect(self.object_snap_mode.setEnabled)
         self.object_snap_check.setToolTip('Attract corridor, node and door placement to nearby graph points and edges. Exact coincidences still connect to avoid duplicate topology.')
         self.snap_check.toggled.connect(self.on_snap_settings_changed)
         self.object_snap_check.toggled.connect(self.on_snap_settings_changed)
@@ -951,7 +958,7 @@ class AMRGraphEditor(QMainWindow):
         add_group(
             edit,
             "Drawing behaviour",
-            [self.snap_check, ("Spacing", self.grid_spacing_spin), self.object_snap_check, self.bidirectional_check, self.chain_edges_check],
+            [self.snap_check, ("Spacing", self.grid_spacing_spin), self.object_snap_check, self.object_snap_mode, self.bidirectional_check, self.chain_edges_check],
             columns=1,
         )
         add_group(edit, "Corridor sections", [
@@ -1199,13 +1206,15 @@ class AMRGraphEditor(QMainWindow):
             return None, None
         target = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
                                 self.floor_spin.value(), *point, snap=False, exact=True,
-                                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
+                                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData())
         return point, target
 
     def _corridor_drawing_feedback(self, target, *, typed=False):
         kind = {'point': 'Object snap: existing point', 'edge': 'Object snap: corridor split',
                 'new': 'Typed exact point' if typed else ('Constrained point' if target.get('angle_step') else
                         ('Grid point' if self.snap_check.isChecked() else 'Free point'))}[target['kind']]
+        if target.get('snap_label') == 'midpoint':
+            kind = 'Object snap: corridor midpoint (split)'
         text = f"{kind} | X {target['x']:.12g}, Y {target['y']:.12g} m"
         start = self.store.all_points().get(self.corridor_draw_start)
         if start:
@@ -1273,7 +1282,7 @@ class AMRGraphEditor(QMainWindow):
             start = self.store.all_points().get(self.corridor_draw_start)
             self.corridor_draw_preview = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
                 self.floor_spin.value(), x, y, self.snap_check.isChecked(),
-                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(),
+                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData(),
                 anchor=(start['x'], start['y']) if start else None, angle_step=self.corridor_angle_step())
             self._corridor_drawing_feedback(self.corridor_draw_preview)
         except (ValueError, KeyError, TypeError):
@@ -1286,7 +1295,7 @@ class AMRGraphEditor(QMainWindow):
             target = self.store.draw_corridor_step(self.corridor_draw_start, self.floor_spin.value(), x, y,
                 snap=False if exact else self.snap_check.isChecked(),
                 bidirectional=self.bidirectional_check.isChecked(), exact=exact,
-                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(),
+                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData(),
                 angle_step=self.corridor_angle_step())
         except (ValueError, KeyError, TypeError) as exc:
             self.set_status(f'Route was not changed: {exc}')
@@ -2994,7 +3003,7 @@ class AMRGraphEditor(QMainWindow):
                 updated, target = draw_step(
                     self.store.data, self.store.all_points(), None, floor,
                     raw_x, raw_y, snap=self.snap_check.isChecked(),
-                    grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
+                    grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData())
                 node = next((node for node in updated['corridors']['nodes']
                              if node['name'] == target['name']), None)
                 if node is None:
@@ -3125,7 +3134,7 @@ class AMRGraphEditor(QMainWindow):
             try:
                 updated, target = draw_step(self.store.data, self.store.all_points(), None, floor,
                     raw_x, raw_y, snap=self.snap_check.isChecked(),
-                    grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
+                    grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData())
             except (ValueError, KeyError, TypeError) as exc:
                 self.set_status(f'Node was not changed: {exc}')
                 return

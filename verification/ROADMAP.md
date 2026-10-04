@@ -839,6 +839,13 @@ The full application guide is
 also unfinished.
 Continue with:
 
+CAD object-snap checkpoint, 4 October 2026: the drawing behaviour controls now
+offer nearest, endpoints/graph points and corridor midpoint targets for corridors,
+nodes and doors. Preview and placement share resolution; exact overlaps retain
+topology and constraints reject off-direction attraction. 98 focused CAD tests
+pass. Perpendicular/intersection snapping, automatic crossing insertion and human
+workflow acceptance remain open.
+
 CAD footprint checkpoint, 4 October 2026: locations now support two-corner
 rectangular boundary drawing with live dimensions, nonmutating preview, explicit
 cancellation and atomic undo/redo. Existing polygon editing remains available;

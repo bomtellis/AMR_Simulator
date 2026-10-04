@@ -4,8 +4,10 @@ import math
 
 
 def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_spacing=1.0, object_snap=True,
-                   anchor=None, angle_step=None):
+                   anchor=None, angle_step=None, snap_mode="nearest"):
     """Resolve a drawing click/preview: point, explicit edge, then free grid point."""
+    if snap_mode not in ("nearest", "endpoints", "midpoints"):
+        raise ValueError("Choose a supported object snap mode.")
     x, y = float(x), float(y)
     if not all(math.isfinite(v) for v in (x, y)):
         raise ValueError('Choose a finite position on the current floor.')
@@ -24,7 +26,7 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
         distance = max(0., dx * ux + dy * uy)
         px, py = ax + distance * ux, ay + distance * uy
         candidate = drawing_target(points, edges, floor, px, py, False, exact=True,
-                                   grid_spacing=grid_spacing, object_snap=object_snap)
+                                   grid_spacing=grid_spacing, object_snap=object_snap, snap_mode=snap_mode)
         cx, cy = candidate['x'] - ax, candidate['y'] - ay
         if abs(cx * uy - cy * ux) <= 1e-8 and cx * ux + cy * uy >= -1e-8:
             return dict(candidate, angle_step=step)
@@ -45,10 +47,10 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
     grid_spacing = float(grid_spacing)
     if not math.isfinite(grid_spacing) or grid_spacing <= 0:
         raise ValueError("Grid spacing must be finite and greater than zero metres.")
-    target = point_at(x, y, .45 if object_snap else 1e-6)
+    target = point_at(x, y, .45 if object_snap and snap_mode != 'midpoints' else 1e-6)
     if target:
         return target
-    def edge_at(x, y, radius):
+    def edge_at(x, y, radius, midpoint=False):
         candidates = []
         for edge in edges:
             key = tuple(sorted((edge['from'], edge['to'])))
@@ -57,6 +59,8 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
             a, b = (local[n] for n in key)
             try:
                 fraction = project_fraction(a, b, x, y)
+                if midpoint:
+                    fraction = .5
             except ValueError:
                 continue
             if not 0 < fraction < 1:
@@ -68,8 +72,10 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
                 candidates.append((distance, key, fraction, px, py))
         if candidates:
             _, key, fraction, px, py = min(candidates)
-            return dict(kind='edge', key=key, fraction=fraction, x=px, y=py)
-    target = edge_at(x, y, .45 if object_snap else 1e-6)
+            return dict(kind='edge', key=key, fraction=fraction, x=px, y=py,
+                        snap_label='midpoint' if midpoint else 'edge')
+    target = edge_at(x, y, .45, midpoint=snap_mode == 'midpoints') if object_snap and snap_mode != 'endpoints' else None
+    target = target or edge_at(x, y, 1e-6)
     if target:
         return target
     if not exact:
@@ -98,13 +104,13 @@ def connect(config, points, start, finish, bidirectional=True):
     return True
 
 
-def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True, angle_step=None):
+def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True, angle_step=None, snap_mode="nearest"):
     """Atomically place/reuse/split a target and connect it to the current anchor."""
     if start is not None and (start not in points or int(points[start]['floor']) != int(floor)):
         raise ValueError('Finish this route before starting on another floor or layout.')
     anchor = (points[start]['x'], points[start]['y']) if start is not None else None
     target = drawing_target(points, config['corridors']['edges'], floor, x, y, snap, exact=exact,
-                            grid_spacing=grid_spacing, object_snap=object_snap, anchor=anchor, angle_step=angle_step)
+                            grid_spacing=grid_spacing, object_snap=object_snap, anchor=anchor, angle_step=angle_step, snap_mode=snap_mode)
     result = deepcopy(config)
     if target['kind'] == 'edge':
         result, chains = subdivide(config, points, {target['key']: [target['fraction']]})
