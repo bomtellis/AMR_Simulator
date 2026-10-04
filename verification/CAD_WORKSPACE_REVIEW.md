@@ -7,6 +7,18 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Failed-edit safety checkpoint (4 October 2026): an uncaught error in an undoable
+command or its history commit now restores the previous configuration, selected
+objects and undo/redo branch. Users no longer need to undo partial failed edits.
+Nested changes roll back together; failed drag release restores the drag's start.
+The original error remains available even if refreshing the restored view also
+fails. Unchanged drawing caches are retained. Six new failure cases and the full
+suite pass (1,996 tests, 179 isolated modules, zero broken evidence links).
+Evidence: `latest/atomic-editor-verified/index.html`; source snapshot includes
+the transaction patch and preserved local simulator/LTN changes. Rollback covers
+configuration/history, not external file writes or arbitrary dialog side effects.
+Model-layer locking and human workflow acceptance remain open.
+
 DXF layer visibility checkpoint (4 October 2026): use **View → DXF layers…** to
 open an optional dock. Search for layer names, toggle their checkboxes, isolate a
 selected layer or show/hide all. The master checkbox controls the whole underlay.

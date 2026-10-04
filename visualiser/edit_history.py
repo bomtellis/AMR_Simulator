@@ -1,5 +1,6 @@
 """Bounded configuration snapshots and completed-operation adapters for the editor."""
 from functools import wraps
+from copy import deepcopy
 import hashlib
 import json
 import zlib
@@ -92,12 +93,40 @@ def undoable(label, *, capture_before=True):
             outer = self._edit_depth == 0
             if outer and capture_before:
                 self._commit_history("Configuration changes")
+            if outer:
+                original_store = self.store
+                before = (deepcopy(self.store.data) if capture_before else
+                          self.edit_history.unpack(self.edit_history.entries[self.edit_history.position]))
+                history_state = (list(self.edit_history.entries), self.edit_history.position, self.edit_history.trimmed)
+                selection = {name:deepcopy(getattr(self,name)) for name in
+                             ('selected_point_name','selected_point_names','selected_edge_keys') if hasattr(self,name)}
             self._edit_depth += 1
             try:
-                return method(self, *args, **kwargs)
-            finally:
-                self._edit_depth -= 1
+                try:
+                    result = method(self, *args, **kwargs)
+                finally:
+                    self._edit_depth -= 1
                 if outer:
                     self._commit_history(label)
+                return result
+            except Exception as error:
+                if outer:
+                    self.store = original_store
+                    self.store.data = before
+                    self.edit_history.entries, self.edit_history.position, self.edit_history.trimmed = history_state
+                    for name,value in selection.items():
+                        setattr(self,name,value)
+                    self._edit_depth += 1
+                    try:
+                        self._rollback_failed_edit(label)
+                    except Exception as refresh_error:
+                        error.add_note(f'Model and history were restored, but refreshing the editor failed: {refresh_error}')
+                    finally:
+                        self._edit_depth -= 1
+                    try:
+                        self._update_history_actions()
+                    except Exception as action_error:
+                        error.add_note(f'Updating history actions after rollback failed: {action_error}')
+                raise
         return wrapped
     return decorate

@@ -559,6 +559,25 @@ class AMRGraphEditor(QMainWindow):
         self.edit_history.reset(self.store.data)
         self._update_history_actions()
 
+    def _rollback_failed_edit(self, label):
+        """Discard transient gestures after the transaction restored model/history."""
+        self._drag_refresh_timer.stop()
+        self._cad_drag_origins = None
+        self._cad_drag_offset = None
+        self._cad_selection_gesture = None
+        self.dragging_point_name = None
+        self.drag_mode_active = False
+        self.selected_for_edge = None
+        self.canvas.set_cad_selection_overlay()
+        self._clear_corridor_drawing()
+        self.set_status(f'{label} was not applied; the previous configuration has been restored.')
+        self.refresh_canvas()
+        self._update_unsaved_indicator()
+        for name in ('checks_panel', 'demand_panel'):
+            panel = getattr(self,name,None)
+            if panel is not None:
+                panel.check_staleness()
+
     def _apply_history(self, redo=False):
         if not self._project_editing_allowed():
             return False

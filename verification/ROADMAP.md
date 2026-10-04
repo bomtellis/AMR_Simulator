@@ -19,6 +19,21 @@ See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md)
 
 ## Assessment and evidence rules
 
+4 October 2026 failed-edit transaction checkpoint: the shared undoable wrapper
+now restores configuration, selected identities and history when an outer edit
+or history commit raises. Nested edits roll back together; failed drag release
+restores the pre-drag configuration. Pending earlier edits and redo branches are
+preserved, transient gestures are cleared, unchanged drawing caches survive and
+secondary refresh failures do not replace the original exception. This replaces
+the earlier behaviour of retaining partial failed edits for manual undo and is
+a prerequisite for safe model-layer rejection; model-layer locking remains open.
+Six new failure cases and the full isolated suite pass: 1,996/1,996 tests across
+179 modules in 414.274 seconds, no broken evidence links, source unchanged.
+Pack: `latest/atomic-editor-verified/index.html`, with logs and source snapshot.
+The tested tree is HEAD `31f537d` plus this transaction patch and preserved local
+simulator/LTN changes; it is not a clean-install result. The 267-option semantic
+review backlog, human acceptance and remaining roadmap gates stay open.
+
 4 October 2026 DXF-layer visibility checkpoint: supported imported entities retain
 their layer names, with layer-zero inheritance for existing supported block
 contents. View → DXF layers opens an optional searchable dock with checkbox,

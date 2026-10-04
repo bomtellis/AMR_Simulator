@@ -158,7 +158,7 @@ class EditHistoryUiTests(unittest.TestCase):
         self.assertTrue(self.editor.undo_edit())
         self.assertEqual(original, self.editor.store.data['simulation'])
 
-    def test_nested_callbacks_are_one_operation_and_partial_failure_is_undoable(self):
+    def test_nested_callbacks_are_one_operation_and_failure_rolls_back_without_losing_redo(self):
         before = deepcopy(self.editor.store.data)
         @undoable('Combined configuration edit')
         def combined(editor):
@@ -174,8 +174,12 @@ class EditHistoryUiTests(unittest.TestCase):
             raise ValueError('interrupted')
         with self.assertRaises(ValueError):
             broken(self.editor)
-        self.assertTrue(self.editor.undo_edit())
         self.assertNotIn('example', self.editor.store.data)
+        self.assertEqual(before,self.editor.store.data)
+        self.assertEqual(0,self.editor.edit_history.position)
+        self.assertEqual('Combined configuration edit',self.editor.edit_history.redo_label)
+        self.assertTrue(self.editor.redo_edit())
+        self.assertEqual([{'id':'T-1'}],self.editor.store.data['tasks'])
 
     def test_save_keeps_history_and_undo_back_to_saved_values_is_clean(self):
         path = self.root / 'saved.json'
