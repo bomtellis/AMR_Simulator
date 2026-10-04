@@ -1,5 +1,22 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 model-layer checkpoint: View → Model layers provides project-owned
+layer definitions, selected-object assignment, visibility and editing locks.
+Locations, corridor nodes, lift stops, departments and explicit corridors can be
+assigned. Locked corridors protect their endpoint positions and reciprocal edge
+records. Layer edits participate in undo/redo and project archive storage; hidden
+objects leave selection and proximity picking. These controls do not change
+route-profile permissions or simulation topology. The optional dock respects
+Focus canvas and workspace switching. Acceptance tests are in
+`tests/test_model_layers.py`; actual UI capture is retained under
+`verification/latest/cad-control-preview/model-layers.png`.
+
+Remaining layer work: rename/remove, current authoring layer, styles and a
+combined drawing/model layer manager. New objects start on Default, except split
+nodes which inherit an unambiguous parent layer. Hidden topology still participates
+in model-aware drawing snaps. Locks protect editor transactions, not external
+file edits. Broader release gates and human UI acceptance remain open.
+
 Reassessed from implementation and tests on 2 October 2026, at code baseline
 `b4770ca`. This replaces the earlier progress estimate while retaining the full
 original roadmap. The user resumed checkpoint 1 on 3 October 2026. Work continues

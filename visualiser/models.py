@@ -529,6 +529,8 @@ DEFAULT_JSON = {
 
 class JsonStore:
     def __init__(self, data: Optional[dict] = None):
+        from visualiser.model_layers import validate as validate_layers
+        validate_layers(data)
         from amr_simulation_inputs import validate_simulation_inputs
         validate_simulation_inputs(data)
         # Explicit mode selections can be saved as incomplete authoring drafts.
@@ -1042,6 +1044,7 @@ class JsonStore:
                     "y": pos["y"],
                     "kind": "lift_node",
                     "lift_id": lift_id,
+                    "editor_layer": pos.get('editor_layer', 'Default'),
                 }
 
         for dept in self.data.get("departments", []):
@@ -1062,6 +1065,7 @@ class JsonStore:
                 "y": y,
                 "kind": "department",
                 "department_id": str(dept.get("id", "")).strip() or name,
+                "editor_layer": dept.get('editor_layer', 'Default'),
             }
 
         return result

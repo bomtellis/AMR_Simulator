@@ -44,6 +44,9 @@ class CadMoveInput(QWidget):
             points = self.editor.selection_move_points()
             if not points:
                 raise ValueError('Select points or corridors on the active floor.')
+            from visualiser.model_layers import locked_points
+            if set(points) & locked_points(self.editor.store.data):
+                raise ValueError('Unlock the selected objects and attached corridors before moving.')
             names = ', '.join(sorted(points)[:4])
             if len(points) > 4:
                 names += ', …'

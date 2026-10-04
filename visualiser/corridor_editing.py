@@ -362,6 +362,10 @@ def subdivide(config, points, cuts, *, _join_cuts=False, _existing_cut_node=None
                 'x': x, 'y': y,
                 'has_door': False,
                 'door_clear_width_m': float(config.get('building', {}).get('default_door_clear_width_m', .9) or .9)}
+            parent_layers = {edge.get('editor_layer','Default') for edge in edges
+                             if {edge['from'],edge['to']} == set(key)}
+            if len(parent_layers) == 1 and parent_layers != {'Default'}:
+                node['editor_layer'] = next(iter(parent_layers))
             result['corridors']['nodes'].append(node)
             inserted.append(node)
         chains[key] = [key[0], *names, key[1]]

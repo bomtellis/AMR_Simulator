@@ -83,4 +83,6 @@ def copy_selection(store, names, dx, dy, *, occupied=False):
     from amr_inventory_inputs import validate_inventory_inputs
     validate_location_inputs(result.data)
     validate_inventory_inputs(result.data)
+    from visualiser.model_layers import assert_unlocked_changes
+    assert_unlocked_changes(store.data,result.data)
     return result, mapping, len(edges)

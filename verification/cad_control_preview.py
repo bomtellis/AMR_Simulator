@@ -44,7 +44,8 @@ def main():
                 ('boundary-large-text',1024,768,18,'boundary'),
                 ('rotation-large-text',1024,768,18,'rotation'),
                 ('copy-large-text',1024,768,18,'copy'),
-                ('dxf-layers',1500,900,10,'layers')):
+                ('dxf-layers',1500,900,10,'layers'),
+                ('model-layers',1500,900,10,'model-layers')):
             editor.cancel_cad_command()
             appearance.apply(replace(Appearance(), font_size=font))
             editor.resize(width,height)
@@ -68,6 +69,15 @@ def main():
                 editor.selected_point_names = {'Stores', 'D-01'}
                 editor.show_selection_copy()
                 editor.cad_copy_input.offset.setText('6,-3')
+            elif command == 'model-layers':
+                editor.dxf_layers.dock.close()
+                editor.update_model_layer('Fixed equipment')
+                editor.selected_point_names = {'Stores'}
+                editor.selected_edge_keys = set()
+                editor.assign_model_layer('Fixed equipment')
+                editor.update_model_layer('Fixed equipment',locked=True)
+                editor.show_model_layers()
+                editor.model_layer_panel.choice.setCurrentText('Fixed equipment')
             elif command == 'layers':
                 import ezdxf
                 from dxf_scene import DXFScene

@@ -167,6 +167,8 @@ class CadWorkbench(QObject):
         self.fit_selection_action = self.action('Zoom to selection', editor.fit_selection, 'fit',
             'Fit selected points, corridor endpoints and location boundaries on the current floor. Drawing underlays are excluded.')
         self.view_menu.addAction(self.fit_selection_action)
+        self.view_menu.addAction(self.action('Model layers…', editor.show_model_layers, 'layout',
+            'Create project layers, assign selected objects, hide them or lock them against editing. Route permissions remain separate.'))
         self.view_menu.addAction(self.action('DXF layers…', editor.show_dxf_layers, 'layout',
             'Search, show, hide or isolate imported DXF layers without changing model geometry or route access.'))
         self.view_menu.addAction(editor.cad_toolbar.project_action)

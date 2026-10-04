@@ -74,4 +74,6 @@ def rotate_selection(store, names, centre, degrees):
     from amr_inventory_inputs import validate_inventory_inputs
     validate_location_inputs(staged.data)
     validate_inventory_inputs(staged.data)
+    from visualiser.model_layers import assert_unlocked_changes
+    assert_unlocked_changes(store.data,staged.data)
     return staged

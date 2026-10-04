@@ -107,6 +107,8 @@ def undoable(label, *, capture_before=True):
                 finally:
                     self._edit_depth -= 1
                 if outer:
+                    from visualiser.model_layers import assert_unlocked_changes
+                    assert_unlocked_changes(before, self.store.data)
                     self._commit_history(label)
                 return result
             except Exception as error:
@@ -127,6 +129,10 @@ def undoable(label, *, capture_before=True):
                         self._update_history_actions()
                     except Exception as action_error:
                         error.add_note(f'Updating history actions after rollback failed: {action_error}')
+                    from visualiser.model_layers import LayerLockedError
+                    if isinstance(error, LayerLockedError):
+                        self.set_status(str(error))
+                        return False
                 raise
         return wrapped
     return decorate

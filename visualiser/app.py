@@ -478,6 +478,49 @@ class AMRGraphEditor(QMainWindow):
         self.workspace.activate('layout')
         self.dxf_layers.show()
 
+    def show_model_layers(self):
+        self.workspace.set_canvas_focus(False)
+        self.workspace.activate('layout')
+        if not hasattr(self, 'model_layer_panel'):
+            from visualiser.model_layer_panel import ModelLayerPanel
+            self.model_layer_panel = ModelLayerPanel(self)
+        self.model_layer_panel.show()
+
+    @undoable('Edit model layer')
+    def update_model_layer(self, name, *, visible=True, locked=False):
+        if self.drag_mode_active or self.dragging_bounding_box_point_index is not None:
+            self.set_status('Finish the active drag before changing layers.')
+            return False
+        from visualiser.model_layers import set_layer
+        proposed = set_layer(self.store.data,name,visible=visible,locked=locked)
+        self._cancel_cad_transients()
+        self._clear_corridor_drawing()
+        self.store.data = proposed
+        self.refresh_canvas()
+        return True
+
+    @undoable('Assign selection to model layer')
+    def assign_model_layer(self, name):
+        from visualiser.model_layers import assign
+        if not self.selected_point_names and not self.selected_edge_keys:
+            return False
+        if self.drag_mode_active or self.dragging_bounding_box_point_index is not None:
+            self.set_status('Finish the active drag before assigning layers.')
+            return False
+        self._cancel_cad_transients()
+        self._clear_corridor_drawing()
+        self.store.data = assign(self.store.data,self.selected_point_names,self.selected_edge_keys,name)
+        self.refresh_canvas()
+        return True
+
+    def _layout_points_editable(self, names):
+        from visualiser.model_layers import locked_points
+        locked = set(names) & locked_points(self.store.data)
+        if locked:
+            self.set_status(f'Unlock the layer protecting {", ".join(sorted(locked)[:3])} before editing.')
+            return False
+        return True
+
     def show_appearance(self):
         if not hasattr(self, 'appearance_panel'):
             from appearance_panel import AppearancePanel
@@ -1605,11 +1648,15 @@ class AMRGraphEditor(QMainWindow):
         return self._apply_corridor_cuts({key: [fraction]})
 
     def find_nearest_edge_key(self, x, y, floor, radius_world=0.45):
+        from visualiser.model_layers import definitions, layer_name
+        layers = definitions(self.store.data)
         points = self.store.all_points()
         best_key = None
         best_distance = float(radius_world)
         visited = set()
         for edge in self.store.data.get("corridors", {}).get("edges", []):
+            if not layers[layer_name(edge)]['visible']:
+                continue
             a = points.get(edge.get("from"))
             b = points.get(edge.get("to"))
             if not a or not b:
@@ -2422,6 +2469,24 @@ class AMRGraphEditor(QMainWindow):
         self.draw_points(floor)
         if self.show_charging_spaces_check.isChecked():
             self.draw_charging_space_markers(floor)
+        from visualiser.model_layers import definitions, layer_name
+        layers = definitions(self.store.data)
+        points = self.store.all_points()
+        visible_points = {name for name,row in points.items() if layers[layer_name(row)]['visible']}
+        self.selected_point_names.intersection_update(visible_points)
+        if self.selected_point_name not in visible_points:
+            self.selected_point_name = None
+        visible_edges = {self._physical_edge_key(edge['from'],edge['to'])
+                         for edge in self.store.data['corridors']['edges'] if layers[layer_name(edge)]['visible']}
+        self.selected_edge_keys.intersection_update(visible_edges)
+        for item, (kind, value) in self._item_lookup.items():
+            row = (value if kind == 'edge' else points.get(value,{})
+                   if kind in ('point','point_label','location_bounding_box') else {}
+                   if kind == 'model_default_overlay' else None)
+            if row is not None:
+                item.setVisible(layers[layer_name(row)]['visible'])
+        if hasattr(self, 'model_layer_panel'):
+            self.model_layer_panel.refresh()
         self.file_label.setText(Path(self.current_json_path).name if self.current_json_path else "New project")
         self.file_label.setToolTip(self.current_json_path or 'Not saved')
         self.canvas.viewport().update()
@@ -2445,6 +2510,8 @@ class AMRGraphEditor(QMainWindow):
             for item, section in items:
                 if section['source'] is not None:
                     self._item_lookup[item] = ('edge', section['source'])
+                else:
+                    self._item_lookup[item] = ('model_default_overlay',None)
         except (ValueError, TypeError, KeyError, OverflowError) as exc:
             self.route_preview_error = 'Profile preview unavailable: ' + str(exc)
 
@@ -2466,6 +2533,7 @@ class AMRGraphEditor(QMainWindow):
             label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
             label.setPos(point.x() + 0.35, point.y() - 0.75)
             label.setZValue(40)
+            self._item_lookup[label] = ('point_label',location['name'])
 
     def _edge_rows_for_point(self, point_name):
         points = self.store.all_points()
@@ -2606,6 +2674,8 @@ class AMRGraphEditor(QMainWindow):
             self._item_lookup[handle] = ("location_bounding_box_point", idx)
 
     def start_location_bounding_box_draw(self, location_name, keep_existing=False):
+        if not self._layout_points_editable([location_name]):
+            return False
         if not self._project_editing_allowed() or not self._finish_property_draft():
             return False
         location = self.store.get_location(location_name)
@@ -2629,6 +2699,8 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def start_location_rectangle(self, name):
+        if not self._layout_points_editable([name]):
+            return False
         location = self.store.get_location(name)
         if location is None or int(location['floor']) != self.floor_spin.value():
             self.set_status('Choose a location on the active floor.')
@@ -3008,9 +3080,13 @@ class AMRGraphEditor(QMainWindow):
         painter.restore()
 
     def find_nearest_point_name(self, x, y, floor, radius_world=3.0):
+        from visualiser.model_layers import definitions, layer_name
+        layers = definitions(self.store.data)
         best = None
         best_dist = radius_world
         for name, point in self.store.points_for_floor(floor).items():
+            if not layers[layer_name(point)]['visible']:
+                continue
             d = math.hypot(point["x"] - x, point["y"] - y)
             if d <= best_dist:
                 best = name
@@ -3566,6 +3642,8 @@ class AMRGraphEditor(QMainWindow):
         points = self.store.all_points()
         selected = self.selection_move_points()
         selected[anchor] = points[anchor]
+        if not self._layout_points_editable(selected):
+            return False
         self._cad_drag_origins = {name: (point['x'], point['y']) for name, point in selected.items()}
         self.dragging_point_name = anchor
         self.drag_mode_active = True
