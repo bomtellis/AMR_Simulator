@@ -11277,16 +11277,18 @@ class Simulation:
         # A blocked first window (for example robots stranded without charging
         # access) must not conceal feasible work later in the pending queue.
         width = self.max_single_candidate_tasks
+        charge_travel_cache = {}
         for offset in range(0, max(1, len(candidate_tasks)), width):
             choice = self._select_single_candidate_window(
                 candidate_tasks[offset:offset + width],
                 batch_charge_requests if offset == 0 else [],
+                charge_travel_cache,
             )
             if choice is not None:
                 return choice
         return None
 
-    def _select_single_candidate_window(self, candidate_tasks, batch_charge_requests):
+    def _select_single_candidate_window(self, candidate_tasks, batch_charge_requests, charge_travel_cache):
         """Select within one ordered, bounded batch using existing precedence."""
 
         single_jobs = []
@@ -11368,7 +11370,8 @@ class Simulation:
                     else (1, *job['order']))
 
         for job, request in sorted(charge_requests, key=lambda item: charge_order(item[0])):
-            option = self._required_route_charge_option(job['amr'], job['task_or_tasks'], request)
+            option = self._required_route_charge_option(job['amr'], job['task_or_tasks'], request,
+                                                       travel_cache=charge_travel_cache)
             if option is not None:
                 charge_choices.append((option['finish_time'], charge_order(job), job['amr'],
                                        job['task_or_tasks'], option))
@@ -11384,7 +11387,7 @@ class Simulation:
             return amr, task, option
         return None
 
-    def _required_route_charge_option(self, amr, task, request):
+    def _required_route_charge_option(self, amr, task, request, *, travel_cache=None):
         """Read-only feasibility of reachable charger plus full-battery work."""
         tasks = task if isinstance(task, list) else [task]
         if (amr.is_charging or amr.available_time > self.current_time
@@ -11393,8 +11396,17 @@ class Simulation:
             return None
         best = None
         for location in self._charge_location_candidates():
-            travel = self._plan_return_to_charge(amr, self._robot_location(amr),
-                self.current_time, destination_name=location.name)
+            # Empty travel depends on this robot and charger, not the waiting
+            # task. Reuse only within one read-only selector pass; onward work
+            # remains task-specific and dispatch always recomputes the plan.
+            key = (amr.id, location.name)
+            if travel_cache is not None and key in travel_cache:
+                travel = travel_cache[key]
+            else:
+                travel = self._plan_return_to_charge(amr, self._robot_location(amr),
+                    self.current_time, destination_name=location.name)
+                if travel_cache is not None:
+                    travel_cache[key] = travel
             if travel is None:
                 continue
             projected = copy(amr)

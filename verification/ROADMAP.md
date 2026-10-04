@@ -1,5 +1,15 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 charging-estimate checkpoint: repeated empty charger approaches
+are reused within a single selection pass, with fresh dispatch checks and
+task-specific onward feasibility. 228 focused tests pass. The full workload's
+corrected outcome hash is unchanged; 544.498 seconds versus 550.802 is only one
+timing sample. Final-state evidence explains the 88 floor-5 pending tasks: local
+robots cannot reach compatible chargers after lift wear, and floor-5 robots are
+elsewhere. Expose explicit final pending evidence in Results investigation next;
+refresh the full regression baseline. Performance and scale acceptance remain
+open. See `WORKLOAD_SCALE_REVIEW.md` and `workload-evidence/charge-cache.json`.
+
 4 October 2026 scale-run defect fixed: an infeasible candidate window no longer
 hides feasible tasks later in the pending queue. Route estimates remain batched;
 226 focused regressions pass. The unchanged seven-day workload completes 402

@@ -1,5 +1,38 @@
 # Operating-scale measurement — 4 October 2026
 
+## Follow-up: charging estimates and final pending state
+
+Charger approach plans now share a cache limited to one read-only selection
+pass, keyed by robot and charger. Onward delivery feasibility remains task
+specific. A subsequent selection pass and actual charge dispatch recompute
+availability. Regression tests show that 19 blocked tasks spanning three windows
+need one empty charger-route estimate rather than 19 for the same robot/charger,
+and that onward feasibility is independently evaluated for different tasks.
+
+The unchanged full workload has exactly the same outcome hash as the window fix:
+`5533ebb0acf18c26ca65e27822bb0029a02be9dbeeb17ca842f33a88d5bfc22c`.
+Counts remain 6,455 completed, 457 failed and 88 pending. Execution and exports
+took 544.498 seconds versus 550.802 previously; this single-sample difference is
+not a substantial performance claim. Reconciliation and input preservation pass.
+See `workload-evidence/charge-cache.json`, including final robot/lift state and
+every pending task's last recorded estimate reason. **228 focused tests pass**.
+
+All 88 pending requests are Source-5 to Destination-5. The only robots remaining
+on floor 5 are Robot-F4-3 and Robot-F4-6 at about 20.09% charge. Both use Source-4
+chargers; the floor-5 bays accept Robot-F5 types. All six Robot-F5 robots are on
+other floors. Both lifts have 19.95% health after 1,601 journeys each. This is
+consistent with 100 - 1,601 * 0.05 percentage points and below the configured
+20% minimum. Remaining work therefore lacks an available robot/charger pairing
+with sufficient usable energy. These requests remain pending rather than being
+silently completed or discarded. A task's last estimate reason refers to the
+last considered robot, not an exhaustive explanation of every candidate.
+
+The user-facing investigation still needs explicit final pending-state evidence;
+these benchmark snapshots do not retrofit that evidence into the event CSV.
+Further runtime investigation and a refreshed full isolated regression baseline
+remain open. A separate maintained-resource acceptance scenario would need
+explicit assumptions and must preserve this constrained run as evidence.
+
 ## Follow-up: candidate-window starvation
 
 The retained diagnostic state reproduced the original 490 pending tasks with no

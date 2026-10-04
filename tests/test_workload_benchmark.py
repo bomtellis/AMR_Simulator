@@ -37,6 +37,9 @@ class WorkloadBenchmarkTests(unittest.TestCase):
             self.assertTrue(first['input_unchanged'])
             self.assertEqual(4,first['completed_tasks'])
             self.assertEqual(0,first['failed_tasks'])
+            self.assertEqual([],first['pending_task_details'])
+            self.assertEqual(2,len(first['final_robots']))
+            self.assertEqual(2,len(first['final_lifts']))
             self.assertEqual(first['input_sha256'],second['input_sha256'])
             self.assertEqual(first['outcome_sha256'],second['outcome_sha256'])
             with self.assertRaisesRegex(ValueError,'new output directory'):

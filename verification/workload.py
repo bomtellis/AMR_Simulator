@@ -104,7 +104,9 @@ def run_workload(output, **dimensions):
     execution_seconds = time.perf_counter()-started
     completed = sorted(row['task_id'] for row in sim.completed_task_records)
     expected = sorted(task['id'] for task in config['tasks'])
-    pending = sorted(task.id for _,_,_,task in sim.pending_tasks if task.id not in sim._removed_pending_task_ids)
+    pending_tasks = sorted((task for _,_,_,task in sim.pending_tasks
+                            if task.id not in sim._removed_pending_task_ids),key=lambda task: task.id)
+    pending = [task.id for task in pending_tasks]
     outcome = dict(completed=sim.completed_task_records,failed=sim.failed_tasks,pending=pending)
     report = dict(dimensions=dimensions,python=sys.version,platform=platform.platform(),
         input_sha256=hashlib.sha256(raw).hexdigest(),project_bytes=project.path.stat().st_size,
@@ -112,6 +114,13 @@ def run_workload(output, **dimensions):
         execution_and_exports_seconds=execution_seconds,simulated_last_event_sec=sim.current_time,
         robot_count=len(sim.amrs),expected_tasks=len(expected),completed_tasks=len(completed),
         failed_tasks=len(sim.failed_tasks),pending_tasks=len(pending),all_expected_completed=completed == expected,
+        pending_task_details=[dict(task_id=t.id,pickup=t.pickup,dropoff=t.dropoff,
+                                   last_pending_reason=t.pending_reason) for t in pending_tasks],
+        final_robots=[dict(id=a.id,location=a.location_name,battery_soc_percent=a.battery_soc_percent,
+                           is_charging=a.is_charging,available_time=a.available_time,
+                           home_charge_location=a.home_charge_location) for a in sim.amrs],
+        final_lifts=[dict(id=lift.id,health_percent=lift.health_percent,
+                          journeys_completed=lift.journeys_completed) for lift in sim.lifts],
         outcome_sha256=hashlib.sha256(json.dumps(outcome,sort_keys=True,default=str).encode()).hexdigest(),
         run_directory=str(directory),output_bytes=sum(p.stat().st_size for p in directory.rglob('*') if p.is_file()),
         warning_review='Automatically acknowledged for this controlled benchmark, not human approval.',

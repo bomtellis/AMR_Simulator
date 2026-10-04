@@ -43,6 +43,34 @@ def prepared():
 
 
 class RequiredChargeDispatchTests(unittest.TestCase):
+    def test_blocked_charger_travel_is_reused_only_within_one_selection(self):
+        sim, first = prepared()
+        for index in range(18):
+            sim._queue_pending_task(Task(f'LONG-{index}', 'A', 'B', 'Box'))
+        request = dict(_requires_route_charge=True, required_energy_kwh=.00138)
+        with patch.object(sim, '_estimate_task_for_amr_cached', return_value=request), \
+                patch.object(sim, '_plan_return_to_charge', return_value=None) as travel:
+            self.assertIsNone(sim._select_best_assignment())
+            self.assertEqual(1, travel.call_count)
+            self.assertIsNone(sim._select_best_assignment())
+            self.assertEqual(2, travel.call_count)
+            # Dispatch never trusts the selection pass's cached availability.
+            self.assertFalse(sim._dispatch_required_route_charge(sim.amrs[0], first, request))
+            self.assertEqual(3, travel.call_count)
+
+    def test_cached_empty_travel_does_not_reuse_task_specific_onward_work(self):
+        sim, first = prepared()
+        second = Task('SECOND', 'A', 'B', 'Box')
+        cache = {}
+        request = dict(_requires_route_charge=True, required_energy_kwh=.00138)
+        with patch.object(sim, '_plan_return_to_charge', wraps=sim._plan_return_to_charge) as travel, \
+                patch.object(sim, '_estimate_task_for_amr', side_effect=[None, {'finish_time':200}]) as onward:
+            self.assertIsNone(sim._required_route_charge_option(sim.amrs[0], first, request, travel_cache=cache))
+            chosen = sim._required_route_charge_option(sim.amrs[0], second, request, travel_cache=cache)
+            self.assertEqual(200, chosen['finish_time'])
+            self.assertEqual(1, travel.call_count)
+            self.assertEqual(['LONG','SECOND'], [call.args[1].id for call in onward.call_args_list])
+
     def test_saved_reference_raw_and_editor_normalised(self):
         path = Path(__file__).resolve().parents[1] / 'verification/scenarios/required-charge-dispatch.json'
         for normalise in (False, True):

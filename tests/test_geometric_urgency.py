@@ -131,7 +131,7 @@ class GeometricUrgencyTests(unittest.TestCase):
                 yield job, {'_requires_route_charge': True,
                             'required_energy_kwh': 2.0}
 
-        def charge_option(robot, selected, request):
+        def charge_option(robot, selected, request, *, travel_cache=None):
             self.assertEqual(2.0, request['required_energy_kwh'])
             finish = finishes.get((selected.id, robot.id))
             return None if finish is None else {
