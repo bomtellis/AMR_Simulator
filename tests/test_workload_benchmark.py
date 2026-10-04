@@ -27,6 +27,19 @@ class WorkloadBenchmarkTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(ValueError):
                 workload_config(days=value)
 
+    def test_wear_sensitivity_changes_only_explicit_lift_wear(self):
+        original = workload_config()
+        constant = workload_config(lift_wear_percent_per_journey=0)
+        for lift in constant['lifts']:
+            self.assertEqual(0,lift.pop('health_loss_per_journey_percent'))
+        self.assertEqual(original,constant)
+        self.assertTrue(all('health_loss_per_journey_percent' not in lift for lift in original['lifts']))
+
+    def test_invalid_wear_override_is_rejected(self):
+        for value in (True,-.01,100.01,float('inf'),float('nan'),'0'):
+            with self.subTest(value=value),self.assertRaisesRegex(ValueError,'Lift wear'):
+                workload_config(lift_wear_percent_per_journey=value)
+
     def test_small_saved_runs_reconcile_and_repeat_without_overwriting(self):
         with tempfile.TemporaryDirectory() as directory,redirect_stdout(StringIO()):
             first = run_workload(Path(directory)/'one',floors=2,robots_per_floor=1,tasks_per_day=4,days=1)

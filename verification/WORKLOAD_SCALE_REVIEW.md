@@ -1,5 +1,38 @@
 # Operating-scale measurement — 4 October 2026
 
+## Constant-health reference: all 7,000 tasks complete
+
+Two fresh-process runs with explicitly zero lift wear complete **7,000/7,000
+tasks**, with no failed or pending tasks. Both runs reconcile completed, failed
+and pending IDs with their event records, preserve input bytes and roundtrip the
+project configuration exactly. Execution and exports take **100.274** and
+**100.751 seconds**; investigation takes 4.114 and 4.093 seconds. Peak process
+working sets are 948,539,392 and 948,764,672 bytes. These are local measurements,
+not a cross-machine runtime guarantee.
+
+Reproduce with `python -m verification.workload --output <new-directory>
+--lift-wear-percent-per-journey 0` using the repository environment. The same
+10 floors, 60 robots, 1,000 tasks/day, seven days, charger restrictions and task
+routes are retained. Only each lift's `health_loss_per_journey_percent` is set
+to zero. This models constant health, not a maintenance regime. The original
+default-wear case and its failed completion gate remain unchanged and retained.
+
+The constant-health input hash is
+`0c767e2d396c4ff89cf8670c730c3a0c021e3cc6af48245a02f0091318b3d348`;
+both outcome hashes are
+`2a734aee76172e098e7c274dd508405226a6e6713b59f164023acb05faa014d2`.
+See `workload-evidence/constant-health.json` and `constant-health-repeat.json`.
+Full local evidence sits under `latest/workload-scale-constant-health` and
+`latest/workload-scale-constant-health-repeat`. The default configuration was
+also compared directly with the first retained input and remains identical.
+
+This closes full completion and repeatability for this controlled simple-mode
+operating-scale reference. It does not close realistic LTN, detailed traffic,
+drawings, interactive responsiveness, offline installation or other roadmap
+gates. There is no agreed hard runtime threshold. Twenty-one focused tests pass,
+including new checks that the sensitivity override changes only lift wear and
+rejects nonfinite/out-of-range values.
+
 ## Follow-up: skip impossible cross-floor approaches
 
 A reduced reconstruction of final robot locations, battery state and lift health

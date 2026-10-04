@@ -4,6 +4,7 @@ import contextlib
 from datetime import datetime, timedelta
 import hashlib
 import json
+import math
 from pathlib import Path
 import platform
 import sys
@@ -15,9 +16,15 @@ from amr_results_investigation import load_investigation
 from visualiser.project_checks import check_project
 
 
-def workload_config(*, floors=10, robots_per_floor=6, tasks_per_day=1000, days=7):
+def workload_config(*, floors=10, robots_per_floor=6, tasks_per_day=1000, days=7,
+                    lift_wear_percent_per_journey=None):
     if any(type(n) is not int or n <= 0 for n in (floors,robots_per_floor,tasks_per_day,days)):
         raise ValueError('Workload dimensions must be positive integers.')
+    if lift_wear_percent_per_journey is not None and (
+            type(lift_wear_percent_per_journey) not in (int,float)
+            or not math.isfinite(lift_wear_percent_per_journey)
+            or not 0 <= lift_wear_percent_per_journey <= 100):
+        raise ValueError('Lift wear must be finite percentage points between 0 and 100.')
     start = datetime(2026,1,5,6)
     config = dict(simulation=dict(start_datetime=start.isoformat(),
         end_datetime=(start+timedelta(days=days)).isoformat(),motion_model='legacy',
@@ -46,6 +53,8 @@ def workload_config(*, floors=10, robots_per_floor=6, tasks_per_day=1000, days=7
         config['lifts'].append(dict(id=lift,served_floors=list(range(floors)),speed_floors_per_sec=.25,
             door_time_sec=3,boarding_time_sec=5,capacity_length_m=3,capacity_width_m=2,
             capacity_height_m=2.2,floor_locations={str(f):dict(x=x,y=0) for f in range(floors)}))
+        if lift_wear_percent_per_journey is not None:
+            config['lifts'][-1]['health_loss_per_journey_percent'] = lift_wear_percent_per_journey
     for day in range(days):
         for index in range(tasks_per_day):
             floor = index % floors
@@ -124,6 +133,8 @@ def run_workload(output, **dimensions):
         outcome_sha256=hashlib.sha256(json.dumps(outcome,sort_keys=True,default=str).encode()).hexdigest(),
         run_directory=str(directory),output_bytes=sum(p.stat().st_size for p in directory.rglob('*') if p.is_file()),
         warning_review='Automatically acknowledged for this controlled benchmark, not human approval.',
+        lift_wear_assumption=('Simulator defaults retained.' if dimensions.get('lift_wear_percent_per_journey') is None
+            else f"Explicit sensitivity case: {dimensions['lift_wear_percent_per_journey']} percentage points lost per journey. This does not model maintenance."),
         limitations=['Controlled simple-mode workload, not LTN or detailed traffic validation.',
             'Ten-hour daily release window; every fourth task goes to the next floor when multiple floors exist.',
             'Two lift banks, 100 m straight floor routes, one payload type, six robot bays per floor at default scale.',
@@ -147,6 +158,8 @@ def run_workload(output, **dimensions):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--lift-wear-percent-per-journey',type=float,default=None,
+                        help='Explicit lift-wear sensitivity override; omit to retain simulator defaults. Zero models constant health, not maintenance.')
     for name,default in [('floors',10),('robots-per-floor',6),('tasks-per-day',1000),('days',7)]:
         parser.add_argument('--'+name,type=int,default=default)
     args = vars(parser.parse_args())

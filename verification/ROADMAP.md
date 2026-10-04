@@ -1,5 +1,14 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 controlled scale completion: two explicit constant-lift-health
+runs complete all 7,000 tasks at 10 floors / 60 robots / 1,000 tasks/day / seven
+days. Outcome and input hashes match between runs, all outcomes reconcile, and
+execution plus exports take 100.274 / 100.751 seconds. Only lift wear is overridden;
+the default-wear reference and its resource constraints remain intact. This
+closes the controlled simple-mode scale-completion/repeatability reference,
+not realistic LTN, detailed traffic, UI responsiveness or release acceptance.
+See `WORKLOAD_SCALE_REVIEW.md` and the two constant-health evidence summaries.
+
 4 October 2026 scale performance checkpoint: a conservative pickup-floor check
 avoids route estimates when no lift serving the two floors meets minimum health.
 Temporary outages/repairs and same-floor work retain normal estimation; five
