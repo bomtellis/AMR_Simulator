@@ -55,6 +55,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSpinBox,
+    QDoubleSpinBox,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -783,8 +784,22 @@ class AMRGraphEditor(QMainWindow):
         self.floor_spin = QSpinBox()
         self.floor_spin.setRange(0, 99)
         self.floor_spin.valueChanged.connect(self.on_floor_changed)
-        self.snap_check = QCheckBox("Snap to 1.0")
+        self.snap_check = QCheckBox("Grid snap")
         self.snap_check.setChecked(True)
+        self.grid_spacing_spin = QDoubleSpinBox()
+        self.grid_spacing_spin.setDecimals(3)
+        self.grid_spacing_spin.setRange(.001, 1000)
+        self.grid_spacing_spin.setValue(1.0)
+        self.grid_spacing_spin.setSuffix(' m')
+        self.grid_spacing_spin.setAccessibleName('Drawing grid spacing in metres')
+        self.grid_spacing_spin.setToolTip('Placement grid spacing; typed coordinates bypass this grid. The display grid adapts to zoom independently.')
+        self.object_snap_check = QCheckBox('Object snap')
+        self.object_snap_check.setChecked(True)
+        self.object_snap_check.setToolTip('Attract corridor, node and door placement to nearby graph points and edges. Exact coincidences still connect to avoid duplicate topology.')
+        self.snap_check.toggled.connect(self.on_snap_settings_changed)
+        self.object_snap_check.toggled.connect(self.on_snap_settings_changed)
+        self.grid_spacing_spin.valueChanged.connect(self.on_snap_settings_changed)
+
         self.chain_edges_check = QCheckBox("Chain edge creation")
         self.chain_edges_check.setChecked(True)
         self.bidirectional_check = QCheckBox("Bidirectional edges")
@@ -934,7 +949,7 @@ class AMRGraphEditor(QMainWindow):
         add_group(
             edit,
             "Drawing behaviour",
-            [self.snap_check, self.bidirectional_check, self.chain_edges_check],
+            [self.snap_check, ("Spacing", self.grid_spacing_spin), self.object_snap_check, self.bidirectional_check, self.chain_edges_check],
             columns=1,
         )
         add_group(edit, "Corridor sections", [
@@ -1100,7 +1115,7 @@ class AMRGraphEditor(QMainWindow):
         self.corridor_draw_preview = None
         if hasattr(self, 'cad_drawing_input'):
             self.cad_drawing_input.coordinate_edit.clear()
-            self.cad_drawing_input.feedback('Click or type a start point. Typed input bypasses grid; object snapping remains active.')
+            self.cad_drawing_input.feedback('Click or type a start point. Typed input bypasses grid; object snapping follows the Object snap setting.')
         if hasattr(self, 'canvas'):
             self.canvas.viewport().update()
 
@@ -1128,7 +1143,7 @@ class AMRGraphEditor(QMainWindow):
             self.cad_drawing_input.draftChanged.connect(self.preview_typed_corridor)
             self.cad_drawing_input.setVisible(drawing)
             self.cad_drawing_input.setEnabled(drawing)
-            self.cad_drawing_input.feedback('Click or type a start point. Typed input bypasses grid; object snapping remains active.')
+            self.cad_drawing_input.feedback('Click or type a start point. Typed input bypasses grid; object snapping follows the Object snap setting.')
             self.finish_route_enter_action = QAction('Finish corridor route', self.canvas)
             self.finish_route_enter_action.setShortcuts([QKeySequence('Return'), QKeySequence('Enter')])
             self.finish_route_enter_action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
@@ -1155,7 +1170,8 @@ class AMRGraphEditor(QMainWindow):
         if point is None:
             return None, None
         target = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
-                                self.floor_spin.value(), *point, snap=False, exact=True)
+                                self.floor_spin.value(), *point, snap=False, exact=True,
+                                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
         return point, target
 
     def _corridor_drawing_feedback(self, target, *, typed=False):
@@ -1224,7 +1240,8 @@ class AMRGraphEditor(QMainWindow):
         x, y = self.scene_to_world(sx, sy)
         try:
             self.corridor_draw_preview = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
-                self.floor_spin.value(), x, y, self.snap_check.isChecked())
+                self.floor_spin.value(), x, y, self.snap_check.isChecked(),
+                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
             self._corridor_drawing_feedback(self.corridor_draw_preview)
         except (ValueError, KeyError, TypeError):
             self.corridor_draw_preview = None
@@ -1235,7 +1252,8 @@ class AMRGraphEditor(QMainWindow):
         try:
             target = self.store.draw_corridor_step(self.corridor_draw_start, self.floor_spin.value(), x, y,
                 snap=False if exact else self.snap_check.isChecked(),
-                bidirectional=self.bidirectional_check.isChecked(), exact=exact)
+                bidirectional=self.bidirectional_check.isChecked(), exact=exact,
+                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
         except (ValueError, KeyError, TypeError) as exc:
             self.set_status(f'Route was not changed: {exc}')
             return False
@@ -2020,9 +2038,17 @@ class AMRGraphEditor(QMainWindow):
     def scene_to_world(self, sx, sy):
         return float(sx), -float(sy)
 
+    def on_snap_settings_changed(self, *_):
+        self.corridor_draw_preview = None
+        if hasattr(self, 'cad_drawing_input'):
+            self.preview_typed_corridor(self.cad_drawing_input.coordinate_edit.text())
+        if hasattr(self, 'canvas'):
+            self.canvas.viewport().update()
+
     def snap(self, x, y):
         if self.snap_check.isChecked():
-            return round(x), round(y)
+            spacing = self.grid_spacing_spin.value()
+            return round(round(x / spacing) * spacing, 12), round(round(y / spacing) * spacing, 12)
         return round(x, 3), round(y, 3)
 
     def _content_bounds(self, floor):
@@ -2808,7 +2834,8 @@ class AMRGraphEditor(QMainWindow):
                 # directed attributes and all profile/resource references.
                 updated, target = draw_step(
                     self.store.data, self.store.all_points(), None, floor,
-                    raw_x, raw_y, snap=self.snap_check.isChecked())
+                    raw_x, raw_y, snap=self.snap_check.isChecked(),
+                    grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
                 node = next((node for node in updated['corridors']['nodes']
                              if node['name'] == target['name']), None)
                 if node is None:
@@ -2936,18 +2963,17 @@ class AMRGraphEditor(QMainWindow):
             return
 
         if mode == "corridor_node":
-            if picked:
-                self.selected_point_name = picked
-                self.set_status(f"Using existing point {picked}; no duplicate node was added.")
-                self.refresh_canvas()
+            from corridor_editing import draw_step
+            try:
+                updated, target = draw_step(self.store.data, self.store.all_points(), None, floor,
+                    raw_x, raw_y, snap=self.snap_check.isChecked(),
+                    grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
+            except (ValueError, KeyError, TypeError) as exc:
+                self.set_status(f'Node was not changed: {exc}')
                 return
-            if picked_edge is not None:
-                self.split_corridor_at(picked_edge, raw_x, raw_y)
-                return
-            name = self.store.suggest_next_corridor_name(floor)
-            self.store.add_corridor_node(name, floor, x, y)
-            self.selected_point_name = name
-            self.set_status(f"Added corridor node {name}")
+            self.store.data = updated
+            self.selected_point_name = target['name']
+            self.set_status(f"{'Using existing point' if target['kind'] == 'point' else 'Added corridor node'} {target['name']}")
             self.refresh_canvas()
             return
 

@@ -3,7 +3,7 @@ from copy import deepcopy
 import math
 
 
-def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False):
+def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_spacing=1.0, object_snap=True):
     """Resolve a drawing click/preview: point, explicit edge, then free grid point."""
     x, y = float(x), float(y)
     if not all(math.isfinite(v) for v in (x, y)):
@@ -19,7 +19,10 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False):
                 raise ValueError('Connect to a department location, not the department marker.')
             return dict(kind='point', name=name, x=float(local[name]['x']), y=float(local[name]['y']))
 
-    target = point_at(x, y, .45)
+    grid_spacing = float(grid_spacing)
+    if not math.isfinite(grid_spacing) or grid_spacing <= 0:
+        raise ValueError("Grid spacing must be finite and greater than zero metres.")
+    target = point_at(x, y, .45 if object_snap else 1e-6)
     if target:
         return target
     def edge_at(x, y, radius):
@@ -43,11 +46,11 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False):
         if candidates:
             _, key, fraction, px, py = min(candidates)
             return dict(kind='edge', key=key, fraction=fraction, x=px, y=py)
-    target = edge_at(x, y, .45)
+    target = edge_at(x, y, .45 if object_snap else 1e-6)
     if target:
         return target
     if not exact:
-        x, y = (float(round(x)), float(round(y))) if snap else (round(x, 3), round(y, 3))
+        x, y = (round(round(x / grid_spacing) * grid_spacing, 12), round(round(y / grid_spacing) * grid_spacing, 12)) if snap else (round(x, 3), round(y, 3))
     # Grid rounding must not create a second point at an occupied position.
     return point_at(x, y, 1e-6) or edge_at(x, y, 1e-6) or dict(kind='new', x=x, y=y)
 
@@ -72,11 +75,11 @@ def connect(config, points, start, finish, bidirectional=True):
     return True
 
 
-def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True, exact=False):
+def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True):
     """Atomically place/reuse/split a target and connect it to the current anchor."""
     if start is not None and (start not in points or int(points[start]['floor']) != int(floor)):
         raise ValueError('Finish this route before starting on another floor or layout.')
-    target = drawing_target(points, config['corridors']['edges'], floor, x, y, snap, exact=exact)
+    target = drawing_target(points, config['corridors']['edges'], floor, x, y, snap, exact=exact, grid_spacing=grid_spacing, object_snap=object_snap)
     result = deepcopy(config)
     if target['kind'] == 'edge':
         result, chains = subdivide(config, points, {target['key']: [target['fraction']]})

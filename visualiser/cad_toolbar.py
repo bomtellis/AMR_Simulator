@@ -40,11 +40,16 @@ class CadToolBar(QToolBar):
         editor.floor_spin.setAccessibleName('Current floor')
         editor.floor_spin.setToolTip('Current drawing floor. This is the same floor selection used by the project tree.')
         self.addWidget(editor.floor_spin)
-        self.snap_action = self.command('Snap', lambda checked: editor.snap_check.setChecked(checked),
-            'Toggle the existing one-metre drawing grid snap. Also available under More tools → Edit.',
+        self.snap_action = self.command('Grid snap', lambda checked: editor.snap_check.setChecked(checked),
+            'Toggle placement grid snapping. Set spacing under More tools → Edit → Drawing behaviour.',
             checkable=True)
         self.snap_action.setChecked(editor.snap_check.isChecked())
         editor.snap_check.toggled.connect(self.snap_action.setChecked)
+        self.object_snap_action = self.command('Object snap', lambda checked: editor.object_snap_check.setChecked(checked),
+            editor.object_snap_check.toolTip(), checkable=True)
+        self.object_snap_action.setChecked(editor.object_snap_check.isChecked())
+        editor.object_snap_check.toggled.connect(self.object_snap_action.setChecked)
+
         self.grid_action = self.command('Grid', self.change_grid,
             'Show or hide the adaptive metre grid. This is a display setting; Snap is independent.', checkable=True)
         self.grid_action.setChecked(editor.appearance.value.show_grid)

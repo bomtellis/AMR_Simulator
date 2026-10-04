@@ -75,7 +75,7 @@ class CadDrawingInput(QWidget):
         self.coordinate_edit.setAccessibleName('Corridor coordinate entry in metres')
         self.coordinate_edit.setToolTip('Absolute X,Y; relative @dx,dy; polar @length<angle. '
             'Angles: 0° east, 90° north. Enter places a point; blank Enter finishes; Escape cancels the draft. '
-            'Typed points bypass the grid. Object snapping remains active; review the actual endpoint before Enter.')
+            'Typed points bypass the grid. Object snapping follows the Object snap setting; review the actual endpoint before Enter.')
         self.coordinate_edit.setMinimumWidth(240)
         label.setBuddy(self.coordinate_edit)
         self.feedback_label = QLabel(self)

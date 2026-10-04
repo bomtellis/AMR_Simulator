@@ -29,6 +29,24 @@ def split_config(config, cuts):
 
 
 class CorridorEditingTests(unittest.TestCase):
+    def test_independent_object_and_variable_grid_snapping(self):
+        from corridor_editing import drawing_target
+        points = {'A': dict(x=0, y=0, floor=0), 'B': dict(x=10, y=0, floor=0)}
+        edges = [dict(zip(('from', 'to'), ('A', 'B')))]
+        target = drawing_target(points, edges, 0, 3.13, .2, snap=False)
+        self.assertEqual(('edge', 0), (target['kind'], target['y']))
+        target = drawing_target(points, edges, 0, 3.13, .2, snap=False, object_snap=False)
+        self.assertEqual(('new', 3.13, .2), (target['kind'], target['x'], target['y']))
+        target = drawing_target(points, edges, 0, 3.13, .2, grid_spacing=.25, object_snap=False)
+        self.assertEqual(('new', 3.25, .25), (target['kind'], target['x'], target['y']))
+        exact = drawing_target(points, edges, 0, 3.13, .2, exact=True, object_snap=False)
+        self.assertEqual((3.13, .2), (exact['x'], exact['y']))
+        for x, kind in [(0, 'point'), (3, 'edge')]:
+            self.assertEqual(kind, drawing_target(points, edges, 0, x, 0, object_snap=False)['kind'])
+        for spacing in (0, -1, float('nan'), float('inf')):
+            with self.assertRaises(ValueError):
+                drawing_target(points, edges, 0, 3, 2, grid_spacing=spacing)
+
     def direct(self):
         config = reference_config()
         config['corridors']['edges'] = [dict(zip(('from', 'to'), ('A', 'B')), width_m=3, bidirectional=False)]
@@ -247,6 +265,29 @@ class CorridorEditingUiTests(unittest.TestCase):
         self.assertEqual(before, self.editor.store.data)
         self.assertTrue(self.editor.redo_edit())
         self.assertEqual(after, self.editor.store.data)
+
+    def test_variable_grid_and_object_snap_preview_match_undoable_placement(self):
+        editor = self.editor
+        editor.grid_spacing_spin.setValue(.25)
+        self.assertEqual((20.25, -20.25), editor.snap(20.13, -20.13))
+        editor._set_edit_mode('corridor_draw')
+        editor.object_snap_check.setChecked(False)
+        editor.ensure_cad_drawing_input()
+        before = deepcopy(editor.store.data)
+        editor.cad_drawing_input.coordinate_edit.setText('0.2,0.2')
+        point, target = editor._typed_corridor_target('0.2,0.2')
+        self.assertEqual('new', target['kind'])
+        editor.draw_next_corridor(*point, exact=True)
+        placed = editor.store.all_points()[editor.corridor_draw_start]
+        self.assertEqual((.2, .2), (placed['x'], placed['y']))
+        editor.undo_edit()
+        self.assertEqual(before, editor.store.data)
+        editor.redo_edit()
+        self.assertTrue(any(p['x'] == .2 and p['y'] == .2 for p in editor.store.data['corridors']['nodes']))
+        editor.finish_corridor_drawing()
+        editor.cad_drawing_input.coordinate_edit.setText('0.2,0.2')
+        editor.object_snap_check.setChecked(True)
+        self.assertEqual('point', editor.corridor_draw_preview['kind'])
 
     def test_cancel_and_invalid_edit_do_not_add_history(self):
         self.editor.selected_edge_keys = {('A', 'Door')}

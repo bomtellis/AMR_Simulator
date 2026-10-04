@@ -839,6 +839,12 @@ The full application guide is
 also unfinished.
 Continue with:
 
+CAD snapping checkpoint, 4 October 2026: separate grid/object toggles and an
+adjustable metre spacing now govern corridor, node and door placement. Typed
+preview and commit share settings; exact overlaps preserve topology. Ninety
+focused CAD tests pass. See `CAD_WORKSPACE_REVIEW.md` for scope and remaining
+snap types, constraints and crossing-junction work.
+
 Investigation UI checkpoint, 4 October 2026: timeline tables render 500 events per
 page with previous/next and direct navigation, retaining every contributing record
 for review/export. Filtering and load failures clear stale event details. The 62

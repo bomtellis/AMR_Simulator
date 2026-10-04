@@ -62,6 +62,27 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Snapping checkpoint, 4 October 2026
+
+The drawing toolbar now separates **Grid snap** from **Object snap**. Under
+**More tools → Edit → Drawing behaviour**, grid spacing is adjustable from
+0.001 to 1000 metres (default 1 metre). These are session editing controls, not
+simulation inputs. Grid display remains adaptive to zoom and independent of the
+placement grid. Corridor, standalone node and door placement share the same
+target resolution. Typed coordinates bypass grid rounding while respecting the
+object-snap choice; changing that choice refreshes the typed preview. Turning
+object snap off disables nearby attraction, but an exact overlap still reuses a
+point or splits a corridor to avoid duplicate topology. Defaults retain previous
+snapping behaviour. Placement remains undoable and split attributes/references
+use the existing atomic subdivision implementation.
+
+Ninety focused CAD tests passed, including independent grid arithmetic, exact
+input, invalid spacing, object attraction, undo/redo and existing drawing, door,
+workspace and deletion workflows. The full verification pack and human visual
+acceptance have not been rerun for this checkpoint. Separate endpoint/midpoint
+snap choices, orthogonal/polar constraints and automatic crossing junctions remain
+open; this checkpoint does not claim those capabilities.
+
 This is working interaction infrastructure, not the final A2 appearance. The map
 still uses its existing dark palette and legend; dense LTN labels need better
 display controls. Selectable snap types, orthogonal/polar constraints, full
