@@ -37,6 +37,16 @@ window; persistence across restarts is outside this checkpoint.
 
 ## Evidence
 
+Catalog reconciliation on 4 October 2026: `features.json` now describes current
+corridor/junction editing, CAD input and view controls, simulation editing locks,
+and investigation paging/limits. The five affected entries remain **partial** with
+explicit limitations. All **449 tests** linked by those entries passed in fresh
+module processes; every pattern resolved and source hashes remained unchanged.
+Evidence is `verification/latest/cad-inventory-audit/evidence.json` with retained
+per-module logs. Nine additional inventory-integrity tests passed. This is a
+scoped feature-evidence audit, not a new full-suite or release-completion claim;
+configuration-field semantic review and human acceptance remain open.
+
 Full isolated checkpoint on 4 October 2026, after the rectangle and object-snap
 increments: **1,927/1,927 tests passed** across 167 modules, zero broken evidence
 links, and source unchanged throughout execution (380.095 seconds). The pack is

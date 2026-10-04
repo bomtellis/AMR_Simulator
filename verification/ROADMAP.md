@@ -839,6 +839,15 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Feature-inventory reconciliation, 4 October 2026: the project, investigation and
+editing entries now match implemented controls and link their current acceptance
+modules; dedicated CAD input/view entries expose their remaining limitations.
+All five affected entries remain partial. The scoped isolated audit passes
+449/449 tests with all references resolved and unchanged source, retained under
+`verification/latest/cad-inventory-audit/`. Nine inventory-integrity tests also
+pass. This corrects stale feature descriptions; it does not close the separate
+267-option semantic backlog or full release/human acceptance.
+
 Automatic crossing checkpoint, 4 October 2026: the default-off Connect crossings
 while drawing corridors option previews junction positions and creates them along
 the new segment in one atomic undo step. Existing door identities, directed
