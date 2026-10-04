@@ -7,6 +7,16 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Transform snapping update (4 October 2026): the toolbar object-snap mode now also
+applies when picking references for Move, Copy and Rotate. Midpoints, perpendicular
+feet and intersections are available alongside nearest/endpoint snaps. Perpendicular
+uses the picked base point or rotation centre. Intersections are reference coordinates
+only: no node is inserted and no connection changes. Hidden edges do not attract
+picks; a visible edge remains usable when its endpoint markers are hidden. Snap and
+preview work is coalesced during movement, and the final click always resolves its
+own coordinate. Seventy-three related tests pass. Polar direction constraints for
+transforms remain open.
+
 Canvas Move/Copy (4 October 2026): open **Move selected by…** or **Copy selected
 by…**, choose **Pick destination**, then click a base point and the destination.
 The pointer previews the resulting geometry without changing the project; the

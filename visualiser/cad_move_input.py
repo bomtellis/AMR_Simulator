@@ -13,6 +13,7 @@ class CadMoveInput(QWidget):
         self.preview_store = None
         self.mouse_stage = None
         self.mouse_target = None
+        self.pending_pointer = None
         self.mouse_timer = QTimer(self)
         self.mouse_timer.setSingleShot(True)
         self.mouse_timer.setInterval(33)
@@ -28,7 +29,7 @@ class CadMoveInput(QWidget):
         self.apply_button = QPushButton('Apply move', self)
         cancel = QPushButton('Cancel', self)
         self.pick_button = QPushButton('Pick destination', self)
-        self.pick_button.setToolTip('Click a base point, then a destination. Grid and visible graph-point snaps apply. Escape or right-click cancels.')
+        self.pick_button.setToolTip('Click a base point, then a destination. Uses the selected grid/object snap mode; perpendicular uses the base point. Reference picks never split corridors. Escape or right-click cancels.')
         label = QLabel('Move by (m)', self)
         label.setBuddy(self.offset)
         layout.addWidget(label, 0, 0)
@@ -92,6 +93,7 @@ class CadMoveInput(QWidget):
             self.preview.setText(str(exc))
 
     def _clear_mouse(self):
+        self.pending_pointer = None
         self.mouse_stage = None
         self.mouse_timer.stop()
         self.preview_store = None
@@ -121,6 +123,7 @@ class CadMoveInput(QWidget):
             return
         self.mouse_timer.stop()
         self.offset.clear()
+        self.pending_pointer = None
         self.preview_store = None
         self.mouse_stage = 'base'
         self.offset.setEnabled(False)
@@ -130,20 +133,47 @@ class CadMoveInput(QWidget):
 
     def pointer_moved(self, sx, sy):
         if self.mouse_stage == 'target' and not self.editor.project_editing_locked():
-            from visualiser.cad_transform_pick import pick_point
-            self.mouse_target = pick_point(self.editor,sx,sy)
+            self.pending_pointer = (sx,sy)
             if not self.mouse_timer.isActive():
                 self.mouse_timer.start()
 
     def _update_mouse_preview(self):
+        if self.mouse_stage != 'target':
+            return
+        if self.pending_pointer is not None:
+            from visualiser.cad_transform_pick import pick_point
+            sx,sy = self.pending_pointer
+            self.pending_pointer = None
+            try:
+                self.mouse_target = pick_point(self.editor,sx,sy,anchor=self.mouse_base)
+            except ValueError as error:
+                self.mouse_timer.stop()
+                self.mouse_target = None
+                self.preview_store = None
+                self.apply_button.setEnabled(False)
+                self.preview.setText(str(error))
+                self.editor.canvas.viewport().update()
+                return
         if self.mouse_stage == 'target' and self.mouse_target is not None:
             dx = self.mouse_target[0]-self.mouse_base[0]
             dy = self.mouse_target[1]-self.mouse_base[1]
-            self.offset.setText(f'{dx:.12g},{dy:.12g}')
+            text = f'{dx:.12g},{dy:.12g}'
+            if self.offset.text() == text and self.preview_store is None:
+                self.refresh_preview()
+            else:
+                self.offset.setText(text)
 
     def mouse_click(self, sx, sy):
+        self.mouse_timer.stop()
+        self.pending_pointer = None
         from visualiser.cad_transform_pick import pick_point
-        point = pick_point(self.editor,sx,sy)
+        try:
+            point = pick_point(self.editor,sx,sy,anchor=self.mouse_base if self.mouse_stage == 'target' else None)
+        except ValueError as error:
+            self.preview_store = None
+            self.apply_button.setEnabled(False)
+            self.preview.setText(str(error))
+            return
         if self.mouse_stage == 'base':
             self.mouse_base = point
             self.mouse_stage = 'target'

@@ -1,5 +1,18 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 shared transform snaps: Move, Copy and Rotate now use the selected
+nearest, endpoint, midpoint, perpendicular or intersection snap mode. Perpendicular
+uses the picked base point/rotation centre; before that anchor exists, the first
+pick uses the grid/free coordinate. Visible corridor lines remain reference targets
+even when endpoint markers are hidden. Hidden lines and other floors do not attract
+picks. Intersection picking is read-only and never subdivides/connects graph edges.
+Both snap resolution and geometry previews are coalesced; final clicks discard any
+pending cursor position and resolve their own coordinates. All 73 related tests
+pass, including independent coordinates, unchanged topology, hidden layers,
+perpendicular movement and a 50-pointer-event/one-resolution check. Polar direction
+constraints and clipboard operations remain open; this does not close the wider
+CAD or release gates.
+
 4 October 2026 canvas move/copy: both numerical transform bars now offer Pick
 destination. Pick a base point and destination with grid/visible-point snapping;
 coalesced previews show the result before the second click commits one undoable

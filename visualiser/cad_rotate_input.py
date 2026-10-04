@@ -14,6 +14,7 @@ class CadRotateInput(QWidget):
         self.preview_store = None
         self.mouse_stage = None
         self.mouse_target = None
+        self.pending_pointer = None
         self.mouse_timer = QTimer(self)
         self.mouse_timer.setSingleShot(True)
         self.mouse_timer.setInterval(33)
@@ -32,7 +33,7 @@ class CadRotateInput(QWidget):
         self.apply_button = QPushButton('Apply rotation', self)
         cancel = QPushButton('Cancel', self)
         self.pick_button = QPushButton('Pick rotation', self)
-        self.pick_button.setToolTip('Click centre, reference direction, then target direction to apply. Grid and graph-point snapping apply. Escape cancels.')
+        self.pick_button.setToolTip('Click centre, reference direction, then target direction to apply. Uses the selected grid/object snap mode; perpendicular uses the centre. Reference picks never split corridors. Escape cancels.')
         self.preview = QLabel(self)
         self.preview.setWordWrap(True)
         centre_label, angle_label = QLabel('Centre (m)', self), QLabel('Angle (°)', self)
@@ -82,6 +83,7 @@ class CadRotateInput(QWidget):
         self.editor.canvas.viewport().update()
 
     def _clear_mouse(self):
+        self.pending_pointer = None
         self.preview_store = None
         self.mouse_stage = None
         self.mouse_timer.stop()
@@ -130,6 +132,7 @@ class CadRotateInput(QWidget):
             return
         self.mouse_timer.stop()
         self.mouse_stage = 'centre'
+        self.pending_pointer = None
         self.mouse_target = None
         self.preview_store = None
         self.angle.clear()
@@ -141,15 +144,30 @@ class CadRotateInput(QWidget):
 
     def _mouse_point(self, sx, sy):
         from visualiser.cad_transform_pick import pick_point
-        return pick_point(self.editor,sx,sy)
+        return pick_point(self.editor,sx,sy,anchor=self.mouse_centre if self.mouse_stage != 'centre' else None)
 
     def pointer_moved(self, sx, sy):
         if self.mouse_stage == 'target' and not self.editor.project_editing_locked():
-            self.mouse_target = self._mouse_point(sx,sy)
+            self.pending_pointer = (sx,sy)
             if not self.mouse_timer.isActive():
                 self.mouse_timer.start()
 
     def _update_mouse_preview(self):
+        if self.mouse_stage != 'target':
+            return
+        if self.pending_pointer is not None:
+            sx,sy = self.pending_pointer
+            self.pending_pointer = None
+            try:
+                self.mouse_target = self._mouse_point(sx,sy)
+            except ValueError as error:
+                self.mouse_timer.stop()
+                self.mouse_target = None
+                self.preview_store = None
+                self.apply_button.setEnabled(False)
+                self.preview.setText(str(error))
+                self.editor.canvas.viewport().update()
+                return
         if self.mouse_stage != 'target' or self.mouse_target is None:
             return
         cx, cy = self.mouse_centre
@@ -160,10 +178,22 @@ class CadRotateInput(QWidget):
         rx, ry = self.mouse_reference
         degrees = math.degrees(math.atan2(y-cy,x-cx)-math.atan2(ry-cy,rx-cx))
         degrees = (degrees+180) % 360-180
-        self.angle.setText(f'{degrees:.12g}')
+        text = f'{degrees:.12g}'
+        if self.angle.text() == text and self.preview_store is None:
+            self.refresh_preview()
+        else:
+            self.angle.setText(text)
 
     def mouse_click(self, sx, sy):
-        point = self._mouse_point(sx,sy)
+        self.mouse_timer.stop()
+        self.pending_pointer = None
+        try:
+            point = self._mouse_point(sx,sy)
+        except ValueError as error:
+            self.preview_store = None
+            self.apply_button.setEnabled(False)
+            self.preview.setText(str(error))
+            return
         if self.mouse_stage == 'centre':
             self.mouse_centre = point
             self.centre.setText(f'{point[0]:.12g},{point[1]:.12g}')
