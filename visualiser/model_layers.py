@@ -1,7 +1,23 @@
 """Project-owned presentation layers and editing locks; never route permissions."""
 from copy import deepcopy
+import math
+import re
 
 DEFAULT = 'Default'
+PATTERNS = ('Solid', 'Dashed', 'Dotted', 'Dash dot', 'Dash dot dot')
+
+
+def validate_style(style):
+    if not isinstance(style, dict) or set(style) != {'colour', 'pattern', 'width_px'}:
+        raise ValueError('Layer style requires colour, pattern and width_px.')
+    if style['colour'] is not None and (not isinstance(style['colour'], str) or
+            not re.fullmatch(r'#[0-9a-fA-F]{6}', style['colour'])):
+        raise ValueError('Use a #RRGGBB colour, or leave it blank to follow the theme.')
+    if style['pattern'] not in PATTERNS:
+        raise ValueError('Choose a supported line pattern.')
+    width = style['width_px']
+    if type(width) not in (int, float) or not math.isfinite(width) or not .5 <= width <= 6:
+        raise ValueError('Line width must be between 0.5 and 6 screen pixels.')
 
 
 class LayerLockedError(ValueError):
@@ -19,9 +35,12 @@ def definitions(config):
     for name, options in raw['layers'].items():
         if not isinstance(name,str) or not name.strip() or name != name.strip():
             raise ValueError('Layer names must be nonblank without surrounding whitespace.')
-        if (not isinstance(options,dict) or set(options) != {'visible','locked'}
+        if (not isinstance(options,dict) or not {'visible','locked'} <= set(options)
+                or set(options) - {'visible','locked','style'}
                 or any(type(options[key]) is not bool for key in ('visible','locked'))):
             raise ValueError(f'Layer {name} requires boolean visible and locked settings.')
+        if 'style' in options:
+            validate_style(options['style'])
         result[name] = dict(options)
     return result
 
@@ -105,10 +124,12 @@ def assert_unlocked_changes(before, after):
             raise LayerLockedError(f'Corridor {edge["from"]} → {edge["to"]} is on locked layer {layer_name(edge)}. Unlock it before editing.')
 
 
-def set_layer(config, name, *, visible=True, locked=False):
+def set_layer(config, name, *, visible=True, locked=False, style=None):
     result = deepcopy(config)
     layers = definitions(config)
-    layers[name] = dict(visible=visible,locked=locked)
+    layers[name] = dict(layers.get(name, {}),visible=visible,locked=locked)
+    if style is not None:
+        layers[name]['style'] = deepcopy(style)
     result['editor_layers'] = dict(config.get('editor_layers') or {},version=1,layers=layers)
     validate(result)
     return result
@@ -188,3 +209,18 @@ def drawing_attributes(config):
     if options['locked'] or not options['visible']:
         raise LayerLockedError(f'Drawing layer {name} is hidden or locked. Choose a visible, unlocked drawing layer.')
     return {'editor_layer': name} if name != DEFAULT else {}
+
+
+def set_style(config, name, style):
+    layers = definitions(config)
+    if name not in layers:
+        raise ValueError('Select an existing model layer.')
+    if style is not None:
+        validate_style(style)
+    result = deepcopy(config)
+    if style is None:
+        layers[name].pop('style', None)
+    else:
+        layers[name]['style'] = deepcopy(style)
+    result['editor_layers'] = dict(config.get('editor_layers') or {},version=1,layers=layers)
+    return result

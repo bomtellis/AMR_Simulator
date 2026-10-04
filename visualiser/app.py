@@ -550,6 +550,22 @@ class AMRGraphEditor(QMainWindow):
         self.set_status(f'Current drawing layer: {name}.')
         return True
 
+    @undoable('Style model layer')
+    def style_model_layer(self, name, style):
+        from visualiser.model_layers import set_style
+        if self.drag_mode_active or self.dragging_bounding_box_point_index is not None:
+            self.set_status('Finish the active drag before changing layer styles.')
+            return False
+        try:
+            proposed = set_style(self.store.data, name, style)
+        except ValueError as error:
+            self.set_status(str(error))
+            return False
+        self.store.data = proposed
+        self.refresh_canvas()
+        self.set_status(f'Updated line style for layer {name}.')
+        return True
+
     def _layout_points_editable(self, names):
         from visualiser.model_layers import locked_points
         locked = set(names) & locked_points(self.store.data)
@@ -2522,6 +2538,10 @@ class AMRGraphEditor(QMainWindow):
                    if kind == 'model_default_overlay' else None)
             if row is not None:
                 item.setVisible(layers[layer_name(row)]['visible'])
+                if (kind == 'location_bounding_box' and value not in self.selected_point_names
+                        and value != self.selected_point_name):
+                    from visualiser.model_layer_style import styled_pen
+                    item.setPen(styled_pen(item.pen(), layers[layer_name(row)]))
         if hasattr(self, 'model_layer_panel'):
             self.model_layer_panel.refresh()
         self.file_label.setText(Path(self.current_json_path).name if self.current_json_path else "New project")
@@ -2859,6 +2879,9 @@ class AMRGraphEditor(QMainWindow):
         self.refresh_canvas()
 
     def draw_edges(self, floor):
+        from visualiser.model_layers import definitions, layer_name
+        from visualiser.model_layer_style import styled_pen
+        layers = definitions(self.store.data)
         points = self.store.all_points()
         colour_by_area = {key: QColor(self._map_colours[key]) for key in ('none','staff','public','both')}
         pen_cross_floor = QPen(QColor(self._map_colours['lift']), 0)
@@ -2884,6 +2907,8 @@ class AMRGraphEditor(QMainWindow):
                 colour = QColor(self._map_colours['muted']) if self.route_display_combo.currentData() is not None else colour_by_area.get(area, colour_by_area['none'])
                 pen = QPen(colour, 1.5)
                 pen.setCosmetic(True)
+            if key not in self.selected_edge_keys and self.route_display_combo.currentData() is None:
+                pen = styled_pen(pen, layers[layer_name(edge)])
             item = self.scene.addLine(pa.x(), pa.y(), pb.x(), pb.y(), pen)
             item.setZValue(5 if key in self.selected_edge_keys else 0)
             self._item_lookup[item] = ("edge", edge)

@@ -45,7 +45,8 @@ def main():
                 ('rotation-large-text',1024,768,18,'rotation'),
                 ('copy-large-text',1024,768,18,'copy'),
                 ('dxf-layers',1500,900,10,'layers'),
-                ('model-layers',1500,900,10,'model-layers')):
+                ('model-layers',1500,900,10,'model-layers'),
+                ('layer-styles',1500,900,10,'layer-styles')):
             editor.cancel_cad_command()
             appearance.apply(replace(Appearance(), font_size=font))
             editor.resize(width,height)
@@ -69,6 +70,13 @@ def main():
                 editor.selected_point_names = {'Stores', 'D-01'}
                 editor.show_selection_copy()
                 editor.cad_copy_input.offset.setText('6,-3')
+            elif command == 'layer-styles':
+                editor.selected_point_names = set()
+                editor.selected_point_name = None
+                editor.style_model_layer('Default',dict(colour='#633b99',pattern='Dashed',width_px=2.5))
+                editor.show_model_layers()
+                editor.model_layer_panel.choice.setCurrentText('Default')
+                editor.model_layer_panel.style_toggle.setChecked(True)
             elif command == 'model-layers':
                 editor.dxf_layers.dock.close()
                 editor.update_model_layer('Fixed equipment')

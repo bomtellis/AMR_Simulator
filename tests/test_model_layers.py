@@ -4,12 +4,30 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QGraphicsLineItem
 
 from tests import test_corridor_editing as editing
 from visualiser import model_layers as layers
 
 
 class ModelLayerTests(unittest.TestCase):
+    def test_style_validation_and_preservation_across_layer_changes(self):
+        style = dict(colour='#123456', pattern='Dash dot', width_px=2.5)
+        config = layers.set_layer({}, 'Routes')
+        config = layers.set_style(config, 'Routes', style)
+        config = layers.set_current(config, 'Routes')
+        config = layers.set_layer(config, 'Routes', locked=True)
+        self.assertEqual(style, layers.definitions(config)['Routes']['style'])
+        config = layers.set_layer(config, 'Routes')
+        config = layers.reorganize(config, 'Routes', 'Renamed')
+        self.assertEqual(style, layers.definitions(config)['Renamed']['style'])
+        self.assertNotIn('style', layers.definitions(layers.set_style(config, 'Renamed', None))['Renamed'])
+        for key, bad in [('colour', 'transparent'), ('colour', '#123'), ('pattern', 'Invisible'),
+                         ('width_px', True), ('width_px', float('nan')), ('width_px', 0), ('width_px', 7)]:
+            with self.subTest(key=key, value=bad), self.assertRaises(ValueError):
+                layers.set_style(config, 'Renamed', dict(style, **{key: bad}))
+
     def test_current_layer_applies_to_new_nodes_locations_and_continuous_routes(self):
         config = layers.set_current(layers.set_layer(editing.reference_config(), 'Drawing'), 'Drawing')
         store = editing.JsonStore(config)
@@ -90,6 +108,7 @@ class ModelLayerTests(unittest.TestCase):
         from amr_project import Project
         config = layers.set_layer(editing.reference_config(), 'Equipment', visible=False, locked=True)
         config = layers.assign(config, {'A'}, set(), 'Equipment')
+        config = layers.set_style(config, 'Equipment', dict(colour=None, pattern='Dotted', width_px=3))
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             path = root / 'layers.amrproj'
@@ -148,6 +167,59 @@ class ModelLayerUiTests(unittest.TestCase):
     setUpClass = classmethod(editing.CorridorEditingUiTests.setUpClass.__func__)
     setUp = editing.CorridorEditingUiTests.setUp
     tearDown = editing.CorridorEditingUiTests.tearDown
+
+    def edge_item(self):
+        return next(item for item, (kind, row) in self.editor._item_lookup.items()
+                    if kind == 'edge' and row['from'] == 'A' and isinstance(item, QGraphicsLineItem))
+
+    def test_line_style_ui_undo_and_selection_precedence(self):
+        e = self.editor
+        e.show_model_layers()
+        panel = e.model_layer_panel
+        before = deepcopy(e.store.data)
+        panel.colour.setText('#123456')
+        panel.pattern.setCurrentText('Dashed')
+        panel.width.setValue(3)
+        panel.apply_style.click()
+        pen = self.edge_item().pen()
+        self.assertEqual('#123456', pen.color().name())
+        self.assertEqual(Qt.DashLine, pen.style())
+        self.assertEqual(3, pen.widthF())
+        self.assertTrue(pen.isCosmetic())
+        e.selected_edge_keys = {('A', 'Door')}
+        e.refresh_canvas()
+        self.assertEqual(Qt.SolidLine, self.edge_item().pen().style())
+        self.assertEqual(e._map_colours['accent'].lower(), self.edge_item().pen().color().name())
+        self.assertTrue(e.undo_edit())
+        self.assertEqual(before, e.store.data)
+        self.assertTrue(e.redo_edit())
+        panel.reset_style.click()
+        self.assertNotIn('style', layers.definitions(e.store.data)['Default'])
+
+    def test_style_does_not_change_route_overlay_or_invalid_input(self):
+        e = self.editor
+        e.style_model_layer('Default', dict(colour='#123456',pattern='Dotted',width_px=6))
+        index = next(i for i in range(e.route_display_combo.count()) if e.route_display_combo.itemData(i) is not None)
+        e.route_display_combo.setCurrentIndex(index)
+        self.assertEqual(Qt.SolidLine, self.edge_item().pen().style())
+        self.assertNotEqual('#123456', self.edge_item().pen().color().name())
+        before = deepcopy(e.store.data)
+        history = deepcopy(e.edit_history.entries)
+        self.assertFalse(e.style_model_layer('Default',dict(colour='red',pattern='Solid',width_px=2)))
+        self.assertEqual(before, e.store.data)
+        self.assertEqual(history, e.edit_history.entries)
+
+    def test_location_outline_uses_style_without_changing_footprint(self):
+        e = self.editor
+        e.store.set_location_bounding_box('A', [dict(dx=-1,dy=-1),dict(dx=1,dy=-1),dict(dx=1,dy=1),dict(dx=-1,dy=1)])
+        before = deepcopy(e.store.data['locations'])
+        e.style_model_layer('Default',dict(colour='#123456',pattern='Dash dot',width_px=2))
+        outline = next(item for item, (kind, name) in e._item_lookup.items()
+                       if kind == 'location_bounding_box' and name == 'A')
+        self.assertEqual(Qt.DashDotLine, outline.pen().style())
+        self.assertEqual('#123456', outline.pen().color().name())
+        self.assertTrue(outline.pen().isCosmetic())
+        self.assertEqual(before, e.store.data['locations'])
 
     def test_current_layer_control_and_undo(self):
         e = self.editor

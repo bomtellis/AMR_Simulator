@@ -1,8 +1,8 @@
 """Optional project-layer panel: definitions, selection assignment and locks."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox, QScrollArea
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox, QScrollArea, QDoubleSpinBox, QFormLayout
 from visualiser.dxf_layers import LayerDock
-from visualiser.model_layers import definitions, members, current_layer, DEFAULT
+from visualiser.model_layers import definitions, members, current_layer, DEFAULT, PATTERNS
 
 
 class ModelLayerPanel:
@@ -30,6 +30,39 @@ class ModelLayerPanel:
         layout.addWidget(self.locked)
         self.assign_button = QPushButton('Assign selected objects',self.body)
         layout.addWidget(self.assign_button)
+        self.style_toggle = QPushButton('Line style…', self.body)
+        self.style_toggle.setCheckable(True)
+        layout.addWidget(self.style_toggle)
+        self.style_body = QWidget(self.body)
+        form = QFormLayout(self.style_body)
+        self.colour = QLineEdit(self.style_body)
+        self.colour.setPlaceholderText('Theme colour, or #RRGGBB')
+        self.colour.setAccessibleName('Layer line colour')
+        self.pattern = QComboBox(self.style_body)
+        self.pattern.addItems(PATTERNS)
+        self.pattern.setAccessibleName('Layer line pattern')
+        self.width = QDoubleSpinBox(self.style_body)
+        self.width.setRange(.5, 6)
+        self.width.setSingleStep(.5)
+        self.width.setSuffix(' px')
+        self.width.setAccessibleName('Layer line width in screen pixels')
+        form.addRow('Colour', self.colour)
+        form.addRow('Pattern', self.pattern)
+        form.addRow('Width', self.width)
+        self.apply_style = QPushButton('Apply line style', self.style_body)
+        self.reset_style = QPushButton('Restore theme style', self.style_body)
+        form.addRow(self.apply_style)
+        form.addRow(self.reset_style)
+        hint = QLabel('Applies to corridors and location outlines. Blank colour follows the theme. '
+                      'Custom colours stay fixed; choose a visible colour and a distinct pattern. '
+                      'Selection and route-profile overlays keep their own styles.', self.style_body)
+        hint.setWordWrap(True)
+        form.addRow(hint)
+        layout.addWidget(self.style_body)
+        self.style_body.hide()
+        self.style_toggle.toggled.connect(self.style_body.setVisible)
+        self.apply_style.clicked.connect(self.save_style)
+        self.reset_style.clicked.connect(lambda: self.editor.style_model_layer(self.choice.currentText(), None))
         row = QHBoxLayout()
         self.name = QLineEdit(self.body)
         self.name.setPlaceholderText('New layer name')
@@ -89,6 +122,10 @@ class ModelLayerPanel:
                 if current in layers:
                     self.choice.setCurrentText(current)
             options = layers[self.choice.currentText()]
+            style = options.get('style', dict(colour=None,pattern='Solid',width_px=1.5))
+            self.colour.setText(style['colour'] or '')
+            self.pattern.setCurrentText(style['pattern'])
+            self.width.setValue(style['width_px'])
             self.current.setText(f'Current drawing layer: {current_layer(self.editor.store.data)}')
             self.use_current.setEnabled(options['visible'] and not options['locked'])
             destinations = [n for n in names if n != self.choice.currentText() and not layers[n]['locked']]
@@ -114,6 +151,9 @@ class ModelLayerPanel:
         if self.loading:
             return
         source, target = self.choice.currentText(), self.destination.currentText()
+        if source == DEFAULT:
+            self.removal_preview.setText('Default is retained and cannot be renamed or removed.')
+            return
         count = len(members(self.editor.store.data,source))
         noun = 'record' if count == 1 else 'records'
         self.removal_preview.setText(f'{count} object {noun} will move from {source} to {target or "an unlocked layer"}. '
@@ -134,6 +174,11 @@ class ModelLayerPanel:
         if not self.loading:
             self.editor.update_model_layer(self.choice.currentText(),visible=self.visible.isChecked(),locked=self.locked.isChecked())
             self.refresh()
+
+    def save_style(self):
+        self.editor.style_model_layer(self.choice.currentText(), dict(
+            colour=self.colour.text().strip() or None,
+            pattern=self.pattern.currentText(),width_px=self.width.value()))
 
     def assign(self):
         self.editor.assign_model_layer(self.choice.currentText())

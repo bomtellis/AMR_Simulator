@@ -1,5 +1,17 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 layer-line styling: the optional line-style section offers theme
+colour or explicit #RRGGBB, five line patterns and cosmetic widths from 0.5–6 px.
+Styles affect explicit corridor lines and location outlines, preserving semantic
+point symbols, selection highlights and route-profile overlays. Style changes
+are undoable, persist in project metadata, survive layer rename/current-layer
+changes and can reset to the theme. Custom colours remain fixed across themes;
+users must choose suitable contrast. The normal-size actual UI capture is
+`latest/cad-control-preview/layer-styles.png`. Node-symbol styling, per-object
+overrides, plot/export style propagation and combined layer management remain open.
+Focused verification passed 92 layer, route-display, selection, map-style,
+transaction and evidence tests; the full baseline below predates this increment.
+
 4 October 2026 corrected model-layer verification baseline: **2,015/2,015 tests**
 passed across **180 isolated modules** in 422.865603 seconds at `f0e33cc`, with
 zero broken evidence links and unchanged tested source. MODEL-LAYERS-01 links all
@@ -49,7 +61,7 @@ explanation; it does not silently fall back to Default. Copies retain source
 layers and split nodes inherit an unambiguous parent layer. Four additional
 acceptance tests cover authoring, blocked creation, persistence and UI undo.
 
-Remaining layer work: styles and a combined drawing/model layer manager.
+Remaining layer work: broader styling and a combined drawing/model layer manager.
 Legacy projects draw on Default. Hidden topology still participates
 in model-aware drawing snaps. Locks protect editor transactions, not external
 file edits. Broader release gates and human UI acceptance remain open.
