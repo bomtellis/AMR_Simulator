@@ -133,10 +133,12 @@ def project_fraction(a, b, x, y):
 
 
 def create_crossing_junction(config, points, keys):
-    """Explicitly join two same-floor corridor interiors; never auto-join drawings."""
+    """Explicitly join two crossing corridors, reusing a unique existing point."""
     keys = sorted(set(tuple(sorted(key)) for key in keys))
     if len(keys) != 2 or any(len(key) != 2 for key in keys):
         raise ValueError('Select exactly two crossing corridors.')
+    if any(not any({e['from'], e['to']} == set(key) for e in config['corridors']['edges']) for key in keys):
+        raise ValueError('A selected corridor no longer exists.')
     try:
         a, b, c, d = [points[name] for key in keys for name in key]
     except KeyError:
@@ -154,19 +156,29 @@ def create_crossing_junction(config, points, keys):
         raise ValueError('Parallel or overlapping corridors have no unique crossing junction.')
     t = ((cx-ax)*sy - (cy-ay)*sx) / cross
     u = ((cx-ax)*ry - (cy-ay)*rx) / cross
-    if not (0 < t < 1 and 0 < u < 1):
-        raise ValueError('Choose corridors that cross strictly inside both links.')
+    if not (0 <= t <= 1 and 0 <= u <= 1):
+        raise ValueError('Choose corridors that intersect within their finite lengths.')
     x, y, floor = ax+t*rx, ay+t*ry, int(a['floor'])
-    if any(int(p['floor']) == floor and math.hypot(float(p['x'])-x, float(p['y'])-y) < 1e-6
-           for p in points.values()):
-        raise ValueError('A point already occupies this crossing; connect to that point instead.')
-    result, chains = subdivide(config, points, {keys[0]: [t], keys[1]: [u]}, _join_cuts=True)
+    nearby = [dict(p, name=name) for name, p in points.items()
+              if int(p['floor']) == floor and math.hypot(float(p['x'])-x, float(p['y'])-y) < 1e-6]
+    if len(nearby) > 1:
+        raise ValueError('Multiple points occupy this crossing; resolve their identities before joining.')
+    existing = nearby[0] if nearby else None
+    if existing and (existing.get('kind') == 'department'
+                     or math.hypot(float(existing['x'])-x, float(existing['y'])-y) >= 1e-8):
+        raise ValueError('The crossing requires an exact graph point, not a nearby point or department marker.')
+    cuts = {key: [fraction] for key, fraction in zip(keys, (t, u)) if 0 < fraction < 1}
+    if not cuts:
+        raise ValueError('These corridors already meet at an endpoint; no new junction is needed.')
+    result, chains = subdivide(config, points, cuts, _join_cuts=True, _existing_cut_node=existing)
     if len({chain[1] for chain in chains.values()}) != 1:
         raise ValueError('The crossing cannot be resolved to one point at the supported coordinate precision.')
+    for key in keys:
+        chains.setdefault(key, list(key))
     return result, chains
 
 
-def subdivide(config, points, cuts, *, _join_cuts=False):
+def subdivide(config, points, cuts, *, _join_cuts=False, _existing_cut_node=None):
     """Return a replacement configuration and new node chains, without mutation.
 
     cuts maps canonical (sorted endpoint) pairs to fractions along that pair.
@@ -178,7 +190,7 @@ def subdivide(config, points, cuts, *, _join_cuts=False):
     edges = result['corridors']['edges']
     used = set(points)
     chains, proportions = {}, {}
-    inserted = []
+    inserted = [_existing_cut_node] if _existing_cut_node is not None else []
     for key, values in sorted(cuts.items()):
         if len(key) != 2 or tuple(sorted(key)) != key or key[0] == key[1]:
             raise ValueError('Corridor endpoints must be a distinct, sorted pair.')

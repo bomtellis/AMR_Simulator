@@ -839,6 +839,12 @@ The full application guide is
 also unfinished.
 Continue with:
 
+CAD existing-junction checkpoint, 4 October 2026: the crossing command now reuses
+a unique existing point and supports T-junctions, preserving door restrictions
+and the untouched branch. Ambiguous identities, department markers and near misses
+are rejected without mutation. Eighty-eight focused tests pass, including actual
+door routing and undo/redo. Automatic crossing insertion remains open.
+
 CAD crossing checkpoint, 4 October 2026: an explicit two-corridor junction command
 now joins same-floor interior crossings in one undoable operation. Split directions,
 widths, distance overrides and route/resource references are retained. Eighty-four

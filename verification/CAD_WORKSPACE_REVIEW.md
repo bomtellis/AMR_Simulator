@@ -62,6 +62,21 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Existing-point and T-junction checkpoint, 4 October 2026
+
+**Create junction at crossing** now reuses a unique graph point exactly at the
+intersection, including an existing door, location or lift stop. Its name,
+attributes and existing references remain intact. T-junctions reuse the branch
+endpoint and split only the through corridor. Already connected endpoints produce
+no edit. Multiple coincident identities, department markers and merely nearby
+points are rejected explicitly rather than merged or moved. Two selected links
+on the active floor remain required; automatic crossing insertion is unchanged.
+
+Eighty-eight focused tests passed. New references verify reuse of a 0.7 m door
+(0.8 m passage rejected, 0.6 m allowed), untouched branch metadata in a T-junction,
+retained one-way restrictions, ambiguous-point rejection, reused selection identity
+and atomic undo/redo. Full-suite evidence remains the earlier baseline.
+
 ### Explicit crossing junction checkpoint, 4 October 2026
 
 Select two crossing corridors, then use **Create junction at crossing** in the
@@ -72,9 +87,9 @@ distance overrides, and profile/resource references use the existing subdivision
 rules. Creating the junction connects the graph; profile restrictions still apply
 to each branch. The entire operation is one undoable edit.
 
-Only two interior crossings on the active floor are supported. Parallel/overlapping
-links, endpoint contacts, missing links, nonfinite geometry and an already occupied
-crossing are rejected atomically. Drawings remain underlays, and line crossings
+The original checkpoint supported two interior crossings; the extension above
+also handles existing points and T-junctions. Parallel/overlapping links, missing
+links and nonfinite geometry remain rejected atomically. Drawings remain underlays, and line crossings
 are not automatically connected. Traffic reservation and congestion timing can
 change when a physical link gains sections, as with ordinary subdivision.
 
@@ -83,7 +98,7 @@ References verify the independent crossing at (4, 0), preserved 8+12 m and 9+21 
 distance overrides, one-way routing, separate reverse-edge attributes, clean-profile
 exclusion of the dirty branch, rejection and undo/redo. The prior full pack remains
 the baseline; it was not rerun for this checkpoint. Automatic multi-crossing
-insertion and joining an existing point at a crossing remain open.
+insertion remains open; existing-point joining is covered by the extension above.
 
 ### Numerical movement checkpoint, 4 October 2026
 
