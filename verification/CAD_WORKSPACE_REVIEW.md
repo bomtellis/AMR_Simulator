@@ -7,6 +7,14 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Full regression baseline after the boundary controls (4 October 2026):
+`latest/boundary-ui-verified/index.html` records 1,967 passing tests across 175
+isolated modules, no broken evidence links, and unchanged tested source. Tested
+HEAD is `53591f4`, including preserved local simulator/LTN changes captured in
+the pack's source archive. This supersedes earlier scoped-only regression
+qualifications for the accumulated implementation, but does not establish human
+workflow acceptance, complete accessibility or representative LTN performance.
+
 Exact polygon entry checkpoint (4 October 2026): drawing a location boundary now
 opens a compact inline bar. Enter `X,Y`, `@dx,dy` or `@length<angle` in metres and
 degrees counterclockwise from east; relative input starts at the last added

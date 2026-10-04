@@ -19,6 +19,17 @@ See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md)
 
 ## Assessment and evidence rules
 
+4 October 2026 accumulated-UI regression baseline: the full isolated suite at
+`53591f46410c6c4b9c20667b69d26d769d854d11` passed 1,967/1,967 tests across 175 modules
+in 401.285 seconds, with zero broken evidence links and unchanged source during
+testing. Evidence: `latest/boundary-ui-verified/index.html`, `evidence.json`,
+JUnit results, individual module logs and `source-snapshot.zip`. This includes
+the preserved local `simulator.py`, `ltn.json` and LTN handoff regression changes;
+it is evidence for that captured working tree, not a clean checkout. The installed
+environment also passed `python -m pip check`; this is not a clean-install test.
+The inventory still has 267 options requiring semantic review. Full operating
+workload benchmarking, human UI acceptance and remaining feature gates stay open.
+
 4 October 2026 exact polygon-entry checkpoint: location boundary drafts now offer
 inline absolute/relative/polar coordinates, last-point removal and explicit
 Finish/Cancel controls. Mouse and keyboard input share a draft and final history
