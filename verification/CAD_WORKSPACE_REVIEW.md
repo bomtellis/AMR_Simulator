@@ -7,6 +7,16 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Boundary draft lifecycle checkpoint (4 October 2026): polygon corner dragging
+changes only the draft until Finish. Escape during a drag restores that corner;
+Escape after release cancels the whole draft. Changing floor, tool or workspace
+also discards the draft. Invalid or incomplete inputs retain the draft with a
+status explanation, and a location changed since drawing began cannot be
+overwritten. A finished boundary remains one undo/redo operation. The seven new
+boundary cases and related outline, rectangle, selection, deletion/history,
+simulation editing-lock and workspace modules pass: 88 tests. This is scoped
+regression evidence; full-suite and human UI acceptance remain outstanding.
+
 1. Open a reference project or LTN in the normal editor. The compact toolbar and
    project tree leave most of the window for the graph. Properties and the full
    tool tabs start collapsed. **More tools** restores the existing advanced tools.

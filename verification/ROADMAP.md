@@ -19,6 +19,13 @@ See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md)
 
 ## Assessment and evidence rules
 
+4 October 2026 boundary-editing checkpoint: polygon drafts now support Escape
+cancellation, reversible corner drags, cancellation on floor/tool/workspace
+changes and rejection of stale location edits. Invalid inputs remain editable
+without changing the saved boundary. Seven new acceptance cases and related UI
+regressions pass (88 tests); full roadmap acceptance is still open. See
+`tests/test_location_boundary_draft.py` and `CAD_WORKSPACE_REVIEW.md`.
+
 The project has a working integrated application and substantial engineering
 verification infrastructure. The remaining work combines correctness gaps,
 completion of existing workflows, verified physical geometry and release material.

@@ -1181,6 +1181,7 @@ class AMRGraphEditor(QMainWindow):
             self.mode_combo.setCurrentIndex(index)
 
     def _clear_corridor_drawing(self):
+        self._clear_location_boundary_draft()
         self._rectangle_draft = None
         if hasattr(self, 'rectangle_input'):
             self.rectangle_input.hide()
@@ -1230,6 +1231,16 @@ class AMRGraphEditor(QMainWindow):
         return self.cad_drawing_input
 
     def cancel_cad_command(self, *_):
+        if getattr(self, '_boundary_drag_original', None) is not None:
+            self.bounding_box_points = self._boundary_drag_original
+            self._boundary_drag_original = None
+            self.dragging_bounding_box_point_index = None
+            self.refresh_canvas()
+            self.set_status('Boundary corner drag cancelled; the draft is unchanged.')
+            return True
+        if self.bounding_box_location_name:
+            self.cancel_location_bounding_box_draw()
+            return True
         if getattr(self, '_rectangle_draft', None):
             self._rectangle_draft = None
             self.rectangle_input.hide()
@@ -2542,18 +2553,24 @@ class AMRGraphEditor(QMainWindow):
             self._item_lookup[handle] = ("location_bounding_box_point", idx)
 
     def start_location_bounding_box_draw(self, location_name, keep_existing=False):
+        if not self._project_editing_allowed() or not self._finish_property_draft():
+            return False
         location = self.store.get_location(location_name)
-        if location is None:
-            return
-        self.bounding_box_location_name = location_name
+        if location is None or int(location.get('floor', -1)) != self.floor_spin.value():
+            self.set_status('Select a location on the current floor before drawing its boundary.')
+            return False
         existing = self.store.get_location_bounding_box_points(location_name)
-        self.bounding_box_points = [dict(p) for p in existing] if keep_existing else []
         self._set_edit_mode("location_bbox")
+        self.bounding_box_location_name = location_name
+        self._boundary_original = deepcopy(self.store.get_location(location_name))
+        self._boundary_drag_original = None
+        self.bounding_box_points = [dict(p) for p in existing] if keep_existing else []
         self.show_location_bounds_check.setChecked(True)
         self.set_status(
             f"Drawing bounding box for {location_name}. Left-click points, right-click empty space to finish."
         )
         self.refresh_canvas()
+        return True
 
     def start_location_rectangle(self, name):
         location = self.store.get_location(name)
@@ -2635,25 +2652,37 @@ class AMRGraphEditor(QMainWindow):
     def finish_location_bounding_box_draw(self):
         name = self.bounding_box_location_name
         if not name:
-            return
+            return False
+        location = self.store.get_location(name)
+        if (not location or location != getattr(self, '_boundary_original', None)
+                or int(location.get('floor', -1)) != self.floor_spin.value()
+                or self.workspace.stage != 'layout'):
+            self.set_status('Location changed while drawing; cancel and select it again before applying a boundary.')
+            return False
         if len(self.bounding_box_points) < 3:
-            QMessageBox.critical(
-                self,
-                "Bounding box",
-                "Add at least three points for a room bounding box.",
-            )
-            return
-        self.store.set_location_bounding_box(name, self.bounding_box_points)
-        self.bounding_box_location_name = None
-        self.bounding_box_points = []
+            self.set_status('Add at least three points for a location boundary; the original boundary is unchanged.')
+            return False
+        try:
+            self.store.set_location_bounding_box(name, self.bounding_box_points)
+        except (ValueError, TypeError, KeyError) as exc:
+            self.set_status(f'Boundary was not applied: {exc}')
+            return False
+        self._clear_location_boundary_draft()
         self._set_edit_mode("select_move")
         self.set_status(f"Saved bounding box for {name}")
         self.refresh_canvas()
+        return True
+
+    def _clear_location_boundary_draft(self):
+        self.bounding_box_location_name = None
+        self.bounding_box_points = []
+        self.dragging_bounding_box_point_index = None
+        self._boundary_drag_original = None
+        self._boundary_original = None
 
     def cancel_location_bounding_box_draw(self):
         name = self.bounding_box_location_name
-        self.bounding_box_location_name = None
-        self.bounding_box_points = []
+        self._clear_location_boundary_draft()
         self.set_status(
             f"Cancelled bounding box drawing for {name}"
             if name
@@ -3306,6 +3335,7 @@ class AMRGraphEditor(QMainWindow):
 
             hit_index = self.find_nearest_bounding_box_point_index(x, y)
             if hit_index is not None:
+                self._boundary_drag_original = deepcopy(self.bounding_box_points)
                 self.dragging_bounding_box_point_index = hit_index
                 self.set_status(
                     f"Dragging bounding box point {hit_index + 1} for {self.bounding_box_location_name}"
@@ -3460,6 +3490,7 @@ class AMRGraphEditor(QMainWindow):
             self._cad_selection_signals_connected = True
 
     def _cancel_cad_transients(self, *_):
+        self._clear_location_boundary_draft()
         self.cancel_cad_drag()
         self.cancel_cad_selection()
         self._cad_drag_offset = None
@@ -3604,6 +3635,7 @@ class AMRGraphEditor(QMainWindow):
             return
 
         was_dragging = bool(self.dragging_point_name or self.dragging_bounding_box_point_index is not None)
+        self._boundary_drag_original = None
         self._drag_refresh_timer.stop()
         self._cad_drag_origins = None
         self.dragging_point_name = None
