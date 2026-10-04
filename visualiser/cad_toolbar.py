@@ -19,7 +19,7 @@ class CadToolBar(QToolBar):
         self.mode_group = QActionGroup(self)
         self.mode_group.setExclusive(True)
         for title, mode, explanation in (
-                ('Select', 'select_move', 'Select or move graph objects. Selection highlights; use Properties to edit.'),
+                ('Select', 'select_move', 'Select graph objects; Shift changes selection. Drag a selected point or corridor to move the group. Escape cancels. Use Properties to edit.'),
                 ('Corridor', 'corridor_draw', 'Draw connected corridor segments. Snap to existing points and edges.'),
                 ('Node', 'corridor_node', 'Place a corridor node or insert a node into an existing corridor.'),
                 ('Location', 'location', 'Place a named simulation location.'),

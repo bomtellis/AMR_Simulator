@@ -62,6 +62,25 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Group movement checkpoint, 4 October 2026
+
+Use Select and Shift/window selection to choose objects, then drag a selected
+point or corridor line to translate the group. Selected corridor endpoints move
+with selected points, once each; unselected connecting corridors stretch between
+their retained endpoint identities. Only the active floor moves. Grid snapping
+applies to the grab anchor, preserving relative offsets and existing coordinate
+precision across the group. Location outlines remain relative to their location.
+The selection survives the drag, and release records one undoable edit. Escape,
+mode changes and floor changes cancel an in-progress move and restore the original
+coordinates without creating a history entry. Movement reuses the existing
+coalesced graph refresh, retaining drawing underlays.
+
+Seventy focused selection/drawing/history/workflow tests passed, including new
+references for line dragging, mixed point/corridor selection, floor isolation,
+room shape and fractional offsets, cancellation, undo and redo. Rotation, scaling,
+copying and typed bulk displacement remain separate open transform requirements.
+No full-suite or human visual acceptance is claimed for this checkpoint.
+
 ### Direction constraints checkpoint, 4 October 2026
 
 The corridor coordinate bar now offers **Free direction**, **Orthogonal (90°)**,

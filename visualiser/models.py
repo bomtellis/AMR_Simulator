@@ -1322,10 +1322,10 @@ class JsonStore:
             if not (e["from"] == from_name and e["to"] == to_name)
         ]
 
-    def set_point_position(self, name: str, x: float, y: float) -> None:
+    def set_point_position(self, name: str, x: float, y: float, *, exact=False) -> None:
         original_x, original_y = x, y
-        x = round(x, 3)
-        y = round(y, 3)
+        x = x if exact else round(x, 3)
+        y = y if exact else round(y, 3)
         for item in self.data.get("locations", []):
             if item["name"] == name:
                 item["x"] = x

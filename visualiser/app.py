@@ -1154,6 +1154,8 @@ class AMRGraphEditor(QMainWindow):
         return self.cad_drawing_input
 
     def cancel_cad_command(self, *_):
+        if self.cancel_cad_drag():
+            return True
         cancel_selection = getattr(self, 'cancel_cad_selection', None)
         if cancel_selection is not None and cancel_selection():
             return True
@@ -2891,7 +2893,7 @@ class AMRGraphEditor(QMainWindow):
             if picked is None and picked_edge is None:
                 self._begin_cad_selection(event, viewport_point)
             if picked:
-                if not additive:
+                if not additive and picked not in self.selected_point_names:
                     self.selected_point_names.clear()
                     self.selected_edge_keys.clear()
                 if additive and picked in self.selected_point_names:
@@ -2901,16 +2903,13 @@ class AMRGraphEditor(QMainWindow):
                     self.selected_point_names.add(picked)
                     self.selected_point_name = picked
                     if not additive:
-                        self.dragging_point_name = picked
-                        self.drag_mode_active = True
-                        point = self.store.all_points()[picked]
-                        self._cad_drag_offset = (raw_x-float(point['x']), raw_y-float(point['y']))
+                        self._begin_point_drag(picked, raw_x, raw_y)
                 self.set_status(
                     f"Selected {len(self.selected_point_names)} node(s) and "
                     f"{len(self.selected_edge_keys)} corridor(s)"
                 )
             elif picked_edge is not None:
-                if not additive:
+                if not additive and picked_edge not in self.selected_edge_keys:
                     self.selected_point_names.clear()
                     self.selected_edge_keys.clear()
                     self.selected_point_name = None
@@ -2918,6 +2917,8 @@ class AMRGraphEditor(QMainWindow):
                     self.selected_edge_keys.remove(picked_edge)
                 else:
                     self.selected_edge_keys.add(picked_edge)
+                    if not additive:
+                        self._begin_point_drag(picked_edge[0], raw_x, raw_y)
                 self.set_status(
                     f"Selected {len(self.selected_point_names)} node(s) and "
                     f"{len(self.selected_edge_keys)} corridor(s)"
@@ -3173,10 +3174,40 @@ class AMRGraphEditor(QMainWindow):
             self._cad_selection_signals_connected = True
 
     def _cancel_cad_transients(self, *_):
+        self.cancel_cad_drag()
         self.cancel_cad_selection()
         self._cad_drag_offset = None
         self.dragging_point_name = None
         self.drag_mode_active = False
+
+    def _begin_point_drag(self, anchor, raw_x, raw_y):
+        points = self.store.all_points()
+        names = set(self.selected_point_names)
+        for edge in self.selected_edge_keys:
+            names.update(edge)
+        names.add(anchor)
+        floor = self.floor_spin.value()
+        self._cad_drag_origins = {name: (points[name]['x'], points[name]['y'])
+                                  for name in names if name in points and int(points[name]['floor']) == floor}
+        self.dragging_point_name = anchor
+        self.drag_mode_active = True
+        point = points[anchor]
+        self._cad_drag_offset = (raw_x - float(point['x']), raw_y - float(point['y']))
+
+    def cancel_cad_drag(self):
+        origins = getattr(self, '_cad_drag_origins', None)
+        if not origins:
+            return False
+        for name, (x, y) in origins.items():
+            self.store.set_point_position(name, x, y, exact=True)
+        self._cad_drag_origins = None
+        self._cad_drag_offset = None
+        self.dragging_point_name = None
+        self.drag_mode_active = False
+        self._drag_refresh_timer.stop()
+        self.refresh_canvas()
+        self.set_status('Move cancelled; selected objects restored.')
+        return True
 
     def cancel_cad_selection(self, *_):
         gesture = getattr(self, '_cad_selection_gesture', None)
@@ -3251,6 +3282,7 @@ class AMRGraphEditor(QMainWindow):
 
         was_dragging = bool(self.dragging_point_name or self.dragging_bounding_box_point_index is not None)
         self._drag_refresh_timer.stop()
+        self._cad_drag_origins = None
         self.dragging_point_name = None
         self.drag_mode_active = False
         self._cad_drag_offset = None
@@ -3593,7 +3625,14 @@ class AMRGraphEditor(QMainWindow):
             if offset is not None:
                 x, y = x-offset[0], y-offset[1]
             x, y = self.snap(x, y)
-            self.store.set_point_position(self.dragging_point_name, x, y)
+            origins = getattr(self, '_cad_drag_origins', None)
+            if origins and self.dragging_point_name in origins:
+                ox, oy = origins[self.dragging_point_name]
+                dx, dy = x - ox, y - oy
+                for name, (px, py) in origins.items():
+                    self.store.set_point_position(name, px + dx, py + dy, exact=True)
+            else:
+                self.store.set_point_position(self.dragging_point_name, x, y)
             self._schedule_drag_refresh()
 
     def _schedule_drag_refresh(self):

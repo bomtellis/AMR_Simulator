@@ -171,6 +171,74 @@ class CadSelectionCanvasTests(unittest.TestCase):
         self.assertTrue(self.editor.undo_edit())
         self.assertEqual((5, 3), (self.editor.store.all_points()['N']['x'], self.editor.store.all_points()['N']['y']))
 
+    def test_selected_nodes_and_corridor_move_together_as_one_undo(self):
+        editor = self.editor
+        editor.selected_point_names = {'N', 'OtherFloor'}
+        editor.selected_edge_keys = {('A', 'B')}
+        before = copy.deepcopy(editor.store.data)
+        self.drag(self.pixel(5, 3), self.pixel(7, 4))
+        points = editor.store.all_points()
+        self.assertAlmostEqual(7, points['N']['x'], places=1)
+        dx, dy = points['N']['x'] - 5, points['N']['y'] - 3
+        self.assertAlmostEqual(dx, points['A']['x'])
+        self.assertAlmostEqual(dy, points['A']['y'])
+        self.assertAlmostEqual(10 + dx, points['B']['x'])
+        self.assertEqual((5, 3), (points['OtherFloor']['x'], points['OtherFloor']['y']))
+        self.assertEqual(before['corridors']['edges'], editor.store.data['corridors']['edges'])
+        self.assertEqual({'N', 'OtherFloor'}, editor.selected_point_names)
+        self.assertEqual({('A', 'B')}, editor.selected_edge_keys)
+        self.assertEqual(2, len(editor.edit_history.entries))
+        after = copy.deepcopy(editor.store.data)
+        self.assertTrue(editor.undo_edit())
+        self.assertEqual(before, editor.store.data)
+        self.assertTrue(editor.redo_edit())
+        self.assertEqual(after, editor.store.data)
+
+    def test_corridor_can_be_dragged_from_its_line(self):
+        before = copy.deepcopy(self.editor.store.data)
+        self.drag(self.pixel(5, 0), self.pixel(6, 2))
+        points = self.editor.store.all_points()
+        self.assertAlmostEqual(1, points['A']['x'], places=1)
+        self.assertAlmostEqual(2, points['A']['y'], places=1)
+        self.assertAlmostEqual(10, points['B']['x'] - points['A']['x'])
+        self.assertEqual((5, 3), (points['N']['x'], points['N']['y']))
+        self.assertTrue(self.editor.undo_edit())
+        self.assertEqual(before, self.editor.store.data)
+
+    def test_group_drag_escape_and_floor_change_restore_without_history(self):
+        editor = self.editor
+        viewport = editor.canvas.viewport()
+        before = copy.deepcopy(editor.store.data)
+        for cancel in (lambda: QTest.keyClick(viewport, Qt.Key_Escape),
+                       lambda: editor.floor_spin.setValue(1)):
+            editor.floor_spin.setValue(0)
+            editor.selected_point_names = {'A', 'N'}
+            QTest.mousePress(viewport, Qt.LeftButton, Qt.NoModifier, self.pixel(5, 3))
+            self.move(self.pixel(7, 4))
+            self.assertNotEqual(before, editor.store.data)
+            cancel()
+            QTest.mouseRelease(viewport, Qt.LeftButton, Qt.NoModifier, self.pixel(7, 4))
+            self.assertEqual(before, editor.store.data)
+            self.assertEqual(1, len(editor.edit_history.entries))
+            self.assertFalse(editor.drag_mode_active)
+
+    def test_group_grid_uses_anchor_offset_and_preserves_room_shape_and_precision(self):
+        editor = self.editor
+        editor.store.data['locations'].append({'name':'Room', 'floor':0, 'x':2.123456, 'y':8.654321,
+            'bounding_box':[{'dx':-1,'dy':-1}, {'dx':1,'dy':-1}, {'dx':1,'dy':1}]})
+        editor._reset_edit_history()
+        editor.refresh_canvas()
+        editor.selected_point_names = {'N', 'Room'}
+        editor.snap_check.setChecked(True)
+        editor.grid_spacing_spin.setValue(.5)
+        shape = copy.deepcopy(editor.store.get_location('Room')['bounding_box'])
+        self.drag(self.pixel(5, 3), self.pixel(6.6, 3.6))
+        room = editor.store.get_location('Room')
+        self.assertAlmostEqual(3.623456, room['x'])
+        self.assertAlmostEqual(9.154321, room['y'])
+        self.assertEqual(shape, room['bounding_box'])
+        self.assertEqual(2, len(editor.edit_history.entries))
+
     def test_point_click_tolerance_is_constant_screen_distance_at_two_zooms(self):
         viewport = self.editor.canvas.viewport()
         for zoom in (10, 50):

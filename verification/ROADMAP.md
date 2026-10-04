@@ -839,6 +839,12 @@ The full application guide is
 also unfinished.
 Continue with:
 
+CAD group-move checkpoint, 4 October 2026: selected points and corridor endpoints
+now translate together on the active floor, retaining identities, shape offsets
+and selection. Each drag is one undoable edit; Escape/mode/floor changes restore
+the original state. Seventy focused tests pass. Rotation, copying, scaling and
+typed displacement remain open; see `CAD_WORKSPACE_REVIEW.md`.
+
 CAD direction checkpoint, 4 October 2026: the corridor input bar now supports
 orthogonal and 15/30/45-degree mouse constraints. Typed coordinates explicitly
 override them; snapping cannot deflect the selected direction. Ninety-three
