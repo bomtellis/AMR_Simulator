@@ -839,6 +839,16 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Full regression checkpoint, 4 October 2026: the isolated pack at
+`verification/latest/cad-snaps-verified/index.html` passes 1,927/1,927 tests across
+167 modules, with zero broken evidence links and unchanged tested source
+(380.095 seconds). Snapshot HEAD is `aa0a82a`, including preserved local
+simulator/LTN changes and local LTN regression tests. The inventory still records
+267 options awaiting semantic review. This does not close release acceptance or
+the representative operating-workload benchmark. Next implement the agreed
+simulation-time project editing lock; current code blocks document switching but
+does not consistently block layout/configuration mutation during a running job.
+
 Intersection-snap checkpoint, 4 October 2026: explicit intersection snapping now
 creates one shared junction across intersecting corridors, including multi-way
 and T-junctions, with existing identity reuse and atomic undo. Default crossing

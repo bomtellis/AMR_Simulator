@@ -37,6 +37,22 @@ window; persistence across restarts is outside this checkpoint.
 
 ## Evidence
 
+Full isolated checkpoint on 4 October 2026, after the rectangle and object-snap
+increments: **1,927/1,927 tests passed** across 167 modules, zero broken evidence
+links, and source unchanged throughout execution (380.095 seconds). The pack is
+`verification/latest/cad-snaps-verified/index.html`, with machine-readable evidence
+and the tested source archive beside it. Tested HEAD was `aa0a82a`; the snapshot
+also includes the preserved local simulator/LTN changes and local LTN regression
+tests, so this is not a clean-checkout claim. The inventory still identifies 267
+options needing semantic review. Full-suite success does not close that audit,
+human acceptance, the operating-workload benchmark or remaining roadmap features.
+
+The next confirmed workflow gap is simulation-time editing: `ProjectRunsPanel`
+blocks starting a second run and document switching, but layout/configuration
+mutators do not yet share a running-project lock. The agreed requirement is to
+lock project editing while simulation runs, while retaining investigation and
+view navigation. This remains open after this regression checkpoint.
+
 Verification on 3 October 2026: **1,805/1,805 tests passed**, including 38 new
 CAD/workflow cases; zero broken evidence links. The pack confirmed its source
 remained unchanged during execution (167.25 seconds including pack generation).
