@@ -159,6 +159,9 @@ class CadWorkbench(QObject):
         self.copy_action = self.action('Copy selected by…', editor.show_selection_copy, 'select',
             'Copy locations and corridor nodes with new names, internal connections and matching route-profile membership.')
         self.edit_menu.addAction(self.copy_action)
+        self.endpoint_action = self.action('Trim / extend corridor…', editor.show_corridor_endpoint, 'select',
+            'Move a free corridor endpoint to a boundary corridor, previewing the joined graph before applying.')
+        self.edit_menu.addAction(self.endpoint_action)
         self.edit_menu.addAction(editor.cad_toolbar.properties_action)
         self.edit_menu.addAction(self.action('Clear selection', editor.clear_topology_selection, 'select',
                                             'Clear graph selections without editing objects.'))

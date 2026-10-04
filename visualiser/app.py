@@ -1280,6 +1280,9 @@ class AMRGraphEditor(QMainWindow):
         self.cad_rotate_input = CadRotateInput(self)
         self.canvas.pointerMoved.connect(self.cad_rotate_input.pointer_moved)
         layout.addWidget(self.cad_rotate_input)
+        from visualiser.cad_endpoint_input import CadEndpointInput
+        self.cad_endpoint_input = CadEndpointInput(self)
+        layout.addWidget(self.cad_endpoint_input)
         from visualiser.rectangle_input import RectangleInput
         self.rectangle_input = RectangleInput(self)
         layout.addWidget(self.rectangle_input)
@@ -1315,6 +1318,8 @@ class AMRGraphEditor(QMainWindow):
             self.mode_combo.setCurrentIndex(index)
 
     def _clear_corridor_drawing(self):
+        if hasattr(self, 'cad_endpoint_input'):
+            self.cad_endpoint_input.hide()
         if hasattr(self, 'cad_copy_input'):
             self.cad_copy_input.hide()
         if hasattr(self, 'cad_rotate_input'):
@@ -1369,6 +1374,9 @@ class AMRGraphEditor(QMainWindow):
         return self.cad_drawing_input
 
     def cancel_cad_command(self, *_):
+        if hasattr(self, 'cad_endpoint_input') and not self.cad_endpoint_input.isHidden():
+            self.cad_endpoint_input.hide()
+            return True
         if hasattr(self, 'cad_copy_input') and not self.cad_copy_input.isHidden():
             self.cad_copy_input.hide()
             return True
@@ -3037,6 +3045,8 @@ class AMRGraphEditor(QMainWindow):
                 self._point_name_labels[name] = text
 
     def draw_overlay_panels(self, painter, viewport_rect):
+        if hasattr(self, 'cad_endpoint_input'):
+            self.cad_endpoint_input.paint_preview(painter)
         if hasattr(self, 'cad_move_input'):
             self.cad_move_input.paint_preview(painter)
         if hasattr(self, 'cad_copy_input'):
@@ -3732,13 +3742,14 @@ class AMRGraphEditor(QMainWindow):
         return {name: points[name] for name in names if name in points and int(points[name]['floor']) == floor}
 
     def _active_canvas_transform(self):
-        for name in ('cad_move_input','cad_copy_input','cad_rotate_input'):
+        for name in ('cad_move_input','cad_copy_input','cad_rotate_input','cad_endpoint_input'):
             bar = getattr(self,name,None)
             if bar is not None and not bar.isHidden() and bar.mouse_stage:
                 return bar
         return None
 
     def show_selection_move(self):
+        self.cad_endpoint_input.hide()
         if self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move' or self.drag_mode_active:
             return
         self.cad_copy_input.hide()
@@ -3750,6 +3761,7 @@ class AMRGraphEditor(QMainWindow):
         self.set_status('Enter a displacement or Pick destination. Preview first; Apply commits, Escape cancels.')
 
     def show_selection_rotation(self):
+        self.cad_endpoint_input.hide()
         if (not self._project_editing_allowed() or self.workspace.stage != 'layout'
                 or self._current_edit_mode() != 'select_move' or self.drag_mode_active
                 or self.route_profile_selection_active or self.department_location_placement_active):
@@ -3785,6 +3797,7 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def show_selection_copy(self):
+        self.cad_endpoint_input.hide()
         if (not self._project_editing_allowed() or self.workspace.stage != 'layout'
                 or self._current_edit_mode() != 'select_move' or self.drag_mode_active
                 or self.route_profile_selection_active or self.department_location_placement_active):
@@ -3797,6 +3810,35 @@ class AMRGraphEditor(QMainWindow):
         self.cad_copy_input.show()
         self.cad_copy_input.offset.setFocus()
         self.set_status('Enter a displacement to preview copies. Create copy commits; Escape cancels.')
+
+    def show_corridor_endpoint(self):
+        if (not self._project_editing_allowed() or self.workspace.stage != 'layout'
+                or self._current_edit_mode() != 'select_move' or self.drag_mode_active):
+            return
+        if len(self.selected_edge_keys) != 1:
+            self.set_status('Select one corridor to trim or extend.')
+            return
+        self._clear_corridor_drawing()
+        self.cad_move_input.hide()
+        self.cad_endpoint_input.start(next(iter(self.selected_edge_keys)))
+        self.set_status('Choose a free endpoint and a boundary corridor; review the preview before Apply.')
+
+    @undoable('Trim or extend corridor endpoint')
+    def trim_extend_selected_corridor(self, source, endpoint, boundary):
+        if (self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move'
+                or self.drag_mode_active or not self._finish_property_draft()):
+            return False
+        from visualiser.corridor_endpoint import trim_extend
+        try:
+            staged,result = trim_extend(self.store,source,endpoint,boundary)
+        except ValueError as error:
+            self.set_status(str(error))
+            return False
+        self.store.data = staged.data
+        self.cad_endpoint_input.hide()
+        self.refresh_canvas()
+        self.set_status(f'{result["operation"]} completed; boundary joined at {endpoint}. Run Project checks.')
+        return True
 
     @undoable('Copy selected layout objects')
     def copy_selected_by(self, dx, dy, *, occupied=False):
@@ -4004,6 +4046,7 @@ class AMRGraphEditor(QMainWindow):
                     junction.setEnabled(len(self.selected_edge_keys) == 2)
                     menu.addAction("Split selected corridors at midpoint", lambda: self.subdivide_selected_corridors(2))
                     menu.addAction("Subdivide selected corridors…", self.subdivide_selected_corridors)
+                    menu.addAction(self.workbench.endpoint_action)
                     menu.addSeparator()
                 menu.addAction(
                     "Edit selected corridor widths / doors",

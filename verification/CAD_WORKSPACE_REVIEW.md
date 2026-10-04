@@ -7,6 +7,16 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Corridor trim/extend (4 October 2026): select one corridor and use **Edit → Trim /
+extend corridor…** or its context menu. Choose the free endpoint, then choose a
+boundary from the list or use **Pick boundary** on the graph. Review the ghost
+geometry and length change before **Apply**. The boundary is split and connected
+using the moved endpoint's identity; no duplicate junction is created. Source
+distance overrides scale with length; directions, widths and doors remain. Undo
+restores the whole edit. Junctions, locations, lift stops, automatic corridors and
+existing boundary endpoints require their existing explicit editing workflows.
+Only the chosen boundary is joined. Check the resulting routes and clearances.
+
 Transform snapping update (4 October 2026): the toolbar object-snap mode now also
 applies when picking references for Move, Copy and Rotate. Midpoints, perpendicular
 feet and intersections are available alongside nearest/endpoint snaps. Perpendicular

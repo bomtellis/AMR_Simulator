@@ -1,5 +1,19 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 corridor endpoint trim/extend: select one corridor and use Edit or
+its context menu → Trim / extend corridor. Choose a free corridor-node endpoint
+and select/pick a boundary; a ghost preview shows the proposed connected graph.
+Apply moves the existing node and subdivides the boundary around that identity.
+Source distance overrides scale proportionally; boundary distances and supported
+route/resource references use the established subdivision rules. One-way records,
+widths and door properties are retained, with one undo step. Automatic corridors,
+junction/location/lift relocation, endpoint merging and occupied intersections are
+rejected. Other crossings remain unchanged and physical clearance still requires
+checks. All 98 related tests pass, including an independent simulator 16 m / 8 s
+connection with retained one-way and door restrictions. Actual normal/large-text
+captures are in `latest/cad-control-preview/corridor-endpoint*.png`. This is a
+bounded graph-editing feature; general trimming and the wider roadmap remain open.
+
 4 October 2026 shared transform snaps: Move, Copy and Rotate now use the selected
 nearest, endpoint, midpoint, perpendicular or intersection snap mode. Perpendicular
 uses the picked base point/rotation centre; before that anchor exists, the first

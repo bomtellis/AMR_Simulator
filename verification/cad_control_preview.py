@@ -48,12 +48,26 @@ def main():
                 ('copy-large-text',1024,768,18,'copy'),
                 ('dxf-layers',1500,900,10,'layers'),
                 ('model-layers',1500,900,10,'model-layers'),
-                ('layer-styles',1500,900,10,'layer-styles')):
+                ('layer-styles',1500,900,10,'layer-styles'),
+                ('corridor-endpoint',1500,900,10,'endpoint'),
+                ('corridor-endpoint-large-text',1024,768,18,'endpoint')):
             editor.cancel_cad_command()
             appearance.apply(replace(Appearance(), font_size=font))
             editor.resize(width,height)
             editor.show()
-            if command == 'rectangle':
+            if command == 'endpoint':
+                from tests.test_corridor_endpoint import scenario
+                editor.model_layer_panel.dock.close()
+                editor._drawings_enabled = False
+                editor.store = JsonStore(scenario())
+                editor._set_edit_mode('select_move')
+                editor.selected_point_names = set()
+                editor.selected_point_name = None
+                editor.selected_edge_keys = {('A','Tip')}
+                editor.refresh_canvas()
+                editor.show_corridor_endpoint()
+                editor.cad_endpoint_input.boundary.setCurrentIndex(1)
+            elif command == 'rectangle':
                 editor.start_location_rectangle('Stores')
                 editor.rectangle_input.dimensions.setText('8,4,30')
             elif command == 'boundary':
