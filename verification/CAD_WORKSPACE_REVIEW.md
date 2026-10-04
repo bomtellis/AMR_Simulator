@@ -7,6 +7,16 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Canvas rotation (4 October 2026): select objects, open **Edit → Rotate selected…**
+and choose **Pick rotation**. Click the centre, a point along the starting direction,
+then a point along the target direction to apply. The last stage shows ghost
+geometry and guide rays; moving the pointer does not change the project. Grid and
+visible graph-point snapping apply; the object-snap midpoint/intersection modes do
+not yet apply to this gesture. Escape or right-click cancels. Zero-length directions
+are rejected and Apply creates one undo step. Numerical centre/angle entry remains
+available. The compact bar retains two rows at large text sizes; 79 related tests
+pass. Normal and large-text captures are in `latest/cad-control-preview`.
+
 Failed-edit safety checkpoint (4 October 2026): an uncaught error in an undoable
 command or its history commit now restores the previous configuration, selected
 objects and undo/redo branch. Users no longer need to undo partial failed edits.

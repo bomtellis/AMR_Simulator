@@ -154,7 +154,7 @@ class CadWorkbench(QObject):
         editor.canvas.addAction(self.move_action)
         self.edit_menu.addAction(self.move_action)
         self.rotate_action = self.action('Rotate selected…', editor.show_selection_rotation, 'select',
-            'Rotate active-floor points, attached boundaries and bays about an explicit centre. Counterclockwise degrees.')
+            'Rotate active-floor points, boundaries and bays. Enter centre/angle, or Pick rotation: centre, reference direction, target direction.')
         self.edit_menu.addAction(self.rotate_action)
         self.copy_action = self.action('Copy selected by…', editor.show_selection_copy, 'select',
             'Copy locations and corridor nodes with new names, internal connections and matching route-profile membership.')

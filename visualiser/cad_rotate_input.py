@@ -1,4 +1,7 @@
 """Inline rotation parameters and affected-selection preview."""
+import math
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QPen, QColor
 from PySide6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton
 from visualiser.cad_drawing_input import CoordinateEdit, parse_coordinate
 from visualiser.selection_rotation import finite, rotate_selection
@@ -9,6 +12,12 @@ class CadRotateInput(QWidget):
         super().__init__(editor)
         self.editor = editor
         self.preview_store = None
+        self.mouse_stage = None
+        self.mouse_target = None
+        self.mouse_timer = QTimer(self)
+        self.mouse_timer.setSingleShot(True)
+        self.mouse_timer.setInterval(33)
+        self.mouse_timer.timeout.connect(self._update_mouse_preview)
         layout = QGridLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
         self.centre = CoordinateEdit(self)
@@ -22,6 +31,8 @@ class CadRotateInput(QWidget):
         self.angle.setToolTip('Counterclockwise degrees; negative values rotate clockwise. Typed values bypass snapping.')
         self.apply_button = QPushButton('Apply rotation', self)
         cancel = QPushButton('Cancel', self)
+        self.pick_button = QPushButton('Pick rotation', self)
+        self.pick_button.setToolTip('Click centre, reference direction, then target direction to apply. Grid and graph-point snapping apply. Escape cancels.')
         self.preview = QLabel(self)
         self.preview.setWordWrap(True)
         centre_label, angle_label = QLabel('Centre (m)', self), QLabel('Angle (°)', self)
@@ -30,7 +41,8 @@ class CadRotateInput(QWidget):
         for column, widget in enumerate((centre_label, self.centre, angle_label,
                                          self.angle, self.apply_button, cancel)):
             layout.addWidget(widget, 0, column)
-        layout.addWidget(self.preview, 1, 0, 1, 6)
+        layout.addWidget(self.preview, 1, 0, 1, 5)
+        layout.addWidget(self.pick_button, 1, 5)
         layout.setColumnStretch(1, 1)
         for entry in (self.centre, self.angle):
             entry.textChanged.connect(self.refresh_preview)
@@ -38,6 +50,7 @@ class CadRotateInput(QWidget):
             entry.escapePressed.connect(self.hide)
         cancel.clicked.connect(self.hide)
         self.apply_button.clicked.connect(self.apply)
+        self.pick_button.clicked.connect(self.begin_mouse)
         self.hide()
 
     def parameters(self):
@@ -68,12 +81,32 @@ class CadRotateInput(QWidget):
             self.preview.setText(str(exc))
         self.editor.canvas.viewport().update()
 
-    def hideEvent(self, event):
-        super().hideEvent(event)
+    def _clear_mouse(self):
         self.preview_store = None
+        self.mouse_stage = None
+        self.mouse_timer.stop()
+        self.centre.setEnabled(True)
+        self.angle.setEnabled(True)
         self.editor.canvas.viewport().update()
 
+    def hide(self):
+        self._clear_mouse()
+        super().hide()
+
+    def hideEvent(self, event):
+        self._clear_mouse()
+        super().hideEvent(event)
+
     def paint_preview(self, painter):
+        if not self.isHidden() and self.mouse_stage == 'target' and self.mouse_target is not None:
+            centre = self.editor.canvas.mapFromScene(self.editor.world_to_scene(*self.mouse_centre))
+            reference = self.editor.canvas.mapFromScene(self.editor.world_to_scene(*self.mouse_reference))
+            target = self.editor.canvas.mapFromScene(self.editor.world_to_scene(*self.mouse_target))
+            painter.save()
+            painter.setPen(QPen(QColor(self.editor._map_colours['accent']), 1, Qt.DashLine))
+            painter.drawLine(centre, reference)
+            painter.drawLine(centre, target)
+            painter.restore()
         if self.isHidden() or self.preview_store is None:
             return
         from visualiser.selection_preview import paint_selection_preview
@@ -87,3 +120,69 @@ class CadRotateInput(QWidget):
                 self.hide()
         except ValueError as exc:
             self.preview.setText(str(exc))
+
+    def begin_mouse(self):
+        if not self.editor.selection_move_points() or self.editor.project_editing_locked():
+            self.preview.setText('Select points or corridors before picking a rotation.')
+            return
+        if not self.editor._layout_points_editable(self.editor.selection_move_points()):
+            self.preview.setText('Unlock the selected objects and attached corridors before rotating.')
+            return
+        self.mouse_timer.stop()
+        self.mouse_stage = 'centre'
+        self.mouse_target = None
+        self.preview_store = None
+        self.angle.clear()
+        self.centre.setEnabled(False)
+        self.angle.setEnabled(False)
+        self.preview.setText('Click the rotation centre. Escape or right-click cancels.')
+        self.editor.canvas.setFocus()
+
+    def _mouse_point(self, sx, sy):
+        x, y = self.editor.scene_to_world(sx, sy)
+        if self.editor.object_snap_check.isChecked():
+            name = self.editor.find_nearest_point_name(x,y,self.editor.floor_spin.value(),radius_world=.45)
+            if name:
+                point = self.editor.store.all_points()[name]
+                return float(point['x']),float(point['y'])
+        return self.editor.snap(x,y)
+
+    def pointer_moved(self, sx, sy):
+        if self.mouse_stage == 'target' and not self.editor.project_editing_locked():
+            self.mouse_target = self._mouse_point(sx,sy)
+            if not self.mouse_timer.isActive():
+                self.mouse_timer.start()
+
+    def _update_mouse_preview(self):
+        if self.mouse_stage != 'target' or self.mouse_target is None:
+            return
+        cx, cy = self.mouse_centre
+        x, y = self.mouse_target
+        if math.hypot(x-cx,y-cy) < 1e-9:
+            self.angle.clear()
+            return
+        rx, ry = self.mouse_reference
+        degrees = math.degrees(math.atan2(y-cy,x-cx)-math.atan2(ry-cy,rx-cx))
+        degrees = (degrees+180) % 360-180
+        self.angle.setText(f'{degrees:.12g}')
+
+    def mouse_click(self, sx, sy):
+        point = self._mouse_point(sx,sy)
+        if self.mouse_stage == 'centre':
+            self.mouse_centre = point
+            self.centre.setText(f'{point[0]:.12g},{point[1]:.12g}')
+            self.mouse_stage = 'reference'
+            self.preview.setText('Click a point along the reference direction from the centre.')
+        elif self.mouse_stage == 'reference':
+            if math.dist(point,self.mouse_centre) < 1e-9:
+                self.preview.setText('Choose a reference point away from the centre.')
+                return
+            self.mouse_reference = point
+            self.mouse_stage = 'target'
+            self.preview.setText('Move to preview; click the target direction to apply. Escape cancels.')
+        elif self.mouse_stage == 'target':
+            self.mouse_timer.stop()
+            self.mouse_target = point
+            self._update_mouse_preview()
+            if self.apply_button.isEnabled():
+                self.apply()

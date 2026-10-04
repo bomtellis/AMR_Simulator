@@ -43,6 +43,7 @@ def main():
                 ('corridor-large-text',1024,768,18,'corridor'),
                 ('boundary-large-text',1024,768,18,'boundary'),
                 ('rotation-large-text',1024,768,18,'rotation'),
+                ('rotation-mouse',1500,900,10,'rotation-mouse'),
                 ('copy-large-text',1024,768,18,'copy'),
                 ('dxf-layers',1500,900,10,'layers'),
                 ('model-layers',1500,900,10,'model-layers'),
@@ -60,6 +61,19 @@ def main():
                     editor.boundary_input.coordinate.setText(text)
                     editor.boundary_input.submit()
                 editor.boundary_input.coordinate.setText('@-4,0')
+            elif command == 'rotation-mouse':
+                editor._set_edit_mode('select_move')
+                editor.selected_point_names = {'Stores', 'West'}
+                editor.show_selection_rotation()
+                bar = editor.cad_rotate_input
+                bar.begin_mouse()
+                for x,y in ((0,0),(5,0)):
+                    pos = editor.world_to_scene(x,y)
+                    bar.mouse_click(pos.x(),pos.y())
+                pos = editor.world_to_scene(4,4)
+                bar.pointer_moved(pos.x(),pos.y())
+                bar.mouse_timer.stop()
+                bar._update_mouse_preview()
             elif command == 'rotation':
                 editor._set_edit_mode('select_move')
                 editor.selected_point_names = {'Stores', 'West'}

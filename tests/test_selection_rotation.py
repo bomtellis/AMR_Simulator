@@ -93,6 +93,86 @@ class RotationUiTests(unittest.TestCase):
     setUp = editing.CorridorEditingUiTests.setUp
     tearDown = editing.CorridorEditingUiTests.tearDown
 
+    def click_world(self, x, y):
+        point = self.editor.world_to_scene(x,y)
+        self.editor.on_left_click(self.event,point.x(),point.y())
+        self.editor.on_left_release(self.event)
+
+    def test_three_click_rotation_preserves_selection_and_commits_one_undo(self):
+        e = self.editor
+        e.selected_point_names = {'B'}
+        e.show_selection_rotation()
+        bar = e.cad_rotate_input
+        before = deepcopy(e.store.data)
+        bar.pick_button.click()
+        self.click_world(0,0)
+        self.click_world(10,0)
+        self.assertEqual({'B'},e.selected_point_names)
+        self.assertEqual(before,e.store.data)
+        self.click_world(0,10)
+        self.assertEqual((-8,6),(e.store.all_points()['B']['x'],e.store.all_points()['B']['y']))
+        self.assertTrue(bar.isHidden())
+        self.assertIsNone(bar.mouse_stage)
+        self.assertEqual(2,len(e.edit_history.entries))
+        self.assertTrue(e.undo_edit())
+        self.assertEqual(before,e.store.data)
+
+    def test_mouse_preview_is_coalesced_and_cancel_is_nonmutating(self):
+        e = self.editor
+        e.selected_point_names = {'B'}
+        e.show_selection_rotation()
+        bar = e.cad_rotate_input
+        before = deepcopy(e.store.data)
+        bar.begin_mouse()
+        self.click_world(0,0)
+        self.click_world(10,0)
+        for y in range(1,10):
+            pos = e.world_to_scene(0,y)
+            bar.pointer_moved(pos.x(),pos.y())
+        self.assertTrue(bar.mouse_timer.isActive())
+        self.assertIsNone(bar.preview_store)
+        bar.mouse_timer.stop()
+        bar._update_mouse_preview()
+        self.assertEqual('90',bar.angle.text())
+        self.assertIsNotNone(bar.preview_store)
+        self.assertEqual(before,e.store.data)
+        e.on_right_click(self.event,0,0)
+        self.assertIsNone(bar.mouse_stage)
+        self.assertFalse(bar.mouse_timer.isActive())
+        self.assertEqual(before,e.store.data)
+        self.assertEqual(1,len(e.edit_history.entries))
+
+    def test_mouse_rotation_rejects_zero_reference_and_zero_target(self):
+        e = self.editor
+        e.selected_point_names = {'B'}
+        e.show_selection_rotation()
+        bar = e.cad_rotate_input
+        before = deepcopy(e.store.data)
+        bar.begin_mouse()
+        self.click_world(0,0)
+        self.click_world(0,0)
+        self.assertEqual('reference',bar.mouse_stage)
+        self.click_world(10,0)
+        self.click_world(0,0)
+        self.assertEqual('target',bar.mouse_stage)
+        self.assertFalse(bar.apply_button.isEnabled())
+        self.assertEqual(before,e.store.data)
+        e.cancel_cad_command()
+        self.assertIsNone(bar.mouse_stage)
+
+    def test_mouse_rotation_uses_grid_and_visible_point_snaps_and_cancels_on_floor_change(self):
+        e = self.editor
+        e.selected_point_names = {'B'}
+        e.show_selection_rotation()
+        bar = e.cad_rotate_input
+        bar.begin_mouse()
+        self.click_world(3.1,4.1)
+        self.assertEqual((3,4),bar.mouse_centre)
+        self.click_world(5.2,4.2)
+        self.assertEqual((5,4),bar.mouse_reference)
+        e.floor_spin.setValue(1)
+        self.assertIsNone(bar.mouse_stage)
+
     def test_inline_edge_selection_rotates_endpoints_in_one_undo_redo(self):
         e = self.editor
         e.selected_edge_keys = {('A','Door')}

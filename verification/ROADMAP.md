@@ -1,5 +1,16 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 canvas rotation: Edit → Rotate selected now includes Pick rotation.
+Click a centre, a reference direction and a target direction to commit one undoable
+rotation using the existing transform model. Pointer motion previews the geometry
+and reference/target rays; events are coalesced at 33 ms. Grid and visible graph-point
+snaps apply to these picks. Zero-length directions are rejected; Escape/right-click,
+floor changes and workspace changes cancel without mutation. Typed rotation remains
+available. Edge/midpoint/intersection snaps and polar angle constraints for this
+gesture remain open. Actual captures include normal mouse guides and large-text
+controls in `latest/cad-control-preview`. All 79 related interaction, layer, layout,
+transaction and workspace tests pass; the full baseline predates this increment.
+
 4 October 2026 layer-line styling: the optional line-style section offers theme
 colour or explicit #RRGGBB, five line patterns and cosmetic widths from 0.5–6 px.
 Styles affect explicit corridor lines and location outlines, preserving semantic
