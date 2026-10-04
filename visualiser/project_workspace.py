@@ -208,6 +208,8 @@ class ProjectWorkspace(QWidget):
         self.properties_tab.setChecked(visible and not self._canvas_focus)
         self.editor.ribbon_tabs.setVisible(self.stage == 'layout' and self._ribbon_open and not self._canvas_focus)
         drawing = self.stage == 'layout' and self.editor._current_edit_mode() == 'corridor_draw'
+        if self.stage != 'layout' and hasattr(self.editor, 'cad_move_input'):
+            self.editor.cad_move_input.hide()
         if hasattr(self.editor, 'cad_drawing_input'):
             self.editor.cad_drawing_input.setVisible(drawing)
             self.editor.cad_drawing_input.setEnabled(drawing)

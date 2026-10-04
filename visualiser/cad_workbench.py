@@ -148,6 +148,11 @@ class CadWorkbench(QObject):
         self.delete_action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
         editor.canvas.addAction(self.delete_action)
         self.edit_menu.addAction(self.delete_action)
+        self.move_action = self.action('Move selected by…', editor.show_selection_move, 'select',
+                                      'Enter an exact displacement for the active-floor selection.', QKeySequence('Ctrl+M'))
+        self.move_action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+        editor.canvas.addAction(self.move_action)
+        self.edit_menu.addAction(self.move_action)
         self.edit_menu.addAction(editor.cad_toolbar.properties_action)
         self.edit_menu.addAction(self.action('Clear selection', editor.clear_topology_selection, 'select',
                                             'Clear graph selections without editing objects.'))

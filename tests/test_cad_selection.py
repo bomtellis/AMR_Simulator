@@ -205,6 +205,69 @@ class CadSelectionCanvasTests(unittest.TestCase):
         self.assertTrue(self.editor.undo_edit())
         self.assertEqual(before, self.editor.store.data)
 
+    def test_numerical_move_previews_then_applies_exact_offset_as_one_edit(self):
+        editor = self.editor
+        editor.selected_point_names = {'N', 'OtherFloor'}
+        editor.selected_edge_keys = {('A', 'B')}
+        before = copy.deepcopy(editor.store.data)
+        editor.snap_check.setChecked(True)
+        editor.workbench.move_action.trigger()
+        bar = editor.cad_move_input
+        self.assertFalse(bar.isHidden())
+        bar.offset.setText('1.234567,-2.345678')
+        self.assertIn('3 points', bar.preview.text())
+        self.assertTrue(bar.apply_button.isEnabled())
+        self.assertEqual(before, editor.store.data)
+        bar.apply_button.click()
+        self.assertTrue(bar.isHidden())
+        points = editor.store.all_points()
+        self.assertAlmostEqual(6.234567, points['N']['x'])
+        self.assertAlmostEqual(.654322, points['N']['y'])
+        self.assertEqual((5, 3), (points['OtherFloor']['x'], points['OtherFloor']['y']))
+        self.assertEqual(before['corridors']['edges'], editor.store.data['corridors']['edges'])
+        self.assertEqual(2, len(editor.edit_history.entries))
+        after = copy.deepcopy(editor.store.data)
+        editor.undo_edit()
+        self.assertEqual(before, editor.store.data)
+        editor.redo_edit()
+        self.assertEqual(after, editor.store.data)
+
+    def test_numerical_move_cancel_invalid_input_and_selection_changes(self):
+        editor = self.editor
+        editor.selected_point_names = {'N'}
+        before = copy.deepcopy(editor.store.data)
+        editor.show_selection_move()
+        bar = editor.cad_move_input
+        for text in ('', '0,0', 'nan,2', '1,'):
+            bar.offset.setText(text)
+            self.assertFalse(bar.apply_button.isEnabled())
+        bar.offset.setText('@2<90')
+        self.assertTrue(bar.apply_button.isEnabled())
+        editor.selected_point_names.clear()
+        editor.refresh_canvas()
+        self.assertFalse(bar.apply_button.isEnabled())
+        editor.selected_point_names = {'N'}
+        editor.refresh_canvas()
+        QTest.keyClick(bar.offset, Qt.Key_Escape)
+        self.assertTrue(bar.isHidden())
+        self.assertEqual(before, editor.store.data)
+        self.assertEqual(1, len(editor.edit_history.entries))
+        editor.show_selection_move()
+        from PySide6.QtWidgets import QWidget
+        editor.workspace.show_page('review', QWidget(editor))
+        self.assertTrue(bar.isHidden())
+        self.assertFalse(editor.move_selected_by(1, 2))
+        self.assertEqual(before, editor.store.data)
+
+    def test_nonfinite_numerical_move_does_not_partially_change_selection(self):
+        editor = self.editor
+        editor.selected_point_names = {'A', 'N'}
+        before = copy.deepcopy(editor.store.data)
+        with self.assertRaises(ValueError):
+            editor.move_selected_by(float('inf'), 2)
+        self.assertEqual(before, editor.store.data)
+        self.assertEqual(1, len(editor.edit_history.entries))
+
     def test_group_drag_escape_and_floor_change_restore_without_history(self):
         editor = self.editor
         viewport = editor.canvas.viewport()

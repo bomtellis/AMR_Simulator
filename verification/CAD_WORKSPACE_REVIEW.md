@@ -62,6 +62,25 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Numerical movement checkpoint, 4 October 2026
+
+**Edit → Move selected by…**, the selection's right-click menu, and **Ctrl+M**
+with canvas focus open an inline displacement bar. Enter `dx,dy` in metres or
+`@distance<angle` (degrees, east zero, north 90). The preview names affected
+active-floor points, includes selected corridor endpoints once each, and shows
+the signed translation before Apply. The graph is not changed by editing the
+draft. Apply performs one atomic, undoable move preserving topology and relative
+geometry; typed distances bypass grid/direction constraints. Escape/Cancel hides
+the draft without mutation. Floor, mode or workspace changes hide the bar.
+Selection changes refresh its preview; zero/invalid inputs cannot be applied.
+
+Ninety-two focused CAD and workspace tests passed. The broader discovery run
+started before this checkpoint did not return a result and was interrupted after
+checks found unchanged process CPU time and no completion output. Its retained
+output is `latest/cad-broad-regression.txt`; it is not a passing full-suite result.
+Full-suite diagnosis and human workflow acceptance remain open. Rotation, copying
+and scaling are not implemented by this displacement command.
+
 ### Group movement checkpoint, 4 October 2026
 
 Use Select and Shift/window selection to choose objects, then drag a selected
@@ -78,7 +97,8 @@ coalesced graph refresh, retaining drawing underlays.
 Seventy focused selection/drawing/history/workflow tests passed, including new
 references for line dragging, mixed point/corridor selection, floor isolation,
 room shape and fractional offsets, cancellation, undo and redo. Rotation, scaling,
-copying and typed bulk displacement remain separate open transform requirements.
+copying remain separate open transform requirements; typed displacement is now
+available through the numerical movement checkpoint above.
 No full-suite or human visual acceptance is claimed for this checkpoint.
 
 ### Direction constraints checkpoint, 4 October 2026

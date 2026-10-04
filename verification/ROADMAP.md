@@ -839,6 +839,13 @@ The full application guide is
 also unfinished.
 Continue with:
 
+CAD numerical move checkpoint, 4 October 2026: Edit/context-menu/Ctrl+M opens an
+inline displacement preview, supporting exact Cartesian or polar offsets for
+active-floor selections. Apply is atomic and undoable; cancellation is nonmutating.
+Ninety-two focused tests pass. A broader discovery run was interrupted without a
+result after it stopped showing observable progress; diagnose this before claiming
+full-suite acceptance. Rotation/copying/scaling and human workflow review remain open.
+
 CAD group-move checkpoint, 4 October 2026: selected points and corridor endpoints
 now translate together on the active floor, retaining identities, shape offsets
 and selection. Each drag is one undoable edit; Escape/mode/floor changes restore

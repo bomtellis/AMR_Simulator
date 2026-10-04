@@ -1088,6 +1088,9 @@ class AMRGraphEditor(QMainWindow):
         self.workspace._sync_panels()
         layout.addWidget(self.workspace, 1)
         layout.addWidget(self.ensure_cad_drawing_input())
+        from visualiser.cad_move_input import CadMoveInput
+        self.cad_move_input = CadMoveInput(self)
+        layout.addWidget(self.cad_move_input)
 
         self.status_label = QLabel("Ready")
         self.status_label.setMinimumWidth(240)
@@ -1120,6 +1123,8 @@ class AMRGraphEditor(QMainWindow):
             self.canvas.viewport().update()
 
     def on_edit_mode_changed(self, *_):
+        if hasattr(self, 'cad_move_input'):
+            self.cad_move_input.hide()
         self._clear_corridor_drawing()
         drawing = (self._current_edit_mode() == 'corridor_draw'
                    and getattr(getattr(self, 'workspace', None), 'stage', 'layout') == 'layout')
@@ -1154,6 +1159,9 @@ class AMRGraphEditor(QMainWindow):
         return self.cad_drawing_input
 
     def cancel_cad_command(self, *_):
+        if hasattr(self, 'cad_move_input') and not self.cad_move_input.isHidden():
+            self.cad_move_input.hide()
+            return True
         if self.cancel_cad_drag():
             return True
         cancel_selection = getattr(self, 'cancel_cad_selection', None)
@@ -1664,6 +1672,8 @@ class AMRGraphEditor(QMainWindow):
         )
 
     def on_floor_changed(self, *_):
+        if hasattr(self, 'cad_move_input'):
+            self.cad_move_input.hide()
         self._clear_corridor_drawing()
         self.selected_for_edge = None
         self.edge_delete_start = None
@@ -2135,6 +2145,8 @@ class AMRGraphEditor(QMainWindow):
         self.refresh_canvas()
 
     def refresh_canvas(self, *, update_panels=True):
+        if hasattr(self, 'cad_move_input') and not self.cad_move_input.isHidden():
+            self.cad_move_input.refresh_preview()
         from route_display import populate_choices
         from cad_map_style import map_colours
         populate_choices(self.route_display_combo, self.store.data)
@@ -3182,17 +3194,52 @@ class AMRGraphEditor(QMainWindow):
 
     def _begin_point_drag(self, anchor, raw_x, raw_y):
         points = self.store.all_points()
-        names = set(self.selected_point_names)
-        for edge in self.selected_edge_keys:
-            names.update(edge)
-        names.add(anchor)
-        floor = self.floor_spin.value()
-        self._cad_drag_origins = {name: (points[name]['x'], points[name]['y'])
-                                  for name in names if name in points and int(points[name]['floor']) == floor}
+        selected = self.selection_move_points()
+        selected[anchor] = points[anchor]
+        self._cad_drag_origins = {name: (point['x'], point['y']) for name, point in selected.items()}
         self.dragging_point_name = anchor
         self.drag_mode_active = True
         point = points[anchor]
         self._cad_drag_offset = (raw_x - float(point['x']), raw_y - float(point['y']))
+
+    def selection_move_points(self):
+        points = self.store.all_points()
+        names = set(self.selected_point_names)
+        for edge in self.selected_edge_keys:
+            names.update(edge)
+        floor = self.floor_spin.value()
+        return {name: points[name] for name in names if name in points and int(points[name]['floor']) == floor}
+
+    def show_selection_move(self):
+        if self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move' or self.drag_mode_active:
+            return
+        self.cad_move_input.refresh_preview()
+        self.cad_move_input.show()
+        self.cad_move_input.offset.setFocus()
+
+    @undoable('Move selected objects by displacement')
+    def move_selected_by(self, dx, dy):
+        if (self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move'
+                or self.drag_mode_active or self.route_profile_selection_active
+                or self.department_location_placement_active):
+            return False
+        if not all(math.isfinite(v) for v in (dx, dy)):
+            raise ValueError('Displacement must contain finite numbers.')
+        if (dx, dy) == (0, 0) or not self._finish_property_draft():
+            return False
+        points = self.selection_move_points()
+        if not points:
+            return False
+        staged = deepcopy(self.store)
+        for name, point in points.items():
+            x, y = float(point['x']) + dx, float(point['y']) + dy
+            if not all(math.isfinite(v) for v in (x, y)):
+                raise ValueError('The resulting coordinates must be finite.')
+            staged.set_point_position(name, x, y, exact=True)
+        self.store.data = staged.data
+        self.refresh_canvas()
+        self.set_status(f'Moved {len(points)} selected points by X {dx:+g}, Y {dy:+g} m.')
+        return True
 
     def cancel_cad_drag(self):
         origins = getattr(self, '_cad_drag_origins', None)
@@ -3337,6 +3384,7 @@ class AMRGraphEditor(QMainWindow):
             if self.selected_edge_keys or len(self.selected_point_names) > 1 or (not picked and self.selected_point_names):
                 menu = QMenu(self)
                 menu.addAction(self.workbench.delete_action)
+                menu.addAction(self.workbench.move_action)
                 menu.addSeparator()
                 if picked_edge is not None:
                     menu.addAction("Insert node here", lambda: self.split_corridor_at(picked_edge, x, y))
@@ -3476,6 +3524,7 @@ class AMRGraphEditor(QMainWindow):
             point = self.store.all_points().get(picked, {})
             menu = QMenu(self)
             menu.addAction(self.workbench.delete_action)
+            menu.addAction(self.workbench.move_action)
             menu.addSeparator()
 
             if point.get("kind") == "department":
