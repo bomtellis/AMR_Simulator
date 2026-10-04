@@ -953,6 +953,8 @@ class AMRGraphEditor(QMainWindow):
             columns=1,
         )
         add_group(edit, "Corridor sections", [
+            button("Create crossing junction", self.create_selected_junction,
+                   "Join two selected crossing corridors on one floor. Retains directions, widths and references; one undo step."),
             button("Split at midpoint", lambda: self.subdivide_selected_corridors(2),
                    "Insert one node per selected corridor. Retains attributes and references; Undo restores all changes."),
             button("Subdivide selected…", self.subdivide_selected_corridors,
@@ -1417,6 +1419,29 @@ class AMRGraphEditor(QMainWindow):
         if type(sections) is not int or not 2 <= sections <= 100:
             return False
         return self._apply_corridor_cuts({key: [i / sections for i in range(1, sections)] for key in keys})
+
+    @undoable('Create crossing junction')
+    def create_selected_junction(self):
+        if (self.workspace.stage != 'layout' or self.drag_mode_active
+                or not self._finish_property_draft()):
+            return False
+        from corridor_editing import create_crossing_junction
+        try:
+            points = self.store.all_points()
+            if any(int(points[name]['floor']) != self.floor_spin.value()
+                   for key in self.selected_edge_keys for name in key):
+                raise ValueError('Select crossing corridors on the active floor.')
+            updated, chains = create_crossing_junction(self.store.data, points, self.selected_edge_keys)
+        except (ValueError, KeyError, TypeError) as exc:
+            self.set_status(f'Junction was not created: {exc}')
+            return False
+        self.store.data = updated
+        self.selected_point_names = {name for chain in chains.values() for name in chain[1:-1]}
+        self.selected_point_name = next(iter(self.selected_point_names))
+        self.selected_edge_keys = {self._physical_edge_key(a, b) for chain in chains.values() for a, b in zip(chain, chain[1:])}
+        self.refresh_canvas()
+        self.set_status(f'Created junction {self.selected_point_name}. The selected routes now connect; directions and profile restrictions are retained.')
+        return True
 
     @undoable("Insert corridor node")
     def split_corridor_at(self, key, x, y):
@@ -3389,6 +3414,8 @@ class AMRGraphEditor(QMainWindow):
                 if picked_edge is not None:
                     menu.addAction("Insert node here", lambda: self.split_corridor_at(picked_edge, x, y))
                 if self.selected_edge_keys:
+                    junction = menu.addAction('Create junction at crossing', self.create_selected_junction)
+                    junction.setEnabled(len(self.selected_edge_keys) == 2)
                     menu.addAction("Split selected corridors at midpoint", lambda: self.subdivide_selected_corridors(2))
                     menu.addAction("Subdivide selected corridors…", self.subdivide_selected_corridors)
                     menu.addSeparator()

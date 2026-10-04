@@ -839,6 +839,13 @@ The full application guide is
 also unfinished.
 Continue with:
 
+CAD crossing checkpoint, 4 October 2026: an explicit two-corridor junction command
+now joins same-floor interior crossings in one undoable operation. Split directions,
+widths, distance overrides and route/resource references are retained. Eighty-four
+focused tests pass, including clean/dirty branch restrictions. Automatic crossing
+insertion and junctions at existing points remain open; no new full-pack claim is
+made for this increment. See `CAD_WORKSPACE_REVIEW.md` for the user workflow.
+
 Unattended verification checkpoint, 4 October 2026: `verification.run --isolated`
 runs each test module in a fresh process with a 180-second limit and preserves
 module logs, stack snapshots and per-test outcomes. Crashes, missing evidence,

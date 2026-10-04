@@ -62,6 +62,29 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Explicit crossing junction checkpoint, 4 October 2026
+
+Select two crossing corridors, then use **Create junction at crossing** in the
+right-click menu, or **More tools → Edit → Corridor sections → Create crossing
+junction**. One new shared node replaces the crossing, splitting both physical
+links and their explicit reverse records. Widths, directions, proportional
+distance overrides, and profile/resource references use the existing subdivision
+rules. Creating the junction connects the graph; profile restrictions still apply
+to each branch. The entire operation is one undoable edit.
+
+Only two interior crossings on the active floor are supported. Parallel/overlapping
+links, endpoint contacts, missing links, nonfinite geometry and an already occupied
+crossing are rejected atomically. Drawings remain underlays, and line crossings
+are not automatically connected. Traffic reservation and congestion timing can
+change when a physical link gains sections, as with ordinary subdivision.
+
+Eighty-four focused geometry, routing, selection and subdivision tests passed.
+References verify the independent crossing at (4, 0), preserved 8+12 m and 9+21 m
+distance overrides, one-way routing, separate reverse-edge attributes, clean-profile
+exclusion of the dirty branch, rejection and undo/redo. The prior full pack remains
+the baseline; it was not rerun for this checkpoint. Automatic multi-crossing
+insertion and joining an existing point at a crossing remain open.
+
 ### Numerical movement checkpoint, 4 October 2026
 
 **Edit → Move selected by…**, the selection's right-click menu, and **Ctrl+M**

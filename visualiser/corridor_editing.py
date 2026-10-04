@@ -132,7 +132,41 @@ def project_fraction(a, b, x, y):
     return ((float(x) - float(a['x'])) * dx + (float(y) - float(a['y'])) * dy) / length_sq
 
 
-def subdivide(config, points, cuts):
+def create_crossing_junction(config, points, keys):
+    """Explicitly join two same-floor corridor interiors; never auto-join drawings."""
+    keys = sorted(set(tuple(sorted(key)) for key in keys))
+    if len(keys) != 2 or any(len(key) != 2 for key in keys):
+        raise ValueError('Select exactly two crossing corridors.')
+    try:
+        a, b, c, d = [points[name] for key in keys for name in key]
+    except KeyError:
+        raise ValueError('A selected corridor endpoint no longer exists.') from None
+    if len({int(p['floor']) for p in (a, b, c, d)}) != 1:
+        raise ValueError('A junction must connect corridors on the same floor.')
+    if any(p.get('kind') == 'department' for p in (a, b, c, d)):
+        raise ValueError('Department markers are not corridor endpoints.')
+    ax, ay, bx, by, cx, cy, dx, dy = [float(p[k]) for p in (a, b, c, d) for k in ('x', 'y')]
+    if not all(math.isfinite(v) for v in (ax, ay, bx, by, cx, cy, dx, dy)):
+        raise ValueError('Corridor coordinates must be finite.')
+    rx, ry, sx, sy = bx-ax, by-ay, dx-cx, dy-cy
+    cross = rx*sy - ry*sx
+    if abs(cross) <= 1e-12 * max(1., math.hypot(rx, ry) * math.hypot(sx, sy)):
+        raise ValueError('Parallel or overlapping corridors have no unique crossing junction.')
+    t = ((cx-ax)*sy - (cy-ay)*sx) / cross
+    u = ((cx-ax)*ry - (cy-ay)*rx) / cross
+    if not (0 < t < 1 and 0 < u < 1):
+        raise ValueError('Choose corridors that cross strictly inside both links.')
+    x, y, floor = ax+t*rx, ay+t*ry, int(a['floor'])
+    if any(int(p['floor']) == floor and math.hypot(float(p['x'])-x, float(p['y'])-y) < 1e-6
+           for p in points.values()):
+        raise ValueError('A point already occupies this crossing; connect to that point instead.')
+    result, chains = subdivide(config, points, {keys[0]: [t], keys[1]: [u]}, _join_cuts=True)
+    if len({chain[1] for chain in chains.values()}) != 1:
+        raise ValueError('The crossing cannot be resolved to one point at the supported coordinate precision.')
+    return result, chains
+
+
+def subdivide(config, points, cuts, *, _join_cuts=False):
     """Return a replacement configuration and new node chains, without mutation.
 
     cuts maps canonical (sorted endpoint) pairs to fractions along that pair.
@@ -144,6 +178,7 @@ def subdivide(config, points, cuts):
     edges = result['corridors']['edges']
     used = set(points)
     chains, proportions = {}, {}
+    inserted = []
     for key, values in sorted(cuts.items()):
         if len(key) != 2 or tuple(sorted(key)) != key or key[0] == key[1]:
             raise ValueError('Corridor endpoints must be a distinct, sorted pair.')
@@ -166,17 +201,25 @@ def subdivide(config, points, cuts):
         floor = int(a['floor'])
         index = 1
         for fraction in fractions:
+            x = float(a['x']) + fraction * (float(b['x']) - float(a['x']))
+            y = float(a['y']) + fraction * (float(b['y']) - float(a['y']))
+            shared = next((node for node in inserted if node['floor'] == floor
+                           and math.hypot(node['x']-x, node['y']-y) < 1e-8), None) if _join_cuts else None
+            if shared is not None:
+                names.append(shared['name'])
+                continue
             while f'C{floor}-{index}' in used:
                 index += 1
             name = f'C{floor}-{index}'
             used.add(name)
             names.append(name)
-            result['corridors']['nodes'].append({
+            node = {
                 'name': name, 'floor': floor,
-                'x': float(a['x']) + fraction * (float(b['x']) - float(a['x'])),
-                'y': float(a['y']) + fraction * (float(b['y']) - float(a['y'])),
+                'x': x, 'y': y,
                 'has_door': False,
-                'door_clear_width_m': float(config.get('building', {}).get('default_door_clear_width_m', .9) or .9)})
+                'door_clear_width_m': float(config.get('building', {}).get('default_door_clear_width_m', .9) or .9)}
+            result['corridors']['nodes'].append(node)
+            inserted.append(node)
         chains[key] = [key[0], *names, key[1]]
         proportions[key] = [right - left for left, right in zip(bounds, bounds[1:])]
 
