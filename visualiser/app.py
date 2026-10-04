@@ -513,6 +513,25 @@ class AMRGraphEditor(QMainWindow):
         self.refresh_canvas()
         return True
 
+    @undoable('Reorganize model layers')
+    def reorganize_model_layer(self, source, target, *, remove=False):
+        if self.drag_mode_active or self.dragging_bounding_box_point_index is not None:
+            self.set_status('Finish the active drag before changing layers.')
+            return False
+        from visualiser.model_layers import reorganize
+        try:
+            proposed = reorganize(self.store.data, source, target, remove=remove)
+        except ValueError as error:
+            self.set_status(str(error))
+            return False
+        self._cancel_cad_transients()
+        self._clear_corridor_drawing()
+        self.store.data = proposed
+        self.refresh_canvas()
+        self.set_status(f'Layer {source} removed; objects moved to {target}.' if remove
+                        else f'Layer {source} renamed to {target}.')
+        return True
+
     def _layout_points_editable(self, names):
         from visualiser.model_layers import locked_points
         locked = set(names) & locked_points(self.store.data)

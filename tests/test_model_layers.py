@@ -10,6 +10,35 @@ from visualiser import model_layers as layers
 
 
 class ModelLayerTests(unittest.TestCase):
+    def test_rename_and_remove_preserve_objects_and_route_profiles(self):
+        config = layers.set_layer(editing.reference_config(), 'Fixtures', visible=False)
+        config = layers.assign(config, {'A', 'Door'}, {('A', 'Door')}, 'Fixtures')
+        before = deepcopy(config)
+        renamed = layers.reorganize(config, 'Fixtures', 'Equipment')
+        self.assertEqual(3, len(layers.members(renamed, 'Equipment')))
+        self.assertEqual(dict(visible=False, locked=False), layers.definitions(renamed)['Equipment'])
+        merged = layers.reorganize(renamed, 'Equipment', 'Default', remove=True)
+        self.assertNotIn('Equipment', layers.definitions(merged))
+        self.assertEqual(config['corridors']['edges'][0]['from'], merged['corridors']['edges'][0]['from'])
+        for section in ('locations', 'corridors'):
+            clean = deepcopy(merged[section])
+            original = deepcopy(config[section])
+            rows = clean if isinstance(clean, list) else clean['nodes'] + clean['edges']
+            old_rows = original if isinstance(original, list) else original['nodes'] + original['edges']
+            for row in rows + old_rows:
+                row.pop('editor_layer', None)
+            self.assertEqual(original, clean)
+        self.assertEqual(before, config)
+
+    def test_reorganizing_default_duplicate_missing_and_locked_layers_is_rejected(self):
+        config = layers.set_layer({}, 'Fixtures')
+        config = layers.set_layer(config, 'Locked', locked=True)
+        for source, target, remove in [('Default','New',False), ('Fixtures','Default',False),
+                ('Missing','New',False), ('Fixtures','Fixtures',True), ('Fixtures','Missing',True),
+                ('Fixtures','Locked',True), ('Locked','New',False), ('Fixtures',' ',False)]:
+            with self.subTest(source=source,target=target,remove=remove), self.assertRaises(ValueError):
+                layers.reorganize(config, source, target, remove=remove)
+
     def test_project_archive_roundtrip_preserves_definitions_and_membership(self):
         from amr_project import Project
         config = layers.set_layer(editing.reference_config(), 'Equipment', visible=False, locked=True)
@@ -72,6 +101,43 @@ class ModelLayerUiTests(unittest.TestCase):
     setUpClass = classmethod(editing.CorridorEditingUiTests.setUpClass.__func__)
     setUp = editing.CorridorEditingUiTests.setUp
     tearDown = editing.CorridorEditingUiTests.tearDown
+
+    def test_panel_rename_and_remove_are_single_undo_operations(self):
+        e = self.editor
+        e.show_model_layers()
+        panel = e.model_layer_panel
+        e.update_model_layer('Fixtures')
+        e.selected_point_names = {'A'}
+        e.assign_model_layer('Fixtures')
+        before = deepcopy(e.store.data)
+        panel.choice.setCurrentText('Fixtures')
+        panel.name.setText('Equipment')
+        count = len(e.edit_history.entries)
+        panel.rename()
+        renamed = deepcopy(e.store.data)
+        self.assertEqual(count + 1, len(e.edit_history.entries))
+        self.assertEqual('Equipment', panel.choice.currentText())
+        self.assertIn('1 object record', panel.removal_preview.text())
+        panel.destination.setCurrentText('Default')
+        panel.remove()
+        self.assertEqual(count + 2, len(e.edit_history.entries))
+        self.assertEqual('Default', panel.choice.currentText())
+        self.assertFalse(panel.remove_button.isEnabled())
+        self.assertTrue(e.undo_edit())
+        self.assertEqual(renamed, e.store.data)
+        self.assertTrue(e.undo_edit())
+        self.assertEqual(before, e.store.data)
+        self.assertTrue(e.redo_edit())
+        self.assertEqual(renamed, e.store.data)
+
+    def test_reorganize_rejection_preserves_history_and_inputs(self):
+        e = self.prepare()
+        before = deepcopy(e.store.data)
+        history = deepcopy(e.edit_history.entries)
+        self.assertFalse(e.reorganize_model_layer('Protected', 'Default', remove=True))
+        self.assertEqual(before, e.store.data)
+        self.assertEqual(history, e.edit_history.entries)
+        self.assertIn('Unlock', e.status_label.text())
 
     def prepare(self, *, edges=False):
         e = self.editor

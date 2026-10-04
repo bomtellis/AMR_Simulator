@@ -11,7 +11,14 @@ Focus canvas and workspace switching. Acceptance tests are in
 `tests/test_model_layers.py`; actual UI capture is retained under
 `verification/latest/cad-control-preview/model-layers.png`.
 
-Remaining layer work: rename/remove, current authoring layer, styles and a
+4 October 2026 layer-management follow-up: rename and move-contents/remove are
+available inline. Removal previews the record count and destination; no graph
+objects are deleted. Default is retained, duplicate names are rejected, and
+locked source/destination layers must be unlocked. Each operation is one undo
+entry. Four additional acceptance tests cover preservation, rejection and undo;
+131 related tests pass. The actual panel was rendered and checked.
+
+Remaining layer work: current authoring layer, styles and a
 combined drawing/model layer manager. New objects start on Default, except split
 nodes which inherit an unambiguous parent layer. Hidden topology still participates
 in model-aware drawing snaps. Locks protect editor transactions, not external

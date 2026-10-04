@@ -124,3 +124,39 @@ def assign(config, points, edges, name):
         if tuple(sorted((edge['from'],edge['to']))) in edges:
             edge['editor_layer'] = name
     return result
+
+
+def members(config, name):
+    """Raw point and corridor records, including reciprocal corridor records."""
+    rows = [row for _, row in point_rows(config)]
+    rows.extend(config.get('corridors', {}).get('edges', []))
+    return [row for row in rows if layer_name(row) == name]
+
+
+def reorganize(config, source, target, *, remove=False):
+    """Rename, or merge membership into another layer without deleting objects."""
+    layers = definitions(config)
+    if source == DEFAULT:
+        raise ValueError('Default cannot be renamed or removed.')
+    if source not in layers:
+        raise ValueError('Select an existing source layer.')
+    if layers[source]['locked']:
+        raise LayerLockedError('Unlock the source layer before renaming or removing it.')
+    if not isinstance(target, str) or not target.strip() or target != target.strip():
+        raise ValueError('Enter a nonblank layer name without surrounding whitespace.')
+    if remove:
+        if target == source or target not in layers:
+            raise ValueError('Select a different destination layer.')
+        if layers[target]['locked']:
+            raise LayerLockedError('Unlock the destination layer before moving objects into it.')
+    elif target in layers:
+        raise ValueError('That layer name already exists.')
+    result = deepcopy(config)
+    for row in members(result, source):
+        row['editor_layer'] = target
+    result['editor_layers'] = dict(version=1, layers={
+        (target if name == source else name): options
+        for name, options in layers.items() if not (remove and name == source)})
+    validate(result)
+    assert_unlocked_changes(config, result)
+    return result

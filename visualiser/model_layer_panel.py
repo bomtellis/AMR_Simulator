@@ -1,8 +1,8 @@
 """Optional project-layer panel: definitions, selection assignment and locks."""
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, QCheckBox, QScrollArea
 from visualiser.dxf_layers import LayerDock
-from visualiser.model_layers import definitions
+from visualiser.model_layers import definitions, members, DEFAULT
 
 
 class ModelLayerPanel:
@@ -33,6 +33,18 @@ class ModelLayerPanel:
         add = QPushButton('Add layer',self.body)
         row.addWidget(add)
         layout.addLayout(row)
+        self.rename_button = QPushButton('Rename layer',self.body)
+        self.rename_button.setToolTip('Rename the selected layer using the name entered above.')
+        layout.addWidget(self.rename_button)
+        layout.addWidget(QLabel('Move contents to',self.body))
+        self.destination = QComboBox(self.body)
+        self.destination.setAccessibleName('Destination for removed layer contents')
+        layout.addWidget(self.destination)
+        self.removal_preview = QLabel(self.body)
+        self.removal_preview.setWordWrap(True)
+        layout.addWidget(self.removal_preview)
+        self.remove_button = QPushButton('Move contents and remove layer',self.body)
+        layout.addWidget(self.remove_button)
         self.note = QLabel(self.body)
         self.note.setWordWrap(True)
         layout.addWidget(self.note)
@@ -40,7 +52,10 @@ class ModelLayerPanel:
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
         layout.addStretch(1)
-        self.dock.setWidget(self.body)
+        scroll = QScrollArea(self.dock)
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(self.body)
+        self.dock.setWidget(scroll)
         editor.addDockWidget(Qt.RightDockWidgetArea,self.dock)
         self.dock.hide()
         self.choice.currentIndexChanged.connect(self.refresh)
@@ -48,6 +63,9 @@ class ModelLayerPanel:
         self.locked.toggled.connect(self.apply_options)
         self.assign_button.clicked.connect(self.assign)
         add.clicked.connect(self.add)
+        self.rename_button.clicked.connect(self.rename)
+        self.remove_button.clicked.connect(self.remove)
+        self.destination.currentTextChanged.connect(self.refresh_removal)
         self.name.returnPressed.connect(self.add)
         self.refresh()
 
@@ -65,6 +83,15 @@ class ModelLayerPanel:
                 if current in layers:
                     self.choice.setCurrentText(current)
             options = layers[self.choice.currentText()]
+            destinations = [n for n in names if n != self.choice.currentText() and not layers[n]['locked']]
+            destination = self.destination.currentText()
+            self.destination.clear()
+            self.destination.addItems(destinations)
+            if destination in destinations:
+                self.destination.setCurrentText(destination)
+            editable = self.choice.currentText() != DEFAULT and not options['locked']
+            self.rename_button.setEnabled(editable)
+            self.remove_button.setEnabled(editable and bool(destinations))
             self.visible.setChecked(options['visible'])
             self.locked.setChecked(options['locked'])
             count = len(self.editor.selected_point_names) + len(self.editor.selected_edge_keys)
@@ -73,6 +100,27 @@ class ModelLayerPanel:
         finally:
             self.loading = False
         self.sync_workspace()
+        self.refresh_removal()
+
+    def refresh_removal(self, *_):
+        if self.loading:
+            return
+        source, target = self.choice.currentText(), self.destination.currentText()
+        count = len(members(self.editor.store.data,source))
+        noun = 'record' if count == 1 else 'records'
+        self.removal_preview.setText(f'{count} object {noun} will move from {source} to {target or "an unlocked layer"}. '
+                                    'No objects are deleted. Destination visibility applies; Undo restores the original layer.')
+
+    def rename(self):
+        name = self.name.text().strip()
+        if self.editor.reorganize_model_layer(self.choice.currentText(),name):
+            self.choice.setCurrentText(name)
+            self.name.clear()
+
+    def remove(self):
+        target = self.destination.currentText()
+        if self.editor.reorganize_model_layer(self.choice.currentText(),target,remove=True):
+            self.choice.setCurrentText(target)
 
     def apply_options(self, *_):
         if not self.loading:
