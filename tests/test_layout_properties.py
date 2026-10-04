@@ -11,7 +11,7 @@ from tests import test_corridor_editing as editing
 from tests.test_engineering_reference import reference_config
 from layout_properties import apply_properties, fingerprint, records
 from simulator import Simulation
-from PySide6.QtWidgets import QApplication, QFileDialog
+from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 
 
 class LayoutPropertyTests(unittest.TestCase):
@@ -218,9 +218,25 @@ class LayoutPropertyUiTests(unittest.TestCase):
     def test_save_applies_valid_draft_before_serializing(self):
         panel = self.select('Door')
         panel.fields['door_clear_width_m'].setText('1.1')
-        path = Path(self.temp.name) / 'saved.json'
-        with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(path), '')):
+        path = Path(self.temp.name) / 'saved.amrproj'
+        with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(path), '')), \
+                patch.object(QMessageBox, 'critical') as failure:
             self.assertTrue(self.editor.save_json())
+        failure.assert_not_called()
+        from amr_project import Project
+        self.assertEqual(1.1, Project.open(path).configuration()['corridors']['nodes'][0]['door_clear_width_m'])
+        self.assertFalse(panel.pending)
+        self.assertFalse(self.editor.has_unsaved_changes())
+
+    def test_imported_json_save_applies_valid_draft_before_serializing(self):
+        path = Path(self.temp.name) / 'imported.json'
+        path.write_text(json.dumps(self.editor.store.data), encoding='utf-8')
+        self.editor.current_json_path = str(path)
+        panel = self.select('Door')
+        panel.fields['door_clear_width_m'].setText('1.1')
+        with patch.object(QMessageBox, 'critical') as failure:
+            self.assertTrue(self.editor.save_json())
+        failure.assert_not_called()
         self.assertEqual(1.1, json.loads(path.read_text())['corridors']['nodes'][0]['door_clear_width_m'])
         self.assertFalse(panel.pending)
         self.assertFalse(self.editor.has_unsaved_changes())
@@ -290,9 +306,12 @@ class LayoutPropertyUiTests(unittest.TestCase):
         workspace.search.setText('Door')
         self.assertFalse(workspace.object_items['point', 'Door'].isHidden())
         self.assertTrue(workspace.object_items['point', 'A'].isHidden())
-        self.assertTrue(all(not row.isHidden() for row in workspace.items.values()))
+        from visualiser.project_workspace import STAGES
+        self.assertTrue(all(not workspace.items[key].isHidden() for key, _ in STAGES))
+        self.assertTrue(workspace.items['demand_generation'].isHidden())
         workspace.search.clear()
         self.assertFalse(workspace.object_items['point', 'A'].isHidden())
+        self.assertFalse(workspace.items['demand_generation'].isHidden())
 
     def test_contextual_properties_fit_desktop_window(self):
         self.select('Door')

@@ -839,6 +839,18 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Regression diagnosis, 4 October 2026: the full-suite stall was traced to the
+layout-property save test passing a JSON filename to the new-project `.amrproj`
+save workflow and waiting in its error dialog. The test now reopens the saved
+project to inspect the draft; a separate imported-JSON test retains that contract.
+The tree-search assertion now distinguishes permanent workflow stages from the
+filterable Demand generation child. All 36 focused property/evidence tests pass.
+The verification runner now retains periodic stack snapshots in `test-stacks.txt`;
+CI bounds the verification step at 20 minutes while retaining available artifacts.
+Snapshots are diagnostic, not automatic failure verdicts. Full-suite rerun is
+still in progress, with later delays traced to Qt global stylesheet restoration;
+do not report a full pass until its terminal result is inspected.
+
 CAD numerical move checkpoint, 4 October 2026: Edit/context-menu/Ctrl+M opens an
 inline displacement preview, supporting exact Cartesian or polar offsets for
 active-floor selections. Apply is atomic and undoable; cancellation is nonmutating.

@@ -6,6 +6,7 @@ never promote a partially verified feature to a fully verified feature.
 from __future__ import annotations
 
 import argparse
+import faulthandler
 import hashlib
 import html
 import importlib.metadata
@@ -233,9 +234,16 @@ def main(argv=None):
             archive.writestr(name, data)
     inventory = build_inventory()
     started = time.perf_counter()
-    with (output / "tests.txt").open("w", encoding="utf-8") as log:
+    with (output / "tests.txt").open("w", encoding="utf-8") as log, \
+            (output / "test-stacks.txt").open("w", encoding="utf-8") as stacks:
         suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
-        result = unittest.TextTestRunner(stream=log, verbosity=2, resultclass=EvidenceResult).run(suite)
+        # Keep useful diagnostics even if a native UI test waits in a modal
+        # dialog. These periodic snapshots are not test timeout/failure verdicts.
+        faulthandler.dump_traceback_later(120, repeat=True, file=stacks)
+        try:
+            result = unittest.TextTestRunner(stream=log, verbosity=2, resultclass=EvidenceResult).run(suite)
+        finally:
+            faulthandler.cancel_dump_traceback_later()
     cases = result.cases
     features = link_evidence(inventory["features"], cases)
     from verification.inventory import link_option_evidence, link_option_sources, summarize_option_audit
