@@ -1,5 +1,18 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 integrated-layer regression audit: the isolated pack at `37153ba`
+ran 2,014 tests in 420.735 seconds with unchanged source and zero broken evidence
+links. 2,013 passed; the object-label fixture selected a corridor it had never
+created. The fixture now creates that corridor. Layer visibility cleanup also
+moves before drawing so hidden selected corridors cannot leave endpoint labels
+for one frame; a new regression covers this. The failed full-run evidence is
+retained in `latest/model-layers-verified` despite that directory's name. A new
+full pass is still required after these changes. The run includes preserved local
+LTN and simulator edits and is not clean-install or release acceptance evidence.
+The corrected fixture and redraw ordering pass 99 focused label, layer, selection,
+history, route-display and workspace-preference tests. MODEL-LAYERS-01 now links
+the delivered layer contract to its acceptance cases in the feature inventory.
+
 4 October 2026 model-layer checkpoint: View → Model layers provides project-owned
 layer definitions, selected-object assignment, visibility and editing locks.
 Locations, corridor nodes, lift stops, departments and explicit corridors can be

@@ -20,6 +20,7 @@ class ObjectLabelTests(unittest.TestCase):
     def test_key_names_hide_plain_nodes_but_include_selected_corridor_endpoints(self):
         self.editor.store.data['corridors']['nodes'].append(dict(name='Plain', floor=0, x=20, y=20))
         self.editor.store.data['corridors']['nodes'].append(dict(name='Other floor', floor=1, x=20, y=20))
+        self.editor.store.connect_corridor('A', 'Plain')
         before = deepcopy(self.editor.store.data)
         self.editor.workbench.object_label_actions[1].trigger()
         self.assertEqual({'A','B','Door'}, set(self.editor._point_name_labels))

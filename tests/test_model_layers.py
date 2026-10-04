@@ -264,6 +264,17 @@ class ModelLayerUiTests(unittest.TestCase):
         e.undo_edit()
         self.assertEqual('A', e.find_nearest_point_name(0, 0, 0, radius_world=.1))
 
+    def test_hiding_selected_corridor_clears_endpoint_labels_in_same_redraw(self):
+        e = self.editor
+        e.update_model_layer('Hidden')
+        e.selected_edge_keys = {('A', 'Door')}
+        e.assign_model_layer('Hidden')
+        e.workbench.object_label_actions[2].trigger()
+        self.assertEqual({'A', 'Door'}, set(e._point_name_labels))
+        e.update_model_layer('Hidden', visible=False)
+        self.assertFalse(e.selected_edge_keys)
+        self.assertEqual({}, e._point_name_labels)
+
     def test_panel_respects_focus_stage_and_explicit_close(self):
         e = self.editor
         e.show_model_layers()

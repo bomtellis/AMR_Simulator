@@ -2500,12 +2500,6 @@ class AMRGraphEditor(QMainWindow):
             self.draw_location_bounding_boxes(floor)
         if hasattr(self, 'dxf_layers'):
             self.dxf_layers.refresh()
-        self.draw_temporary_location_bounding_box(floor)
-        self.draw_edges(floor)
-        self.draw_route_access(floor)
-        self.draw_points(floor)
-        if self.show_charging_spaces_check.isChecked():
-            self.draw_charging_space_markers(floor)
         from visualiser.model_layers import definitions, layer_name
         layers = definitions(self.store.data)
         points = self.store.all_points()
@@ -2516,6 +2510,12 @@ class AMRGraphEditor(QMainWindow):
         visible_edges = {self._physical_edge_key(edge['from'],edge['to'])
                          for edge in self.store.data['corridors']['edges'] if layers[layer_name(edge)]['visible']}
         self.selected_edge_keys.intersection_update(visible_edges)
+        self.draw_temporary_location_bounding_box(floor)
+        self.draw_edges(floor)
+        self.draw_route_access(floor)
+        self.draw_points(floor)
+        if self.show_charging_spaces_check.isChecked():
+            self.draw_charging_space_markers(floor)
         for item, (kind, value) in self._item_lookup.items():
             row = (value if kind == 'edge' else points.get(value,{})
                    if kind in ('point','point_label','location_bounding_box') else {}
