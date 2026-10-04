@@ -1,5 +1,15 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 corrected model-layer verification baseline: **2,015/2,015 tests**
+passed across **180 isolated modules** in 422.865603 seconds at `f0e33cc`, with
+zero broken evidence links and unchanged tested source. MODEL-LAYERS-01 links all
+19 layer acceptance cases. See `latest/model-layers-corrected/index.html`, its
+evidence JSON, JUnit, module logs and frozen source archive. This supersedes the
+failed layer regression run below. Preserved local simulator/LTN changes remain
+included; this is not a clean-install result. The 267 unreviewed option paths,
+representative workload benchmark, remaining core/CAD features, offline release
+packaging, human acceptance and learning materials retain their open gates.
+
 4 October 2026 integrated-layer regression audit: the isolated pack at `37153ba`
 ran 2,014 tests in 420.735 seconds with unchanged source and zero broken evidence
 links. 2,013 passed; the object-label fixture selected a corridor it had never
