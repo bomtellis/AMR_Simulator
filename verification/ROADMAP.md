@@ -1,5 +1,14 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 scale performance checkpoint: a conservative pickup-floor check
+avoids route estimates when no lift serving the two floors meets minimum health.
+Temporary outages/repairs and same-floor work retain normal estimation; five
+new cases and 269 focused regressions pass. Full unchanged workload runtime falls
+from 544.498 to 213.406 seconds with an identical outcome hash. All 7,000 tasks
+now reconcile as completed (6,455), failed (457) or explicitly pending (88).
+Resource constraints and the all-completed gate remain unchanged. See
+`WORKLOAD_SCALE_REVIEW.md`; full regression refresh and wider release gates remain open.
+
 4 October 2026 pending-state investigation: new runs record each live pending
 task at stop, reconcile those IDs with the bound summary, and expose a
 "pending at stop" filter plus snapshot explanation in Results investigation.

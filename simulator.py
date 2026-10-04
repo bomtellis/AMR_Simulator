@@ -11278,17 +11278,39 @@ class Simulation:
         # access) must not conceal feasible work later in the pending queue.
         width = self.max_single_candidate_tasks
         charge_travel_cache = {}
+        floor_access_cache = {}
         for offset in range(0, max(1, len(candidate_tasks)), width):
             choice = self._select_single_candidate_window(
                 candidate_tasks[offset:offset + width],
                 batch_charge_requests if offset == 0 else [],
                 charge_travel_cache,
+                floor_access_cache,
             )
             if choice is not None:
                 return choice
         return None
 
-    def _select_single_candidate_window(self, candidate_tasks, batch_charge_requests, charge_travel_cache):
+    def _candidate_can_reach_pickup_floor(self, amr, task, cache):
+        """Reject only a missing health-operational lift connection before pickup.
+
+        The cache belongs to one read-only selection pass. Repair/availability
+        windows and actual graph, payload and profile feasibility still belong
+        to the full estimator. Idle returns can select a different pickup.
+        """
+        if getattr(task, 'is_idle_return', False):
+            return True
+        origin = self._geometric_graph_location(amr.location_name)
+        pickup = self._task_pickup_location(task)
+        if origin is None or pickup is None or origin.floor == pickup.floor:
+            return True
+        key = (origin.floor, pickup.floor)
+        if key not in cache:
+            cache[key] = any(lift.can_serve(*key) and self._lift_health_speed_factor(lift) > 0
+                             for lift in self.lifts)
+        return cache[key]
+
+    def _select_single_candidate_window(self, candidate_tasks, batch_charge_requests, charge_travel_cache,
+                                        floor_access_cache):
         """Select within one ordered, bounded batch using existing precedence."""
 
         single_jobs = []
@@ -11296,6 +11318,8 @@ class Simulation:
             task_prefers_multi_stop = self._task_prefers_multi_stop_amr(task)
             for amr_order, amr in enumerate(self.amrs):
                 if not self._task_allowed_for_amr(task, amr):
+                    continue
+                if not self._candidate_can_reach_pickup_floor(amr, task, floor_access_cache):
                     continue
                 if getattr(amr, "is_charging", False):
                     continue

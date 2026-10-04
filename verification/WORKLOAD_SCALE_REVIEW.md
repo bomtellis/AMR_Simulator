@@ -1,5 +1,33 @@
 # Operating-scale measurement — 4 October 2026
 
+## Follow-up: skip impossible cross-floor approaches
+
+A reduced reconstruction of final robot locations, battery state and lift health
+identified 15,840 candidate route estimates across three scheduler passes. Most
+robots were on other floors with both lifts below minimum operating health.
+The selector now checks that a health-operational lift serves the robot and
+pickup floors before estimating that approach. The check is cached only within
+one selection pass. Same-floor work, unknown locations and adaptive idle returns
+retain the full estimator. Temporary repairs and scenario outages are not used
+to reject candidates here; detailed routing still decides their availability.
+
+The reduced profiling case fell from 1.775 to 0.372 seconds and 15,840 to 528
+candidate estimates. It omits the original run's reservation history and is a
+diagnostic, not a full replay. Five independent tests cover floor reachability,
+the inclusive health threshold, repair waits, idle returns, changing health and
+work beyond blocked windows. **269 focused tests pass** including the related
+scheduling, charging, traffic and investigation checks.
+
+The unchanged seven-day workload now takes **213.406 seconds**, versus 544.498
+before this screen (2.55 times faster in these measurements). Input and outcome
+hashes are identical. It still has 6,455 completed, 457 failed and 88 pending
+tasks. All three counts now reconcile against explicit events, accounting for
+all 7,000 requests. Investigation loads in 3.754 seconds; peak working set is
+901,869,568 bytes. See `workload-evidence/floor-screen.json` and the full local
+run under `latest/workload-scale-floor-screen`. Full completion acceptance is
+still false because the resource constraints were retained. This measurement
+does not establish LTN, detailed-traffic or interactive GUI performance.
+
 ## Follow-up: charging estimates and final pending state
 
 Charger approach plans now share a cache limited to one read-only selection

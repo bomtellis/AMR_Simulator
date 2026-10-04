@@ -31,6 +31,7 @@ def selector(tasks, finishes, *, detailed=True, robot_ids=('R1',)):
     sim._payload_for_task = lambda _task: None
     sim._task_prefers_multi_stop_amr = lambda _task: False
     sim._task_allowed_for_amr = lambda _task, _amr: True
+    sim._candidate_can_reach_pickup_floor = lambda _amr, _task, _cache: True
 
     def estimates(jobs):
         for job in jobs:

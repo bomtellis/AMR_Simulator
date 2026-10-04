@@ -8800,6 +8800,10 @@ class SimulationSettingsDialog(QDialog):
         self.max_single_candidate_tasks_spin.setValue(
             max(1, int(float(simulation.get("max_single_candidate_tasks", 8) or 8)))
         )
+        self.max_single_candidate_tasks_spin.setToolTip(
+            "Tasks estimated in each ordered batch. If a whole batch has no feasible assignment, "
+            "later batches are checked; this does not limit the total pending queue."
+        )
         self.max_assignments_per_tick_spin = QSpinBox()
         self.max_assignments_per_tick_spin.setRange(0, 1000000)
         self.max_assignments_per_tick_spin.setSpecialValueText("Unlimited")
