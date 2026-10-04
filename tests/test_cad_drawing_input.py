@@ -20,6 +20,37 @@ from amr_recovery import RecoveryStore
 
 
 class CoordinateReferenceTests(unittest.TestCase):
+    def test_mouse_constraints_have_independent_geometric_expectations(self):
+        from corridor_editing import drawing_target
+        for step, click, expected in [(90, (5, 2), (5, 0)), (90, (-2, -5), (0, -5)),
+                                     (45, (6, 4), (5, 5)), (45, (-6, 4), (-5, 5))]:
+            target = drawing_target({}, [], 0, *click, snap=False, anchor=(0, 0), angle_step=step)
+            self.assertAlmostEqual(expected[0], target['x'])
+            self.assertAlmostEqual(expected[1], target['y'])
+        # Grid precedes direction; an off-grid anchor is not displaced.
+        target = drawing_target({}, [], 0, 5.3, 1, grid_spacing=.5, anchor=(.2, .2), angle_step=90)
+        self.assertAlmostEqual(5.5, target['x'])
+        self.assertAlmostEqual(.2, target['y'])
+        target = drawing_target({}, [], 0, 5.3, 1, exact=True, anchor=(0, 0), angle_step=90)
+        self.assertEqual((5.3, 1), (target['x'], target['y']))
+
+    def test_object_snap_cannot_deflect_constrained_direction(self):
+        from corridor_editing import drawing_target
+        points = {'near': dict(x=5, y=.2, floor=0)}
+        target = drawing_target(points, [], 0, 5, 1, snap=False, anchor=(0, 0), angle_step=90)
+        self.assertEqual(('new', 5, 0), (target['kind'], target['x'], target['y']))
+        points['near']['y'] = 0
+        target = drawing_target(points, [], 0, 5, 1, snap=False, anchor=(0, 0), angle_step=90)
+        self.assertEqual('near', target['name'])
+        points.update(a=dict(x=5, y=-5, floor=0), b=dict(x=5, y=5, floor=0))
+        del points['near']
+        target = drawing_target(points, [{'from':'a','to':'b'}], 0, 5, 1, snap=False, anchor=(0, 0), angle_step=90)
+        self.assertEqual('edge', target['kind'])
+        self.assertAlmostEqual(.5, target['fraction'])
+        for step in (0, -1, 100, float('nan')):
+            with self.assertRaises(ValueError):
+                drawing_target({}, [], 0, 5, 1, anchor=(0, 0), angle_step=step)
+
     def test_absolute_relative_and_polar_independent_coordinates(self):
         self.assertEqual((1.123456789, -2.5), parse_coordinate('1.123456789,-2.5'))
         self.assertEqual((13, 24), parse_coordinate('@3,4', (10, 20)))
@@ -67,6 +98,28 @@ class CadDrawingInputTests(unittest.TestCase):
     def enter(self, text):
         self.widget.coordinate_edit.setText(text)
         QTest.keyClick(self.widget.coordinate_edit, Qt.Key_Return)
+
+    def test_constrained_mouse_preview_commit_undo_and_typed_override(self):
+        self.enter('0.2,0.2')
+        self.widget.direction.setCurrentIndex(self.widget.direction.findData(90))
+        self.editor.object_snap_check.setChecked(False)
+        before = deepcopy(self.editor.store.data)
+        scene = self.editor.world_to_scene(5, 1)
+        self.editor.preview_corridor_drawing(scene.x(), scene.y())
+        preview = dict(self.editor.corridor_draw_preview)
+        self.assertAlmostEqual(.2, preview['y'])
+        self.assertTrue(self.editor.draw_next_corridor(5, 1))
+        placed = self.editor.store.all_points()[self.editor.corridor_draw_start]
+        self.assertEqual((preview['x'], preview['y']), (placed['x'], placed['y']))
+        after = deepcopy(self.editor.store.data)
+        self.assertTrue(self.editor.undo_edit())
+        self.assertEqual(before, self.editor.store.data)
+        self.assertTrue(self.editor.redo_edit())
+        self.assertEqual(after, self.editor.store.data)
+        self.enter('7.3,2.7')
+        placed = self.editor.store.all_points()[self.editor.corridor_draw_start]
+        self.assertEqual((7.3, 2.7), (placed['x'], placed['y']))
+        self.assertIn('direction constraint bypassed', self.widget.feedback_label.text())
 
     def test_two_ten_metre_links_and_each_step_undo_redo(self):
         self.enter('0,0')

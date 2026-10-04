@@ -1135,14 +1135,14 @@ class JsonStore:
         self.data = updated
         return chains
 
-    def draw_corridor_step(self, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True):
+    def draw_corridor_step(self, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True, angle_step=None):
         try:
             from .corridor_editing import draw_step
         except ImportError:
             from corridor_editing import draw_step
         updated, target = draw_step(self.data, self.all_points(), start, floor, x, y,
                                     snap=snap, bidirectional=bidirectional, exact=exact,
-                                    grid_spacing=grid_spacing, object_snap=object_snap)
+                                    grid_spacing=grid_spacing, object_snap=object_snap, angle_step=angle_step)
         self.data = updated
         return target
 

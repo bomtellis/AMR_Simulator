@@ -3,11 +3,34 @@ from copy import deepcopy
 import math
 
 
-def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_spacing=1.0, object_snap=True):
+def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_spacing=1.0, object_snap=True,
+                   anchor=None, angle_step=None):
     """Resolve a drawing click/preview: point, explicit edge, then free grid point."""
     x, y = float(x), float(y)
     if not all(math.isfinite(v) for v in (x, y)):
         raise ValueError('Choose a finite position on the current floor.')
+    if angle_step is not None and anchor is not None and not exact:
+        step = float(angle_step)
+        ax, ay = map(float, anchor)
+        if not all(math.isfinite(v) for v in (step, ax, ay)) or not 0 < step <= 90:
+            raise ValueError('Drawing angle increment must be between zero and 90 degrees, with a finite anchor.')
+        # Resolve grid first, then project onto the closest permitted ray. Object
+        # attraction is accepted only when it retains that ray's direction.
+        base = drawing_target(points, edges, floor, x, y, snap,
+                              grid_spacing=grid_spacing, object_snap=False)
+        dx, dy = base['x'] - ax, base['y'] - ay
+        angle = math.radians(math.floor(math.degrees(math.atan2(dy, dx)) / step + .5) * step)
+        ux, uy = math.cos(angle), math.sin(angle)
+        distance = max(0., dx * ux + dy * uy)
+        px, py = ax + distance * ux, ay + distance * uy
+        candidate = drawing_target(points, edges, floor, px, py, False, exact=True,
+                                   grid_spacing=grid_spacing, object_snap=object_snap)
+        cx, cy = candidate['x'] - ax, candidate['y'] - ay
+        if abs(cx * uy - cy * ux) <= 1e-8 and cx * ux + cy * uy >= -1e-8:
+            return dict(candidate, angle_step=step)
+        target = drawing_target(points, edges, floor, px, py, False, exact=True,
+                                grid_spacing=grid_spacing, object_snap=False)
+        return dict(target, angle_step=step)
     local = {name: p for name, p in points.items() if int(p['floor']) == int(floor)}
 
     def point_at(px, py, radius):
@@ -75,11 +98,13 @@ def connect(config, points, start, finish, bidirectional=True):
     return True
 
 
-def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True):
+def draw_step(config, points, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True, angle_step=None):
     """Atomically place/reuse/split a target and connect it to the current anchor."""
     if start is not None and (start not in points or int(points[start]['floor']) != int(floor)):
         raise ValueError('Finish this route before starting on another floor or layout.')
-    target = drawing_target(points, config['corridors']['edges'], floor, x, y, snap, exact=exact, grid_spacing=grid_spacing, object_snap=object_snap)
+    anchor = (points[start]['x'], points[start]['y']) if start is not None else None
+    target = drawing_target(points, config['corridors']['edges'], floor, x, y, snap, exact=exact,
+                            grid_spacing=grid_spacing, object_snap=object_snap, anchor=anchor, angle_step=angle_step)
     result = deepcopy(config)
     if target['kind'] == 'edge':
         result, chains = subdivide(config, points, {target['key']: [target['fraction']]})

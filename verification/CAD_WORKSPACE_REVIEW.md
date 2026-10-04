@@ -62,6 +62,25 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Direction constraints checkpoint, 4 October 2026
+
+The corridor coordinate bar now offers **Free direction**, **Orthogonal (90°)**,
+and **Polar 45° / 30° / 15°**. The first point is unconstrained; subsequent mouse
+placements project onto the nearest permitted direction from the current route
+end. Grid rounding applies before direction projection. Object attraction is
+accepted only if it preserves that direction; an exact corridor intersection
+still splits the corridor using the existing attribute-preserving operation.
+Typed coordinates explicitly bypass grid and direction constraints, with that
+override stated in feedback. Changing controls invalidates the old preview.
+Free direction remains the default, and the selector is confined to the existing
+corridor input bar rather than adding another permanent side panel.
+
+Ninety-three focused CAD tests passed. Independent references cover horizontal,
+vertical and diagonal projection, off-grid anchors, exact typed coordinates,
+nearby object rejection, aligned object reuse, edge splitting, preview/placement
+parity and undo/redo. Human workflow acceptance remains open. These controls do
+not introduce curved edges, robot turning geometry or multi-object transforms.
+
 ### Snapping checkpoint, 4 October 2026
 
 The drawing toolbar now separates **Grid snap** from **Object snap**. Under
@@ -80,12 +99,12 @@ Ninety focused CAD tests passed, including independent grid arithmetic, exact
 input, invalid spacing, object attraction, undo/redo and existing drawing, door,
 workspace and deletion workflows. The full verification pack and human visual
 acceptance have not been rerun for this checkpoint. Separate endpoint/midpoint
-snap choices, orthogonal/polar constraints and automatic crossing junctions remain
+snap choices and automatic crossing junctions remain
 open; this checkpoint does not claim those capabilities.
 
 This is working interaction infrastructure, not the final A2 appearance. The map
 still uses its existing dark palette and legend; dense LTN labels need better
-display controls. Selectable snap types, orthogonal/polar constraints, full
+display controls. Selectable snap types, full
 location/door footprint drawing, arcs/fillets and multi-object transforms remain.
 Layers, run-time editing locks, complete keyboard and custom-rendering
 accessibility, numerical engineering input authoring and advanced dialog rework

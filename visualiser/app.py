@@ -1141,6 +1141,7 @@ class AMRGraphEditor(QMainWindow):
             self.cad_drawing_input.submitted.connect(self.submit_corridor_coordinate)
             self.cad_drawing_input.cancelled.connect(self.cancel_cad_command)
             self.cad_drawing_input.draftChanged.connect(self.preview_typed_corridor)
+            self.cad_drawing_input.direction.currentIndexChanged.connect(self.on_snap_settings_changed)
             self.cad_drawing_input.setVisible(drawing)
             self.cad_drawing_input.setEnabled(drawing)
             self.cad_drawing_input.feedback('Click or type a start point. Typed input bypasses grid; object snapping follows the Object snap setting.')
@@ -1176,14 +1177,17 @@ class AMRGraphEditor(QMainWindow):
 
     def _corridor_drawing_feedback(self, target, *, typed=False):
         kind = {'point': 'Object snap: existing point', 'edge': 'Object snap: corridor split',
-                'new': 'Typed exact point' if typed else ('Grid point' if self.snap_check.isChecked() else 'Free point')}[target['kind']]
+                'new': 'Typed exact point' if typed else ('Constrained point' if target.get('angle_step') else
+                        ('Grid point' if self.snap_check.isChecked() else 'Free point'))}[target['kind']]
         text = f"{kind} | X {target['x']:.12g}, Y {target['y']:.12g} m"
         start = self.store.all_points().get(self.corridor_draw_start)
         if start:
             dx, dy = target['x'] - float(start['x']), target['y'] - float(start['y'])
             text += f' | {math.hypot(dx,dy):.6g} m at {math.degrees(math.atan2(dy,dx)) % 360:.6g}°'
         if typed:
-            text += ' | grid bypassed'
+            text += ' | grid bypassed; direction constraint bypassed'
+        elif target.get('angle_step'):
+            text += f" | direction constrained to {target['angle_step']:g}° increments"
         if hasattr(self, 'cad_drawing_input'):
             self.cad_drawing_input.feedback(text)
         return text
@@ -1239,9 +1243,11 @@ class AMRGraphEditor(QMainWindow):
         from corridor_editing import drawing_target
         x, y = self.scene_to_world(sx, sy)
         try:
+            start = self.store.all_points().get(self.corridor_draw_start)
             self.corridor_draw_preview = drawing_target(self.store.all_points(), self.store.data['corridors']['edges'],
                 self.floor_spin.value(), x, y, self.snap_check.isChecked(),
-                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
+                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(),
+                anchor=(start['x'], start['y']) if start else None, angle_step=self.corridor_angle_step())
             self._corridor_drawing_feedback(self.corridor_draw_preview)
         except (ValueError, KeyError, TypeError):
             self.corridor_draw_preview = None
@@ -1253,7 +1259,8 @@ class AMRGraphEditor(QMainWindow):
             target = self.store.draw_corridor_step(self.corridor_draw_start, self.floor_spin.value(), x, y,
                 snap=False if exact else self.snap_check.isChecked(),
                 bidirectional=self.bidirectional_check.isChecked(), exact=exact,
-                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked())
+                grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(),
+                angle_step=self.corridor_angle_step())
         except (ValueError, KeyError, TypeError) as exc:
             self.set_status(f'Route was not changed: {exc}')
             return False
@@ -1267,6 +1274,9 @@ class AMRGraphEditor(QMainWindow):
         self.refresh_canvas()
         self.set_status(f"Route end: {target['name']}. Click the next point; right-click or Escape finishes. Existing directions and profiles are retained.")
         return True
+
+    def corridor_angle_step(self):
+        return self.cad_drawing_input.direction.currentData() if hasattr(self, 'cad_drawing_input') else None
 
     def set_status(self, text):
         self.status_label.setText(text)

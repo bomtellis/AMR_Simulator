@@ -2,7 +2,7 @@
 import math
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QWidget, QComboBox
 
 
 def parse_coordinate(text, anchor=None):
@@ -70,17 +70,25 @@ class CadDrawingInput(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
         label = QLabel('Next point (m)', self)
+        self.direction = QComboBox(self)
+        self.direction.setAccessibleName('Corridor drawing direction constraint')
+        for title, step in [('Free direction', None), ('Orthogonal (90°)', 90),
+                            ('Polar 45°', 45), ('Polar 30°', 30), ('Polar 15°', 15)]:
+            self.direction.addItem(title, step)
+        self.direction.setToolTip('Constrain mouse placement from the current route end. Grid applies first; '
+            'object snapping must retain the constrained direction. Typed coordinates override direction and grid.')
         self.coordinate_edit = CoordinateEdit(self)
         self.coordinate_edit.setPlaceholderText('X,Y  |  @dx,dy  |  @length<angle')
         self.coordinate_edit.setAccessibleName('Corridor coordinate entry in metres')
         self.coordinate_edit.setToolTip('Absolute X,Y; relative @dx,dy; polar @length<angle. '
             'Angles: 0° east, 90° north. Enter places a point; blank Enter finishes; Escape cancels the draft. '
-            'Typed points bypass the grid. Object snapping follows the Object snap setting; review the actual endpoint before Enter.')
+            'Typed points bypass grid and direction constraints. Object snapping follows the Object snap setting; review the actual endpoint before Enter.')
         self.coordinate_edit.setMinimumWidth(240)
         label.setBuddy(self.coordinate_edit)
         self.feedback_label = QLabel(self)
         self.feedback_label.setWordWrap(True)
         self.feedback_label.setAccessibleName('Drawing coordinates, snapping and input errors')
+        layout.addWidget(self.direction)
         layout.addWidget(label)
         layout.addWidget(self.coordinate_edit, 1)
         layout.addWidget(self.feedback_label, 2)

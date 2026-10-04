@@ -839,11 +839,18 @@ The full application guide is
 also unfinished.
 Continue with:
 
+CAD direction checkpoint, 4 October 2026: the corridor input bar now supports
+orthogonal and 15/30/45-degree mouse constraints. Typed coordinates explicitly
+override them; snapping cannot deflect the selected direction. Ninety-three
+focused CAD tests pass, including independent geometry and undo/preview checks.
+This closes the basic orthogonal/polar drawing-control implementation, while
+human acceptance, richer snap types, crossings, footprints and arcs remain open.
+
 CAD snapping checkpoint, 4 October 2026: separate grid/object toggles and an
 adjustable metre spacing now govern corridor, node and door placement. Typed
 preview and commit share settings; exact overlaps preserve topology. Ninety
 focused CAD tests pass. See `CAD_WORKSPACE_REVIEW.md` for scope and remaining
-snap types, constraints and crossing-junction work.
+snap types and crossing-junction work.
 
 Investigation UI checkpoint, 4 October 2026: timeline tables render 500 events per
 page with previous/next and direct navigation, retaining every contributing record
