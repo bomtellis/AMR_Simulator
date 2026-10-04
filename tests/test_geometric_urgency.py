@@ -53,6 +53,47 @@ class GeometricUrgencyTests(unittest.TestCase):
         sim = selector([urgent, routine], {('Routine', 'R1'): 110})
         self.assertIs(routine, sim._select_best_assignment()[1])
 
+    def test_blocked_candidate_window_does_not_hide_later_feasible_work(self):
+        blocked = [task(f'Blocked-{i}', 1) for i in range(8)]
+        routine = task('Routine', 100)
+        for detailed in (False, True):
+            with self.subTest(detailed=detailed):
+                sim = selector(blocked + [routine], {('Routine', 'R1'): 110}, detailed=detailed)
+                sim.max_single_candidate_tasks = 8
+                chosen = sim._select_best_assignment()
+                self.assertIsNotNone(chosen)
+                self.assertIs(routine, chosen[1])
+
+    def test_later_windows_keep_estimation_batches_bounded(self):
+        tasks = [task(str(i), 100) for i in range(19)]
+        sim = selector(tasks, {('18', 'R1'): 110})
+        sim.max_single_candidate_tasks = 8
+        original = sim._estimate_candidate_jobs
+        batches = []
+
+        def estimates(jobs):
+            batches.append([job['task_or_tasks'].id for job in jobs])
+            return original(jobs)
+
+        sim._estimate_candidate_jobs = estimates
+        self.assertIs(tasks[-1], sim._select_best_assignment()[1])
+        self.assertEqual([list(map(str, range(0,8))), list(map(str, range(8,16))),
+                          list(map(str, range(16,19)))], [b for b in batches if b])
+
+    def test_first_feasible_window_retains_precedence(self):
+        tasks = [task(str(i), 100) for i in range(9)]
+        sim = selector(tasks, {('7','R1'): 300, ('8','R1'): 110}, detailed=False)
+        sim.max_single_candidate_tasks = 8
+        self.assertIs(tasks[7], sim._select_best_assignment()[1])
+
+    def test_all_windows_blocked_returns_none_without_dropping_tasks(self):
+        tasks = [task(str(i), 100) for i in range(19)]
+        sim = selector(tasks, {})
+        sim.max_single_candidate_tasks = 8
+        before = list(sim.pending_tasks)
+        self.assertIsNone(sim._select_best_assignment())
+        self.assertEqual(before, sim.pending_tasks)
+
     def test_equal_priority_selects_longest_waiting_not_fastest_finish(self):
         old, recent = task('Old', 10, 0), task('Recent', 10, 90)
         sim = selector([recent, old], {('Old', 'R1'): 300,

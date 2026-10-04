@@ -1,5 +1,37 @@
 # Operating-scale measurement — 4 October 2026
 
+## Follow-up: candidate-window starvation
+
+The retained diagnostic state reproduced the original 490 pending tasks with no
+future events. Eight tasks had a failed charger-access estimate; 482 had no
+recorded pending reason. An independent selector regression then proved that a
+fully blocked eight-task candidate window hid feasible work beyond it in both
+simple and detailed modes.
+
+The scheduler now examines subsequent bounded windows when the current window
+has no assignment. Existing precedence within each window, batch preference and
+charging decisions are retained. It does not discard blocked tasks or increase
+the number of tasks per estimation batch. Tests cover later-window selection,
+bounded batches, first-feasible-window precedence and an entirely blocked queue.
+
+The identical full workload after this fix completed **6,455 tasks**, failed
+457 and left 88 pending: **402 additional completions**. Completed and failed
+events still reconcile with the run summary; input hash and configuration
+roundtrip are unchanged. Execution and exports took **550.802 seconds** and
+investigation took 3.759 seconds. Peak working set was 906,059,776 bytes. See
+`workload-evidence/window-fix.json` and local full evidence under
+`latest/workload-scale-window-fix`.
+
+This exposes a substantial runtime regression from examining previously hidden
+work. Optimising repeated infeasible estimates and explaining the 88 remaining
+pending tasks are open actions; do not restore the bounded-window starvation to
+recover the old timing. Lift-wear assumptions remain unchanged and full scale
+acceptance still fails. **226 focused tests pass** across scheduling, charging,
+deferral, physical-bin returns, routing, geometric traffic and resource recovery.
+The full isolated regression baseline has not yet been refreshed for this fix.
+
+## Original baseline
+
 The controlled seven-day workload is reproducible, but **does not pass the
 all-tasks-completed gate**. Two fresh-process runs each produced 6,053 completed,
 457 failed and 490 pending tasks from 7,000 releases. Preserve this result when

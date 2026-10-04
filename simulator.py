@@ -11231,10 +11231,9 @@ class Simulation:
             return multi_stop_best
 
         candidate_tasks = []
-        # Apply the candidate limit to tasks that can actually be considered
-        # now.  In particular, generated waste tasks may wait for their
-        # physical bin to return.  Counting those blocked tasks here can fill
-        # the whole window and hide the return task that would free the bin.
+        # Filter work that cannot be considered now before forming bounded
+        # estimation windows. Generated waste tasks may wait for a physical
+        # bin whose return task is later in the queue.
         for item in sorted(self.pending_tasks):
             task = item[3]
             if self._pending_task_removed(task):
@@ -11273,8 +11272,22 @@ class Simulation:
                     continue
 
             candidate_tasks.append(item)
-            if len(candidate_tasks) >= self.max_single_candidate_tasks:
-                break
+
+        # Bound each estimation batch, not the set of work that can ever run.
+        # A blocked first window (for example robots stranded without charging
+        # access) must not conceal feasible work later in the pending queue.
+        width = self.max_single_candidate_tasks
+        for offset in range(0, max(1, len(candidate_tasks)), width):
+            choice = self._select_single_candidate_window(
+                candidate_tasks[offset:offset + width],
+                batch_charge_requests if offset == 0 else [],
+            )
+            if choice is not None:
+                return choice
+        return None
+
+    def _select_single_candidate_window(self, candidate_tasks, batch_charge_requests):
+        """Select within one ordered, bounded batch using existing precedence."""
 
         single_jobs = []
         for task_order, (_, _, _, task) in enumerate(candidate_tasks):

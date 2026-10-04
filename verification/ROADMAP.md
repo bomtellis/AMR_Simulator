@@ -1,5 +1,14 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 scale-run defect fixed: an infeasible candidate window no longer
+hides feasible tasks later in the pending queue. Route estimates remain batched;
+226 focused regressions pass. The unchanged seven-day workload completes 402
+additional tasks (6,455 completed, 457 failed, 88 pending), with reconciled event
+counts. Runtime rises to 550.802 seconds. Explain the remaining pending work and
+optimise repeated infeasible estimates next, retaining the corrected behaviour.
+See `WORKLOAD_SCALE_REVIEW.md`; full workload acceptance and a refreshed full
+isolated regression baseline remain open.
+
 4 October 2026 operating-scale evidence: two controlled 10-floor, 60-robot,
 7,000-task runs reproduce identical outcomes in approximately 172 seconds each.
 Both have 6,053 completed, 457 failed and 490 pending tasks; lift health declines
