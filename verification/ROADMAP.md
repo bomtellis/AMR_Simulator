@@ -19,6 +19,19 @@ See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md)
 
 ## Assessment and evidence rules
 
+4 October 2026 layout-copy checkpoint: Edit/context menus copy selected locations
+and corridor nodes by an exact displacement, including selected-edge endpoints
+and all explicit edges within the selection. Unique names, dashed previews,
+profile membership, local/absolute owned geometry, internal wash references and
+one-step undo/redo are implemented. Bays start empty unless Copy occupied bays is
+enabled. Operational demand, people schedules, scenario events, initial fleet
+and geometry are separate inputs. Automatic corridors must first be explicit;
+departments/lifts use their dedicated editors. Seven copy acceptance cases plus
+related CAD, profile, inventory and project regressions pass (107 tests), including
+independent copied clean/dirty path lengths of 10/14 metres and project round trips.
+Actual compact large-text rendering is retained. Clipboard placement, department/
+lift duplication, trim/extend/offset, layers and human workflow acceptance remain open.
+
 4 October 2026 selection-rotation checkpoint: Edit and selection context menus
 now expose rotation about editable absolute X,Y with counterclockwise degrees.
 A dashed graph preview shows transformed points, affected edges, boundaries,

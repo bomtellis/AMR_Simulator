@@ -1,7 +1,5 @@
 """Inline rotation parameters and affected-selection preview."""
 from PySide6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton
-from PySide6.QtCore import Qt, QPointF
-from PySide6.QtGui import QColor, QPen, QPolygonF
 from visualiser.cad_drawing_input import CoordinateEdit, parse_coordinate
 from visualiser.selection_rotation import finite, rotate_selection
 
@@ -78,36 +76,9 @@ class CadRotateInput(QWidget):
     def paint_preview(self, painter):
         if self.isHidden() or self.preview_store is None:
             return
-        e = self.editor
-        def position(x, y):
-            return QPointF(e.canvas.mapFromScene(e.world_to_scene(x, y)))
-        points = self.preview_store.all_points()
-        painter.save()
-        painter.setPen(QPen(QColor(e._map_colours['accent']), 2, Qt.DashLine))
-        painter.setBrush(Qt.NoBrush)
-        for edge in self.preview_store.data['corridors']['edges']:
-            a, b = edge['from'], edge['to']
-            if not self.preview_names.intersection((a, b)) or a not in points or b not in points:
-                continue
-            if any(int(points[name]['floor']) != e.floor_spin.value() for name in (a,b)):
-                continue
-            painter.drawLine(position(points[a]['x'], points[a]['y']), position(points[b]['x'], points[b]['y']))
-        for name in self.preview_names:
-            p = points[name]
-            painter.drawEllipse(position(p['x'], p['y']), 5, 5)
-            location = self.preview_store.get_location(name)
-            if location is not None:
-                outlines = [self.preview_store.get_location_bounding_box_points(name)]
-                outlines.extend(self.preview_store.inventory_space_points_absolute(name, space)
-                                for space in location.get('inventory_spaces', []))
-                for outline in outlines:
-                    if outline:
-                        painter.drawPolygon(QPolygonF([position(p['x'], p['y']) for p in outline]))
-        pivot = position(*self.preview_centre)
-        painter.drawLine(pivot+QPointF(-8,0), pivot+QPointF(8,0))
-        painter.drawLine(pivot+QPointF(0,-8), pivot+QPointF(0,8))
-        painter.drawText(pivot+QPointF(10,-10), 'Rotation preview')
-        painter.restore()
+        from visualiser.selection_preview import paint_selection_preview
+        paint_selection_preview(self.editor, painter, self.preview_store,
+                                self.preview_names, self.preview_centre, 'Rotation preview')
 
     def apply(self):
         try:

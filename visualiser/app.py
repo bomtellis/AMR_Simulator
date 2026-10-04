@@ -1149,6 +1149,9 @@ class AMRGraphEditor(QMainWindow):
         from visualiser.cad_move_input import CadMoveInput
         self.cad_move_input = CadMoveInput(self)
         layout.addWidget(self.cad_move_input)
+        from visualiser.cad_copy_input import CadCopyInput
+        self.cad_copy_input = CadCopyInput(self)
+        layout.addWidget(self.cad_copy_input)
         from visualiser.cad_rotate_input import CadRotateInput
         self.cad_rotate_input = CadRotateInput(self)
         layout.addWidget(self.cad_rotate_input)
@@ -1187,6 +1190,8 @@ class AMRGraphEditor(QMainWindow):
             self.mode_combo.setCurrentIndex(index)
 
     def _clear_corridor_drawing(self):
+        if hasattr(self, 'cad_copy_input'):
+            self.cad_copy_input.hide()
         if hasattr(self, 'cad_rotate_input'):
             self.cad_rotate_input.hide()
         self._clear_location_boundary_draft()
@@ -1239,6 +1244,9 @@ class AMRGraphEditor(QMainWindow):
         return self.cad_drawing_input
 
     def cancel_cad_command(self, *_):
+        if hasattr(self, 'cad_copy_input') and not self.cad_copy_input.isHidden():
+            self.cad_copy_input.hide()
+            return True
         if hasattr(self, 'cad_rotate_input') and not self.cad_rotate_input.isHidden():
             self.cad_rotate_input.hide()
             return True
@@ -2332,6 +2340,8 @@ class AMRGraphEditor(QMainWindow):
         return True
 
     def refresh_canvas(self, *, update_panels=True):
+        if hasattr(self, 'cad_copy_input') and not self.cad_copy_input.isHidden():
+            self.cad_copy_input.refresh_preview()
         if hasattr(self, 'cad_rotate_input') and not self.cad_rotate_input.isHidden():
             self.cad_rotate_input.refresh_preview()
         if hasattr(self, 'boundary_input') and not self.boundary_input.isHidden():
@@ -2862,6 +2872,8 @@ class AMRGraphEditor(QMainWindow):
                 self._point_name_labels[name] = text
 
     def draw_overlay_panels(self, painter, viewport_rect):
+        if hasattr(self, 'cad_copy_input'):
+            self.cad_copy_input.paint_preview(painter)
         if hasattr(self, 'cad_rotate_input'):
             self.cad_rotate_input.paint_preview(painter)
         draft = getattr(self, '_rectangle_draft', None)
@@ -3543,6 +3555,7 @@ class AMRGraphEditor(QMainWindow):
     def show_selection_move(self):
         if self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move' or self.drag_mode_active:
             return
+        self.cad_copy_input.hide()
         self.cad_rotate_input.hide()
         self.cad_move_input.refresh_preview()
         self.cad_move_input.show()
@@ -3553,6 +3566,7 @@ class AMRGraphEditor(QMainWindow):
                 or self._current_edit_mode() != 'select_move' or self.drag_mode_active
                 or self.route_profile_selection_active or self.department_location_placement_active):
             return
+        self.cad_copy_input.hide()
         self.cad_move_input.hide()
         points = self.selection_move_points()
         if points:
@@ -3579,6 +3593,36 @@ class AMRGraphEditor(QMainWindow):
         self.store.data = staged.data
         self.refresh_canvas()
         self.set_status(f'Rotated {len(points)} selected points by {degrees:g}°. Recheck routes and initial poses.')
+        return True
+
+    def show_selection_copy(self):
+        if (not self._project_editing_allowed() or self.workspace.stage != 'layout'
+                or self._current_edit_mode() != 'select_move' or self.drag_mode_active
+                or self.route_profile_selection_active or self.department_location_placement_active):
+            return
+        self.cad_move_input.hide()
+        self.cad_rotate_input.hide()
+        self.cad_copy_input.offset.clear()
+        self.cad_copy_input.refresh_preview()
+        self.cad_copy_input.show()
+        self.cad_copy_input.offset.setFocus()
+        self.set_status('Enter a displacement to preview copies. Create copy commits; Escape cancels.')
+
+    @undoable('Copy selected layout objects')
+    def copy_selected_by(self, dx, dy, *, occupied=False):
+        if (self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move'
+                or self.drag_mode_active or self.route_profile_selection_active
+                or self.department_location_placement_active or not self._finish_property_draft()):
+            return False
+        from visualiser.selection_copy import copy_selection
+        staged, mapping, edge_count = copy_selection(self.store, self.selection_move_points(), dx, dy, occupied=occupied)
+        self.store.data = staged.data
+        self.selected_point_names = set(mapping.values())
+        self.selected_point_name = next(iter(sorted(self.selected_point_names)), None)
+        self.selected_edge_keys = set()
+        self.cad_copy_input.hide()
+        self.refresh_canvas()
+        self.set_status(f'Copied {len(mapping)} points and {edge_count} corridors. Configure demand for new locations and run Project checks.')
         return True
 
     @undoable('Move selected objects by displacement')
@@ -3754,6 +3798,7 @@ class AMRGraphEditor(QMainWindow):
                 menu.addAction(self.workbench.delete_action)
                 menu.addAction(self.workbench.move_action)
                 menu.addAction(self.workbench.rotate_action)
+                menu.addAction(self.workbench.copy_action)
                 menu.addAction(self.workbench.fit_selection_action)
                 menu.addSeparator()
                 if picked_edge is not None:
@@ -3898,6 +3943,7 @@ class AMRGraphEditor(QMainWindow):
             menu.addAction(self.workbench.delete_action)
             menu.addAction(self.workbench.move_action)
             menu.addAction(self.workbench.rotate_action)
+            menu.addAction(self.workbench.copy_action)
             menu.addAction(self.workbench.fit_selection_action)
             menu.addSeparator()
 

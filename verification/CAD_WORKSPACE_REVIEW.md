@@ -7,6 +7,22 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Layout copy checkpoint (4 October 2026): select locations/nodes/corridors and use
+**Edit → Copy selected by…** or the selection context menu. Enter a displacement
+in metres (`dx,dy` or `@distance<angle`). Dashed outlines preview the result; the
+feedback names the new objects (hover for the complete name mapping). Create copy
+adds new identities and internal edges in one undo step, then selects the copies.
+Copied bays are empty unless **Copy occupied bays** is enabled. Object settings,
+boundaries, bay templates, corridor attributes and matching named-profile
+allowances are copied; internal wash targets follow the new names. External
+connections and operational demand/people/scenario rules are not duplicated.
+Configure demand and run Project checks afterwards. Automatic graph connections
+must first be made explicit. Departments and lifts retain their dedicated editing
+workflows. Seven copy tests and related regressions pass (107 tests), including
+simulator route lengths, invalid/colliding placements, inventory policy,
+preview/commit equality, undo and save/reopen. Actual rendering is stored at
+`latest/cad-control-preview/copy-large-text.png`; human workflow acceptance remains open.
+
 Selection rotation checkpoint (4 October 2026): select points or corridors, then
 choose **Edit → Rotate selected…** (also in selection context menus). The centre
 starts at the selected point extents' midpoint; enter another absolute `X,Y`
