@@ -1,5 +1,16 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 integrated CAD verification baseline: **2,040/2,040 tests passed**
+across **183 isolated modules** in 434.957137 seconds at `51a0a3a`. The evidence
+has zero broken links and unchanged tested source. This includes layer styling,
+canvas Move/Copy/Rotate, shared transform snaps and corridor endpoint trim/extend.
+Review `latest/cad-transforms-verified/index.html`; JUnit, per-module logs, source
+snapshot and evidence JSON are retained beside it. Preserved local simulator/LTN
+changes are included, so this is not a clean-install result. The 267 unreviewed
+option paths, representative workload and LTN performance measurements, remaining
+core/CAD requirements, offline packaging, human approval and learning materials
+retain their open gates. Passing regression tests do not close those requirements.
+
 4 October 2026 corridor endpoint trim/extend: select one corridor and use Edit or
 its context menu → Trim / extend corridor. Choose a free corridor-node endpoint
 and select/pick a boundary; a ghost preview shows the proposed connected graph.

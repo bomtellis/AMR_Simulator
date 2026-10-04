@@ -7,6 +7,13 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Integrated regression baseline (4 October 2026): `latest/cad-transforms-verified`
+records 2,040 passing tests in 183 isolated modules, zero broken evidence links
+and unchanged source at `51a0a3a`, including preserved local simulator/LTN edits.
+It covers the accumulated layer styling and canvas transform/trim features below.
+Human workflow acceptance, representative performance and the wider roadmap remain
+open; this is not clean-install or release acceptance evidence.
+
 Corridor trim/extend (4 October 2026): select one corridor and use **Edit → Trim /
 extend corridor…** or its context menu. Choose the free endpoint, then choose a
 boundary from the list or use **Pick boundary** on the graph. Review the ghost
