@@ -210,6 +210,7 @@ class ProjectWorkspace(QWidget):
         drawing = self.stage == 'layout' and self.editor._current_edit_mode() == 'corridor_draw'
         if self.stage != 'layout' and hasattr(self.editor, 'cad_move_input'):
             self.editor.cad_move_input.hide()
+            self.editor._rectangle_draft = None
         if hasattr(self.editor, 'cad_drawing_input'):
             self.editor.cad_drawing_input.setVisible(drawing)
             self.editor.cad_drawing_input.setEnabled(drawing)

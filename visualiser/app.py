@@ -490,7 +490,7 @@ class AMRGraphEditor(QMainWindow):
     def _history_busy(self):
         return (self._edit_depth > 0 or QApplication.activeModalWidget() is not None or
                 QApplication.mouseButtons() != Qt.NoButton or self.drag_mode_active or
-                bool(self.dragging_point_name) or bool(self.bounding_box_location_name) or
+                bool(self.dragging_point_name) or bool(self.bounding_box_location_name) or bool(getattr(self, '_rectangle_draft', None)) or
                 self.department_location_placement_active or self.route_profile_selection_active or
                 any(window.isVisible() and not window.property('amrEmbeddedPlayback') for window in self.findChildren(QMainWindow)))
 
@@ -748,6 +748,7 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.leftClicked.connect(self.on_left_click)
         self.canvas.leftDoubleClicked.connect(self.on_double_click)
         self.canvas.leftReleased.connect(self.on_left_release)
+        self.canvas.pointerMoved.connect(self.preview_location_rectangle)
         self.canvas.rightClicked.connect(self.on_right_click)
         self.canvas.middleClicked.connect(self.on_middle_click)
         self.canvas.middleDragged.connect(self.on_middle_drag)
@@ -765,6 +766,7 @@ class AMRGraphEditor(QMainWindow):
             ("Add door", "door", "Place a door node or insert a door opening into an existing corridor."),
             ("Add location", "location", "Place a general simulation location."),
             ("Draw location boundary", "location_bbox", "Draw or replace the usable boundary around a location."),
+            ("Draw rectangular location boundary", "location_rectangle", "Choose a location, then two opposite corners. Escape cancels."),
             ("Add department location", "department", "Place a location associated with a department workflow."),
             ("Connect corridor", "edge", "Create a corridor edge between graph nodes."),
             ("Add lift", "lift", "Place or edit a lift access point."),
@@ -1116,6 +1118,7 @@ class AMRGraphEditor(QMainWindow):
             self.mode_combo.setCurrentIndex(index)
 
     def _clear_corridor_drawing(self):
+        self._rectangle_draft = None
         self.corridor_draw_start = None
         self.corridor_draw_preview = None
         if hasattr(self, 'cad_drawing_input'):
@@ -1161,6 +1164,11 @@ class AMRGraphEditor(QMainWindow):
         return self.cad_drawing_input
 
     def cancel_cad_command(self, *_):
+        if getattr(self, '_rectangle_draft', None):
+            self._rectangle_draft = None
+            self.canvas.viewport().update()
+            self.set_status('Rectangle cancelled; the original location boundary is unchanged.')
+            return True
         if hasattr(self, 'cad_move_input') and not self.cad_move_input.isHidden():
             self.cad_move_input.hide()
             return True
@@ -2415,6 +2423,59 @@ class AMRGraphEditor(QMainWindow):
         )
         self.refresh_canvas()
 
+    def start_location_rectangle(self, name):
+        location = self.store.get_location(name)
+        if location is None or int(location['floor']) != self.floor_spin.value():
+            self.set_status('Choose a location on the active floor.')
+            return False
+        if not self._finish_property_draft():
+            return False
+        self._set_edit_mode('location_rectangle')
+        self.bounding_box_location_name = None
+        self.bounding_box_points = []
+        location = self.store.get_location(name)
+        self._rectangle_draft = dict(name=name, original=deepcopy(location), first=None, second=None)
+        self.set_status(f'Rectangle for {name}: click the first corner, then the opposite corner. Escape cancels.')
+        return True
+
+    def preview_location_rectangle(self, sx, sy):
+        draft = getattr(self, '_rectangle_draft', None)
+        if draft and draft['first'] is not None:
+            draft['second'] = self.snap(*self.scene_to_world(sx, sy))
+            self.canvas.viewport().update()
+
+    @undoable('Draw rectangular location boundary')
+    def place_location_rectangle_corner(self, x, y):
+        draft = getattr(self, '_rectangle_draft', None)
+        if not draft:
+            name = self.find_nearest_point_name(x, y, self.floor_spin.value(), radius_world=.45)
+            return self.start_location_rectangle(name) if name else False
+        if self.store.get_location(draft['name']) != draft['original']:
+            self._rectangle_draft = None
+            self.set_status('Location changed while drawing; start the rectangle again.')
+            self.canvas.viewport().update()
+            return False
+        x, y = self.snap(x, y)
+        if draft['first'] is None:
+            draft['first'] = draft['second'] = (x, y)
+            self.set_status('Click the opposite corner to apply the rectangle. Escape cancels.')
+            self.canvas.viewport().update()
+            return True
+        from visualiser.location_drawing import rectangle_points
+        try:
+            points = rectangle_points(draft['first'], (x, y))
+            self.store.set_location_bounding_box(draft['name'], points)
+        except (ValueError, TypeError) as exc:
+            self.set_status(f'Rectangle was not applied: {exc}')
+            return False
+        name = draft['name']
+        self._rectangle_draft = None
+        self.show_location_bounds_check.setChecked(True)
+        self._set_edit_mode('select_move')
+        self.refresh_canvas()
+        self.set_status(f'Saved rectangular boundary for {name}. Undo restores the previous boundary.')
+        return True
+
     @undoable("Edit location boundary")
     def finish_location_bounding_box_draw(self):
         name = self.bounding_box_location_name
@@ -2586,6 +2647,15 @@ class AMRGraphEditor(QMainWindow):
                 self._item_lookup[text] = ("point_label", name)
 
     def draw_overlay_panels(self, painter, viewport_rect):
+        draft = getattr(self, '_rectangle_draft', None)
+        if draft and draft['first'] is not None and draft['second'] is not None:
+            first, second = draft['first'], draft['second']
+            a = self.canvas.mapFromScene(self.world_to_scene(*first))
+            b = self.canvas.mapFromScene(self.world_to_scene(*second))
+            painter.setPen(QPen(QColor(self._map_colours['accent']), 2, Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRect(QRectF(QPointF(a), QPointF(b)).normalized())
+            painter.drawText(b + QPoint(12,-12), f'{abs(second[0]-first[0]):.6g} × {abs(second[1]-first[1]):.6g} m')
         target = self.corridor_draw_preview
         if self._current_edit_mode() == 'corridor_draw' and target:
             endpoint = self.canvas.mapFromScene(self.world_to_scene(target['x'], target['y']))
@@ -2842,6 +2912,10 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         raw_x, raw_y = self.scene_to_world(sx, sy)
         x, y = self.snap(raw_x, raw_y)
+
+        if mode == 'location_rectangle':
+            self.place_location_rectangle_corner(raw_x, raw_y)
+            return
 
         if self.department_location_placement_active:
             self.finish_department_location_placement(x, y, floor)
@@ -3366,6 +3440,9 @@ class AMRGraphEditor(QMainWindow):
     @undoable("Edit layout")
     def on_right_click(self, event, sx, sy):
         mode = self._current_edit_mode()
+        if mode == 'location_rectangle':
+            self.cancel_cad_command()
+            return
         if mode == 'corridor_draw':
             self.finish_corridor_drawing()
             return
@@ -3583,6 +3660,7 @@ class AMRGraphEditor(QMainWindow):
 
             if point.get("kind") == "location":
                 draw_bounds_action = menu.addAction("Add / edit room bounding box")
+                menu.addAction('Draw rectangular boundary', lambda: self.start_location_rectangle(picked))
                 remove_bounds_action = None
                 location = self.store.get_location(picked)
                 if location and location.get("bounding_box"):

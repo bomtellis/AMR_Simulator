@@ -62,6 +62,29 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Rectangular location boundaries, 4 October 2026
+
+Right-click a location in Select mode and choose **Draw rectangular boundary**.
+Click the first corner and then the opposite corner. A dashed outline displays
+width and height in metres before placement; the existing boundary remains saved
+until the second valid corner applies the replacement. Grid spacing controls the
+corners. The alternative **Draw rectangular location boundary** placement mode
+first asks the user to select the location. Existing polygon tools remain available.
+
+Escape/right-click cancels; mode, floor or workspace changes discard the draft.
+Zero-width/height rectangles are rejected, and a location changed during drawing
+must be selected again. Completion is one undoable edit and stores the footprint
+relative to the location so later movement carries it. Preview updates only the
+canvas overlay and does not rebuild drawing underlays.
+
+123 focused tests passed across rectangle geometry, drafting, selection, drawing,
+properties, workspace and history. References cover opposite corner ordering,
+invalid coordinates, nonmutating preview, replacement cancellation, stale input,
+grid placement, relative storage and undo/redo. Rotation and numerical footprint
+dimensions remain open; this adds an axis-aligned rectangular authoring workflow,
+not robot swept-footprint validation or a new geometry model. The full-suite
+baseline predates this increment.
+
 ### Existing-point and T-junction checkpoint, 4 October 2026
 
 **Create junction at crossing** now reuses a unique graph point exactly at the
