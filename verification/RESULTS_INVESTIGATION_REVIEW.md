@@ -94,11 +94,22 @@ This checkpoint reconciles completed/failed task sets against the recorded run
 summary. It does not independently certify every existing PDF/CSV report metric,
 reconstruct completed vehicle journeys, or prove full payload conservation.
 Legacy multi-stop journeys are reconstructed only where batch evidence exists.
-Logs above 300 MiB or 250,000 events are rejected explicitly; pagination for larger
-investigations remains outstanding. Direct event-schema migration is additive;
+Logs above 300 MiB or 250,000 events are rejected explicitly. Timeline tables now
+display 500 events per page, with previous/next controls and direct page selection.
+All contributing records remain available in chronological order and in exports;
+paging does not truncate evidence or alter metrics. File parsing and analysis still
+retain the accepted log in memory; larger-than-limit loading remains outstanding.
+Direct event-schema migration is additive;
 existing report/visualiser columns remain available.
 
 ## Verification evidence
+
+On 4 October 2026, 62 focused investigation, lift, tracked-stock and partial-run
+tests passed after timeline pagination. A 1,201-event UI reference verifies page
+boundaries, source-row identity, the final partial page, retained evidence and
+clearing stale detail after filtering or load failure. This establishes bounded
+table creation, not a measured 300 MiB load-time or memory guarantee. The full
+verification pack was not rerun for this UI checkpoint.
 
 The full test report is `latest/index.html`. New tests cover independently known
 timeline arithmetic, the nine-second reference delivery, width failures, native

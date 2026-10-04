@@ -272,6 +272,49 @@ class InvestigationUiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_large_timeline_pages_preserve_every_event_and_source_identity(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'events.csv'
+            path.write_text('event_type,sim_time_sec,task_id,details\n' + ''.join(
+                f'segment_wait,{i},T,Wait {i}\n' for i in range(1201)))
+            panel = ResultsInvestigationPanel()
+            try:
+                panel.accept_result(load_investigation(path))
+                panel.tasks.selectRow(0)
+                self.assertEqual(500, panel.events.rowCount())
+                self.assertEqual(1201, len(panel.event_rows))
+                self.assertEqual(3, panel.event_page.maximum())
+                self.assertFalse(panel.previous_events.isEnabled())
+                self.assertTrue(panel.next_events.isEnabled())
+                panel.next_events.click()
+                panel.events.selectRow(0)
+                self.assertIn('Source row: 502', panel.details.toPlainText())
+                self.assertIn('Wait 500', panel.details.toPlainText())
+                panel.event_page.setValue(3)
+                self.assertEqual('', panel.details.toPlainText())
+                self.assertEqual(201, panel.events.rowCount())
+                self.assertFalse(panel.next_events.isEnabled())
+                self.assertIn('1,001', panel.event_range.text())
+                panel.events.selectRow(200)
+                self.assertIn('Source row: 1202', panel.details.toPlainText())
+                self.assertEqual(1201, len(panel.result['events']))
+                panel.search.setText('No matching task')
+                self.assertEqual(0, panel.events.rowCount())
+                self.assertEqual('No events', panel.event_range.text())
+                self.assertFalse(panel.event_page.isEnabled())
+                self.assertEqual('', panel.details.toPlainText())
+                panel.search.clear()
+                panel.tasks.selectRow(0)
+                self.assertEqual(1, panel.event_page.value())
+                self.assertEqual(500, panel.events.rowCount())
+                panel.accept_result(None, 'Unreadable log')
+                self.assertEqual([], panel.event_rows)
+                self.assertEqual([], panel.task_rows)
+                self.assertEqual({}, panel.events_by_id)
+                self.assertFalse(panel.next_events.isEnabled())
+            finally:
+                panel.close()
+
     def test_task_and_metric_selection_show_contributing_events(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'events.csv'

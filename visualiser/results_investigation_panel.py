@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QComboBox, QTabWidget, QPlainTextEdit, QFileDialog, QMessageBox, QSplitter)
+    QLineEdit, QComboBox, QTabWidget, QPlainTextEdit, QFileDialog, QMessageBox, QSplitter, QSpinBox)
 from PySide6.QtCore import Qt
 
 from amr_results_investigation import load_investigation
@@ -64,6 +64,7 @@ class ResultJob(QRunnable):
 
 
 class ResultsInvestigationPanel(QWidget):
+    EVENT_PAGE_SIZE = 500
     table = staticmethod(DemandPreviewPanel.table)
     fill = staticmethod(DemandPreviewPanel.fill)
 
@@ -119,6 +120,23 @@ class ResultsInvestigationPanel(QWidget):
         self.timeline_label.setWordWrap(True)
         self.timeline_label.setMinimumHeight(self.fontMetrics().lineSpacing() * 4)
         timeline_layout.addWidget(self.timeline_label)
+        pages = QHBoxLayout()
+        self.previous_events = QPushButton('Previous page')
+        self.next_events = QPushButton('Next page')
+        self.event_page = QSpinBox()
+        self.event_page.setRange(1, 1)
+        self.event_page.setPrefix('Page ')
+        self.event_page.setAccessibleName('Timeline event page')
+        self.event_range = QLabel('No events')
+        self.previous_events.clicked.connect(lambda: self.event_page.setValue(self.event_page.value() - 1))
+        self.next_events.clicked.connect(lambda: self.event_page.setValue(self.event_page.value() + 1))
+        self.event_page.valueChanged.connect(self.populate_event_page)
+        pages.addWidget(self.previous_events)
+        pages.addWidget(self.event_page)
+        pages.addWidget(self.next_events)
+        pages.addWidget(self.event_range)
+        pages.addStretch()
+        timeline_layout.addLayout(pages)
         self.events = self.table(['Time (s)', 'Event', 'Evidence', 'AMR', 'Lift', 'Duration (s)', 'Wait (s)', 'Source row'])
         timeline_layout.addWidget(self.events)
         split.addWidget(timeline)
@@ -133,6 +151,7 @@ class ResultsInvestigationPanel(QWidget):
         self.metrics.itemSelectionChanged.connect(self.select_metric)
         self.lift_checks.itemSelectionChanged.connect(self.select_lift)
         self.events.itemSelectionChanged.connect(self.select_event)
+        self.clear_events()
 
     def open_csv(self):
         path, _ = QFileDialog.getOpenFileName(self, 'Open full simulation event log', '', 'CSV (*.csv)')
@@ -156,10 +175,11 @@ class ResultsInvestigationPanel(QWidget):
     def accept_result(self, result, error=''):
         self.job = None
         self.result = result
-        self.events.setRowCount(0)
+        self.clear_events()
         self.details.clear()
         self.export_button.setEnabled(bool(result))
         if error:
+            self.task_rows, self.lift_rows = [], []
             self.summary.setText('Investigation could not open: ' + error)
             self.tasks.setRowCount(0)
             self.metrics.setRowCount(0)
@@ -211,14 +231,40 @@ class ResultsInvestigationPanel(QWidget):
                           and (outcome == 'All outcomes' or t['outcome'] == outcome)]
         self.fill(self.tasks, [[display(t[k]) for k in ('task_id', 'outcome', 'release_seconds', 'assignment_seconds',
                                                        'completion_seconds', 'assignment_delay_seconds', 'route_profile')] for t in self.task_rows])
-        self.events.setRowCount(0)
+        self.clear_events()
         self.timeline_label.setText('Select a task or metric to see its supporting events.')
+
+    def clear_events(self):
+        self.event_rows = []
+        self.events_by_id = {} if not self.result else getattr(self, 'events_by_id', {})
+        self.reset_event_pages()
+
+    def reset_event_pages(self):
+        self.event_page.blockSignals(True)
+        self.event_page.setRange(1, max(1, (len(self.event_rows) + self.EVENT_PAGE_SIZE - 1) // self.EVENT_PAGE_SIZE))
+        self.event_page.setValue(1)
+        self.event_page.blockSignals(False)
+        self.populate_event_page()
 
     def show_events(self, ids):
         self.event_rows = sorted([self.events_by_id[eid] for eid in set(ids) if eid in self.events_by_id],
                                  key=lambda e: (e['time_seconds'] is None, e['time_seconds'] or 0, e['source_line']))
+        self.reset_event_pages()
+
+    def populate_event_page(self, *_):
+        start = (self.event_page.value() - 1) * self.EVENT_PAGE_SIZE
+        end = min(start + self.EVENT_PAGE_SIZE, len(self.event_rows))
+        self.events.blockSignals(True)
+        self.events.clearSelection()
+        self.events.setCurrentCell(-1, -1)
+        self.events.blockSignals(False)
+        self.details.clear()
         self.fill(self.events, [[e[k].replace('_', ' ') if k == 'type' else display(e[k]) for k in ('time_seconds', 'type', 'evidence_kind', 'amr_id', 'lift_id',
-                                                        'duration_seconds', 'wait_seconds', 'source_line')] for e in self.event_rows])
+                                                        'duration_seconds', 'wait_seconds', 'source_line')] for e in self.event_rows[start:end]])
+        self.previous_events.setEnabled(start > 0)
+        self.next_events.setEnabled(end < len(self.event_rows))
+        self.event_page.setEnabled(bool(self.event_rows))
+        self.event_range.setText(f'Events {start + 1:,}–{end:,} of {len(self.event_rows):,}' if self.event_rows else 'No events')
 
     def select_task(self):
         index = self.tasks.currentRow()
@@ -265,8 +311,9 @@ class ResultsInvestigationPanel(QWidget):
             'Coverage: ' + ('full bound planned movements' if record['known'] else 'incomplete; absence of a conflict does not prove consistency')]))
 
     def select_event(self):
-        index = self.events.currentRow()
-        if 0 <= index < len(self.event_rows):
+        row_index = self.events.currentRow()
+        index = (self.event_page.value() - 1) * self.EVENT_PAGE_SIZE + row_index
+        if row_index >= 0 and 0 <= index < len(self.event_rows):
             e = self.event_rows[index]
             row = e['row']
             self.details.setPlainText('\n'.join([

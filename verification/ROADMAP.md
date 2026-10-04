@@ -839,6 +839,13 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Investigation UI checkpoint, 4 October 2026: timeline tables render 500 events per
+page with previous/next and direct navigation, retaining every contributing record
+for review/export. Filtering and load failures clear stale event details. The 62
+focused regression tests pass; file analysis remains in-memory with the existing
+300 MiB / 250,000-event limits. This advances large-run usability but does not
+close overall performance, report coverage or remaining CAD acceptance gates.
+
 1. Current priority: deliver the confirmed A2 CAD interactions and present the
    working production UI for review. The first checkpoint adds compact controls,
    explicitly opened properties, directional selection and typed route drawing;
