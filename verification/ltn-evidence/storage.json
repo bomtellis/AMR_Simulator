@@ -1,0 +1,14 @@
+{
+  "source": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\ltn.json",
+  "source_sha256": "77ea27f29e79ac3ea004a965eed134846125b3d7d077361ce2068ef07179a181",
+  "source_json_bytes": 1391935,
+  "archive_bytes": 15140221,
+  "unique_drawing_bytes": 227733904,
+  "drawing_references": 6,
+  "unique_drawings": 5,
+  "save_seconds": 2.08,
+  "open_seconds": 0.317,
+  "configuration_roundtrip_matches": true,
+  "source_unchanged": true,
+  "limitations": "One local timing sample; open excludes drawing rendering and editor construction."
+}

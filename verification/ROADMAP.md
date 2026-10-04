@@ -1,5 +1,15 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 current LTN measurements: six drawing references / five unique
+drawings (227.7 MB) plus configuration pack into a 15.1 MB project, with exact
+roundtrip and unchanged source. Save/reopen take 2.080 / 0.317 seconds. Two
+bounded six-hour saved-project runs produce identical 150 completed / 15 failed /
+0 pending outcomes in 10.634 / 10.717 seconds; all outcome counts reconcile.
+Failures point to graph entries inside other inventory-bay obstacle bounds at
+seven drop-off zones. Add navigable preflight warnings for that risk next.
+See `LTN_CURRENT_REVIEW.md`. This does not close successful seven-day LTN runs,
+interactive drawing performance or the wider release gates.
+
 4 October 2026 controlled scale completion: two explicit constant-lift-health
 runs complete all 7,000 tasks at 10 floors / 60 robots / 1,000 tasks/day / seven
 days. Outcome and input hashes match between runs, all outcomes reconcile, and

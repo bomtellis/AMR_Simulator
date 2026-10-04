@@ -1,0 +1,43 @@
+{
+  "run_directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\ltn-current-six-hours\\results\\run_20261004_153652_oykhoc3m",
+  "project": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\ltn-current-six-hours\\ltn-bounded.amrproj",
+  "binding": {
+    "run_key": "472616ae49584859b122e607000d781a",
+    "project_id": "6cd91223fd0e4659894b74ce3ccc4fff",
+    "revision_id": "22818b4c5de143ae9803192d45ebd51b",
+    "revision_config_sha256": "167ef9995476fbf689fc3ffbc1970bc3bcae822619f484ade44eac5ee7e8d959"
+  },
+  "completed": 150,
+  "failed": 15,
+  "pending": 0,
+  "run_seconds": 10.634,
+  "outcome_sha256": "f590a2f075511fb1355df4ab1bd6c9ec8faf53d389eaa2f84b2a36ba54a816aa",
+  "input_unchanged": true,
+  "reconciliation": [
+    {
+      "outcome": "completed",
+      "recorded_summary_count": 150,
+      "event_count": 150,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    },
+    {
+      "outcome": "failed",
+      "recorded_summary_count": 15,
+      "event_count": 15,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    },
+    {
+      "outcome": "pending at stop",
+      "recorded_summary_count": 0,
+      "event_count": 0,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    }
+  ],
+  "warning_review": "Automatically acknowledged by the engineering regression command, not human approval."
+}
