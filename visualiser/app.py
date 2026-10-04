@@ -1270,9 +1270,11 @@ class AMRGraphEditor(QMainWindow):
         layout.addWidget(self.ensure_cad_drawing_input())
         from visualiser.cad_move_input import CadMoveInput
         self.cad_move_input = CadMoveInput(self)
+        self.canvas.pointerMoved.connect(self.cad_move_input.pointer_moved)
         layout.addWidget(self.cad_move_input)
         from visualiser.cad_copy_input import CadCopyInput
         self.cad_copy_input = CadCopyInput(self)
+        self.canvas.pointerMoved.connect(self.cad_copy_input.pointer_moved)
         layout.addWidget(self.cad_copy_input)
         from visualiser.cad_rotate_input import CadRotateInput
         self.cad_rotate_input = CadRotateInput(self)
@@ -3035,6 +3037,8 @@ class AMRGraphEditor(QMainWindow):
                 self._point_name_labels[name] = text
 
     def draw_overlay_panels(self, painter, viewport_rect):
+        if hasattr(self, 'cad_move_input'):
+            self.cad_move_input.paint_preview(painter)
         if hasattr(self, 'cad_copy_input'):
             self.cad_copy_input.paint_preview(painter)
         if hasattr(self, 'cad_rotate_input'):
@@ -3311,8 +3315,9 @@ class AMRGraphEditor(QMainWindow):
 
     @undoable("Edit layout")
     def on_left_click(self, event, sx, sy):
-        if self.cad_rotate_input.mouse_stage:
-            self.cad_rotate_input.mouse_click(sx, sy)
+        transform = self._active_canvas_transform()
+        if transform:
+            transform.mouse_click(sx, sy)
             return
         if hasattr(self, 'workspace'):
             self.workspace.selected_edge_record = None
@@ -3624,7 +3629,7 @@ class AMRGraphEditor(QMainWindow):
 
     @undoable("Edit layout")
     def on_double_click(self, event, sx, sy):
-        if self.cad_rotate_input.mouse_stage:
+        if self._active_canvas_transform():
             return
         if self._current_edit_mode() == 'corridor_draw':
             self.finish_corridor_drawing()
@@ -3726,14 +3731,23 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         return {name: points[name] for name in names if name in points and int(points[name]['floor']) == floor}
 
+    def _active_canvas_transform(self):
+        for name in ('cad_move_input','cad_copy_input','cad_rotate_input'):
+            bar = getattr(self,name,None)
+            if bar is not None and not bar.isHidden() and bar.mouse_stage:
+                return bar
+        return None
+
     def show_selection_move(self):
         if self.workspace.stage != 'layout' or self._current_edit_mode() != 'select_move' or self.drag_mode_active:
             return
         self.cad_copy_input.hide()
         self.cad_rotate_input.hide()
+        self.cad_move_input.hide()
         self.cad_move_input.refresh_preview()
         self.cad_move_input.show()
         self.cad_move_input.offset.setFocus()
+        self.set_status('Enter a displacement or Pick destination. Preview first; Apply commits, Escape cancels.')
 
     def show_selection_rotation(self):
         if (not self._project_editing_allowed() or self.workspace.stage != 'layout'
@@ -3777,6 +3791,7 @@ class AMRGraphEditor(QMainWindow):
             return
         self.cad_move_input.hide()
         self.cad_rotate_input.hide()
+        self.cad_copy_input.hide()
         self.cad_copy_input.offset.clear()
         self.cad_copy_input.refresh_preview()
         self.cad_copy_input.show()
@@ -3879,7 +3894,7 @@ class AMRGraphEditor(QMainWindow):
 
     @undoable("Move layout item", capture_before=False)
     def on_left_release(self, event):
-        if self.cad_rotate_input.mouse_stage:
+        if self._active_canvas_transform():
             return
         if self._finish_cad_selection(event):
             return
@@ -3926,8 +3941,9 @@ class AMRGraphEditor(QMainWindow):
 
     @undoable("Edit layout")
     def on_right_click(self, event, sx, sy):
-        if self.cad_rotate_input.mouse_stage:
-            self.cad_rotate_input.hide()
+        transform = self._active_canvas_transform()
+        if transform:
+            transform.hide()
             return
         mode = self._current_edit_mode()
         if mode == 'location_rectangle':
@@ -4204,7 +4220,7 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
 
     def on_drag(self, event, sx, sy):
-        if self.cad_rotate_input.mouse_stage:
+        if self._active_canvas_transform():
             return
         if self.project_editing_locked():
             return

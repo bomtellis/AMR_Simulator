@@ -136,16 +136,12 @@ class CadRotateInput(QWidget):
         self.centre.setEnabled(False)
         self.angle.setEnabled(False)
         self.preview.setText('Click the rotation centre. Escape or right-click cancels.')
+        self.editor.set_status(self.preview.text())
         self.editor.canvas.setFocus()
 
     def _mouse_point(self, sx, sy):
-        x, y = self.editor.scene_to_world(sx, sy)
-        if self.editor.object_snap_check.isChecked():
-            name = self.editor.find_nearest_point_name(x,y,self.editor.floor_spin.value(),radius_world=.45)
-            if name:
-                point = self.editor.store.all_points()[name]
-                return float(point['x']),float(point['y'])
-        return self.editor.snap(x,y)
+        from visualiser.cad_transform_pick import pick_point
+        return pick_point(self.editor,sx,sy)
 
     def pointer_moved(self, sx, sy):
         if self.mouse_stage == 'target' and not self.editor.project_editing_locked():
@@ -173,6 +169,7 @@ class CadRotateInput(QWidget):
             self.centre.setText(f'{point[0]:.12g},{point[1]:.12g}')
             self.mouse_stage = 'reference'
             self.preview.setText('Click a point along the reference direction from the centre.')
+            self.editor.set_status(self.preview.text())
         elif self.mouse_stage == 'reference':
             if math.dist(point,self.mouse_centre) < 1e-9:
                 self.preview.setText('Choose a reference point away from the centre.')
@@ -180,6 +177,7 @@ class CadRotateInput(QWidget):
             self.mouse_reference = point
             self.mouse_stage = 'target'
             self.preview.setText('Move to preview; click the target direction to apply. Escape cancels.')
+            self.editor.set_status(self.preview.text())
         elif self.mouse_stage == 'target':
             self.mouse_timer.stop()
             self.mouse_target = point

@@ -1,5 +1,18 @@
 # Dependable AMR application — revised delivery plan
 
+4 October 2026 canvas move/copy: both numerical transform bars now offer Pick
+destination. Pick a base point and destination with grid/visible-point snapping;
+coalesced previews show the result before the second click commits one undoable
+edit. Numerical Move now also has a graphical preview. Copies retain their existing
+new-identity, empty-bay-default and conflict-rejection rules. Selection stays intact
+during picking; right-click/Escape, floor/stage changes and reopening a command
+cancel the draft. Tests independently check preview/result equality, original-copy
+preservation, collision rejection, zero offsets, locks and undo/redo. Broader snap
+modes, clipboard operations and physical-clearance acceptance remain open.
+The 100 related transform, layer, selection, layout, lock, lifecycle and evidence
+tests pass. Actual normal Move and enlarged Copy captures were visually checked;
+the full-suite baseline predates this increment.
+
 4 October 2026 canvas rotation: Edit → Rotate selected now includes Pick rotation.
 Click a centre, a reference direction and a target direction to commit one undoable
 rotation using the existing transform model. Pointer motion previews the geometry

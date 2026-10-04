@@ -74,9 +74,9 @@ class CadInputLayoutTests(unittest.TestCase):
                 self.app.processEvents()
                 self.assertEqual(width,self.editor.width())
                 self.assertLessEqual(bar.height(),160)
-                # Rotation shares its second row with the canvas-pick action.
-                self.assertGreater(feedback.width(),bar.width()*(.8 if mode == 'rotate' else .9))
-                if mode == 'rotate':
+                # Transform bars share the feedback row with canvas picking.
+                self.assertGreater(feedback.width(),bar.width()*(.75 if mode in ('rotate','move','copy') else .9))
+                if mode in ('rotate','move','copy'):
                     self.assertFalse(feedback.geometry().intersects(bar.pick_button.geometry()))
                     self.assertTrue(bar.rect().contains(bar.pick_button.geometry()))
                 self.assertGreater(feedback.geometry().top(),entry.geometry().bottom())

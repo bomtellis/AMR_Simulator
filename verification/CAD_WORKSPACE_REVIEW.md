@@ -7,6 +7,15 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+Canvas Move/Copy (4 October 2026): open **Move selected by…** or **Copy selected
+by…**, choose **Pick destination**, then click a base point and the destination.
+The pointer previews the resulting geometry without changing the project; the
+destination click applies one undoable edit. Grid and visible graph-point snaps
+apply. Escape or right-click cancels, and a rejected copy placement keeps the draft
+open for another destination. Exact numerical offsets remain available. The Move
+bar also previews numerical translations. Existing copy rules still apply: new
+identities, empty bays by default and separate demand configuration.
+
 Canvas rotation (4 October 2026): select objects, open **Edit → Rotate selected…**
 and choose **Pick rotation**. Click the centre, a point along the starting direction,
 then a point along the target direction to apply. The last stage shows ghost
