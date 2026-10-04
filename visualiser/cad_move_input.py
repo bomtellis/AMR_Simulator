@@ -1,5 +1,5 @@
 """Inline numerical translation of the active-floor selection."""
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton
 from visualiser.cad_drawing_input import CoordinateEdit, parse_coordinate
 
 
@@ -7,7 +7,7 @@ class CadMoveInput(QWidget):
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
-        layout = QHBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
         self.offset = CoordinateEdit(self)
         self.offset.setAccessibleName('Move selection displacement in metres')
@@ -17,11 +17,14 @@ class CadMoveInput(QWidget):
         self.preview.setWordWrap(True)
         self.apply_button = QPushButton('Apply move', self)
         cancel = QPushButton('Cancel', self)
-        layout.addWidget(QLabel('Move by (m)', self))
-        layout.addWidget(self.offset)
-        layout.addWidget(self.preview, 1)
-        layout.addWidget(self.apply_button)
-        layout.addWidget(cancel)
+        label = QLabel('Move by (m)', self)
+        label.setBuddy(self.offset)
+        layout.addWidget(label, 0, 0)
+        layout.addWidget(self.offset, 0, 1)
+        layout.addWidget(self.apply_button, 0, 2)
+        layout.addWidget(cancel, 0, 3)
+        layout.addWidget(self.preview, 1, 0, 1, 4)
+        layout.setColumnStretch(1, 1)
         self.offset.textChanged.connect(self.refresh_preview)
         self.offset.returnPressed.connect(self.apply)
         self.offset.escapePressed.connect(self.hide)

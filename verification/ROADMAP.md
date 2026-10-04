@@ -839,6 +839,13 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Compact input-layout checkpoint, 4 October 2026: actual Qt review exposed a narrow
+rectangle feedback column at large text sizes. Rectangle, corridor and move bars
+now place feedback beneath inputs across the full width. The 1024×768/18-point
+rectangle graph viewport gains 82 pixels of height; real captures are saved under
+`verification/latest/cad-control-preview/`. 69 focused layout/interaction tests
+pass. This is not human UI approval or exhaustive DPI/accessibility verification.
+
 Feature-inventory reconciliation, 4 October 2026: the project, investigation and
 editing entries now match implemented controls and link their current acceptance
 modules; dedicated CAD input/view entries expose their remaining limitations.

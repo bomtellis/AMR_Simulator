@@ -1,5 +1,5 @@
 """Optional exact dimensions alongside two-corner footprint drawing."""
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton
 from visualiser.cad_drawing_input import CoordinateEdit
 from visualiser.location_drawing import dimensioned_rectangle
 
@@ -8,7 +8,7 @@ class RectangleInput(QWidget):
     def __init__(self, editor):
         super().__init__(editor)
         self.editor = editor
-        layout = QHBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(4,2,4,2)
         self.dimensions = CoordinateEdit(self)
         self.dimensions.setPlaceholderText('width,height[,angle]')
@@ -18,11 +18,15 @@ class RectangleInput(QWidget):
         self.explanation.setWordWrap(True)
         self.apply_button = QPushButton('Apply dimensions', self)
         cancel = QPushButton('Cancel', self)
-        layout.addWidget(QLabel('Rectangle at location centre (m, °)', self))
-        layout.addWidget(self.dimensions)
-        layout.addWidget(self.explanation, 1)
-        layout.addWidget(self.apply_button)
-        layout.addWidget(cancel)
+        label = QLabel('Rectangle (m, °)', self)
+        label.setToolTip('Exact dimensions and rotation, centred on the selected location.')
+        label.setBuddy(self.dimensions)
+        layout.addWidget(label, 0, 0)
+        layout.addWidget(self.dimensions, 0, 1)
+        layout.addWidget(self.apply_button, 0, 2)
+        layout.addWidget(cancel, 0, 3)
+        layout.addWidget(self.explanation, 1, 0, 1, 4)
+        layout.setColumnStretch(1, 1)
         self.dimensions.textChanged.connect(self.preview)
         self.dimensions.returnPressed.connect(self.apply)
         self.dimensions.escapePressed.connect(editor.cancel_cad_command)
@@ -52,7 +56,7 @@ class RectangleInput(QWidget):
             try:
                 points, width, height, angle = self.rectangle_geometry()
                 draft['numeric_points'] = points
-                self.explanation.setText(f'{width:g} × {height:g} m, {angle:g}°; replaces the boundary in one undo step.')
+                self.explanation.setText(f'At location centre: {width:g} × {height:g} m, {angle:g}°; replaces the boundary in one undo step.')
                 self.apply_button.setEnabled(True)
             except ValueError as exc:
                 self.explanation.setText(str(exc))

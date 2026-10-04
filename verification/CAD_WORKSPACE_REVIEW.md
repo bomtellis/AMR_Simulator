@@ -88,6 +88,25 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Compact drafting controls, 4 October 2026
+
+Rectangle, corridor and numerical-move controls now place feedback across the
+full row below their inputs, avoiding narrow columns of wrapped text. Rectangle
+units remain visible; its explanation and tooltip state that dimensions are
+centred on the location. Field labels are associated with their inputs.
+
+Actual Qt captures at `verification/latest/cad-control-preview/` are reproducible
+with `python -m verification.cad_control_preview`. The capture uses in-memory
+appearance settings and registers Windows UI fonts without changing user settings.
+At 1024×768 with 18-point UI text, the rectangle graph viewport increased from
+763×303 to 763×385 pixels. Normal and large-text captures were visually inspected;
+this is implementation review, not user approval. Captures use the compact reference
+project and omit underlays, so they are not LTN performance evidence.
+
+69 focused tests pass, including real 1024×768/18-point and 1500×900/10-point widget
+geometry, visible inputs, full-width feedback and retained drawing/move/rectangle
+interactions. Broader display/DPI combinations and human acceptance remain open.
+
 ### Connect crossings while drawing, 4 October 2026
 
 **More tools → Edit → Drawing behaviour → Connect crossings while drawing

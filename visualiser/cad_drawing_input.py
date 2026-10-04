@@ -2,7 +2,7 @@
 import math
 
 from PySide6.QtCore import QEvent, Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QWidget, QComboBox
+from PySide6.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget, QComboBox
 
 
 def parse_coordinate(text, anchor=None):
@@ -67,7 +67,7 @@ class CadDrawingInput(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        layout = QHBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
         label = QLabel('Next point (m)', self)
         self.direction = QComboBox(self)
@@ -88,10 +88,11 @@ class CadDrawingInput(QWidget):
         self.feedback_label = QLabel(self)
         self.feedback_label.setWordWrap(True)
         self.feedback_label.setAccessibleName('Drawing coordinates, snapping and input errors')
-        layout.addWidget(self.direction)
-        layout.addWidget(label)
-        layout.addWidget(self.coordinate_edit, 1)
-        layout.addWidget(self.feedback_label, 2)
+        layout.addWidget(self.direction, 0, 0)
+        layout.addWidget(label, 0, 1)
+        layout.addWidget(self.coordinate_edit, 0, 2)
+        layout.addWidget(self.feedback_label, 1, 0, 1, 3)
+        layout.setColumnStretch(2, 1)
         self.coordinate_edit.returnPressed.connect(self.submitted)
         self.coordinate_edit.escapePressed.connect(self.cancelled)
         self.coordinate_edit.textChanged.connect(self.draftChanged)
