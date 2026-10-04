@@ -839,6 +839,12 @@ The full application guide is
 also unfinished.
 Continue with:
 
+Selection navigation checkpoint, 4 October 2026: Zoom to selection is available
+from View and the Select context menu. It fits active-floor points, selected
+corridor endpoints and location boundaries without including/reloading underlays
+or rebuilding the scene. It remains usable during simulation and leaves edits and
+history untouched. 65 focused CAD tests pass; human navigation acceptance remains.
+
 Dense-label checkpoint, 4 October 2026: View → Object names now filters to key
 locations/doors or selected objects, or hides names without removing graph symbols.
 Selected corridor endpoints are identified, and route labels retain their separate

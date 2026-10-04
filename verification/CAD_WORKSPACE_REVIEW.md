@@ -78,6 +78,21 @@ Actual application captures (regenerate locally alongside the evidence pack):
 
 ## Remaining UI work
 
+### Zoom to selection, 4 October 2026
+
+**View → Zoom to selection** and the Select-mode context menu fit selected graph
+points, selected corridor endpoints and location boundaries on the active floor.
+Other floors and drawing underlays are excluded. A one-metre minimum margin keeps
+single points usable; larger selections receive an eight-percent margin. Empty,
+stale or invalid selections produce feedback without moving the view. Selection,
+configuration and undo history are unchanged, and the operation does not rebuild
+the scene or load underlays. The View command remains available during simulation.
+
+65 focused tests pass, including independent extents, world-to-scene Y conversion,
+footprint bounds, floor scoping, malformed inputs, underlay independence and the
+existing selection/context-menu/workspace workflows. No additional keyboard
+mapping is introduced. Human navigation acceptance remains open.
+
 ### Dense-layout object names, 4 October 2026
 
 **View → Object names** offers all names, locations/departments/lifts/doors,

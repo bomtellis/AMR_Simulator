@@ -2245,6 +2245,52 @@ class AMRGraphEditor(QMainWindow):
             self.canvas.viewport().update()
         self.refresh_canvas()
 
+    def selection_view_rect(self):
+        """Finite active-floor selection bounds, independent of drawing underlays."""
+        points = self.store.points_for_floor(self.floor_spin.value())
+        names = set(self.selected_point_names)
+        names.add(self.selected_point_name)
+        current_edges = {self._physical_edge_key(e['from'], e['to'])
+                         for e in self.store.data.get('corridors', {}).get('edges', [])}
+        for key in self.selected_edge_keys & current_edges:
+            names.update(key)
+        coordinates = []
+        for name in names:
+            point = points.get(name)
+            if point is None:
+                continue
+            coordinates.append((float(point['x']), float(point['y'])))
+            if point.get('kind') == 'location':
+                coordinates.extend((float(p['x']), float(p['y']))
+                                   for p in self.store.get_location_bounding_box_points(name))
+        if not coordinates:
+            return None
+        if not all(math.isfinite(v) for xy in coordinates for v in xy):
+            raise ValueError('Selection has non-finite coordinates; repair them in Properties or Project checks.')
+        left, right = min(x for x, _ in coordinates), max(x for x, _ in coordinates)
+        bottom, top = min(y for _, y in coordinates), max(y for _, y in coordinates)
+        padding = max(1., max(right-left, top-bottom)*.08)
+        return QRectF(left-padding, -top-padding, right-left+2*padding, top-bottom+2*padding)
+
+    def fit_selection(self):
+        if self.workspace.stage != 'layout':
+            self.set_status('Open Layout to zoom to selected graph objects.')
+            return False
+        try:
+            rect = self.selection_view_rect()
+        except (ValueError, TypeError, KeyError) as exc:
+            self.set_status(f'Cannot zoom to selection: {exc}')
+            return False
+        if rect is None:
+            self.set_status('Select points or corridors on this floor before zooming to selection.')
+            return False
+        self.scene.setSceneRect(self.scene.sceneRect().united(rect.adjusted(-40, -40, 40, 40)))
+        self.canvas.resetTransform()
+        self.canvas.fitInView(rect, Qt.KeepAspectRatio)
+        self.canvas.viewport().update()
+        self.set_status('Zoomed to selection on the current floor.')
+        return True
+
     def refresh_canvas(self, *, update_panels=True):
         if hasattr(self, 'cad_move_input') and not self.cad_move_input.isHidden():
             self.cad_move_input.refresh_preview()
@@ -3596,6 +3642,7 @@ class AMRGraphEditor(QMainWindow):
                 menu = QMenu(self)
                 menu.addAction(self.workbench.delete_action)
                 menu.addAction(self.workbench.move_action)
+                menu.addAction(self.workbench.fit_selection_action)
                 menu.addSeparator()
                 if picked_edge is not None:
                     menu.addAction("Insert node here", lambda: self.split_corridor_at(picked_edge, x, y))
@@ -3738,6 +3785,7 @@ class AMRGraphEditor(QMainWindow):
             menu = QMenu(self)
             menu.addAction(self.workbench.delete_action)
             menu.addAction(self.workbench.move_action)
+            menu.addAction(self.workbench.fit_selection_action)
             menu.addSeparator()
 
             if point.get("kind") == "department":

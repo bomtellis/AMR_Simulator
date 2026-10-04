@@ -158,6 +158,9 @@ class CadWorkbench(QObject):
                                             'Clear graph selections without editing objects.'))
         self.view_menu = editor.menuBar().addMenu('&View')
         self.view_menu.addAction(editor.cad_toolbar.fit_action)
+        self.fit_selection_action = self.action('Zoom to selection', editor.fit_selection, 'fit',
+            'Fit selected points, corridor endpoints and location boundaries on the current floor. Drawing underlays are excluded.')
+        self.view_menu.addAction(self.fit_selection_action)
         self.view_menu.addAction(editor.cad_toolbar.project_action)
         self.view_menu.addAction(editor.cad_toolbar.properties_action)
         self.view_menu.addAction(editor.cad_toolbar.focus_action)
