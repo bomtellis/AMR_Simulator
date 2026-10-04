@@ -19,6 +19,18 @@ See the [stored UI options and CAD interactions](../design/ui-options/REVIEW.md)
 
 ## Assessment and evidence rules
 
+4 October 2026 DXF-layer visibility checkpoint: supported imported entities retain
+their layer names, with layer-zero inheritance for existing supported block
+contents. View → DXF layers opens an optional searchable dock with checkbox,
+show/hide-all and isolate controls. Layer paths stay batched; visibility reuses
+existing graphics without drawing I/O, model changes or undo entries. Choices
+persist per drawing path on this computer. The dock hides outside Layout and in
+Focus canvas, restores on return and respects explicit closure. Eight new
+acceptance cases and related drawing/workspace regressions pass (62 tests), with
+actual UI capture retained. Imported layers retain the existing all-visible
+default; source off/frozen flags, further DXF entity support, custom model layers,
+locking and line styling remain open. This is not a geometric-wall implementation.
+
 4 October 2026 layout-copy checkpoint: Edit/context menus copy selected locations
 and corridor nodes by an exact displacement, including selected-edge endpoints
 and all explicit edges within the selection. Unique names, dashed previews,

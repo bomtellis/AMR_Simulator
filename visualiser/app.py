@@ -467,9 +467,16 @@ class AMRGraphEditor(QMainWindow):
         self.route_styles.changed.connect(self.refresh_canvas)
         from workspace_preferences import WorkspacePreferences
         self.workspace_preferences = WorkspacePreferences(self, self.appearance.settings)
+        from visualiser.dxf_layers import DxfLayers
+        self.dxf_layers = DxfLayers(self, self.appearance.settings)
 
     def _appearance_changed(self, _value):
         self.refresh_canvas()
+
+    def show_dxf_layers(self):
+        self.workspace.set_canvas_focus(False)
+        self.workspace.activate('layout')
+        self.dxf_layers.show()
 
     def show_appearance(self):
         if not hasattr(self, 'appearance_panel'):
@@ -2388,6 +2395,8 @@ class AMRGraphEditor(QMainWindow):
                 )
         if self.show_location_bounds_check.isChecked():
             self.draw_location_bounding_boxes(floor)
+        if hasattr(self, 'dxf_layers'):
+            self.dxf_layers.refresh()
         self.draw_temporary_location_bounding_box(floor)
         self.draw_edges(floor)
         self.draw_route_access(floor)

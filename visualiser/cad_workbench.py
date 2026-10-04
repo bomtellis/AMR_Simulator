@@ -167,6 +167,8 @@ class CadWorkbench(QObject):
         self.fit_selection_action = self.action('Zoom to selection', editor.fit_selection, 'fit',
             'Fit selected points, corridor endpoints and location boundaries on the current floor. Drawing underlays are excluded.')
         self.view_menu.addAction(self.fit_selection_action)
+        self.view_menu.addAction(self.action('DXF layers…', editor.show_dxf_layers, 'layout',
+            'Search, show, hide or isolate imported DXF layers without changing model geometry or route access.'))
         self.view_menu.addAction(editor.cad_toolbar.project_action)
         self.view_menu.addAction(editor.cad_toolbar.properties_action)
         self.view_menu.addAction(editor.cad_toolbar.focus_action)
@@ -217,6 +219,7 @@ class CadWorkbench(QObject):
             'Door places a graph door restriction using the configured clear width. Select it and open Properties to edit the width; '
             'this does not draw physical walls or openings.\n\n'
             'Use the project tree or upper workflow bar to configure, check, simulate and investigate saved runs. '
+            'View → DXF layers opens searchable underlay visibility controls; they do not change routes or physical geometry. '
             'More tools contains the full editor commands. Theme and text size are personal preferences.')
 
     def change_text_size(self, _index):

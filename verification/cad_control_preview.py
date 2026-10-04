@@ -43,7 +43,8 @@ def main():
                 ('corridor-large-text',1024,768,18,'corridor'),
                 ('boundary-large-text',1024,768,18,'boundary'),
                 ('rotation-large-text',1024,768,18,'rotation'),
-                ('copy-large-text',1024,768,18,'copy')):
+                ('copy-large-text',1024,768,18,'copy'),
+                ('dxf-layers',1500,900,10,'layers')):
             editor.cancel_cad_command()
             appearance.apply(replace(Appearance(), font_size=font))
             editor.resize(width,height)
@@ -67,6 +68,25 @@ def main():
                 editor.selected_point_names = {'Stores', 'D-01'}
                 editor.show_selection_copy()
                 editor.cad_copy_input.offset.setText('6,-3')
+            elif command == 'layers':
+                import ezdxf
+                from dxf_scene import DXFScene
+                doc = ezdxf.new()
+                doc.header['$INSUNITS'] = 6
+                for layer in ('Walls', 'Furniture', 'Dimensions'):
+                    doc.layers.new(layer)
+                doc.modelspace().add_lwpolyline([(0,-9),(25,-9),(25,10),(0,10)],close=True,dxfattribs={'layer':'Walls'})
+                doc.modelspace().add_lwpolyline([(2,6),(6,6),(6,8),(2,8)],close=True,dxfattribs={'layer':'Furniture'})
+                doc.modelspace().add_text('Reference floor',dxfattribs={'layer':'Dimensions','height':.5,'insert':(8,9)})
+                path = output / 'layer-preview.dxf'
+                doc.saveas(path)
+                editor.store.data['floor_dxf_files'] = [dict(floor=0,filepath=str(path))]
+                editor._dxf_cache[0] = DXFScene.load_content(str(path))
+                editor._drawings_enabled = True
+                editor._set_edit_mode('select_move')
+                editor.refresh_canvas()
+                editor.show_dxf_layers()
+                editor.dxf_layers.set_visible(['Furniture'],False)
             else:
                 editor._set_edit_mode('corridor_draw')
                 editor.corridor_draw_start = 'Stores'

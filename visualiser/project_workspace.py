@@ -200,6 +200,8 @@ class ProjectWorkspace(QWidget):
         self.refresh()
 
     def _sync_panels(self):
+        if hasattr(self.editor, 'dxf_layers'):
+            self.editor.dxf_layers.sync_workspace()
         editing = not self.editor.project_editing_locked()
         self.properties.setEnabled(editing)
         self.editor.ribbon_tabs.setEnabled(editing)

@@ -7,6 +7,19 @@ remain open. The full tutorial and illustrated guide follow the delivered UI.
 
 ## Try the implemented workflow
 
+DXF layer visibility checkpoint (4 October 2026): use **View → DXF layers…** to
+open an optional dock. Search for layer names, toggle their checkboxes, isolate a
+selected layer or show/hide all. The master checkbox controls the whole underlay.
+Choices persist per resolved drawing path on this computer; a moved drawing has
+fresh defaults. Imported supported entities start visible, retaining the previous
+import policy (source off/frozen flags are not interpreted). Visibility changes
+reuse batched graphics, preserve camera/undo state and never change route access
+or simulation geometry. Focus canvas and non-Layout stages hide the dock;
+returning restores it unless explicitly closed. Eight new tests plus related
+regressions pass (62 tests). Actual UI capture:
+`latest/cad-control-preview/dxf-layers.png`. Custom model layers, locking, line
+styling, expanded DXF support and human workflow acceptance remain open.
+
 Layout copy checkpoint (4 October 2026): select locations/nodes/corridors and use
 **Edit → Copy selected by…** or the selection context menu. Enter a displacement
 in metres (`dx,dy` or `@distance<angle`). Dashed outlines preview the result; the
