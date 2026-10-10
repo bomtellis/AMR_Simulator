@@ -5,8 +5,7 @@ permalink: /
 page_class: project-page
 ---
 <section class="hero">
-  <p class="eyebrow">The project</p>
-  <h1>AMR Simulator</h1>
+  <h1>AMR Feasibility Tool</h1>
   <p class="hero-subtitle">A feasibility tool for autonomous mobile robot logistics.</p>
   <div class="actions">
     <a class="button" href="#downloads">Windows download</a>
@@ -17,13 +16,24 @@ page_class: project-page
 ## About the project
 
 <div class="description-draft" markdown="1">
-**Your project description goes here.**
+**Autonomous mobile robot feasibility**
 
-Add a short introduction explaining what the simulator helps people investigate,
-who the project is for, and why you are building it. Replace this text with your
-own description when you are ready.
+<p>
+  The AMR Simulator is a desktop feasibility and planning tool for assessing autonomous mobile robot logistics within buildings. It helps users model operations, compare designs and identify capacity constraints before deployment.
+</p>
 
-Add your current project status, intended use, and any acknowledgements here.
+<p>
+  Its capabilties include:
+  <ul>
+    <li>Creating multi-floor layouts using DXF or PDF plans, with corridors, doors, lifts, storage and charging bays.</li>
+    <li>Configuring robot fleets, payloads, delivery demand, departments and staff workflows.</li>
+    <li>Simulating routing, traffic interactions, lift usage, battery consumption, charging and payload returns.</li>
+    <li>Reviewing operations through animated playback and task, lift and payload monitoring.</li>
+    <li>Comparing scenarios and lift arrangements to investigate bottlenecks and service performance.</li>
+    <li>Producing PDF reports and CSV exports covering demand, utilisation, delays, energy and operational KPIs.</li>
+  </ul>
+</p>
+
 </div>
 
 <section id="downloads" class="downloads-section">
