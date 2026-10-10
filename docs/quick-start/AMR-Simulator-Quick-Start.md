@@ -1,3 +1,9 @@
+---
+title: First simulation
+nav_order: 3
+has_children: true
+permalink: /first-simulation/
+---
 # AMR Simulator Quick Start Guide
 
 Use this guide beside the AMR Simulator workbench. Complete the small-map exercise first, then inspect the supplied LTN project. Help > Guided walkthrough presents the same steps inside the application. Each exercise ends with a saved run, investigated result and report export.
@@ -6,11 +12,21 @@ Use this guide beside the AMR Simulator workbench. Complete the small-map exerci
 
 The walkthrough stays open while you use the workbench.
 
+## Before starting
+
+Follow [Install and open](../install.md). Download the tracked
+[small-map practice input](small-map.json), or use it in your source checkout.
+The source checkout contains no portable LTN archive or published installer;
+Exercise 2 requires a separately supplied development package. You can complete
+Exercise 1 and the [building tutorial](../building-tutorial/Building-Flow-Tutorial.md)
+without LTN. The **Open exercise project** button is in the in-app walkthrough;
+on this website use the download link or File → Open project / JSON.
+
 ## Exercise 1 Small connected map
 
 ### 1 Open the practice map
 
-**Do this:** Choose Open exercise project below, or File → Open project / JSON and select docs/quick-start/small-map.json from the application folder.
+**Do this:** In the in-app walkthrough choose Open exercise project, or File → Open project / JSON and select docs/quick-start/small-map.json from the application folder.
 
 **Expected state:** Layout shows A, B and C, with only A–B connected. Configuration contains two robot types, R1 and R2, and task T1. C is intentionally disconnected.
 
@@ -58,7 +74,7 @@ The connected small map in Layout.
 
 ### 1 Open LTN
 
-**Do this:** Choose Open exercise project below, or File → Open project / JSON and select the supplied LTN project.
+**Do this:** In the in-app walkthrough choose Open exercise project, or File → Open project / JSON and select the supplied LTN project.
 
 **Expected state:** Layout shows the hospital graph and its floors. If you opened JSON, save it as .amrproj before running so the inputs and available drawings are captured.
 

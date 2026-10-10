@@ -1,4 +1,17 @@
+---
+title: Scenario configuration
+nav_order: 1
+parent: Technical reference
+---
 # Understanding A Scenario Config
+
+## Current workbench
+
+Use **Configuration** to edit the settings below and **File → Save project as**
+to retain them in a portable project. A `.amrproj` packages available drawings
+and revisions; **Export JSON** produces CLI input. Results remain external.
+Both DXF and PDF underlays are supported; Simple routes still depend on the graph.
+For Detailed mode read [geometry and movement](../reference/geometry.md).
 
 ## Aim
 
@@ -101,7 +114,7 @@ Lift assumptions may affect:
 - which routes are possible
 - waiting time
 - congestion
-- comparison between AMR and future porter-led options
+- comparison between AMR and hypothetical porter-led options
 
 ## AMR Fleet
 
@@ -173,9 +186,9 @@ Task generation is powerful, but it is also more complex than manual task
 definition. It should be introduced only after the basic config structure is
 understood.
 
-## What The Launcher Summary Shows
+## Review The Configuration Before Running
 
-The launcher shows a compact summary for each managed config:
+Use the workbench's Configuration pages and current Project checks to review:
 
 - locations and departments
 - floor layout coverage
@@ -186,14 +199,14 @@ The launcher shows a compact summary for each managed config:
 - graph nodes and edges
 - basic checks
 
-This summary is designed to catch obvious issues quickly. It is not a full
-validation of the scenario.
+Counts and current findings help catch obvious issues, but they do not fully
+validate an operational scenario. Build Demand preview and inspect a bounded run.
 
 ## What To Check Before Editing
 
 Before changing a config, confirm:
 
-- it is a launcher-managed copy, not the only original
+- it is a saved working project or copy, with the original baseline retained
 - the floor layouts are available
 - the route graph appears complete
 - the AMR fleet is plausible

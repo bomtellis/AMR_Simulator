@@ -1,4 +1,22 @@
+---
+title: Routes and constraints
+nav_order: 1
+parent: Build a model
+---
 # Working With Routes And Constraints
+
+## Current workbench steps
+
+Edit the graph in **Layout**. Use **Corridor** to draw connected sections and
+**Edge** to connect existing graph points; set direction/chain behaviour in
+**More tools → Edit → Drawing behaviour**. Use **Configuration → Route profiles**
+for node, directed-edge and lift permissions. Rerun **Check → Run checks** after
+editing; **Review → Route checks** uses the selected saved run's frozen inputs.
+Inspect actual movements in **Playback selected run**.
+
+Check outbound, return and empty robot travel separately. Layer visibility and
+colour are display controls, not permissions. In Detailed mode, physical geometry
+and movement inputs are additional requirements beyond graph connectivity.
 
 ## Aim
 
@@ -74,7 +92,7 @@ Route assumptions should check:
 
 - which lifts each workflow may use
 - whether clean and dirty flows share lifts
-- whether AMRs and future porter-led flows would compete for lift space
+- whether AMRs and hypothetical porter-led flows would compete for lift space
 - whether the selected lifts create unrealistic detours
 
 If a route profile excludes necessary lifts, tasks may fail even if the pickup
@@ -110,7 +128,7 @@ This is especially important for:
 Before running a large scenario, create or select a simple task that exercises
 the route being tested.
 
-Run it and inspect the visualiser output.
+Run it and inspect **Playback selected run**.
 
 This is often the quickest way to find missing edges, incorrect lift choices, or
 route-profile restrictions that are too tight.

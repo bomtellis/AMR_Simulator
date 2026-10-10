@@ -1,131 +1,43 @@
-# Your First Simulation
+---
+title: First-run checklist
+nav_order: 1
+parent: First simulation
+---
+# Your first simulation
 
-## Aim
+Use the [illustrated quick-start guide](../quick-start/AMR-Simulator-Quick-Start.md)
+for the full exercise. These are the current workbench steps.
 
-This page guides you through running an existing scenario from the launcher,
-generating a report, and opening the visualiser.
+## Before you start
 
-The aim is to become familiar with the basic workflow before editing a scenario.
+[Install and open](../install.md) the application. Use the tracked
+[small-map JSON](../quick-start/small-map.json); this input needs no external
+hospital drawings. It has locations A, B and C, robot types R1/R2 and task T1.
+C is intentionally disconnected.
 
-## Before You Start
+## Complete the workflow
 
-You need:
+1. Choose **File → Open project / JSON** and open the small map.
+2. In **Layout**, choose **Corridor**, click B then C with endpoint snapping,
+   and press blank Enter to finish. Expect A–B and B–C connections.
+3. Choose **File → Save project as**, and save `small-map.amrproj` in your study folder.
+4. Choose **Check → Run checks**. After B–C is connected this fixture should
+   have no errors or warnings; informational scope notes remain.
+5. Choose **Simulate → Save, check and simulate**, review checks, and start.
+6. Select the completed run and choose **Investigate selected run**. Expect
+   T1 completed, zero failed and zero pending for the reference input.
+7. Choose **Playback selected run** and follow the recorded path.
+8. Choose **Report selected run**, select sections and **Generate report**.
+   Use **Open generated PDF**; retain the supporting CSVs in the run folder.
 
-- the AMR Simulator launcher open
-- at least one scenario config available to import
-- the required floor layout files available on the computer
+Reopen the project to confirm the saved connection and robot types. Later
+editing does not change the frozen run. A successful process is not proof every
+request in a larger scenario was served: inspect recorded task outcomes.
 
-If you are using a launcher-managed config that has already been imported, you
-can start from the **Configs** tab.
+## Optional LTN exercise
 
-## Step 1: Import A Scenario Config
-
-1. Open the **Configs** tab.
-2. Select **Import Config**.
-3. Choose the JSON scenario config you want to use.
-4. Confirm that it appears in the config list.
-
-The launcher copies the config into its own managed config folder. This protects
-the original file and keeps launcher-managed work separate from files created
-manually.
-
-## Step 2: Review The Config Details
-
-Select the imported config and review the **Config Details** panel.
-
-Check that the broad counts look sensible:
-
-- locations and departments
-- floor layouts
-- AMR fleet and AMR types
-- payloads
-- tasks
-- route profiles
-- graph nodes and edges
-
-These figures do not prove that the config is correct, but they help identify
-obvious mistakes. For example, a config with no floor layouts, no AMRs, or no
-graph edges is unlikely to run as intended.
-
-## Step 3: Run The Selected Config
-
-1. Optionally enter a run name.
-2. Choose the output detail level.
-3. Select **Run Selected Config**.
-
-The launcher creates a new run folder. New runs are grouped under the config
-name and include the config name in the run folder name.
-
-During the run, the **Activity Log** shows messages from the simulator. Long
-configurations may take some time. 30 minutes or more is to be expected for a
-whole hospital model across multiple days of operations.
-
-## Step 4: Check The Run Status
-
-After the process finishes, select the run in the **Runs** tab.
-
-Review the **Run Details** panel:
-
-- run name
-- source config
-- start time
-- completion time
-- status
-- report availability
-
-A report can only be generated for a completed run. Cancelled, failed, or
-incomplete runs are not suitable for reporting.
-
-## Step 5: Generate Or Open The Report
-
-If the run completed successfully and no report exists yet, select **Generate
-Report**.
-
-Once the report has been generated, the same button changes to **Open Report**.
-
-The report is useful for reviewing summary outputs and sharing results, but it
-should be interpreted alongside the config assumptions and visualiser output.
-
-## Step 6: Open The Visualiser
-
-Select **Visualise** for the completed run.
-
-The launcher opens the visualiser with the run config and simulation CSV already
-selected. This allows you to inspect movement against the hospital layout.
-
-## What To Check
-
-For a first simulation, check:
-
-- the run completed successfully
-- the report opens without error
-- the visualiser opens the expected layout
-- the simulated routes look plausible
-- failed tasks, if any, are understood
-
-## Common Problems
-
-**The run takes a long time**
-
-Large scenarios can be slow. Start with a smaller or simpler config when testing
-launcher behaviour.
-
-**The report button says Report Unavailable**
-
-The selected run did not complete successfully. Reports are only available for
-completed runs.
-
-**The visualiser cannot find a file**
-
-The run may be incomplete, or the expected output CSV was not created.
-
-**The layout does not appear correctly**
-
-Check that the config refers to valid DXF floor layout files.
-
-## Modelling Notes
-
-A successful run only means that the simulator could execute the scenario. It
-does not prove that the scenario reflects real operations. Before relying on
-results, review the config assumptions, route graph, task definitions, and
-outputs.
+The full quick-start guide also describes a 05:00–11:00 LTN exercise on
+1 January 2026. It requires the separately supplied portable LTN archive and its
+drawings, normally distributed in a development package. The source checkout's
+LTN JSON can contain external paths and is not a self-contained replacement.
+Complete the small map or building tutorial while that package is unavailable.

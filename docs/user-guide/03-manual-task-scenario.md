@@ -1,4 +1,19 @@
+---
+title: Manual task scenarios
+nav_order: 1
+parent: Configure demand and resources
+---
 # Creating A Simple Manual Task Scenario
+
+## Current workbench steps
+
+Use **Configuration → Tasks** for the explicit task list. Configure payloads
+and robots in their corresponding Configuration pages, and disable unrelated
+generated demand for a controlled route test. After saving, choose **Check →
+Run checks**, then **Simulate → Save, check and simulate**. Use **Investigate
+selected run**, **Playback selected run**, and **Report selected run** afterwards.
+The [small-map exercise](../quick-start/AMR-Simulator-Quick-Start.md) supplies a
+self-contained manual-task reference without hospital drawings.
 
 ## Aim
 
@@ -54,7 +69,7 @@ dirty route profile.
 Use a config that already:
 
 - opens in the editor
-- has floor layouts
+- has visible locations in Layout (drawing underlays are optional)
 - has a connected route graph
 - has at least one AMR type
 - has at least one payload type
@@ -105,7 +120,7 @@ connectivity and routing.
 
 ## Step 5: Run The Scenario
 
-Run the config from the launcher.
+Use **Check → Run checks**, then **Simulate → Save, check and simulate**.
 
 For a simple manual task test, the run should usually finish quickly. If it does
 not, check whether the config includes other tasks or task-generation rules.
@@ -116,7 +131,7 @@ After the run completes:
 
 - check the run status
 - generate a report if needed
-- open the visualiser
+- open **Playback selected run**
 - confirm that the AMR follows a plausible route
 - check whether the task completed or failed
 

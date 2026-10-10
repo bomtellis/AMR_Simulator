@@ -1,3 +1,8 @@
+---
+title: Report structure and PDF insertion
+nav_order: 2
+parent: Investigate and report
+---
 # Report structure and PDF insertion
 
 The Report page includes **Export 5-minute lift usage CSV** and **Open lift usage

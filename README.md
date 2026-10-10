@@ -1,5 +1,12 @@
 # Autonomous Mobile Robot Simulator
 
+## Operating guide
+
+The [searchable operating guide](https://bomtellis.github.io/AMR_Simulator/)
+covers Windows setup, the workbench, tutorials, configuration, checks, saved runs
+and reports. Its source begins at [docs/index.md](docs/index.md).
+To enable the website, follow [Publish and maintain](docs/maintain.md).
+
 ## Open the engineering workbench
 
 From an existing environment with the project dependencies installed:

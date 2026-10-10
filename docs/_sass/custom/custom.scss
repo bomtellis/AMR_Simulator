@@ -1,0 +1,11 @@
+// Keep screenshots, tables and code usable on narrow screens and in print.
+.main-content img { max-width: 100%; height: auto; border: 1px solid #d9e2ec; border-radius: 4px; }
+.main-content pre { overflow-x: auto; }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 3px solid #005fcc; outline-offset: 3px; }
+@media print {
+  .side-bar, .main-header, .search, .site-footer, .page-header { display: none !important; }
+  .main { margin: 0 !important; max-width: none !important; }
+  .main-content { font-size: 11pt; }
+  .main-content img { max-height: 22cm; object-fit: contain; }
+  .main-content pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+}

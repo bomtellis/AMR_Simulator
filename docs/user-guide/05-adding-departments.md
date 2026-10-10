@@ -1,4 +1,18 @@
+---
+title: Departments
+nav_order: 2
+parent: Configure demand and resources
+---
 # Adding Departments
+
+## Current workbench steps
+
+Use **Configuration → Departments**, or **Layout → Department → Manage
+departments…**. The department editor groups **Details**, **Hours & waste**, and
+**Task locations & zones**. Save the individual editor, then Save in the
+Departments list. Assign actual category locations and floor identity; a marker
+alone does not create a valid task endpoint. Use **Configuration → Demand
+preview → Build preview** to inspect effective department/group rules and dates.
 
 ## Aim
 

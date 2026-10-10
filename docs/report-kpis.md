@@ -1,3 +1,8 @@
+---
+title: Operational report KPIs
+nav_order: 1
+parent: Investigate and report
+---
 # Operational report KPIs
 
 The **Operational KPIs (demand, service, capacity and cost)** report section is

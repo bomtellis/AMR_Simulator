@@ -1,4 +1,24 @@
+---
+title: Task generation
+nav_order: 3
+parent: Configure demand and resources
+---
 # Task Generation Basics
+
+## Current workbench steps
+
+Open **Configuration → Demand generation**. Enable automatic generation, select
+a category, then its department/group settings. Review the effective endpoints,
+payload, schedule, route profile, service target and returns. Save the dialog and
+project. Open **Configuration → Demand preview**, choose dates/filters and
+**Build preview**; inspect Tasks, Timetable and Rules and reconciliation, including
+zero-work explanations. Runtime-dependent returns still need saved-run evidence.
+
+Scheduled, timeframe, threshold, hybrid and accumulation rules serve different
+questions; avoid enabling overlapping mechanisms unless you intend their combined
+workload. Read control labels for seconds versus minutes and fractions versus
+percentages. **Maximum task deferral** limits release-to-assignment waiting,
+not the total journey duration; see [run controls](../check-simulate.md).
 
 ## Aim
 

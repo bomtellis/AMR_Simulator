@@ -1,4 +1,9 @@
-Building flow tutorial
+---
+title: Building flow tutorial
+nav_order: 2
+parent: Build a model
+---
+# Building flow tutorial
 
 Create, test and improve a three-floor building in Simple mode. Every floor is 40 x 20 m (800 square metres), with a 3.5 m floor height. The two original lifts sit at x=34 and x=38 m, favouring the far end of the plan.
 
@@ -12,13 +17,36 @@ The bubble is an independent nonmodal instruction dialog owned by the main appli
 
 More opens explanations, checkpoints, object rebinding, policy selection, optional lessons and this guide. The larger course window is an optional reference. A checkpoint creates a saved working copy; choose a destination outside the installed example folder. Tutorial progress saves automatically beside that project in .amrproj.tutorial.json as you practise, change chapters and advance actions. Saving the first project or using Save as preserves that progress. Resume restores your position and skips verified chapters and actions to the first unfinished step.
 
-![Application screen](images/bubble.png)
+![Tutorial bubble highlighting the current workbench action](images/bubble.png)
 
-Example files and setup
+## Get the practice assets
+
+The tracked [floor 0](floor-0.dxf), [floor 1](floor-1.dxf), and
+[floor 2](floor-2.dxf) drawings share metre units and origin.
+[The side-by-side drawing](building-three-floors.dxf) is for presentation only.
+Portable `.amrproj` starter/checkpoint/reference archives mentioned below are
+generated assets, not checked-in downloads. A development package may supply them.
+
+With the source dependencies installed, generate a separate teaching folder
+from the repository root (create the destination parent folder first):
+
+```powershell
+.\.venv\Scripts\python.exe -m amr_tutorial_assets "C:\AMR studies\building-practice"
+```
+
+This writes aligned drawings and portable starter, chapter-3 through chapter-7,
+and dedicated/shared reference archives under the chosen folder. Open
+`starter.amrproj` or use **Help → Building flow tutorial** to create a working
+copy/checkpoint. Keep the generated reference input unchanged and save your own
+project separately. Reference JSON files retained in the repository may have
+machine-specific drawing paths; generate portable assets instead.
+
+## Example files and setup
 
 Use floor-0.dxf, floor-1.dxf and floor-2.dxf for per-floor import; all use metre units and the same origin. building-three-floors.dxf is a side-by-side presentation for sharing, not the per-floor import source. starter.amrproj contains drawings only. chapter-3/4/5/6/7 checkpoints retain progressively more configuration. reference-dedicated.amrproj and reference-shared.amrproj contain the completed designs.
 
 | Item | Teaching configuration |
+| --- | --- |
 | Circulation | Clean lane y=7; dirty lane y=13. Nodes x=3,8,10,12,18,24,30,34,38 on every floor. Shared transition (3,10). |
 | Service endpoints | Floor f: clean (8+2f,4), dirty (8+2f,16); door nodes at y=6 and y=14, 1.2 m clear width. |
 | Ground floor | Dispatch (3,10), Clean store (3,7), Dirty receiving (3,13), Wash (5,13). Connect these to the corresponding circulation. |
@@ -28,7 +56,7 @@ Use floor-0.dxf, floor-1.dxf and floor-2.dxf for per-floor import; all use metre
 | Lifts | L1=(34,10), L2=(38,10), all floors. Car 2 x 2 x 2.5 m; speed 0.5 floors/s; door 4 s; boarding 3 s; health decay 0. Shaft 2 x 2 m, landing 1 m, clearance 0.1 m. |
 | Building operations | Load/unload 5 s; idle return off; opportunity charging off; initial low SOC demonstrates charging. Dirty receiving requires wash at Wash, 60 s; Wash capacity 1. |
 
-1. Create the project
+## 1. Create the project
 
 Purpose and expected result: Three aligned 800 m² drawings and a saved project.
 
@@ -42,11 +70,11 @@ Purpose and expected result: Three aligned 800 m² drawings and a saved project.
 
 5. File > Save project as. Keep the supplied starter unchanged.
 
-![Application screen](images/floor-settings.png)
+![Building settings with tutorial floors and level height](images/floor-settings.png)
 
 Check: Three aligned 800 m² drawings and a saved project. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-2. Learn the workbench
+## 2. Learn the workbench
 
 Purpose and expected result: An actual edit and undo/redo, with the controls used.
 
@@ -64,7 +92,7 @@ Purpose and expected result: An actual edit and undo/redo, with the controls use
 
 Check: An actual edit and undo/redo, with the controls used. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-3. Draw clean and dirty circulation
+## 3. Draw clean and dirty circulation
 
 Purpose and expected result: Connected same-floor lanes and service locations on all floors.
 
@@ -114,13 +142,13 @@ The canvas shows the finished route as a dashed preview and numbers each click. 
 
 Next remains unavailable while a required point, link, door opening or service name is missing or incorrect. Finish a completed route with Escape before continuing. Checks run automatically and show corrections on their actual floor and canvas position; an existing corridor with an incorrect width, direction or length is highlighted for a Properties repair. Renamed service locations retain their bound roles; a deleted role needs repair or rebinding. Undoing an earlier connection blocks progress again. Chapter navigation also checks unfinished work.
 
-![Application screen](images/route-preview.png)
+![Layout preview of the clean and dirty circulation routes](images/route-preview.png)
 
-![Application screen](images/route-repair.png)
+![Highlighted corridor properties for a tutorial route repair](images/route-repair.png)
 
 Check: Connected same-floor lanes and service locations on all floors. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-4. Add dispatch, charging and wash facilities
+## 4. Add dispatch, charging and wash facilities
 
 Purpose and expected result: Four compatible charging bays and a reachable wash station.
 
@@ -136,17 +164,17 @@ Four ground-floor markers show Dispatch (3,10), Clean store (3,7), Dirty receivi
 
 The same contextual coordinate entry and pointer preview are available for Node, Door, Location, Department, Lift and Edge tools. Coordinates are in metres and use the active floor. Object/grid snapping is shown before insertion; typed X,Y bypasses grid and opens the normal editor. Boundary and rectangle tools retain their existing entries and also show pointer coordinates. Facility, department and lift steps show spatial hints; every other stage highlights its actual control and validates completion automatically.
 
-![Application screen](images/facility-preview.png)
+![Dispatch, charging and wash locations on the ground floor](images/facility-preview.png)
 
-![Application screen](images/location-name.png)
+![Location naming dialog during the tutorial](images/location-name.png)
 
 Washing uses the visible location Properties fields. At Dirty receiving set Wash cycle required to Yes, Wash location to Wash, and Wash duration (s) to 60. The bubble highlights each field, then Apply changes. At Wash enter 1 in Service capacity (AMRs) and Apply changes; this is the simulator limit for simultaneous service, including washing. Draft values do not complete these actions until applied.
 
-![Application screen](images/washing-properties.png)
+![Receiving-location wash requirement and wash station settings](images/washing-properties.png)
 
 Check: Four compatible charging bays and a reachable wash station. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-5. Configure transport
+## 5. Configure transport
 
 Purpose and expected result: Four compatible robots, two payloads, departments and two complete lifts.
 
@@ -225,17 +253,17 @@ Save. Repeat for L2 with X 38 m, Y 10 m on every floor.
 
 Enter one highlighted value at a time. The blue field prompt follows the next value that differs from the checklist. Unloaded robot weight may remain Unspecified; it is optional report metadata. Payload Loaded weight must be 20 kg for this tutorial.
 
-![Application screen](images/tutorial-next-field.png)
+![In-dialog tutorial prompt pointing to the next required field](images/tutorial-next-field.png)
 
 Check: Four compatible robots, two payloads, departments and two complete lifts. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
 The department Floor control is editable in Details. Lift and floors contains an editable stop table: enter X/Y for each served floor. When a requested field is on another tab, the bubble highlights that tab first; it then highlights the field and its required value. Save the nested editor, then the list; the lift list instead applies each saved lift and closes with Close.
 
-![Application screen](images/department-floor.png)
+![Department editor showing its assigned tutorial floor](images/department-floor.png)
 
-![Application screen](images/lift-stop-positions.png)
+![Lift editor showing stop positions on the served floors](images/lift-stop-positions.png)
 
-6. Define your flow policy
+## 6. Define your flow policy
 
 Purpose and expected result: Payload routes obey the chosen permissions. Empty travel uses the existing model.
 
@@ -283,7 +311,7 @@ A different policy needs a separate comparison study.
 
 In Layout choose Routes on the drawing toolbar, or Layout > Routes, to open Route view. Select clean or dirty. Profile colour changes the permitted-edge colour; Blocked colour changes the dotted excluded directions. Show blocked directions and Show profile labels are independent display switches. Arrows distinguish one-way permission. Profile details lists permitted and blocked directions and lift allowances. Colours save as personal preferences and do not change permissions.
 
-![Application screen](images/layout-route-views.png)
+![Layout showing the separate clean and dirty route views](images/layout-route-views.png)
 
 Dedicated profiles permit only the matching lane/service nodes and their designated lift stops (L1 for clean, L2 for dirty). Shared profiles retain lane permissions but include both sets of lift stops and both lift IDs. Dispatch and shared transition areas remain available to empty AMR travel under the existing model. Changing the course policy describes your chosen inputs; it does not configure routes for you.
 
@@ -291,15 +319,15 @@ Layout has Add node / transition, Add edge between nodes and Route profiles. The
 
 Orange rings and dashed links show the permissions required by the selected tutorial policy; blue marks selected permissions. Guidance follows each missing node, then each directed edge, across floors. Overlapping nodes and zero-length access links offer a choice of names. Changing floors retains previous selections. Finish selection returns a draft to the profile editor; Apply Changes and Save All commit it. Cancel selection retains the previous draft.
 
-![Application screen](images/layout-route-menu.png)
+![Route view selection menu in Layout](images/layout-route-menu.png)
 
-![Application screen](images/route-profile-graphical-control.png)
+![Graphical route-profile permissions control](images/route-profile-graphical-control.png)
 
-![Application screen](images/route-policy-layout-selection.png)
+![Selection of layout objects for route permissions](images/route-policy-layout-selection.png)
 
 Check: Payload routes obey the chosen permissions. Empty travel uses the existing model. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-7. Generate deliveries and collections
+## 7. Generate deliveries and collections
 
 Purpose and expected result: Deterministic work serving all floors, both flows and return work.
 
@@ -369,17 +397,17 @@ In the Check pane, Demand preview sits beside Run checks. Click it, then Build p
 
 Run checks also evaluates Task routes: every explicit task and each possible pickup/drop-off pair in active resolved demand rules, including return routes. It honours profile node, directed-edge and lift permissions and manual task extensions. Blocked results identify the affected task or rule, department, profile and leg. Counts describe route definitions, including conditional work; they do not predict release totals. Edit permissions or geometry in Layout, then rerun checks. Clearance, capacity, outages and timing require simulation.
 
-![Application screen](images/task-route-checks.png)
+![Task route-check results for the teaching building](images/task-route-checks.png)
 
-![Application screen](images/linen-enabled-destination.png)
+![Enabled linen destination rule in demand generation](images/linen-enabled-destination.png)
 
-![Application screen](images/check-demand-preview.png)
+![Project checks with the Demand preview control](images/check-demand-preview.png)
 
-![Application screen](images/demand-service-target.png)
+![Demand service target settings for the tutorial category](images/demand-service-target.png)
 
-![Application screen](images/demand-return-profile.png)
+![Return-task route profile settings in demand generation](images/demand-return-profile.png)
 
-8. Check, save and run Simple
+## 8. Check, save and run Simple
 
 Purpose and expected result: A completed frozen Simple run linked to this project.
 
@@ -391,7 +419,7 @@ Purpose and expected result: A completed frozen Simple run linked to this projec
 
 Check: A completed frozen Simple run linked to this project. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-9. Investigate and play back
+## 9. Investigate and play back
 
 Purpose and expected result: Verified evidence includes both lifts, payload transitions, charging and washing.
 
@@ -405,11 +433,11 @@ Check: Verified evidence includes both lifts, payload transitions, charging and 
 
 Review > Route checks reruns task navigation against the saved run input snapshot, independently of current project edits. The table shows reachable, blocked or invalid routes and their source settings. Unverified logs without an input snapshot have no route coverage; current project inputs are never substituted. These are static permission checks, not proof that recorded movements physically completed.
 
-![Application screen](images/review-route-checks.png)
+![Saved-run route checks in the Review workspace](images/review-route-checks.png)
 
 Washing services the AMR after a designated delivery. Payload decontamination and contamination during every empty movement are not simulated. Use the linked payload transition evidence to follow loaded transport; do not infer contamination state from it.
 
-10. Stress the design
+## 10. Stress the design
 
 Purpose and expected result: Baseline scenario evidence identifies distance, lift, wash and charging constraints.
 
@@ -421,9 +449,9 @@ Purpose and expected result: Baseline scenario evidence identifies distance, lif
 
 Check: Baseline scenario evidence identifies distance, lift, wash and charging constraints. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-![Application screen](images/interpretation.png)
+![Lift-planning interpretation of building geometry and layers](images/interpretation.png)
 
-11. Improve lift locations
+## 11. Improve lift locations
 
 Purpose and expected result: A completed comparison and a safely saved improved variant, or an explained absence of improvement.
 
@@ -444,9 +472,9 @@ Click Generate five layout proposals, select each proposal and inspect Proposal 
 
 Check: A completed comparison and a safely saved improved variant, or an explained absence of improvement. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-![Application screen](images/proposals.png)
+![Lift-layout proposal table and floor overlays](images/proposals.png)
 
-12. Report and hand over
+## 12. Report and hand over
 
 Purpose and expected result: Readable exports, reopened project and retained original run evidence.
 
@@ -460,7 +488,7 @@ Purpose and expected result: Readable exports, reopened project and retained ori
 
 Check: Readable exports, reopened project and retained original run evidence. If it fails, the bubble names the first correction; More > Show explanation / corrections lists the remaining findings.
 
-Comparisons, evidence and portability
+## Comparisons, evidence and portability
 
 Review and confirm a closed building boundary, circulation, wall openings, retained facilities and prohibited areas on every floor. Ambiguous/open boundaries or absent circulation need repair; the drawing bounding box is never treated as the building boundary. Metre and millimetre drawings, transformed blocks and supported curves are flattened with maximum 10 mm deviation. Layer roles and registered offsets/rotation are saved in the study.
 
@@ -474,51 +502,51 @@ Create design variant saves a separate .amrproj by default. Apply selected layou
 
 Retain the project, its .tutorial.json and .lift-study.json companions, and the referenced study/run folders together. Project drawings are embedded portably. Companion records contain registered paths; use moved-run relinking after moving run folders. PDF/CSV comparison exports are convenient summaries; the study records and immutable run evidence explain them.
 
-Verified example improvement
+## Verified example improvement
 
 Dedicated: proposal-1; worst floor/flow on-time 75.0%; suite horizontal change -17728.4 m; lift-wait change -4017.3 s. Every floor/flow passed its baseline service guard. These are deterministic example results, not a claim for another drawing or policy.
 
 Shared: proposal-2; worst floor/flow on-time 75.0%; suite horizontal change -17049.0 m; lift-wait change 226.0 s. Every floor/flow passed its baseline service guard. These are deterministic example results, not a claim for another drawing or policy.
 
-Additional lessons
+## Additional lessons
 
-Advanced demand (configuration)
+### Advanced demand (configuration)
 
 Demand modes, dates, recurrence, scope groups, stock pools and zero-work explanations. Use Demand preview to verify each change.
 
-Inventory and exchanges (layout)
+### Inventory and exchanges (layout)
 
 Create payload bays; constrain payloads and AMR bays separately. Test stock exhaustion, tracked items, return pools and wait-for-space.
 
-Staff and people (configuration)
+### Staff and people (configuration)
 
 Configure staff response/handling, shifts and working hours; preview a people-flow profile and compare a busy interval.
 
-Batching and route restrictions (configuration)
+### Batching and route restrictions (configuration)
 
 Configure slots and multi-stop operation, then investigate shared legs and verify every onboard payload restriction.
 
-Drawing tools and layers (layout)
+### Drawing tools and layers (layout)
 
 Practise Corridor, junctions, doors, copy/move/rotate, bounds, floor drawings, PDF underlays, model locks, DXF visibility and export.
 
-Appearance and keyboard (project)
+### Appearance and keyboard (project)
 
 Try themes, enlarged text, Focus canvas, panel proportions and keyboard selection. These preferences do not change simulation inputs.
 
-Recovery and run outcomes (simulate)
+### Recovery and run outcomes (simulate)
 
 Recover unsaved work; cancel a run; inspect failed and pending work. Preserve frozen inputs and understand stale checks.
 
-Relinking and evidence (review)
+### Relinking and evidence (review)
 
 Move a copied run folder, use Locate moved run, compare identities and export all selected evidence pages.
 
-Report options (report)
+### Report options (report)
 
 Explore report sections, lift CSV, title, drawing heatmaps and insertion into an existing PDF.
 
-Detailed and historical settings (configuration)
+### Detailed and historical settings (configuration)
 
 Read mode readiness and historical-value explanations. This course operates in Simple; Detailed engineering is a separate activity.
 

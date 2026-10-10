@@ -1,4 +1,24 @@
+---
+title: Waste and volume
+nav_order: 4
+parent: Configure demand and resources
+---
 # Waste And Volume-Based Generation
+
+## Current workbench steps
+
+Review category and department/group waste rules in **Configuration → Demand
+generation** and **Departments → Hours & waste**. Set positive container volume
+in cubic metres and the intended full-threshold fraction, then check the effective
+rate, active calendar and pickup/dropoff assignments in **Demand preview**.
+Review **Simulation settings → Initial conditions → Inventory and container
+state** for initial stock and seeded physical containers.
+
+Reconcile collected and remaining waste against actual source contributions.
+A scheduled check does not guarantee a collection: thresholds and usable physical
+containers matter. Shared containers can combine several departments; do not count
+each source as an independent full-bin collection. Inspect returns, inventory
+identity and failures in the selected saved run before scaling up.
 
 ## Aim
 

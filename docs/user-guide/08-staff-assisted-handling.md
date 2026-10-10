@@ -1,4 +1,23 @@
+---
+title: Staff-assisted handling
+nav_order: 5
+parent: Configure demand and resources
+---
 # Staff-Assisted Handling
+
+## Current workbench steps and limits
+
+Open **Configuration → Demand generation** and review shared staff settings plus
+category/department-group overrides. Configure **Requires staff**, resource name,
+initial count, movement policy, handling minutes, working hours and shift pattern.
+Save, build Demand preview and inspect actual staff events in a short saved run.
+
+Explicit staff-enabled generated tasks default to weekday 09:00–17:00 hours for
+the `none` pattern, or 07:00–19:00 for `four_on_four_off_12h`, unless overridden.
+The rotating model uses two teams, with four-day blocks anchored to simulation
+start. It can add staff when the selected team is busy; initial count is not a
+fixed workforce ceiling. Inspect assignment, travel, waits and fallback flags
+rather than assuming a shift name provides a hard capacity constraint.
 
 ## Aim
 
@@ -18,7 +37,7 @@ It can affect:
 - whether generated tasks are spread across staff working hours
 - staff-related events written to simulation outputs
 
-Porter-led transport functionality will be provided in a future update.
+Full porter-led transport is outside the current staff-assisted handling model.
 
 ## Key Concepts
 
@@ -203,4 +222,4 @@ generated tasks are being released together.
 Staff-assisted handling is useful when the operational question is about whether
 endpoint staff availability affects task timing.
 
-Porter-led transport will be covered by future functionality.
+This does not establish a full porter-led transport workflow.
