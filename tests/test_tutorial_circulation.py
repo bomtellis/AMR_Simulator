@@ -128,7 +128,7 @@ class CirculationInteraction(unittest.TestCase):
                 if n in (2,9,16):
                     self.assertTrue(any(r['floor']==step['floor'] and (r['x'],r['y'])==(3,10)
                         for r in editor.store.data['corridors']['nodes']))
-                self.assertTrue(bubble.check_action(),bubble.feedback.text())
+                bubble._auto_after=0;bubble.follow()
                 self.assertTrue(bubble.next.isEnabled())
                 if n==0:
                     editor.store.data['corridors']['edges'][0]['width_m']=1.1

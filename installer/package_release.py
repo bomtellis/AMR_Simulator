@@ -77,7 +77,7 @@ def package(version):
                 raise RuntimeError(f'Corrupt archive entry: {bad_file}')
     commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
     status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT, text=True).splitlines()
-    manifest = dict(version=version, tag=f'v{version}', base_commit=commit,
+    manifest = dict(version=version, tag=version, base_commit=commit,
                     pending_source_changes=status, platform=platform.platform(),
                     python=sys.version, software_sha256=software, signed=False,
                     ltn_included=metadata['ltn_included'], source_files=source_files,

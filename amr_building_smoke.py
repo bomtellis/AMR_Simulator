@@ -8,6 +8,42 @@ from pathlib import Path
 import sys
 import traceback
 
+def tutorial_gates(editor,app,config,output):
+    """Check the repaired Part 3 gates in the installed Qt application."""
+    editor.store.data=deepcopy(config);editor._reset_edit_history()
+    editor.show();app.processEvents();editor.workbench.show_building_course()
+    course=editor.workbench.quick_start_dialog.building_course;bubble=course.card
+    course.chapters.setCurrentIndex(2);editor.floor_spin.setValue(2)
+    def poll():
+        bubble._auto_after=0;bubble.follow();app.processEvents()
+    course.session.state['action']=17;bubble.refresh();poll()
+    assert bubble.next.isEnabled(),bubble.feedback.text()
+    door=next(r for r in editor.store.data['corridors']['nodes'] if r['name']=='Clean-door-F2')
+    door['door_clear_width_m']=.9;poll()
+    assert not bubble.next.isEnabled(),'Action 18 must reject a wrong door opening.'
+    door['door_clear_width_m']=1.2;poll()
+    assert bubble.next.isEnabled(),bubble.feedback.text()
+    course.session.state['action']=18
+    row=next(r for r in editor.store.data['locations'] if r['name']=='Clean-F2')
+    row['name']='Wrong-F1';course.session.state['bindings'].pop('service_clean_2',None)
+    for edge in editor.store.data['corridors']['edges']:
+        for key in ('from','to'):
+            if edge[key]=='Clean-F2':edge[key]='Wrong-F1'
+    bubble.refresh();poll()
+    assert not bubble.next.isEnabled(),'Action 19 must reject an unbound wrong name.'
+    assert 'Clean-F2' in bubble.where.text() and 'Wrong-F1' not in bubble.where.text(),bubble.where.text()
+    assert bubble._correction['name']=='Wrong-F1' and bubble._correction['property']=='name'
+    bubble.grab().save(str(output/'tutorial-name-repair.png'))
+    editor.store.data=deepcopy(config);editor._reset_edit_history()
+    course.session.state['action']=18;bubble.refresh();poll()
+    assert bubble.next.isEnabled(),bubble.feedback.text()
+    course.session.state['action']=19;editor._set_edit_mode('corridor_draw')
+    editor.corridor_draw_start='Clean-F2';bubble.refresh();poll()
+    assert not bubble.next.isEnabled()
+    editor.finish_corridor_drawing();poll()
+    assert bubble.next.isEnabled(),'Ending a route must recheck completion without another model edit.'
+    editor.workbench.quick_start_dialog.close()
+
 def run(output,policies=('dedicated',)):
     output=Path(output).resolve();output.mkdir(parents=True,exist_ok=True)
     os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
@@ -70,7 +106,9 @@ def run(output,policies=('dedicated',)):
             result['policies'][policy]=dict(recommendation=best,normal=normal,study=str(path),course_chapters=12,comparison_runs=48)
         from app import AMRGraphEditor
         editor=AMRGraphEditor();editor._drawings_enabled=False
-        assert editor.load_json_file(str(working.path),load_drawings=False)
+        tutorial_gates(editor,app,config,output)
+        # Discard only the synthetic, unsaved gate-check fixture above.
+        assert editor.load_json_file(str(working.path),load_drawings=False,check_unsaved=False)
         editor.show();app.processEvents();editor.workbench.show_building_course();course=editor.workbench.quick_start_dialog.building_course
         course.session=session;course.show_step();editor.workbench.quick_start_dialog.grab().save(str(output/'installed-course.png'))
         course.card.refresh();app.processEvents();course.card.grab().save(str(output/'installed-bubble.png'))
@@ -91,7 +129,8 @@ def run(output,policies=('dedicated',)):
         course.session.state['run']=str(run_dir)
         assert course.context()['current_run'],'Practice run must bind the actual saved source project.'
         editor.show_project_report(run_dir);assert editor.report_panel._run_project.project_id==editor.project.project_id
-        result['gui']=dict(live_bubble=True,study_playback=True,study_report=True,current_project_run=True)
+        result['gui']=dict(live_bubble=True,study_playback=True,study_report=True,current_project_run=True,
+                           tutorial_floor_two_gates=True,tutorial_name_repair=True,tutorial_route_finish=True)
         planner.close();editor.workbench.quick_start_dialog.close();editor.close()
         result['status']='passed';(output/'smoke.json').write_text(json.dumps(result,indent=2),encoding='utf-8');return 0
     except Exception:

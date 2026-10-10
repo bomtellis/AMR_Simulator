@@ -1,7 +1,7 @@
 # Fill these in when a Windows package is available.
 # An empty URL shows "Coming soon" instead of a broken download link.
-windows_url: "https://github.com/bomtellis/AMR_Simulator/releases/download/0.1.0/AMR-Simulator-0.1.0-Windows-x64-Setup.exe"
-windows_version: "0.1.0"
+windows_url: "https://github.com/bomtellis/AMR_Simulator/releases/download/0.1.1/AMR-Simulator-0.1.1-Windows-x64-Setup.exe"
+windows_version: "0.1.1"
 windows_details: "Windows x64 installer. Includes Python and the guided tutorial."
 
 # Fill these in when the source is available at its chosen location.

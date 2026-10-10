@@ -61,7 +61,8 @@ def inspect_step(config,index,bindings=None):
         if step['kind']=='location':
             role=f"service_{'clean' if n==0 else 'dirty'}_{floor}"
             expected=bindings.get(role,step['names'][n])
-            if row['name']!=expected:issue(f"Floor {floor}: name this location {expected}, or rebind its tutorial role after renaming.",point,name=row['name'])
+            if row['name']!=expected:issue(f"Floor {floor}: choose Select, double-click this location and set Name to {expected}, then Save. Alternatively, rebind its tutorial role after renaming.",point,
+                                         name=row['name'],expected_name=expected,property='name')
     if step['kind']=='route':
         for start,finish,a,b in zip(step['points'],step['points'][1:],matched,matched[1:]):
             if a is None or b is None:continue

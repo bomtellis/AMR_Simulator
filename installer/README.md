@@ -14,13 +14,13 @@ and install Inno Setup (this host uses 7.1.0). From the repository root:
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r installer\requirements-build.txt
-& .\installer\build.ps1 -Version 0.1.0 -Iscc 'C:\path\to\ISCC.exe'
+& .\installer\build.ps1 -Version 0.1.1 -Iscc 'C:\path\to\ISCC.exe'
 ```
 
 On this host the compiler is already at `tmp\inno-tool\ISCC.exe`, the script's
-default. Versioned outputs stay in the ignored `installer/build/releases/0.1.0`
+default. Versioned outputs stay in the ignored `installer/build/releases/0.1.1`
 folder, preserving previous development deliveries. Both frozen executables
-and the installer carry version 0.1.0. The build cleans PyInstaller analysis,
+and the installer carry version 0.1.1. The build cleans PyInstaller analysis,
 keeps exact application source files for run/report fingerprints, and removes
 the incompatible ICU DLL that can be collected from this host's tooling PATH.
 
@@ -39,8 +39,8 @@ Omit `-Version` for the backwards-compatible development output
 Install into a new, absent directory under this version's build folder:
 
 ```powershell
-$releaseRoot = Join-Path (Get-Location) 'installer\build\releases\0.1.0'
-$setup = Join-Path $releaseRoot 'setup\AMR-Simulator-0.1.0-Windows-x64-Setup.exe'
+$releaseRoot = Join-Path (Get-Location) 'installer\build\releases\0.1.1'
+$setup = Join-Path $releaseRoot 'setup\AMR-Simulator-0.1.1-Windows-x64-Setup.exe'
 $installedApp = Join-Path $releaseRoot 'installed'
 $setupProcess = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', ('/DIR="' + $installedApp + '"')) -Wait -PassThru -WindowStyle Hidden
 if ($setupProcess.ExitCode -ne 0) { throw 'Installation failed' }
@@ -50,13 +50,13 @@ New-Item -ItemType Directory -Path $releaseTemp -Force | Out-Null
 $env:TEMP = $releaseTemp
 $env:TMP = $releaseTemp
 $env:QT_QPA_PLATFORM = 'offscreen'
-.\.venv\Scripts\python.exe -m unittest tests.test_quick_start.QuickStartTests.test_small_map_has_two_types_and_completed_connected_reference tests.test_building_tutorial tests.test_workbench_lifecycle *> (Join-Path $releaseRoot 'source-checks.log')
+.\.venv\Scripts\python.exe -m unittest tests.test_quick_start.QuickStartTests.test_small_map_has_two_types_and_completed_connected_reference tests.test_building_tutorial tests.test_workbench_lifecycle tests.test_tutorial_status tests.test_tutorial_circulation tests.test_tutorial_placement tests.test_tutorial_bubble *> (Join-Path $releaseRoot 'source-checks.log')
 if ($LASTEXITCODE -ne 0) { throw 'Source checks failed' }
 & $worker --package-smoke (Join-Path $releaseRoot 'smoke-small')
 if ($LASTEXITCODE -ne 0) { throw 'Small-map verification failed' }
 & $worker --package-smoke-building (Join-Path $releaseRoot 'smoke-building')
 if ($LASTEXITCODE -ne 0) { throw 'Building-course verification failed' }
-.\.venv\Scripts\python.exe installer\package_release.py --version 0.1.0
+.\.venv\Scripts\python.exe installer\package_release.py --version 0.1.1
 ```
 
 Each check writes `smoke.json`, screenshots and reports; `error.txt` locates a
@@ -65,7 +65,7 @@ fingerprints. Review the generated guides visually and try a normal GUI launch.
 Checks cover one Windows host and reference projects, not complete validation.
 The package is unsigned; Windows may display an unknown-publisher warning.
 
-## Publish manually as v0.1.0
+## Publish manually as 0.1.1
 
 No GitHub Actions workflow or publishing command is added. Build/package
 commands work locally and never upload anything.
@@ -77,11 +77,11 @@ commands work locally and never upload anything.
    records the base commit and pending changes; the supplied Source ZIP
    contains the actual build source even before those changes are committed.
 3. In GitHub open **Releases → Draft a new release**.
-4. Choose **v0.1.0**, create the tag on your pushed release commit (or select
-   an existing matching tag), and set the title to **AMR Simulator 0.1.0**.
-5. Paste `installer/RELEASE-0.1.0.md` into the release description. Attach the
+4. Choose **0.1.1**, create the tag on your pushed release commit (or select
+   an existing matching tag), and set the title to **AMR Simulator 0.1.1**.
+5. Paste `installer/RELEASE-0.1.1.md` into the release description. Attach the
    installer, portable ZIP, Source ZIP, manifest and checksum file from
-   `installer/build/releases/0.1.0/assets`.
+   `installer/build/releases/0.1.1/assets`.
 6. Review and publish the release. Use the pre-release checkbox if distributing
    it for testing.
 
@@ -92,10 +92,10 @@ folders into the source repository. Official guidance:
 After publication, fill in `docs/_data/downloads.yml` with:
 
 ```yaml
-windows_url: "https://github.com/bomtellis/AMR_Simulator/releases/download/v0.1.0/AMR-Simulator-0.1.0-Windows-x64-Setup.exe"
-windows_version: "0.1.0"
+windows_url: "https://github.com/bomtellis/AMR_Simulator/releases/download/0.1.1/AMR-Simulator-0.1.1-Windows-x64-Setup.exe"
+windows_version: "0.1.1"
 windows_details: "Windows x64 installer. Includes Python and the guided tutorial."
 ```
 
-Use that URL only if you publish to that exact repository with that tag and
-filename. The website download remains Coming soon until you fill it in.
+The website download is configured for that exact repository, tag and filename.
+It becomes available once you upload and publish the matching release asset.

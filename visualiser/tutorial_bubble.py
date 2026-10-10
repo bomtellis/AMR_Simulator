@@ -101,7 +101,7 @@ class CirculationOverlay(QWidget):
                 painter.drawLine(self.canvas.mapFromScene(QPointF(self.issue['path_start'][0],-self.issue['path_start'][1])),
                                  self.canvas.mapFromScene(QPointF(self.issue['path_finish'][0],-self.issue['path_finish'][1])))
         if self.next_point:
-            p=self.next_point;name=(self.issue or {}).get('name')
+            p=self.next_point;name=(self.issue or {}).get('expected_name') or (self.issue or {}).get('name')
             if not name and self.step.get('names'):
                 name=next((n for n,point in zip(self.step['names'],self.step['points']) if tuple(point)==tuple(p)),None)
             label=f'{name or self.step["tool"]} · F{self.step["floor"]} · ({p[0]:g}, {p[1]:g}) m'
@@ -327,7 +327,7 @@ class TutorialBubble(QDialog):
                 try:evidence.append((str(path),path.stat().st_mtime_ns,path.stat().st_size))
                 except OSError:pass
         session=self.course.session.state
-        token=(self.current()[:2],config_hash(self.editor.store.data),tuple(session['seen']),session['policy'],
+        token=(self.current()[:2],config_hash(self.editor.store.data),self.editor.corridor_draw_start,tuple(session['seen']),session['policy'],
                json.dumps(session['bindings'],sort_keys=True,default=str),json.dumps(context,sort_keys=True,default=str),tuple(evidence))
         if token!=self._auto_token:
             self._auto_token=token;self.check_action(automatic=True)
@@ -509,6 +509,9 @@ class TutorialBubble(QDialog):
                 if row:
                     p=self.editor.canvas.mapFromScene(QPointF(row['x'],-row['y']))
                     return self.editor.canvas.viewport(),QRect(p-QPoint(23,23),QSize(46,46))
+        if modal and chapter==2 and self._correction and self._correction.get('expected_name'):
+            from dialogs import PointEditorDialog
+            if isinstance(modal,PointEditorDialog):return modal.name_edit,None
         if modal and getattr(self.editor,'_pending_insertion',None):
             field_widget=modal.findChild(QLineEdit)
             if field_widget:return field_widget,None
@@ -682,7 +685,7 @@ class TutorialBubble(QDialog):
             floor=issue['floor'] if issue else step['floor']
             self.route_overlay.step=dict(step,floor=floor)
             point=self.route_overlay.next_point or step['points'][0]
-            name=issue.get('name') if issue else None
+            name=(issue.get('expected_name') or issue.get('name')) if issue else None
             if chapter==2 and step['points']==[(3,7),(3,10),(3,13)] and issue and issue['point']==(3,10) and not issue.get('start'):
                 name='Shared transition'
             if not name and step.get('names'):
