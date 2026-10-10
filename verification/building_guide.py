@@ -6,7 +6,7 @@ import sys
 from xml.sax.saxutils import escape
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));sys.path.insert(0,str(ROOT/'visualiser'))
 
-def build(evidence=None):
+def build(evidence=None, output=None):
     evidence=Path(evidence) if evidence else ROOT/'verification/latest/building-tutorial'
     from amr_tutorial import LESSONS,EXTRA_LESSONS
     from tutorial_bubble import ACTIONS
@@ -15,7 +15,11 @@ def build(evidence=None):
     from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate,Paragraph,Spacer,Image,PageBreak,Table,TableStyle
-    out=ROOT/'docs/building-tutorial';images=out/'images';images.mkdir(exist_ok=True)
+    source=ROOT/'docs/building-tutorial'
+    out=Path(output) if output else source
+    images=out/'images';images.mkdir(parents=True,exist_ok=True)
+    if out.resolve()!=source.resolve():
+        shutil.copytree(source/'images',images,dirs_exist_ok=True)
     sources={'bubble.png':'visual-100/bubble-Light-1024.png','interpretation.png':'visual-100/planner-Light-1024-tab0.png',
              'proposals.png':'visual-100/planner-Light-1024-tab1.png','workbench.png':'visual-100/workbench.png',
              'floor-settings.png':'visual-100/floor-settings-Light-1024.png',
@@ -30,6 +34,7 @@ def build(evidence=None):
     styles.add(ParagraphStyle('ActionBullet',parent=styles['BodyText'],leftIndent=14,bulletIndent=2))
     styles.add(ParagraphStyle('ActionLead',parent=styles['BodyText'],keepWithNext=True))
     def p(text,style='BodyText'):
+        text=text.replace('\u2192',' > ').replace('\u2013','-').replace('\u2014','-')
         lines=text.split('\n')
         for index,line in enumerate(lines):
             if not line:

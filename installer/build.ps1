@@ -1,27 +1,36 @@
 param(
-    [string]$LtnProject = 'ltn.amrproj',
+    [ValidatePattern('^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$')]
+    [string]$Version = '0.1.0-dev',
+    [string]$LtnProject = '',
     [string]$Iscc = 'tmp\inno-tool\ISCC.exe'
 )
 
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 $python = Join-Path $root '.venv\Scripts\python.exe'
-$ltn = if ([IO.Path]::IsPathRooted($LtnProject)) { $LtnProject } else { Join-Path $root $LtnProject }
+$ltn = if ($LtnProject) { if ([IO.Path]::IsPathRooted($LtnProject)) { $LtnProject } else { Join-Path $root $LtnProject } }
 $compiler = if ([IO.Path]::IsPathRooted($Iscc)) { $Iscc } else { Join-Path $root $Iscc }
-$dist = Join-Path $PSScriptRoot 'build\dist\AMRSimulator'
-$outputRoot = Join-Path $PSScriptRoot 'build'
+$outputRoot = if ($Version -eq '0.1.0-dev') { Join-Path $PSScriptRoot 'build' } else { Join-Path $PSScriptRoot "build\releases\$Version" }
+$distRoot = Join-Path $outputRoot 'dist'
+$dist = Join-Path $distRoot 'AMRSimulator'
 if (-not [IO.Path]::GetFullPath($dist).StartsWith([IO.Path]::GetFullPath($outputRoot) + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Build output must stay under installer\build.'
 }
-foreach ($path in @($python, $ltn, $compiler)) {
+foreach ($path in @($python, $compiler, (Join-Path $root 'docs\quick-start\small-map.json'))) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Required build input missing: $path" }
 }
+if ($ltn -and -not (Test-Path -LiteralPath $ltn -PathType Leaf)) { throw "Optional LTN project missing: $ltn" }
+New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 
 Push-Location $root
+$previousVersion = $env:AMR_BUILD_VERSION
 try {
+    $env:AMR_BUILD_VERSION = $Version
+    $buildLog = Join-Path $outputRoot 'pyinstaller.log'
     & $python -m PyInstaller --clean --noconfirm `
-        --distpath 'installer\build\dist' --workpath 'installer\build\work' `
-        'installer\AMRSimulator.spec'
+        --distpath $distRoot --workpath (Join-Path $outputRoot 'work') `
+        'installer\AMRSimulator.spec' *> $buildLog
+    if ($LASTEXITCODE -ne 0) { Get-Content -LiteralPath $buildLog -Tail 35 }
     if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
     if (-not (Test-Path -LiteralPath (Join-Path $dist 'AMRSimulator.exe') -PathType Leaf) -or
         -not (Test-Path -LiteralPath (Join-Path $dist 'AMRSimulatorWorker.exe') -PathType Leaf)) {
@@ -52,31 +61,22 @@ try {
         }
     }
 
-    $guide = Join-Path $dist 'docs\quick-start'
-    New-Item -ItemType Directory -Path $guide -Force | Out-Null
-    foreach ($name in @('AMR-Simulator-Quick-Start.md', 'AMR-Simulator-Quick-Start.docx',
-                        'AMR-Simulator-Quick-Start.pdf', 'small-map.json')) {
-        Copy-Item -LiteralPath (Join-Path $root "docs\quick-start\$name") -Destination $guide -Force
-    }
-    Copy-Item -LiteralPath (Join-Path $root 'docs\quick-start\images') -Destination $guide -Recurse -Force
-    $buildingGuide = Join-Path $dist 'docs\building-tutorial'
-    New-Item -ItemType Directory -Path $buildingGuide -Force | Out-Null
-    Get-ChildItem -LiteralPath (Join-Path $root 'docs\building-tutorial') -File | Where-Object {
-        $_.Extension -in @('.dxf', '.amrproj', '.md', '.pdf') -or $_.Name -eq 'coverage.json'
-    } | ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $buildingGuide -Force }
-    Copy-Item -LiteralPath (Join-Path $root 'docs\building-tutorial\images') -Destination $buildingGuide -Recurse -Force
-    $examples = Join-Path $dist 'examples'
-    New-Item -ItemType Directory -Path $examples -Force | Out-Null
-    Copy-Item -LiteralPath $ltn -Destination (Join-Path $examples 'ltn.amrproj') -Force
+    $assetArgs = @('installer\prepare_assets.py', '--output', $dist, '--version', $Version)
+    if ($ltn) { $assetArgs += @('--ltn-project', $ltn) }
+    & $python @assetArgs
+    if ($LASTEXITCODE -ne 0) { throw 'Practice projects and help generation failed.' }
 
     $compileLog = Join-Path $outputRoot 'inno-compile.log'
-    & $compiler (Join-Path $PSScriptRoot 'AMRSimulator.iss') *> $compileLog
+    $setupRoot = Join-Path $outputRoot 'setup'
+    $setupName = if ($Version -eq '0.1.0-dev') { 'AMR-Simulator-Setup-dev' } else { "AMR-Simulator-$Version-Windows-x64-Setup" }
+    & $compiler "/DAppVersion=$Version" "/DSourceDir=$dist" "/O$setupRoot" "/F$setupName" (Join-Path $PSScriptRoot 'AMRSimulator.iss') *> $compileLog
     if ($LASTEXITCODE -ne 0) {
         Get-Content -LiteralPath $compileLog -Tail 30
         throw 'Inno Setup compile failed.'
     }
-    Write-Output (Join-Path $PSScriptRoot 'build\setup\AMR-Simulator-Setup-dev.exe')
+    Write-Output (Join-Path $setupRoot "$setupName.exe")
 }
 finally {
+    $env:AMR_BUILD_VERSION = $previousVersion
     Pop-Location
 }

@@ -1,49 +1,101 @@
-# Windows development installer
+# Windows installer and tagged releases
 
-From the repository root, install `requirements.txt` and PyInstaller into
-`.venv`, then run:
+The installed application includes Python, Qt, simulation/report workers,
+the current 12-part Building flow tutorial, generated practice projects,
+drawings, Markdown/PDF guides and the project licence. Installation works
+offline and defaults to the current user's LocalAppData folder without an
+administrator prompt. A portable ZIP can be supplied alongside the installer.
 
-```powershell
-& installer\build.ps1 -LtnProject ltn.amrproj -Iscc 'C:\path\to\ISCC.exe'
-```
+## Build on Windows x64
 
-The LTN project is a supplied portable build input. The build script requires
-it; it does not package `ltn.json` with machine-specific drawing paths.
-The output is `installer/build/setup/AMR-Simulator-Setup-dev.exe`. Build files
-stay under the ignored `installer/build` directory.
-
-The installer defaults to a current-user LocalAppData directory and needs no
-administrator rights or network connection. It carries the practice map, LTN
-project, and the PDF, DOCX and Markdown quick-start guide. The GUI launches
-the bundled console worker for simulations and report export. The build removes
-an incompatible ICU DLL that PyInstaller can collect from this host's tooling
-path; Qt then uses Windows' system ICU as it does in the working source
-environment. Older version 1 `.amrproj` files open without being rewritten;
-Save upgrades them to version 2. To verify an
-installed copy without opening the GUI, run:
+Use Python 3.13 in `.venv`, install the pinned application/build dependencies,
+and install Inno Setup (this host uses 7.1.0). From the repository root:
 
 ```powershell
-& 'C:\path\to\AMRSimulator.exe' --package-smoke 'C:\writable\smoke-output'
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r installer\requirements-build.txt
+& .\installer\build.ps1 -Version 0.1.0 -Iscc 'C:\path\to\ISCC.exe'
 ```
 
-`smoke.json` records a saved small-map run, reopened project, actual Review and
-Playback, compact Simple settings and PDF report. Read-only review verifies that
-saved inputs and event CSV have not changed. This command excludes LTN workloads;
-`error.txt` contains a traceback on failure. This is a development package,
-not a signed or release-accepted build.
+On this host the compiler is already at `tmp\inno-tool\ISCC.exe`, the script's
+default. Versioned outputs stay in the ignored `installer/build/releases/0.1.0`
+folder, preserving previous development deliveries. Both frozen executables
+and the installer carry version 0.1.0. The build cleans PyInstaller analysis,
+keeps exact application source files for run/report fingerprints, and removes
+the incompatible ICU DLL that can be collected from this host's tooling PATH.
 
-The 9 October Simple delivery and checksums are described in
-[the delivery review](../verification/SIMPLE_DELIVERY_REVIEW.md).
+The public build uses tracked practice inputs and regenerates the tutorial
+projects and guides. It requires no separately supplied LTN project or generated
+PDF/DOCX from an earlier checkout. To include an authorised portable LTN example,
+explicitly add `-LtnProject 'C:\path\to\ltn.amrproj'`. The in-app walkthrough
+still lists that optional exercise when its input is not bundled; use the small
+map or Building flow tutorial instead.
 
-For the supplied LTN archive, run the more complete installed check with a
-writable output directory:
+Omit `-Version` for the backwards-compatible development output
+`installer/build/setup/AMR-Simulator-Setup-dev.exe` (version 0.1.0-dev).
+
+## Verify a fresh installation
+
+Install into a new, absent directory under this version's build folder:
 
 ```powershell
-& 'C:\path\to\AMRSimulator.exe' --package-smoke-ltn 'C:\writable\ltn-output'
+$releaseRoot = Join-Path (Get-Location) 'installer\build\releases\0.1.0'
+$setup = Join-Path $releaseRoot 'setup\AMR-Simulator-0.1.0-Windows-x64-Setup.exe'
+$installedApp = Join-Path $releaseRoot 'installed'
+$setupProcess = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', ('/DIR="' + $installedApp + '"')) -Wait -PassThru -WindowStyle Hidden
+if ($setupProcess.ExitCode -ne 0) { throw 'Installation failed' }
+$worker = Join-Path $installedApp 'AMRSimulatorWorker.exe'
+$releaseTemp = Join-Path $releaseRoot 'temp'
+New-Item -ItemType Directory -Path $releaseTemp -Force | Out-Null
+$env:TEMP = $releaseTemp
+$env:TMP = $releaseTemp
+$env:QT_QPA_PLATFORM = 'offscreen'
+.\.venv\Scripts\python.exe -m unittest tests.test_quick_start.QuickStartTests.test_small_map_has_two_types_and_completed_connected_reference tests.test_building_tutorial tests.test_workbench_lifecycle *> (Join-Path $releaseRoot 'source-checks.log')
+if ($LASTEXITCODE -ne 0) { throw 'Source checks failed' }
+& $worker --package-smoke (Join-Path $releaseRoot 'smoke-small')
+if ($LASTEXITCODE -ne 0) { throw 'Small-map verification failed' }
+& $worker --package-smoke-building (Join-Path $releaseRoot 'smoke-building')
+if ($LASTEXITCODE -ne 0) { throw 'Building-course verification failed' }
+.\.venv\Scripts\python.exe installer\package_release.py --version 0.1.0
 ```
 
-It opens all LTN DXF floors and the walkthrough, checks bay-entry findings,
-runs the 05:00–11:00 exercise, reconciles recorded outcomes, and exports a PDF.
-`ltn-smoke.json` records the result; `ltn-progress.txt` and `ltn-error.txt`
-locate a failure. The check uses a temporary drawing cache under its output
-directory so it can run in a restricted filesystem sandbox.
+Each check writes `smoke.json`, screenshots and reports; `error.txt` locates a
+failure. Packaging requires passing fresh-installed checks and matching software
+fingerprints. Review the generated guides visually and try a normal GUI launch.
+Checks cover one Windows host and reference projects, not complete validation.
+The package is unsigned; Windows may display an unknown-publisher warning.
+
+## Publish manually as v0.1.0
+
+No GitHub Actions workflow or publishing command is added. Build/package
+commands work locally and never upload anything.
+
+1. Review and commit the packaging changes and restored small-map practice
+   input on `main`. The tag must identify the same application source used
+   in the build. If application code changes, rebuild and reverify first.
+2. Push that commit yourself to the intended repository. The build manifest
+   records the base commit and pending changes; the supplied Source ZIP
+   contains the actual build source even before those changes are committed.
+3. In GitHub open **Releases → Draft a new release**.
+4. Choose **v0.1.0**, create the tag on your pushed release commit (or select
+   an existing matching tag), and set the title to **AMR Simulator 0.1.0**.
+5. Paste `installer/RELEASE-0.1.0.md` into the release description. Attach the
+   installer, portable ZIP, Source ZIP, manifest and checksum file from
+   `installer/build/releases/0.1.0/assets`.
+6. Review and publish the release. Use the pre-release checkbox if distributing
+   it for testing.
+
+Release assets are uploaded separately; do not commit the installer or build
+folders into the source repository. Official guidance:
+[Managing releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository).
+
+After publication, fill in `docs/_data/downloads.yml` with:
+
+```yaml
+windows_url: "https://github.com/bomtellis/AMR_Simulator/releases/download/v0.1.0/AMR-Simulator-0.1.0-Windows-x64-Setup.exe"
+windows_version: "0.1.0"
+windows_details: "Windows x64 installer. Includes Python and the guided tutorial."
+```
+
+Use that URL only if you publish to that exact repository with that tag and
+filename. The website download remains Coming soon until you fill it in.
