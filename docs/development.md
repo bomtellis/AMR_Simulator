@@ -30,10 +30,10 @@ copy, use that folder and continue below.
 {% endif %}
 
 Download and extract the source archive, or clone the repository when its link
-is available. Replace `REPOSITORY_URL` with that actual Git URL before running:
+is available. Replace `https://github.com/bomtellis/AMR_Simulator/` with that actual Git URL before running:
 
 ```text
-git clone REPOSITORY_URL AMR_Simulator
+git clone https://github.com/bomtellis/AMR_Simulator/ AMR_Simulator
 cd AMR_Simulator
 ```
 
