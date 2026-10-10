@@ -1,0 +1,5 @@
+docs/_build/
+docs/.jekyll-cache/
+docs/.sass-cache/
+docs/.bundle/
+docs/Gemfile.lock

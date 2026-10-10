@@ -1,0 +1,12 @@
+<div class="download-card">
+  <div>
+    <h3>AMR Simulator for Windows</h3>
+    {% if site.data.downloads.windows_version != "" %}<p class="version">{{ site.data.downloads.windows_version | escape }}</p>{% endif %}
+    <p>{{ site.data.downloads.windows_details | escape }}</p>
+  </div>
+  {% if site.data.downloads.windows_url != "" %}
+    <a class="button" href="{{ site.data.downloads.windows_url | escape }}">Download for Windows</a>
+  {% else %}
+    <span class="button unavailable" aria-disabled="true">Coming soon</span>
+  {% endif %}
+</div>

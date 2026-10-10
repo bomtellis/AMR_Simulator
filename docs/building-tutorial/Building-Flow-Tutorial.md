@@ -1,7 +1,8 @@
 ---
-title: Building flow tutorial
-nav_order: 2
-parent: Build a model
+layout: default
+title: Building flow guide
+permalink: /tutorial/guide/
+page_class: guide-page
 ---
 # Building flow tutorial
 

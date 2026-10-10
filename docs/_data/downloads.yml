@@ -1,0 +1,9 @@
+# Fill these in when a Windows package is available.
+# An empty URL shows "Coming soon" instead of a broken download link.
+windows_url: ""
+windows_version: ""
+windows_details: "The Windows package will be added here when it is ready."
+
+# Fill these in when the source is available at its chosen location.
+source_url: ""
+source_archive_url: ""
