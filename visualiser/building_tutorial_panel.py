@@ -219,10 +219,15 @@ class BuildingCourse(QWidget):
         role,ok=QInputDialog.getItem(self,'Tutorial object','Role',roles,0,False)
         if not ok:return
         section='lifts' if role.startswith('lift') else 'locations'; key='id' if section=='lifts' else 'name'
-        names=[r[key] for r in self.editor.store.data.get(section,[])]
+        from amr_tutorial_circulation import SERVICE_ROLES,service_location_matches
+        names=[r[key] for r in self.editor.store.data.get(section,[])
+               if role not in SERVICE_ROLES or service_location_matches(role,r)]
         if not names:self.feedback.setText('Create an object before binding it.'); return
         name,ok=QInputDialog.getItem(self,'Bind tutorial object',role,names,0,False)
-        if ok:self.session.bind(role,self.editor.store.data,section,name); self.session.save(); self.check_step()
+        if ok:
+            try:self.session.bind(role,self.editor.store.data,section,name)
+            except ValueError as exc:self.feedback.setText(str(exc));return
+            self.session.save();self.check_step()
 
     def highlight(self):
         self.show_card();self.card.locate()

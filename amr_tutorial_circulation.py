@@ -3,6 +3,18 @@ import math
 
 XS=(3,8,10,12,18,24,30,34,38)
 TOLERANCE=.05
+SERVICE_ROLES={f'service_{flow}_{floor}':(floor,(8+2*floor,y),f'{flow.title()}-F{floor}')
+               for floor in range(3) for flow,y in (('clean',4),('dirty',16))}
+
+
+def service_location_matches(role,row):
+    """Service bindings belong to one floor and one clean/dirty marker."""
+    floor,point,name=SERVICE_ROLES[role]
+    reserved={r[2] for r in SERVICE_ROLES.values()}
+    try:
+        return (row.get('name',name) not in reserved-{name} and row.get('floor')==floor
+                and math.hypot(float(row['x'])-point[0],float(row['y'])-point[1])<=TOLERANCE)
+    except (KeyError,TypeError,ValueError):return False
 
 
 def steps():
@@ -60,7 +72,8 @@ def inspect_step(config,index,bindings=None):
                 issue(f"Floor {floor}: select this door, open Properties, set Clear door opening to 1.2 m and Apply changes.",point,property='door_clear_width_m',name=row['name'])
         if step['kind']=='location':
             role=f"service_{'clean' if n==0 else 'dirty'}_{floor}"
-            expected=bindings.get(role,step['names'][n])
+            bound=next((r for r in locations if r['name']==bindings.get(role)),None)
+            expected=bound['name'] if bound and service_location_matches(role,bound) else step['names'][n]
             if row['name']!=expected:issue(f"Floor {floor}: choose Select, double-click this location and set Name to {expected}, then Save. Alternatively, rebind its tutorial role after renaming.",point,
                                          name=row['name'],expected_name=expected,property='name')
     if step['kind']=='route':

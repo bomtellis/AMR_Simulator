@@ -45,6 +45,11 @@ def package(version):
     setup = build / f'setup/AMR-Simulator-{version}-Windows-x64-Setup.exe'
     if not setup.is_file():
         raise FileNotFoundError(setup)
+    upgrade = json.loads((build / 'upgrade-check.json').read_text(encoding='utf-8-sig'))
+    if (upgrade.get('status') != 'passed' or upgrade.get('to') != version
+            or upgrade.get('setup_sha256') != digest(setup)
+            or not all(upgrade.get(k) for k in ('same_version_reinstall', 'saved_projects_preserved', 'previous_payload_removed'))):
+        raise RuntimeError('Passing upgrade/reinstall evidence for this exact installer is missing.')
     source_checks = (build / 'source-checks.log').read_text(encoding='utf-8')
     match = re.search(r'Ran (\d+) tests in [\d.]+s\s+OK\s*$', source_checks)
     if not match:
@@ -81,7 +86,7 @@ def package(version):
                     pending_source_changes=status, platform=platform.platform(),
                     python=sys.version, software_sha256=software, signed=False,
                     ltn_included=metadata['ltn_included'], source_files=source_files,
-                    validation=dict(source_tests=dict(passed=int(match[1]),
+                    validation=dict(upgrade=upgrade,source_tests=dict(passed=int(match[1]),
                                                       log_sha256=digest(build / 'source-checks.log')),
                                     small_map=small, building_course=course),
                     files={p.name: dict(bytes=p.stat().st_size, sha256=digest(p))

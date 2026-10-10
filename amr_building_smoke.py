@@ -37,6 +37,10 @@ def tutorial_gates(editor,app,config,output):
     editor.store.data=deepcopy(config);editor._reset_edit_history()
     course.session.state['action']=18;bubble.refresh();poll()
     assert bubble.next.isEnabled(),bubble.feedback.text()
+    course.session.state['bindings']['service_clean_2']=deepcopy(course.session.state['bindings']['service_dirty_1'])
+    poll()
+    assert course.session.roles(editor.store.data)['service_clean_2']=='Clean-F2'
+    assert bubble.next.isEnabled() and 'Dirty-F1' not in bubble.feedback.text(),bubble.feedback.text()
     course.session.state['action']=19;editor._set_edit_mode('corridor_draw')
     editor.corridor_draw_start='Clean-F2';bubble.refresh();poll()
     assert not bubble.next.isEnabled()
@@ -130,7 +134,8 @@ def run(output,policies=('dedicated',)):
         assert course.context()['current_run'],'Practice run must bind the actual saved source project.'
         editor.show_project_report(run_dir);assert editor.report_panel._run_project.project_id==editor.project.project_id
         result['gui']=dict(live_bubble=True,study_playback=True,study_report=True,current_project_run=True,
-                           tutorial_floor_two_gates=True,tutorial_name_repair=True,tutorial_route_finish=True)
+                           tutorial_floor_two_gates=True,tutorial_name_repair=True,tutorial_route_finish=True,
+                           tutorial_stale_role_repaired=True)
         planner.close();editor.workbench.quick_start_dialog.close();editor.close()
         result['status']='passed';(output/'smoke.json').write_text(json.dumps(result,indent=2),encoding='utf-8');return 0
     except Exception:

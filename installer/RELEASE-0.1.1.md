@@ -11,6 +11,12 @@ Windows x64 update for the Building flow tutorial.
   and **Dirty-F2**.
 - Name repairs direct users to **Select → double-click location → Name → Save**.
   Names remain read-only in the layout Properties panel.
+- Saved service-role bindings are checked against their floor and marker.
+  Invalid bindings are repaired when the correct location exists. Clean-F2
+  is never asked to take the floor-1 dirty location's name.
+- Setup detects the current user's registered AMR Simulator installation and
+  runs its uninstaller before replacing it, including when reinstalling 0.1.1.
+  Untracked projects and results are preserved; only installed files are removed.
 
 Part 3 actions 18 and 19 are covered by regression checks using the door
 Properties controls, location placement and editing, automatic completion,

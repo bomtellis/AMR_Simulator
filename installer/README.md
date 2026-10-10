@@ -6,6 +6,13 @@ drawings, Markdown/PDF guides and the project licence. Installation works
 offline and defaults to the current user's LocalAppData folder without an
 administrator prompt. A portable ZIP can be supplied alongside the installer.
 
+Setup checks the current user's AMR Simulator uninstall registration and removes
+the previous package before installing this one, including a rebuilt package
+with the same version. Close AMR Simulator and its workers first. Setup stops
+if removal fails or Windows needs a restart. The registered uninstaller removes
+its installed files; saved projects, results and untracked files are retained.
+Portable copies are not registered and must be replaced manually.
+
 ## Build on Windows x64
 
 Use Python 3.13 in `.venv`, install the pinned application/build dependencies,
@@ -36,14 +43,17 @@ Omit `-Version` for the backwards-compatible development output
 
 ## Verify a fresh installation
 
-Install into a new, absent directory under this version's build folder:
+Verify an upgrade from the previous release and a same-version replacement.
+This test installs the previous package into `upgrade-previous`, upgrades into
+an absent `installed` folder, reinstalls there, and checks that untracked
+project files inside and outside the installation folders retain their bytes.
+It refuses to run when a normal installation outside the build area is
+registered. Use a separate Windows account in that case.
 
 ```powershell
 $releaseRoot = Join-Path (Get-Location) 'installer\build\releases\0.1.1'
-$setup = Join-Path $releaseRoot 'setup\AMR-Simulator-0.1.1-Windows-x64-Setup.exe'
 $installedApp = Join-Path $releaseRoot 'installed'
-$setupProcess = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', ('/DIR="' + $installedApp + '"')) -Wait -PassThru -WindowStyle Hidden
-if ($setupProcess.ExitCode -ne 0) { throw 'Installation failed' }
+& .\installer\verify_upgrade.ps1 -Version 0.1.1 -PreviousVersion 0.1.0
 $worker = Join-Path $installedApp 'AMRSimulatorWorker.exe'
 $releaseTemp = Join-Path $releaseRoot 'temp'
 New-Item -ItemType Directory -Path $releaseTemp -Force | Out-Null
@@ -61,7 +71,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Building-course verification failed' }
 
 Each check writes `smoke.json`, screenshots and reports; `error.txt` locates a
 failure. Packaging requires passing fresh-installed checks and matching software
-fingerprints. Review the generated guides visually and try a normal GUI launch.
+fingerprints and upgrade/reinstall evidence for the exact Setup executable.
+Review the generated guides visually and try a normal GUI launch.
 Checks cover one Windows host and reference projects, not complete validation.
 The package is unsigned; Windows may display an unknown-publisher warning.
 

@@ -3,6 +3,7 @@ from copy import deepcopy
 import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -162,6 +163,39 @@ class TutorialStatusTests(unittest.TestCase):
         self.assertTrue(self.editor.redo_edit())
         self.poll()
         self.assertTrue(self.bubble.next.isEnabled())
+
+    def test_saved_floor_two_role_cannot_request_Dirty_F1_for_Clean_F2(self):
+        from amr_tutorial import TutorialSession
+        from amr_tutorial_circulation import inspect_step
+        config = self.editor.store.data
+        # A stale companion file can bind the floor-2 clean role to a floor-1
+        # object. The checker must validate the role, not use its name blindly.
+        old = TutorialSession()
+        old.seed_bindings(config)
+        old.state['bindings']['service_clean_2'] = deepcopy(old.state['bindings']['service_dirty_1'])
+        with tempfile.TemporaryDirectory() as folder:
+            old.path = Path(folder) / 'working.amrproj.tutorial.json'
+            old.save()
+            restored = TutorialSession(old.path)
+        self.course.session.state['bindings'] = deepcopy(restored.state['bindings'])
+        self.course.session.state['action'] = 18
+        self.editor.floor_spin.setValue(2)
+        raw_roles = {k: v['name'] for k, v in old.state['bindings'].items()}
+        before = deepcopy(config)
+        self.assertEqual([], inspect_step(config, 18, raw_roles))
+        self.bubble.refresh()
+        self.poll()
+        self.assertEqual('Clean-F2', self.course.session.roles(config)['service_clean_2'])
+        self.assertTrue(self.bubble.next.isEnabled(), self.bubble.feedback.text())
+        self.assertNotIn('Dirty-F1', self.bubble.feedback.text())
+        self.assertEqual(before, config, 'Repair progress bindings without editing project inputs.')
+
+    def test_binding_service_role_rejects_another_floor_or_flow(self):
+        from amr_tutorial import TutorialSession
+        session = TutorialSession()
+        for wrong in ('Dirty-F1', 'Dirty-F2', 'Clean-F1'):
+            with self.subTest(wrong=wrong), self.assertRaises(ValueError):
+                session.bind('service_clean_2', self.editor.store.data, 'locations', wrong)
 
 
 if __name__ == '__main__':

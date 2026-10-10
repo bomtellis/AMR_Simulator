@@ -5,6 +5,7 @@ from pathlib import Path
 
 from amr_project import atomic_write
 from amr_run_evidence import config_hash
+from amr_tutorial_circulation import SERVICE_ROLES,service_location_matches
 
 # id, title, workspace, action, expected; IDs remain stable when copy is revised.
 LESSONS = (
@@ -73,19 +74,30 @@ class TutorialSession:
         rows=config.get(section,[])
         row=next((r for r in rows if r.get(key)==name),None)
         if row is None: raise ValueError('Choose an existing object.')
+        if role in SERVICE_ROLES and (section!='locations' or not service_location_matches(role,row)):
+            floor,point,_=SERVICE_ROLES[role]
+            raise ValueError(f'{role}: choose the service location on floor {floor} at X {point[0]}, Y {point[1]} m.')
         self.state['bindings'][role]=dict(section=section,key=key,name=name,snapshot=_signature(row,key))
 
     def reconcile(self, config):
         missing=[]
-        for role,b in self.state['bindings'].items():
+        for role,b in list(self.state['bindings'].items()):
             rows=config.get(b['section'],[])
             row=next((r for r in rows if r.get(b['key'])==b['name']),None)
             if row is None:
                 matches=[r for r in rows if _signature(r,b['key'])==b['snapshot']]
                 if len(matches)==1: row=matches[0]; b['name']=row[b['key']]
-                else: missing.append(role); continue
+                else:
+                    if role in SERVICE_ROLES and not service_location_matches(role,dict(b['snapshot'],name=b['name'])):
+                        del self.state['bindings'][role]
+                    missing.append(role); continue
+            if role in SERVICE_ROLES and (b['section']!='locations' or not service_location_matches(role,row)):
+                del self.state['bindings'][role];missing.append(role);continue
             b['snapshot']=_signature(row,b['key'])
-        return missing
+        self.seed_bindings(config)
+        return [role for role in missing if role not in self.state['bindings'] or
+                not any(r.get(self.state['bindings'][role]['key'])==self.state['bindings'][role]['name']
+                        for r in config.get(self.state['bindings'][role]['section'],[]))]
 
     def roles(self, config):
         self.reconcile(config)
@@ -99,7 +111,7 @@ class TutorialSession:
         for floor in range(3):
             for flow in ('clean','dirty'):
                 role=f'service_{flow}_{floor}';name=f'{flow.title()}-F{floor}'
-                if role not in self.state['bindings'] and any(r.get('name')==name for r in config.get('locations',[])):
+                if role not in self.state['bindings'] and any(r.get('name')==name and service_location_matches(role,r) for r in config.get('locations',[])):
                     self.bind(role,config,'locations',name)
         for role,name in [('lift1','L1'),('lift2','L2')]:
             if role not in self.state['bindings'] and any(r.get('id')==name for r in config.get('lifts',[])):
