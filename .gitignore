@@ -208,8 +208,7 @@ marimo/_lsp/
 __marimo__/
 
 # PDF
-*.pdf
-!docs/quick-start/AMR-Simulator-Quick-Start.pdf
+*.[pP][dD][fF]
 /installer/build/
 
 # Local AMR projects, including tutorial/lift-study sidecars and backups.
@@ -242,8 +241,12 @@ temp/
 *.prof
 *.pstats
 
+# Generated CAD drawings; retain required tutorial drawings.
+*.[dD][xX][fF]
+!docs/building-tutorial/*.[dD][xX][fF]
+
 # CSV
-*.csv
+*.[cC][sS][vV]
 simulation_steps.csv
 
 # Reproducible verification output is retained locally and as CI artifacts.
