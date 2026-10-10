@@ -1,4 +1,4 @@
-"""Portable version-1 project archives. Simulation outputs are never collected.
+"""Portable project archives with version-1 read migration. Outputs stay external.
 
 Only configured DXF/PDF underlays are embedded. Revisions and drawings are
 content-addressed; restore appends history. This is not a tamper-proof audit.
@@ -14,10 +14,12 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import time
 import uuid
 import zipfile
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+PREVIOUS_SCHEMA_VERSION = 1
 MAX_MEMBER_BYTES = 256 * 1024 * 1024
 MAX_TOTAL_BYTES = 512 * 1024 * 1024
 MAX_MEMBERS = 10000
@@ -50,7 +52,15 @@ def atomic_write(path, data):
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, path)
+        for attempt in range(6):
+            try:
+                os.replace(temporary, path)
+                break
+            except PermissionError as exc:
+                # Brief Windows sharing/access locks must not turn a complete
+                # flushed write into a failed save. Persistent denial still fails.
+                if getattr(exc,'winerror',None) not in (5,32,33) or attempt==5:raise
+                time.sleep(.025*2**attempt)
     finally:
         Path(temporary).unlink(missing_ok=True)
 
@@ -85,6 +95,7 @@ class Project:
         self.path = None
         self._disk_hash = None
         self.external_results = {"version": 1, "root": None, "runs": []}
+        self.migration_pending = False
 
     @classmethod
     def open(cls, path):
@@ -106,10 +117,17 @@ class Project:
                 if name != "manifest.json" and not re.fullmatch(r"(?:configs/[0-9a-f]{64}\.json|assets/[0-9a-f]{64})", name):
                     raise ValueError(f"Unsupported archive entry: {name}")
             manifest = json.loads(archive.read("manifest.json"))
-            if not isinstance(manifest, dict) or manifest.get("schema_version") != SCHEMA_VERSION:
-                raise ValueError("Unsupported project version; no automatic migration is available")
+            version = manifest.get("schema_version") if isinstance(manifest, dict) else None
+            if type(version) is not int or version not in (PREVIOUS_SCHEMA_VERSION, SCHEMA_VERSION):
+                raise ValueError(
+                    f"Unsupported project version {version!r}; this app opens versions "
+                    f"{PREVIOUS_SCHEMA_VERSION} and {SCHEMA_VERSION}. Open the file in a compatible "
+                    "app, export its JSON and drawings, then import that JSON here.")
             if manifest.get("format") != "amrproj":
                 raise ValueError("Not an AMR project")
+            if version == SCHEMA_VERSION and "external_results" not in manifest:
+                raise ValueError("Project version 2 is missing external-results settings; restore a valid project backup.")
+            project.migration_pending = version == PREVIOUS_SCHEMA_VERSION
             project.project_id = manifest["project_id"]
             if not isinstance(project.project_id, str) or not re.fullmatch(r"[0-9a-f]{32}", project.project_id):
                 raise ValueError("Invalid project identifier")
@@ -339,6 +357,7 @@ class Project:
             Path(temporary).unlink(missing_ok=True)
         self.path, self._disk_hash = path, saved_hash
         self.external_results = results
+        self.migration_pending = False
 
     def save(self, path, config, *, base_dir=".", label="Saved changes"):
         candidate = deepcopy(self)

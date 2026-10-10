@@ -118,8 +118,11 @@ def _point_index(data: Mapping) -> Dict[str, dict]:
 
 
 def configured_floors(data: Mapping) -> list[int]:
-    """Return every floor represented by geometry or a configured underlay."""
+    """Return every declared floor or floor represented by geometry/underlays."""
     floors = set()
+    count = _as_floor((data.get('building', {}) or {}).get('floor_count'))
+    if count is not None:
+        floors.update(range(max(0, min(100, count))))
     for collection in (
         data.get("locations", []) or [],
         (data.get("corridors", {}) or {}).get("nodes", []) or [],
@@ -337,7 +340,7 @@ def export_floor_to_dxf(
         if not name:
             continue
         x, y = _as_float(department.get("x")), _as_float(department.get("y"))
-        half_size = 0.90
+        half_size = 0.40
         _add_closed_polyline(
             modelspace,
             scaled_points(

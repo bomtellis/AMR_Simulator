@@ -4,6 +4,17 @@ import math
 from itertools import combinations
 
 
+def object_snap_modes(value):
+    """Accept a single preset or independently enabled object snap targets."""
+    try:
+        modes = frozenset((value,) if isinstance(value, str) else value)
+    except TypeError:
+        raise ValueError('Choose supported object snap modes.') from None
+    if not modes <= {'nearest', 'endpoints', 'midpoints', 'perpendicular', 'intersections'}:
+        raise ValueError('Choose supported object snap modes.')
+    return modes
+
+
 def intersection_target(points, edges, floor, x, y, radius=.45):
     """Find a nearby connected junction target, considering only local segments."""
     local = {name: p for name, p in points.items() if int(p['floor']) == int(floor)}
@@ -60,12 +71,11 @@ def intersection_target(points, edges, floor, x, y, radius=.45):
 def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_spacing=1.0, object_snap=True,
                    anchor=None, angle_step=None, snap_mode="nearest"):
     """Resolve a drawing click/preview: point, explicit edge, then free grid point."""
-    if snap_mode not in ("nearest", "endpoints", "midpoints", "perpendicular", "intersections"):
-        raise ValueError("Choose a supported object snap mode.")
+    modes = object_snap_modes(snap_mode)
     x, y = float(x), float(y)
     if not all(math.isfinite(v) for v in (x, y)):
         raise ValueError('Choose a finite position on the current floor.')
-    if snap_mode == 'perpendicular' and anchor is not None:
+    if 'perpendicular' in modes and anchor is not None:
         anchor = tuple(map(float, anchor))
         if len(anchor) != 2 or not all(math.isfinite(v) for v in anchor):
             raise ValueError('Perpendicular snapping requires a finite route endpoint.')
@@ -106,13 +116,19 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
     grid_spacing = float(grid_spacing)
     if not math.isfinite(grid_spacing) or grid_spacing <= 0:
         raise ValueError("Grid spacing must be finite and greater than zero metres.")
-    if object_snap and snap_mode == 'intersections':
+    enabled = modes if object_snap else frozenset()
+    candidates = []
+    if 'intersections' in enabled:
         target = intersection_target(points, edges, floor, x, y)
         if target:
-            return target
-    target = point_at(x, y, .45 if object_snap and snap_mode in ('nearest', 'endpoints') else 1e-6)
-    if target:
-        return target
+            if len(enabled) == 1:
+                return target
+            candidates.append((math.hypot(target['x']-x, target['y']-y), 0, target))
+    point = point_at(x, y, .45 if enabled & {'nearest', 'endpoints'} else 1e-6)
+    if point and len(enabled) <= 1:
+        return point
+    if point and ('endpoints' in enabled or math.hypot(point['x']-x, point['y']-y) <= 1e-6):
+        candidates.append((math.hypot(point['x']-x, point['y']-y), 1, point))
     def edge_at(x, y, radius, midpoint=False, perpendicular=False):
         candidates = []
         for edge in edges:
@@ -141,8 +157,17 @@ def drawing_target(points, edges, floor, x, y, snap=True, *, exact=False, grid_s
                 return dict(kind='point', name=key[int(fraction)], x=px, y=py, snap_label='perpendicular')
             return dict(kind='edge', key=key, fraction=fraction, x=px, y=py,
                         snap_label='perpendicular' if perpendicular else ('midpoint' if midpoint else 'edge'))
-    attract_edge = object_snap and snap_mode not in ('endpoints', 'intersections') and (snap_mode != 'perpendicular' or anchor is not None)
-    target = edge_at(x, y, .45, midpoint=snap_mode == 'midpoints', perpendicular=snap_mode == 'perpendicular') if attract_edge else None
+    for priority, mode in ((2, 'midpoints'), (3, 'perpendicular')):
+        if mode in enabled and (mode != 'perpendicular' or anchor is not None):
+            target = edge_at(x, y, .45, midpoint=mode == 'midpoints', perpendicular=mode == 'perpendicular')
+            if target:
+                candidates.append((math.hypot(target['x']-x, target['y']-y), priority, target))
+    if candidates:
+        _, _, target = min(candidates, key=lambda candidate: candidate[:2])
+        return target
+    # Nearest is a fallback so its edge projection cannot swallow enabled
+    # midpoint, perpendicular or intersection targets within snap tolerance.
+    target = (point or edge_at(x, y, .45)) if 'nearest' in enabled else None
     target = target or edge_at(x, y, 1e-6)
     if target:
         return target

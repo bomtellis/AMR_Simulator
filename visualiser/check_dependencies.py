@@ -22,6 +22,7 @@ GROUPS = {
     'values': ('Numbers and schedules', ('*',)),
     'references': ('Identifiers and references', ('*',)),
     'graph': ('Graph connectivity', (*GRAPH, 'tasks', 'route_profiles')),
+    'task_routes': ('Task route profile navigation', (*GRAPH, 'tasks', 'route_profiles', 'task_generation', 'departments', 'waste_streams', 'payloads')),
     'compatibility': ('Payload compatibility', ('amrs', 'payloads')),
     'legacy': ('Existing validation', ('*',)),
     'drawings': ('Drawing availability', ('floor_dxf_files', 'floor_pdf_underlays', '@drawings')),
@@ -48,7 +49,8 @@ def dependencies(finding):
     if code in {'LOCATION_INPUT', 'LOCATION_MODEL_SCOPE'}:
         return ('locations',)
     if code in {'INVENTORY_INPUT', 'INVENTORY_OCCUPANCY_SCOPE', 'INVENTORY_ENVELOPE',
-                'INVENTORY_HEIGHT_SCOPE', 'INVENTORY_CLASSIFICATION', 'INVENTORY_CHARGER_SCOPE'}:
+                'INVENTORY_HEIGHT_SCOPE', 'INVENTORY_CLASSIFICATION', 'INVENTORY_CHARGER_SCOPE',
+                'LOCAL_BAY_ENTRY_OVERLAP'}:
         return GROUPS['inventory'][1]
     if code in {'PAYLOAD_INPUT', 'PAYLOAD_MODEL_SCOPE'}:
         return ('payloads',)
@@ -78,8 +80,8 @@ def dependencies(finding):
         return tuple(sorted(set(local + GRAPH + ('payloads', 'route_profiles', 'task_generation', 'departments'))))
     if code in {'RECOVERY_INPUT', 'RECOVERY_POLICY', 'PAYLOAD_ID_TYPE'}:
         return ('tasks', 'payloads')
-    if code == 'TASK_UNREACHABLE':
-        return (*GRAPH, 'tasks', 'route_profiles')
+    if code in {'TASK_UNREACHABLE', 'GENERATED_TASK_UNREACHABLE', 'RETURN_UNREACHABLE', 'ROUTE_CHECKS_INCOMPLETE'}:
+        return GROUPS['task_routes'][1]
     if code == 'PAYLOAD_NO_AMR':
         return ('payloads', 'amrs')
     if code == 'DRAWING_MISSING':

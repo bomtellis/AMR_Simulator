@@ -1,5 +1,6 @@
 """Graph-first shell, explicit properties and retained panel/draft state."""
 from copy import deepcopy
+from dataclasses import replace
 import unittest
 from unittest.mock import patch
 
@@ -24,20 +25,27 @@ class CadWorkspaceTests(unittest.TestCase):
         self.app.processEvents()
 
     def test_graph_is_majority_default_at_small_and_large_text_sizes(self):
-        for size in (9, 18):
-            for width, height in ((1024, 768), (1600, 1000)):
-                with self.subTest(font=size, width=width):
-                    font = QFont(self.editor.font())
-                    font.setPointSize(size)
-                    self.editor.setFont(font)
-                    self.show(width, height)
-                    workspace = self.editor.workspace
-                    self.assertTrue(workspace.properties.isHidden())
-                    self.assertTrue(self.editor.ribbon_tabs.isHidden())
-                    viewport = self.editor.canvas.viewport()
-                    self.assertGreater(viewport.width()*viewport.height(),
-                                       self.editor.width()*self.editor.height()*.5)
-                    self.assertTrue(self.editor.cad_toolbar.isVisible())
+        appearance = self.editor.appearance
+        original = appearance.value
+        with patch.object(appearance, 'settings', None):
+            try:
+                for size in (9, 18):
+                    appearance.apply(replace(original, font_size=size))
+                    for width, height in ((1024, 768), (1600, 1000)):
+                        with self.subTest(font=size, width=width):
+                            self.show(width, height)
+                            workspace = self.editor.workspace
+                            self.assertTrue(workspace.properties.isHidden())
+                            self.assertTrue(self.editor.ribbon_tabs.isHidden())
+                            viewport = self.editor.canvas.viewport()
+                            self.assertGreater(viewport.width()*viewport.height(),
+                                               self.editor.width()*self.editor.height()*.5)
+                            self.assertTrue(self.editor.cad_toolbar.isVisible())
+                            self.assertEqual(size >= 16 and width < 1400,
+                                             self.editor.workbench.checks_strip.isHidden())
+                            self.assertIn('Project checks', self.editor.workbench.stages['checks'].toolTip())
+            finally:
+                appearance.apply(original)
 
     def test_select_only_highlights_until_properties_requested(self):
         self.show()

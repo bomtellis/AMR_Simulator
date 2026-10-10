@@ -1,5 +1,15 @@
 # Department location contracts and provisional placement — slice 2AK
 
+Combined workflow update (4 October 2026): a department child editor now states
+that newly placed service locations and zones remain provisional until the
+Departments list is saved, and that one Undo removes the accepted edit together.
+An application-level check places both kinds of point, saves the parent list,
+undoes/redoes once, saves a `.amrproj`, then reopens it in the editor. The
+service and zone assignments, coordinates and unlisted category metadata remain
+available. The archive preserves the exact saved department record; editor
+import adds canonical fields to legacy category entries without losing their
+effective selections. Forty-nine focused location/draft/storage tests pass.
+
 ## Behaviour and independent expectations
 
 Department category location assignments now use the same resolution in raw

@@ -3,13 +3,15 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QScrollArea, QLineEdit, QLayout)
+    QSplitter, QStackedWidget, QTreeWidget, QTreeWidgetItem, QScrollArea, QLineEdit,
+    QPlainTextEdit, QLayout, QMenu)
 
 
 STAGES = [('project', 'Project'), ('layout', 'Layout'), ('configuration', 'Configuration'),
           ('checks', 'Check'), ('simulate', 'Simulate'), ('review', 'Review'), ('report', 'Report')]
-CONFIGURATION = [('Simulation settings', 'manage_simulation_settings'), ('Robots', 'manage_amrs'),
-    ('Payloads', 'manage_payloads'), ('Lifts', 'manage_lifts'), ('Tasks', 'manage_tasks'),
+CONFIGURATION = [('Building settings', 'manage_building_settings'),
+    ('Simulation settings', 'manage_simulation_settings'), ('Robots', 'manage_amrs'),
+    ('Payloads', 'manage_payloads'), ('Lifts', 'manage_lifts'), ('Plan lift locations', 'show_lift_planner'), ('Tasks', 'manage_tasks'),
     ('Demand generation', 'manage_task_generation'), ('Route profiles', 'manage_route_profiles'),
     ('Departments', 'manage_departments'), ('People movement', 'manage_people_movement'),
     ('Scenarios', 'manage_scenario_testing'), ('Corridor settings', 'manage_corridor_settings')]
@@ -75,6 +77,8 @@ class ProjectWorkspace(QWidget):
         self.tree.setAccessibleName('Project workflow and floors')
         self.tree.setIndentation(14)
         self.tree.setUniformRowHeights(True)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.show_layout_context_menu)
         self.items = {}
         for key, title in STAGES:
             item = QTreeWidgetItem([title])
@@ -115,6 +119,31 @@ class ProjectWorkspace(QWidget):
         self.central_layout = QVBoxLayout(self.central_workspace)
         self.central_layout.setContentsMargins(4, 4, 4, 4)
         self.central_layout.setSpacing(5)
+        self.import_issues = QWidget()
+        self.import_issues.setAccessibleName('Imported JSON validation issues')
+        issue_layout = QVBoxLayout(self.import_issues)
+        issue_layout.setContentsMargins(8, 5, 8, 5)
+        issue_heading = QHBoxLayout()
+        self.import_issues_label = QLabel()
+        self.import_issues_label.setWordWrap(True)
+        issue_heading.addWidget(self.import_issues_label, 1)
+        self.recheck_import_button = QPushButton('Recheck')
+        self.recheck_import_button.setAccessibleName('Recheck imported JSON validation')
+        self.recheck_import_button.clicked.connect(editor.recheck_import_validation)
+        issue_heading.addWidget(self.recheck_import_button)
+        self.hide_import_issues_button = QPushButton('Hide')
+        self.hide_import_issues_button.setAccessibleName('Hide imported JSON validation issues')
+        self.hide_import_issues_button.clicked.connect(self.import_issues.hide)
+        issue_heading.addWidget(self.hide_import_issues_button)
+        issue_layout.addLayout(issue_heading)
+        self.import_issues_text = QPlainTextEdit()
+        self.import_issues_text.setReadOnly(True)
+        self.import_issues_text.setAccessibleName('Imported JSON validation details')
+        self.import_issues_text.setMinimumHeight(70)
+        self.import_issues_text.setMaximumHeight(110)
+        issue_layout.addWidget(self.import_issues_text)
+        self.central_layout.addWidget(self.import_issues)
+        self.import_issues.hide()
         self.central_layout.addWidget(self.stack, 1)
         split.addWidget(self.central_workspace)
         from project_properties_panel import ProjectPropertiesPanel
@@ -137,6 +166,19 @@ class ProjectWorkspace(QWidget):
         self.tree.currentItemChanged.connect(self.selected)
         self.show_page('layout', canvas)
         self.refresh()
+
+    def show_import_validation(self, path, errors):
+        if not errors:
+            self.import_issues_text.clear()
+            self.import_issues.hide()
+            return
+        name = Path(path).name if path else 'Current configuration'
+        self.import_issues_label.setText(f'{name} · {len(errors)} import validation issue(s)')
+        self.import_issues_label.setToolTip(
+            'Edit the inputs, then recheck here before running Project checks. '
+            'These issues reflect the import or last recheck.')
+        self.import_issues_text.setPlainText('\n'.join(f'{index}. {error}' for index, error in enumerate(errors, 1)))
+        self.import_issues.show()
 
     def selected(self, item, _previous):
         if item is None or self._navigating:
@@ -168,6 +210,54 @@ class ProjectWorkspace(QWidget):
             'report': self.editor.show_project_report, 'playback': self.editor.show_project_playback,
             'appearance': self.editor.show_appearance, 'route_display': self.editor.show_route_identification}
         handlers[key]()
+
+    def show_layout_context_menu(self, pos):
+        menu = self.layout_context_menu(self.tree.itemAt(pos))
+        if menu is not None:
+            try:
+                menu.exec(self.tree.viewport().mapToGlobal(pos))
+            finally:
+                menu.deleteLater()
+
+    def layout_context_menu(self, item):
+        """Drawing commands target the clicked floor, including its object groups."""
+        floor = self.editor.floor_spin.value()
+        row = item
+        while row is not None and row is not self.items['layout']:
+            key = row.data(0, Qt.UserRole)
+            if isinstance(key, tuple) and key[0] == 'floor':
+                floor = int(key[1])
+            row = row.parent()
+        if row is None:
+            return None
+        menu = QMenu(self.tree)
+        menu.addSection(f'Floor {floor}')
+        editing = not self.editor.project_editing_locked()
+        mapped = bool(self.editor.get_floor_dxf_path(floor))
+
+        def command(parent, title, callback, *, enabled=True, modifies=True):
+            action = parent.addAction(title)
+            action.setEnabled(enabled and (editing or not modifies))
+            action.triggered.connect(
+                lambda _checked=False: self.run_floor_command(floor, callback, modifies))
+            return action
+
+        command(menu, 'Add DXF…', self.editor.load_dxf)
+        command(menu, 'Guide this floor…', self.editor.workbench.show_building_course, modifies=False)
+        manage = QMenu('Manage DXF', menu)
+        menu.addMenu(manage)
+        command(manage, 'Change DXF…', self.editor.load_dxf, enabled=mapped)
+        command(manage, 'Clear floor DXF', self.editor.clear_floor_dxf, enabled=mapped)
+        manage.addSeparator()
+        command(manage, 'DXF layers…', self.editor.show_dxf_layers, enabled=mapped, modifies=False)
+        return menu
+
+    def run_floor_command(self, floor, callback, modifies=True):
+        if modifies and self.editor.project_editing_locked():
+            return
+        self.show_page('layout', self.editor.canvas)
+        self.editor.floor_spin.setValue(floor)
+        callback()
 
     def show_page(self, key, widget):
         if key not in self.pages:
@@ -214,20 +304,24 @@ class ProjectWorkspace(QWidget):
         self.properties_rail.setVisible(self.stage in ('layout', 'configuration') and not self._canvas_focus)
         self.properties_tab.setChecked(visible and not self._canvas_focus)
         self.editor.ribbon_tabs.setVisible(self.stage == 'layout' and self._ribbon_open and not self._canvas_focus)
-        drawing = self.stage == 'layout' and self.editor._current_edit_mode() == 'corridor_draw'
+        drawing = self.stage == 'layout' and self.editor._current_edit_mode() in self.editor.coordinate_insertion_modes()
         if self.stage != 'layout' and hasattr(self.editor, 'cad_move_input'):
             self.editor.cad_move_input.hide()
             self.editor._rectangle_draft = None
             if hasattr(self.editor, 'rectangle_input'):
                 self.editor.rectangle_input.hide()
         if hasattr(self.editor, 'cad_drawing_input'):
+            self.editor.cad_drawing_input.set_mode(self.editor._current_edit_mode())
             self.editor.cad_drawing_input.setVisible(drawing)
             self.editor.cad_drawing_input.setEnabled(drawing and editing)
         if hasattr(self.editor, 'finish_route_enter_action'):
-            self.editor.finish_route_enter_action.setEnabled(drawing)
+            self.editor.finish_route_enter_action.setEnabled(drawing and self.editor._current_edit_mode()=='corridor_draw')
         toolbar = getattr(self.editor, 'cad_toolbar', None)
         if toolbar is not None:
             toolbar.sync_panels()
+        snap_controls = getattr(self.editor, 'snap_controls', None)
+        if snap_controls is not None:
+            snap_controls.sync_workspace()
         workbench = getattr(self.editor, 'workbench', None)
         if workbench is not None:
             workbench.refresh()
@@ -317,8 +411,20 @@ class ProjectWorkspace(QWidget):
             workbench.refresh()
         points = self.editor.store.all_points()
         edges = self.editor.store.data.get('corridors', {}).get('edges', [])
-        floors = tuple(sorted({int(p['floor']) for p in points.values()}))
-        objects = (tuple(sorted((name, int(p['floor']), p['kind']) for name, p in points.items())),
+        floor_numbers = {int(p['floor']) for p in points.values()}
+        try:
+            count = int(self.editor.store.data.get('building', {}).get('floor_count', 0))
+            floor_numbers.update(range(max(0, min(100, count))))
+        except (TypeError, ValueError):
+            pass
+        for section in ('floor_dxf_files', 'floor_pdf_underlays'):
+            for mapping in self.editor.store.data.get(section, []):
+                try:
+                    floor_numbers.add(int(mapping['floor']))
+                except (KeyError, TypeError, ValueError):
+                    continue
+        floors = tuple(sorted(floor_numbers))
+        objects = (floors, tuple(sorted((name, int(p['floor']), p['kind']) for name, p in points.items())),
                    tuple((e.get('from'), e.get('to'), e.get('bidirectional', True)) for e in edges))
         if objects != self._objects:
             self._objects = objects

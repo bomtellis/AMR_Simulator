@@ -14,6 +14,7 @@ from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 from amr_project import Project
 from models import JsonStore
+from project_setup import NewProjectDialog
 
 
 class WorkbenchLifecycleTests(unittest.TestCase):
@@ -29,7 +30,8 @@ class WorkbenchLifecycleTests(unittest.TestCase):
         self.editor.selected_point_names = {'A'}
         self.editor.store.data['building']['floor_height_m'] = 7
         self.editor.capture_recovery()
-        with patch.object(QMessageBox, 'warning', return_value=QMessageBox.Discard):
+        with patch.object(QMessageBox, 'warning', return_value=QMessageBox.Discard), \
+                patch.object(NewProjectDialog, 'exec', new=lambda _dialog: NewProjectDialog.SKIPPED):
             self.editor.workbench.new_action.trigger()
         self.assertEqual(JsonStore().data, self.editor.store.data)
         self.assertIsNone(self.editor.project)
@@ -60,7 +62,8 @@ class WorkbenchLifecycleTests(unittest.TestCase):
         self.editor.store.data['building']['floor_height_m'] = 7
         before = deepcopy(self.editor.store.data)
         with patch.object(QMessageBox, 'warning', return_value=QMessageBox.Save), \
-                patch.object(QFileDialog, 'getSaveFileName', return_value=(str(path), '')) as save:
+                patch.object(QFileDialog, 'getSaveFileName', return_value=(str(path), '')) as save, \
+                patch.object(NewProjectDialog, 'exec', new=lambda _dialog: NewProjectDialog.SKIPPED):
             self.assertTrue(self.editor.new_project())
         self.assertIn('*.amrproj', save.call_args.args[-1])
         self.assertEqual(before, Project.open(path).configuration())
@@ -108,7 +111,8 @@ class WorkbenchLifecycleTests(unittest.TestCase):
         with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(path), '')):
             self.assertTrue(self.editor.save_json())
         self.assertEqual(before, Project.open(path).configuration())
-        self.assertTrue(self.editor.new_project())
+        with patch.object(NewProjectDialog, 'exec', new=lambda _dialog: NewProjectDialog.SKIPPED):
+            self.assertTrue(self.editor.new_project())
         self.assertTrue(self.editor.load_json_file(str(path), load_drawings=False))
         self.assertEqual(before, self.editor.store.data)
         exported = Path(self.temp.name) / 'legacy.json'
@@ -123,6 +127,46 @@ class WorkbenchLifecycleTests(unittest.TestCase):
 
 
 class WorkbenchLaunchTests(unittest.TestCase):
+    def test_startup_without_a_file_opens_optional_setup_and_skip_keeps_empty_project(self):
+        root = Path(__file__).resolve().parents[1]
+        script = textwrap.dedent(f'''
+            import sys
+            from PySide6.QtCore import QTimer, QStandardPaths
+            from PySide6.QtWidgets import QApplication
+            sys.path.insert(0, {str(root)!r})
+            sys.path.insert(0, {str(root / 'visualiser')!r})
+            import amr_app
+            from app import AMRGraphEditor
+            from project_setup import NewProjectDialog
+            from models import JsonStore
+            QStandardPaths.setTestModeEnabled(True)
+            app = QApplication([])
+            outcome = []
+            def verify():
+                setup = app.activeModalWidget()
+                if not isinstance(setup, NewProjectDialog):
+                    return
+                timer.stop()
+                setup.skip_button.click()
+                def finish():
+                    windows = [w for w in app.topLevelWidgets() if isinstance(w, AMRGraphEditor)]
+                    outcome.append(len(windows) == 1 and windows[0].store.data == JsonStore().data
+                                   and not windows[0].has_unsaved_changes())
+                    for window in windows:
+                        window.close()
+                    app.quit()
+                QTimer.singleShot(0, finish)
+            timer = QTimer()
+            timer.timeout.connect(verify)
+            timer.start(100)
+            QTimer.singleShot(10000, app.quit)
+            code = amr_app.main([])
+            assert code == 0 and outcome == [True], (code, outcome)
+        ''')
+        result = subprocess.run([sys.executable, '-X', 'faulthandler', '-c', script], cwd=root,
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_help_runs_from_another_directory_without_launching_qt(self):
         root = Path(__file__).resolve().parents[1]
         for entry in ('amr_app.py', 'visualiser/amr_editor_main.py'):

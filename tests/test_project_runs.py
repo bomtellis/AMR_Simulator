@@ -17,8 +17,8 @@ from tests.test_engineering_reference import reference_config
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'visualiser'))
-from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
+from PySide6.QtCore import QEventLoop, QTimer, Qt
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 from app import AMRGraphEditor
 from models import JsonStore
 from project_runs_panel import ProjectRunsPanel, RunChecksDialog
@@ -243,6 +243,75 @@ class ProjectRunsUiTests(unittest.TestCase):
                     path.write_text('{}')
                 return QDialog.Accepted
         return AutomatedChecks
+
+    def wait_for(self, finished, timeout_ms=20000):
+        loop = QEventLoop()
+        poll = QTimer()
+        poll.setInterval(20)
+        poll.timeout.connect(lambda: loop.quit() if finished() else None)
+        timeout = QTimer()
+        timeout.setSingleShot(True)
+        timeout.timeout.connect(loop.quit)
+        poll.start()
+        timeout.start(timeout_ms)
+        try:
+            if not finished():
+                loop.exec()
+        finally:
+            poll.stop()
+            timeout.stop()
+        self.assertTrue(finished(), 'Timed out waiting for the application workflow.')
+
+    def test_run_move_relink_reopen_read_only_playback_and_export_report(self):
+        with patch('project_runs_panel.RunChecksDialog', self.dialog()):
+            self.panel.start_run()
+        self.wait_for(lambda: not self.panel.running())
+        original = self.panel.run_dir
+        frozen = (original / 'config.json').read_bytes()
+        self.assertEqual('complete', inspect_run(original, self.editor.project)['status'])
+        moved = self.root / 'moved-complete-run'
+        shutil.move(str(original), moved)
+        self.panel.refresh_runs()
+        self.assertEqual(1, self.panel.runs.count())
+        self.assertIn('missing or unavailable', self.panel.runs.item(0).text())
+        self.assertIn('select its missing entry and choose Locate moved run', self.panel.workflow_help.text())
+        self.panel.runs.setCurrentRow(0)
+        with patch.object(QFileDialog, 'getExistingDirectory', return_value=str(moved)):
+            self.panel.relink_run()
+        self.assertEqual([moved], self.panel.run_paths)
+        self.assertEqual(frozen, (moved / 'config.json').read_bytes())
+        project_path = self.editor.project.path
+        with patch.object(self.editor, '_confirm_unsaved_changes', return_value=True):
+            self.assertTrue(self.editor.close())
+        self.editor = AMRGraphEditor()
+        self.editor._recovery_store = RecoveryStore(self.root / 'reopened-recovery')
+        self.assertTrue(self.editor.load_json_file(str(project_path), load_drawings=False))
+        self.editor.show_project_runs()
+        self.panel = self.editor.project_runs_panel
+        self.assertEqual([moved], self.panel.run_paths)
+        project_bytes = project_path.read_bytes()
+        self.panel.runs.setCurrentRow(0)
+        self.panel.playback()
+        playback = self.editor.playback_panel
+        self.wait_for(lambda: playback.viewer is not None or bool(playback.summary.text().startswith('Playback unavailable')))
+        self.assertIsNotNone(playback.viewer, playback.summary.text())
+        self.assertEqual(2, playback.viewer.layout_model.data['amrs'][0]['speed_m_per_sec'])
+        self.editor.store.data['amrs'][0]['speed_m_per_sec'] = 99
+        self.panel.report()
+        report = self.editor.report_panel
+        self.assertEqual(moved, report.run_dir)
+        for index in range(report.sections.count()):
+            item = report.sections.item(index)
+            item.setCheckState(Qt.Checked if item.data(Qt.UserRole) == 'front_summary' else Qt.Unchecked)
+        report.generate()
+        self.wait_for(lambda: not report.running())
+        self.assertTrue(report.pdf and report.pdf.is_file(), report.log.toPlainText())
+        self.assertTrue(report.pdf.read_bytes().startswith(b'%PDF-'))
+        self.assertEqual(2, read_json(report.pdf.parent / 'report_configuration.json')['amrs'][0]['speed_m_per_sec'])
+        self.assertEqual(99, self.editor.store.data['amrs'][0]['speed_m_per_sec'])
+        self.assertEqual(frozen, (moved / 'config.json').read_bytes())
+        self.assertEqual(project_bytes, project_path.read_bytes())
+        self.assertEqual('complete', inspect_run(moved, self.editor.project)['status'])
 
     def test_check_cancellation_creates_no_run(self):
         with patch('project_runs_panel.RunChecksDialog', self.dialog(False)), patch.object(self.panel, 'start_process') as start:

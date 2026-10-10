@@ -110,6 +110,26 @@ class ProjectReportTests(unittest.TestCase):
         self.assertEqual(2, read_json(pdf.parent / 'report_configuration.json')['amrs'][0]['speed_m_per_sec'])
         self.assertEqual(frozen, (directory / 'config.json').read_bytes())
         self.assertEqual(archive, self.project.path.read_bytes())
+        self.assertTrue((pdf.parent / 'report_lift_cohorts.csv').exists())
+
+    def test_lift_cohort_export_is_verified_and_does_not_build_pdf(self):
+        directory = self.run_reference()
+        frozen = (directory / 'config.json').read_bytes()
+        report_sections()
+        with patch('amr_report_main.generate_report_from_paths', side_effect=AssertionError('CSV must not regenerate PDF')):
+            with contextlib.redirect_stdout(io.StringIO()):
+                path = generate(directory, self.root / 'csv-export', [], lift_cohorts_only=True)
+        import pandas as pd
+        from amr_run_evidence import file_hash
+        frame = pd.read_csv(path)
+        self.assertIn('transfer_trips', frame.columns)
+        self.assertIn('travel_time_s', frame.columns)
+        metadata = read_json(path.parent / 'report_manifest.json')
+        self.assertEqual('complete', metadata['status'])
+        self.assertEqual('lift_cohorts_csv', metadata['kind'])
+        self.assertEqual(file_hash(path), metadata['lift_cohorts_sha256'])
+        self.assertFalse((path.parent / 'report.pdf').exists())
+        self.assertEqual(frozen, (directory / 'config.json').read_bytes())
 
 
 class ProjectWorkspaceUiTests(unittest.TestCase):
@@ -153,6 +173,72 @@ class ProjectWorkspaceUiTests(unittest.TestCase):
         self.editor.workspace.selected(floor, None)
         self.assertEqual(1, self.editor.floor_spin.value())
         self.assertEqual('layout', self.editor.workspace.stage)
+
+    def test_layout_context_assigns_dxf_to_clicked_floor_and_supports_undo(self):
+        from PySide6.QtWidgets import QFileDialog
+        self.editor.store.add_corridor_node('UP', 1, 1, 1)
+        self.editor._reset_edit_history()
+        workspace = self.editor.workspace
+        workspace.refresh()
+        self.editor.show_results_investigation()
+        menu = workspace.layout_context_menu(workspace.object_items[('group', 1, 'location')])
+        add = next(action for action in menu.actions() if action.text() == 'Add DXF…')
+        with patch.object(QFileDialog, 'getOpenFileName', return_value=('upper.dxf', '')), \
+                patch.object(self.editor, '_queue_all_floor_dxf_loads'), \
+                patch.object(self.editor, 'ensure_floor_dxf_loaded', return_value=True):
+            add.trigger()
+            self.assertEqual(1, self.editor.floor_spin.value())
+            self.assertEqual('layout', workspace.stage)
+            self.assertEqual('upper.dxf', self.editor.get_floor_dxf_path(1))
+            self.assertIsNone(self.editor.get_floor_dxf_path(0))
+            self.editor.undo_edit()
+            self.assertIsNone(self.editor.get_floor_dxf_path(1))
+        menu.deleteLater()
+
+    def test_drawing_only_floors_appear_and_update_without_model_points(self):
+        workspace = self.editor.workspace
+        self.editor.store.data['floor_dxf_files'] = [{'floor': 4, 'filepath': 'four.dxf'}]
+        self.editor.store.data['floor_pdf_underlays'] = [{'floor': 5, 'filepath': 'five.pdf'}]
+        workspace.refresh()
+        self.assertIn(('floor', 4), workspace.object_items)
+        self.assertIn(('floor', 5), workspace.object_items)
+        self.editor.store.data['floor_dxf_files'] = [{'floor': 6, 'filepath': 'six.dxf'}]
+        workspace.refresh()
+        self.assertNotIn(('floor', 4), workspace.object_items)
+        self.assertIn(('floor', 6), workspace.object_items)
+
+    def test_manage_dxf_clears_clicked_floor_preserving_other_mappings(self):
+        from PySide6.QtWidgets import QMessageBox
+        workspace = self.editor.workspace
+        self.editor.store.data['floor_dxf_files'] = [
+            {'floor': 0, 'filepath': 'ground.dxf'}, {'floor': 4, 'filepath': 'four.dxf'}]
+        self.editor._reset_edit_history()
+        workspace.refresh()
+        menu = workspace.layout_context_menu(workspace.object_items[('floor', 4)])
+        manage = next(action.menu() for action in menu.actions() if action.text() == 'Manage DXF')
+        clear = next(action for action in manage.actions() if action.text() == 'Clear floor DXF')
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.Yes), \
+                patch.object(self.editor, '_queue_all_floor_dxf_loads'), \
+                patch.object(self.editor, 'ensure_floor_dxf_loaded', return_value=True):
+            clear.trigger()
+            self.assertIsNone(self.editor.get_floor_dxf_path(4))
+            self.assertEqual('ground.dxf', self.editor.get_floor_dxf_path(0))
+            self.editor.undo_edit()
+            self.assertEqual('four.dxf', self.editor.get_floor_dxf_path(4))
+        menu.deleteLater()
+
+    def test_layout_context_respects_editing_lock_and_ignores_other_stages(self):
+        workspace = self.editor.workspace
+        self.assertIsNone(workspace.layout_context_menu(workspace.items['configuration']))
+        self.assertIsNone(workspace.layout_context_menu(None))
+        with patch.object(self.editor, 'project_editing_locked', return_value=True), \
+                patch.object(self.editor, 'load_dxf') as load:
+            menu = workspace.layout_context_menu(workspace.items['layout'])
+            add = next(action for action in menu.actions() if action.text() == 'Add DXF…')
+            self.assertFalse(add.isEnabled())
+            add.trigger()
+            load.assert_not_called()
+            menu.deleteLater()
 
     def test_leaving_layout_finishes_route_without_discarding_placed_nodes(self):
         self.editor._set_edit_mode('corridor_draw')
@@ -268,6 +354,35 @@ class ProjectReportUiTests(unittest.TestCase):
         self.assertFalse(report.running())
         self.assertFalse(report.open_pdf.isEnabled())
         self.assertEqual('cancelled', read_json(report.output / 'report_manifest.json')['status'])
+
+    def test_report_page_exports_lift_csv_with_no_sections_selected(self):
+        from PySide6.QtCore import Qt, QEventLoop, QTimer
+        self.completed()
+        panel = self.editor.report_panel
+        for i in range(panel.sections.count()):
+            panel.sections.item(i).setCheckState(Qt.Unchecked)
+        panel.existing_pdf.setText('unused.pdf')
+        self.assertTrue(panel.export_lifts.isEnabled())
+        panel.export_lifts.click()
+        self.assertTrue(panel.running())
+        self.assertFalse(panel.export_lifts.isEnabled())
+        loop = QEventLoop()
+        poll = QTimer()
+        poll.timeout.connect(lambda: loop.quit() if not panel.running() else None)
+        poll.start(20)
+        QTimer.singleShot(20000, loop.quit)
+        loop.exec()
+        poll.stop()
+        self.assertFalse(panel.running(), panel.log.toPlainText())
+        self.assertTrue(panel.open_lift_csv.isEnabled(), panel.log.toPlainText())
+        self.assertTrue(panel.lift_csv.exists())
+        self.assertFalse((panel.output / 'report.pdf').exists())
+
+    def test_packaged_worker_forwards_lift_export_mode(self):
+        import amr_app
+        with patch('amr_project_report.main') as worker:
+            amr_app.main(['--generate-report', 'run', 'output', '--lift-cohorts-only'])
+        self.assertIn('--lift-cohorts-only', worker.call_args.args[0])
 
     def test_next_from_selected_run_opens_its_investigation_then_report(self):
         self.completed()

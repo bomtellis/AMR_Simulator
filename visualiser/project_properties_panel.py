@@ -23,6 +23,16 @@ class ProjectPropertiesPanel(QWidget):
         self.note = QLabel('Select an object in the tree or layout.')
         self.note.setWordWrap(True)
         root.addWidget(self.note)
+        self.spaces_summary = QLabel()
+        self.spaces_summary.setWordWrap(True)
+        self.spaces_summary.setAccessibleName('Location inventory space summary')
+        self.spaces_button = QPushButton('Create / edit spaces…')
+        self.spaces_button.setAccessibleName('Create or edit location inventory spaces')
+        self.spaces_button.setToolTip('Create AMR parking and charging bays or payload spaces for this location. Alternative: right-click the location → Inventory spaces.')
+        self.spaces_button.clicked.connect(self.edit_spaces)
+        root.addWidget(self.spaces_summary)
+        root.addWidget(self.spaces_button)
+        self.spaces_summary.hide(); self.spaces_button.hide()
         self.content = QWidget()
         self.form = QFormLayout(self.content)
         self.form.setRowWrapPolicy(QFormLayout.WrapAllRows)
@@ -66,12 +76,14 @@ class ProjectPropertiesPanel(QWidget):
         target = self.selection()
         current = fingerprint(self.editor.store.data)
         if self.pending:
+            self.sync_spaces_control()
             if current != self.expected:
                 self.note.setText('The project changed. Discard this draft and reload before applying.')
             elif target != self.target:
                 self.note.setText('Draft retained for the object(s) below. Apply or discard it to edit the new selection.')
             return
         if target == self.target and current == self.expected:
+            self.sync_spaces_control()
             return
         self.loading = True
         try:
@@ -134,7 +146,10 @@ class ProjectPropertiesPanel(QWidget):
                     widget.currentIndexChanged.connect(self.changed)
                 else:
                     widget = QLineEdit('' if mixed or not present else ('null' if value is None else str(value)))
-                    widget.setPlaceholderText('Mixed — leave unchanged' if mixed else ('Required' if kind == 'coordinate' else 'Use default / geometric length'))
+                    placeholder = ('Unlimited (default)' if key == 'max_concurrency' else
+                                   '300 seconds (default)' if key == 'wash_cycle_duration_sec' else
+                                   'Use default / geometric length')
+                    widget.setPlaceholderText('Mixed — leave unchanged' if mixed else ('Required' if kind == 'coordinate' else placeholder))
                     widget.textChanged.connect(self.changed)
                 widget.setAccessibleName(label)
                 self.fields[key] = widget
@@ -158,6 +173,7 @@ class ProjectPropertiesPanel(QWidget):
                          'door_clear_width_m': f"Unset: building door opening ({building.get('default_door_clear_width_m', .9)} m). Applies only when the node is a door.",
                          'distance_m': 'Unset: endpoint geometry. Zero is an explicit zero-length override; it does not mean automatic.',
                          'bidirectional': 'Unset: two-way travel. This changes this record only; a separate reverse record may still permit returning.',
+                         'max_concurrency': 'Maximum AMRs served here at the same time, including wash cycles. 1 serves one AMR at a time. Unset: effectively unlimited service capacity.',
                          'wash_cycle_duration_sec': 'Unset: 300 seconds in the simulator. Zero explicitly disables the wash delay.',
                          'wash_location': 'Unset: wash at the task drop-off after delivery. The drop-off wash rule wins if both endpoints require washing.',
                          'has_door': 'Unset: no door restriction.', 'wash_cycle_required': 'Unset: no required wash cycle.'}
@@ -171,6 +187,32 @@ class ProjectPropertiesPanel(QWidget):
             self.note.setText(str(exc))
         finally:
             self.loading = False
+            self.sync_spaces_control()
+
+    def sync_spaces_control(self):
+        location = None
+        if self.target and self.target[0] == 'points' and len(self.target[1]) == 1:
+            try:
+                rows = records(self.editor.store.data, self.target)
+                if rows[0][0] == 'location': location = rows[0][1]
+            except (ValueError, KeyError, TypeError): pass
+        visible = location is not None
+        self.spaces_button.setVisible(visible); self.spaces_summary.setVisible(visible)
+        self.spaces_button.setEnabled(visible and not self.pending and not self.editor.project_editing_locked())
+        if location is not None:
+            from amr_inventory_inputs import inventory_space_is_amr
+            spaces = location.get('inventory_spaces', []) or []
+            bays = [space for space in spaces if inventory_space_is_amr(space)]
+            chargers = sum(bool(space.get('has_charger')) for space in bays)
+            self.spaces_summary.setText(f'{len(spaces)} spaces · {len(bays)} AMR bays · {chargers} chargers' if spaces else
+                                       'No spaces yet. Create AMR bays or payload spaces here.')
+            if self.pending:
+                self.spaces_summary.setText(self.spaces_summary.text()+'\nApply or discard the property draft before editing spaces.')
+
+    def edit_spaces(self):
+        self.sync_spaces_control()
+        if self.spaces_button.isEnabled():
+            self.editor.edit_location_spaces(self.target[1][0])
 
     @staticmethod
     def value(widget):
@@ -191,6 +233,7 @@ class ProjectPropertiesPanel(QWidget):
             return
         changes = self.changes()
         self.pending = bool(changes)
+        self.sync_spaces_control()
         self.apply_button.setEnabled(self.pending)
         self.discard_button.setEnabled(self.pending)
         def describe(value):

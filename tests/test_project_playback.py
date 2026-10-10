@@ -6,7 +6,8 @@ import unittest
 from unittest.mock import patch
 
 from tests import test_project_runs as runs
-from PySide6.QtCore import QEventLoop, QTimer
+from PySide6.QtCore import QEventLoop, QPoint, QPointF, QTimer, Qt
+from PySide6.QtGui import QWheelEvent
 from PySide6.QtWidgets import QApplication, QWidget
 from project_playback_panel import load_playback, BoundVisualizer, ProjectPlaybackPanel
 from amr_sim_visualiser_pyside6 import SimulationLog, LayoutModel
@@ -139,6 +140,60 @@ class PlaybackUiTests(unittest.TestCase):
         self.assertFalse(viewer.live_waste_fill_check.isChecked())
         self.assertIn('R-1', [viewer.follow_combo.itemText(i) for i in range(viewer.follow_combo.count())])
 
+    def test_embedded_graph_wheel_keeps_cursor_anchor_after_dynamic_redraw(self):
+        viewer = self.adopt()
+        self.editor.resize(1280, 800)
+        self.editor.show()
+        self.app.processEvents()
+        viewer.fit_view()
+        view = viewer.view
+        position = QPointF(view.viewport().width() * .8, view.viewport().height() * .2)
+        inverse, _ = view.viewportTransform().inverted()
+        target = inverse.map(position)
+        when = viewer.current_time
+        for delta in (120, -120):
+            event = QWheelEvent(position, QPointF(view.viewport().mapToGlobal(position.toPoint())),
+                                QPoint(), QPoint(0, delta), Qt.NoButton, Qt.NoModifier,
+                                Qt.NoScrollPhase, False)
+            with patch.object(viewer, 'refresh_dynamic_scene', wraps=viewer.refresh_dynamic_scene) as refresh:
+                self.app.sendEvent(view.viewport(), event)
+                refresh.assert_called_once()
+            self.app.processEvents()
+            actual = view.viewportTransform().map(target)
+            self.assertLessEqual(abs(actual.x() - position.x()), 2)
+            self.assertLessEqual(abs(actual.y() - position.y()), 2)
+            self.assertEqual(when, viewer.current_time)
+
+    def test_display_menu_retains_controls_and_floor_change_reuses_timeline(self):
+        viewer = self.adopt()
+        action = next(a for a in viewer.display_button.menu().actions() if a.text() == 'Show labels')
+        with patch.object(viewer, 'build_amr_timeline_data', wraps=viewer.build_amr_timeline_data) as build:
+            action.setChecked(False)
+            self.assertFalse(viewer.show_labels_check.isChecked())
+            viewer.floor_spin.setValue(1)
+            build.assert_not_called()
+
+    def test_drag_seeks_are_coalesced_and_release_applies_final_position(self):
+        viewer = self.adopt()
+        first = viewer.sim_log.start_time + timedelta(seconds=3)
+        last = viewer.sim_log.start_time + timedelta(seconds=4)
+        with patch.object(viewer, 'refresh_dynamic_scene', wraps=viewer.refresh_dynamic_scene) as refresh:
+            viewer.queue_seek(first)
+            viewer.queue_seek(last)
+            refresh.assert_not_called()
+            viewer.flush_seek()
+            refresh.assert_called_once()
+        self.assertEqual(last, viewer.current_time)
+        self.assertEqual(last, viewer.local_timeline.timeline_widget.current_time)
+        states, _ = viewer.sim_log.state_at(last, viewer.layout_model)
+        self.assertAlmostEqual(2.4, states['R-1']['x'])
+        self.assertAlmostEqual(3.2, states['R-1']['y'])
+        self.assertFalse(viewer.seek_timer.isActive())
+        viewer.queue_seek(first)
+        viewer.pause()
+        self.assertFalse(viewer.seek_timer.isActive())
+        self.assertIsNone(viewer._pending_seek)
+
     def test_controls_and_timeline_fit_desktop_window(self):
         viewer = self.adopt()
         self.editor.resize(1280, 800)
@@ -148,10 +203,24 @@ class PlaybackUiTests(unittest.TestCase):
         self.assertLessEqual(self.editor.height(), 800)
         self.assertLessEqual(self.editor.width(), 1280)
         self.assertGreaterEqual(viewer.local_timeline.timeline_scroll.viewport().height(), 90)
-        self.assertGreater(viewer.controls_scroll.verticalScrollBar().maximum(), 0)
+        self.assertEqual(Qt.Vertical, viewer.main_splitter.orientation())
+        self.assertGreaterEqual(viewer.view.width(), viewer.width() * .95)
+        self.assertGreaterEqual(viewer.view.height(), 200)
+        self.assertFalse(viewer.playback_controls.isHidden())
+        self.assertTrue(viewer.file_label.isHidden() or not viewer.file_label.isVisible())
         viewer.on_timeline_zoom_changed('Fit')
         end_x = viewer.local_timeline.timeline_widget._time_to_x(viewer.sim_log.end_time)
         self.assertLess(end_x, viewer.local_timeline.timeline_scroll.viewport().width())
+        self.editor.resize(1024, 768)
+        for _ in range(4):
+            QApplication.processEvents()
+        self.assertLessEqual(self.editor.width(), 1024)
+        self.assertLessEqual(self.editor.height(), 768)
+        self.assertGreaterEqual(viewer.local_timeline.timeline_scroll.viewport().height(), 90)
+        end_x = viewer.local_timeline.timeline_widget._time_to_x(viewer.sim_log.end_time)
+        self.assertLess(end_x, viewer.local_timeline.timeline_scroll.viewport().width())
+        self.assertLess(viewer.time_label.geometry().right(), viewer.slider.geometry().left())
+        self.assertLess(viewer.follow_combo.geometry().right(), viewer.route_choice.geometry().left())
 
     def test_new_selection_ignores_previous_worker_completion(self):
         self.panel.requested_project = self.project
@@ -228,8 +297,7 @@ class PlaybackUiTests(unittest.TestCase):
     def test_opening_project_clears_playback_and_close_stops_timers(self):
         viewer = self.adopt()
         viewer.toggle_play()
-        with patch.object(self.editor, '_show_config_validation_warning'):
-            self.assertTrue(self.editor.load_json_file(str(self.project.path), load_drawings=False, check_unsaved=False))
+        self.assertTrue(self.editor.load_json_file(str(self.project.path), load_drawings=False, check_unsaved=False))
         self.assertIsNone(self.panel.viewer)
         self.assertFalse(viewer.play_timer.isActive())
         self.project = self.editor.project

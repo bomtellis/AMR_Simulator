@@ -19,6 +19,7 @@ from amr_direct_volume_evidence import summarize_direct_volume
 COMPLETED = {'task_complete', 'multi_stop_task_complete'}
 ASSIGNED = {'task_assigned', 'multi_stop_task_assigned'}
 MAX_EVENTS = 250000
+MAX_LOG_BYTES = 300 * 1024 * 1024
 
 
 def number(value):
@@ -72,7 +73,7 @@ def resolve_log(path):
 
 def load_investigation(path):
     source = resolve_log(path)
-    if source.stat().st_size > 300 * 1024 * 1024:
+    if source.stat().st_size > MAX_LOG_BYTES:
         raise ValueError('This investigation viewer supports logs up to 300 MiB. The file has not been truncated.')
     digest = file_hash(source)
     findings, metadata, frozen, simulation_mode = [], {}, None, None

@@ -1,7 +1,7 @@
 """A2 workflow navigation and honest current-project status around the CAD view."""
 from dataclasses import replace
 
-from PySide6.QtCore import QObject, QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QMessageBox, QPushButton,
                                QStyle, QStyleOptionButton, QStylePainter, QToolBar, QWidget)
@@ -108,8 +108,28 @@ class CadWorkbench(QObject):
         self.text_size.currentIndexChanged.connect(self.change_text_size)
         self.theme.currentTextChanged.connect(self.change_theme)
         editor.appearance.changed.connect(self.appearance_changed)
+        from route_view_toolbar import RouteViewToolbar
+        editor.route_view_toolbar=RouteViewToolbar(editor)
         self.appearance_changed(editor.appearance.value)
         self.refresh()
+        editor.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if watched is self.editor and event.type() == QEvent.Resize:
+            self.refresh_density()
+        return super().eventFilter(watched, event)
+
+    def refresh_density(self):
+        compact = self.editor.width() < 1400 and self.editor.appearance.value.font_size >= 16
+        self.editor.workspace.central_layout.setContentsMargins(4,2 if compact else 4,4,2 if compact else 4)
+        toolbar = self.editor.cad_toolbar
+        for action in toolbar.mode_actions.values():
+            button = toolbar.widgetForAction(action)
+            button.setToolButtonStyle(Qt.ToolButtonIconOnly if compact else Qt.ToolButtonTextUnderIcon)
+            button.setAccessibleName(action.text())
+        toolbar.widgetForAction(toolbar.route_views_action).setToolButtonStyle(Qt.ToolButtonIconOnly if compact else Qt.ToolButtonTextUnderIcon)
+        self.checks_strip.setVisible(self.editor.workspace.stage == 'layout' and
+            not self.editor.workspace._canvas_focus and not compact)
 
     def action(self, text, callback, icon, tooltip, shortcut=None):
         action = QAction(text, self.editor)
@@ -140,6 +160,21 @@ class CadWorkbench(QObject):
         self.file_menu.addAction(self.action('Recover unsaved work…', editor.recover_unsaved_work, 'project',
                                             'Review available recovery snapshots.'))
         self.file_menu.addAction(self.action('Close window', editor.close, 'project', 'Close after reviewing unsaved work.'))
+        self.layout_menu = editor.menuBar().addMenu('&Layout')
+        self.add_node_action = self.action('Add node / transition',lambda: editor._set_edit_mode('corridor_node'), 'transition',
+            'Place a node on the current floor, or insert one into an existing corridor in Layout.')
+        self.layout_menu.addAction(self.add_node_action)
+        self.add_edge_action = self.action('Add edge between nodes',lambda: editor._set_edit_mode('edge'), 'edge',
+            'In Layout, click two existing nodes to connect them on the same floor. Escape finishes.')
+        self.layout_menu.addAction(self.add_edge_action)
+        self.layout_menu.addAction(editor.cad_toolbar.mode_actions['corridor_draw'])
+        self.layout_menu.addSeparator()
+        def route_profiles():
+            editor.workspace.activate('layout');editor.manage_route_profiles()
+        self.route_profiles_action = self.action('Route profiles…',route_profiles,'edge',
+            'Create flow profiles and select their permitted nodes and edges on the Layout drawing.')
+        self.layout_menu.addAction(self.route_profiles_action)
+        self.layout_menu.addAction(editor.cad_toolbar.route_views_action)
         self.edit_menu = editor.menuBar().addMenu('&Edit')
         self.edit_menu.addActions([editor.undo_action, editor.redo_action])
         self.edit_menu.addSeparator()
@@ -199,6 +234,14 @@ class CadWorkbench(QObject):
         self.view_menu.addAction(editor.cad_toolbar.grid_action)
         self.view_menu.addAction(self.appearance_action)
         self.help_menu = editor.menuBar().addMenu('&Help')
+        self.walkthrough_action = self.action('Guided walkthrough…', self.show_quick_start, 'help',
+                                              'Follow the small-map or supplied LTN exercise in the application.')
+        self.help_menu.addAction(self.walkthrough_action)
+        self.help_menu.addAction(self.action('Building flow tutorial…', self.show_building_course, 'help',
+            'Build three floors, compare scenarios and plan lift locations.'))
+        self.restart_bubble_action = self.action('Restart tutorial bubble', self.restart_tutorial_bubble, 'help',
+            'Reopen the tutorial bubble at the current step, keeping your project and progress.')
+        self.help_menu.addAction(self.restart_bubble_action)
         self.help_menu.addAction(self.help_action)
         self.help_menu.addAction(self.action('Model scope and checks', editor.show_project_checks, 'checks',
                                             'Review supported features, limitations and current project findings.'))
@@ -221,11 +264,37 @@ class CadWorkbench(QObject):
             'Corridor draws connected segments. Type X,Y, @dx,dy or @length<angle in metres and degrees. '
             'Enter places a point; blank Enter finishes. Escape cancels the current drawing draft. '
             'Undo and Redo use the shared project history.\n\n'
+            'Department places a department marker or edits one by clicking it. Its drop-down opens Manage departments. '
+            'Use the bottom-right Object snap toggles to combine End, Mid, Perp and Cross. Near is a fallback; '
+            'turn Object snap off to suspend snapping while retaining your chosen targets.\n\n'
+            'Edge connects existing graph points: click the start, then the end. Escape cancels the chain. '
+            'More tools → Edit → Drawing behaviour controls bidirectional edges and chain creation. '
+            'Right-click empty space cancels; right-click two points removes their edge.\n\n'
             'Door places a graph door restriction using the configured clear width. Select it and open Properties to edit the width; '
             'this does not draw physical walls or openings.\n\n'
             'Use the project tree or upper workflow bar to configure, check, simulate and investigate saved runs. '
             'View → DXF layers opens searchable underlay visibility controls; they do not change routes or physical geometry. '
             'More tools contains the full editor commands. Theme and text size are personal preferences.')
+
+    def show_quick_start(self):
+        if not hasattr(self, 'quick_start_dialog'):
+            from quick_start import QuickStartDialog
+            self.quick_start_dialog = QuickStartDialog(self.editor)
+        self.quick_start_dialog.show()
+        self.quick_start_dialog.raise_()
+        self.quick_start_dialog.activateWindow()
+
+    def show_building_course(self):
+        if not hasattr(self, 'quick_start_dialog'):
+            from quick_start import QuickStartDialog
+            self.quick_start_dialog = QuickStartDialog(self.editor)
+        self.quick_start_dialog.building_course.show_card()
+
+    def restart_tutorial_bubble(self):
+        if not hasattr(self, 'quick_start_dialog'):
+            from quick_start import QuickStartDialog
+            self.quick_start_dialog = QuickStartDialog(self.editor)
+        self.quick_start_dialog.building_course.restart_bubble()
 
     def change_text_size(self, _index):
         value = self.text_size.currentData()
@@ -259,13 +328,15 @@ class CadWorkbench(QObject):
                 control.blockSignals(False)
         from cad_visual_style import apply_workbench_style
         apply_workbench_style(self.editor)
+        self.refresh_density()
 
     def refresh(self):
         stage = self.editor.workspace.stage
+        if hasattr(self.editor,'route_view_toolbar'):self.editor.route_view_toolbar.sync()
         active = {'demand': 'checks', 'playback': 'review', 'appearance': 'project', 'route_display': 'layout'}.get(stage, stage)
         for key, action in self.stages.items():
             action.setChecked(key == active)
-        self.checks_strip.setVisible(stage == 'layout' and not self.editor.workspace._canvas_focus)
+        self.refresh_density()
         self.refresh_checks()
 
     def refresh_checks(self):
@@ -284,3 +355,4 @@ class CadWorkbench(QObject):
             text = f'Project checks · Current · {errors} errors · {warnings} warnings'
         self.checks_label.setText(text)
         self.checks_label.setToolTip(text + '. Open checks to review findings and warning acknowledgements.')
+        self.stages['checks'].setToolTip(text + '. Open checks to review findings and warning acknowledgements.')

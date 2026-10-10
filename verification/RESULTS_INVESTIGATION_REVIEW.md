@@ -1,5 +1,28 @@
 # Results investigation checkpoint — 2 October 2026
 
+4 October related-record update: selecting a task now offers a timeline choice
+for every payload, native journey and lift identity recorded on that task's
+events. Each choice shows all matching records across the saved run, including
+records shared with other tasks. Returning to the task restores its own timeline.
+Selected-evidence export identifies the chosen record and writes exactly that
+run-wide timeline. Legacy events without a native journey ID do not gain an
+invented identity. The focused investigation and quick-start tests pass (39
+tests); the installed LTN log contains 9,839 events and all 206 tasks have
+recorded related identities. A fresh installed LTN smoke followed all three
+identity types for task `GEN_CATERING_D1_00004` and passed the run/report check.
+
+4 October selected-evidence update: Results investigation now offers
+**Export selected evidence** for the chosen task, metric or lift. It writes the
+entire selected timeline across all 500-event pages, with event identities,
+source rows, the run/log binding, coverage and the selected record. The
+existing **Export investigation** action still writes the complete analysis.
+The panel states its 250,000-event / 300 MiB input limits before a file is
+opened and explains that larger files are rejected without truncation. A real
+saved LTN run exported all 80 events for a selected task with exact ID coverage
+and the source checksum. The focused investigation, lift, stock and partial-run
+group passes 69 tests, including a 1,201-event, three-page selected export.
+Parsing and analysis remain in memory within the stated limits.
+
 4 October update: new simulation runs emit `task_pending_at_stop` records for
 live tasks remaining in the pending queue. Select **pending at stop** in the
 outcome filter, select a task, and read its snapshot in the details area. The
@@ -116,7 +139,8 @@ reconstruct completed vehicle journeys, or prove full payload conservation.
 Legacy multi-stop journeys are reconstructed only where batch evidence exists.
 Logs above 300 MiB or 250,000 events are rejected explicitly. Timeline tables now
 display 500 events per page, with previous/next controls and direct page selection.
-All contributing records remain available in chronological order and in exports;
+All contributing records remain available in chronological order and in both
+full and selected-timeline exports;
 paging does not truncate evidence or alter metrics. File parsing and analysis still
 retain the accepted log in memory; larger-than-limit loading remains outstanding.
 Direct event-schema migration is additive;

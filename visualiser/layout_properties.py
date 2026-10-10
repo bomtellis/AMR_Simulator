@@ -55,9 +55,10 @@ def specs(config, target):
             fields += [('has_door', 'Door restriction', 'bool'), ('door_clear_width_m', 'Clear door opening (m)', 'positive')]
         if kinds == {'location'}:
             fields += [('people_area_type', 'People using this area', 'people'),
+                       ('max_concurrency', 'Service capacity (AMRs)', 'integer'),
                        ('wash_cycle_required', 'Wash cycle required', 'bool'),
-                       ('wash_cycle_duration_sec', 'Wash duration (s)', 'nonnegative'),
-                       ('wash_location', 'Wash location', 'location')]
+                       ('wash_location', 'Wash location', 'location'),
+                       ('wash_cycle_duration_sec', 'Wash duration (s)', 'nonnegative')]
     return fields
 
 
@@ -79,6 +80,14 @@ def apply_properties(config, target, changes, expected):
         elif kind == 'bool':
             if type(value) is not bool:
                 raise ValueError('Choose Yes, No or the inherited default.')
+        elif kind == 'integer':
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                raise ValueError('Service capacity must be a positive whole number of AMRs.') from None
+            if isinstance(value, bool) or not math.isfinite(numeric) or numeric < 1 or not numeric.is_integer():
+                raise ValueError('Service capacity must be a positive whole number of AMRs.')
+            value = int(numeric)
         elif kind in {'coordinate', 'positive', 'nonnegative'}:
             try:
                 value = float(value)

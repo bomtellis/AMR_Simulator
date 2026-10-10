@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDialog, QFileDialog, QHBoxLayout,
     QHeaderView, QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QTabWidget,
+    QScrollArea,
 )
 
 try:
@@ -20,6 +21,7 @@ except ImportError:
 class ProjectChecksPanel(QWidget):
     navigate = Signal(object)
     readiness_changed = Signal()
+    demand_preview_requested = Signal()
 
     def __init__(self, config_provider, parent=None, base_path_provider=None):
         super().__init__(parent)
@@ -31,7 +33,14 @@ class ProjectChecksPanel(QWidget):
         self._finding_changes = {}
         self._group_states = {}
         self.setWindowTitle("Project checks")
-        layout = QVBoxLayout(self)
+        root=QVBoxLayout(self)
+        root.setContentsMargins(0,0,0,0)
+        self.scroll=QScrollArea(self)
+        self.scroll.setWidgetResizable(True)
+        body=QWidget()
+        layout=QVBoxLayout(body)
+        self.scroll.setWidget(body)
+        root.addWidget(self.scroll)
         intro = QLabel("Check inputs before running. Errors need correction; warnings can describe an intentional constraint study.")
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -44,6 +53,9 @@ class ProjectChecksPanel(QWidget):
         row = QHBoxLayout()
         self.refresh_button = QPushButton("Run checks")
         self.refresh_button.clicked.connect(self.check_now)
+        self.demand_preview_button = QPushButton("Demand preview")
+        self.demand_preview_button.setToolTip("Inspect planned deliveries, collections and return work before running.")
+        self.demand_preview_button.clicked.connect(self.demand_preview_requested.emit)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Find an object, setting or issue…")
         self.search.setAccessibleName("Filter project findings")
@@ -52,9 +64,12 @@ class ProjectChecksPanel(QWidget):
         self.severity.addItems(["All findings", "Errors", "Warnings", "Information"])
         self.severity.currentIndexChanged.connect(self.populate)
         row.addWidget(self.refresh_button)
-        row.addWidget(self.search, 1)
-        row.addWidget(self.severity)
+        row.addWidget(self.demand_preview_button)
         layout.addLayout(row)
+        filters=QHBoxLayout()
+        filters.addWidget(self.search,1)
+        filters.addWidget(self.severity)
+        layout.addLayout(filters)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Severity", "Object", "Finding", "Input status"])
         self.table.verticalHeader().hide()
@@ -80,6 +95,9 @@ class ProjectChecksPanel(QWidget):
         self.groups_table.verticalHeader().hide()
         self.groups_table.itemSelectionChanged.connect(self.show_details)
         self.tabs.addTab(self.groups_table, 'Check coverage')
+        from route_checks_view import RouteChecksView
+        self.route_checks_view=RouteChecksView(self)
+        self.tabs.addTab(self.route_checks_view,'Task routes')
         layout.addWidget(self.tabs, 1)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
@@ -141,10 +159,12 @@ class ProjectChecksPanel(QWidget):
             self.coverage.clear()
             self.groups_table.setRowCount(0)
             self._group_states = {}
+            self.route_checks_view.set_report(None,'Checks could not complete.')
             self.visible_findings = []
             self.check_staleness()
             return
         self.acknowledge.blockSignals(True)
+        self.route_checks_view.set_report(self.report.to_dict(),'Current project inputs.')
         self.acknowledge.setChecked(False)
         self.acknowledge.blockSignals(False)
         self.populate()
@@ -175,6 +195,10 @@ class ProjectChecksPanel(QWidget):
         return self.visible_findings[row] if 0 <= row < len(self.visible_findings) else None
 
     def show_details(self):
+        self.details.setVisible(self.tabs.currentIndex()!=2)
+        if self.tabs.currentIndex()==2:
+            self.navigate_button.setEnabled(False)
+            return
         if self.tabs.currentIndex() == 1:
             self.navigate_button.setEnabled(False)
             row = self.groups_table.currentRow()
@@ -252,6 +276,7 @@ class ProjectChecksPanel(QWidget):
                 counts = {level: sum(f.severity == level for f in self.report.findings) for level in ("error", "warning", "info")}
                 self.summary.setText(f"Current checks: {counts['error']} errors · {counts['warning']} warnings · {counts['info']} information.\nThese checks cover selected rules; they do not certify all simulator behaviour.")
         self.export_button.setEnabled(current)
+        self.route_checks_view.set_context('Current project inputs.' if current else 'STALE — run checks again before using these route results.')
         self.acknowledge.setEnabled(current and any(f.severity == "warning" for f in self.report.findings))
         self.show_details()
         self.readiness_changed.emit()
@@ -276,6 +301,7 @@ class RunChecksDialog(QDialog):
         self.panel = ProjectChecksPanel(config_provider, self, base_path_provider)
         # Navigation is provided by the editor workspace, not a detached launcher.
         self.panel.navigate_button.hide()
+        self.panel.demand_preview_button.hide()
         layout.addWidget(self.panel)
         buttons = QHBoxLayout()
         cancel = QPushButton("Cancel")

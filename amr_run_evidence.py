@@ -90,7 +90,6 @@ def write_run_evidence(simulation, csv_path, *, kind='full'):
                     list(csv.DictReader(stream)), simulation._evidence_inputs,
                     stop_time=termination['stop_time_sec'])
     target = Path(str(path) + '.run.json')
-    temporary = target.with_suffix(target.suffix + '.tmp')
-    temporary.write_text(json.dumps(data, indent=2, allow_nan=False) + '\n', encoding='utf-8')
-    os.replace(temporary, target)
+    from amr_project import atomic_write
+    atomic_write(target,(json.dumps(data, indent=2, allow_nan=False)+'\n').encode('utf-8'))
     return target

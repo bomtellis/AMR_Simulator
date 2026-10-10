@@ -222,6 +222,7 @@ class Simulation:
         self.wash_cycles_completed = 0
         self.charge_intervals: List[dict] = []
         self._charge_wait_reasons: Dict[str, str] = {}
+        self._charger_queue_waits: Dict[str, dict] = {}
         start_datetime = parse_datetime(
             sim_cfg.get("start_datetime", "2026-01-01T08:00:00")
         )
@@ -5651,7 +5652,7 @@ class Simulation:
             and str(getattr(task, "final_destination", "") or "").strip()
         )
         if (
-            uses_dropoff_zone
+            (uses_dropoff_zone or bool(str(getattr(task, "department_id", "") or "").strip()))
             and bool(staff_cfg.get("department_fallback_enabled", False))
             and not self._primary_staff_can_handle_at(task, requested_start, duration)
         ):
@@ -6758,6 +6759,7 @@ class Simulation:
                     continue
                 if (
                     not bool(space.get("occupied", False))
+                    and not str(space.get("reserved_by_task", "") or "").strip()
                     and self._inventory_space_can_fit_payload(space, payload_obj)
                 ):
                     target_space = space
@@ -7052,6 +7054,11 @@ class Simulation:
         return combined
 
     def _build_floor_graphs(self, corridor_cfg: dict):
+        # Lift stops are boarding/alighting endpoints, never corridor junctions.
+        self.lift_stop_names = {
+            lift.location_on_floor(floor).name
+            for lift in self.lifts for floor in lift.served_floors
+        }
         for location in self.locations.values():
             self.graph_nodes[location.name] = location
             self.floor_graphs[location.floor][location.name]
@@ -7801,6 +7808,11 @@ class Simulation:
         if start_name == end_name:
             return cache_and_return({"distance_m": 0.0, "edges": []})
 
+        # Exclude intermediate stops in BOTH searches, including their meeting
+        # point. Merely stopping expansion at a lift would still allow the two
+        # search fronts to join there and create a same-floor shortcut.
+        intermediate_lifts = self.lift_stop_names - {start_name, end_name}
+
         # Bidirectional Dijkstra.  The forward search expands from the start and
         # the reverse search expands from the destination over reverse adjacency.
         # This normally touches far fewer corridor nodes than a single-source
@@ -7833,6 +7845,8 @@ class Simulation:
                     if float(edge["width_m"]) + 1e-9 < minimum_width_m:
                         continue
                     nxt = edge["to"]
+                    if nxt in intermediate_lifts:
+                        continue
                     if not self._node_allowed(nxt, rules):
                         continue
                     if not self._edge_allowed(node, nxt, rules):
@@ -7861,6 +7875,8 @@ class Simulation:
                         continue
                     nxt = edge["to"]
                     # Reverse edge node -> nxt corresponds to original edge nxt -> node.
+                    if nxt in intermediate_lifts:
+                        continue
                     if not self._node_allowed(nxt, rules):
                         continue
                     if not self._edge_allowed(nxt, node, rules):
@@ -10152,6 +10168,33 @@ class Simulation:
             },
         )
 
+    def _update_charger_queue_wait(self, amr, now: float, reason: str = '') -> None:
+        """Record elapsed finite-bay contention without restarting repeat waits."""
+        previous = self._charger_queue_waits.get(amr.id)
+        if previous and previous['reason'] == reason:
+            return
+        if previous:
+            self._charger_queue_waits.pop(amr.id, None)
+            duration = max(0.0, float(now) - previous['start'])
+            if duration > 0:
+                self.log_step(event_time=previous['start'], event_type='segment_wait_for_charger',
+                    amr_id=amr.id, segment_type='wait_for_charger', status='observed_wait',
+                    start_time=previous['start'], end_time=now, duration_sec=duration,
+                    wait_time_sec=duration, from_location=previous['location'],
+                    to_location=previous['location'], details=json.dumps({
+                        'reason': previous['reason'], 'basis': 'elapsed_charger_bay_contention'}))
+        if reason:
+            self._charger_queue_waits[amr.id] = dict(start=float(now), reason=reason,
+                                                    location=str(amr.location_name or ''))
+
+    def _flush_charger_queue_waits(self) -> None:
+        """Include open waits to the observed cut-off; repeated exports add no time."""
+        for amr_id, previous in list(self._charger_queue_waits.items()):
+            amr = self.amrs_by_id[amr_id]
+            self._update_charger_queue_wait(amr, self.current_time)
+            if self._evidence_run_status not in ('finished', 'cancelled'):
+                self._charger_queue_waits[amr_id] = dict(previous, start=float(self.current_time))
+
     def _schedule_charge_cycle(
         self,
         amr: AMR,
@@ -10163,6 +10206,7 @@ class Simulation:
             return True
 
         if self._scenario_event_state('amr', amr.id, now)['availability_percent'] <= 0:
+            self._update_charger_queue_wait(amr, now)
             reason = f'AMR {amr.id} unavailable in scenario {self.scenario_name}'
             if self._charge_wait_reasons.get(amr.id) != reason:
                 self._charge_wait_reasons[amr.id] = reason
@@ -10175,12 +10219,15 @@ class Simulation:
                                            destination_name=destination_name)
         if plan is None:
             reason = self._charge_plan_failure_reason(amr, current_loc)
+            self._update_charger_queue_wait(amr, now, reason if reason.startswith(
+                'No compatible charger-equipped AMR bay available') else '')
             if self._charge_wait_reasons.get(amr.id) != reason:
                 self._charge_wait_reasons[amr.id] = reason
                 self.log_step(event_time=now, event_type='charge_wait', amr_id=amr.id,
                     status='waiting', from_location=current_loc.name, details=reason)
             return False
 
+        self._update_charger_queue_wait(amr, now)
         self._charge_wait_reasons.pop(amr.id, None)
         amr._charge_cycle_id = getattr(amr, '_charge_cycle_id', 0) + 1
         amr._charge_cycle_phase = 'scheduled'
@@ -14674,6 +14721,7 @@ class Simulation:
             "scenario_name": self.scenario_name,
             "description": self.scenario_description,
             "enhanced_logging": bool(self.scenario_enhanced_logging),
+            "charger_queue_intervals_complete": True,
             "scenario_delay_sec": round(self.scenario_delay_sec, 3),
             "scenario_affected_segments": self.scenario_affected_segments,
             "people_delay_sec": round(self.people_delay_sec, 3),
@@ -14930,6 +14978,7 @@ class Simulation:
         if not self.verbose_csv_path:
             return
 
+        self._flush_charger_queue_waits()
         self._append_scenario_summary_row()
         if not (self.scenario_mode and not self.scenario_enhanced_logging):
             self._append_payload_population_summary_rows()

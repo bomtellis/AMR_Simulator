@@ -56,6 +56,21 @@ class ProjectCheckTests(unittest.TestCase):
         self.assertIn('/amrs/0/speed_m_per_sec', paths)
         self.assertIn('/payloads/0/weight_kg', paths)
 
+    def test_optional_robot_mass_may_be_unknown_but_payload_mass_cannot(self):
+        self.config['amrs'][0]['weight_kg'] = None
+        before = copy.deepcopy(self.config)
+        self.assertFalse(any(f.path == '/amrs/0/weight_kg' and f.severity == 'error'
+                             for f in check_project(self.config).findings))
+        self.assertEqual(before, self.config)
+        for value in (-1, True, float('nan'), float('inf'), 'unknown'):
+            self.config['amrs'][0]['weight_kg'] = value
+            self.assertTrue(any(f.path == '/amrs/0/weight_kg' and f.severity == 'error'
+                                for f in check_project(self.config).findings), value)
+        self.config['amrs'][0]['weight_kg'] = None
+        self.config['payloads'][0]['weight_kg'] = None
+        self.assertTrue(any(f.path == '/payloads/0/weight_kg' and f.severity == 'error'
+                            for f in check_project(self.config).findings))
+
     def test_dates_and_clock_boundaries(self):
         self.config['simulation']['end_datetime'] = '2025-01-01T00:00:00'
         self.config['task_generation']['timeframe_end'] = '24:00'
@@ -212,6 +227,32 @@ class ProjectChecksUiTests(unittest.TestCase):
             self.assertIs(editor.workspace.stack.currentWidget(), editor.canvas)
         finally:
             with patch.object(editor, "_confirm_unsaved_changes", return_value=True):
+                editor.close()
+
+    def test_bay_entry_warning_navigates_to_affected_location(self):
+        from app import AMRGraphEditor
+        from models import JsonStore
+        square = lambda x: [{'dx': x + dx, 'dy': dy} for dx, dy in
+                            ((-.5, -.5), (.5, -.5), (.5, .5), (-.5, .5))]
+        self.config['locations'][1]['inventory_spaces'] = [
+            {'name': 'Cover', 'points': square(0), 'length_m': 1,
+             'width_m': 1, 'height_m': 1, 'payload_slots': [{'payload': 'Box'}]},
+            {'name': 'Target', 'points': square(3), 'length_m': 1,
+             'width_m': 1, 'height_m': 1, 'payload_slots': [{'payload': 'Box'}]},
+        ]
+        editor = AMRGraphEditor()
+        try:
+            editor.store = JsonStore(self.config)
+            editor.validate_json()
+            finding = next(f for f in editor.checks_panel.report.findings
+                           if f.code == 'LOCAL_BAY_ENTRY_OVERLAP')
+            self.assertEqual('B', finding.target)
+            self.assertEqual('/locations/1/inventory_spaces/0/points', finding.path)
+            self.assertTrue(editor.navigate_check_finding(finding))
+            self.assertEqual('B', editor.selected_point_name)
+            self.assertIs(editor.workspace.stack.currentWidget(), editor.canvas)
+        finally:
+            with patch.object(editor, '_confirm_unsaved_changes', return_value=True):
                 editor.close()
 
 

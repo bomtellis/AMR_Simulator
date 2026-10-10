@@ -4,7 +4,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from tests import test_corridor_editing as editing
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
+from PySide6.QtGui import QWheelEvent
 
 
 class ZoomSelectionTests(unittest.TestCase):
@@ -58,3 +59,28 @@ class ZoomSelectionTests(unittest.TestCase):
         self.assertIn('finite', self.editor.status_label.text())
         self.assertEqual(before, self.editor.canvas.transform())
         self.editor.store.get_location('A')['x'] = 0
+
+    def test_cursor_wheel_zoom_preserves_model_selection_and_history(self):
+        self.editor.resize(1280, 900)
+        self.editor.show()
+        self.app.processEvents()
+        self.editor.selected_point_name = 'A'
+        self.editor.fit_view()
+        before = deepcopy(self.editor.store.data)
+        history = deepcopy(self.editor.edit_history.entries)
+        view = self.editor.canvas
+        position = QPointF(view.viewport().width() * .75, view.viewport().height() * .25)
+        inverse, _ = view.viewportTransform().inverted()
+        target = inverse.map(position)
+        event = QWheelEvent(position, QPointF(view.viewport().mapToGlobal(position.toPoint())),
+                            QPoint(), QPoint(0, 120), Qt.NoButton, Qt.NoModifier,
+                            Qt.NoScrollPhase, False)
+        with patch.object(self.editor, 'refresh_canvas', side_effect=AssertionError('Scene rebuilt')), \
+             patch.object(self.editor, 'ensure_floor_dxf_loaded', side_effect=AssertionError('Underlay loaded')):
+            self.app.sendEvent(view.viewport(), event)
+        actual = view.viewportTransform().map(target)
+        self.assertLessEqual(abs(actual.x() - position.x()), 1.1)
+        self.assertLessEqual(abs(actual.y() - position.y()), 1.1)
+        self.assertEqual(before, self.editor.store.data)
+        self.assertEqual(history, self.editor.edit_history.entries)
+        self.assertEqual('A', self.editor.selected_point_name)

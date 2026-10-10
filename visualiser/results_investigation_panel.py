@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
     QLineEdit, QComboBox, QTabWidget, QPlainTextEdit, QFileDialog, QMessageBox, QSplitter, QSpinBox)
 from PySide6.QtCore import Qt
 
-from amr_results_investigation import load_investigation
+from amr_results_investigation import MAX_EVENTS, MAX_LOG_BYTES, load_investigation
 from amr_run_review import verified_inputs
 from amr_project_runs import read_json, OUTPUTS
 from amr_run_evidence import file_hash
@@ -33,6 +33,10 @@ def load_review(source):
         manifest_hash = file_hash(manifest_path)
         manifest, _config, _csv, _checksum = verified_inputs(directory, allow_partial=True)
     result = load_investigation(source)
+    frozen=result.get('frozen_inputs')
+    if isinstance(frozen,dict):
+        from visualiser.project_checks import check_project
+        result['route_checks_report']=check_project(frozen,base_path=directory,include_legacy=False).to_dict()
     if manifest and manifest['status'] == 'partial':
         _current, _config, _csv, checksum = verified_inputs(directory, allow_partial=True)
         if checksum != _checksum or file_hash(manifest_path) != manifest_hash:
@@ -73,6 +77,8 @@ class ResultsInvestigationPanel(QWidget):
         self.result = None
         self.job = None
         self.task_rows, self.event_rows = [], []
+        self.selected_evidence = None
+        self.related_choices = []
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
         self.open_button = QPushButton('Open event CSV…')
@@ -82,14 +88,31 @@ class ResultsInvestigationPanel(QWidget):
         self.export_button = QPushButton('Export investigation…')
         self.export_button.clicked.connect(self.export)
         self.export_button.setEnabled(False)
+        self.export_selected_button = QPushButton('Export selected evidence…')
+        self.export_selected_button.setAccessibleName('Export all evidence for the selected task, metric or lift')
+        self.export_selected_button.setToolTip('Exports every event in the selected timeline, including events on other pages.')
+        self.export_selected_button.clicked.connect(self.export_selected)
+        self.export_selected_button.setEnabled(False)
         controls.addWidget(self.open_button)
         controls.addWidget(folder)
+        if hasattr(parent, 'show_lift_planner'):
+            lift_study = QPushButton('Lift studies…')
+            lift_study.clicked.connect(parent.show_lift_planner)
+            controls.addWidget(lift_study)
         controls.addStretch()
+        controls.addWidget(self.export_selected_button)
         controls.addWidget(self.export_button)
         layout.addLayout(controls)
         self.summary = QLabel('Open a saved run to investigate recorded events. Planned segments and confirmed task outcomes are separate evidence.')
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
+        self.limits_label = QLabel(
+            f'Log limit: {MAX_EVENTS:,} events and {MAX_LOG_BYTES // (1024 * 1024)} MiB. '
+            f'Timelines show {self.EVENT_PAGE_SIZE:,} events per page; selected-evidence export includes every page. '
+            'Files above either limit are rejected without truncation.')
+        self.limits_label.setWordWrap(True)
+        self.limits_label.setAccessibleName('Investigation log and event page limits')
+        layout.addWidget(self.limits_label)
         search_row = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText('Find a task or route profile…')
@@ -113,13 +136,23 @@ class ResultsInvestigationPanel(QWidget):
         self.tabs.addTab(self.metrics, 'Metrics')
         self.tabs.addTab(self.lift_checks, 'Lift checks')
         self.tabs.addTab(self.evidence, 'Run evidence')
+        from route_checks_view import RouteChecksView
+        self.route_checks_view=RouteChecksView(self)
+        self.tabs.addTab(self.route_checks_view,'Route checks')
         split.addWidget(self.tabs)
         timeline = QWidget()
+        self.timeline_widget=timeline
         timeline_layout = QVBoxLayout(timeline)
         self.timeline_label = QLabel('Select a task or metric to see its supporting events.')
         self.timeline_label.setWordWrap(True)
-        self.timeline_label.setMinimumHeight(self.fontMetrics().lineSpacing() * 4)
+        self.timeline_label.setMinimumHeight(self.fontMetrics().lineSpacing() * 3)
         timeline_layout.addWidget(self.timeline_label)
+        self.follow = QComboBox()
+        self.follow.setAccessibleName('Follow task, payload, journey or lift evidence')
+        self.follow.setToolTip('Choose an identity linked to this task to inspect every matching record in the saved log.')
+        self.follow.currentIndexChanged.connect(self.follow_related)
+        self.follow.setEnabled(False)
+        timeline_layout.addWidget(self.follow)
         pages = QHBoxLayout()
         self.previous_events = QPushButton('Previous page')
         self.next_events = QPushButton('Next page')
@@ -140,17 +173,18 @@ class ResultsInvestigationPanel(QWidget):
         self.events = self.table(['Time (s)', 'Event', 'Evidence', 'AMR', 'Lift', 'Duration (s)', 'Wait (s)', 'Source row'])
         timeline_layout.addWidget(self.events)
         split.addWidget(timeline)
-        split.setSizes([300, 260])
+        split.setSizes([260, 300])
         layout.addWidget(split, 1)
         self.details = QPlainTextEdit()
         self.details.setReadOnly(True)
-        self.details.setMaximumHeight(190)
+        self.details.setMaximumHeight(125)
         self.details.setAccessibleName('Selected event explanation and evidence identity')
         layout.addWidget(self.details)
         self.tasks.itemSelectionChanged.connect(self.select_task)
         self.metrics.itemSelectionChanged.connect(self.select_metric)
         self.lift_checks.itemSelectionChanged.connect(self.select_lift)
         self.events.itemSelectionChanged.connect(self.select_event)
+        self.tabs.currentChanged.connect(self.select_active_tab)
         self.clear_events()
 
     def open_csv(self):
@@ -167,12 +201,17 @@ class ResultsInvestigationPanel(QWidget):
         if self.job:
             return
         self.summary.setText('Reading saved run evidence…')
+        self.summary.setToolTip('')
         self.export_button.setEnabled(False)
+        self.export_selected_button.setEnabled(False)
         self.job = ResultJob(source)
         self.job.signals.finished.connect(self.accept_result)
         QThreadPool.globalInstance().start(self.job)
 
     def accept_result(self, result, error=''):
+        self.route_checks_view.set_report((result or {}).get('route_checks_report'),
+            'Saved run input snapshot — independent of current project edits.' if (result or {}).get('route_checks_report') else
+            'Route coverage unavailable: no checked saved-run input snapshot. Current project inputs are not substituted.')
         self.job = None
         self.result = result
         self.clear_events()
@@ -190,7 +229,9 @@ class ResultsInvestigationPanel(QWidget):
         if result.get('termination'):
             stop = result['termination']
             coverage = f"Verified partial run — {stop['reason']} at {stop['stop_time_sec']:.9g} s: {stop['message']}"
-        self.summary.setText(f"{coverage}\n{len(result['tasks'])} tasks · {len(result['events'])} events · {len(result['findings'])} evidence findings · {result['source']}")
+        self.summary.setText(f"{coverage}\n{len(result['tasks'])} tasks · {len(result['events'])} events · "
+                             f"{len(result['findings'])} evidence findings · {Path(result['source']).name}")
+        self.summary.setToolTip(result['source'])
         self.events_by_id = {e['id']: e for e in result['events']}
         self.populate_tasks()
         self.fill(self.metrics, [[m['title'], display(m['value']), m['observed_count'], m['coverage']] for m in result['metrics']])
@@ -236,6 +277,13 @@ class ResultsInvestigationPanel(QWidget):
 
     def clear_events(self):
         self.event_rows = []
+        self.selected_evidence = None
+        self.export_selected_button.setEnabled(False)
+        self.related_choices = []
+        self.follow.blockSignals(True)
+        self.follow.clear()
+        self.follow.blockSignals(False)
+        self.follow.setEnabled(False)
         self.events_by_id = {} if not self.result else getattr(self, 'events_by_id', {})
         self.reset_event_pages()
 
@@ -270,27 +318,97 @@ class ResultsInvestigationPanel(QWidget):
         index = self.tasks.currentRow()
         if 0 <= index < len(self.task_rows):
             task = self.task_rows[index]
-            self.timeline_label.setText(f"{task['task_id']} · {task['outcome']} · release to completion: {display(task['release_to_completion_seconds'])} s\n"
-                                        + task['delay_explanation'])
-            self.show_events(task['event_ids'])
-            self.details.setPlainText('Missing evidence: ' + (', '.join(task['missing_evidence']) or 'None of the principal lifecycle events')
-                                      + '\nOrigin: ' + (task['source_rule_path'] or 'Not recorded')
-                                      + '\nSelect a timeline event for recorded reasons, route restrictions and source identity.')
-            if task.get('stop_snapshot'):
-                self.details.appendPlainText('\nPending-state snapshot: ' + task['stop_snapshot'])
-            if task['profile_definition'] is not None:
-                profile = task['profile_definition']
-                lines = ['\nProfile restrictions from saved inputs (task allowances can extend these):']
-                for key in ('allowed_nodes', 'allowed_lifts', 'allowed_edges'):
-                    values = profile.get(key, [])
-                    text = ', '.join(' → '.join(v) if isinstance(v, list) else str(v) for v in values)
-                    lines.append(key.replace('_', ' ').capitalize() + ': ' + (text or 'Unrestricted'))
-                self.details.appendPlainText('\n'.join(lines))
+            linked = [self.events_by_id[eid] for eid in task['event_ids'] if eid in self.events_by_id]
+            self.related_choices = [('task', task['task_id'])]
+            self.follow.blockSignals(True)
+            self.follow.clear()
+            self.follow.addItem(f"Task {task['task_id']} · linked records")
+            for kind, field in (('payload', 'payload_instance_id'), ('journey', 'journey_id'), ('lift', 'lift_id')):
+                for identity in sorted({e[field] for e in linked if e[field]}):
+                    self.related_choices.append((kind, identity))
+                    self.follow.addItem(f'{kind.capitalize()} {identity} · all matching run records')
+            self.follow.setCurrentIndex(0)
+            self.follow.blockSignals(False)
+            self.follow.setEnabled(len(self.related_choices) > 1)
+            self._show_task(task)
+
+    def _show_task(self, task):
+        self.selected_evidence = ('task', task)
+        self.export_selected_button.setEnabled(True)
+        self.timeline_label.setText(f"{task['task_id']} · {task['outcome']} · release to completion: {display(task['release_to_completion_seconds'])} s\n"
+                                    + task['delay_explanation'])
+        self.show_events(task['event_ids'])
+        self.details.setPlainText('Missing evidence: ' + (', '.join(task['missing_evidence']) or 'None of the principal lifecycle events')
+                                  + '\nOrigin: ' + (task['source_rule_path'] or 'Not recorded')
+                                  + '\nSelect a timeline event for recorded reasons, route restrictions and source identity.')
+        if task.get('stop_snapshot'):
+            self.details.appendPlainText('\nPending-state snapshot: ' + task['stop_snapshot'])
+        if task['profile_definition'] is not None:
+            profile = task['profile_definition']
+            lines = ['\nProfile restrictions from saved inputs (task allowances can extend these):']
+            for key in ('allowed_nodes', 'allowed_lifts', 'allowed_edges'):
+                values = profile.get(key, [])
+                text = ', '.join(' → '.join(v) if isinstance(v, list) else str(v) for v in values)
+                lines.append(key.replace('_', ' ').capitalize() + ': ' + (text or 'Unrestricted'))
+            self.details.appendPlainText('\n'.join(lines))
+
+    def select_active_tab(self, index):
+        route_tab=self.tabs.widget(index) is self.route_checks_view
+        self.timeline_widget.setVisible(not route_tab)
+        self.details.setVisible(not route_tab)
+        if route_tab:
+            self.clear_events()
+            return
+        self.follow.setVisible(index == 0)
+        if index == 0:
+            if self.tasks.currentRow() >= 0:
+                self.select_task()
+            else:
+                self.clear_events()
+        elif index == 1:
+            if self.metrics.currentRow() >= 0:
+                self.select_metric()
+            else:
+                self.clear_events()
+        elif index == 2:
+            if self.lift_checks.currentRow() >= 0:
+                self.select_lift()
+            else:
+                self.clear_events()
+        if index in (0, 1, 2) and self.selected_evidence is None:
+            self.timeline_label.setText('Select a task, metric or lift to see its supporting events.')
+            self.details.clear()
+
+    def follow_related(self, index):
+        if not self.result or not 0 <= index < len(self.related_choices):
+            return
+        kind, identity = self.related_choices[index]
+        if kind == 'task':
+            task = next((t for t in self.task_rows if t['task_id'] == identity), None)
+            if task:
+                self._show_task(task)
+            return
+        field = {'payload': 'payload_instance_id', 'journey': 'journey_id', 'lift': 'lift_id'}[kind]
+        records = [e for e in self.result['events'] if e[field] == identity]
+        origin = self.related_choices[0][1]
+        record = {field: identity, 'origin_task_id': origin, 'event_ids': [e['id'] for e in records]}
+        self.selected_evidence = (kind, record)
+        self.export_selected_button.setEnabled(True)
+        self.timeline_label.setText(
+            f'{kind.capitalize()} {identity} · {len(records):,} matching records across this run.\n'
+            f'Followed from task {origin}; other tasks may share this identity. '
+            'Only recorded IDs are linked; planned segments do not prove execution.')
+        self.show_events(record['event_ids'])
+        self.details.setPlainText(
+            f'Run-wide {kind} timeline for {identity}. Select an event for its recorded reason and source row. '
+            'The selected-evidence export contains this displayed identity timeline.')
 
     def select_metric(self):
         index = self.metrics.currentRow()
         if self.result and 0 <= index < len(self.result['metrics']):
             metric = self.result['metrics'][index]
+            self.selected_evidence = ('metric', metric)
+            self.export_selected_button.setEnabled(True)
             self.timeline_label.setText(metric['title'] + ': ' + display(metric['value']) + '\n' + metric['definition'])
             self.show_events(metric['event_ids'])
             self.details.setPlainText(metric['coverage'] + '\nEach event below contributes to this metric. Shared task lists do not multiply segment counts.')
@@ -300,10 +418,12 @@ class ResultsInvestigationPanel(QWidget):
         if not self.result or not 0 <= index < len(getattr(self, 'lift_rows', [])):
             return
         record = self.lift_rows[index]
+        self.selected_evidence = ('lift', record)
+        self.export_selected_button.setEnabled(True)
         self.timeline_label.setText(f"{record['lift_id'] or 'Unidentified lift'} · {record['status']}\n"
                                    'Recorded plans checked against frozen initial floors and final bookings; not confirmation of physical execution.')
         related = [eid for p in record['issues'] for eid in p['event_ids']]
-        self.show_events(related or record['event_ids'])
+        self.show_events(record['event_ids'] + related)
         self.details.setPlainText('\n'.join([
             'Initial floor from saved inputs: ' + display(record['initial_floor']),
             'Recorded movement counts: ' + json.dumps(record['observed']),
@@ -324,6 +444,8 @@ class ResultsInvestigationPanel(QWidget):
                 'Route: ' + (row.get('from_location') or row.get('start_node') or '?') + ' → ' + (row.get('to_location') or row.get('end_node') or '?'),
                 'Profile: ' + (row.get('route_profile') or 'Not recorded'),
                 'Payload instance: ' + (e['payload_instance_id'] or 'Not recorded'),
+                'Journey: ' + (e['journey_id'] or 'Not recorded'),
+                'Lift: ' + (e['lift_id'] or 'Not recorded'),
                 'Event identity: ' + e['id'], 'Source row: ' + str(e['source_line']),
                 '', 'Original recorded detail:', row.get('details') or 'No detail recorded.']))
 
@@ -334,5 +456,35 @@ class ResultsInvestigationPanel(QWidget):
         if path:
             try:
                 Path(path).write_text(json.dumps(self.result, indent=2) + '\n', encoding='utf-8')
+            except OSError as exc:
+                QMessageBox.critical(self, 'Export failed', str(exc))
+
+    def export_selected(self):
+        if not self.result or self.job or self.selected_evidence is None:
+            return
+        kind, record = self.selected_evidence
+        identity = {'task': 'task_id', 'metric': 'key', 'lift': 'lift_id',
+                    'payload': 'payload_instance_id', 'journey': 'journey_id'}[kind]
+        payload = {
+            'schema_version': 1,
+            'kind': 'selected_run_evidence',
+            'source': self.result['source'],
+            'log_sha256': self.result['log_sha256'],
+            'run_id': self.result['run_id'],
+            'complete_evidence': self.result['complete_evidence'],
+            'project_binding': self.result.get('project_binding'),
+            'findings': self.result['findings'],
+            'limitations': self.result['limitations'],
+            'selection': {'kind': kind, 'identity': record.get(identity), 'record': record},
+            'event_count': len(self.event_rows),
+            'events': self.event_rows,
+        }
+        if self.result.get('termination'):
+            payload['termination'] = self.result['termination']
+        path, _ = QFileDialog.getSaveFileName(self, 'Export selected timeline evidence',
+                                              'selected-run-evidence.json', 'JSON (*.json)')
+        if path:
+            try:
+                Path(path).write_text(json.dumps(payload, indent=2) + '\n', encoding='utf-8')
             except OSError as exc:
                 QMessageBox.critical(self, 'Export failed', str(exc))

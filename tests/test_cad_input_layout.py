@@ -30,7 +30,12 @@ class CadInputLayoutTests(unittest.TestCase):
         self.editor.appearance.apply(replace(self.original_appearance, font_size=size))
         self.editor.resize(width,height)
         self.editor.show()
-        for mode in ('rectangle','corridor','move','boundary','rotate','copy'):
+        self.app.processEvents()
+        for mode in ('corridor_node','lift'):
+            button=self.editor.cad_toolbar.widgetForAction(self.editor.cad_toolbar.mode_actions[mode])
+            self.assertTrue(button.isVisible(),mode)
+            self.assertTrue(self.editor.cad_toolbar.rect().contains(button.geometry()),mode)
+        for mode in ('rectangle','corridor','corridor_node','door','location','department','lift','edge','move','boundary','rotate','copy'):
             with self.subTest(mode=mode):
                 self.editor.cancel_cad_command()
                 self.editor.cad_move_input.hide()
@@ -39,8 +44,8 @@ class CadInputLayoutTests(unittest.TestCase):
                     bar = self.editor.rectangle_input
                     entry, feedback = bar.dimensions, bar.explanation
                     entry.setText('8,4,30')
-                elif mode == 'corridor':
-                    self.editor._set_edit_mode('corridor_draw')
+                elif mode in ('corridor','corridor_node','door','location','department','lift','edge'):
+                    self.editor._set_edit_mode('corridor_draw' if mode=='corridor' else mode)
                     bar = self.editor.cad_drawing_input
                     entry, feedback = bar.coordinate_edit, bar.feedback_label
                     entry.setText('10,5')

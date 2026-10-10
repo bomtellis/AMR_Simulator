@@ -290,10 +290,10 @@ def execute(directory):
     return simulation
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         execute(args.directory)
         return PARTIAL_EXIT_CODE if read_json(args.directory / MANIFEST)['status'] == 'partial' else 0

@@ -1356,20 +1356,33 @@ def build_lift_movement_detail(lift_rows, ctx, payload_weights=None, amr_weights
     return pd.DataFrame(rows, columns=columns)
 
 
-def extract_lift_movements(csv_path: Path, config_json: Path = None) -> pd.DataFrame:
-    """Extract lift travel without running the full task/PDF analysis."""
+def load_lift_trip_rows(csv_path: Path):
+    """Read the lift segments shared by movement and cohort CSV exports."""
     frame, ctx = parse_time_column(pd.read_csv(csv_path, low_memory=False))
     segment_col = ctx.cols.get("segment_type")
     event_col = ctx.cols.get("event")
     segments = frame[segment_col].fillna("").astype(str).str.lower() if segment_col else pd.Series("", index=frame.index)
     if event_col:
-        segments = segments.where(segments.ne(""), frame[event_col].astype(str).str.lower().str.replace(r"^segment_", "", regex=True))
+        segments = segments.where(segments.ne(""), frame[event_col].astype(str).str.lower().str.replace(r"^(?:multi_stop_)?segment_", "", regex=True))
     frame = frame[segments.isin(["lift_transfer", "lift_reposition"])].copy()
     frame["_segment_text"] = segments.loc[frame.index]
     frame = derive_lift_columns(frame, ctx.cols)
     duration_col = ctx.cols.get("duration")
     frame["lift_time_s"] = pd.to_numeric(frame[duration_col], errors="coerce") if duration_col else float("nan")
     frame = frame[frame["_lift_id"].notna() & frame["lift_time_s"].ge(0) & frame[ctx.time_col].notna()]
+    return frame, ctx
+
+
+def extract_lift_cohorts(csv_path: Path) -> dict:
+    """Restore the existing 5-minute/hourly export without task or PDF analysis."""
+    frame, ctx = load_lift_trip_rows(csv_path)
+    return {key: build_lift_trip_cohorts(frame, ctx, interval_minutes=minutes)
+            for key, minutes in (('lift_trip_cohorts_5min', 5), ('lift_trip_cohorts_hourly', 60))}
+
+
+def extract_lift_movements(csv_path: Path, config_json: Path = None) -> pd.DataFrame:
+    """Extract lift travel without running the full task/PDF analysis."""
+    frame, ctx = load_lift_trip_rows(csv_path)
     return build_lift_movement_detail(
         frame, ctx,
         load_payload_weights(config_json) if config_json else {},
@@ -5049,6 +5062,7 @@ def analyse(
     payload_dimensions: Optional[pd.DataFrame] = None,
     task_generation_metadata: Optional[dict] = None,
     amr_weights: Optional[Dict[str, float]] = None,
+    kpi_config: Optional[dict] = None,
 ) -> Dict[str, pd.DataFrame]:
     payload_weights = payload_weights or {}
     energy_evidence = read_energy_evidence(csv_path)
@@ -6331,7 +6345,24 @@ def analyse(
         ]
     )
 
+    try:
+        from .amr_report_kpis import build_kpis
+    except ImportError:
+        from amr_report_kpis import build_kpis
+    kpi_inputs = dict(kpi_config or {})
+    if 'amrs' not in kpi_inputs and amr_parameters is not None:
+        kpi_inputs['amrs'] = amr_parameters.to_dict('records')
+    kpis = build_kpis(df, ctx, tasks, journey_detail, config=kpi_inputs,
+        metadata=task_generation_metadata, staff_summary=staff_handling_summary,
+        energy_evidence=energy_evidence, target_util=target_amr_util)
+    try:
+        from .amr_report_sla import build_sla_assignments
+    except ImportError:
+        from amr_report_sla import build_sla_assignments
+    kpis.update(build_sla_assignments(kpi_config, kpis['kpi_requests']))
+
     return {
+        **kpis,
         "summary": summary,
         "journey_observation": {
             "start": fmt_ts(t0, ctx.has_datetime),

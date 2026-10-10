@@ -1,6 +1,7 @@
 import csv
 import json
 from copy import deepcopy
+from functools import partial
 import math
 from typing import Any, List, Optional
 from amr_generation_inputs import generation_mode_explanation
@@ -10,8 +11,8 @@ from amr_department_inputs import department_location_names, department_stream_i
 from advanced_dialogs import MultiSelectPicker
 from inventory_spaces_manager import LocationSpacesManagerDialog
 
-from PySide6.QtCore import Qt, QPointF, QRectF, QSize, QTime, QDateTime
-from PySide6.QtGui import QColor, QBrush, QPen, QPolygonF, QPainter, QPainterPath, QDoubleValidator, QIntValidator
+from PySide6.QtCore import Qt, QPointF, QRectF, QSize, QTime, QDateTime, QTimer, QItemSelectionModel
+from PySide6.QtGui import QColor, QBrush, QPen, QPolygonF, QPainter, QPainterPath, QDoubleValidator, QIntValidator, QAction, QActionGroup
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -49,9 +50,13 @@ from PySide6.QtWidgets import (
     QGraphicsSimpleTextItem,
     QGraphicsItem,
     QMenu,
+    QToolButton,
+    QStackedWidget,
     QGraphicsPathItem,
     QTimeEdit,
     QDateTimeEdit,
+    QSplitter,
+    QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
     QFileDialog,
@@ -59,6 +64,7 @@ from PySide6.QtWidgets import (
 
 
 from ui_theme import polish_dialog as _polish_dialog
+from compact_forms import FocusedForms, scroll_page
 
 STAFF_MOVEMENT_POLICIES = [
     ("First available", "available_first"),
@@ -70,6 +76,17 @@ STAFF_SHIFT_PATTERNS = [
     ("Global fixed working hours", "none"),
     ("Global 4 on / 4 off, 12-hour days", "four_on_four_off_12h"),
 ]
+
+
+def _service_target_value(widget):
+    text = widget.text().strip()
+    if not text:return None
+    try:
+        value = float(text)
+        if not math.isfinite(value) or value < 0:raise ValueError()
+    except (ValueError, TypeError):
+        raise ValueError('Service target must be a finite nonnegative number of seconds.') from None
+    return value
 
 
 def _normalise_staff_movement_policy_value(value) -> str:
@@ -1089,6 +1106,11 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
             str(self.base_category.get("return_payload", ""))
         )
 
+        self.target_time_edit = QLineEdit(str(self.base_category.get('target_time', '')) if self.base_category.get('target_time') is not None else '')
+        self.target_time_edit.setPlaceholderText('Unset: no service target')
+        self.return_profile_combo = QComboBox()
+        self.return_profile_combo.addItems([''] + self.profile_names)
+        self.return_profile_combo.setCurrentText(str(self.base_category.get('return_route_profile', '') or ''))
         self.return_delay_edit = QLineEdit(
             str(self.base_category.get("return_delay_minutes", 0))
         )
@@ -1321,6 +1343,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Enabled", self.enabled_check)
         form.addRow("Generation mode", self.mode_combo)
         form.addRow("Priority", self.priority_edit)
+        form.addRow("Service target (s)", self.target_time_edit)
         form.addRow("Pickup / source locations", pickup_row)
         form.addRow("Drop-off destinations", dropoff_row)
         form.addRow("Payload", self.payload_combo)
@@ -1329,6 +1352,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Route profile", self.route_profile_combo)
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
+        form.addRow("Return route profile", self.return_profile_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
         form.addRow(
             "Shared-zone release spacing",
@@ -1872,6 +1896,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 str(x).strip() for x in self.selected_dropoffs if str(x).strip()
             ]
 
+            target_time = _service_target_value(self.target_time_edit)
             payload = {
                 "enabled": self.enabled_check.isChecked(),
                 "generation_mode": self.mode_combo.currentText().strip(),
@@ -1889,6 +1914,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "exchange_mode": self.exchange_mode_combo.currentText().strip(),
                 "return_enabled": self.return_enabled_check.isChecked(),
                 "return_payload": self.return_payload_combo.currentText().strip(),
+                "return_route_profile": self.return_profile_combo.currentText().strip(),
                 "return_delay_minutes": float(self.return_delay_edit.text() or 0),
                 "release_next_after_return_pickup": (
                     self.release_next_after_return_pickup_check.isChecked()
@@ -1956,6 +1982,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 payload["timeframe_payload_multiple"] = 1
                 payload["payload_multiple"] = 1
 
+            if target_time is not None:payload['target_time'] = target_time
             self.result = {}
 
             for dept_id in self.selected_department_ids:
@@ -2099,7 +2126,6 @@ class TaskGenerationSettingsDialog(QDialog):
         edit_global_staff_btn.clicked.connect(self.edit_global_staff_config)
         global_staff_row.addWidget(self.global_staff_summary, 1)
         global_staff_row.addWidget(edit_global_staff_btn)
-        layout.addLayout(global_staff_row)
         self._refresh_global_staff_summary()
 
         body = QHBoxLayout()
@@ -2116,47 +2142,9 @@ class TaskGenerationSettingsDialog(QDialog):
 
         category_col.addWidget(QLabel("Categories"))
         self.category_list = QListWidget()
-        self.category_list.setFixedWidth(190)
+        self.category_list.setMinimumWidth(140)
+        self.category_list.setMaximumWidth(230)
         category_col.addWidget(self.category_list, 1)
-
-        department_col = QVBoxLayout()
-        lists_row.addLayout(department_col)
-
-        department_col.addWidget(QLabel("Departments"))
-        self.department_list = QListWidget()
-        self.department_list.setFixedWidth(230)
-        department_col.addWidget(self.department_list, 1)
-
-        self.department_hint = QLabel(
-            "Select a department to configure department-specific task generation"
-        )
-        self.department_hint.setWordWrap(True)
-        department_col.addWidget(self.department_hint)
-
-        bulk_dept_btn = QPushButton("Configure multiple...")
-        bulk_dept_btn.clicked.connect(self.configure_multiple_departments)
-        department_col.addWidget(bulk_dept_btn)
-
-        edit_group_btn = QPushButton("Edit configured group...")
-        edit_group_btn.clicked.connect(self.edit_configured_department_group)
-        department_col.addWidget(edit_group_btn)
-
-        delete_group_btn = QPushButton("Delete configured group...")
-        delete_group_btn.clicked.connect(self.delete_configured_department_group)
-        department_col.addWidget(delete_group_btn)
-
-        clear_group_btn = QPushButton("Clear configured group...")
-        clear_group_btn.clicked.connect(self.clear_configured_department_group)
-        department_col.addWidget(clear_group_btn)
-
-        clear_category_departments_btn = QPushButton("Clear all department settings...")
-        clear_category_departments_btn.setToolTip(
-            "Remove every department-specific task generation override for the selected category."
-        )
-        clear_category_departments_btn.clicked.connect(
-            self.clear_all_department_settings_for_category
-        )
-        department_col.addWidget(clear_category_departments_btn)
 
         category_buttons = QHBoxLayout()
         left.addLayout(category_buttons)
@@ -2167,12 +2155,56 @@ class TaskGenerationSettingsDialog(QDialog):
         category_buttons.addWidget(add_category_btn)
         category_buttons.addWidget(delete_category_btn)
 
-        right = QScrollArea()
-        right.setWidgetResizable(True)
+        right = QWidget()
         body.addWidget(right, 1)
-        container = QWidget()
-        right.setWidget(container)
-        form = QFormLayout(container)
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(QLabel('Department / configured group'))
+        self.department_actions = QToolButton()
+        self.department_actions.setText('Department actions')
+        self.department_actions.setPopupMode(QToolButton.InstantPopup)
+        scope_menu = QMenu(self.department_actions)
+        for title, handler in (
+            ('Configure multiple...', self.configure_multiple_departments),
+            ('Edit configured group...', self.edit_configured_department_group),
+            ('Delete configured group...', self.delete_configured_department_group),
+            ('Clear configured group...', self.clear_configured_department_group),
+            ('Clear all department settings...', self.clear_all_department_settings_for_category),
+        ):
+            scope_menu.addAction(title).triggered.connect(handler)
+        self.department_actions.setMenu(scope_menu)
+        scope_row.addStretch(1)
+        scope_row.addWidget(self.department_actions)
+        right_layout.addLayout(scope_row)
+        self.department_list = QListWidget()
+        self.department_list.setAccessibleName('Department or configured group scope')
+        self.department_list.setMinimumHeight(60)
+        self.department_list.setMaximumHeight(96)
+        right_layout.addWidget(self.department_list)
+        self.department_hint = QLabel('Select a department to configure department-specific task generation')
+        self.department_hint.setWordWrap(True)
+        right_layout.addWidget(self.department_hint)
+        sections = {
+            'Basics': ['Category enabled', 'Display name', 'Generation mode', 'Priority', 'Service target (s)'],
+            'Locations & routing': ['Department location role', 'Pickup / source location',
+                'Drop-off destinations', 'Payload', 'Route profile'],
+            'Returns & stock': ['Tracked item exchange', 'Exchange mode', 'Return task',
+                'Return payload', 'Return route profile', 'Return delay (minutes)', 'Shared-zone release spacing',
+                'Reusable return pool', 'Pool multiplier', 'Pool hard cap (0 = auto)'],
+            'Schedule & staff': ['Staff handling', 'Collection response delay (minutes)',
+                'Handling time (minutes)', 'Handoff timing', 'Category-wide drop-off-zone capacity',
+                'Initial staff count', 'Staff resource name', 'Out-of-hours fallback',
+                'Fallback resource name', 'Staff movement', 'Shift pattern', 'Working hours by day',
+                'Days active', 'Fortnightly recurrence', 'Scheduled times', 'Frequency per day',
+                'Volume per event m³', 'Threshold volume m³', 'Base daily volume m³',
+                'Timeframe start HH:MM', 'Timeframe end HH:MM', 'Payload multiple'],
+            'Notes & help': ['Notes'],
+        }
+        form = FocusedForms(list(sections), {label: title for title, labels in sections.items() for label in labels})
+        self.delivery_tabs = form
+        right_layout.addWidget(form, 1)
+        form.forms['Schedule & staff'].addRow(global_staff_row)
         self.form = form
         form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
@@ -2191,7 +2223,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.role_dropoff_radio.toggled.connect(
             lambda checked: self._set_department_location_role("dropoff", checked)
         )
-        role_row = QHBoxLayout()
+        role_row = QVBoxLayout()
         role_row.addWidget(self.role_pickup_radio)
         role_row.addWidget(self.role_dropoff_radio)
         role_row.addStretch(1)
@@ -2237,6 +2269,10 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_payload_combo = QComboBox()
         self.return_payload_combo.addItems([""] + self.payload_names)
 
+        self.target_time_edit = QLineEdit()
+        self.target_time_edit.setPlaceholderText('Unset: no service target')
+        self.return_profile_combo = QComboBox()
+        self.return_profile_combo.addItems([''] + self.profile_names)
         self.return_delay_edit = QLineEdit()
         self.release_next_after_return_pickup_check = QCheckBox(
             "Release the next task after the preceding return clears the shared space"
@@ -2401,6 +2437,7 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Display name", self.display_name_edit)
         form.addRow("Generation mode", self.mode_combo)
         form.addRow("Priority", self.priority_edit)
+        form.addRow("Service target (s)", self.target_time_edit)
         form.addRow("Department location role", role_row)
         form.addRow("Pickup / source location", self.pickup_combo)
         form.addRow("Drop-off destinations", dropoff_row)
@@ -2410,6 +2447,7 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Route profile", self.route_profile_combo)
         form.addRow("Return task", self.return_enabled_check)
         form.addRow("Return payload", self.return_payload_combo)
+        form.addRow("Return route profile", self.return_profile_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
         form.addRow(
             "Shared-zone release spacing",
@@ -2457,7 +2495,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "priority, pickup/drop-off role, destinations, route profile and return task settings."
         )
         self.waste_stream_notice_label.setWordWrap(True)
-        layout.addWidget(self.waste_stream_notice_label)
+        form.add_help(self.waste_stream_notice_label)
 
         help_label = QLabel(
             "Schedule times are comma-separated HH:MM values. "
@@ -2471,7 +2509,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "not on the task-generation category override."
         )
         help_label.setWordWrap(True)
-        layout.addWidget(help_label)
+        form.add_help(help_label)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.export_configuration_button = buttons.addButton(
@@ -3536,6 +3574,8 @@ class TaskGenerationSettingsDialog(QDialog):
             display = str(item.get("display_name", "")).strip() or labels.get(
                 key, key.title()
             )
+            category_label=labels.get(key,key.title())
+            if key in labels and display.casefold()!=category_label.casefold():display=f'{category_label} · {display}'
             pairs.append((key, display))
         return sorted(pairs, key=lambda pair: pair[1].lower())
 
@@ -3952,6 +3992,8 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(False)
         self.return_payload_combo.setCurrentText("")
         self.return_delay_edit.setText("0")
+        self.target_time_edit.clear()
+        self.return_profile_combo.setCurrentText('')
         self.release_next_after_return_pickup_check.setChecked(False)
         self.requires_staff_check.setChecked(False)
         self.staff_collection_delay_edit.setText("0")
@@ -4026,6 +4068,8 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self.mode_combo.setCurrentText(str(item.get("generation_mode", "scheduled")))
         self.priority_edit.setText(str(item.get("priority", 100)))
+        self.target_time_edit.setText(str(item.get('target_time', '')) if item.get('target_time') is not None else '')
+        self.return_profile_combo.setCurrentText(str(item.get('return_route_profile', '') or ''))
         role = str(item.get("department_location_role", "dropoff") or "dropoff").strip()
         self._set_department_location_role(
             "pickup" if role == "pickup" else "dropoff", True
@@ -4211,6 +4255,7 @@ class TaskGenerationSettingsDialog(QDialog):
             self.dropoff_zone_capacity_policy_combo, show_generation
         )
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
+        self._set_form_row_visible(self.return_profile_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
         self._set_form_row_visible(
             self.release_next_after_return_pickup_check,
@@ -4350,6 +4395,7 @@ class TaskGenerationSettingsDialog(QDialog):
         dropoff_locations = [
             str(x).strip() for x in self.selected_dropoffs if str(x).strip()
         ]
+        target_time = _service_target_value(self.target_time_edit)
         payload = {
             "enabled": self.enabled_check.isChecked(),
             "display_name": display_name,
@@ -4364,6 +4410,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "exchange_mode": self.exchange_mode_combo.currentText().strip(),
             "return_enabled": self.return_enabled_check.isChecked(),
             "return_payload": self.return_payload_combo.currentText().strip(),
+            "return_route_profile": self.return_profile_combo.currentText().strip(),
             "return_delay_minutes": self._float_from_edit(self.return_delay_edit, 0.0),
             "release_next_after_return_pickup": (
                 self.release_next_after_return_pickup_check.isChecked()
@@ -4413,6 +4460,7 @@ class TaskGenerationSettingsDialog(QDialog):
             "notes": self.notes_edit.toPlainText().strip(),
         }
 
+        if target_time is not None:payload['target_time'] = target_time
         if str(category_key).strip().lower() == "waste":
             # Waste generation mode, volumes and stream payloads now come from
             # departments[].waste_streams[] and the global waste_streams list.
@@ -4486,7 +4534,8 @@ class TaskGenerationSettingsDialog(QDialog):
         )
 
         if list_item is not None and not department_id:
-            list_item.setText(display_name)
+            category_label=dict(self.CATEGORY_LABELS).get(category_key,str(category_key).title())
+            list_item.setText(category_label if display_name.casefold()==category_label.casefold() else f'{category_label} · {display_name}')
 
     def _collect_configuration(self):
         self._store_current_category()
@@ -4905,7 +4954,7 @@ class LiftEditorDialog(QDialog):
         timing_form.addRow("AMR boarding / exit time", self.board_edit)
         general_layout.addWidget(timing_box)
 
-        positions_box = QGroupBox("Generated entrance positions")
+        positions_box = QGroupBox("Stop positions")
         positions_layout = QVBoxLayout(positions_box)
         self.positions_edit = QPlainTextEdit()
         self.positions_edit.setReadOnly(True)
@@ -4914,9 +4963,16 @@ class LiftEditorDialog(QDialog):
             "Automatically generated from the floors served. Existing positions are retained."
         )
         positions_layout.addWidget(self.positions_edit)
+        self.positions_edit.hide()
+        self.stop_positions_table = QTableWidget(0, 3)
+        self.stop_positions_table.setHorizontalHeaderLabels(['Floor', 'X (m)', 'Y (m)'])
+        self.stop_positions_table.setAccessibleName('Lift stop positions in metres')
+        self.stop_positions_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.stop_positions_table.setMaximumHeight(160)
+        positions_layout.addWidget(self.stop_positions_table)
         positions_layout.addWidget(
             QLabel(
-                "Existing floor positions are kept. A newly added floor uses the X/Y position where the lift was created."
+                "Edit each stop's X and Y in metres. New floors start at the lift's insertion position."
             )
         )
         general_layout.addWidget(positions_box)
@@ -5084,12 +5140,22 @@ class LiftEditorDialog(QDialog):
         return sorted(set(floors))
 
     def _build_floor_locations(self, floors):
+        edited = {}
+        for row in range(self.stop_positions_table.rowCount()):
+            floor = int(self.stop_positions_table.item(row, 0).text())
+            try:
+                x = float(self.stop_positions_table.item(row, 1).text())
+                y = float(self.stop_positions_table.item(row, 2).text())
+                if not all(math.isfinite(value) for value in (x, y)):raise ValueError()
+            except (ValueError, TypeError):
+                raise ValueError(f'Floor {floor}: enter finite X and Y positions in metres.') from None
+            edited[floor] = (x, y)
         positions = {}
         for floor in floors:
-            x, y = self.existing_floor_locations.get(
+            x, y = edited.get(floor, self.existing_floor_locations.get(
                 floor,
                 (self.default_x, self.default_y),
-            )
+            ))
             positions[floor] = (float(x), float(y))
         return positions
 
@@ -5102,6 +5168,12 @@ class LiftEditorDialog(QDialog):
                 for floor, pos in positions.items()
             ]
             self.positions_edit.setPlainText("\n".join(lines))
+            self.stop_positions_table.setRowCount(len(positions))
+            for row, (floor, (x, y)) in enumerate(positions.items()):
+                item = QTableWidgetItem(str(floor));item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                self.stop_positions_table.setItem(row, 0, item)
+                self.stop_positions_table.setItem(row, 1, QTableWidgetItem(str(x)))
+                self.stop_positions_table.setItem(row, 2, QTableWidgetItem(str(y)))
             if int(self.start_floor_edit.value()) not in floors:
                 self.start_floor_edit.setValue(floors[0])
         except Exception as exc:
@@ -8669,7 +8741,8 @@ class SimulationSettingsDialog(QDialog):
         period_scroll.setWidget(period_page)
         tabs.addTab(period_scroll, "Run period")
         period_layout = QVBoxLayout(period_page)
-        period_box = QGroupBox("Simulation dates and speed")
+        self.delivery_tabs = tabs
+        period_box = QGroupBox("Mode")
         period_form = QFormLayout(period_box)
         from amr_simulation_modes import resolve_simulation_mode
         self.mode_combo = QComboBox()
@@ -8698,7 +8771,17 @@ class SimulationSettingsDialog(QDialog):
         self.mode_preview_text.setMaximumHeight(130)
         self.mode_preview_text.setAccessibleName('Simulation mode changes and readiness findings')
         period_form.addRow(self.mode_readiness_label)
+        self.mode_details_button = QToolButton()
+        self.mode_details_button.setText('Show mode details')
+        self.mode_details_button.setCheckable(True)
+        self.mode_details_button.setAccessibleName('Show complete mode changes and readiness findings')
+        self.mode_details_button.toggled.connect(self.mode_preview_text.setVisible)
+        self.mode_details_button.toggled.connect(lambda visible: self.mode_details_button.setText(
+            'Hide mode details' if visible else 'Show mode details'))
+        period_form.addRow(self.mode_details_button)
         period_form.addRow(self.mode_preview_text)
+        self.mode_preview_text.hide()
+        period_layout.addWidget(period_box)
         self.mode_combo.currentIndexChanged.connect(self._update_mode_preview)
         self._update_mode_preview()
         self.start_datetime_edit = QDateTimeEdit()
@@ -8740,10 +8823,15 @@ class SimulationSettingsDialog(QDialog):
         self.generated_stagger_spin.setToolTip(
             "Adds a small spacing between tasks generated for exactly the same instant."
         )
+        period_box = QGroupBox('Demand window')
+        period_form = QFormLayout(period_box)
         period_form.addRow("Starts", self.start_datetime_edit)
         period_form.addRow("End condition", self.use_end_datetime_check)
         period_form.addRow("Ends", self.end_datetime_edit)
         period_form.addRow("Legacy rate (metadata)", self.tick_rate_spin)
+        period_layout.addWidget(period_box)
+        period_box = QGroupBox('Release and deferral')
+        period_form = QFormLayout(period_box)
         period_form.addRow("Same-time task release spacing", self.generated_stagger_spin)
         self.max_task_deferral_minutes_spin = QDoubleSpinBox()
         self.max_task_deferral_minutes_spin.setRange(0, 525600)
@@ -8769,7 +8857,7 @@ class SimulationSettingsDialog(QDialog):
         period_layout.addStretch(1)
 
         performance_page = QWidget()
-        tabs.addTab(performance_page, "Performance")
+        tabs.addTab(scroll_page(performance_page), "Performance")
         performance_layout = QVBoxLayout(performance_page)
         route_box = QGroupBox("Route preparation")
         route_form = QFormLayout(route_box)
@@ -8831,7 +8919,7 @@ class SimulationSettingsDialog(QDialog):
         performance_layout.addStretch(1)
 
         charging_page = QWidget()
-        tabs.addTab(charging_page, "Charging")
+        tabs.addTab(scroll_page(charging_page), "Charging")
         charging_layout = QVBoxLayout(charging_page)
         opportunity_box = QGroupBox("Opportunity charging")
         opportunity_form = QFormLayout(opportunity_box)
@@ -8890,7 +8978,7 @@ class SimulationSettingsDialog(QDialog):
         charging_layout.addStretch(1)
 
         initial_page = QWidget()
-        tabs.addTab(initial_page, "Initial conditions")
+        tabs.addTab(scroll_page(initial_page), "Initial conditions")
         initial_layout = QVBoxLayout(initial_page)
         inventory_box = QGroupBox("Inventory and container state")
         inventory_layout = QVBoxLayout(inventory_box)
@@ -10221,12 +10309,40 @@ class DepartmentEditorDialog(QDialog):
         )
 
         layout = QVBoxLayout(self)
-        form = QFormLayout()
-        layout.addLayout(form)
+        self.resize(920, 680)
+        sections = {
+            'Details': ['Department ID', 'Department name', 'Floor', 'Status', 'Bed count',
+                'Patient turnover', 'Staff count', 'X', 'Y'],
+            'Hours & waste': ['Operating start', 'Operating end', 'Calculated operating hours',
+                'Days active', 'Assigned waste streams', ''],
+        }
+        form = FocusedForms(list(sections), {label: title for title, labels in sections.items() for label in labels})
+        self.delivery_tabs = form
+        layout.addWidget(form, 1)
+        locations_page = QWidget()
+        locations_layout = QVBoxLayout(locations_page)
+        category_body = QHBoxLayout()
+        self.location_category_list = QListWidget()
+        self.location_category_list.setAccessibleName('Task location category')
+        self.location_category_list.setMinimumWidth(120)
+        self.location_category_list.setMaximumWidth(220)
+        self.location_category_pages = QStackedWidget()
+        category_body.addWidget(self.location_category_list)
+        category_body.addWidget(self.location_category_pages, 1)
+        locations_layout.addLayout(category_body, 1)
+        form.addTab(scroll_page(locations_page), 'Task locations && zones')
+        self.location_category_list.currentRowChanged.connect(self.location_category_pages.setCurrentIndex)
 
         self.id_edit = QLineEdit(self.seed.get("id", default_department_id))
         self.name_edit = QLineEdit(self.seed.get("name", ""))
-        self.floor_label = QLabel(str(int(self.seed.get("floor", current_floor))))
+        self.floor_edit = _integer_input(int(self.seed.get("floor", current_floor)), minimum=0, maximum=999)
+        self.floor_edit.setAccessibleName('Department floor')
+        owner=parent
+        while owner and not hasattr(owner,'store'):owner=owner.parentWidget()
+        if owner:
+            count=int(owner.store.data.get('building',{}).get('floor_count',1000))
+            self.floor_edit.setMaximum(max(self.floor_edit.value(),count-1))
+        self.floor_label = self.floor_edit
         self.enabled_check = QCheckBox("Enabled")
         self.enabled_check.setChecked(bool(self.seed.get("enabled", True)))
 
@@ -10293,12 +10409,23 @@ class DepartmentEditorDialog(QDialog):
         waste_help.setWordWrap(True)
         form.addRow("", waste_help)
 
+        details_form = form
         for (
             category_key,
             category_label,
             default_suffix,
         ) in self.task_generation_categories:
-            row = QHBoxLayout()
+            category_page = QWidget()
+            category_layout = QVBoxLayout(category_page)
+            form = QFormLayout()
+            form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+            form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            category_layout.addLayout(form)
+            category_layout.addStretch(1)
+            self.location_category_list.addItem(category_label)
+            self.location_category_pages.addWidget(category_page)
+            row = QVBoxLayout()
+            actions = QHBoxLayout()
 
             summary = QLabel("None selected")
             summary.setWordWrap(True)
@@ -10315,7 +10442,8 @@ class DepartmentEditorDialog(QDialog):
                     )
                 )
             )
-            suffix_edit.setFixedWidth(90)
+            suffix_edit.setMinimumWidth(70)
+            suffix_edit.setMaximumWidth(160)
 
             place_btn = QPushButton("Place...")
             place_btn.setToolTip("Place location on the DXF/editor scene")
@@ -10324,10 +10452,11 @@ class DepartmentEditorDialog(QDialog):
             )
 
             row.addWidget(summary, 1)
-            row.addWidget(select_btn)
-            row.addWidget(QLabel("Suffix"))
-            row.addWidget(suffix_edit)
-            row.addWidget(place_btn)
+            actions.addWidget(select_btn)
+            actions.addWidget(QLabel("Suffix"))
+            actions.addWidget(suffix_edit, 1)
+            actions.addWidget(place_btn)
+            row.addLayout(actions)
 
             self.category_location_summaries[category_key] = summary
             self.category_suffix_edits[category_key] = suffix_edit
@@ -10353,6 +10482,10 @@ class DepartmentEditorDialog(QDialog):
             self.category_dropoff_zone_summaries[category_key] = zone_summary
             form.addRow(f"{category_label} drop-off zone", zone_row)
 
+        self.location_category_list.setCurrentRow(0)
+        form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.WrapLongRows)
+        locations_layout.addLayout(form)
         create_zone_row = QHBoxLayout()
         create_zone_help = QLabel(
             "Select or create one staged-delivery location and assign it to several categories."
@@ -10368,8 +10501,17 @@ class DepartmentEditorDialog(QDialog):
         create_zone_row.addWidget(create_zone_btn)
         form.addRow("Shared drop-off zone", create_zone_row)
 
-        form.addRow("X", self.x_edit)
-        form.addRow("Y", self.y_edit)
+        placement_help = QLabel(
+            "Placed pickup/drop-off locations and new zones stay provisional. "
+            "Choose Save here, then Save in the Departments list to add both to the project. "
+            "Undo removes that saved department edit and its new locations together."
+        )
+        placement_help.setWordWrap(True)
+        placement_help.setAccessibleName('Department location save instructions')
+        layout.addWidget(placement_help)
+
+        details_form.addRow("X", self.x_edit)
+        details_form.addRow("Y", self.y_edit)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -10509,6 +10651,7 @@ class DepartmentEditorDialog(QDialog):
             "category_keys": category_keys,
         }
         self.hide()
+        parent.floor_spin.setValue(self.floor_edit.value())
         parent.start_department_location_placement(
             location_name=zone_name,
             category_key="dropoff_zone",
@@ -10586,6 +10729,7 @@ class DepartmentEditorDialog(QDialog):
 
         self.hide()
 
+        parent.floor_spin.setValue(self.floor_edit.value())
         parent.start_department_location_placement(
             location_name=location_name,
             category_key=category_key,
@@ -10802,7 +10946,7 @@ class DepartmentEditorDialog(QDialog):
                 raise ValueError("Select at least one active day")
 
             dept_id = self.id_edit.text().strip()
-            floor = int(self.floor_label.text())
+            floor = int(self.floor_edit.value())
             x = float(self.x_edit.text())
             y = float(self.y_edit.text())
 
@@ -10830,7 +10974,7 @@ class DepartmentEditorDialog(QDialog):
                 **deepcopy(self.seed),
                 "id": dept_id,
                 "name": name,
-                "floor": int(self.floor_label.text()),
+                "floor": floor,
                 "enabled": self.enabled_check.isChecked(),
                 "bed_count": float(self.bed_count_edit.text()),
                 "patient_turnover": float(self.turnover_edit.text()),
@@ -13208,6 +13352,8 @@ class ZoomableInventoryView(QGraphicsView):
         self._inventory_mouse_press = None
         self._inventory_mouse_move = None
         self._inventory_mouse_release = None
+        self.pan_mode = False
+        self.show_grid = True
         self.setDragMode(QGraphicsView.NoDrag)
 
     def set_inventory_mouse_handlers(self, press, move, release):
@@ -13221,7 +13367,7 @@ class ZoomableInventoryView(QGraphicsView):
         event.accept()
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.MiddleButton:
+        if event.button() == Qt.MiddleButton or (self.pan_mode and event.button() == Qt.LeftButton):
             self._middle_panning = True
             self._last_middle_pos = event.position().toPoint()
             self.viewport().setCursor(Qt.ClosedHandCursor)
@@ -13257,7 +13403,7 @@ class ZoomableInventoryView(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MiddleButton:
+        if event.button() == Qt.MiddleButton or (self.pan_mode and event.button() == Qt.LeftButton):
             self._middle_panning = False
             self._last_middle_pos = None
             self.viewport().unsetCursor()
@@ -13269,6 +13415,24 @@ class ZoomableInventoryView(QGraphicsView):
             return
 
         super().mouseReleaseEvent(event)
+
+    def drawBackground(self, painter, rect):
+        super().drawBackground(painter, rect)
+        if not self.show_grid:
+            return
+        # Metres remain legible as the user zooms between a bay and a room.
+        spacing = 10 ** math.ceil(math.log10(28 / max(self.transform().m11(), .001)))
+        colour = self.palette().text().color()
+        colour.setAlpha(28)
+        painter.setPen(QPen(colour, 0))
+        x = math.floor(rect.left()/spacing)*spacing
+        while x <= rect.right():
+            painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
+            x += spacing
+        y = math.floor(rect.top()/spacing)*spacing
+        while y <= rect.bottom():
+            painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
+            y += spacing
 
 
 
@@ -13393,10 +13557,12 @@ class ArrayInventorySpacesDialog(QDialog):
 
 
 class InventorySpacesDialog(QDialog):
-    def __init__(self, parent, location_name):
+    def __init__(self, parent, location_name, *, tutorial_charging_bays=False):
         super().__init__(parent)
         self.setWindowTitle(f"Inventory Spaces - {location_name}")
-        self.resize(900, 650)
+        self.setProperty('amrCadDialog', True)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowMaximizeButtonHint | Qt.WindowMinimizeButtonHint)
+        self.setWindowState(Qt.WindowMaximized)
 
         self.location_name = location_name
         self.store = parent.store
@@ -13405,6 +13571,17 @@ class InventorySpacesDialog(QDialog):
         self._dxf_background_rect = None
         self.location = self.store.get_location(location_name)
         self.spaces = self.store.get_location_inventory_spaces(location_name)
+        self.tutorial_charging_bays = tutorial_charging_bays
+        self._draft_undo = []
+        self._draft_redo = []
+        self._draft_edit_depth = 0
+        self._drag_undo_before = None
+        for method in ('add_payload_slot','add_amr_space','create_space_array','paste_copied_space',
+                       'delete_selected_space','auto_arrange_payload_capacity','auto_align_payloads',
+                       'apply_rotation_from_field','nudge_selected_rotation','apply_height_to_selected_spaces',
+                       'apply_bulk_space_flags','apply_selected_spaces_as_amr','save_current_space',
+                       'create_tutorial_charging_bays','_apply_charger_state_to_selected_spaces','_apply_size_from_fields'):
+            setattr(self, method, partial(self.run_draft_command, getattr(self, method)))
 
         self.current_points = []
         self.selected_space_index = None
@@ -13437,11 +13614,30 @@ class InventorySpacesDialog(QDialog):
         self.drag_spaces_start_slots = {}
 
         root_layout = QVBoxLayout(self)
-        layout = QHBoxLayout()
-        root_layout.addLayout(layout, 1)
+        self.placement_guidance = QLabel()
+        self.placement_guidance.setWordWrap(True)
+        self.placement_guidance.setAccessibleName('Inventory space size and placement guidance')
+        root_layout.addWidget(self.placement_guidance)
+        self.tutorial_bays_button = QPushButton('Create four tutorial charging bays')
+        self.tutorial_bays_button.setToolTip('Place four 1.4 × 1.1 m bays with 2 m clear height at the shown centres. Chargers are enabled. Save and close applies them to the project.')
+        self.tutorial_bays_button.clicked.connect(self.create_tutorial_charging_bays)
+        self.tutorial_bays_button.setVisible(tutorial_charging_bays)
+        root_layout.addWidget(self.tutorial_bays_button)
+        self.commands = QToolBar('Inventory drawing commands')
+        self.commands.setMovable(False)
+        self.commands.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.commands.setAccessibleName('Inventory CAD tools')
+        root_layout.addWidget(self.commands)
+        self.command_actions = {}
+        layout = QSplitter(Qt.Horizontal)
+        self.cad_splitter = layout
+        root_layout.addWidget(layout, 1)
 
-        left = QVBoxLayout()
-        layout.addLayout(left, 0)
+        self.spaces_panel = QWidget()
+        self.spaces_panel.setMinimumWidth(160)
+        self.spaces_panel.setMaximumWidth(240)
+        left = QVBoxLayout(self.spaces_panel)
+        layout.addWidget(self.spaces_panel)
 
         self.space_list = QListWidget()
         self.space_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
@@ -13470,25 +13666,27 @@ class InventorySpacesDialog(QDialog):
 
         left.addWidget(add_btn)
         left.addWidget(save_btn)
-        left.addWidget(copy_btn)
-        left.addWidget(paste_btn)
-        left.addWidget(delete_btn)
+        copy_btn.hide(); paste_btn.hide(); delete_btn.hide()
         left.addStretch(1)
-        left.addWidget(finish_btn)
 
-        right = QVBoxLayout()
-        layout.addLayout(right, 1)
+        properties_content = QWidget()
+        right = QVBoxLayout(properties_content)
+        right.addWidget(QLabel('Space properties'))
+        self.space_properties = scroll_page(properties_content)
+        self.space_properties.setMinimumWidth(300)
+        self.space_properties.setMaximumWidth(370)
 
         self.name_edit = QLineEdit()
         right.addWidget(QLabel("Space name"))
         right.addWidget(self.name_edit)
+        self.name_edit.editingFinished.connect(lambda: self.run_draft_command(self._commit_current_space,show_errors=False))
 
         self.rectangle_snap_check = QCheckBox("Rectangular snap")
         self.rectangle_snap_check.setChecked(True)
         self.rectangle_snap_check.setVisible(False)
         right.addWidget(self.rectangle_snap_check)
 
-        size_row = QHBoxLayout()
+        size_row = QFormLayout()
 
         self.length_edit = QLineEdit("0.000")
         self.width_edit = QLineEdit("0.000")
@@ -13502,6 +13700,7 @@ class InventorySpacesDialog(QDialog):
         height_validator = QDoubleValidator(0.001, 999999.0, 3, self.height_edit)
         height_validator.setNotation(QDoubleValidator.StandardNotation)
         self.height_edit.setValidator(height_validator)
+        self.height_edit.editingFinished.connect(lambda: self.run_draft_command(self._commit_current_space,show_errors=False))
         self.height_edit.setToolTip(
             "Maximum clear height for this space in metres. This can be set "
             "independently for fixed, flexible and AMR spaces."
@@ -13513,19 +13712,16 @@ class InventorySpacesDialog(QDialog):
         self.length_edit.editingFinished.connect(self._apply_size_from_fields)
         self.width_edit.editingFinished.connect(self._apply_size_from_fields)
 
-        size_row.addWidget(QLabel("Length"))
-        size_row.addWidget(self.length_edit)
-        size_row.addWidget(QLabel("Width"))
-        size_row.addWidget(self.width_edit)
-        size_row.addWidget(QLabel("Max height"))
-        size_row.addWidget(self.height_edit)
-        size_row.addWidget(apply_height_btn)
-        size_row.addWidget(self.lock_size_check)
+        for label, field in (('Length (m)', self.length_edit), ('Width (m)', self.width_edit),
+                             ('Max height (m)', self.height_edit)):
+            size_row.addRow(label, field)
+        size_row.addRow(apply_height_btn)
+        size_row.addRow(self.lock_size_check)
 
         right.addLayout(size_row)
 
         self.flexible_check = QCheckBox(
-            "Flexible payload space (assign any payload that fits its maximum dimensions)"
+            "Flexible payload space"
         )
         self.flexible_check.setToolTip(
             "Ignore the template payload type and select this space by maximum "
@@ -13546,9 +13742,18 @@ class InventorySpacesDialog(QDialog):
         rotate_right_btn.clicked.connect(lambda: self.nudge_selected_rotation(5.0))
         rotate_row.addWidget(QLabel("Rotation °"))
         rotate_row.addWidget(self.rotation_edit)
-        rotate_row.addWidget(rotate_left_btn)
-        rotate_row.addWidget(rotate_right_btn)
+        rotate_left_btn.hide(); rotate_right_btn.hide()
         right.addLayout(rotate_row)
+
+        position_form = QFormLayout()
+        self.centre_x_edit = QDoubleSpinBox()
+        self.centre_y_edit = QDoubleSpinBox()
+        for label, field in (('Centre X (m)',self.centre_x_edit),('Centre Y (m)',self.centre_y_edit)):
+            field.setDecimals(3);field.setRange(-999999,999999)
+            field.setAccessibleName(label)
+            field.editingFinished.connect(lambda: self.run_draft_command(self.apply_space_centre))
+            position_form.addRow(label,field)
+        right.addLayout(position_form)
 
         payload_tools = QHBoxLayout()
         self.payload_combo = QComboBox()
@@ -13559,14 +13764,14 @@ class InventorySpacesDialog(QDialog):
         auto_align_btn.clicked.connect(self.auto_align_payloads)
         payload_tools.addWidget(QLabel("Payload"))
         payload_tools.addWidget(self.payload_combo, 1)
-        payload_tools.addWidget(add_payload_btn)
-        payload_tools.addWidget(auto_align_btn)
+        add_payload_btn.hide(); auto_align_btn.hide()
         right.addLayout(payload_tools)
 
         amr_tools = QHBoxLayout()
         self.amr_space_combo = QComboBox()
         self.amr_space_combo.addItems([""] + self._amr_type_names())
         self.amr_space_combo.currentTextChanged.connect(lambda _text: self._update_bulk_controls())
+        self.amr_space_combo.currentTextChanged.connect(self.update_placement_guidance)
         add_amr_space_btn = QPushButton("Add AMR space")
         add_amr_space_btn.setToolTip("Create an inventory space sized to the selected AMR so this location can store / park AMRs.")
         add_amr_space_btn.clicked.connect(self.add_amr_space)
@@ -13575,12 +13780,11 @@ class InventorySpacesDialog(QDialog):
         array_spaces_btn.clicked.connect(self.create_space_array)
         amr_tools.addWidget(QLabel("AMR"))
         amr_tools.addWidget(self.amr_space_combo, 1)
-        amr_tools.addWidget(add_amr_space_btn)
-        amr_tools.addWidget(array_spaces_btn)
+        add_amr_space_btn.hide(); array_spaces_btn.hide()
         right.addLayout(amr_tools)
 
-        capacity_tools = QHBoxLayout()
-        self.charger_check = QCheckBox("Selected AMR space(s) contain chargers")
+        capacity_tools = QGridLayout()
+        self.charger_check = QCheckBox("Chargers enabled")
         self.charger_check.setToolTip(
             "Only AMR spaces with this enabled can recharge an AMR. Other AMR spaces remain parking/stowage bays."
         )
@@ -13600,13 +13804,13 @@ class InventorySpacesDialog(QDialog):
             "Create the requested number of payload spaces while reserving AMR approach and movement clearance."
         )
         auto_arrange_btn.clicked.connect(self.auto_arrange_payload_capacity)
-        capacity_tools.addWidget(self.charger_check)
-        capacity_tools.addWidget(self.bulk_charger_on_btn)
-        capacity_tools.addWidget(self.bulk_charger_off_btn)
-        capacity_tools.addWidget(self.bulk_amr_btn)
-        capacity_tools.addStretch(1)
-        capacity_tools.addWidget(auto_arrange_btn)
+        capacity_tools.addWidget(self.charger_check, 0, 0)
+        capacity_tools.addWidget(self.bulk_charger_on_btn, 1, 0)
+        capacity_tools.addWidget(self.bulk_charger_off_btn, 2, 0)
+        capacity_tools.addWidget(self.bulk_amr_btn, 3, 0)
+        auto_arrange_btn.hide()
         right.addLayout(capacity_tools)
+        right.addStretch(1)
 
         self.scene = QGraphicsScene(self)
         self.view = ZoomableInventoryView(self.scene)
@@ -13619,16 +13823,201 @@ class InventorySpacesDialog(QDialog):
             self._mouse_move,
             self._mouse_release,
         )
-        right.addWidget(self.view, 1)
+        canvas_panel = QWidget()
+        canvas_layout = QVBoxLayout(canvas_panel)
+        canvas_layout.setContentsMargins(0,0,0,0)
+        canvas_layout.addWidget(self.view, 1)
+        layout.addWidget(canvas_panel)
+        layout.addWidget(self.space_properties)
+        layout.setStretchFactor(1, 1)
+        layout.setSizes([190,900,330])
+        self.space_properties.hide()
 
         self.status_label = QLabel(
-            "Inventory spaces are fixed footprints. Use Add payload or Add AMR space, then drag to position it or use the rotate handle / angle field."
+            "Drag to move · Use the handle to rotate · Properties edits coordinates, dimensions and chargers."
         )
-        right.addWidget(self.status_label)
+        self.status_label.setWordWrap(True)
+        self.view.setMinimumHeight(120)
+        canvas_layout.addWidget(self.status_label)
+        self.coordinates = QLabel('Wheel: zoom · Middle drag: pan · Shift/Ctrl: multi-select')
+        self.coordinates.setWordWrap(True)
+        canvas_layout.addWidget(self.coordinates)
+        for button, symbol, shortcut in ((add_payload_btn,'location',''),(add_amr_space_btn,'node',''),
+                (array_spaces_btn,'layout',''),(auto_align_btn,'layout',''),(auto_arrange_btn,'layout',''),
+                (copy_btn,'configuration','Ctrl+C'),(paste_btn,'configuration','Ctrl+V'),
+                (delete_btn,'checks','Delete'),(rotate_left_btn,'undo',''),(rotate_right_btn,'redo','')):
+            button.setParent(self);button.hide()
+            self.add_cad_command(button.text(), button.click, button.toolTip() or button.text(), symbol, shortcut)
+        self.commands.addSeparator()
+        self.add_cad_command('Fit', self.fit_tutorial_bays, 'Fit all spaces and the room boundary.', 'fit', 'F')
+        action = self.add_cad_command('Properties', lambda: self.space_properties.setVisible(not self.space_properties.isVisible()),
+                                     'Show or hide space properties, dimensions and payload / AMR choices.', 'properties')
+        action.setCheckable(True)
+        self.properties_action = action
+        # Frequent drawing controls stay visible; every editing command also
+        # has a stable menu entry when the toolbar would overflow.
+        for title in ('Auto align', 'Auto arrange payload capacity...', 'Copy selected',
+                      'Paste copy', 'Delete selected', '-5°', '+5°'):
+            self.commands.removeAction(self.command_actions[title])
+        self.more_tools = QToolButton()
+        self.more_tools.setText('Edit tools')
+        self.more_tools.setPopupMode(QToolButton.InstantPopup)
+        menu = QMenu(self.more_tools)
+        for title in ('Copy selected','Paste copy','Delete selected','-5°','+5°',
+                      'Auto align','Auto arrange payload capacity...'):
+            menu.addAction(self.command_actions[title])
+        self.more_tools.setMenu(menu)
+        self.commands.addWidget(self.more_tools)
+        modes = QActionGroup(self)
+        modes.setExclusive(True)
+        for title, pan in (('Select / move', False), ('Pan', True)):
+            action = self.add_cad_command(title, lambda checked=False, value=pan: setattr(self.view,'pan_mode',value),
+                                         'Drag to pan.' if pan else 'Drag spaces to move; Shift/Ctrl selects a group.', 'select')
+            action.setCheckable(True); action.setChecked(not pan); modes.addAction(action)
+        action = self.add_cad_command('Grid', lambda checked: self.toggle_inventory_grid(checked),
+                                      'Show an adaptive grid in metres.', 'layout')
+        action.setCheckable(True); action.setChecked(True)
+        menu.addSeparator()
+        for title in ('Select / move', 'Pan', 'Grid'):
+            self.commands.removeAction(self.command_actions[title])
+            menu.addAction(self.command_actions[title])
+        self.undo_space_action = self.add_cad_command('Undo', self.undo_spaces, 'Undo the last edit in this draft.', 'undo', 'Ctrl+Z')
+        self.redo_space_action = self.add_cad_command('Redo', self.redo_spaces, 'Redo the last edit in this draft.', 'redo', 'Ctrl+Y')
+        for action in (self.undo_space_action, self.redo_space_action):
+            self.commands.removeAction(action);menu.addAction(action)
+        self.update_draft_history_actions()
+        buttons = QDialogButtonBox(QDialogButtonBox.Cancel)
+        buttons.addButton(finish_btn, QDialogButtonBox.AcceptRole)
+        buttons.rejected.connect(self.reject)
+        root_layout.addWidget(buttons)
 
         self.refresh_list()
         self.refresh_scene()
+        self.update_placement_guidance()
         _polish_dialog(self)
+
+    def add_cad_command(self, title, callback, tooltip, symbol, shortcut=''):
+        from cad_visual_style import icon
+        action = QAction(icon(symbol, self.palette().text().color().name()), title, self)
+        action.setToolTip(tooltip)
+        action.triggered.connect(callback)
+        if shortcut:
+            action.setShortcut(shortcut)
+            action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+        self.commands.addAction(action)
+        self.command_actions[title] = action
+        self.addAction(action)
+        return action
+
+    def toggle_inventory_grid(self, checked):
+        self.view.show_grid = checked
+        self.view.viewport().update()
+
+    def run_draft_command(self, callback, *args, **kwargs):
+        outer = self._draft_edit_depth == 0
+        before = deepcopy(self.spaces) if outer else None
+        self._draft_edit_depth += 1
+        try:
+            return callback(*args, **kwargs)
+        finally:
+            self._draft_edit_depth -= 1
+            if outer:self.record_draft_edit(before)
+
+    def record_draft_edit(self, before):
+        if before is not None and before != self.spaces:
+            self._draft_undo.append(before)
+            del self._draft_undo[:-100]
+            self._draft_redo.clear()
+        self.update_draft_history_actions()
+
+    def update_draft_history_actions(self):
+        if hasattr(self, 'undo_space_action'):
+            self.undo_space_action.setEnabled(bool(self._draft_undo))
+            self.redo_space_action.setEnabled(bool(self._draft_redo))
+
+    def restore_space_draft(self, spaces):
+        self.spaces = deepcopy(spaces)
+        self.selected_space_index = None
+        self.selected_space_indices = set()
+        self.current_points = []
+        self.refresh_list()
+        if self.spaces:self.space_list.setCurrentRow(0)
+        else:self.name_edit.clear()
+        self.refresh_scene();self.update_draft_history_actions()
+
+    def undo_spaces(self):
+        if self._draft_undo:
+            self._draft_redo.append(deepcopy(self.spaces))
+            self.restore_space_draft(self._draft_undo.pop())
+
+    def redo_spaces(self):
+        if self._draft_redo:
+            self._draft_undo.append(deepcopy(self.spaces))
+            self.restore_space_draft(self._draft_redo.pop())
+
+    def apply_space_centre(self):
+        if self.selected_space_index is None:return
+        from inventory_spaces_manager import space_geometry
+        self._commit_current_space(show_errors=False)
+        index=self.selected_space_index
+        cx,cy,*_=space_geometry(self.spaces[index],self.location)
+        dx=self.centre_x_edit.value()-float(self.location.get('x',0))-cx
+        dy=self.centre_y_edit.value()-float(self.location.get('y',0))-cy
+        slot=self._space_payload_slot(index)
+        starts={index:dict(slot) if slot else {'_footprint':deepcopy(self.spaces[index])}}
+        self._move_space_group(starts,dx,dy)
+        self.current_points=self.store.inventory_space_points_absolute(self.location_name,self.spaces[index])
+        self.refresh_scene()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self, self.fit_tutorial_bays)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self,'commands'):
+            self.commands.setToolButtonStyle(Qt.ToolButtonIconOnly if self.width()<1100 else Qt.ToolButtonTextBesideIcon)
+
+    def fit_tutorial_bays(self):
+        self.view.fitInView(self.scene.sceneRect(), Qt.KeepAspectRatio)
+
+    def update_placement_guidance(self, *_):
+        lx,ly=float(self.location.get('x',0)),float(self.location.get('y',0))
+        floor=self.location.get('floor',0)
+        if self.tutorial_charging_bays:
+            from amr_tutorial_placement import CHARGING_BAYS
+            centres='; '.join(f"({lx+bay['dx']:g}, {ly+bay['dy']:g})" for bay in CHARGING_BAYS)
+            has_bays=any(self._space_is_amr_space(s) for s in self.spaces)
+            preview_text=('The drawing shows your placed bays.' if has_bays else 'Dashed rectangles preview the four bay positions; the creation button enables chargers.')
+            self.placement_guidance.setText(
+                f'{self.location_name} · floor {floor} · Bay length 1.4 m × width 1.1 m · clear height 2 m.\n'
+                f'Teaching AMR 1.0 × 0.7 m · Bay centres (X, Y metres): {centres}.\n'+preview_text)
+            self.placement_guidance.setToolTip('Robot types are configured in chapter 5. The four bays can be created now; each has clearance for the Teaching AMR. Positions are measured on this floor, relative to the location origin.')
+            self.tutorial_bays_button.setEnabled(not has_bays)
+        else:
+            name=self.amr_space_combo.currentText().strip()
+            length,width=self._amr_dimensions(name)
+            sizing=(f'{name}: {length:g} × {width:g} m. Add AMR space uses this footprint.' if name else
+                    'Open Properties and select an AMR type to see its dimensions; Add AMR space sizes the bay from that robot. Define robot types in Configuration > Robots if the list is empty.')
+            self.placement_guidance.setText(f'{self.location_name} · floor {floor} · location origin X {lx:g}, Y {ly:g} m. '
+                +sizing+' New spaces start inside the room boundary, or beside the location origin when no boundary is defined. The drawing uses floor coordinates in metres.')
+
+    def create_tutorial_charging_bays(self):
+        if not self.tutorial_charging_bays or any(self._space_is_amr_space(s) for s in self.spaces):return
+        from amr_tutorial_placement import CHARGING_BAYS
+        for template in CHARGING_BAYS:
+            bay=deepcopy(template)
+            if any(space.get('name') == bay['name'] for space in self.spaces):
+                bay['name']=self._next_payload_space_name(bay['name'])
+            bay['points']=[dict(dx=bay['dx']+x,dy=bay['dy']+y) for x,y in
+                ((-.7,-.55),(.7,-.55),(.7,.55),(-.7,.55))]
+            self.spaces.append(bay)
+        self.selected_space_index=len(self.spaces)-4
+        selection=set(range(self.selected_space_index,len(self.spaces)))
+        self.refresh_list();self.select_space(self.selected_space_index)
+        self._set_space_selection(selection,current_index=self.selected_space_index)
+        self.update_placement_guidance();self.refresh_scene()
+        self.status_label.setText('Four bays placed · Chargers enabled · Save and close applies changes; Cancel discards them.')
 
     def _sync_space_list_selection(self):
         rows = set()
@@ -13667,7 +14056,7 @@ class InventorySpacesDialog(QDialog):
             self.selected_space_index is not None
             and 0 <= self.selected_space_index < self.space_list.count()
         ):
-            self.space_list.setCurrentRow(self.selected_space_index)
+            self.space_list.setCurrentRow(self.selected_space_index, QItemSelectionModel.NoUpdate)
         self.space_list.blockSignals(False)
         self._update_bulk_controls()
 
@@ -13989,6 +14378,17 @@ class InventorySpacesDialog(QDialog):
         # Boundary checking is now advisory/visual only; the user can recover an
         # out-of-bound space by dragging it back inside.
         for index, slot_start in starts.items():
+            if '_footprint' in slot_start:
+                original = slot_start['_footprint']
+                space = self.spaces[index]
+                points = self.store.inventory_space_points_absolute(self.location_name, original)
+                lx, ly = float(self.location.get('x',0)), float(self.location.get('y',0))
+                space['points'] = [dict(dx=round(p['x']+dx-lx,6),dy=round(p['y']+dy-ly,6)) for p in points]
+                space['dx'] = float(original.get('dx',0)) + dx
+                space['dy'] = float(original.get('dy',0)) + dy
+                if index == self.selected_space_index:
+                    self.current_points = self.store.inventory_space_points_absolute(self.location_name, space)
+                continue
             slot = self._space_payload_slot(index)
             if not slot:
                 continue
@@ -14856,23 +15256,15 @@ class InventorySpacesDialog(QDialog):
             self._refresh_size_fields()
             return
 
-        if new_length <= 0 or new_width <= 0:
+        if not all(math.isfinite(value) and value>0 for value in (new_length,new_width)):
             self._refresh_size_fields()
             return
 
-        xs = [float(p["x"]) for p in self.current_points]
-        ys = [float(p["y"]) for p in self.current_points]
-
-        min_x = min(xs)
-        min_y = min(ys)
-
-        self.current_points = [
-            {"x": round(min_x, 3), "y": round(min_y, 3)},
-            {"x": round(min_x + new_length, 3), "y": round(min_y, 3)},
-            {"x": round(min_x + new_length, 3), "y": round(min_y + new_width, 3)},
-            {"x": round(min_x, 3), "y": round(min_y + new_width, 3)},
-        ]
-
+        from inventory_spaces_manager import resize_space
+        footprint={'points':deepcopy(self.current_points)}
+        resize_space(footprint,new_length,new_width,location=self.location)
+        self.current_points=self.store.inventory_space_points_absolute(self.location_name,footprint)
+        self._commit_current_space(show_errors=False)
         self.refresh_scene()
 
     def _show_space_list_menu(self, pos):
@@ -14902,6 +15294,11 @@ class InventorySpacesDialog(QDialog):
         if not self.current_points:
             return 0.0, 0.0
 
+        if len(self.current_points)==4:
+            a,b,c=self.current_points[:3]
+            return (round(math.hypot(b['x']-a['x'],b['y']-a['y']),3),
+                    round(math.hypot(c['x']-b['x'],c['y']-b['y']),3))
+
         xs = [float(p["x"]) for p in self.current_points]
         ys = [float(p["y"]) for p in self.current_points]
 
@@ -14914,6 +15311,10 @@ class InventorySpacesDialog(QDialog):
         length, width = self._current_size()
         self.length_edit.setText(f"{length:.3f}")
         self.width_edit.setText(f"{width:.3f}")
+
+        if hasattr(self,'centre_x_edit') and self.current_points:
+            self.centre_x_edit.setValue(sum(p['x'] for p in self.current_points)/len(self.current_points))
+            self.centre_y_edit.setValue(sum(p['y'] for p in self.current_points)/len(self.current_points))
 
     def _point_inside_current_space(self, x, y):
         if len(self.current_points) < 3:
@@ -14952,6 +15353,7 @@ class InventorySpacesDialog(QDialog):
             self.space_list.addItem(label)
         self.space_list.blockSignals(False)
         self._update_bulk_controls()
+        self.update_placement_guidance()
 
     def select_space(self, row):
         previous_index = self.selected_space_index
@@ -15067,7 +15469,11 @@ class InventorySpacesDialog(QDialog):
 
     def finish(self):
         self._commit_current_space(show_errors=False)
-        self.store.set_location_inventory_spaces(self.location_name, self.spaces)
+        try:
+            self.store.set_location_inventory_spaces(self.location_name, self.spaces)
+        except ValueError as exc:
+            QMessageBox.warning(self,'Inventory spaces',str(exc))
+            return
         self.accept()
 
     def world_to_scene(self, x, y):
@@ -15158,7 +15564,9 @@ class InventorySpacesDialog(QDialog):
             return
         slot = self._selected_space_slot()
         if not slot:
-            self.rotation_edit.setText("0.0")
+            from inventory_spaces_manager import space_geometry
+            angle = space_geometry(self.spaces[self.selected_space_index],self.location)[4] if self.selected_space_index is not None else 0
+            self.rotation_edit.setText(f'{angle:.1f}')
             return
         self.rotation_edit.setText(
             f"{self._normalise_degrees(slot.get('rotation_deg', 0.0)):.1f}"
@@ -15166,13 +15574,24 @@ class InventorySpacesDialog(QDialog):
 
     def apply_rotation_from_field(self):
         slot = self._selected_space_slot()
-        if not slot or self.selected_space_index is None:
+        if self.selected_space_index is None:
             self._refresh_rotation_field()
             return
         try:
             angle = float(self.rotation_edit.text())
         except ValueError:
             self._refresh_rotation_field()
+            return
+        if not math.isfinite(angle):
+            self._refresh_rotation_field();return
+        if not slot:
+            from inventory_spaces_manager import space_geometry, resize_space
+            self._commit_current_space(show_errors=False)
+            space = self.spaces[self.selected_space_index]
+            _,_,length,width,_ = space_geometry(space,self.location)
+            resize_space(space,length,width,angle,self.location)
+            self.current_points = self.store.inventory_space_points_absolute(self.location_name,space)
+            self.refresh_scene();self._refresh_rotation_field()
             return
         slot["rotation_deg"] = self._normalise_degrees(angle)
         self.selected_payload_index = 0
@@ -15182,7 +15601,12 @@ class InventorySpacesDialog(QDialog):
 
     def nudge_selected_rotation(self, delta):
         slot = self._selected_space_slot()
-        if not slot or self.selected_space_index is None:
+        if self.selected_space_index is None:
+            return
+        if not slot:
+            self._refresh_rotation_field()
+            self.rotation_edit.setText(str(float(self.rotation_edit.text())+delta))
+            self.apply_rotation_from_field()
             return
         slot["rotation_deg"] = self._normalise_degrees(
             float(slot.get("rotation_deg", 0.0) or 0.0) + float(delta)
@@ -15210,13 +15634,20 @@ class InventorySpacesDialog(QDialog):
         if self.selected_space_index is None:
             return None
         slot = self._selected_space_slot()
-        if not slot:
-            return None
-        handle = self._rotation_handle_world(slot)
+        handle = self._rotation_handle_world(slot) if slot else self.generic_rotation_handle()
         if not handle:
             return None
         dist = math.hypot(float(handle["x"]) - float(x), float(handle["y"]) - float(y))
         return self.selected_space_index if dist <= radius else None
+
+    def generic_rotation_handle(self):
+        if self.selected_space_index is None:return None
+        from inventory_spaces_manager import space_geometry
+        cx,cy,length,width,angle=space_geometry(self.spaces[self.selected_space_index],self.location)
+        angle=math.radians(angle)
+        distance=max(length,width)/2+.35
+        return dict(x=cx+float(self.location.get('x',0))+math.cos(angle)*distance,
+                    y=cy+float(self.location.get('y',0))+math.sin(angle)*distance)
 
     def _nearest_current_point(self, x, y, radius=0.5):
         best = None
@@ -15231,6 +15662,7 @@ class InventorySpacesDialog(QDialog):
         return best
 
     def _mouse_press(self, event):
+        if event.button() == Qt.LeftButton:self._drag_undo_before=deepcopy(self.spaces)
         scene_pos = self.view.mapToScene(event.position().toPoint())
         x, y = self.scene_to_world(scene_pos)
 
@@ -15241,17 +15673,18 @@ class InventorySpacesDialog(QDialog):
         rotate_hit = self._nearest_rotation_handle_index_at(x, y)
         if event.button() == Qt.LeftButton and rotate_hit is not None:
             slot = self._space_payload_slot(rotate_hit)
-            if slot:
-                self.rotate_space_index = rotate_hit
-                self.rotate_start_center = self._slot_center_absolute(slot)
-                self.drag_space_indices = set()
-                self.drag_spaces_start_world = None
-                self.drag_spaces_start_slots = {}
-                self.selected_payload_index = 0
-                self.status_label.setText(
-                    "Drag to rotate freely. Release to save the angle."
-                )
-                return
+            self.rotate_space_index = rotate_hit
+            if slot:self.rotate_start_center = self._slot_center_absolute(slot)
+            else:
+                from inventory_spaces_manager import space_geometry
+                cx,cy,*_=space_geometry(self.spaces[rotate_hit],self.location)
+                self.rotate_start_center=(cx+float(self.location.get('x',0)),cy+float(self.location.get('y',0)))
+            self.drag_space_indices = set()
+            self.drag_spaces_start_world = None
+            self.drag_spaces_start_slots = {}
+            self.selected_payload_index = 0 if slot else None
+            self.status_label.setText('Drag to rotate freely. Shift snaps to 90°. Release to save the angle.')
+            return
 
         if event.button() == Qt.RightButton:
             if hit_space is not None:
@@ -15294,12 +15727,15 @@ class InventorySpacesDialog(QDialog):
                 slot = self._space_payload_slot(index)
                 if slot:
                     self.drag_spaces_start_slots[index] = dict(slot)
+                else:
+                    self.drag_spaces_start_slots[index] = {'_footprint':deepcopy(self.spaces[index])}
             self.refresh_scene()
             return
 
     def _mouse_move(self, event):
         scene_pos = self.view.mapToScene(event.position().toPoint())
         x, y = self.scene_to_world(scene_pos)
+        self.coordinates.setText(f'Floor {self.location.get("floor",0)} · X {x:.3f}, Y {y:.3f} m · Wheel: zoom · Middle drag: pan')
 
         # Qt can still deliver a move event after the mouse button has been
         # released, especially if the cursor leaves the rotate handle/viewport.
@@ -15324,6 +15760,17 @@ class InventorySpacesDialog(QDialog):
 
         if self.rotate_space_index is not None and self.rotate_start_center is not None:
             slot = self._space_payload_slot(self.rotate_space_index)
+            if not slot:
+                from inventory_spaces_manager import space_geometry,resize_space
+                cx,cy=self.rotate_start_center
+                angle=math.degrees(math.atan2(y-cy,x-cx))
+                if event.modifiers() & Qt.ShiftModifier:angle=round(angle/90)*90
+                space=self.spaces[self.rotate_space_index]
+                _,_,length,width,_=space_geometry(space,self.location)
+                resize_space(space,length,width,angle,self.location)
+                self.current_points=self.store.inventory_space_points_absolute(self.location_name,space)
+                self.refresh_scene();self._refresh_rotation_field()
+                return
             if slot:
                 cx, cy = self.rotate_start_center
                 angle = math.degrees(
@@ -15394,6 +15841,8 @@ class InventorySpacesDialog(QDialog):
             self.refresh_scene()
 
     def _mouse_release(self, event):
+        before=self._drag_undo_before
+        self._drag_undo_before=None
         if self.rotate_space_index is not None:
             self.rotate_space_index = None
             self.rotate_start_center = None
@@ -15411,6 +15860,9 @@ class InventorySpacesDialog(QDialog):
         self.drag_spaces_start_world = None
         self.drag_spaces_start_slots = {}
         event.accept()
+
+        if self.selected_space_index is not None:self._commit_current_space(show_errors=False)
+        self.record_draft_edit(before)
 
     def _location_box_scene_rect(self):
         location_box = self.store.get_location_bounding_box_points(self.location_name)
@@ -15449,6 +15901,8 @@ class InventorySpacesDialog(QDialog):
 
         pasted = dict(self.copied_space)
         pasted["name"] = f"{self.copied_space.get('name', 'Inventory space')} copy"
+        if any(s.get('name')==pasted['name'] for s in self.spaces):
+            pasted['name']=self._next_payload_space_name(pasted['name'])
         pasted["points"] = [dict(p) for p in self.copied_space.get("points", [])]
         pasted["payload_slots"] = [
             dict(slot) for slot in self.copied_space.get("payload_slots", [])
@@ -15572,6 +16026,27 @@ class InventorySpacesDialog(QDialog):
         self.scene.clear()
         self._draw_dxf_background()
 
+        if self.tutorial_charging_bays and not any(self._space_is_amr_space(s) for s in self.spaces):
+            from amr_tutorial_placement import CHARGING_BAYS
+            lx, ly = float(self.location.get('x', 0)), float(self.location.get('y', 0))
+            for bay in CHARGING_BAYS:
+                cx, cy = lx + bay['dx'], ly + bay['dy']
+                half_length, half_width = bay['length_m']/2, bay['width_m']/2
+                pts = [self.world_to_scene(cx+x, cy+y) for x,y in
+                       ((-half_length,-half_width),(half_length,-half_width),
+                        (half_length,half_width),(-half_length,half_width))]
+                preview = QGraphicsPolygonItem(QPolygonF(pts))
+                preview.setPen(QPen(QColor('#55b7e8'), 0.0, Qt.DashLine))
+                preview.setBrush(QBrush(QColor(85,183,232,18)))
+                preview.setData(0, 'tutorial-bay-preview')
+                self.scene.addItem(preview)
+                label = QGraphicsSimpleTextItem(f"{bay['name']}\n({cx:g}, {cy:g}) m\n1.4 × 1.1 m")
+                font=label.font();font.setPointSizeF(min(font.pointSizeF(),12));label.setFont(font)
+                label.setBrush(QBrush(self.view.palette().text().color()))
+                label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
+                label.setPos(self.world_to_scene(cx-half_length, cy+half_width))
+                self.scene.addItem(label)
+
         location_box = self.store.get_location_bounding_box_points(self.location_name)
 
         if location_box:
@@ -15596,7 +16071,7 @@ class InventorySpacesDialog(QDialog):
             poly = QGraphicsPolygonItem(QPolygonF(pts))
             is_multi_selected = idx in self.selected_space_indices
             poly.setPen(
-                QPen(QColor("#ffffff" if is_multi_selected else "#6aa9ff"), 0.0)
+                QPen(self.view.palette().highlight().color() if is_multi_selected else QColor('#6aa9ff'), 0.0)
             )
             poly.setBrush(
                 QBrush(QColor(106, 169, 255, 38 if is_multi_selected else 18))
@@ -15605,7 +16080,7 @@ class InventorySpacesDialog(QDialog):
             self.scene.addItem(poly)
 
             label = QGraphicsSimpleTextItem(space.get("name", "Inventory"))
-            label.setBrush(QBrush(QColor("#bcd7ff")))
+            label.setBrush(QBrush(self.view.palette().text().color()))
             label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
             label.setPos(pts[0])
             self.scene.addItem(label)
@@ -15618,6 +16093,19 @@ class InventorySpacesDialog(QDialog):
                 poly.setPen(QPen(QColor("#ffdd57"), 0.0))
                 poly.setBrush(QBrush(QColor(255, 221, 87, 30)))
                 self.scene.addItem(poly)
+                if self.selected_space_index is not None:
+                    label=QGraphicsSimpleTextItem(self.spaces[self.selected_space_index].get('name','Space'))
+                    label.setBrush(QBrush(self.view.palette().text().color()))
+                    label.setFlag(QGraphicsItem.ItemIgnoresTransformations,True)
+                    label.setPos(pts[0]);self.scene.addItem(label)
+
+            if self.selected_space_index is not None and not self._selected_space_slot():
+                handle=self.generic_rotation_handle()
+                cx=sum(p['x'] for p in self.current_points)/len(self.current_points)
+                cy=sum(p['y'] for p in self.current_points)/len(self.current_points)
+                self.scene.addLine(cx,-cy,handle['x'],-handle['y'],QPen(self.view.palette().text().color(),0))
+                self.scene.addEllipse(handle['x']-.08,-handle['y']-.08,.16,.16,
+                    QPen(self.view.palette().text().color(),0),QBrush(QColor('#ffdd57')))
 
             # No freehand handles: inventory spaces are fixed payload footprints.
 
@@ -15635,7 +16123,7 @@ class InventorySpacesDialog(QDialog):
             self.scene.addItem(item)
             cx, cy = self._slot_center_absolute(slot)
             label = QGraphicsSimpleTextItem(item_name)
-            label.setBrush(QBrush(QColor("#e3f2ff")))
+            label.setBrush(QBrush(self.view.palette().text().color()))
             label.setFlag(QGraphicsItem.ItemIgnoresTransformations, True)
             label.setPos(self.world_to_scene(cx, cy))
             label.setZValue(16)
@@ -15667,6 +16155,11 @@ class InventorySpacesDialog(QDialog):
 
         base_rect = self._location_box_scene_rect()
         items_rect = self.scene.itemsBoundingRect()
+        # Screen-sized labels must not enlarge the world-coordinate extent.
+        items_rect = QRectF()
+        for item in self.scene.items():
+            if not isinstance(item, QGraphicsSimpleTextItem):
+                items_rect = items_rect.united(item.sceneBoundingRect())
 
         if base_rect is None or base_rect.isNull():
             base_rect = items_rect

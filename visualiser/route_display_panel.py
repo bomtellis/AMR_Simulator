@@ -64,7 +64,7 @@ class RouteDisplayPanel(QWidget):
         root.addWidget(self.search)
         self.table = QTableWidget(0, 4)
         self.table.setMinimumHeight(220)
-        self.table.setHorizontalHeaderLabels(['Floor', 'Section', 'Permitted profile directions', 'Source'])
+        self.table.setHorizontalHeaderLabels(['Floor', 'Section', 'Profile directions: permitted / blocked', 'Source'])
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
@@ -110,9 +110,10 @@ class RouteDisplayPanel(QWidget):
         self.lifts.setText('Lift allowances — ' + (' | '.join(text) or 'no profiles configured'))
         for section in sections:
             members = [(name, pairs) for name, pairs in sorted(section['profiles'].items()) if name in names]
-            if selected not in (None, ALL) and not members:
-                continue
             description = '; '.join(f"{name}: " + ', '.join(f'{a} → {b}' for a, b in sorted(pairs)) for name, pairs in members)
+            if isinstance(selected,str):
+                blocked=section['directions']-section['profiles'].get(selected,set())
+                if blocked:description += (' | ' if description else '')+'Blocked: '+', '.join(f'{a} → {b}' for a,b in sorted(blocked))
             row = self.table.rowCount()
             self.table.insertRow(row)
             source = ('Explicit + auto-connected' if section['auto_directions'] - section['explicit_directions'] and section['explicit_directions']
@@ -160,4 +161,5 @@ class RouteDisplayPanel(QWidget):
         populate_choices(combo, self.editor.store.data)
         combo.setCurrentIndex(max(0, combo.findData(self.profile.currentData())))
         self.editor.workspace.activate('layout')
+        self.editor.route_view_toolbar.set_expanded(True)
         self.editor.fit_view()

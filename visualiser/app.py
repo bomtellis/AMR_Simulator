@@ -17,6 +17,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from PySide6.QtCore import (
     QObject,
     QPoint,
+    QSize,
     QPointF,
     Qt,
     Signal,
@@ -29,6 +30,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import QAction, QColor, QBrush, QPainter, QPen, QFont, QFontMetrics, QPolygonF, QKeySequence
 from edit_history import EditHistory, undoable
+from graph_navigation import zoom_at_cursor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -109,6 +111,8 @@ from advanced_dialogs import (
 )
 from models import JsonStore
 from ui_theme import install_application_theme, polish_dialog as _polish_dialog
+from project_setup import NewProjectDialog
+from building_settings import BuildingSettingsDialog
 
 
 def _load_dxf_floor_process(args):
@@ -396,6 +400,8 @@ class AMRGraphEditor(QMainWindow):
         self._pdf_render_errors = {}
 
         self.route_profile_selection_active = False
+        self.route_profile_select_edges = False
+        self.route_profile_selected_edges = set()
         self.route_profile_allowed_point_names = set()
         self.route_profile_selected_nodes = set()
         self.route_profile_selection_callback = None
@@ -606,7 +612,8 @@ class AMRGraphEditor(QMainWindow):
 
     def project_editing_locked(self):
         panel = getattr(self, 'project_runs_panel', None)
-        return panel is not None and panel.running()
+        planner = getattr(self, 'lift_planner', None)
+        return (panel is not None and panel.running()) or (planner is not None and planner.running())
 
     def _project_editing_allowed(self):
         if self.project_editing_locked():
@@ -814,6 +821,9 @@ class AMRGraphEditor(QMainWindow):
         return not hasattr(self, 'properties_panel') or self.properties_panel.apply()
 
     def _confirm_unsaved_changes(self):
+        if hasattr(self, 'lift_planner') and self.lift_planner.running():
+            self.set_status('Stop lift-study evaluation or wait for completion before changing projects or closing.')
+            return False
         if self.route_profile_selection_active or self.department_location_placement_active:
             QMessageBox.information(self, 'Finish drawing selection first',
                 'Finish or cancel the route-profile selection or department placement before changing projects or closing. '
@@ -914,19 +924,20 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.mouseWheelScrolled.connect(self.on_mousewheel)
         self.canvas.mouseDragged.connect(self.on_drag)
         self.canvas.pointerMoved.connect(self.preview_corridor_drawing)
+        self.canvas.pointerMoved.connect(self.preview_insertion_coordinates)
 
         self.mode_combo = QComboBox()
         self.mode_combo.setMinimumWidth(230)
         edit_modes = [
             ("Select and move", "select_move", "Select, multi-select, drag and edit existing items."),
             ("Draw corridor route", "corridor_draw", "Click successive points to draw connected corridors. Existing points and edges snap automatically. Right-click or Escape finishes."),
-            ("Add corridor node", "corridor_node", "Place a graph node used by corridor routes and door openings."),
+            ("Add node / transition", "corridor_node", "Place a shared transition or junction node on the current floor. Use Corridor to connect its lanes."),
             ("Add door", "door", "Place a door node or insert a door opening into an existing corridor."),
             ("Add location", "location", "Place a general simulation location."),
             ("Draw location boundary", "location_bbox", "Draw or replace the usable boundary around a location."),
             ("Draw rectangular location boundary", "location_rectangle", "Choose a location, then two opposite corners. Escape cancels."),
-            ("Add department location", "department", "Place a location associated with a department workflow."),
-            ("Connect corridor", "edge", "Create a corridor edge between graph nodes."),
+            ("Add department", "department", "Place or edit a department marker and configure its workflow locations."),
+            ("Draw edge between points", "edge", "Click two existing graph points to create a corridor edge. Escape cancels the chain."),
             ("Add lift", "lift", "Place or edit a lift access point."),
             (
                 "Align PDF underlay",
@@ -956,10 +967,10 @@ class AMRGraphEditor(QMainWindow):
         self.object_snap_check = QCheckBox('Object snap')
         self.object_snap_check.setChecked(True)
         self.object_snap_mode = QComboBox()
-        self.object_snap_mode.setAccessibleName('Object snap target')
+        self.object_snap_mode.setAccessibleName('Object snap preset')
         for title, value in [('Nearest point or edge', 'nearest'), ('Endpoints / graph points', 'endpoints'), ('Corridor midpoints', 'midpoints'), ('Perpendicular from route end', 'perpendicular'), ('Intersections (connect junction)', 'intersections')]:
             self.object_snap_mode.addItem(title, value)
-        self.object_snap_mode.setToolTip('Choose nearby targets for corridor, node and door placement. Perpendicular requires a current route endpoint and stays within the target corridor. Exact overlaps always reuse or split existing geometry.')
+        self.object_snap_mode.setToolTip('Choose a single preset here, or combine targets using the bottom-right object snap toggles. Perpendicular requires a current route endpoint. Exact overlaps always reuse or split existing geometry.')
         self.object_snap_mode.currentIndexChanged.connect(self.on_snap_settings_changed)
         self.object_snap_check.toggled.connect(self.object_snap_mode.setEnabled)
         self.object_snap_check.setToolTip('Attract corridor, node and door placement to nearby graph points and edges. Exact coincidences still connect to avoid duplicate topology.')
@@ -1177,6 +1188,7 @@ class AMRGraphEditor(QMainWindow):
             "Configuration",
             [
                 button("Simulation settings", self.manage_simulation_settings),
+                button("Building settings", self.manage_building_settings),
                 button("Scenario testing", self.manage_scenario_testing),
                 button("People movement", self.manage_people_movement),
                 button("Corridor widths and doors", self.manage_corridor_settings),
@@ -1302,6 +1314,9 @@ class AMRGraphEditor(QMainWindow):
         self.file_label.setToolTip("Current JSON file")
         self.statusBar().addWidget(self.status_label, 1)
         self.statusBar().addPermanentWidget(self.file_label)
+        from cad_snap_controls import CadSnapControls
+        self.snap_controls = CadSnapControls(self)
+        self.statusBar().addPermanentWidget(self.snap_controls)
         from cad_workbench import CadWorkbench
         self.workbench = CadWorkbench(self)
         layout.insertWidget(0, self.workbench.workflow)
@@ -1318,6 +1333,7 @@ class AMRGraphEditor(QMainWindow):
             self.mode_combo.setCurrentIndex(index)
 
     def _clear_corridor_drawing(self):
+        self._insertion_preview=None
         if hasattr(self, 'cad_endpoint_input'):
             self.cad_endpoint_input.hide()
         if hasattr(self, 'cad_copy_input'):
@@ -1341,20 +1357,24 @@ class AMRGraphEditor(QMainWindow):
         if hasattr(self, 'cad_move_input'):
             self.cad_move_input.hide()
         self._clear_corridor_drawing()
-        drawing = (self._current_edit_mode() == 'corridor_draw'
+        drawing = (self._current_edit_mode() in self.coordinate_insertion_modes()
                    and getattr(getattr(self, 'workspace', None), 'stage', 'layout') == 'layout')
         if hasattr(self, 'cad_drawing_input'):
+            self.cad_drawing_input.set_mode(self._current_edit_mode())
             self.cad_drawing_input.setVisible(drawing)
             self.cad_drawing_input.setEnabled(drawing)
         if hasattr(self, 'finish_route_enter_action'):
-            self.finish_route_enter_action.setEnabled(drawing)
+            self.finish_route_enter_action.setEnabled(drawing and self._current_edit_mode()=='corridor_draw')
         self.selected_for_edge = None
         self.edge_delete_start = None
         self.refresh_canvas()
 
+        if self._current_edit_mode() == 'edge':
+            self.set_status('Draw edge: click an existing start point, then an end point. Escape cancels the chain.')
+
     def ensure_cad_drawing_input(self):
         if not hasattr(self, 'cad_drawing_input'):
-            drawing = (self._current_edit_mode() == 'corridor_draw'
+            drawing = (self._current_edit_mode() in self.coordinate_insertion_modes()
                        and getattr(getattr(self, 'workspace', None), 'stage', 'layout') == 'layout')
             from cad_drawing_input import CadDrawingInput
             self.cad_drawing_input = CadDrawingInput(self)
@@ -1368,10 +1388,54 @@ class AMRGraphEditor(QMainWindow):
             self.finish_route_enter_action = QAction('Finish corridor route', self.canvas)
             self.finish_route_enter_action.setShortcuts([QKeySequence('Return'), QKeySequence('Enter')])
             self.finish_route_enter_action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
-            self.finish_route_enter_action.setEnabled(drawing)
+            self.finish_route_enter_action.setEnabled(drawing and self._current_edit_mode()=='corridor_draw')
             self.finish_route_enter_action.triggered.connect(self.finish_corridor_drawing)
             self.canvas.addAction(self.finish_route_enter_action)
         return self.cad_drawing_input
+
+    @staticmethod
+    def coordinate_insertion_modes():
+        return ('corridor_draw','corridor_node','door','location','department','lift','edge')
+
+    def insertion_target(self,x,y,*,exact=False):
+        mode=self._current_edit_mode()
+        if mode in ('corridor_node','door','location'):
+            from corridor_editing import drawing_target
+            return drawing_target(self.store.all_points(),self.store.data['corridors']['edges'],self.floor_spin.value(),
+                x,y,snap=False if exact else self.snap_check.isChecked(),exact=exact,
+                grid_spacing=self.grid_spacing_spin.value(),object_snap=self.object_snap_check.isChecked(),snap_mode=self.object_snap_mode.currentData())
+        x,y=(x,y) if exact else self.snap(x,y)
+        if mode=='edge':
+            name=self.find_nearest_point_name(x,y,self.floor_spin.value())
+            if name:
+                row=self.store.all_points()[name];return dict(kind='point',name=name,x=row['x'],y=row['y'])
+        return dict(kind='new',x=x,y=y)
+
+    def insertion_feedback(self,target,*,typed=False):
+        mode=self._current_edit_mode();floor=self.floor_spin.value()
+        tool=self.mode_combo.currentText().removeprefix('Add ')
+        text=f"{tool} · Floor {floor} · X {target['x']:.9g}, Y {target['y']:.9g} m"
+        if target.get('name'):text+=' · '+target['name']
+        text+=(' · typed; grid bypassed' if typed else ' · snapped' if target['kind']!='new' else
+               ' · grid' if self.snap_check.isChecked() else ' · free')
+        if mode in self.coordinate_insertion_modes():self.cad_drawing_input.feedback(text)
+        elif mode=='location_bbox' and hasattr(self,'boundary_input') and not self.boundary_input.isHidden():
+            self.boundary_input.feedback.setText(text+' · click adds a vertex; Finish saves.')
+        elif mode=='location_rectangle' and hasattr(self,'rectangle_input') and not self.rectangle_input.dimensions.text():
+            self.rectangle_input.explanation.setText(text+' · click the next corner.')
+        return text
+
+    def preview_insertion_coordinates(self,sx,sy):
+        mode=self._current_edit_mode()
+        if self.workspace.stage!='layout' or mode=='corridor_draw':return
+        if mode not in (*self.coordinate_insertion_modes(),'location_bbox','location_rectangle') and not self.department_location_placement_active:return
+        if mode in self.coordinate_insertion_modes() and self.cad_drawing_input.coordinate_edit.text().strip():return
+        x,y=self.scene_to_world(sx,sy)
+        try:
+            target=self.insertion_target(x,y);self._insertion_preview=target;self.insertion_feedback(target)
+            if self.department_location_placement_active:self.set_status(f"Place {self.department_location_placement_name} · Floor {self.floor_spin.value()} · X {target['x']:.9g}, Y {target['y']:.9g} m")
+        except (ValueError,TypeError,KeyError) as exc:self.cad_drawing_input.feedback(str(exc),error=True)
+        self.canvas.viewport().update()
 
     def cancel_cad_command(self, *_):
         if hasattr(self, 'cad_endpoint_input') and not self.cad_endpoint_input.isHidden():
@@ -1409,6 +1473,12 @@ class AMRGraphEditor(QMainWindow):
             return True
         if self._current_edit_mode() == 'corridor_draw':
             self.finish_corridor_drawing()
+            return True
+        if self._current_edit_mode() == 'edge':
+            self.selected_for_edge = None
+            self.edge_delete_start = None
+            self.refresh_canvas()
+            self.set_status('Edge chain cancelled. Click a start point to draw another edge.')
             return True
         return False
 
@@ -1451,7 +1521,8 @@ class AMRGraphEditor(QMainWindow):
             text += ' | grid bypassed; direction constraint bypassed'
         elif target.get('angle_step'):
             text += f" | direction constrained to {target['angle_step']:g}° increments"
-        if self.object_snap_check.isChecked() and self.object_snap_mode.currentData() == 'perpendicular' and not start:
+        from corridor_editing import object_snap_modes
+        if self.object_snap_check.isChecked() and 'perpendicular' in object_snap_modes(self.object_snap_mode.currentData()) and not start:
             text += ' | perpendicular snap needs a route start'
         if self.connect_crossings_check.isChecked():
             text += f" | connect crossings: {len(target.get('crossings', []))} junction position(s)"
@@ -1460,6 +1531,17 @@ class AMRGraphEditor(QMainWindow):
         return text
 
     def preview_typed_corridor(self, text):
+        if self._current_edit_mode() in self.coordinate_insertion_modes() and self._current_edit_mode()!='corridor_draw':
+            if self.workspace.stage!='layout':return
+            from cad_drawing_input import parse_coordinate
+            try:
+                point=parse_coordinate(text)
+                self._insertion_preview=self.insertion_target(*point,exact=True) if point else None
+                if point:self.insertion_feedback(self._insertion_preview,typed=True)
+                else:self.cad_drawing_input.feedback('Click a point or enter X,Y in metres.')
+            except (ValueError,KeyError,TypeError) as exc:
+                self._insertion_preview=None;self.cad_drawing_input.feedback(str(exc),error=True)
+            self.canvas.viewport().update();return
         if (self._current_edit_mode() != 'corridor_draw'
                 or getattr(getattr(self, 'workspace', None), 'stage', 'layout') != 'layout'):
             return
@@ -1476,6 +1558,21 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.viewport().update()
 
     def submit_corridor_coordinate(self):
+        if self._current_edit_mode() in self.coordinate_insertion_modes() and self._current_edit_mode()!='corridor_draw':
+            if self.workspace.stage!='layout' or not self._project_editing_allowed():return False
+            from cad_drawing_input import parse_coordinate
+            from types import SimpleNamespace
+            try:
+                point=parse_coordinate(self.cad_drawing_input.coordinate_edit.text())
+                if point is None:raise ValueError('Enter X,Y in metres before placing an object.')
+                target=self.insertion_target(*point,exact=True)
+            except (ValueError,KeyError,TypeError) as exc:self.cad_drawing_input.feedback(str(exc),error=True);return False
+            self._typed_insertion_exact=True
+            try:
+                scene=self.world_to_scene(*point)
+                self.on_left_click(SimpleNamespace(modifiers=lambda:Qt.NoModifier),scene.x(),scene.y())
+            finally:self._typed_insertion_exact=False
+            self.cad_drawing_input.coordinate_edit.clear();self.insertion_feedback(target,typed=True);return True
         if (self._current_edit_mode() != 'corridor_draw'
                 or getattr(getattr(self, 'workspace', None), 'stage', 'layout') != 'layout'):
             return False
@@ -2563,7 +2660,7 @@ class AMRGraphEditor(QMainWindow):
 
     def draw_route_access(self, floor):
         from route_display import populate_choices, draw_access
-        from cad_map_style import ContrastRouteStyles
+        from cad_map_style import ContrastRouteStyles,contrast_colour
         populate_choices(self.route_display_combo, self.store.data)
         selected = self.route_display_combo.currentData()
         self.route_preview_error = ''
@@ -2574,7 +2671,9 @@ class AMRGraphEditor(QMainWindow):
             styles = ContrastRouteStyles(self.route_styles, self._map_colours['background'])
             items = draw_access(self.scene, points, sections, floor, selected, styles,
                                 self.world_to_scene, self.appearance.value.map_font_size, self.route_labels_check.isChecked(),
-                                label_background=self._map_colours['background'])
+                                label_background=self._map_colours['background'],
+                                show_blocked=hasattr(self,'route_view_toolbar') and self.route_view_toolbar.blocked.isChecked(),
+                                blocked_colour=contrast_colour(self.route_styles.blocked_colour,self._map_colours['background']))
             for item, section in items:
                 if section['source'] is not None:
                     self._item_lookup[item] = ('edge', section['source'])
@@ -2908,7 +3007,9 @@ class AMRGraphEditor(QMainWindow):
             pa = self.world_to_scene(a["x"], a["y"])
             pb = self.world_to_scene(b["x"], b["y"])
             key = self._physical_edge_key(edge.get("from"), edge.get("to"))
-            if key in self.selected_edge_keys:
+            route_selected = self.route_profile_selection_active and self.route_profile_select_edges and any(
+                pair in self.route_profile_selected_edges for pair in ((edge['from'],edge['to']),(edge['to'],edge['from'])))
+            if key in self.selected_edge_keys or route_selected:
                 pen = QPen(QColor(self._map_colours['accent']), 3)
                 pen.setCosmetic(True)
             elif a_floor != b_floor:
@@ -2918,10 +3019,10 @@ class AMRGraphEditor(QMainWindow):
                 colour = QColor(self._map_colours['muted']) if self.route_display_combo.currentData() is not None else colour_by_area.get(area, colour_by_area['none'])
                 pen = QPen(colour, 1.5)
                 pen.setCosmetic(True)
-            if key not in self.selected_edge_keys and self.route_display_combo.currentData() is None:
+            if key not in self.selected_edge_keys and not route_selected and self.route_display_combo.currentData() is None:
                 pen = styled_pen(pen, layers[layer_name(edge)])
             item = self.scene.addLine(pa.x(), pa.y(), pb.x(), pb.y(), pen)
-            item.setZValue(5 if key in self.selected_edge_keys else 0)
+            item.setZValue(5 if key in self.selected_edge_keys or route_selected else 0)
             self._item_lookup[item] = ("edge", edge)
             if not edge.get('bidirectional', True) and pa != pb:
                 arrow = QGraphicsPolygonItem(QPolygonF([QPointF(5, 0), QPointF(-5, -4), QPointF(-5, 4)]))
@@ -2994,12 +3095,13 @@ class AMRGraphEditor(QMainWindow):
                     self.scene.addItem(door_text)
                     self._item_lookup[door_text] = ("point_label", name)
             elif kind == "department":
+                r = 0.4
                 poly = QPolygonF(
                     [
-                        QPointF(pos.x(), pos.y() - 0.9),
-                        QPointF(pos.x() + 0.9, pos.y()),
-                        QPointF(pos.x(), pos.y() + 0.9),
-                        QPointF(pos.x() - 0.9, pos.y()),
+                        QPointF(pos.x(), pos.y() - r),
+                        QPointF(pos.x() + r, pos.y()),
+                        QPointF(pos.x(), pos.y() + r),
+                        QPointF(pos.x() - r, pos.y()),
                     ]
                 )
                 item = QGraphicsPolygonItem(poly)
@@ -3045,6 +3147,25 @@ class AMRGraphEditor(QMainWindow):
                 self._point_name_labels[name] = text
 
     def draw_overlay_panels(self, painter, viewport_rect):
+        insertion=getattr(self,'_insertion_preview',None)
+        if insertion and self._current_edit_mode()!='corridor_draw' and self.workspace.stage=='layout':
+            point=self.canvas.mapFromScene(self.world_to_scene(insertion['x'],insertion['y']))
+            painter.save()
+            painter.setPen(QPen(QColor(self._map_colours['accent']),2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawEllipse(point,7,7)
+            painter.drawLine(point+QPoint(-12,0),point+QPoint(12,0))
+            painter.drawLine(point+QPoint(0,-12),point+QPoint(0,12))
+            label=f"F{self.floor_spin.value()} · X {insertion['x']:.6g}, Y {insertion['y']:.6g} m"
+            metrics=painter.fontMetrics()
+            badge=QRect(point+QPoint(15,-metrics.height()-12),QSize(metrics.horizontalAdvance(label)+12,metrics.height()+8))
+            badge.moveLeft(max(2,min(badge.left(),viewport_rect.width()-badge.width()-2)))
+            badge.moveTop(max(2,min(badge.top(),viewport_rect.height()-badge.height()-2)))
+            painter.setBrush(QColor(self._map_colours['panel']))
+            painter.drawRoundedRect(badge,3,3)
+            painter.setPen(QColor(self._map_colours['text']))
+            painter.drawText(badge,Qt.AlignCenter,label)
+            painter.restore()
         if hasattr(self, 'cad_endpoint_input'):
             self.cad_endpoint_input.paint_preview(painter)
         if hasattr(self, 'cad_move_input'):
@@ -3091,7 +3212,8 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.setToolTip('')
         if self.appearance.value.show_legend:
             profile = self.route_display_combo.currentText() if self.route_display_combo.currentData() is not None else None
-            lines = compact_legend(profile)
+            lines = compact_legend(profile, isinstance(self.route_display_combo.currentData(),str) and
+                                   hasattr(self,'route_view_toolbar') and self.route_view_toolbar.blocked.isChecked())
             width = min(300, max(160, viewport_rect.width()//3))
             height = 16 + len(lines)*(metrics.height()+4)
             self._draw_overlay_box(painter, max(12,viewport_rect.width()-width-12),
@@ -3335,7 +3457,8 @@ class AMRGraphEditor(QMainWindow):
         mode = self._current_edit_mode()
         floor = self.floor_spin.value()
         raw_x, raw_y = self.scene_to_world(sx, sy)
-        x, y = self.snap(raw_x, raw_y)
+        exact=getattr(self,'_typed_insertion_exact',False)
+        x,y=(raw_x,raw_y) if exact else self.snap(raw_x,raw_y)
 
         if mode == 'location_rectangle':
             self.place_location_rectangle_corner(raw_x, raw_y)
@@ -3346,6 +3469,9 @@ class AMRGraphEditor(QMainWindow):
             return
 
         if self.route_profile_selection_active:
+            if self.route_profile_select_edges:
+                self.route_permission_selection.click(raw_x,raw_y,floor)
+                return
             picked = self._route_profile_pickable_point_at(raw_x, raw_y, floor)
 
             if picked:
@@ -3381,7 +3507,7 @@ class AMRGraphEditor(QMainWindow):
                 # directed attributes and all profile/resource references.
                 updated, target = draw_step(
                     self.store.data, self.store.all_points(), None, floor,
-                    raw_x, raw_y, snap=self.snap_check.isChecked(),
+                    raw_x, raw_y, snap=False if exact else self.snap_check.isChecked(),exact=exact,
                     grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData())
                 node = next((node for node in updated['corridors']['nodes']
                              if node['name'] == target['name']), None)
@@ -3512,7 +3638,7 @@ class AMRGraphEditor(QMainWindow):
             from corridor_editing import draw_step
             try:
                 updated, target = draw_step(self.store.data, self.store.all_points(), None, floor,
-                    raw_x, raw_y, snap=self.snap_check.isChecked(),
+                    raw_x, raw_y, snap=False if exact else self.snap_check.isChecked(),exact=exact,
                     grid_spacing=self.grid_spacing_spin.value(), object_snap=self.object_snap_check.isChecked(), snap_mode=self.object_snap_mode.currentData())
             except (ValueError, KeyError, TypeError) as exc:
                 self.set_status(f'Node was not changed: {exc}')
@@ -3524,11 +3650,27 @@ class AMRGraphEditor(QMainWindow):
             return
 
         if mode == "location":
-            name, ok = QInputDialog.getText(self, "Location", "Location name:")
+            try:target=self.insertion_target(raw_x,raw_y,exact=exact)
+            except (ValueError,TypeError,KeyError) as exc:self.set_status(f'Location was not placed: {exc}');return
+            x,y=target['x'],target['y']
+            join=target['kind'] in ('edge','junction') or (target.get('name') and target['name'] in {r['name'] for r in self.store.data['corridors']['nodes']})
+            self._pending_insertion=dict(tool='Location',floor=floor,x=x,y=y)
+            try:
+                name, ok = QInputDialog.getText(self, "Location", f"Location name:\nFloor {floor} · X {x:g}, Y {y:g} m"+
+                    ('\nJoins the corridor here with a 0.1 m access link.' if join else ''))
+            finally:self._pending_insertion=None
             if not ok or not name:
                 return
+            name=name.strip()
+            if not name or name in self.store.names_in_use():self.set_status('Location was not placed: choose a unique, non-empty name.');return
+            if join:
+                access=self.store.draw_corridor_step(None,floor,x,y,snap=False,exact=True,
+                    grid_spacing=self.grid_spacing_spin.value(),object_snap=self.object_snap_check.isChecked(),snap_mode=self.object_snap_mode.currentData())
             self.store.add_location(name, floor, x, y)
-            self.set_status(f"Added location {name}")
+            if join:
+                self.store.add_edge(name,access['name'])
+                self.store.data['corridors']['edges'][-1]['distance_m']=.1
+            self.set_status(f"Added location {name} · Floor {floor} · X {x:g}, Y {y:g} m"+(' · connected to corridor' if join else ''))
             self.refresh_canvas()
             return
 
@@ -3945,6 +4087,12 @@ class AMRGraphEditor(QMainWindow):
                 rect = self.route_profile_selection_rect_item.rect()
                 keep_existing = bool(event.modifiers() & Qt.ControlModifier)
 
+                if self.route_profile_select_edges:
+                    self.route_permission_selection.rectangle(rect,self.floor_spin.value(),keep_existing)
+                    self.scene.removeItem(self.route_profile_selection_rect_item)
+                    self.route_profile_selection_rect_item=None;self.route_profile_selection_rect_start=None
+                    self.refresh_canvas();return
+
                 if not keep_existing:
                     self.route_profile_selected_nodes.clear()
 
@@ -3997,6 +4145,19 @@ class AMRGraphEditor(QMainWindow):
         floor = self.floor_spin.value()
         x, y = self.scene_to_world(sx, sy)
         picked = self.find_nearest_point_name(x, y, floor)
+        if mode == 'select_move' and picked:
+            points = self.store.all_points()
+            hit = points[picked]
+            distance = math.hypot(hit['x']-x, hit['y']-y)
+            # Facility access may share a junction position. Expose the chosen
+            # location's context commands instead of silently picking its node.
+            selected = points.get(self.selected_point_name, {})
+            if selected.get('floor') == floor and math.hypot(selected.get('x',0)-x, selected.get('y',0)-y) <= distance+1e-6:
+                picked = self.selected_point_name
+            elif hit.get('kind') == 'corridor_node':
+                overlapping = next((name for name,row in points.items() if row.get('kind') == 'location'
+                    and row.get('floor') == floor and math.hypot(row['x']-x,row['y']-y) <= distance+1e-6), None)
+                if overlapping:picked = overlapping
         picked_edge = None if picked else self.find_nearest_edge_key(x, y, floor)
 
         if self.department_location_placement_active:
@@ -4004,10 +4165,17 @@ class AMRGraphEditor(QMainWindow):
             return
 
         if self.route_profile_selection_active:
-            if picked:
-                return
-
             menu = QMenu(self)
+            if (picked in self.route_profile_allowed_point_names
+                    and self.store.all_points().get(picked, {}).get('kind') != 'department'):
+                add_node_action = menu.addAction("Add node to route profile selection")
+                add_node_action.setEnabled(picked not in self.route_profile_selected_nodes)
+                add_node_action.setCheckable(True)
+                add_node_action.setChecked(picked in self.route_profile_selected_nodes)
+                add_node_action.triggered.connect(
+                    lambda _checked=False, name=picked: self._add_route_profile_draft_node(name)
+                )
+                menu.addSeparator()
             finish_action = menu.addAction("Apply route profile selection")
             cancel_action = menu.addAction("Cancel route profile selection")
 
@@ -4039,6 +4207,7 @@ class AMRGraphEditor(QMainWindow):
                 menu.addAction(self.workbench.copy_action)
                 menu.addAction(self.workbench.fit_selection_action)
                 menu.addSeparator()
+                self._add_route_profile_node_menu(menu, self.selected_point_names)
                 if picked_edge is not None:
                     menu.addAction("Insert node here", lambda: self.split_corridor_at(picked_edge, x, y))
                 if self.selected_edge_keys:
@@ -4185,6 +4354,7 @@ class AMRGraphEditor(QMainWindow):
             menu.addAction(self.workbench.copy_action)
             menu.addAction(self.workbench.fit_selection_action)
             menu.addSeparator()
+            self._add_route_profile_node_menu(menu, {picked})
 
             if point.get("kind") == "department":
                 edit_department_action = menu.addAction("Edit department")
@@ -4243,10 +4413,7 @@ class AMRGraphEditor(QMainWindow):
                 self.set_status(f"Removed bounding box for {picked}")
                 self.refresh_canvas()
             elif point.get("kind") == "location" and action == inventory_spaces_action:
-                dialog = InventorySpacesDialog(self, picked)
-                if dialog.exec() == QDialog.Accepted:
-                    self.set_status(f"Updated inventory spaces for {picked}")
-                    self.refresh_canvas()
+                self.edit_location_spaces(picked)
             elif action == show_edges_action:
                 self._show_edge_connections_dialog(picked)
             elif action == create_department_action:
@@ -4261,6 +4428,68 @@ class AMRGraphEditor(QMainWindow):
         if picked:
             self.selected_point_name = picked
             self.refresh_canvas()
+
+    def _add_route_profile_node_menu(self, menu, names):
+        points = self.store.all_points()
+        nodes = {name for name in names if name in points and points[name]['kind'] != 'department'}
+        if not nodes:
+            return
+        label = 'Add node to route profile' if len(nodes) == 1 else 'Add selected nodes to route profile'
+        profiles_menu = menu.addMenu(label)
+        # Keep the Python wrapper alive until the parent context menu closes.
+        menu.route_profile_nodes_menu = profiles_menu
+        profiles_menu.setToolTipsVisible(True)
+        for name, profile in sorted(self.store.data.get('route_profiles', {}).items()):
+            allowed = set(profile.get('allowed_nodes') or [])
+            included = nodes <= allowed
+            text = name if allowed else f'{name} (start node filter)'
+            action = profiles_menu.addAction(text)
+            action.setCheckable(True)
+            action.setChecked(included)
+            action.setEnabled(not included)
+            action.setToolTip('All selected nodes are already included.' if included else
+                'Add to the permitted nodes. Edge and lift permissions remain unchanged.' if allowed else
+                'Currently all nodes are permitted. Start a node filter with the selected nodes; edge and lift permissions remain unchanged.')
+            action.triggered.connect(
+                lambda _checked=False, profile_name=name, selected=frozenset(nodes):
+                    self.add_nodes_to_route_profile(profile_name, selected)
+            )
+        if profiles_menu.actions():
+            profiles_menu.addSeparator()
+        profiles_menu.addAction('Manage route profiles…', self.manage_route_profiles)
+
+    @undoable('Add nodes to route profile')
+    def add_nodes_to_route_profile(self, profile_name, names):
+        if self.route_profile_selection_active or not self._finish_property_draft():
+            return False
+        profile = self.store.data.get('route_profiles', {}).get(profile_name)
+        points = self.store.all_points()
+        nodes = {name for name in names if name in points and points[name]['kind'] != 'department'}
+        if profile is None or not nodes:
+            return False
+        allowed = list(profile.get('allowed_nodes') or [])
+        additions = sorted(nodes - set(allowed))
+        if not additions:
+            return False
+        profile['allowed_nodes'] = allowed + additions
+        self.refresh_canvas()
+        self.route_display_combo.setCurrentIndex(self.route_display_combo.findData(profile_name))
+        self.route_view_toolbar.set_expanded(True)
+        self._update_unsaved_indicator()
+        if hasattr(self, 'checks_panel'):
+            self.checks_panel.check_staleness()
+        self.set_status(f'Added {len(additions)} node(s) to route profile {profile_name}. Save the project to keep this change.')
+        return True
+
+    def _add_route_profile_draft_node(self, name):
+        if (not self.route_profile_selection_active or name not in self.route_profile_allowed_point_names
+                or self.store.all_points().get(name, {}).get('kind') == 'department'):
+            return
+        self.route_profile_selected_nodes.add(name)
+        if self.route_profile_select_edges:
+            self.route_permission_selection.update()
+        self.refresh_canvas()
+        self.set_status(f'Added {name} to the route profile draft. Finish selection, then save the profile.')
 
     def on_drag(self, event, sx, sy):
         if self._active_canvas_transform():
@@ -4378,29 +4607,19 @@ class AMRGraphEditor(QMainWindow):
         self.canvas.viewport().update()
 
     def on_mousewheel(self, event):
-        factor = 1.1 if event.angleDelta().y() > 0 else 0.9
-        self.canvas.scale(factor, factor)
-        self.canvas.viewport().update()
+        zoom_at_cursor(self.canvas, event)
 
-    def _show_config_validation_warning(self, path: str, errors: list[str]) -> None:
-        preview_limit = 50
-        shown_errors = errors[:preview_limit]
-        message_lines = [
-            f"{Path(path).name} was opened, but validation found {len(errors)} issue(s).",
-            "",
-            "You can continue editing the file and use Validate JSON after making changes.",
-            "",
-            *shown_errors,
-        ]
-        if len(errors) > preview_limit:
-            message_lines.append(
-                f"... plus {len(errors) - preview_limit} additional issue(s)."
-            )
-        QMessageBox.warning(
-            self,
-            "Config opened with validation issues",
-            "\n".join(message_lines),
-        )
+    def recheck_import_validation(self):
+        if not self._finish_property_draft():
+            self.set_status('Finish or correct the open property draft before rechecking imported JSON.')
+            return
+        try:
+            errors = self.store.validate()
+        except Exception as exc:
+            errors = [f'Validation could not complete: {exc}']
+        self.workspace.show_import_validation(self.current_json_path, errors)
+        self.set_status(f'{len(errors)} JSON validation issue(s)' if errors else
+                        'JSON validation passed; run Project checks before simulation.')
 
     def load_json_file(self, path: str, *, load_drawings: bool = True, check_unsaved: bool = True) -> bool:
         if check_unsaved and not self._confirm_unsaved_changes():
@@ -4468,7 +4687,22 @@ class AMRGraphEditor(QMainWindow):
         """Start a fresh authoring document after protecting the current one."""
         if not self._confirm_unsaved_changes():
             return False
-        return self._replace_document(JsonStore(), None)
+        dialog = NewProjectDialog(self)
+        try:
+            result = dialog.exec()
+            if result == QDialog.Rejected:
+                return False
+            store = JsonStore(dialog.configuration()) if result == QDialog.Accepted else JsonStore()
+        finally:
+            dialog.deleteLater()
+        baseline = JsonStore()
+        created = self._replace_document(store, None)
+        self.workspace.activate('layout')
+        if result == QDialog.Accepted:
+            # Setup is authored work: protect it with the normal save/recovery flow.
+            self._saved_state = json.dumps(baseline.data, ensure_ascii=False)
+            self._update_unsaved_indicator()
+        return created
 
     def _replace_document(self, store, path, *, project=None, cache=None,
                           load_drawings=True, validation_errors=()):
@@ -4511,13 +4745,15 @@ class AMRGraphEditor(QMainWindow):
         current_floor = self.floor_spin.value()
         self._pending_fit_after_load = load_drawings and bool(self.get_floor_dxf_path(current_floor))
         self._queue_all_floor_dxf_loads(active_floor=current_floor, force_reload=False)
+        self.workspace.show_import_validation(path, validation_errors)
         if validation_errors:
             self.set_status(
                 f"Opened {Path(path).name} with {len(validation_errors)} validation issue(s)"
             )
-            self._show_config_validation_warning(path, validation_errors)
         elif path is not None:
             suffix = " without drawings" if not load_drawings else ""
+            if project is not None and project.migration_pending:
+                suffix += " — version 1 archive; Save upgrades to version 2"
             self.set_status(f"Opened {Path(path).name}{suffix}")
         else:
             self.set_status('New project. Draw the layout, configure robots and demand, then run Project checks before simulation.')
@@ -4596,7 +4832,7 @@ class AMRGraphEditor(QMainWindow):
         if root not in sys.path:
             sys.path.insert(0, root)
         from amr_project import Project
-        path = str(self.project.path) if self.project is not None else ""
+        path = str(self.project.path) if self.project is not None and self.project.path is not None else ""
         if save_as or not path:
             suggested = str(Path(self.current_json_path).with_suffix(".amrproj")) if self.current_json_path else "project.amrproj"
             path, _ = QFileDialog.getSaveFileName(self, "Save portable project", suggested, "AMR projects (*.amrproj)")
@@ -4627,6 +4863,12 @@ class AMRGraphEditor(QMainWindow):
             self.refresh_canvas()
             self._mark_saved()
             self._recovered_work = False
+            if hasattr(self.workbench, 'quick_start_dialog'):
+                course = self.workbench.quick_start_dialog.building_course
+                try:
+                    course.sync(preserve_progress=True)
+                except OSError as exc:
+                    course.feedback.setText('Progress could not save: '+str(exc))
             return True
         except Exception as exc:
             QMessageBox.critical(self, "Project save failed", f"The project was not saved.\n\n{exc}")
@@ -4928,6 +5170,14 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(f"Updated {len(dialog.result)} people movement profile(s)")
             self.refresh_canvas()
 
+    @undoable("Edit building settings")
+    def manage_building_settings(self):
+        dialog = BuildingSettingsDialog(self, self.store.data)
+        if dialog.exec() == QDialog.Accepted and dialog.result is not None:
+            self.store.data = dialog.result
+            self.set_status('Building floor settings updated')
+            self.refresh_canvas()
+
     @undoable("Edit corridor settings")
     def manage_corridor_settings(self):
         building = self.store.data.setdefault("building", {})
@@ -5112,6 +5362,29 @@ class AMRGraphEditor(QMainWindow):
         self.workspace.show_page('review', self.results_panel)
         self.set_status('Results investigation opened. Select a saved run or event CSV.')
 
+    def show_lift_planner(self):
+        from lift_planner import LiftPlanner
+        if not hasattr(self, 'lift_planner'):
+            self.lift_planner = LiftPlanner(self)
+        elif not self.lift_planner.running():
+            self.lift_planner.refresh_project()
+        self.lift_planner.show()
+        self.lift_planner.raise_()
+
+    @undoable('Apply lift layout proposal')
+    def apply_lift_proposal(self, configuration):
+        if not self._project_editing_allowed():
+            return False
+        self.store.data = deepcopy(configuration)
+        # Record before the drawing loader opens its transient modal window.
+        # The undoable transaction restores this entry if refreshing fails.
+        self.edit_history.record(self.store.data, 'Apply lift layout proposal')
+        self.refresh_canvas()
+        self._update_unsaved_indicator()
+        if hasattr(self, 'checks_panel'):
+            self.checks_panel.check_staleness()
+        return True
+
     def show_demand_preview(self):
         # The editor also runs directly from visualiser/amr_editor_main.py.
         root = str(Path(__file__).resolve().parents[1])
@@ -5135,12 +5408,15 @@ class AMRGraphEditor(QMainWindow):
         self.set_status('Review existing findings or choose Run checks to evaluate the current inputs.')
 
     def validate_json(self):
+        if self.workspace.import_issues_text.toPlainText():
+            self.recheck_import_validation()
         from project_checks_panel import ProjectChecksPanel
         if not hasattr(self, 'checks_panel'):
             self.checks_panel = ProjectChecksPanel(
                 lambda: self.store.data, self,
                 lambda: Path(self.current_json_path).parent if self.current_json_path else None)
             self.checks_panel.navigate.connect(self.navigate_check_finding)
+            self.checks_panel.demand_preview_requested.connect(self.show_demand_preview)
         else:
             self.checks_panel.check_now()
         self.workspace.show_page('checks', self.checks_panel)
@@ -5181,7 +5457,8 @@ class AMRGraphEditor(QMainWindow):
         handlers = {
             'simulation': self.manage_simulation_settings,
             'corridors': self.manage_corridor_settings,
-            'building': self.manage_corridor_settings,
+            'building': (self.manage_building_settings if finding.path == '/building/floor_height_m'
+                         else self.manage_corridor_settings),
             'amrs': self.manage_amrs, 'payloads': self.manage_payloads,
             'lifts': self.manage_lifts, 'tasks': self.manage_tasks,
             'task_generation': self.manage_task_generation,
@@ -5459,6 +5736,28 @@ class AMRGraphEditor(QMainWindow):
         dialog.exec()
 
     @undoable("Edit inventory spaces")
+    def edit_location_spaces(self, location_name):
+        if self.properties_panel.pending:
+            self.properties_panel.note.setText('Apply or discard the property draft before editing inventory spaces.')
+            return False
+        if self.store.get_location(location_name) is None:
+            self.set_status('Select an existing location to edit its inventory spaces.')
+            return False
+        course = getattr(getattr(self.workbench, 'quick_start_dialog', None), 'building_course', None)
+        from shiboken6 import isValid
+        tutorial = bool(course and course.card and isValid(course.card) and course.card._running and course.card.current()[:2] == (3,1)
+                        and course.session.roles(self.store.data).get('dispatch','Dispatch') == location_name)
+        dialog = InventorySpacesDialog(self, location_name, tutorial_charging_bays=tutorial)
+        try:
+            if dialog.exec() != QDialog.Accepted:
+                return False
+            self.set_status(f"Updated inventory spaces for {location_name}")
+            self.refresh_canvas()
+            return True
+        finally:
+            dialog.deleteLater()
+
+    @undoable("Edit inventory spaces")
     def manage_location_spaces(self):
         dialog = LocationSpacesManagerDialog(self)
         dialog.exec()
@@ -5491,8 +5790,13 @@ class AMRGraphEditor(QMainWindow):
         selected_nodes,
         callback,
         return_window=None,
+        selected_edges=None,
+        include_edges=False,
+        profile_name=None,
     ):
         self.route_profile_selection_active = True
+        self.route_profile_select_edges = include_edges
+        self.route_profile_selected_edges = {tuple(pair) for pair in (selected_edges or [])}
         self.route_profile_allowed_point_names = set(allowed_point_names or [])
         self.route_profile_selected_nodes = set(selected_nodes or [])
         self.route_profile_selection_callback = callback
@@ -5501,7 +5805,12 @@ class AMRGraphEditor(QMainWindow):
         self.route_profile_selection_rect_item = None
 
         self._set_edit_mode("select_move")
+        if include_edges:
+            from route_profile_graphics import RoutePermissionSelection
+            if not hasattr(self,'route_permission_selection'):self.route_permission_selection=RoutePermissionSelection(self)
+            self.route_permission_selection.start(profile_name)
         self.set_status(
+            'Route permissions: choose Nodes or Edges; click to toggle. Alt-drag selects an area on this floor. Finish selection returns to the profile; Cancel discards this selection.' if include_edges else
             "Route profile graphical selection: click nodes, Ctrl-click to add/remove, "
             "Alt-drag for rectangle selection, Ctrl+Alt-drag to add to selection, "
             "right-click empty space to finish."
@@ -5520,11 +5829,15 @@ class AMRGraphEditor(QMainWindow):
 
     def _finish_route_profile_graphical_selection(self):
         selected = set(self.route_profile_selected_nodes)
+        edges=set(self.route_profile_selected_edges);include_edges=self.route_profile_select_edges
+        if include_edges:self.route_permission_selection.stop()
 
         callback = self.route_profile_selection_callback
         return_window = self.route_profile_return_window
 
         self.route_profile_selection_active = False
+        self.route_profile_select_edges = False
+        self.route_profile_selected_edges = set()
         self.route_profile_allowed_point_names = set()
         self.route_profile_selected_nodes = set()
         self.route_profile_selection_callback = None
@@ -5539,10 +5852,12 @@ class AMRGraphEditor(QMainWindow):
         self.route_profile_selection_rect_item = None
 
         self.set_status(f"Route profile selection applied: {len(selected)} node(s)")
+        self.cad_toolbar.sync_panels()
         self.refresh_canvas()
 
         if callback:
-            callback(selected)
+            if include_edges:callback(selected,edges)
+            else:callback(selected)
 
         if return_window:
             return_window.show()
@@ -5551,8 +5866,11 @@ class AMRGraphEditor(QMainWindow):
 
     def _cancel_route_profile_graphical_selection(self):
         return_window = self.route_profile_return_window
+        if self.route_profile_select_edges:self.route_permission_selection.stop()
 
         self.route_profile_selection_active = False
+        self.route_profile_select_edges = False
+        self.route_profile_selected_edges = set()
         self.route_profile_allowed_point_names = set()
         self.route_profile_selected_nodes = set()
         self.route_profile_selection_callback = None
@@ -5567,6 +5885,7 @@ class AMRGraphEditor(QMainWindow):
         self.route_profile_selection_rect_item = None
 
         self.set_status("Route profile graphical selection cancelled")
+        self.cad_toolbar.sync_panels()
         self.refresh_canvas()
 
         if return_window:
@@ -5584,4 +5903,6 @@ def main(project_path=None, *, load_drawings=True):
     window.show()
     if project_path is not None:
         window.load_json_file(str(project_path), load_drawings=load_drawings)
+    else:
+        QTimer.singleShot(0, window.new_project)
     return app.exec()

@@ -120,6 +120,22 @@ class LayoutPropertyTests(unittest.TestCase):
         self.assertEqual('B', result['locations'][0]['wash_location'])
         self.assertEqual(30, result['locations'][0]['wash_cycle_duration_sec'])
 
+    def test_service_capacity_is_a_positive_integer_used_by_the_simulator(self):
+        before = deepcopy(self.config)
+        for value in ('1', '2.0', 3):
+            result = self.edit(('points', ('A',)), {'max_concurrency': value})
+            capacity = result['locations'][0]['max_concurrency']
+            self.assertIs(type(capacity), int)
+            self.assertEqual(int(float(value)), Simulation(result).location_max_concurrency['A'])
+        for value in (True, 0, -1, '1.5', 'invalid', float('nan'), float('inf')):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'positive whole number'):
+                self.edit(('points', ('A',)), {'x': 99, 'max_concurrency': value})
+            self.assertEqual(before, self.config)
+        self.config['locations'][0]['max_concurrency'] = 1
+        result = self.edit(('points', ('A',)), {'max_concurrency': None})
+        self.assertNotIn('max_concurrency', result['locations'][0])
+        self.assertEqual(999999, Simulation(result).location_max_concurrency['A'])
+
 
 class LayoutPropertyUiTests(unittest.TestCase):
     setUpClass = classmethod(editing.CorridorEditingUiTests.setUpClass.__func__)

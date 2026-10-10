@@ -10,6 +10,9 @@ from tests import test_project_playback as playback_tests
 from tests.test_route_profiles import profile_config
 from tests.test_engineering_reference import reference_config
 from PySide6.QtCore import Qt, QSettings
+from PySide6.QtGui import QColor
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QColorDialog
 from PySide6.QtWidgets import QApplication, QGraphicsLineItem, QGraphicsSimpleTextItem
 from models import JsonStore
 from simulator import Simulation
@@ -134,6 +137,50 @@ class RouteDisplayUiTests(unittest.TestCase):
 
     def select(self, name):
         self.routes.profile.setCurrentIndex(self.routes.profile.findData(name))
+
+    def test_layout_has_direct_profile_views_and_editable_permitted_and_blocked_colours(self):
+        self.editor.resize(1400,950);self.editor.show()
+        self.select('clean');self.routes.show_map();self.app.processEvents()
+        view=self.editor.route_view_toolbar
+        self.assertTrue(view.isVisible());self.assertTrue(view.profile.isVisible())
+        before=deepcopy(self.editor.store.data)
+        with patch.object(QColorDialog,'getColor',return_value=QColor('#ffffff')):
+            QTest.mouseClick(view.permitted,Qt.LeftButton)
+        with patch.object(QColorDialog,'getColor',return_value=QColor('#ffff00')):
+            QTest.mouseClick(view.blocked_colour,Qt.LeftButton)
+        blocked=[item for item in self.editor.scene.items() if item.data(0)=='route_profile_blocked']
+        self.assertTrue(blocked);self.assertTrue(all('Blocked by profile clean' in item.toolTip() for item in blocked))
+        lines=[item for item in blocked if isinstance(item,QGraphicsLineItem)]
+        from cad_map_style import contrast_colour
+        self.assertTrue(all(item.pen().color().name()==contrast_colour('#ffff00',self.editor._map_colours['background']) for item in lines))
+        self.assertEqual('#ffffff',self.editor.route_styles.get('clean')['colour'])
+        self.assertEqual('#ffff00',RouteStyles(self.editor.appearance).blocked_colour)
+        self.assertEqual(before,self.editor.store.data);self.assertFalse(self.editor.has_unsaved_changes())
+        view.blocked.setChecked(False)
+        self.assertFalse(any(item.data(0)=='route_profile_blocked' for item in self.editor.scene.items()))
+        self.editor.show_project_checks();self.app.processEvents();self.assertFalse(view.isVisible())
+
+    def test_check_pane_lists_route_definitions_and_marks_results_stale_after_profile_edits(self):
+        self.editor.store.data['tasks']=[dict(id='Blocked task',pickup='A',dropoff='B',payload='Box',route_profile='clean')]
+        self.editor.store.data['route_profiles']['clean']['allowed_nodes']=['A','Shared']
+        self.editor.show_project_checks();panel=self.editor.checks_panel
+        routes=panel.route_checks_view
+        self.assertEqual(1,routes.table.rowCount());self.assertEqual('Blocked',routes.table.item(0,5).text())
+        panel.tabs.setCurrentIndex(2);self.assertFalse(panel.navigate_button.isEnabled())
+        self.editor.store.data['route_profiles']['clean']['allowed_nodes']=[]
+        panel.check_staleness();self.assertIn('STALE',routes.summary.text())
+        panel.check_now();self.assertEqual('Reachable',routes.table.item(0,5).text())
+        self.assertNotIn('STALE',routes.summary.text())
+
+    def test_blocked_direction_overlay_distinguishes_reverse_permission_and_restores_off(self):
+        self.editor.store.data['route_profiles']['one-way']={'allowed_edges':[['A','Shared']]}
+        self.editor.refresh_canvas();view=self.editor.route_view_toolbar
+        view.profile.setCurrentIndex(view.profile.findData('one-way'));self.editor.workspace.activate('layout')
+        blocked=[item.toolTip() for item in self.editor.scene.items() if item.data(0)=='route_profile_blocked']
+        self.assertTrue(any('Shared → A' in tip for tip in blocked))
+        self.assertFalse(any('A → Shared' in tip for tip in blocked))
+        view.profile.setCurrentIndex(0)
+        self.assertFalse(any(item.data(0)=='route_profile_blocked' for item in self.editor.scene.items()))
 
     def overlays(self):
         return [item for item in self.editor.scene.items() if item.data(0) == 'route_profile_access']

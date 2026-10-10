@@ -1,43 +1,172 @@
 # Dependable AMR application — revised delivery plan
 
+## Immediate delivery sequence — 9 October 2026
+
+The current user-authorised delivery is a working **Simple-mode application,
+matching source checkpoint and offline Windows installer by 10 October**.
+This sequence supersedes the historical next-action order below for this delivery.
+Detailed movement, directional passage and constrained-turn development are
+deferred. LTN testing, simulations, benchmarks and repairs are explicitly excluded.
+The bundled LTN archive is retained unchanged as a build asset.
+
+| Package | Goal and saved deliverable |
+| --- | --- |
+| P1 Baseline | Preserve current sources and guide inputs, record identity and capture the existing GUI. |
+| P2 Project editing | Complete create/open/edit/undo/save/reopen; keep the canvas prominent and Properties optional. |
+| P3 Configure and check | Deliver Task generation Option A and Department Option A; retain all inputs/callbacks; demonstrate checks and demand preview. |
+| P4 Simple runs | Deliver Simulation settings Option B, explicit Simple practice inputs, frozen runs, progress, cancellation and edit locks. |
+| P5 Review and report | Demonstrate saved-run investigation, playback, relinking and frozen-input PDF/CSV exports. |
+| P6 QA | Run the relevant isolated regression modules and compact/wide actual-widget captures at 100/150/200% scaling, without LTN workloads. |
+| P7 Refine | Fix workflow/data-loss/crash/export blockers first, then clipping and confusing feedback; retain reproduction evidence. |
+| P8 Handover | Build and fresh-install offline, execute the small-map GUI/run/report smoke check, and deliver source/installer hashes, guides and findings. |
+
+Each package retains focused evidence and a short handover in
+`SIMPLE_DELIVERY_REVIEW.md`. The reproducible QA/capture entry point is
+`python -m verification.simple_delivery`; use `--help` for actions.
+Keep advanced controls in existing tabs, menus and contextual panels. No new
+permanent toolbar rows or always-open docks are part of this delivery.
+Feature additions end at P5; QA, correction and packaging take the final third
+of available time. Source/installer delivery is distinct from formal user release
+acceptance and from the historical engineering audit below.
+
+4 October run lifecycle checkpoint: the application freezes a saved revision,
+runs it in a child process, moves the completed output folder, relinks it through
+Simulate, reopens the project, loads read-only playback and exports a PDF report
+from the frozen inputs. The Simulate panel now gives the short relink/playback/
+report sequence. Seventy-five focused run/link/playback/report tests pass; the
+combined test confirms the project archive and frozen run configuration remain
+byte-identical. Other checkpoint 4 workflows and its delivery gate remain open;
+see `PROJECT_WORKSPACE_REVIEW.md`.
+
+4 October project lifecycle checkpoint: an application workflow saves two
+portable revisions, closes and reopens the project, restores the earlier
+revision, then simulates an atomic save failure after another edit. The last
+valid archive stays byte-identical; a separate editor opens the recovery copy
+and saves the unsaved edit to a new project. Project history now explains that
+recovery path. Fifty-five focused storage/recovery/workbench tests pass. Other
+checkpoint 4 workflows and its delivery gate remain open; see
+`RECOVERY_REVIEW.md`.
+
+4 October nested department-edit checkpoint: one UI workflow now places a
+service location and a drop-off zone in the same child editor, accepts it,
+saves the Departments list, undoes/redoes once, saves the portable project and
+reopens it in the application. The department editor now explains the two-step
+save. Forty-nine focused department/draft/project tests pass. Other named
+checkpoint 4 workflows and its delivery gate remain to be audited; see
+`DEPARTMENT_LOCATION_REVIEW.md`.
+
+4 October related-record investigation checkpoint: from a selected task, the
+timeline choice follows recorded payload, native journey and lift identities
+across the saved run. The selected export follows that choice, including shared
+records from other tasks. Thirty-nine focused investigation/quick-start tests
+pass, and the bounded LTN log has related identities for all 206 tasks. The
+illustrated guide and in-app reference now describe the control. See
+`RESULTS_INVESTIGATION_REVIEW.md`.
+
+4 October 2026 investigation export checkpoint: selecting a task, metric or lift
+now enables an export containing its complete evidence timeline across all
+500-event pages, alongside source identity and coverage. The UI states the
+250,000-event / 300 MiB input limits and that larger logs are not truncated.
+Sixty-nine focused investigation/lift/stock/partial-run tests pass; a real LTN
+task export has exact linked event IDs. See `RESULTS_INVESTIGATION_REVIEW.md`.
+File analysis remains in memory and larger-than-limit access remains open.
+
+4 October 2026 JSON import checkpoint: a supported imported JSON file with
+field issues now opens in the editor with a scrollable inline validation panel,
+Recheck and a route back through File → Validate JSON. The modal validation
+warning is removed; corrected fields save and reopen in `.amrproj`. Previous
+version 1 archives now open unchanged and Save upgrades to version 2 with
+explicit run-link metadata. A real supplied LTN archive migration preserved
+configuration, five drawings, revision history and three run links. The focused
+project/workspace/check/CAD group passes 104 tests. See `JSON_IMPORT_REVIEW.md`
+and `ARCHIVE_MIGRATION_REVIEW.md`. The wider checkpoint 4 gate remains open.
+
+4 October 2026 quick-start implementation: Help → Guided walkthrough now has
+the two specified exercises and concise controls reference. The small-map
+fixture, UI captures and matching Markdown/DOCX/PDF guide are in
+`docs/quick-start/`; 88 focused workbench/run/check checks pass, and both
+exported layouts were visually reviewed at four pages. See
+`QUICK_START_REVIEW.md`. The current development installer bundles both
+examples and all guide formats; an installed GUI check now opens all six LTN
+DXF floors and the walkthrough, completes its bounded run and exports a PDF.
+Physical screen/PDF-viewer review and later user testing remain open.
+
+4 October 2026 offline package checkpoint: an Inno Setup per-user development
+installer now bundles the PySide6 GUI, a console run/report worker, the exact
+source fingerprint inputs and local examples/help. A first build failed at
+QtCore import because PyInstaller collected an incompatible ICU DLL; the build
+excludes it. Frozen DXF child processes now dispatch before app option parsing.
+A fresh installed package imported Qt, launched the GUI, loaded all LTN DXF
+floors, completed both example runs and exported PDFs under network-restricted
+execution. See `OFFLINE_INSTALLER_REVIEW.md`. Remote CI evidence, physical
+screen/PDF-viewer review and later release acceptance remain open.
+
 4 October 2026 current LTN measurements: six drawing references / five unique
 drawings (227.7 MB) plus configuration pack into a 15.1 MB project, with exact
 roundtrip and unchanged source. Save/reopen take 2.080 / 0.317 seconds. Two
 bounded six-hour saved-project runs produce identical 150 completed / 15 failed /
 0 pending outcomes in 10.634 / 10.717 seconds; all outcome counts reconcile.
 Failures point to graph entries inside other inventory-bay obstacle bounds at
-seven drop-off zones. Add navigable preflight warnings for that risk next.
-See `LTN_CURRENT_REVIEW.md`. This does not close successful seven-day LTN runs,
+seven drop-off zones. Navigable Project checks warnings now flag that bounded
+risk; see `LOCAL_BAY_ENTRY_REVIEW.md` and `LTN_CURRENT_REVIEW.md`.
+This does not close successful seven-day LTN runs,
 interactive drawing performance or the wider release gates.
 
-4 October 2026 controlled scale completion: two explicit constant-lift-health
+## Delivery and testing phases
+
+The current roadmap phase is implementation and delivery of the listed features,
+workflows, documentation and release materials. A feature is delivered when its
+specified controls, data flow, user entry point and documented behaviour are
+implemented to the scope stated here. Implementation checkpoints may use focused
+checks to confirm that the delivered path runs and produces reviewable evidence.
+
+Simulator design errors, unexpected results and engineering-model disagreements
+found while implementing or demonstrating a feature are recorded as test-phase
+findings. They do not block completion of the planned implementation deliverables.
+Do not expand implementation scope to redesign simulator behaviour or resolve
+those findings during this phase. Preserve the reproduction, observed result,
+expected result and relevant run/configuration so the user can pick it up during
+the testing phase after roadmap deliverables are complete.
+
+After delivery, the user testing phase reviews the completed workflows and
+simulator outcomes against the agreed requirements. That phase triages findings
+and authorises any required simulator corrections. Release acceptance follows
+that review. Keep delivery status, test findings and release acceptance distinct
+throughout this roadmap.
+
+4 October 2026 controlled scale delivery: two explicit constant-lift-health
 runs complete all 7,000 tasks at 10 floors / 60 robots / 1,000 tasks/day / seven
-days. Outcome and input hashes match between runs, all outcomes reconcile, and
-execution plus exports take 100.274 / 100.751 seconds. Only lift wear is overridden;
-the default-wear reference and its resource constraints remain intact. This
-closes the controlled simple-mode scale-completion/repeatability reference,
-not realistic LTN, detailed traffic, UI responsiveness or release acceptance.
+days. The benchmark deliverable and retained evidence are complete. Input and
+outcome hashes match between runs, and execution plus exports take 100.274 /
+100.751 seconds. Only lift wear is overridden; the default-wear reference and its
+resource constraints remain intact. This completes the controlled simple-mode
+scale benchmark deliverable. LTN, detailed traffic, UI responsiveness and release
+acceptance are separate roadmap/testing items.
 See `WORKLOAD_SCALE_REVIEW.md` and the two constant-health evidence summaries.
 
-4 October 2026 scale performance checkpoint: a conservative pickup-floor check
+4 October 2026 scale performance deliverable: a conservative pickup-floor check
 avoids route estimates when no lift serving the two floors meets minimum health.
 Temporary outages/repairs and same-floor work retain normal estimation; five
 new cases and 269 focused regressions pass. Full unchanged workload runtime falls
 from 544.498 to 213.406 seconds with an identical outcome hash. All 7,000 tasks
 now reconcile as completed (6,455), failed (457) or explicitly pending (88).
-Resource constraints and the all-completed gate remain unchanged. See
-`WORKLOAD_SCALE_REVIEW.md`; full regression refresh and wider release gates remain open.
+The 88 pending tasks and retained resource constraints are test-phase findings.
+See `WORKLOAD_SCALE_REVIEW.md`; full regression refresh and wider roadmap
+deliverables remain open.
 
 4 October 2026 pending-state investigation: new runs record each live pending
 task at stop, reconcile those IDs with the bound summary, and expose a
 "pending at stop" filter plus snapshot explanation in Results investigation.
 Cancellation preserves partial coverage; absent reasons and older logs remain
-explicitly unknown rather than inferred. 129 focused tests pass after this change.
+explicitly unknown rather than inferred. The pending-state implementation is
+delivered, with 129 focused checks recorded; scale outcomes remain test-phase
+findings.
 Before this addition, the scheduler baseline passed 2,049/2,049 isolated tests
 in 441.532938 seconds at `84284b4`, with unchanged source and zero broken links:
 `latest/scheduler-window-verified/index.html`. That full baseline does not include
 the new pending-state feature. Preserved local LTN/simulator edits remain part of
-the tested worktree. Scale completion, performance and wider release gates stay open.
+the tested worktree. A refreshed full regression baseline and wider roadmap
+deliverables remain open.
 
 4 October 2026 charging-estimate checkpoint: repeated empty charger approaches
 are reused within a single selection pass, with fresh dispatch checks and
@@ -288,14 +417,16 @@ remain open.
 4 October 2026 boundary-editing checkpoint: polygon drafts now support Escape
 cancellation, reversible corner drags, cancellation on floor/tool/workspace
 changes and rejection of stale location edits. Invalid inputs remain editable
-without changing the saved boundary. Seven new acceptance cases and related UI
-regressions pass (88 tests); full roadmap acceptance is still open. See
+without changing the saved boundary. Seven new focused checks and related UI
+regressions pass (88 tests); the remaining roadmap deliverables are listed below.
+Any observed model issue is logged for the user testing phase. See
 `tests/test_location_boundary_draft.py` and `CAD_WORKSPACE_REVIEW.md`.
 
-The project has a working integrated application and substantial engineering
-verification infrastructure. The remaining work combines correctness gaps,
-completion of existing workflows, verified physical geometry and release material.
-It is not adequately described by either test count or a single completion percentage.
+The project has a working integrated application and substantial implementation
+evidence. Remaining work covers specified workflows, model controls, documentation
+and release materials. Simulator behaviour findings are tracked separately for
+the user testing phase. Progress is not adequately described by a single test
+count or completion percentage.
 
 A fresh `python -m unittest discover -s tests -q` run passed all 870 tests in
 approximately 120 seconds. There are 66 test modules. This verifies the exercised
@@ -304,14 +435,17 @@ The earlier figure of 495 unreviewed option paths is a documentation classificat
 produced by `inventory.py`, not a count of 495 missing or broken features. Its input
 examples and literal-key discovery also do not establish an exhaustive inventory.
 
-For each requirement, distinguish:
+For delivery tracking, distinguish:
 
 - **Implemented:** an executable path and user entry point exist.
-- **Verified within stated scope:** independently specified acceptance evidence
-  covers the behaviour and boundaries being claimed.
-- **Complete:** implementation, acceptance evidence, user workflow and required
-  documentation meet the entire requirement; material limitations are resolved
-  or explicitly excluded from supported behaviour.
+- **Delivery complete:** the specified implementation, user entry point, workflow
+  and required documentation are present. Focused checks may confirm the path is
+  runnable; they do not certify simulator design or engineering correctness.
+- **Test-phase finding:** an observed error, questionable result, unsupported
+  interaction or disagreement with expected simulator behaviour, recorded with a
+  reproduction for review after roadmap deliverables are complete.
+- **Release accepted:** the user has completed the later testing and acceptance
+  phase and accepted the resulting behaviour and documented limitations.
 
 No original release gate is declared complete by this reassessment.
 
@@ -336,9 +470,12 @@ These are supported by code and tests, rather than progress-note claims.
 
 ## Delivery sequence and human review
 
-Work proceeds through the checkpoints below. Each checkpoint ends with a tested
-commit, concise changed-result explanation, reproducible review material and a
-user verification stop. Resume the next checkpoint only on the user's instruction.
+Work proceeds through the checkpoints below. Each checkpoint ends with an
+implementation summary and reviewable delivery material. Preserve focused checks
+as evidence that the implemented path runs. Record simulator behaviour concerns
+as test-phase findings; a user verification stop is for workflow/design review
+where specified, not a requirement to diagnose simulator correctness during
+implementation. Resume the next checkpoint only on the user's instruction.
 Large checkpoints are delivered as reviewable slices, without changing their
 completion criteria to match what happens to be implemented.
 
@@ -348,13 +485,15 @@ Keep technical help notes and meaningful acceptance tests alongside core changes
 Produce the final user tutorial and illustrated guide after the approved UI rework
 so their instructions and screenshots match the delivered application.
 
-### 1. Correct the concrete gaps found in the source review
+### 1. Implement the concrete source-review deliverables
 
-**Delivery update, 3 October 2026:** fixes and acceptance coverage are recorded in
-[Local routing and software evidence](LOCAL_ROUTING_REVIEW.md). User verification
-is the next gate; the later geometry requirements remain open.
+**Delivery update, 3 October 2026:** implementation and focused evidence are
+recorded in [Local routing and software evidence](LOCAL_ROUTING_REVIEW.md).
+Any simulator design review is part of the later testing phase; subsequent
+geometry deliverables remain open.
 
-**Purpose:** make existing behaviour and run evidence trustworthy before extending it.
+**Purpose:** deliver the scoped route-failure handling and software fingerprint
+changes. Record any simulator outcome concerns for later user testing.
 
 1. Local manoeuvre failure must not silently return a blocked straight path.
    A read-only probe requested `(0, 0)` → `(4, 0)` with four rectangular walls
@@ -374,18 +513,26 @@ is the next gate; the later geometry requirements remain open.
    project/check dependencies are omitted too. Define and fingerprint the full
    relevant source dependency set. Preserve honest interpretation of older runs.
 
-**Delivery:** record each issue with a reproducing acceptance test; fix individually;
-trace failure propagation through callers so no movement, time or resource booking
-is fabricated. Make invalid endpoint placement, geometric infeasibility and search
-limits explicit where applicable. Explain changed results and compatibility with
-legacy runs. Preserve legacy comparison without presenting approximations as verified.
+**Delivery:** implement each scoped item and retain its reproducing scenario, focused
+checks and changed-result notes. Make the requested failure outcomes and fingerprint
+behaviour available in the product. Record any suspected simulator-design error or
+unexpected result for the later testing phase; resolving it is not a prerequisite
+for completing this implementation checkpoint.
 
-**Gate:** both geometry probes have explicit correct outcomes; unchanged valid
-reference routes still pass; changes to every covered source dependency invalidate
-prepared-run compatibility; older evidence remains readable with its limits shown.
-Review the small references and representative LTN behaviour before continuing.
+**Delivery gate:** the two probe scenarios, software fingerprint behaviour and
+legacy-evidence presentation are implemented and documented with focused evidence.
+Any disagreement between expected and observed simulator outcomes is recorded for
+the user's testing phase. It does not block moving to the next delivery checkpoint.
 
 ### 2. Finish verification of existing configuration and simulation behaviour
+
+**Bounded delivery scope:** finish configuration reference pages for the current
+supported inputs; provide one inventory file with a row for each discovered
+setting and its default, unit, editor path, runtime consumer, and known limitation;
+complete the named reference workflows in slices 2A–2AN; and retain one runnable
+LTN benchmark with input/output hashes and runtime/memory/project-size fields.
+Do not treat exhaustive proof of every option combination as a delivery condition.
+Record simulator discrepancies for user testing.
 
 **Slice 2A, 3 October 2026:** sixteen routing/door option contracts now have
 individual source/default/validation/acceptance traceability. See
@@ -648,6 +795,10 @@ the inventory. Wider custom/mixed-service stock and report reconciliation remain
 
 **Purpose:** close the first release's engineering evidence requirement.
 
+This checkpoint delivers the inventory and traceability materials. Runtime
+findings discovered during inventory are recorded for the later user testing
+phase; they do not require simulator fixes to complete this deliverable.
+
 - Inventory actual user inputs across configuration, editor, generator and simulator
   consumption paths. Record units, defaults, precedence, validation, limitations,
   supported/partial/defective/unsupported disposition and acceptance links.
@@ -668,137 +819,145 @@ the inventory. Wider custom/mixed-service stock and report reconciliation remain
   before declaring performance satisfactory.
 - Surface unsupported settings and material limitations in the application.
 
-**Gate:** every inventoried option has a reviewed disposition; every supported
-feature has passing acceptance evidence within an explicit contract; calculations,
-results, defects and limitations are traceable in the verification pack. Remaining
-unsupported behaviour is visible rather than silently accepted as supported.
+**Delivery gate:** the inventory file contains one row for each discovered setting
+with unit, default, editor path, runtime consumer, disposition and known limit;
+the LTN benchmark summary contains input/output hashes, elapsed time, memory and
+project size; the help links each unsupported setting to its current limitation.
+Suspected implementation issues remain in the separate test-phase findings log.
 
-### 3. Complete the three correctness workspaces
+### 3. Complete three named project workflows
 
-**Project checks:** extend coverage to resolved generation inputs and all relevant
-references, dimensions, schedules, connectivity, profiles and resource compatibility.
-Keep invalid inputs distinct from warnings and intentional constraint studies.
-Finish affected-object navigation. Preserve stale-check tracking, warning review
-and run-bound findings/acknowledgements.
+**Workflow A — Prepare and check a project:** open an editable project, change a
+generation rule, run Project checks, review a finding, navigate to its object, and
+acknowledge an allowed warning. Deliver the resolved-input checks, affected-object
+navigation and stale-check indicator.
 
-**Demand preview:** complete task-specific values, global staff settings, implicit
-defaults, inactive rules and every zero-work explanation. Reconcile configured
-fixed demand independently across supported schedules and department calendars.
-Retain department/category/payload/date/profile filters and timetable accounting.
-State conditional and runtime-dependent work without inventing fixed totals.
+**Workflow B — Preview demand:** select a date range and department/category,
+inspect generated task rows and the weekly timetable, and see why a rule produces
+zero tasks. Deliver values/defaults and inactive-rule explanations supported by
+the existing generator.
 
-**Results investigation:** retain the implemented task/payload/journey/lift separation
-and missing-evidence handling. Complete assignment delay, resource wait, restriction
-and failure explanations; link each supported metric and report total to contributing
-records. Use frozen inputs and recorded events. Add scalable loading/access for
-representative large logs while preserving older-log compatibility.
+**Workflow C — Investigate a run:** open a saved run, filter to a task, follow its
+task/payload/journey/lift records, inspect pending/failure/resource-wait reasons,
+and export the selected evidence. Deliver paged access for the current 250,000
+event/300 MiB log limits and explain those limits in the UI.
 
-**Gate:** reference scenarios can be followed from configured demand through
-preview, checks, simulated events and final reports with reconciled totals and
-explanations. Missing evidence remains distinguishable from zero activity.
+**Delivery gate:** the workspaces expose the specified inputs, previews, checks,
+investigation views and report explanations. Record any simulator-result mismatch
+or unresolved engineering question as a test-phase finding with its reproduction;
+it does not hold the workspace implementation deliverable open.
 
-**First-release gate:** checkpoints 1–3 plus applicable release checks below.
+**First-release delivery gate:** workflow 2 plus the project workflows in checkpoint
+3 and their listed artifacts are present. Simulator findings remain separate.
 
 ### 4. Finish project and editor hardening
 
-**Purpose:** complete the second release using the existing integrated application.
-This checkpoint supplies reliable core editing commands and necessary controls.
-The broad screen redesign and final user workflows are deferred to checkpoint 8;
-do not choose a new navigation layout or interaction scheme on the user's behalf.
+**Purpose:** complete the named editor and project workflows using the existing
+integrated application. The approved screen design and remaining CAD actions are
+specified in checkpoint 8.
 
-- Finish frequent nested configuration editing, rule editing and create/rename/delete
-  workflows with reference-safe updates, inline properties and bulk previews.
-- Audit all persistent edits for coherent undo/redo, atomic saving, recovery and
-  revision comparison/restore. Retain command grouping and pending-draft protection.
-- Define explicit import/archive migrations with fixtures and failure behaviour.
-  Finish revision/asset retention and large-project save/load responsiveness.
-- Retain revision/input/software-bound external runs, relinking and JSON interchange.
-- Finish snapping controls, intentional crossing/junction creation and corridor
-  operations that preserve applicable attributes/references in one undo step.
-- Preserve functional keyboard access, readable controls and user preferences
-  while hardening the core. Finish playback underlay functionality. Full navigation,
-  dialog, typography and dense-map presentation rework is reviewed at checkpoint 8.
-  Route identification must continue to use labels/patterns alongside colour.
+- Complete one nested-edit workflow: add a department location and drop-off zone,
+  save the parent dialog, undo/redo, and verify the project after reopen.
+- Complete one project lifecycle workflow: save, close, reopen, restore a revision,
+  and recover after a simulated failed save without losing the last valid project.
+- Complete one run lifecycle workflow: freeze inputs, run, relink a moved output
+  folder, reopen the read-only run and export its report.
+- Complete one import workflow: import a supported JSON project, show validation
+  errors inline, save as `.amrproj`, reopen and retain supported fields.
+- Support migration from the immediately previous archive version; unsupported
+  versions show an actionable message.
+- Complete one corridor edit workflow: snap, split at a junction, preserve edge
+  attributes/profile references, undo/redo and save/reopen.
+- Keep keyboard access for these workflows and preserve existing user preferences.
 
-**Gate:** representative users can create, edit, check, save, close, reopen, recover,
-simulate, investigate and report a project without losing references or history.
-Large-text and keyboard workflows, moved results, failed saves, migrations and
-performance meet the agreed acceptance criteria.
+**Delivery gate:** the five named workflows above are available in the application,
+produce the described saved state, and have concise user instructions. Any observed
+failure is recorded for later user testing and does not expand this implementation
+scope.
 
-**Second-release gate:** checkpoint 4 plus continued first-release regression and
-applicable release checks below.
+This is a delivery milestone for the listed editing and project workflows. Any
+behaviour findings are retained for later testing and do not hold implementation
+delivery open.
 
-### 5. Verify door geometry and profile interactions
+**Second-release delivery gate:** all five checkpoint 4 workflows are documented
+and produce the named saved project/run state. Simulator findings remain separate.
 
-- Define explicit modelled corridor, opening, junction and obstacle geometry;
-  drawings remain underlays, not inferred collision boundaries.
-- Introduce explicit robot manoeuvring/clearance parameters with unit validation.
-- Verify loaded robot/payload footprints through openings and along trajectories.
-- Keep clean/dirty/shared access in **route profiles**. Shared sections are allowed
-  by each relevant profile. Finish loaded, return, batch and empty-journey policy
-  interactions without adding a competing classification system.
-- Establish the trajectory representation shared by simulation and visualisation,
-  collision checks, failure outcomes and an explicit legacy migration/comparison mode.
+### 5. Detailed movement workflow — bounded first delivery
 
-**Gate:** independently specified just-fit, just-fail, orientation, load and
-profile-intersection cases agree between simulation, display and recorded evidence.
-No failed geometry request silently becomes straight-line movement.
+Add a Detailed mode choice to Simulation settings and freeze the mode in each run.
+Add robot-type fields for footprint length/width, wall clearance, forward/reverse/
+rotation speed, turning radius, and reverse/pivot permissions. The first delivery
+supports forward travel, reverse travel and a single minimum-radius turn using one
+shared trajectory for simulation, playback and event evidence. Reject unsupported
+manoeuvres with a named reason and retain the run up to the failure.
 
-### 6. Implement verified directional traffic
+**Explicitly deferred:** lateral motion, acceleration/braking, configurable turning
+reference offsets, multi-point search, payload offset/articulated loads, automatic
+recovery/deadlock proofs, optional passing/no-queuing areas and user-drawn obstacle
+geometry. Existing drawings remain underlays. These are follow-on proposals, not
+implicit parts of this bounded delivery.
 
-- Replace approximate width-based concurrency where the geometric mode applies
-  with keep-right directional lanes, narrow-section reservations and junction
-  conflict handling.
-- Account for loaded footprints, direction, occupancy and safe release of claims.
-- Distinguish infeasible routes, deadlocks and exhausted search limits. Provide
-  understandable diagnostics and evidence for the affected geometry/resources.
+**Workflow:** choose Detailed; set robot footprint and movement fields; prepare a
+project with a straight corridor, one opening and one 90-degree route; save and run;
+open playback and see the same recorded path and any explicit failure reason.
+Delivery ends when those controls, frozen input fields, playback path and reason
+display are available. Outcome concerns are recorded for user testing.
 
-**Gate:** opposing traffic, narrow passages, junction crossings, queues, contention
-and recovery cases satisfy capacity/collision invariants with repeatable outcomes.
-The displayed and simulated trajectories are the same.
+### 6. Directional passage workflow — bounded first delivery
 
-### 7. Implement constrained manoeuvres in successive checkpoints
+Use explicit corridor width and robot width to choose single-file or two-lane
+operation. Reserve a single-file section before entry, queue opposing robots at
+its ends, and release the reservation when the robot exits or its run stops.
+Provide a visible reservation/wait reason in playback and investigation.
 
-Deliver and review in this order:
+**Explicitly deferred:** drawn passing places/no-queuing regions, mid-corridor
+yielding, urgency preemption, multi-section reverse retreat and general deadlock
+proof. The initial workflow covers one narrow section and two opposing robots.
 
-1. Minimum-radius turns and explicitly permitted pivots.
-2. Reversing with explicit robot capability and motion constraints.
-3. Multi-point manoeuvres with bounded search and meaningful failure reporting.
+**Workflow:** configure one narrow and one passable corridor; release two robots
+from opposite ends; review reservation ownership, waiting reason and release in
+the run. Delivery means the controls, queued state, reason and event evidence are
+available. Unexpected movement outcomes are testing findings.
 
-Replace footprint-derived visual steering heuristics only through an explicit
-model choice/migration. Check swept loaded footprints over every manoeuvre and
-use the same trajectories for timing, movement evidence and visualisation.
-Provide editor controls for drawing and adjusting these paths, with visible
-turning radii, permitted manoeuvres and clearance/infeasibility feedback.
+### 7. Constrained-turn workflow — bounded first delivery
 
-**Gate for each:** independent feasible/infeasible geometry cases, minimum-radius
-and clearance boundaries, resource interactions, deterministic replay and explicit
-search-limit/deadlock outcomes. Legacy comparisons identify changed assumptions.
+Deliver one turn planner using the robot's configured minimum turning radius and
+reverse permission. Expose steering/pivot/reverse capabilities in robot settings;
+the initial planner uses steering and reverse, with pivot as an explicit opt-in.
+Show the planned path before run and retain the same path in playback.
 
-**Third-release gate:** checkpoints 5–7 plus continued earlier-release regression
-and the final release requirements below.
+**Explicitly deferred:** multi-point manoeuvres, lateral travel, advanced search,
+per-payload movement profiles and user-drawn trajectory editing.
 
-## Core-feature completion gate
+**Workflow:** set a robot radius and permissions; use a right-angle corridor and
+one constrained bay approach; inspect the planned route, save, run and inspect
+playback. An unavailable turn has a named outcome for later user testing.
 
-Core checkpoints 1–7 must meet their acceptance gates before production UI rework
-starts: supported engineering behaviour is verified, project/run operations are
-reliable, and the specified geometric model is implemented with explicit failure
-outcomes. Unresolved supported-feature defects keep this gate open. Preparing
-concept images is design work and does not satisfy this gate. Visual selection
-does not establish implemented functionality.
+Delivery checkpoints 5–7 end when the named controls and workflows are present,
+their run inputs are frozen, and the route/wait/failure evidence is reviewable.
+The detailed simulator test phase follows after roadmap implementation deliverables.
+
+## Core-feature delivery gate
+
+Core checkpoints 1–7 describe implementation deliverables and can proceed alongside
+the approved UI work. Their completion means the specified engineering controls,
+model paths and failure reporting have been implemented. Simulator design errors
+or unexpected outcomes are recorded for the later user testing phase and do not
+block implementation delivery. Preparing concept images alone does not satisfy an
+implementation deliverable.
 
 ### 8. User-approved UI and CAD workflow rework — current priority
 
 **Updated entry conditions:** the latest user request explicitly brings UI and
 interactions ahead of the remaining core work. The graph-focused A2 workbench and
 the confirmed selection/properties conventions are authorised for implementation.
-Additional material workflows retain their user review gate. Stored images are
-design concepts, not evidence of implemented controls or geometry.
+Additional material workflows outside the named checkpoints below remain deferred.
+Stored images are design concepts, not evidence of implemented controls.
 
-The first production interaction checkpoint is described in
+The production interaction checkpoint is described in
 [CAD workspace review](CAD_WORKSPACE_REVIEW.md): compact commands, collapsed
-properties, directional selection and typed continuous drawing. It does not close
-the full UI or core-feature gate.
+properties, directional selection and typed continuous drawing. This roadmap now
+limits additional CAD delivery to the workflows below.
 
 The following [A2 implementation checkpoint](A2_IMPLEMENTATION_REVIEW.md) applies
 the approved visual shell in production: workflow menus/bar, illustrated CAD
@@ -806,104 +965,100 @@ tools, light/dark/high-contrast map, Properties side tab and checks strip. Direc
 Door placement preserves topology and references. Full CAD geometry commands,
 run editing locks, dense labels and final human acceptance remain open.
 
-**8A — design and workflow approval**
+**8A — A2 shell and session preferences**
 
-- Retain the selected A2 project-tree workbench as the visual target. The graph
-  occupies the majority of the main workspace. Side and bottom panels provide
-  additional information and must not overcrowd the graph. Keep drawing controls
-  compact, with properties and checks collapsed in the default drawing view.
-- Retain A, B and C alternatives for comparison. Review panel expansion, docking,
-  resizing, remembered state and a focus-canvas action before implementation;
-  frequent selection must not unexpectedly shrink the drawing area. Keep important
-  check/status information discoverable when its full panel is collapsed.
-- Review creation/drawing, selection/properties, configuration, checks, simulation,
-  investigation and reporting flows. Show save/recovery, invalid input, stale
-  checks, warnings, progress/cancellation and representative dialog states.
-- Obtain explicit approval of navigation, panels, tool grouping, visual hierarchy,
-  drawing gestures, keyboard mappings and the distinction between current projects
-  and read-only saved runs. Elapsed time or an unattended machine is not approval.
-- Confirm the selected design with a reviewable prototype before completing the
-  production rework. Any material workflow change returns for user approval.
+Keep the existing graph-dominant shell, project tree, compact toolbar, collapsed
+Properties tab and checks strip. Deliver three explicit session workflows: switch
+Layout/Configuration/Check/Simulate/Review/Report; hide and restore panels with
+Focus canvas; resize Layout and Configuration panes and retain their proportions
+across restart. The existing code already supplies much of this scope; remaining
+work is gaps listed in CAD_WORKSPACE_REVIEW.md. Do not reopen A/B/C navigation
+selection or add docking as a requirement for this release.
 
-**8B — familiar CAD interaction requirements**
+**8B — drawing and selection**
 
-- Draw lines, connected polylines, arcs/fillets where supported, corridor nodes,
-  doors and labelled location footprints directly on the canvas. Locations have
-  clear connection points and editable size, position and rotation.
-- Provide crosshair/dynamic input, typed coordinates/lengths/angles with visible
-  units, grid and object snaps (endpoint, midpoint, intersection and perpendicular),
-  orthogonal/polar constraints and clear snap/preview feedback.
-- Support familiar selection, additive selection and window/crossing selection;
-  editable grips; move, copy, rotate, trim, extend, offset, split and join operations
-  where meaningful. Model topology and routing references must remain correct.
-- Inserting a node on an edge splits/reconnects it atomically. Crossing a route
-  must explicitly distinguish a connected junction from a geometric crossing.
-- Provide layers, visibility/locking, line type, line weight, colour and labels.
-  These control presentation, not routing permissions. Clean/dirty/shared access
-  remains defined by route profiles; shared means membership in applicable profiles.
-- Provide wheel zoom around the cursor, pan, zoom extents/selection, consistent
-  Esc cancel and Enter finish behaviour, repeat command and per-operation undo/redo.
-  Final keyboard/mouse mappings require user approval and discoverable tooltips.
-- Show widths, turning radii and swept-clearance feedback using the verified core
-  model. Invalid geometry must be explained rather than merely drawn as successful.
-- Complete resizable/dockable workspaces, contextual properties, bulk-edit previews,
-  consistent dialogs, large text, keyboard access, contrast and custom-rendering
-  accessibility. Labels and patterns accompany route colours.
+Deliver three entry-to-save workflows: (1) draw a connected corridor using mouse
+or typed `X,Y` / `@distance<angle`, then finish or cancel; (2) create a junction
+at an existing/interior crossing and undo it; (3) select by click/window/crossing,
+open Properties explicitly, edit one field, undo/redo and save/reopen. Retain the
+already implemented snaps, directional window rules and CAD conventions.
 
-**Gate:** the user approves the design and workflows, then verifies the implemented
-CAD operations on reference and LTN projects. Drawing, cancellation, selection,
-topology preservation, undo/redo, save/reopen, accessibility and saved-run isolation
-pass acceptance tests. Image approval alone does not prove working interactions.
+**8C — graph editing**
 
-### 9. User tutorial and illustrated guide — after approved UI delivery
+Deliver four workflows: move selected graph objects by typed displacement or picked
+destination; copy a selected subgraph with new identities and empty bays by default;
+rotate a selection by typed centre/angle or picked directions; trim/extend one free
+corridor endpoint to a selected boundary. Each previews before Apply, produces one
+undoable change, and saves/reopens through the project archive. Defer clipboard
+integration, department/lift duplication, general offset and arbitrary multi-edge
+trimming.
 
-- Deliver a compact guided tutorial taking a new user from a blank project through
-  drawing corridors, placing nodes/locations/doors, assigning profiles, configuring
-  robots/payloads/demand, checking, simulating, investigating and reporting.
-- Include explicit step-by-step actions, expected screen states, independently
-  verified expected results, common mistakes and recovery. Cover CAD snapping,
-  dimensions, line types/layers, selection and undo as practical exercises.
-- Follow with an LTN worked example and contextual help in the final application.
-- Deliver a separate illustrated PDF user guide with editable source, an option
-  reference and screenshots of the approved UI and relevant dialogs. Distinguish
-  display settings from engineering model settings and explain limitations.
-- Supply editable guide sources in both Word and Markdown. Deliver the tutorial
-  as an in-application guided walkthrough, with the compact reference and LTN example.
-- Check the tutorial and guide against the delivered application. User completion
-  of the tutorial is explicitly excluded from release acceptance (3 October Q&A).
-  Design-concept images are not final guide screenshots, and checkpoint notes do
-  not substitute for this deliverable.
+**8D — model and drawing layers**
 
-**Gate:** a new engineering modeller can reproduce the expected reference outcome
-and follow the LTN example using only the delivered tutorial and guide. Documents
-match the released UI version and all files are retained with editable sources.
+Deliver layer create/rename, assign selected objects, change visibility/lock, set
+new-drawing layer, and set explicit line colour/pattern/width. Keep route-profile
+permissions independent from visual styling. Defer per-object overrides, node
+symbol styling, custom DXF source flags and export-style propagation.
+
+**8E — presentation and edit safety**
+
+Deliver persistent normal/dark/high-contrast themes, adjustable text size, object
+name filtering, zoom-to-selection, simulation-time project edit lock, and cancellation
+of active drafts on Escape or workspace/floor changes. Defers are full accessibility
+certification, arbitrary docking, collision-aware label placement and all-platform
+screen-size tuning.
+
+**Delivery gate:** each numbered workflow above can be performed in the application,
+shows a preview where specified, has a defined finish/cancel path, and saves through
+the project file. Record simulator findings for later user testing. Human testing
+is a later phase and does not block this delivery gate.
+
+### 9. Quick-start and reference guide — after UI delivery
+
+Deliver one in-app walkthrough and one illustrated guide (PDF plus editable DOCX
+and Markdown). The walkthrough has exactly two exercises: a small connected map
+with two robot types, and the supplied LTN project. Each exercise lists the actions,
+expected UI state, how to save a run, where to inspect results, and how to export a
+report. Include a concise reference for project checks, demand preview, snaps,
+selection, undo, layers, run investigation and report export. Use captures from the
+delivered UI. Do not build a general training course or duplicate the full option
+inventory in the guide.
+
+**Delivery gate:** both exercises can be followed using only the shipped help;
+PDF/DOCX/Markdown files agree on steps and controls and match the delivered UI.
+Simulator-result concerns are recorded for user testing.
 
 ### 10. Final release validation
 
-Automated tests and engineering evidence run throughout development. User release
-acceptance follows the core and approved UI gates and excludes the tutorial.
+Automated checks and implementation evidence run throughout development. The user
+testing phase follows roadmap delivery and reviews simulator behaviour; release
+acceptance follows that phase and excludes the tutorial.
 Tutorial/help/guide delivery and document quality checks remain required work.
 
 - Execute Windows clean-install and launch/run/report checks from the actual
   installer, without administrator access and with networking unavailable.
   Installation, normal operation, help and reporting must all work offline.
   Retain executed CI evidence.
-- Run the complete normal/boundary/invalid/interaction acceptance matrix and
-  independent invariant checks. Reconcile demand, event records and report totals.
-- Confirm repeatability and agreed project-size, save/load, memory and LTN runtime
-  thresholds with reproducible inputs and the released software fingerprint.
-- Publish the general engineering verification pack: requirements/dispositions,
-  independent calculations, test inputs/results, defects and unresolved limitations.
+- Prepare and run the complete normal/boundary/invalid/interaction test matrix and
+  independent invariant checks during the user testing phase. Reconcile demand,
+  event records and report totals; log findings for user triage.
+- Record project size, save/load, peak memory and LTN runtime for the named
+  reference workloads. No numeric pass threshold is implied until the user sets one.
+- Publish one delivery pack containing feature-to-workflow mapping, run inputs,
+  implementation checks, known scope limits and a separate test-phase findings log.
 - Verify the contextual help, tutorial, LTN example and illustrated guide from
   checkpoint 9 against the final installed application.
-- Have the user complete this agreed acceptance workflow: open/create a project,
+- After implementation delivery, have the user review this workflow in the testing
+  phase: open/create a project,
   edit geometry and configuration, check inputs, simulate, investigate results or
-  a blockage, compare runs and export reports. Resolve review findings before
-  declaring the complete plan delivered. Do not add tutorial completion to this gate.
+  a blockage, compare runs and export reports. Resolve or disposition findings under
+  the user's direction before release acceptance. Do not add tutorial completion
+  to this gate.
 
-**Final gate:** every original requirement has inspectable implementation,
-acceptance evidence and its required user-facing deliverable. An unresolved or
-unverified requirement keeps its gate open; successful narrow tests cannot close it.
+**Roadmap delivery gate:** workflows 2A–2C, 5–9 and offline packaging can be
+performed from the named inputs and produce the listed saved artifacts. The
+delivery pack links each workflow to its controls and scope. Simulator findings
+are kept for the later user testing phase. Release acceptance follows that phase.
 
 ## Retained decisions
 
@@ -915,33 +1070,31 @@ explicit migrations and legacy comparison; sequential user verification checkpoi
 
 ## Confirmed Q&A decisions — 3 October 2026
 
-These requirements refine the earlier roadmap and take precedence where wording
-conflicts. They are agreed target behaviour, not claims of implemented or verified
-functionality. The user explicitly resumed implementation after the Q&A and
-authorised multiple subagents on 3 October 2026. Complete core features sequentially, then
-the approved UI workflows, and finish the tutorial and illustrated guide at the end.
-Keep engineering test evidence current throughout.
+These notes record the user's decisions. The bounded delivery is defined by
+checkpoints 5–9; items marked deferred are future scope, not hidden acceptance
+conditions for this delivery. Simulator outcomes are reviewed in the later user
+testing phase.
 
-### Simulation modes and geometry
+### Simulation modes and geometry — bounded in checkpoint 5
 
 - Provide a Simple/Detailed simulation behaviour toggle, not a UI-complexity toggle.
   Simple preserves existing graph/capacity behaviour, including door-width and
   route-profile restrictions. Detailed adds physical trajectories and traffic
   interactions. Record the selected mode with each frozen run.
-- Corridor width is measured between walls. Normally provide two keep-right lanes;
+- **Deferred:** Corridor width is measured between walls. Normally provide two keep-right lanes;
   use single-file operation when the loaded footprints and required clearances
   cannot accommodate two lanes. Physical openings/obstructions still use explicit
   model geometry; drawings remain underlays.
-- Wall clearance and robot-to-robot minimum separation are separate user settings,
+- **Deferred:** Wall clearance and robot-to-robot minimum separation are separate user settings,
   with project defaults and optional robot-type overrides. Enforce the larger
   robot-to-robot requirement when two robot types differ. The earlier 100 mm
   discussion does not establish a compulsory or universal default.
-- Users may draw no-queuing areas, but these are optional for simulation. Protect
+- **Deferred:** Users may draw no-queuing areas, but these are optional for simulation. Protect
   modelled doors/openings and junction connecting paths automatically even without
   custom areas. Check the complete loaded footprint when deciding whether a stop
   obstructs protected space.
 
-### Yielding, queuing and blockage handling
+### Yielding, queuing and blockage handling — deferred beyond checkpoint 6
 
 - Robots can queue in corridors if they do not obstruct doors, junctions or drawn
   no-queuing areas. In a corridor wide enough for passing, the yielding robot may
@@ -962,32 +1115,32 @@ Keep engineering test evidence current throughout.
   and evidence, and highlight the robots, blocked routes and conflicting areas.
   An exhausted search is a distinct explicit error, not proof of deadlock or passage.
 
-### Robot movement and load model
+### Robot movement and load model — partial delivery in checkpoint 5
 
-- Provide steering, pivoting and omnidirectional presets. Define movement capability
+- **Deferred:** Provide steering, pivoting and omnidirectional presets. Define movement capability
   per robot type, with independently selectable stationary pivot and lateral motion.
   Reversing, minimum-radius turns and multi-point manoeuvres must use those capabilities.
-- Use one empty and one loaded settings set per robot type, not a separate movement
+- **Deferred:** Use one empty and one loaded settings set per robot type, not a separate movement
   configuration for every robot/payload combination. Loaded settings may change
   movement permissions, speeds and turning radius.
-- Configure forward, reverse, sideways and rotation speeds separately, exposing
+- Checkpoint 5 specifies forward, reverse and rotation speeds. **Deferred:** configure sideways speed separately, exposing
   the relevant values for each type. Loaded reverse, lateral and rotation speeds
   are independently configurable from their empty equivalents.
-- Detailed mode models acceleration and braking explicitly, with separate empty
+- **Deferred:** Detailed mode models acceleration and braking explicitly, with separate empty
   and loaded values and angular acceleration/braking. These affect journey time,
   stopping distance and safe traffic behaviour.
-- Turning speed must satisfy both a configured maximum turning speed and a
+- **Deferred:** Turning speed must satisfy both a configured maximum turning speed and a
   configured lateral-acceleration limit; use the lower permitted speed.
-- The turning reference point is configurable per robot using longitudinal/lateral
+- **Deferred:** The turning reference point is configurable per robot using longitudinal/lateral
   offsets from its geometric centre in millimetres, and is displayed on its footprint.
   Do not silently interpret an entered turning radius as a centre-based radius.
-- Payloads are centred, rigidly carried loads. Offset load placement and articulated
+- **Deferred:** Payloads are centred, rigidly carried loads. Offset load placement and articulated
   towing are outside this agreed scope; centred loads can still extend beyond the
   robot body and their complete footprint must be checked.
 
-### CAD and project workflow
+### CAD and project workflow — bounded in checkpoints 4 and 8
 
-- Support both centreline-plus-width corridor drawing with automatic nodes/links,
+- **Deferred:** Support both centreline-plus-width corridor drawing with automatic nodes/links,
   and explicit boundary drawing from which the route is derived.
 - Use CAD window/crossing selection: left-to-right selects fully enclosed objects;
   right-to-left selects objects touched by the selection area. Support Shift
@@ -1000,17 +1153,16 @@ Keep engineering test evidence current throughout.
   day and seven simulated days. Benchmark this workload; do not impose these values
   as hard software limits or invent an agreed runtime threshold.
 - Deliver a Windows installer that does not require administrator access. Bundle
-  the dependencies/assets needed for fully offline installation, help and reporting.
+  the dependencies/assets needed for the checkpoint 9 walkthrough and PDF/CSV reports.
 
-### Reports, comparisons and learning materials
+### Reports, comparisons and learning materials — bounded in checkpoints 9–10
 
-- Default report sections, individually selectable: inputs/assumptions/software
+- Deliver PDF/CSV export in the report workflow. **Deferred:** individually selectable report sections for inputs/assumptions/software
   version/project revision; demand and completed/failed/pending outcomes with
   explanations; delivery times/waits/queues/resource utilisation; energy/charging/
   fleet performance; route restrictions/geometric failures/deadlocks; verification
   findings and known limitations.
-- Export PDF, supporting CSV records and an Excel workbook.
-- Integrate comparison of multiple runs, displaying input differences alongside
+- Export PDF and supporting CSV records. **Deferred:** Excel workbook and multi-run comparison, displaying input differences alongside
   results. Support runs from different project files as well as revisions of the
   same project, including alternative layouts and fleet sizes.
 - Deliver an in-app guided walkthrough, illustrated PDF guide and editable Word
@@ -1020,6 +1172,19 @@ Keep engineering test evidence current throughout.
   completion is excluded from that acceptance; the tutorial remains a deliverable.
 
 ## Next action when resumed
+
+Continue with CAD workflows 8A–8E, then the bounded project and simulator workflows
+in checkpoints 2–7, followed by the quick-start materials and offline package.
+Each workflow names its user action and saved result. Keep simulator design concerns
+in the test-phase findings log for the user's later review.
+
+## Historical implementation notes
+
+The dated implementation notes that follow preserve prior progress and evidence.
+They are a development history, not additional scope or completion gates. The
+bounded workflows in checkpoints 2–10 above define this delivery. If a historical
+note describes a broader simulator feature, mark it as existing work or deferred
+follow-up; do not infer that its full engineering validation is part of delivery.
 
 The next correction adds the user-confirmed opt-in direct fallback for failed
 local inventory-bay manoeuvres. The default remains rejection; non-finite
@@ -1311,3 +1476,14 @@ those audits when needed by these workflows and before final release. Preserve
 the user's uncommitted LTN edits and the explicit UI workflow approval checkpoint.
 
 - Optional depleted-source supply: default off; unique objects supplied at pickup, with addition events and counts. Exact identities and reserved empty exchanges retain stock requirements. Tests: `test_source_payload_replenishment`.
+
+## Subsequent building-flow increment
+
+The approved T1–T7 sequence is implemented separately from the preserved Simple
+delivery: reproducible assets and interface inventory; checked tutorial engine
+with a live-control bubble; twelve-chapter core course; frozen scenario evidence;
+confirmed DXF interpretation; service-protected two-lift proposals; integrated QA,
+illustrated guide and offline package. See `BUILDING_TUTORIAL_REVIEW.md` for the
+package handovers and practical limits. Main instruction delivery is a small
+anchored bubble; the larger walkthrough is an optional reference. Detailed
+development and LTN testing, workloads, benchmarks and repairs remain deferred.

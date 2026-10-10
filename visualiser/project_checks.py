@@ -26,6 +26,48 @@ def config_fingerprint(config) -> str:
                                     separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
+def _entry_overlapping_bay_bounds(location):
+    """Find drawn bays whose expanded local-routing bounds cover the graph entry.
+
+    The runtime treats every *other* bay at a location as an obstacle expanded by
+    0.15 m. A bay with no drawn polygon has a synthetic footprint; this check is
+    deliberately limited to the reviewable, drawn footprints.
+    """
+    spaces = location.get('inventory_spaces', [])
+    if not isinstance(spaces, list) or len(spaces) < 2:
+        return []
+    try:
+        entry_x, entry_y = float(location['x']), float(location['y'])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return []
+    if not (math.isfinite(entry_x) and math.isfinite(entry_y)):
+        return []
+    conflicts = []
+    for index, space in enumerate(spaces):
+        if not isinstance(space, dict) or not isinstance(space.get('points'), list):
+            continue
+        points = []
+        for point in space['points']:
+            if not isinstance(point, dict):
+                continue
+            try:
+                # Match the runtime's local-bay obstacle calculation: drawn
+                # points are offsets from their parent graph location.
+                x = entry_x + float(point.get('dx', 0.0) or 0.0)
+                y = entry_y + float(point.get('dy', 0.0) or 0.0)
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(x) and math.isfinite(y):
+                points.append((x, y))
+        if len(points) < 3:
+            continue
+        xs, ys = zip(*points)
+        if (min(xs) - 0.15 <= entry_x <= max(xs) + 0.15 and
+                min(ys) - 0.15 <= entry_y <= max(ys) + 0.15):
+            conflicts.append((index, str(space.get('name') or f'Space {index + 1}')))
+    return conflicts
+
+
 @dataclass(frozen=True)
 class Finding:
     code: str
@@ -56,6 +98,7 @@ class CheckReport:
     finding_inputs: dict = field(default_factory=dict)
     check_groups: dict = field(default_factory=dict)
     external_files: dict = field(default_factory=dict)
+    route_checks: list = field(default_factory=list)
 
     def is_stale(self, config):
         return (self.config_hash != config_fingerprint(config) or
@@ -99,6 +142,7 @@ class CheckReport:
                 "dependency_schema_version": 1,
                 "finding_inputs": self.finding_inputs, "check_groups": self.check_groups,
                 "external_drawing_availability": self.external_files,
+                "route_checks": self.route_checks,
                 "scope": "Structural, reference, schedule, graph and payload-capacity preflight; not full simulator validation."}
 
 
@@ -106,6 +150,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
     """Read raw input before normalisation; never repair or save it implicitly."""
     findings = []
     completed_groups = set()
+    route_checks = []
 
     def add(code, severity, path, name, message, consequence, action,
             section="project", target="", kind=None):
@@ -131,7 +176,8 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             finding_inputs={f.id: capture(dependency_checks.dependencies(f)) for f in ordered},
             check_groups={key: {'label': label, 'execution': 'completed' if key in completed_groups else 'not_run',
                                 'inputs': capture(deps)}
-                          for key, (label, deps) in dependency_checks.GROUPS.items()}, external_files=external)
+                          for key, (label, deps) in dependency_checks.GROUPS.items()}, external_files=external,
+            route_checks=route_checks)
 
     completed_groups.add('structure')
     if not isinstance(config, dict):
@@ -232,6 +278,10 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                 p = path + "/" + str(key).replace("~", "~0").replace("/", "~1")
                 sec = section if path else str(key)
                 if key in positive | nonnegative:
+                    # The robot editor saves an unspecified own mass as null.
+                    # It is optional report metadata; payload mass is required.
+                    if key == 'weight_kg' and child is None and re.fullmatch(r'/amrs/\d+', path):
+                        continue
                     inferred_bay_dimension = (key in {'length_m', 'width_m', 'height_m'}
                                               and re.fullmatch(r'/locations/\d+/inventory_spaces/\d+', path))
                     must_be_positive = key in positive and not inferred_bay_dimension
@@ -508,14 +558,18 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             "Correct errors and run checks again.", kind="coverage")
         return finish()
 
-    # Resolve active demand rules without running a simulation. Generator setup
-    # uses identifier membership only; physical objects are not needed here.
+    # Resolve active demand rules without running a simulation. Payload metadata
+    # retains tracked-item source locations; no physical runtime state is prepared.
     from amr_sim_task_generation import TaskGenerationManager, SharedContainerConflictError, DepartmentWasteTaskGenerator
     from amr_sim_time_utils import SimulationClock
+    from types import SimpleNamespace
+    generation_manager = None
     try:
+        payload_metadata={row['name']: SimpleNamespace(**copy.deepcopy(row)) for row in config.get('payloads', [])}
+        payload_metadata.setdefault('__empty__',SimpleNamespace(track_items=False,items={}))
         generation_manager = TaskGenerationManager(copy.deepcopy(config), SimulationClock(dates['start_datetime']),
                               {key: None for key in by_collection['locations']},
-                              {key: None for key in by_collection['payloads']}, prepare_runtime=False)
+                              payload_metadata, prepare_runtime=False)
         for generator in generation_manager.generators:
             if not isinstance(generator, DepartmentWasteTaskGenerator):
                 continue
@@ -563,45 +617,29 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         error('/task_generation', f'Demand rules could not be resolved: {exc}', 'task_generation',
               code='GENERATION_RESOLUTION')
 
-    def reachable(start, end, profile=None, task=None):
-        profile, task = profile or {}, task or {}
-        allowed_nodes = set(profile.get("allowed_nodes", [])) | set(task.get("allowed_nodes", []))
-        allowed_lifts = set(profile.get("allowed_lifts", [])) | set(task.get("allowed_lifts", []))
-        allowed_edges = {tuple(e) for e in profile.get("allowed_edges", [])} | {tuple(e) for e in task.get("allowed_edges", [])}
-        if allowed_nodes and (start not in allowed_nodes or end not in allowed_nodes):
-            return False
-        adjacency = {}
-        for a, b, lift in directed:
-            if allowed_nodes and (a not in allowed_nodes or b not in allowed_nodes):
+    from amr_route_navigation import audit_task_routes
+    try:
+        route_checks.extend(audit_task_routes(config, names, directed, generation_manager))
+        if generation_manager is not None:
+            completed_groups.add('task_routes')
+        for row in route_checks:
+            if row['status'] == 'Reachable':
                 continue
-            if lift and allowed_lifts and lift not in allowed_lifts:
-                continue
-            if not lift and allowed_edges and (a, b) not in allowed_edges:
-                continue
-            adjacency.setdefault(a, set()).add(b)
-        stack, seen = [start], set()
-        while stack:
-            node = stack.pop()
-            if node == end:
-                return True
-            if node not in seen:
-                seen.add(node)
-                stack.extend(adjacency.get(node, set()) - seen)
-        return False
-
-    for i, task in enumerate(config.get("tasks", [])):
-        profile = profiles.get(task.get("route_profile") or ("dirty" if "dirty" in task.get("labels", []) else ""), {})
-        target = task.get("dropoff_zone") or task["dropoff"]
-        try:
-            connected = reachable(task["pickup"], target, profile, task)
-        except (TypeError, ValueError):
-            error(f"/tasks/{i}", "Task routing allowances must use identifier lists and edge pairs.", "tasks", task["id"])
-            continue
-        if not connected:
-            add("TASK_UNREACHABLE", "warning", f"/tasks/{i}", task["id"],
-                f"No directed graph route from {task['pickup']} to {target} under this task's allowances.",
-                "This task is expected to fail even if a robot is available.",
-                "Review connections or keep this warning for an intentional constraint study.", "tasks", task["id"])
+            code = ('PROFILE_REFERENCE' if row['status'] == 'Invalid' else
+                    'RETURN_UNREACHABLE' if row['leg'] == 'Return' else
+                    'TASK_UNREACHABLE' if row['path'].startswith('/tasks/') else 'GENERATED_TASK_UNREACHABLE')
+            section = row['path'].split('/')[1]
+            profile = row['profile'] or 'unrestricted'
+            add(code, 'error' if row['status'] == 'Invalid' else 'warning', row['path'], row['name'],
+                f"{row['leg']} route {row['pickup']} → {row['dropoff']} is {row['status'].lower()} under profile {profile!r}.",
+                row['reason'] + ' This checks graph permissions, not clearance, capacity or timing.',
+                'Review the profile in Layout, its directed connections and the task or effective demand rule.',
+                section, row['name'])
+    except (TypeError, ValueError, KeyError, AttributeError, OverflowError) as exc:
+        add('ROUTE_CHECKS_INCOMPLETE', 'warning', '/task_generation', 'Task route navigation',
+            f'Task route definitions could not all be checked: {exc}',
+            'Generated route coverage is incomplete.', 'Correct the effective demand definitions and run checks again.',
+            'task_generation', kind='coverage')
     incident = {n for a, b, _lift in directed for n in (a, b)}
     for i, location in enumerate(config.get("locations", [])):
         if location["name"] not in incident and len(names) > 1:
@@ -721,6 +759,15 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                 'Configure corridor people-area settings and AMR route profiles for their respective routing rules.', 'locations', kind='unsupported')
         spaces = location.get('inventory_spaces', [])
         if isinstance(spaces, list):
+            for space_index, bay_name in _entry_overlapping_bay_bounds(location):
+                add('LOCAL_BAY_ENTRY_OVERLAP', 'warning',
+                    f'/locations/{index}/inventory_spaces/{space_index}/points',
+                    location.get('name', ''),
+                    f"Graph entry at {location.get('name', '')} lies inside the expanded obstacle bounds of {bay_name}.",
+                    'Local movement to a different bay here can be rejected at its start. '
+                    'This is an axis-aligned bay-bound risk, not a physical-wall or route-feasibility proof.',
+                    'Select this location, adjust the bay outline relative to its graph entry or assign work to a different graph location, then rerun Project checks.',
+                    'locations', location.get('name', ''))
             for space_index, space in enumerate(spaces):
                 bay_path = f'/locations/{index}/inventory_spaces/{space_index}'
                 length, width, height = inventory_space_dimensions(space, payload_definitions, location)

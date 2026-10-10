@@ -20,8 +20,10 @@ from typing import Dict, List, Optional, Tuple
 
 try:
     from .dxf_scene import DXFScene
+    from .graph_navigation import zoom_at_cursor
 except ImportError:  # Direct script execution from the visualiser directory.
     from dxf_scene import DXFScene
+    from graph_navigation import zoom_at_cursor
 try:
     from .staff_route_geometry import (
         interpolate_staff_route,
@@ -1225,11 +1227,9 @@ class GraphicsView(QGraphicsView):
         self.viewport().update()
 
     def wheelEvent(self, event):
-        factor = 1.1 if event.angleDelta().y() > 0 else 0.9
-        self.scale(factor, factor)
-        if self._zoom_callback:
+        changed = zoom_at_cursor(self, event)
+        if changed and self._zoom_callback:
             self._zoom_callback()
-        self.viewport().update()
         event.accept()
 
     def mousePressEvent(self, event):

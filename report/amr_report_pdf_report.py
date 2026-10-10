@@ -6,8 +6,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
 import io
 import math
+import numbers
 import re
 import tempfile
+from datetime import datetime
 from xml.sax.saxutils import escape
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -32,6 +34,7 @@ from reportlab.lib.colors import Color
 from reportlab.lib.pagesizes import A0, A3, A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import (
     BaseDocTemplate,
     CondPageBreak,
@@ -45,6 +48,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from reportlab.platypus.tableofcontents import TableOfContents
 try:
     from svglib.svglib import svg2rlg
 except Exception:  # SVG conversion is optional when --omit-drawings is used
@@ -55,6 +59,7 @@ from amr_report_analysis import fmt_duration, fmt_ts
 
 REPORT_SECTIONS = [
     ("front_summary", "Executive summary"),
+    ("operational_kpis", "Operational KPIs (demand, service, capacity and cost)"),
     ("scenario_impact", "Scenario impact and resilience"),
     ("method", "Method"),
     ("amr_list", "AMR list"),
@@ -63,6 +68,7 @@ REPORT_SECTIONS = [
     ("payload_summary", "Payload summary"),
     ("pending_tasks", "Pending tasks"),
     ("task_sla", "Task SLA performance"),
+    ("sla_categories", "SLA categories and assigned targets"),
     ("failed_delivery", "Failed delivery analysis"),
     ("lift_usage", "Lift usage and waits"),
     ("journey_flows", "Journey origins, destinations and returns"),
@@ -86,6 +92,7 @@ DEFAULT_REPORT_SECTION_ORDER = [section_id for section_id, _label in REPORT_SECT
 
 REPORT_SECTION_PAGE_TEMPLATES = {
     "front_summary": "standard",
+    "operational_kpis": "landscape",
     "scenario_impact": "landscape",
     "generated_tasks": "landscape",
     "deferred_releases": "a3_landscape",
@@ -108,6 +115,7 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "location_recommendations": "a3_landscape",
     "pending_tasks": "a3_landscape",
     "task_sla": "a3_landscape",
+    "sla_categories": "landscape",
     "task_detail": "a3_landscape",
     "heatmaps": "a0_landscape",
 }
@@ -175,21 +183,61 @@ class SectionedStory:
 
         return cleaned
 
-    def flowables(self) -> List:
+    def flowables(self, styles=None) -> List:
+        styles = styles or make_styles()
         result = []
         first_section = True
-        for section_id in self.section_order:
+        for number, section_id in enumerate(self.section_order, 1):
             section_flowables = self._normalised_section_content(
                 self.sections.get(section_id, [])
             )
             if not section_flowables:
-                continue
+                section_flowables = [Paragraph('No records in the observed period.', styles['BodyText'])]
 
             template_id = REPORT_SECTION_PAGE_TEMPLATES.get(section_id, "standard")
             result.append(NextPageTemplate(template_id))
             if not first_section:
                 result.append(PageBreak())
-            result.extend(section_flowables)
+            title = f'{number} {REPORT_SECTION_LABELS[section_id]}'
+            def heading(text, level, key, style):
+                paragraph = Paragraph(text, style)
+                paragraph._report_heading = (level, paragraph.getPlainText(), key)
+                return paragraph
+            if section_id == 'heatmaps' and isinstance(section_flowables[0], FloorOverlayFlowable):
+                # Heatmaps occupy the complete frame; draw their title inside the overlay.
+                section_flowables[0]._report_heading = (0, title, section_id)
+                for floor_number, overlay in enumerate((f for f in section_flowables if isinstance(f, FloorOverlayFlowable)), 1):
+                    floor_title = f'{number}.{floor_number} Floor {overlay.floor_label}'
+                    overlay.report_title = title + ' / ' + floor_title
+                    overlay._report_floor_heading = (1, floor_title, f'{section_id}-floor-{floor_number}')
+            else:
+                result.append(heading(escape(title), 0, section_id, styles['Section']))
+            sub = child = 0
+            parent_seen = False
+            for flowable in section_flowables:
+                if isinstance(flowable, Paragraph) and flowable.style.name in ('Section', 'Heading1', 'Heading2', 'Heading3'):
+                    text = flowable.getPlainText()
+                    if text.lower() == REPORT_SECTION_LABELS[section_id].lower():
+                        continue
+                    if section_id == 'operational_kpis':
+                        match = re.match(r'^1\.(\d+)\s+(.*)', text)
+                        if match:
+                            sub, child = int(match[1]), 0
+                            prefix, text, level = f'{number}.{sub}', match[2], 1
+                        else:
+                            child += 1
+                            prefix, level = f'{number}.{max(sub, 1)}.{child}', 2
+                    elif flowable.style.name == 'Heading3' and parent_seen:
+                        child += 1
+                        prefix, level = f'{number}.{sub}.{child}', 2
+                    else:
+                        sub += 1
+                        child = 0
+                        prefix, level = f'{number}.{sub}', 1
+                        parent_seen = flowable.style.name != 'Heading3'
+                    flowable = heading(escape(f'{prefix} {text}'), level,
+                                       f'{section_id}-{sub}-{child}', styles['Subsection'] if level == 1 else styles['Heading3'])
+                result.append(flowable)
             first_section = False
         return result
 
@@ -240,10 +288,20 @@ def make_styles():
             spaceAfter=4,
         )
     )
+    styles.add(ParagraphStyle(name='Subsection', parent=styles['Section'], fontSize=12, leading=15))
     return styles
 
 
 class NumberedDocTemplate(BaseDocTemplate):
+    def afterFlowable(self, flowable):
+        for entry in (getattr(flowable, '_report_heading', None), getattr(flowable, '_report_floor_heading', None)):
+            if not entry:
+                continue
+            level, text, key = entry
+            self.canv.bookmarkPage(key)
+            self.canv.addOutlineEntry(text, key, level=level, closed=False)
+            self.notify('TOCEntry', (level, escape(text), self.page, key))
+
     def __init__(self, filename, first_template_id: str = "standard", **kwargs):
         super().__init__(filename, **kwargs)
 
@@ -358,10 +416,13 @@ class NumberedDocTemplate(BaseDocTemplate):
         canvas.setFillColor(colors.HexColor("#666666"))
 
         page_width, page_height = canvas._pagesize
+        header = doc.title
+        while pdfmetrics.stringWidth(header, 'Helvetica', 8) > page_width - doc.leftMargin - doc.rightMargin:
+            header = header[:-4] + '...'
         canvas.drawString(
             doc.leftMargin,
             page_height - 12 * mm,
-            "AMR Simulation Performance Report",
+            header,
         )
         canvas.drawRightString(
             page_width - doc.rightMargin,
@@ -378,21 +439,78 @@ def natural_key(s):
     )
 
 
+class PageWidthTable(Table):
+    """Fit report tables to the actual frame, including split continuations.
+
+    Section widths express column proportions, not a fixed paper size. ReportLab
+    creates split pieces using this class, so repeated headers and continuation
+    pages retain the same sizing rule on portrait and landscape templates.
+    """
+
+    def _fit_frame(self, available_width):
+        if getattr(self, '_report_frame_width', None) == available_width:
+            return
+        if not hasattr(self, '_report_column_weights'):
+            self._report_column_weights = tuple(float(w) for w in self._argW)
+            minimums = []
+            for cell, style in zip(self._cellvalues[0], self._cellStyles[0]):
+                if isinstance(cell, (list, tuple)):
+                    cell = cell[0] if cell else None
+                if isinstance(cell, Paragraph):
+                    word_width = max((pdfmetrics.stringWidth(word, cell.style.fontName, cell.style.fontSize)
+                                      for word in cell.getPlainText().split()), default=0)
+                else:
+                    word_width = 0
+                minimums.append(word_width + style.leftPadding + style.rightPadding + 2)
+            self._report_column_minimums = tuple(minimums)
+
+        weights = self._report_column_weights
+        minimums = self._report_column_minimums
+        widths = [0.0] * len(weights)
+        remaining = set(range(len(weights)))
+        budget = available_width
+        if sum(minimums) > available_width:
+            # Extremely dense tables still stay inside the page; paragraphs can
+            # wrap long words when no allocation can satisfy every header.
+            widths = [available_width * w / sum(minimums) for w in minimums]
+        else:
+            while remaining:
+                total_weight = sum(weights[i] for i in remaining)
+                shares = {i: budget * weights[i] / total_weight for i in remaining}
+                constrained = {i for i in remaining if shares[i] < minimums[i]}
+                if not constrained:
+                    for i, width in shares.items():
+                        widths[i] = width
+                    break
+                for i in constrained:
+                    widths[i] = minimums[i]
+                    budget -= widths[i]
+                remaining -= constrained
+        widths[-1] += available_width - sum(widths)
+        self._argW = self._colWidths = widths
+        self.__dict__.pop('_width_calculated_once', None)
+        self._report_frame_width = available_width
+
+    def wrap(self, availWidth, availHeight):
+        self._fit_frame(availWidth)
+        return super().wrap(availWidth, availHeight)
+
+    def split(self, availWidth, availHeight):
+        self._fit_frame(availWidth)
+        return super().split(availWidth, availHeight)
+
+
 def table_from_df(
     df: pd.DataFrame,
     col_widths: List[float],
     styles,
     right_align: Optional[List[int]] = None,
+    format_values: bool = True,
 ) -> Table:
     df = df.loc[:, ~pd.Index(df.columns).duplicated()].copy()
     col_widths = list(col_widths[: len(df.columns)])
     if len(col_widths) < len(df.columns):
         col_widths.extend([20 * mm] * (len(df.columns) - len(col_widths)))
-    max_width = landscape(A4)[0] - 30 * mm
-    total_width = sum(col_widths)
-    if total_width > max_width:
-        scale = max_width / total_width
-        col_widths = [w * scale for w in col_widths]
 
     header_style = ParagraphStyle(
         "TblHead",
@@ -411,11 +529,11 @@ def table_from_df(
 
     header = [Paragraph(str(c), header_style) for c in df.columns]
     rows = []
-    for row in df.fillna("-").astype(str).values.tolist():
+    for row in df.fillna("-").itertuples(index=False, name=None):
         rows.append(
             [
                 Paragraph(
-                    cell.replace("&", "&amp;")
+                    (format_report_cell(cell) if format_values else str(cell)).replace("&", "&amp;")
                     .replace("<", "&lt;")
                     .replace(">", "&gt;"),
                     body_style,
@@ -425,7 +543,7 @@ def table_from_df(
         )
 
     data = [header] + rows
-    tbl = Table(data, colWidths=col_widths, repeatRows=1)
+    tbl = PageWidthTable(data, colWidths=col_widths, repeatRows=1, hAlign='LEFT')
     style = TableStyle(
         [
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9E2F3")),
@@ -452,6 +570,19 @@ def table_from_df(
             style.add("ALIGN", (idx, 1), (idx, -1), "RIGHT")
     tbl.setStyle(style)
     return tbl
+
+
+def format_report_cell(value) -> str:
+    """Use consistent precision for measured values without altering counts or IDs."""
+    if isinstance(value, numbers.Real) and not isinstance(value, (bool, numbers.Integral)):
+        return f"{value:.2f}" if math.isfinite(value) else "-"
+    text = str(value)
+    match = re.fullmatch(r"([+-]?\d+(?:,\d{3})*\.\d+)(\s*(?:%|[A-Za-z][A-Za-z0-9²³/ ]*))?", text)
+    if match:
+        number, suffix = match.groups()
+        precision = f"{float(number.replace(',', '')):,.2f}" if "," in number else f"{float(number):.2f}"
+        return precision + (suffix or "")
+    return text
 
 
 def lift_trip_cohort_matrix(cohort_df: pd.DataFrame) -> pd.DataFrame:
@@ -551,7 +682,7 @@ def fmt_wait_duration(value) -> str:
     except (TypeError, ValueError):
         return fmt_duration(value)
     if 0 < seconds < 1:
-        return f"{seconds:.3f} s"
+        return f"{seconds:.2f} s"
     return fmt_duration(seconds)
 
 
@@ -803,11 +934,6 @@ def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
         "Sun": "Sunday",
     }
     col_widths = [36 * mm] + [34 * mm] * len(day_cols)
-    max_width = landscape(A4)[0] - 30 * mm
-    total_width = sum(col_widths)
-    if total_width > max_width:
-        scale = max_width / total_width
-        col_widths = [w * scale for w in col_widths]
 
     header_style = ParagraphStyle(
         "TimetableHead",
@@ -910,7 +1036,7 @@ def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
                 )
             body_row_index += 1
 
-    tbl = Table(
+    tbl = PageWidthTable(
         data,
         colWidths=col_widths,
         repeatRows=1,
@@ -1247,7 +1373,7 @@ class FloorOverlayFlowable(Flowable):
         canvas.drawString(
             plot_x,
             height - 8 * mm,
-            f"Congestion heatmap - Floor {self.floor_label}",
+            getattr(self, 'report_title', f"Congestion heatmap - Floor {self.floor_label}"),
         )
 
         if self.floor_df.empty:
@@ -1406,6 +1532,82 @@ def prepare_heatmap_floor(
     }
 
 
+def append_kpi_story(story, results, styles):
+    summary = results.get('kpi_summary', pd.DataFrame())
+    story.section('operational_kpis')
+    if summary.empty:
+        story.append(Paragraph('Operational KPI evidence is unavailable for this report.', styles['BodyText']))
+        return
+
+    def table(key, columns, labels, widths, limit=None):
+        frame = results.get(key, pd.DataFrame()).copy()
+        if frame.empty:
+            story.append(Paragraph('No records in the observed period.', styles['BodyText']))
+            return
+        if limit and len(frame) > limit:
+            story.append(Paragraph(f'First {limit} of {len(frame):,} records shown. The accompanying {key} CSV contains every record.', styles['Small']))
+            frame = frame.head(limit)
+        frame = frame.reindex(columns=columns)
+        for column in frame.columns:
+            if column == 'reason':
+                frame[column] = frame[column].map(lambda v: str(v)[:280] + ('...' if len(str(v)) > 280 else ''))
+            elif pd.api.types.is_numeric_dtype(frame[column]):
+                frame[column] = frame[column].map(lambda v: '-' if pd.isna(v) else
+                    f'{v:,.6g}' if 0 < abs(v) < .01 else f'{v:,.2f}'.rstrip('0').rstrip('.'))
+        story.append(table_from_df(frame.rename(columns=dict(zip(columns, labels))), [w*mm for w in widths], styles, format_values=False))
+
+    observation = results.get('kpi_observation', {})
+    for index, group in enumerate(summary.group.drop_duplicates(), 1):
+        if index > 1:
+            story.append(PageBreak())
+        story.append(Paragraph(f'1.{index} {escape(group)}', styles['Section']))
+        if index == 1:
+            story.append(Paragraph('Operational KPIs cover delivery and collection requests in the observed run. '
+                'Unavailable values require additional evidence; estimates and supplied inputs are labelled. '
+                'Empty vehicle returns and charging records are excluded from request counts. '
+                f"Observed duration (h:mm:ss or m:ss): {fmt_duration(observation.get('horizon_s', 0))}; fleet: {observation.get('fleet', 0):g} vehicles. "
+                f"Request-time fallback used for {observation.get('request_time_fallbacks', 0)} tasks.", styles['BodyText']))
+        metrics = summary[summary.group.eq(group)].copy()
+        metrics['Result'] = metrics.apply(lambda row: 'Unavailable' if pd.isna(row.value) else
+            f'{row.value:,.6g}' + ' ' + row.unit, axis=1)
+        story.append(table_from_df(metrics[['metric', 'Result', 'status', 'basis']].rename(
+            columns={'metric': 'KPI', 'status': 'Evidence', 'basis': 'Definition and scope'}),
+            [48*mm, 32*mm, 32*mm, 145*mm], styles, format_values=False))
+        story.append(Spacer(1, 10))
+        if group == 'Demand':
+            story.append(Paragraph('Hourly requests and fleet use', styles['Section']))
+            table('kpi_hourly', ['hour', 'observed_minutes', 'requests', 'tasks_per_hour', 'fleet_utilisation_pct'],
+                ['Hour', 'Minutes observed', 'Requests', 'Requests/h', 'Fleet use %'], [53, 45, 40, 48, 50])
+        elif group == 'Service':
+            story.append(Paragraph('Service performance by logistics stream', styles['Section']))
+            table('kpi_streams', ['stream', 'requests', 'completed', 'mean_delivery_s', 'p95_delivery_s', 'sla_assessed', 'compliance_pct', 'overdue', 'overdue_pct'],
+                ['Stream', 'Requests', 'Completed', 'Mean (s)', 'P95 (s)', 'SLA assessed', 'SLA %', 'Overdue', 'Overdue %'],
+                [43, 25, 27, 27, 27, 29, 25, 25, 29])
+            story.append(Spacer(1, 10))
+            if not results.get('kpi_overdue', pd.DataFrame()).empty:
+                story.append(CondPageBreak(70*mm))
+            story.append(Paragraph('Overdue tasks and recorded reasons', styles['Section']))
+            table('kpi_overdue', ['task_id', 'stream', 'outcome', 'target_s', 'overdue_s', 'reason'],
+                ['Task', 'Stream', 'Outcome', 'Target (s)', 'Overdue (s)', 'Recorded reason'], [47, 35, 25, 27, 28, 95], limit=100)
+        elif group == 'Efficiency':
+            story.append(Paragraph('Distance by service and route', styles['Section']))
+            story.append(Paragraph('Shared movement distance is allocated equally across completed tasks named on the segment. '
+                'Unassigned empty and charging travel is included in the fleet KPI but has no service-route allocation.', styles['Small']))
+            table('kpi_routes', ['stream', 'origin', 'destination', 'completed', 'allocated_distance_m', 'distance_per_delivery_m'],
+                ['Stream', 'Origin', 'Destination', 'Completed', 'Distance (m)', 'Metres/task'], [35, 62, 62, 29, 35, 34], limit=100)
+        elif group == 'Bottleneck':
+            story.append(Paragraph('Queue time by location and cause', styles['Section']))
+            table('kpi_queues', ['location', 'cause', 'waits', 'total_wait_s', 'mean_wait_s', 'max_wait_s'],
+                ['Location', 'Cause', 'Waits', 'Total (s)', 'Mean (s)', 'Maximum (s)'], [53, 78, 23, 34, 34, 35], limit=100)
+        elif group == 'Resources':
+            story.append(Paragraph('Charging locations and infrastructure', styles['Section']))
+            table('kpi_chargers', ['location', 'configured_chargers', 'peak_charging', 'charging_hours', 'recommended_with_spare', 'charger_type'],
+                ['Location', 'Chargers', 'Peak charging', 'Charge hours', 'With spare', 'Type'], [58, 31, 34, 33, 31, 70])
+            rates = ', '.join(str(v) for v in observation.get('charge_rates_kw', []) if v is not None and str(v) != '-')
+            story.append(Paragraph('Configured vehicle charge rates (kW): ' + escape(rates or 'Unavailable') +
+                '. Charger recommendations reflect observed use; confirm compatibility, access and future demand before sizing.', styles['Small']))
+
+
 def build_report(
     results: Dict[str, pd.DataFrame],
     csv_path: Path,
@@ -1414,6 +1616,7 @@ def build_report(
     heatmap_workers: Optional[int] = None,
     include_drawings: bool = True,
     report_sections: Optional[Sequence[str]] = None,
+    report_title: str = "AMR Simulation Performance Report",
 ) -> None:
     styles = make_styles()
     selected_section_order = normalise_report_sections(report_sections)
@@ -1424,13 +1627,13 @@ def build_report(
     )
     doc = NumberedDocTemplate(
         str(pdf_path),
-        first_template_id=first_template_id,
+        first_template_id='standard',
         pagesize=A4,
         leftMargin=15 * mm,
         rightMargin=15 * mm,
         topMargin=18 * mm,
         bottomMargin=15 * mm,
-        title="AMR Simulation Performance Report",
+        title=report_title,
         author="",
     )
 
@@ -1446,8 +1649,6 @@ def build_report(
     # --- START front page ---
     story.section("front_summary")
     story += [
-        Paragraph("AMR Simulation Performance Report", styles["ReportTitle"]),
-        Paragraph(f"Source CSV: {csv_path.name}", styles["ReportSub"]),
         Paragraph(
             "This report summarises task completion, wait time, lift usage, and resource recommendations derived from the simulation event log.",
             styles["BodyText"],
@@ -1458,6 +1659,49 @@ def build_report(
         NextPageTemplate("landscape"),
         PageBreak(),
     ]
+
+    append_kpi_story(story, results, styles)
+
+    story.section('sla_categories')
+    story.append(Paragraph('SLA categories and assigned targets', styles['Section']))
+    story.append(Paragraph('Only positive delivery targets and timeframe deadlines are SLA assignments. '
+        'The clock starts at task release and ends at recorded task completion. '
+        'Effective rules include department and group overrides; disabled generation rules are excluded. '
+        'Observed targets below reflect the actual run, including targets that differ from configuration.', styles['BodyText']))
+    story.append(Paragraph('Configured assignments', styles['Section']))
+    assignments = results.get('sla_assignments', pd.DataFrame()).copy()
+    if assignments.empty:
+        story.append(Paragraph('No enabled SLA assignments found in the supplied configuration. '
+                               'Supply the matching configuration to list configured categories.', styles['BodyText']))
+    else:
+        category_rows = []
+        for category, rules in assignments.groupby('category', sort=True):
+            targets = [f'{v:g} s ({v/60:.6g} min)' for v in sorted(rules.target_s.dropna().unique())]
+            deadlines = rules.loc[rules.target_s.isna(), 'detail'].str.extract(r'Complete by (\S+)')[0].dropna().unique()
+            targets += ['Deadline ' + value for value in sorted(deadlines)]
+            category_rows.append({'Category': category, 'Rules': len(rules), 'Scopes': rules.scope.nunique(),
+                                  'Assigned targets': '; '.join(targets)})
+        story.append(table_from_df(pd.DataFrame(category_rows), [45*mm, 25*mm, 25*mm, 162*mm], styles, format_values=False))
+        story.append(Paragraph('Assignment detail', styles['Section']))
+        assignments['target_s'] = assignments.target_s.map(lambda v: 'Deadline rule' if pd.isna(v) else f'{v:g} s / {v/60:.6g} min')
+        story.append(table_from_df(assignments[['category', 'scope', 'task_type', 'target_s', 'detail', 'source']].rename(
+            columns={'category': 'Category', 'scope': 'Scope', 'task_type': 'Task type', 'target_s': 'Target',
+                     'detail': 'SLA detail', 'source': 'Rule source'}),
+            [30*mm, 40*mm, 28*mm, 23*mm, 91*mm, 45*mm], styles, format_values=False))
+    story.append(Paragraph('Targets recorded in this run', styles['Section']))
+    observed = results.get('sla_observed_targets', pd.DataFrame()).copy()
+    if observed.empty:
+        story.append(Paragraph('No requests with a positive SLA target were recorded.', styles['BodyText']))
+    else:
+        observed['target_s'] = observed.target_s.map(lambda v: f'{v:g}')
+        observed['compliance_pct'] = observed.compliance_pct.map(lambda v: '-' if pd.isna(v) else f'{v:.2f}')
+        story.append(table_from_df(observed[['category', 'target_s', 'requests', 'completed', 'overdue', 'assessed', 'compliance_pct']].rename(
+            columns={'category': 'Logistics stream', 'target_s': 'Target (s)', 'requests': 'Requests', 'completed': 'Completed',
+                     'overdue': 'Overdue', 'assessed': 'Assessed', 'compliance_pct': 'Compliance %'}),
+            [62*mm, 30*mm, 30*mm, 33*mm, 30*mm, 30*mm, 42*mm], styles, format_values=False))
+    story.append(Paragraph('Compliance counts completed tasks within target, divided by assessed tasks: '
+        'completed, failed/cancelled, or already overdue. Pending tasks before their deadline are excluded. '
+        'The accompanying CSVs contain the configured assignments and observed target groups.', styles['Small']))
 
     scenario_impact_df = results.get("scenario_impact", pd.DataFrame()).copy()
     story.section("scenario_impact")
@@ -1974,7 +2218,7 @@ def build_report(
 
     amr_df_table = table_from_df(
         amr_df,
-        [20 * mm, 14 * mm, 18 * mm, 14 * mm, 14 * mm, 22 * mm, 20 * mm, 18 * mm, 22 * mm, 18 * mm, 20 * mm][: len(amr_df.columns)],
+        [25 * mm, 17 * mm, 29 * mm, 17 * mm, 18 * mm, 29 * mm, 26 * mm, 22 * mm, 27 * mm, 29 * mm, 23 * mm][: len(amr_df.columns)],
         styles,
         right_align=list(range(1, len(amr_df.columns))),
     )
@@ -2068,7 +2312,7 @@ def build_report(
             fmt_duration
         )
         recharge_df["recharge_energy_kwh"] = recharge_df["recharge_energy_kwh"].map(
-            lambda value: f'{value:.6g}' if pd.notna(value) else 'Unknown'
+            lambda value: f'{value:.2f}' if pd.notna(value) else 'Unknown'
         )
         recharge_df = recharge_df.rename(
             columns={
@@ -2104,7 +2348,7 @@ def build_report(
         for column in ('initial_kwh', 'applied_charge_kwh', 'planned_traction_kwh', 'final_kwh', 'residual_kwh'):
             battery_df.loc[~battery_df['known'].astype(bool), column] = float('nan')
             battery_df[column] = battery_df[column].map(
-                lambda value: f'{value:.6g}' if pd.notna(value) else 'Unknown')
+                lambda value: f'{value:.2f}' if pd.notna(value) else 'Unknown')
         battery_df = battery_df[['amr_id', 'initial_kwh', 'applied_charge_kwh', 'planned_traction_kwh',
                                  'final_kwh', 'residual_kwh', 'status']].rename(columns={
             'amr_id': 'AMR', 'initial_kwh': 'Initial', 'applied_charge_kwh': 'Applied charge',
@@ -2130,7 +2374,7 @@ def build_report(
     energy_df = results.get('energy_summary', pd.DataFrame()).copy()
     if not energy_df.empty:
         energy_df['planned_kwh'] = energy_df['planned_kwh'].map(
-            lambda value: f'{value:.6g}' if pd.notna(value) else 'Not established')
+            lambda value: f'{value:.2f}' if pd.notna(value) else 'Not established')
         energy_df = energy_df[['metric', 'planned_kwh', 'coverage']].rename(columns={
             'metric': 'Source', 'planned_kwh': 'Plan kWh', 'coverage': 'Evidence'})
         story.append(table_from_df(energy_df, [66 * mm, 44 * mm, 60 * mm], styles))
@@ -2158,7 +2402,7 @@ def build_report(
 
         lift_df = pd.concat([lift_df, pd.DataFrame([lift_df_total])], ignore_index=True)
         lift_df['lift_energy_kwh'] = lift_df['lift_energy_kwh'].map(
-            lambda value: f'{value:.6g}' if pd.notna(value) else 'Not established')
+            lambda value: f'{value:.2f}' if pd.notna(value) else 'Not established')
         lift_df["total_lift_time_s"] = lift_df["total_lift_time_s"].map(
             lambda x: fmt_duration(x) if isinstance(x, (int, float)) else x
         )
@@ -3097,7 +3341,7 @@ def build_report(
         )
     else:
         sla_overview_df["compliance_pct"] = sla_overview_df["compliance_pct"].map(
-            lambda value: f"{float(value):.1f}%"
+            lambda value: f"{float(value):.2f}%"
         )
         sla_overview_df = sla_overview_df.rename(
             columns={
@@ -3125,7 +3369,7 @@ def build_report(
                 )
             )
         sla_summary_df["percentage_pct"] = sla_summary_df["percentage_pct"].map(
-            lambda value: f"{float(value):.1f}%"
+            lambda value: f"{float(value):.2f}%"
         )
         sla_summary_df = sla_summary_df.rename(
             columns={
@@ -3396,5 +3640,16 @@ def build_report(
     # --- END Heat map ---
 
     report_progress(10, 11, "Building PDF")
-    doc.build(story.flowables())
+    toc = TableOfContents()
+    toc.levelStyles = [ParagraphStyle(name=f'TOC{level}', fontName='Helvetica-Bold' if level == 0 else 'Helvetica',
+        fontSize=10 if level == 0 else 9, leading=13, leftIndent=level*12, firstLineIndent=0,
+        spaceBefore=7 if level == 0 else 3, textColor=colors.HexColor('#17365D')) for level in range(3)]
+    front_matter = [Spacer(1, 42*mm), Paragraph(escape(report_title), styles['ReportTitle']),
+        Spacer(1, 8*mm), Paragraph('Simulation analysis and operational performance', styles['ReportSub']),
+        Paragraph('Source: ' + escape(csv_path.name), styles['BodyText']),
+        Paragraph('Generated: ' + datetime.now().strftime('%d %B %Y %H:%M'), styles['BodyText']),
+        Spacer(1, 12*mm), Paragraph(f'{len(selected_section_order)} selected report sections', styles['BodyText']),
+        PageBreak(), Paragraph('Contents', styles['ReportTitle']), toc,
+        NextPageTemplate(first_template_id), PageBreak()]
+    doc.multiBuild(front_matter + story.flowables(styles))
     report_progress(11, 11, "PDF complete")

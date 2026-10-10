@@ -6,7 +6,7 @@ import uuid
 from PySide6.QtCore import Qt, QProcess, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QListWidget, QListWidgetItem, QCheckBox, QPlainTextEdit, QMessageBox)
+    QListWidget, QListWidgetItem, QCheckBox, QPlainTextEdit, QMessageBox, QLineEdit, QFileDialog, QSpinBox, QFormLayout)
 from amr_project_runs import inspect_run, read_json
 from amr_project_report import report_sections
 
@@ -21,6 +21,8 @@ class ProjectReportPanel(QWidget):
         self.pdf = None
         self.cancelled = False
         self.binding = None
+        self.export_only = False
+        self.lift_csv = None
         layout = QVBoxLayout(self)
         self.summary = QLabel('Select a completed run in Simulate, then choose Report selected run. Reports use its frozen inputs, not current edits.')
         self.summary.setWordWrap(True)
@@ -40,6 +42,43 @@ class ProjectReportPanel(QWidget):
         for button in (choose, self.start, self.stop, self.open_pdf):
             controls.addWidget(button)
         layout.addLayout(controls)
+        csv_controls = QHBoxLayout()
+        self.export_lifts = QPushButton('Export 5-minute lift usage CSV')
+        self.export_lifts.setToolTip('Export the existing five-minute and hourly per-lift trip and travel tables without generating a PDF.')
+        self.export_lifts.setEnabled(False)
+        self.export_lifts.clicked.connect(lambda: self.generate(lift_cohorts_only=True))
+        self.open_lift_csv = QPushButton('Open lift usage CSV')
+        self.open_lift_csv.setEnabled(False)
+        self.open_lift_csv.clicked.connect(self.open_csv_result)
+        csv_controls.addWidget(self.export_lifts)
+        csv_controls.addWidget(self.open_lift_csv)
+        csv_controls.addStretch(1)
+        layout.addLayout(csv_controls)
+        form = QFormLayout()
+        self.report_title = QLineEdit()
+        self.report_title.setPlaceholderText('Default report title')
+        form.addRow('Report title', self.report_title)
+        self.existing_pdf = QLineEdit()
+        self.existing_pdf.setPlaceholderText('Optional existing PDF to insert into')
+        insert_row = QHBoxLayout()
+        insert_row.addWidget(self.existing_pdf, 1)
+        browse = QPushButton('Browse PDF...')
+        def choose_existing():
+            filename, _ = QFileDialog.getOpenFileName(self, 'Existing report PDF', self.existing_pdf.text(), 'PDF files (*.pdf)')
+            if filename:
+                self.existing_pdf.setText(filename)
+        browse.clicked.connect(choose_existing)
+        insert_row.addWidget(browse)
+        form.addRow('Existing PDF', insert_row)
+        self.insert_page = QSpinBox()
+        self.insert_page.setRange(-1, 1000000)
+        self.insert_page.setSpecialValueText('Append to end')
+        self.insert_page.setValue(-1)
+        form.addRow('Insert after page (0 = before first)', self.insert_page)
+        layout.addLayout(form)
+        note = QLabel('Insert selected sections as a supplement with its own title, linked contents and numbering. Existing pages are reused; the combined PDF is saved as a new report.')
+        note.setWordWrap(True)
+        layout.addWidget(note)
         self.sections = QListWidget()
         self.sections.setAccessibleName('Report sections to include')
         for key, title in report_sections():
@@ -62,34 +101,44 @@ class ProjectReportPanel(QWidget):
     def set_run(self, path):
         if self.running():
             raise ValueError('Wait for this report to finish or stop it before selecting another run.')
-        manifest = inspect_run(path, self.editor.project)
+        project=getattr(self,'_study_context',None) or self.editor.project
+        self._study_context=None
+        manifest = inspect_run(path, project)
         if manifest['status'] != 'complete':
             raise ValueError('Choose a completed run for report generation.')
         self.run_dir = Path(path).resolve()
         self.binding = manifest['project_binding']
+        self._run_project=project;self._requested_editor_project=self.editor.project
         self.pdf = None
+        self.lift_csv = None
         self.open_pdf.setEnabled(False)
+        self.open_lift_csv.setEnabled(False)
         self.start.setEnabled(True)
+        self.export_lifts.setEnabled(True)
         self.summary.setText(f"Run: {self.run_dir.name}\nRevision: {manifest['project_binding']['revision_id']}\n"
                              'Uses frozen inputs and recorded events. Outputs are saved under this run’s external reports folder.')
 
-    def generate(self):
+    def generate(self, lift_cohorts_only=False):
         if self.running() or self.run_dir is None:
             return
         sections = [self.sections.item(i).data(Qt.UserRole) for i in range(self.sections.count())
                     if self.sections.item(i).checkState() == Qt.Checked]
-        if not sections:
+        if not sections and not lift_cohorts_only:
             self.log.setPlainText('Select at least one report section.')
             return
         try:
-            inspect_run(self.run_dir, self.editor.project)
+            if self.editor.project is not self._requested_editor_project:raise ValueError('Select a run again after changing projects.')
+            inspect_run(self.run_dir, self._run_project)
         except Exception as exc:
             QMessageBox.warning(self, 'Run unavailable', str(exc))
             return
         self.output = self.run_dir / 'reports' / ('report_' + uuid.uuid4().hex[:12])
+        self.export_only = lift_cohorts_only
         self.cancelled = False
         self.pdf = None
         self.open_pdf.setEnabled(False)
+        self.lift_csv = None
+        self.open_lift_csv.setEnabled(False)
         self.log.clear()
         self.process = QProcess(self)
         self.process.setProcessChannelMode(QProcess.MergedChannels)
@@ -97,12 +146,26 @@ class ProjectReportPanel(QWidget):
         self.process.finished.connect(lambda code, _status: self.finished(code))
         self.process.errorOccurred.connect(self.process_error)
         self.start.setEnabled(False)
+        self.export_lifts.setEnabled(False)
         self.stop.setEnabled(True)
-        args = ['-u', str(Path(__file__).resolve().parents[1] / 'amr_project_report.py'),
-                str(self.run_dir), str(self.output), '--sections', ','.join(sections)]
-        if self.drawings.isChecked():
+        if getattr(sys, 'frozen', False):
+            executable = str(Path(sys.executable).with_name('AMRSimulatorWorker.exe'))
+            args = ['--generate-report', str(self.run_dir), str(self.output), '--sections', ','.join(sections)]
+        else:
+            executable = sys.executable
+            args = ['-u', str(Path(__file__).resolve().parents[1] / 'amr_project_report.py'),
+                    str(self.run_dir), str(self.output), '--sections', ','.join(sections)]
+        if lift_cohorts_only:
+            args.append('--lift-cohorts-only')
+        if self.drawings.isChecked() and not lift_cohorts_only:
             args.append('--drawings')
-        self.process.start(sys.executable, args)
+        if self.existing_pdf.text().strip() and not lift_cohorts_only:
+            args.extend(['--existing-pdf', self.existing_pdf.text().strip()])
+            if self.insert_page.value() >= 0:
+                args.extend(['--insert-after-page', str(self.insert_page.value())])
+        if self.report_title.text().strip() and not lift_cohorts_only:
+            args.extend(['--report-title', self.report_title.text().strip()])
+        self.process.start(executable, args)
 
     def process_error(self, error):
         if error == QProcess.FailedToStart:
@@ -119,6 +182,7 @@ class ProjectReportPanel(QWidget):
         process, self.process = self.process, None
         process.deleteLater()
         self.start.setEnabled(True)
+        self.export_lifts.setEnabled(True)
         self.stop.setEnabled(False)
         try:
             from amr_project_runs import write_json, timestamp
@@ -134,6 +198,14 @@ class ProjectReportPanel(QWidget):
                     write_json(self.output / 'report_manifest.json', manifest)
                 raise ValueError('Generation stopped or failed. Partial files are not a completed report.')
             from amr_run_evidence import file_hash
+            csv_path = self.output / 'report_lift_cohorts.csv'
+            if file_hash(csv_path) != manifest['lift_cohorts_sha256']:
+                raise ValueError('Lift usage CSV does not match its recorded checksum.')
+            self.lift_csv = csv_path
+            self.open_lift_csv.setEnabled(True)
+            self.log.appendPlainText(f'Five-minute and hourly lift usage CSV complete: {csv_path}')
+            if self.export_only:
+                return
             path = self.output / 'report.pdf'
             if file_hash(path) != manifest['pdf_sha256']:
                 raise ValueError('Report file does not match its recorded checksum.')
@@ -151,3 +223,7 @@ class ProjectReportPanel(QWidget):
     def open_result(self):
         if self.pdf is not None:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.pdf)))
+
+    def open_csv_result(self):
+        if self.lift_csv is not None:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(self.lift_csv)))

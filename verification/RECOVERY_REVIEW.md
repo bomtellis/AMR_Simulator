@@ -1,5 +1,15 @@
 # Recovery and unsaved-work checkpoint — 2 October 2026
 
+Project lifecycle update (4 October 2026): the Project history panel now tells
+users to keep the editor open if Save fails and explains that Recovery copies
+opens an available snapshot as unsaved work to save under a new filename. An
+application-level check saves two project revisions, closes and reopens the
+window, restores the first revision, captures another edit, forces an atomic
+save failure and confirms the last valid archive remains byte-identical. A
+second editor opens that recovery snapshot and saves a distinct portable
+project without changing the original. Fifty-five focused project/recovery/
+workbench tests pass. Recovery still depends on a successful prior capture.
+
 The editor now tracks unsaved configuration changes, offers Save / Discard /
 Cancel before opening another file or closing, and captures a separate recovery
 copy every 30 seconds while edits are pending. Saved project history is unchanged.

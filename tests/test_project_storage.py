@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 
-from amr_project import Project, digest
+from amr_project import Project, SCHEMA_VERSION, digest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "visualiser"))
@@ -78,7 +78,44 @@ class ProjectStorageTests(unittest.TestCase):
         # Existing schema-1 files contain sorted compact JSON; preserve support.
         self.config = json.loads(json.dumps(self.config, sort_keys=True))
         self.save()
+        def prior_version(entries):
+            manifest = json.loads(entries['manifest.json'])
+            manifest['schema_version'] = 1
+            manifest.pop('external_results')
+            entries['manifest.json'] = json.dumps(manifest).encode()
+        self.rewrite(prior_version)
         self.assertEqual(self.project.configuration(), Project.open(self.path).configuration())
+
+    def test_previous_archive_version_migrates_only_when_saved(self):
+        self.save()
+        original_assets = dict(self.project.assets)
+        def prior_version(entries):
+            manifest = json.loads(entries['manifest.json'])
+            manifest['schema_version'] = 1
+            manifest.pop('external_results')
+            entries['manifest.json'] = json.dumps(manifest).encode()
+        self.rewrite(prior_version)
+        before = self.path.read_bytes()
+        loaded = Project.open(self.path)
+        self.assertTrue(loaded.migration_pending)
+        self.assertEqual(before, self.path.read_bytes())
+        self.assertEqual(original_assets, loaded.assets)
+        loaded.save(self.path, loaded.configuration(), base_dir=self.folder)
+        self.assertFalse(loaded.migration_pending)
+        self.assertEqual(1, len(loaded.revisions))
+        with zipfile.ZipFile(self.path) as archive:
+            self.assertEqual(SCHEMA_VERSION, json.loads(archive.read('manifest.json'))['schema_version'])
+        self.assertEqual(original_assets, Project.open(self.path).assets)
+
+    def test_current_archive_requires_explicit_results_settings(self):
+        self.save()
+        def remove_settings(entries):
+            manifest = json.loads(entries['manifest.json'])
+            manifest.pop('external_results')
+            entries['manifest.json'] = json.dumps(manifest).encode()
+        self.rewrite(remove_settings)
+        with self.assertRaisesRegex(ValueError, 'restore a valid project backup'):
+            Project.open(self.path)
 
     def test_restore_preserves_unsaved_changes_and_old_drawing(self):
         self.save()
@@ -145,7 +182,7 @@ class ProjectStorageTests(unittest.TestCase):
             entries["manifest.json"] = json.dumps(manifest).encode()
         self.rewrite(change)
         before = self.path.read_bytes()
-        with self.assertRaisesRegex(ValueError, "version"):
+        with self.assertRaisesRegex(ValueError, "versions 1 and 2.*export its JSON"):
             Project.open(self.path)
         self.assertEqual(before, self.path.read_bytes())
 
@@ -198,6 +235,63 @@ class ProjectStorageUiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_project_lifecycle_restores_revision_and_recovers_failed_save(self):
+        from amr_recovery import RecoveryStore
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            path = root / 'lifecycle.amrproj'
+            recovered_path = root / 'recovered.amrproj'
+            first = AMRGraphEditor()
+            second = None
+            first._recovery_store = RecoveryStore(root / 'recovery')
+            first._drawings_enabled = False
+            try:
+                with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(path), '')):
+                    self.assertTrue(first.save_project())
+                baseline = first.store.data['building']['floor_height_m']
+                first.store.data['building']['floor_height_m'] = 4.5
+                self.assertTrue(first.save_json())
+                self.assertTrue(first.close())
+                first = AMRGraphEditor()
+                first._recovery_store = RecoveryStore(root / 'recovery')
+                first._drawings_enabled = False
+                self.assertTrue(first.load_json_file(str(path), load_drawings=False))
+                first.show_project_revisions()
+                self.assertIn('If Save fails, keep the editor open', first.project_history_panel.summary.text())
+                first.project_history_panel.revisions.setCurrentIndex(1)
+                first.project_history_panel.restore()
+                self.assertEqual(baseline, first.store.data['building']['floor_height_m'])
+                saved_bytes = path.read_bytes()
+                self.assertEqual(baseline, Project.open(path).configuration()['building']['floor_height_m'])
+                first.store.data['building']['floor_height_m'] = 5.5
+                self.assertTrue(first.capture_recovery())
+                snapshot = first._recovery_store.snapshot_path
+                with patch('amr_project.os.replace', side_effect=OSError('locked project')), \
+                        patch.object(QMessageBox, 'critical') as error:
+                    self.assertFalse(first.save_json())
+                self.assertIn('locked project', error.call_args.args[2])
+                self.assertEqual(saved_bytes, path.read_bytes())
+                self.assertEqual(5.5, first.store.data['building']['floor_height_m'])
+                self.assertTrue(snapshot.is_file())
+                second = AMRGraphEditor()
+                second._recovery_store = RecoveryStore(root / 'recovery')
+                second._drawings_enabled = False
+                with patch.object(QMessageBox, 'information') as notice:
+                    self.assertTrue(second.load_recovery_snapshot(snapshot))
+                self.assertIn('original remains unchanged', notice.call_args.args[2])
+                self.assertEqual(5.5, second.store.data['building']['floor_height_m'])
+                self.assertIsNone(second.project)
+                self.assertEqual(saved_bytes, path.read_bytes())
+                with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(recovered_path), '')):
+                    self.assertTrue(second.save_project(save_as=True))
+                self.assertEqual(5.5, Project.open(recovered_path).configuration()['building']['floor_height_m'])
+                self.assertEqual(saved_bytes, path.read_bytes())
+            finally:
+                for editor in (second, first):
+                    if editor is not None:
+                        with patch.object(editor, '_confirm_unsaved_changes', return_value=True):
+                            editor.close()
+
     def test_editor_save_reopen_restore_and_export(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "editor.amrproj"
@@ -241,6 +335,69 @@ class ProjectStorageUiTests(unittest.TestCase):
                 with patch.object(QMessageBox, "critical"):
                     self.assertFalse(editor.load_json_file(str(path)))
                 self.assertIs(original, editor.store)
+            finally:
+                editor.close()
+
+    def test_json_import_shows_inline_issues_then_saves_corrected_project(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'import.json'
+            saved = Path(folder) / 'import.amrproj'
+            config = JsonStore().data
+            config['building']['floor_height_m'] = 4.25
+            config['building']['charge_locations'] = []
+            config['tasks'] = [{'id': 'T-import', 'pickup': 'missing',
+                                'dropoff': 'missing', 'payload': 'missing'}]
+            source.write_text(json.dumps(config), encoding='utf-8')
+            editor = AMRGraphEditor()
+            try:
+                with patch.object(QMessageBox, 'warning', side_effect=AssertionError('modal validation warning')):
+                    self.assertTrue(editor.load_json_file(str(source), load_drawings=False))
+                panel = editor.workspace
+                self.assertFalse(panel.import_issues.isHidden())
+                self.assertIn('import.json', panel.import_issues_label.text())
+                self.assertIn('Task T-import pickup not found', panel.import_issues_text.toPlainText())
+                panel.hide_import_issues_button.click()
+                self.assertTrue(panel.import_issues.isHidden())
+                editor.validate_json()
+                self.assertFalse(panel.import_issues.isHidden())
+                editor.store.data['tasks'] = []
+                panel.recheck_import_button.click()
+                self.assertTrue(panel.import_issues.isHidden())
+                with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(saved), '')):
+                    self.assertTrue(editor.save_project(save_as=True))
+                self.assertTrue(editor.load_json_file(str(saved), load_drawings=False))
+                self.assertEqual(4.25, editor.store.data['building']['floor_height_m'])
+                self.assertEqual([], editor.store.data['tasks'])
+                self.assertEqual(4.25, Project.open(saved).configuration()['building']['floor_height_m'])
+            finally:
+                with patch.object(editor, '_confirm_unsaved_changes', return_value=True):
+                    editor.close()
+
+    def test_editor_opens_previous_archive_and_save_upgrades_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'previous.amrproj'
+            config = JsonStore().data
+            config['building']['charge_locations'] = []
+            Project().save(path, config)
+            with zipfile.ZipFile(path) as archive:
+                entries = {name: archive.read(name) for name in archive.namelist()}
+            manifest = json.loads(entries['manifest.json'])
+            manifest['schema_version'] = 1
+            manifest.pop('external_results')
+            entries['manifest.json'] = json.dumps(manifest).encode()
+            with zipfile.ZipFile(path, 'w') as archive:
+                for name, data in entries.items():
+                    archive.writestr(name, data)
+            before = path.read_bytes()
+            editor = AMRGraphEditor()
+            try:
+                self.assertTrue(editor.load_json_file(str(path), load_drawings=False))
+                self.assertIn('Save upgrades to version 2', editor.status_label.text())
+                self.assertEqual(before, path.read_bytes())
+                self.assertTrue(editor.save_project())
+                self.assertFalse(editor.project.migration_pending)
+                with zipfile.ZipFile(path) as archive:
+                    self.assertEqual(2, json.loads(archive.read('manifest.json'))['schema_version'])
             finally:
                 editor.close()
 

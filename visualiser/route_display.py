@@ -18,6 +18,7 @@ from PySide6.QtCore import QSettings
 PATTERNS = {'Solid': Qt.SolidLine, 'Dashed': Qt.DashLine, 'Dotted': Qt.DotLine, 'Dash-dot': Qt.DashDotLine}
 PALETTE = ('#56b4e9', '#e69f00', '#00cc99', '#ff99cc', '#f0e442', '#c4adff')
 STYLE_KEY = 'route-display/v1'
+BLOCKED_STYLE_KEY = 'route-display/blocked-colour'
 class DisplayMode(Enum):
     ALL = 'all'
 
@@ -59,6 +60,14 @@ class RouteStyles(QObject):
         self.styles = {}
         self.warning = ''
         settings = appearance.settings
+        self.blocked_colour = '#ff6b6b'
+        saved_blocked = settings.value(BLOCKED_STYLE_KEY, '') if settings is not None else ''
+        if saved_blocked:
+            try:
+                validate_style({'colour': saved_blocked, 'pattern': 'Dotted'})
+                self.blocked_colour = saved_blocked
+            except ValueError:
+                self.warning = 'Saved blocked-edge colour could not be read; the default is shown.'
         raw = settings.value(STYLE_KEY, '') if settings is not None else ''
         if raw:
             try:
@@ -96,6 +105,20 @@ class RouteStyles(QObject):
                 raise OSError('Route styles could not be saved; the active styles are unchanged.')
         self.styles = changed
         self.warning = ''
+        self.changed.emit()
+
+    def save_blocked_colour(self, colour):
+        validate_style({'colour': colour, 'pattern': 'Dotted'})
+        settings = self.appearance.settings
+        if settings is not None:
+            old = settings.value(BLOCKED_STYLE_KEY, None)
+            settings.setValue(BLOCKED_STYLE_KEY, colour)
+            settings.sync()
+            if settings.status() != QSettings.NoError:
+                settings.remove(BLOCKED_STYLE_KEY) if old is None else settings.setValue(BLOCKED_STYLE_KEY, old)
+                settings.sync()
+                raise OSError('Blocked-edge colour could not be saved.')
+        self.blocked_colour = colour
         self.changed.emit()
 
 
@@ -228,7 +251,7 @@ class ProfileLabel(QGraphicsSimpleTextItem):
 
 
 def draw_access(scene, points, sections, floor, selected, styles, mapper, font_size=12, labels=True,
-                label_background='#111111'):
+                label_background='#111111', show_blocked=False, blocked_colour='#ff6b6b'):
     """Return (item, section) pairs so each host can preserve picking/lifetimes."""
     items = []
     for section in sections:
@@ -238,6 +261,27 @@ def draw_access(scene, points, sections, floor, selected, styles, mapper, font_s
         pa, pb = (mapper(points[n]['x'], points[n]['y']) for n in (section['a'], section['b']))
         dx, dy = pb.x() - pa.x(), pb.y() - pa.y()
         length = math.hypot(dx, dy)
+        blocked = section['directions'] - section['profiles'].get(selected,set()) if isinstance(selected,str) and show_blocked else set()
+        if blocked:
+            pen = QPen(QColor(blocked_colour),3,Qt.DotLine);pen.setCosmetic(True)
+            shift = QPointF(-dy/length*.18,dx/length*.18) if length and names else QPointF()
+            a,b=pa+shift,pb+shift
+            line = (scene.addLine(a.x(),a.y(),b.x(),b.y(),pen) if length else
+                    scene.addEllipse(a.x()-.18,a.y()-.18,.36,.36,pen))
+            created=[line]
+            if length:
+                angle=math.degrees(math.atan2(dy,dx))
+                for pair in sorted(blocked):
+                    forward=pair==(section['a'],section['b'])
+                    arrow=QGraphicsPolygonItem(QPolygonF([QPointF(5,0),QPointF(-4,-4),QPointF(-4,4)]))
+                    arrow.setFlag(QGraphicsItem.ItemIgnoresTransformations)
+                    arrow.setPos(a+(b-a)*(.78 if forward else .22));arrow.setRotation(angle+(0 if forward else 180))
+                    arrow.setPen(QPen(QColor(blocked_colour),1));arrow.setBrush(QColor(blocked_colour))
+                    scene.addItem(arrow);created.append(arrow)
+            tooltip=f'Blocked by profile {selected}\n'+'\n'.join(f'{a} → {b}' for a,b in sorted(blocked))
+            for item in created:
+                item.setZValue(1);item.setToolTip(tooltip);item.setData(0,'route_profile_blocked');item.setData(1,selected)
+                item.setAcceptedMouseButtons(Qt.NoButton);items.append((item,section))
         if not length:
             continue
         for index, name in enumerate(names):

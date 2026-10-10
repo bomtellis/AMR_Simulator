@@ -40,6 +40,12 @@ class ProjectRunsPanel(QWidget):
             button.clicked.connect(handler)
             actions.addWidget(button)
         layout.addLayout(actions)
+        self.workflow_help = QLabel(
+            'If a run folder moves, select its missing entry and choose Locate moved run. '
+            'Playback opens recorded evidence read-only. Choose Report selected run, then Generate report '
+            'to export from the run’s frozen inputs.')
+        self.workflow_help.setWordWrap(True)
+        layout.addWidget(self.workflow_help)
         self.runs = QListWidget()
         self.runs.setAccessibleName("Runs belonging to this project's saved revisions")
         self.runs.currentRowChanged.connect(self.show_selected)
@@ -198,7 +204,11 @@ class ProjectRunsPanel(QWidget):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.editor.sync_project_editing_lock()
-        self.process.start(sys.executable, ['-u', str(Path(__file__).resolve().parents[1] / 'amr_project_runs.py'), str(directory)])
+        if getattr(sys, 'frozen', False):
+            worker = Path(sys.executable).with_name('AMRSimulatorWorker.exe')
+            self.process.start(str(worker), ['--run-project', str(directory)])
+        else:
+            self.process.start(sys.executable, ['-u', str(Path(__file__).resolve().parents[1] / 'amr_project_runs.py'), str(directory)])
 
     def read_output(self):
         if self.process is not None:

@@ -88,10 +88,11 @@ def scale_bar(pixels_per_metre, target_pixels=120):
     return metres, metres*pixels_per_metre
 
 
-def compact_legend(profile=None):
+def compact_legend(profile=None, show_blocked=False):
     lines = ['Map key', '○ Location   □ Node   D Door', '◇ Department / lift   → One-way']
     if profile:
         lines.extend([f'Profile: {profile}', 'Names + patterns show access, not lanes'])
+        if show_blocked:lines.append('Dotted arrows: blocked directions')
     return lines
 
 

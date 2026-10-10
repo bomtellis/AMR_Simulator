@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
 import traceback
+import tempfile
 
 import pandas as pd
 
@@ -181,6 +182,17 @@ def export_lift_movements_csv(movements: pd.DataFrame, output_csv: Path) -> None
     movements.to_csv(output_csv, index=False, encoding="utf-8-sig")
 
 
+def export_kpi_csvs(results: dict, output_pdf: Path) -> list:
+    """Export complete KPI evidence, including every overdue task and reason."""
+    paths = []
+    for key in ('kpi_summary', 'kpi_hourly', 'kpi_streams', 'kpi_requests',
+                'kpi_overdue', 'kpi_queues', 'kpi_routes', 'kpi_chargers'):
+        path = output_pdf.with_name(output_pdf.stem + '_' + key + '.csv')
+        results[key].to_csv(path, index=False, encoding='utf-8-sig')
+        paths.append(path)
+    return paths
+
+
 def parse_report_sections(value: str) -> list:
     return normalise_report_sections(
         [part.strip() for part in str(value or "").split(",") if part.strip()]
@@ -299,6 +311,9 @@ def generate_report_from_paths(
     department_review_dir: Path = None,
     department_review_formats: str = 'both',
     department_review_only: bool = False,
+    existing_pdf: Path = None,
+    insert_after_page: int = None,
+    report_title: str = None,
 ) -> None:
     csv_path = Path(csv_path)
     if not csv_path.exists():
@@ -307,6 +322,13 @@ def generate_report_from_paths(
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     config_json = Path(config_json) if config_json else None
+    if existing_pdf:
+        from amr_report_pdf_insert import validate_insertion
+        validate_insertion(existing_pdf, out_path, insert_after_page)
+        if lift_csv_only or department_review_only:
+            raise ValueError('PDF insertion requires report sections, not a CSV/review-only export.')
+    elif insert_after_page is not None:
+        raise ValueError('Choose an existing PDF when setting an insertion page.')
     lift_movements_csv = (Path(lift_movements_csv) if lift_movements_csv else
                           out_path.with_name(out_path.stem + "_lift_movements.csv"))
     if lift_movements_csv.resolve() in {csv_path.resolve(), out_path.resolve(), config_json.resolve() if config_json else csv_path.resolve()}:
@@ -376,6 +398,7 @@ def generate_report_from_paths(
         payload_dimensions,
         task_generation_metadata,
         amr_weights=load_amr_weights(config_json) if config_json else {},
+        kpi_config=json.loads(config_json.read_text(encoding='utf-8-sig')) if config_json else None,
     )
 
     if failed_tasks_csv:
@@ -388,6 +411,9 @@ def generate_report_from_paths(
 
     for export_path in export_journey_csvs(results, out_path):
         emit_progress(34, 100, f"Journey export written to {export_path}")
+    export_kpi_csvs(results, out_path)
+    for key in ('sla_assignments', 'sla_observed_targets'):
+        results[key].to_csv(out_path.with_name(out_path.stem + '_' + key + '.csv'), index=False)
     export_lift_movements_csv(results["lift_movement_detail"], lift_movements_csv)
     emit_progress(34, 100, f"Lift travel CSV written to {lift_movements_csv}")
 
@@ -400,15 +426,26 @@ def generate_report_from_paths(
         mapped = base + int(span * current / max(total, 1))
         emit_progress(mapped, 100, message)
 
-    build_report(
-        results,
-        csv_path,
-        out_path,
-        progress_callback=report_progress,
-        heatmap_workers=heatmap_workers,
-        include_drawings=include_drawings,
-        report_sections=report_sections,
-    )
+    def render(destination):
+        build_report(
+            results,
+            csv_path,
+            destination,
+            progress_callback=report_progress,
+            heatmap_workers=heatmap_workers,
+            include_drawings=include_drawings,
+            report_sections=report_sections,
+            report_title=report_title or ('AMR Simulation Report Supplement' if existing_pdf else 'AMR Simulation Performance Report'),
+        )
+    if existing_pdf:
+        from amr_report_pdf_insert import insert_pdf_sections
+        with tempfile.TemporaryDirectory(prefix='report-insert-', dir=out_path.parent) as directory:
+            supplement = Path(directory) / 'sections.pdf'
+            render(supplement)
+            emit_progress(98, 100, 'Inserting selected sections into the existing PDF')
+            insert_pdf_sections(existing_pdf, supplement, out_path, insert_after_page)
+    else:
+        render(out_path)
 
     emit_progress(100, 100, f"Report written to {out_path}")
 
@@ -433,6 +470,8 @@ def launch_report_generator_dialog(args=None) -> None:
             QPushButton,
             QDoubleSpinBox,
             QSpinBox,
+            QScrollArea,
+            QWidget,
             QTextEdit,
             QVBoxLayout,
         )
@@ -456,6 +495,24 @@ def launch_report_generator_dialog(args=None) -> None:
                 csv_path = Path(self.csv_edit.text().strip())
                 output_seed = str(csv_path.with_name(csv_path.stem + "_report.pdf"))
             self.output_edit = QLineEdit(output_seed)
+            self.report_title_edit = QLineEdit(str(getattr(seed_args, 'report_title', '') or ''))
+            self.report_title_edit.setPlaceholderText('AMR Simulation Performance Report (or Report Supplement when inserting)')
+            form.addRow('Report title', self.report_title_edit)
+            self.existing_pdf_edit = QLineEdit(str(getattr(seed_args, 'existing_pdf', '') or ''))
+            self.existing_pdf_edit.setPlaceholderText('Optional: insert selected sections into an existing PDF')
+            self._add_file_row(form, 'Existing PDF', self.existing_pdf_edit, 'Existing report PDF', 'PDF files (*.pdf)', save=False)
+            self.prepared_pdf_edit = QLineEdit(str(getattr(seed_args, 'insert_pdf', '') or ''))
+            self.prepared_pdf_edit.setPlaceholderText('Optional: copy prepared pages only, skipping simulation analysis')
+            self._add_file_row(form, 'Prepared sections PDF', self.prepared_pdf_edit, 'Prepared sections PDF', 'PDF files (*.pdf)', save=False)
+            self.insert_page_spin = QSpinBox()
+            self.insert_page_spin.setRange(-1, 1000000)
+            self.insert_page_spin.setSpecialValueText('Append to end')
+            page_seed = getattr(seed_args, 'insert_after_page', None)
+            self.insert_page_spin.setValue(-1 if page_seed is None else page_seed)
+            form.addRow('Insert after page (0 = before first)', self.insert_page_spin)
+            insertion_note = QLabel('Existing pages retain their contents and numbering. Inserted sections have a separate title and linked contents page. Save to a new PDF.')
+            insertion_note.setWordWrap(True)
+            form.addRow('', insertion_note)
             self.failed_csv_edit = QLineEdit(
                 str(getattr(seed_args, "failed_tasks_csv", "") or "")
             )
@@ -567,7 +624,13 @@ def launch_report_generator_dialog(args=None) -> None:
             form.addRow("Target lift utilisation", self.target_lift_spin)
             form.addRow("Heatmap workers (0 = auto)", self.heatmap_workers_spin)
             form.addRow("", self.include_drawings_check)
-            layout.addLayout(form)
+            form_widget = QWidget()
+            form_widget.setLayout(form)
+            form_scroll = QScrollArea()
+            form_scroll.setWidgetResizable(True)
+            form_scroll.setWidget(form_widget)
+            form_scroll.setMinimumHeight(200)
+            layout.addWidget(form_scroll, 2)
 
             layout.addWidget(QLabel("Report sections"))
             section_row = QHBoxLayout()
@@ -692,7 +755,7 @@ def launch_report_generator_dialog(args=None) -> None:
                 item = self.section_list.item(index)
                 if item.checkState() == Qt.Checked:
                     sections.append(item.data(Qt.UserRole))
-            return normalise_report_sections(sections)
+            return sections
 
         def _log(self, message: str):
             self.log_box.append(str(message or ""))
@@ -704,6 +767,31 @@ def launch_report_generator_dialog(args=None) -> None:
             csv_path = Path(self.csv_edit.text().strip())
             output_text = self.output_edit.text().strip()
             output_path = Path(output_text) if output_text else None
+            prepared = self.prepared_pdf_edit.text().strip()
+            if prepared:
+                if output_path is None or not self.existing_pdf_edit.text().strip():
+                    QMessageBox.warning(self, 'Missing PDF paths', 'Choose an existing PDF and a different output PDF to insert prepared pages.')
+                    return
+                self._generating = True
+                self.generate_btn.setEnabled(False)
+                self.close_btn.setEnabled(False)
+                self.progress.setValue(0)
+                self.log_box.clear()
+                try:
+                    from amr_report_pdf_insert import insert_pdf_sections
+                    insert_pdf_sections(self.existing_pdf_edit.text().strip(), prepared, output_path,
+                        self.insert_page_spin.value() if self.insert_page_spin.value() >= 0 else None)
+                    self.progress.setValue(100)
+                    self._log(f'Prepared pages inserted: {output_path}')
+                    QMessageBox.information(self, 'Insertion complete', f'Combined PDF written to:\n{output_path}')
+                except Exception as exc:
+                    QMessageBox.critical(self, 'Insertion failed', str(exc))
+                    self._log(traceback.format_exc())
+                finally:
+                    self._generating = False
+                    self.generate_btn.setEnabled(True)
+                    self.close_btn.setEnabled(True)
+                return
             json_text = self.json_edit.text().strip()
             failed_text = self.failed_csv_edit.text().strip()
             lift_cohorts_text = self.lift_cohorts_csv_edit.text().strip()
@@ -723,6 +811,9 @@ def launch_report_generator_dialog(args=None) -> None:
                 return
             if self.department_review_check.isChecked() and self.lift_csv_only_check.isChecked():
                 QMessageBox.warning(self, 'Conflicting exports', 'Clear lift CSV only to export department reviews.')
+                return
+            if not self.selected_sections() and not (self.lift_csv_only_check.isChecked() or self.department_review_only_check.isChecked()):
+                QMessageBox.warning(self, 'No sections selected', 'Select at least one report section.')
                 return
 
             self._generating = True
@@ -763,6 +854,9 @@ def launch_report_generator_dialog(args=None) -> None:
                         else output_path.with_name(output_path.stem + '_department_reviews')) if self.department_review_check.isChecked() else None,
                     department_review_formats=self.department_review_format.currentData(),
                     department_review_only=self.department_review_only_check.isChecked() and self.department_review_check.isChecked(),
+                    existing_pdf=Path(self.existing_pdf_edit.text().strip()) if self.existing_pdf_edit.text().strip() else None,
+                    insert_after_page=self.insert_page_spin.value() if self.insert_page_spin.value() >= 0 else None,
+                    report_title=self.report_title_edit.text().strip() or None,
                 )
                 lift_path = Path(lift_movements_text) if lift_movements_text else output_path.with_name(output_path.stem + "_lift_movements.csv")
                 message = f"Lift travel CSV written to:\n{lift_path}"
@@ -797,6 +891,13 @@ def main() -> None:
 
     if args.report_dialog:
         launch_report_generator_dialog(args)
+        return
+
+    if args.insert_pdf:
+        if not args.existing_pdf or not args.output:
+            raise SystemExit('--insert-pdf requires --existing-pdf and --output.')
+        from amr_report_pdf_insert import insert_pdf_sections
+        print(insert_pdf_sections(args.existing_pdf, args.insert_pdf, args.output, args.insert_after_page))
         return
 
     if not args.csv:
@@ -842,6 +943,9 @@ def main() -> None:
         department_review_dir=Path(args.department_review_dir) if args.department_review_dir else None,
         department_review_formats=args.department_review_formats,
         department_review_only=args.department_review_only,
+        existing_pdf=Path(args.existing_pdf) if args.existing_pdf else None,
+        insert_after_page=args.insert_after_page,
+        report_title=args.report_title,
     )
 
 

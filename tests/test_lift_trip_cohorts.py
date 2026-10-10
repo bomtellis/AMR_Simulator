@@ -1,4 +1,6 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 import pandas as pd
 
@@ -6,6 +8,7 @@ from report.amr_report_analysis import (
     Context,
     build_lift_trip_cohorts,
     build_lift_usage_profile,
+    extract_lift_cohorts,
 )
 
 
@@ -120,6 +123,26 @@ class LiftTripCohortTests(unittest.TestCase):
         self.assertTrue(result.empty)
         self.assertIn("transfer_trips", result.columns)
         self.assertIn("travel_time_s", result.columns)
+
+    def test_direct_csv_export_matches_existing_cohorts_without_task_analysis(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'events.csv'
+            self.rows.rename(columns={'_event_time': 'event_time', '_lift_id': 'lift_id',
+                '_segment_text': 'segment_type', 'lift_time_s': 'duration_sec'}).to_csv(path, index=False)
+            result = extract_lift_cohorts(path)
+        for minutes, key in [(5, 'lift_trip_cohorts_5min'), (60, 'lift_trip_cohorts_hourly')]:
+            pd.testing.assert_frame_equal(build_lift_trip_cohorts(self.rows, self.ctx, minutes), result[key])
+
+    def test_event_only_multi_stop_lift_segments_and_empty_export(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'events.csv'
+            pd.DataFrame([dict(sim_time_sec=300, event_type='multi_stop_segment_lift_transfer',
+                               from_location='Lift L1 (0)', to_location='Lift L1 (1)', duration_sec=20)]).to_csv(path, index=False)
+            result = extract_lift_cohorts(path)['lift_trip_cohorts_5min']
+            self.assertEqual(1, result.trips.sum())
+            self.assertEqual(20, result.travel_time_s.sum())
+            pd.DataFrame([dict(sim_time_sec=0, event_type='task_assigned')]).to_csv(path, index=False)
+            self.assertTrue(extract_lift_cohorts(path)['lift_trip_cohorts_5min'].empty)
 
 
 if __name__ == "__main__":

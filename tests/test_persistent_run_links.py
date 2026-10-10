@@ -170,6 +170,7 @@ class PersistentRunLinkTests(unittest.TestCase):
         with zipfile.ZipFile(path) as archive:
             entries = {name: archive.read(name) for name in archive.namelist()}
         manifest = json.loads(entries['manifest.json'])
+        manifest['schema_version'] = 1
         manifest.pop('external_results')
         entries['manifest.json'] = json.dumps(manifest).encode()
         with zipfile.ZipFile(path, 'w') as archive:
@@ -177,6 +178,7 @@ class PersistentRunLinkTests(unittest.TestCase):
                 archive.writestr(name, data)
         before = path.read_bytes()
         reopened = Project.open(path)
+        self.assertTrue(reopened.migration_pending)
         self.assertEqual([], reopened.external_results['runs'])
         self.assertEqual(before, path.read_bytes())
 

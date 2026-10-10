@@ -1,0 +1,925 @@
+[
+  {
+    "dialog": "MultiSelectPicker",
+    "source": "visualiser/advanced_dialogs.py",
+    "line": 99,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": true,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "RouteProfilesEditorV2",
+    "source": "visualiser/advanced_dialogs.py",
+    "line": 284,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 7,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "dense horizontal layout",
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "TaskFormDialog",
+    "source": "visualiser/advanced_dialogs.py",
+    "line": 558,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "BulkOneToManyTaskDialog",
+    "source": "visualiser/advanced_dialogs.py",
+    "line": 707,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "MultiDaySelectDialog",
+    "source": "visualiser/advanced_dialogs.py",
+    "line": 820,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "EditMultipleTasksDialog",
+    "source": "visualiser/advanced_dialogs.py",
+    "line": 1587,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 5,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "dense horizontal layout",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "TaskJumpDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 1430,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "TasksByLocationDepartmentDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 1653,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "LocationInventoryPayloadDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 1882,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "LocationInventorySpacesDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 1956,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "PayloadSpaceMaximumUtilisationDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 2019,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": false,
+    "risks": [
+      "long explanatory copy",
+      "no local scroll",
+      "theme only on show"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "AmrPayloadMonitorDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 2093,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "LiftMonitorDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 2177,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "FailedTasksDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 2772,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "LocationInventoryPayloadDialog",
+    "source": "visualiser/amr_sim_visualiser_pyside6.py",
+    "line": 2883,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "DXFLoadingDialog",
+    "source": "visualiser/app.py",
+    "line": 177,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "ScheduledTimesDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 383,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "StaffWeeklyHoursDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 534,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "GlobalStaffConfigDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 628,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 2,
+    "polish_in_constructor": true,
+    "risks": [
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "BulkDepartmentTaskGenerationDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 899,
+    "fixed_controls": 1,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 7,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 3,
+    "polish_in_constructor": true,
+    "risks": [
+      "fixed-width control",
+      "dense horizontal layout",
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "ConfiguredGroupSelectDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 1991,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "TaskGenerationSettingsDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 2029,
+    "fixed_controls": 2,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 9,
+    "local_scroll": true,
+    "tabs": false,
+    "long_copy_blocks": 4,
+    "polish_in_constructor": true,
+    "risks": [
+      "fixed-width control",
+      "dense horizontal layout",
+      "long explanatory copy"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "PointEditorDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 4550,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "EdgeConnectionsDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 4733,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "LiftEditorDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 4834,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": true,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "LiftListDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 5181,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "AMRPayloadSlotDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 5398,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "AMREditorDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 5497,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 1,
+    "local_scroll": true,
+    "tabs": true,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "PayloadTrackedItemDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 5834,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "PayloadEditorDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 5980,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": true,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "PayloadListDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 6280,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "AMRListDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 6440,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "RouteProfilesEditor",
+    "source": "visualiser/dialogs.py",
+    "line": 6686,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "PeopleMovementEditorDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 6700,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": true,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "PeopleMovementListDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 7194,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "ScenarioEventDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 7421,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": true,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "ScenarioTestingDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 7706,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "CorridorSettingsDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 8149,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": true,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "SimulationSettingsDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 8639,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 0,
+    "local_scroll": true,
+    "tabs": true,
+    "long_copy_blocks": 5,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "long explanatory copy"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "WasteStreamEditorDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 9065,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "WasteStreamListDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 9135,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "MassCollectionEditorDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 9244,
+    "fixed_controls": 1,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 3,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "fixed-width control",
+      "dense horizontal layout",
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "MassCollectionListDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 9468,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "DepartmentWasteStreamSettingsDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 9590,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "DepartmentWasteStreamItemDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 9733,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "DepartmentDropoffZoneCreationDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 9998,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": true,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "DepartmentEditorDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 10159,
+    "fixed_controls": 1,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 5,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 2,
+    "polish_in_constructor": true,
+    "risks": [
+      "fixed-width control",
+      "dense horizontal layout",
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "BulkDepartmentWasteStreamControlDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 10899,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "TaskCategoryCommonLocationWizard",
+    "source": "visualiser/dialogs.py",
+    "line": 11429,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 3,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "dense horizontal layout",
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "TaskCategorySharedBinGroupWizard",
+    "source": "visualiser/dialogs.py",
+    "line": 11748,
+    "fixed_controls": 1,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 3,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "fixed-width control",
+      "dense horizontal layout",
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "DepartmentListDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 12221,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "ArrayInventorySpacesDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 13284,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [],
+    "priority": "low"
+  },
+  {
+    "dialog": "InventorySpacesDialog",
+    "source": "visualiser/dialogs.py",
+    "line": 13404,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 6,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": true,
+    "risks": [
+      "dense horizontal layout",
+      "no local scroll"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "LocationSpacesManagerDialog",
+    "source": "visualiser/inventory_spaces_manager.py",
+    "line": 87,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 7,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 1,
+    "polish_in_constructor": true,
+    "risks": [
+      "minimum size",
+      "dense horizontal layout",
+      "long explanatory copy",
+      "no local scroll"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "PdfUnderlayDialog",
+    "source": "visualiser/pdf_underlay.py",
+    "line": 158,
+    "fixed_controls": 0,
+    "minimum_sizes": 1,
+    "horizontal_layouts": 0,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "minimum size",
+      "no local scroll",
+      "theme only on show"
+    ],
+    "priority": "high"
+  },
+  {
+    "dialog": "RunChecksDialog",
+    "source": "visualiser/project_checks_panel.py",
+    "line": 270,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 1,
+    "local_scroll": false,
+    "tabs": false,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  },
+  {
+    "dialog": "QuickStartDialog",
+    "source": "visualiser/quick_start.py",
+    "line": 95,
+    "fixed_controls": 0,
+    "minimum_sizes": 0,
+    "horizontal_layouts": 2,
+    "local_scroll": false,
+    "tabs": true,
+    "long_copy_blocks": 0,
+    "polish_in_constructor": false,
+    "risks": [
+      "theme only on show"
+    ],
+    "priority": "medium"
+  }
+]

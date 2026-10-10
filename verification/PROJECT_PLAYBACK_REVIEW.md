@@ -7,16 +7,18 @@ The standalone visualiser remains available with its original file-loading path.
 ## Try this checkpoint
 
 1. Open a saved `.amrproj`, choose **Simulate**, and select a completed run.
-2. Choose **Playback selected run**. The heading identifies the saved revision
-   and number of timestamped events. Loading and input checks run in a background
+2. Choose **Playback selected run**. The heading identifies the run and event count;
+   its tooltip gives the saved revision. Loading and input checks run in a background
    worker. Incomplete, modified or reduced evidence is rejected.
-3. Use **First Move**, **Play**, the time slider or a click on the timeline.
-   **Jump to Task** and **Failed Tasks** retain the existing navigation.
+3. Use **Play**, the time slider or a click on the timeline. **Inspect** contains
+   **First movement**, **Jump to task** and **Failed tasks**.
    The timeline's **Fit** option fits the simulation window; zoom in to inspect
    short activities. Scroll vertically to see additional robots.
-4. Change floors, use **Fit View**, or scroll the control column to follow a robot
-   and change playback speed. Controls and timeline remain usable at 1280 × 800.
-5. Use **Lift Monitor** or **AMR Payload Monitor**. Leaving Playback pauses the
+4. Horizontal controls above the map select floor, speed and followed robot.
+   **Display** contains visibility options and an optional legend. Drag the divider
+   above the timeline to resize the panes. Controls fit at 1280 × 800 and 1024 × 768;
+   **Fit** refits the timeline after resizing. Loaded-file text is omitted.
+5. Use **Inspect → Lift monitor** or **AMR payload monitor**. Leaving Playback pauses the
    run and closes its auxiliary dialogs. Returning does not restart playback.
 6. Choose **Investigate this run** to inspect supporting records, or **Next** to
    report on the played run. A different selection in Simulate does not silently
@@ -30,6 +32,20 @@ The standalone visualiser remains available with its original file-loading path.
 ![LTN playback with the embedded timeline](images/project-playback-ltn.png)
 
 ## Independent checks and evidence
+
+The October 9 layout/performance update caches only the visible timeline background,
+indexes blocks by time and draws only visible lanes. Playhead movement repaints the
+old/new cursor strips; scrolling, zooming, resizing, font changes and replacement
+data refresh the cache. Drag-to-seek work is coalesced at 33 ms, with final position
+applied on release and pending work cancelled when leaving playback. Floor and label
+changes reuse the frozen timeline data. Partial-run cutoffs remain enforced.
+
+Three timeline regressions cover cache reuse/invalidation, viewport-bounded memory,
+time culling, long overlapping blocks and instantaneous events. Two additional
+playback cases cover retained display controls and coalesced seeks with independently
+calculated positions. A local synthetic benchmark with 24,000 blocks measured about
+130 ms per redraw with the original widget and 0.05 ms with the warmed viewport cache.
+This measures timeline painting, not overall playback frame time or loading speed.
 
 `tests/test_project_playback.py` adds 18 acceptance cases. On the reference path,
 the robot loads for 2 seconds, then travels from (0, 0) to (3, 4) at 2 m/s. At

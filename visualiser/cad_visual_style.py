@@ -47,11 +47,28 @@ def icon(name, colour='#17335a'):
         path([(4, 19), (10, 12), (16, 12), (21, 4)])
         for x, y in ((4, 19), (10, 12), (16, 12), (21, 4)):
             circle(x, y, 1.5)
+    elif name == 'edge':
+        path([(5, 18), (19, 6)])
+        circle(5, 18, 2.5)
+        circle(19, 6, 2.5)
     elif name == 'node':
         circle(12, 12, 5)
         circle(12, 12, 1)
         for pts in ([(12, 2), (12, 5)], [(12, 19), (12, 22)], [(2, 12), (5, 12)], [(19, 12), (22, 12)]):
             path(pts)
+    elif name == 'transition':
+        path([(3, 4), (21, 4)])
+        path([(3, 20), (21, 20)])
+        path([(12, 4), (12, 8)])
+        path([(12, 16), (12, 20)])
+        path([(12, 8), (16, 12), (12, 16), (8, 12)], True)
+    elif name == 'lift':
+        rect(3, 7, 18, 15)
+        path([(12, 9), (12, 20)])
+        path([(6, 5), (6, 1), (4, 3)])
+        path([(6, 1), (8, 3)])
+        path([(18, 1), (18, 5), (16, 3)])
+        path([(18, 5), (20, 3)])
     elif name == 'location':
         p = QPainterPath(QPointF(12, 22))
         p.cubicTo(-6, 5, 6, 2, 12, 2)
@@ -62,6 +79,11 @@ def icon(name, colour='#17335a'):
         path([(4, 22), (4, 2), (20, 2), (20, 22)])
         path([(7, 21), (7, 5), (17, 7), (17, 23)], True)
         circle(14, 14, .6)
+    elif name == 'department':
+        rect(3, 7, 18, 14)
+        rect(8, 3, 8, 4)
+        path([(12, 10), (12, 17)])
+        path([(8.5, 13.5), (15.5, 13.5)])
     elif name in ('project', 'configuration', 'checks', 'review', 'report', 'help'):
         rect(5, 3, 15, 19)
         if name == 'project':
@@ -129,6 +151,9 @@ def apply_workbench_style(editor):
         QMainWindow#amrWorkbench QTreeWidget::item:selected {{ background: {c['accent']}; color: {c['selected_text']}; border-radius: 3px; }}
         QMainWindow#amrWorkbench QSplitter::handle {{ background: {border}; width: 1px; }}
         QMainWindow#amrWorkbench QStatusBar {{ background: {c['base']}; border-top: 1px solid {border}; padding: 2px; }}
+        QMainWindow#amrWorkbench QWidget#cadSnapControls QToolButton {{ border: 1px solid {border}; border-radius: 3px; padding: 3px 6px; color: {c['text']}; background: {c['base']}; }}
+        QMainWindow#amrWorkbench QWidget#cadSnapControls QToolButton:checked {{ background: {c['accent']}; color: {c['selected_text']}; border-color: {c['accent']}; }}
+        QMainWindow#amrWorkbench QWidget#cadSnapControls QToolButton:disabled {{ color: {c['mid']}; }}
         QMainWindow#amrWorkbench QLabel[sectionHeading="true"] {{ font-weight: 600; padding: 5px; }}
         QMainWindow#amrWorkbench QWidget#cadChecksStrip {{ background: {c['base']}; border: 1px solid {border}; border-radius: 4px; }}
         QMainWindow#amrWorkbench QWidget#cadProjectSidebar {{ background: {c['base']}; border-right: 1px solid {border}; }}

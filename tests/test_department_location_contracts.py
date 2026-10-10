@@ -249,3 +249,65 @@ class DepartmentLocationEditingTests(unittest.TestCase):
             finally:
                 with patch.object(editor, '_confirm_unsaved_changes', return_value=True):
                     editor.close()
+
+    def test_service_location_and_dropoff_zone_save_undo_and_reopen_together(self):
+        from amr_project import Project
+        from PySide6.QtWidgets import QFileDialog, QLabel
+        from tests import test_corridor_editing as editing
+        from visualiser.dialogs import DepartmentListDialog, QDialog
+        with tempfile.TemporaryDirectory() as directory:
+            editor = editing.AMRGraphEditor()
+            editor._recovery_store = editing.RecoveryStore(Path(directory) / 'recovery')
+            editor._drawings_enabled = False
+            try:
+                editor.store = editing.JsonStore(grouped_config())
+                editor.refresh_canvas()
+                editor._saved_state = editor._configuration_state()
+                editor._reset_edit_history()
+                before = copy.deepcopy(editor.store.data)
+                listing = DepartmentListDialog(editor, before['departments'], ['A', 'B'], [], 0,
+                                               editor._save_departments, lambda: 'E')
+                child = self.editor_dialog(listing)
+                self.assertTrue(any('then Save in the Departments list' in label.text()
+                                    for label in child.findChildren(QLabel)))
+                child._place_category_location('stores')
+                editor.finish_department_location_placement(1.25, 2.5, 0)
+                with patch('visualiser.dialogs.DepartmentDropoffZoneCreationDialog') as zone_dialog:
+                    zone_dialog.return_value.exec.return_value = QDialog.Accepted
+                    zone_dialog.return_value.result = dict(name='D-ZONE', category_keys=['stores'], create_new=True)
+                    child._create_and_assign_dropoff_zone()
+                editor.finish_department_location_placement(3.75, 4.5, 0)
+                self.assertEqual(before, editor.store.data)
+                child.accept()
+                listing.items[0] = listing._commit_department_editor_result(child.result)
+                listing.save_items()
+                after = copy.deepcopy(editor.store.data)
+                entry = after['departments'][0]['task_generation_locations']['stores']
+                prior_names = {row['name'] for row in before['locations']}
+                created_bays = set(entry['pickup_dropoff_locations']) - prior_names
+                self.assertEqual(1, len(created_bays))
+                bay = created_bays.pop()
+                self.assertEqual(['D-ZONE'], entry['dropoff_zone_locations'])
+                points = {row['name']: row for row in after['locations']}
+                self.assertEqual((1.25, 2.5), (points[bay]['x'], points[bay]['y']))
+                self.assertEqual((3.75, 4.5), (points['D-ZONE']['x'], points['D-ZONE']['y']))
+                self.assertFalse(any('_create_locations' in row for row in after['departments']))
+                self.assertTrue(editor.undo_edit())
+                self.assertEqual(before, editor.store.data)
+                self.assertTrue(editor.redo_edit())
+                self.assertEqual(after, editor.store.data)
+                path = Path(directory) / 'nested-edit.amrproj'
+                with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(path), '')):
+                    self.assertTrue(editor.save_project(save_as=True))
+                reopened = Project.open(path).configuration()
+                self.assertEqual(after['departments'], reopened['departments'])
+                self.assertEqual(after['locations'], reopened['locations'])
+                self.assertTrue(editor.load_json_file(str(path), load_drawings=False))
+                self.assertEqual(after['locations'], editor.store.data['locations'])
+                imported_entry = editor.store.data['departments'][0]['task_generation_locations']['stores']
+                self.assertEqual(entry['pickup_dropoff_locations'], imported_entry['pickup_dropoff_locations'])
+                self.assertEqual(entry['dropoff_zone_locations'], imported_entry['dropoff_zone_locations'])
+                self.assertEqual(42, editor.store.data['departments'][0]['task_generation_locations']['unlisted']['custom'])
+            finally:
+                with patch.object(editor, '_confirm_unsaved_changes', return_value=True):
+                    editor.close()

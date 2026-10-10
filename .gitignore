@@ -31,6 +31,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!installer/AMRSimulator.spec
 
 # Installer logs
 pip-log.txt
@@ -208,6 +209,38 @@ __marimo__/
 
 # PDF
 *.pdf
+!docs/quick-start/AMR-Simulator-Quick-Start.pdf
+/installer/build/
+
+# Local AMR projects, including tutorial/lift-study sidecars and backups.
+# Keep checked-in JSON examples and verification reference data versionable.
+*.amrproj*
+
+# Generated simulation runs, reports and exports.
+*_results/
+results/
+run_[0-9]*/
+/output/
+/outputs/
+
+# Temporary work directories, editor recovery files and local backups.
+tmp/
+temp/
+.tmp/
+.temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+
+# Local profiling output.
+*.prof
+*.pstats
 
 # CSV
 *.csv

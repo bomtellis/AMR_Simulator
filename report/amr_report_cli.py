@@ -7,6 +7,11 @@ def parse_args():
     )
     parser.add_argument("csv", nargs="?", help="Path to the simulation CSV")
     parser.add_argument("-o", "--output", help="Path to the PDF report", default=None)
+    parser.add_argument('--existing-pdf', help='Insert selected sections into this PDF; original pages are preserved.')
+    parser.add_argument('--insert-after-page', type=int, default=None,
+                        help='Insert after this existing page (0 = before first page); default appends.')
+    parser.add_argument('--insert-pdf', help='Insert an already prepared PDF, skipping analysis. Requires --existing-pdf and --output.')
+    parser.add_argument('--report-title', help='Title on the cover, headers and PDF metadata.')
     parser.add_argument(
         "--target-amr-util",
         type=float,

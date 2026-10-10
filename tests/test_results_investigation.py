@@ -8,9 +8,10 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFileDialog
 from amr_results_investigation import load_investigation
 from simulator import Simulation
 from tests.test_engineering_reference import reference_config
@@ -176,6 +177,30 @@ class InvestigationTests(unittest.TestCase):
         sim.write_verbose_csv()
         report = load_investigation(path)
         self.assertEqual(0, report['frozen_inputs']['locations'][0]['x'])
+
+    def test_review_route_checks_use_frozen_manual_and_generated_rules(self):
+        from visualiser.results_investigation_panel import load_review
+        c=grouped_config();c['route_profiles']={'blocked':{'allowed_nodes':['A','Door']}}
+        c['tasks']=[dict(id='Manual',pickup='A',dropoff='B',payload='Box',route_profile='blocked')]
+        c['task_generation']['categories']['stores']['route_profile']='blocked'
+        sim,path=self.run_reference(c)
+        sim.config['route_profiles']['blocked']={}
+        report=load_review(path);routes=report['route_checks_report']['route_checks']
+        self.assertEqual({'Manual task','Generated rule'},{row['source'] for row in routes})
+        self.assertTrue(all(row['status']=='Blocked' for row in routes))
+        app=QApplication.instance() or QApplication([]);panel=ResultsInvestigationPanel()
+        try:
+            panel.accept_result(report)
+            view=panel.route_checks_view
+            panel.tabs.setCurrentWidget(view)
+            self.assertTrue(panel.timeline_widget.isHidden())
+            panel.tabs.setCurrentIndex(0)
+            self.assertFalse(panel.timeline_widget.isHidden())
+            self.assertEqual(len(routes),view.table.rowCount())
+            self.assertIn('Saved run input snapshot',view.summary.text())
+            view.search.setText('Manual task');app.processEvents()
+            self.assertEqual(1,sum(not view.table.isRowHidden(i) for i in range(view.table.rowCount())))
+        finally:panel.close()
 
     def test_generated_rule_provenance_is_saved(self):
         config = grouped_config()
@@ -351,6 +376,58 @@ class InvestigationUiTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_follow_task_payload_journey_and_lift_across_run_then_export(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'events.csv'
+            path.write_text(
+                'event_type,sim_time_sec,task_id,payload_instance_id,journey_id,lift_id\n'
+                'task_assigned,1,T1,P1,J1,L1\n'
+                'segment_lift_transfer,2,T1,P1,J1,L1\n'
+                'segment_lift_transfer,3,T2,P1,J1,L1\n'
+                'task_complete,4,T2,P2,J2,L2\n'
+                'task_complete,5,T1,,,\n', encoding='utf-8')
+            panel = ResultsInvestigationPanel()
+            try:
+                panel.accept_result(load_investigation(path))
+                panel.tasks.selectRow(0)
+                self.assertEqual(3, len(panel.event_rows))
+                self.assertEqual([('task', 'T1'), ('payload', 'P1'),
+                                  ('journey', 'J1'), ('lift', 'L1')], panel.related_choices)
+                for index, kind, identity in ((1, 'payload', 'P1'),
+                                               (2, 'journey', 'J1'), (3, 'lift', 'L1')):
+                    panel.follow.setCurrentIndex(index)
+                    self.assertEqual(3, len(panel.event_rows))
+                    self.assertEqual((kind, identity),
+                                     (panel.selected_evidence[0],
+                                      panel.selected_evidence[1][{'payload': 'payload_instance_id',
+                                                                  'journey': 'journey_id', 'lift': 'lift_id'}[kind]]))
+                    self.assertIn('other tasks may share', panel.timeline_label.text())
+                exported_path = Path(folder) / 'lift-evidence.json'
+                with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(exported_path), '')):
+                    panel.export_selected_button.click()
+                exported = json.loads(exported_path.read_text(encoding='utf-8'))
+                self.assertEqual(('lift', 'L1'),
+                                 (exported['selection']['kind'], exported['selection']['identity']))
+                self.assertEqual(['T1', 'T1', 'T2'],
+                                 [e['task_ids'][0] for e in exported['events']])
+                panel.follow.setCurrentIndex(0)
+                self.assertEqual('task', panel.selected_evidence[0])
+                self.assertEqual(3, len(panel.event_rows))
+                panel.tabs.setCurrentIndex(1)
+                panel.metrics.selectRow(0)
+                self.assertEqual('metric', panel.selected_evidence[0])
+                panel.tabs.setCurrentIndex(2)
+                self.assertIsNone(panel.selected_evidence)
+                self.assertFalse(panel.export_selected_button.isEnabled())
+                panel.tabs.setCurrentIndex(0)
+                self.assertEqual('task', panel.selected_evidence[0])
+                self.assertEqual(4, panel.follow.count())
+                panel.search.setText('no match')
+                self.assertFalse(panel.follow.isEnabled())
+                self.assertFalse(panel.export_selected_button.isEnabled())
+            finally:
+                panel.close()
+
     def test_pending_filter_and_stop_explanation_are_visible(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'events.csv'
@@ -379,6 +456,8 @@ class InvestigationUiTests(unittest.TestCase):
             try:
                 panel.accept_result(load_investigation(path))
                 panel.tasks.selectRow(0)
+                self.assertIn('250,000 events and 300 MiB', panel.limits_label.text())
+                self.assertTrue(panel.export_selected_button.isEnabled())
                 self.assertEqual(500, panel.events.rowCount())
                 self.assertEqual(1201, len(panel.event_rows))
                 self.assertEqual(3, panel.event_page.maximum())
@@ -395,8 +474,17 @@ class InvestigationUiTests(unittest.TestCase):
                 self.assertIn('1,001', panel.event_range.text())
                 panel.events.selectRow(200)
                 self.assertIn('Source row: 1202', panel.details.toPlainText())
+                selected_path = Path(folder) / 'selected.json'
+                with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(selected_path), '')):
+                    panel.export_selected_button.click()
+                exported = json.loads(selected_path.read_text(encoding='utf-8'))
+                self.assertEqual(('task', 'T'), (exported['selection']['kind'], exported['selection']['identity']))
+                self.assertEqual(1201, exported['event_count'])
+                self.assertEqual((2, 1202), (exported['events'][0]['source_line'], exported['events'][-1]['source_line']))
+                self.assertNotIn('metrics', exported)
                 self.assertEqual(1201, len(panel.result['events']))
                 panel.search.setText('No matching task')
+                self.assertFalse(panel.export_selected_button.isEnabled())
                 self.assertEqual(0, panel.events.rowCount())
                 self.assertEqual('No events', panel.event_range.text())
                 self.assertFalse(panel.event_page.isEnabled())
@@ -406,6 +494,7 @@ class InvestigationUiTests(unittest.TestCase):
                 self.assertEqual(1, panel.event_page.value())
                 self.assertEqual(500, panel.events.rowCount())
                 panel.accept_result(None, 'Unreadable log')
+                self.assertFalse(panel.export_selected_button.isEnabled())
                 self.assertEqual([], panel.event_rows)
                 self.assertEqual([], panel.task_rows)
                 self.assertEqual({}, panel.events_by_id)
@@ -425,6 +514,17 @@ class InvestigationUiTests(unittest.TestCase):
                 index = next(i for i, m in enumerate(panel.result['metrics']) if m['key'] == 'completed')
                 panel.metrics.selectRow(index)
                 self.assertEqual(1, panel.events.rowCount())
+                selected_path = Path(folder) / 'metric-selected.json'
+                with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(selected_path), '')):
+                    panel.export_selected()
+                selected = json.loads(selected_path.read_text(encoding='utf-8'))
+                self.assertEqual(('metric', 'completed'),
+                                 (selected['selection']['kind'], selected['selection']['identity']))
+                self.assertEqual([3], [e['source_line'] for e in selected['events']])
+                full_path = Path(folder) / 'full.json'
+                with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(full_path), '')):
+                    panel.export()
+                self.assertEqual(2, len(json.loads(full_path.read_text(encoding='utf-8'))['events']))
                 panel.events.selectRow(0)
                 self.assertIn('Source row: 3', panel.details.toPlainText())
                 self.assertIn('Legacy', panel.evidence.toPlainText())

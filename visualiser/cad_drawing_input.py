@@ -69,7 +69,7 @@ class CadDrawingInput(QWidget):
         super().__init__(parent)
         layout = QGridLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
-        label = QLabel('Next point (m)', self)
+        label = QLabel('Next point (m)', self);self.coordinate_label=label
         self.direction = QComboBox(self)
         self.direction.setAccessibleName('Corridor drawing direction constraint')
         for title, step in [('Free direction', None), ('Orthogonal (90°)', 90),
@@ -100,3 +100,16 @@ class CadDrawingInput(QWidget):
     def feedback(self, message, *, error=False):
         # Text carries the distinction, independent of theme or colour perception.
         self.feedback_label.setText(('Input error: ' if error else '') + message)
+
+    def set_mode(self,mode):
+        corridor=mode=='corridor_draw'
+        self.direction.setVisible(corridor)
+        self.coordinate_label.setText('Next point (m)' if corridor else 'Place at (m)')
+        self.coordinate_edit.setAccessibleName('Corridor coordinate entry in metres' if corridor else 'Insertion coordinate entry in metres')
+        self.coordinate_edit.setPlaceholderText('X,Y  |  @dx,dy  |  @length<angle' if corridor else 'X,Y')
+        self.coordinate_edit.setToolTip('Enter coordinates in metres. Enter places the object with its normal editor and undo boundary. '
+            'Typed coordinates bypass grid snapping. Object snapping follows its setting.' if not corridor else
+            'Absolute X,Y; relative @dx,dy; polar @length<angle. Enter places a point; blank Enter finishes; Escape finishes the draft.')
+        if not self.coordinate_edit.text():
+            self.feedback('Click or type a start point. Typed input bypasses grid; object snapping follows the Object snap setting.' if corridor else
+                'Move the pointer to see floor and coordinates. Click or enter X,Y to place; Escape cancels the draft.')

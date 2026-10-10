@@ -31,7 +31,7 @@ class CadConceptIconTests(unittest.TestCase):
 
     def test_native_symbols_are_visible_at_toolbar_size_on_light_and_dark(self):
         for colour in ('#17335a', '#ffffff'):
-            for name in ('save', 'undo', 'redo', 'select', 'corridor', 'node', 'location',
+            for name in ('save', 'undo', 'redo', 'select', 'corridor', 'node', 'transition', 'lift', 'location',
                          'door', 'project', 'configuration', 'checks', 'review', 'report',
                          'help', 'layout', 'simulate', 'fit', 'focus', 'properties', 'tree', 'more'):
                 with self.subTest(name=name, colour=colour):

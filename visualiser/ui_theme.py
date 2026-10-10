@@ -247,6 +247,8 @@ def _direct_intro_exists(dialog: QWidget) -> bool:
 
 
 def _insert_intro(dialog: QWidget) -> None:
+    if dialog.inherits('QInputDialog'):
+        return  # The short naming/value prompt already supplies its instruction.
     if _direct_intro_exists(dialog):
         return
     text = _intro_for_title(dialog.windowTitle())
@@ -380,6 +382,10 @@ def _polish_buttons(root: QWidget) -> None:
                 ok_button.setText("Apply")
             elif title not in {""}:
                 ok_button.setText("Save")
+            if root.inherits('QInputDialog'):
+                # QInputDialog can retain the initial, narrower OK geometry
+                # after its label changes to Save during show-time polishing.
+                ok_button.setMinimumWidth(ok_button.fontMetrics().horizontalAdvance(ok_button.text().replace('&',''))+24)
         for standard in (
             QDialogButtonBox.Save,
             QDialogButtonBox.Ok,
@@ -469,8 +475,12 @@ def _fit_to_screen(dialog: QWidget) -> None:
 
 def polish_dialog(dialog: QWidget) -> None:
     """Apply the shared theme and responsive behaviour to a completed dialog."""
+    from shiboken6 import isValid
+    if not isValid(dialog):return
     if not isinstance(dialog, (QDialog, QMainWindow)):
         return
+    if dialog.property('amrInstructionBubble'):
+        return  # Compact, independent instruction UI manages its own layout.
     install_application_theme()
     if isinstance(dialog, QMainWindow) and (dialog.property('amrProjectWorkspace') or
             dialog.windowTitle().startswith("AMR Simulation Graph Editor")):
@@ -489,5 +499,6 @@ def polish_dialog(dialog: QWidget) -> None:
         _polish_buttons(dialog)
         dialog.style().unpolish(dialog)
         dialog.style().polish(dialog)
-    _make_small_screen_scrollable(dialog)
-    _fit_to_screen(dialog)
+    if not dialog.property('amrCadDialog'):
+        _make_small_screen_scrollable(dialog)
+        _fit_to_screen(dialog)

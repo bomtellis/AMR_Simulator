@@ -1,5 +1,14 @@
 # Unified project workflow — review checkpoint
 
+Run lifecycle update (4 October 2026): Simulate now explains how to relink a
+moved output folder, open its read-only playback and export a report from frozen
+inputs. A combined application check saves and runs a revision through the child
+worker, moves and relinks the completed folder, closes/reopens the project,
+loads playback and generates a PDF through the Report panel. The frozen run
+configuration and reopened project archive stay byte-identical through playback
+and report export; current unsaved editor edits do not enter the report. The
+focused run/link/workspace/playback group passes 75 tests.
+
 The application now has a persistent project navigator and one central workspace.
 The seven stages use the same editor configuration and saved project. Existing
 checks, demand preview, revision history, run management and investigation panels

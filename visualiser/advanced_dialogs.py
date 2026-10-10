@@ -360,13 +360,20 @@ class RouteProfilesEditorV2(QDialog):
         nodes_row.addWidget(pick_nodes)
         profile_form.addRow("Allowed nodes", nodes_row)
 
-        graphical_nodes_btn = QPushButton("Graphical...")
-        graphical_nodes_btn.clicked.connect(self.pick_nodes_graphically)
-        nodes_row.addWidget(graphical_nodes_btn)
+        self.graphical_nodes_btn = QPushButton("Select nodes and edges in Layout")
+        self.graphical_nodes_btn.clicked.connect(self.pick_nodes_graphically)
+        form.addWidget(self.graphical_nodes_btn)
 
-        form.addWidget(QLabel("Allowed edges as JSON array pairs"))
+        self.edges_summary=QLabel();self.edges_summary.setWordWrap(True)
+        form.addWidget(self.edges_summary)
+        self.advanced_edges=QPushButton('Advanced edge pairs')
+        self.advanced_edges.setCheckable(True);form.addWidget(self.advanced_edges)
+
         self.edges_text = QPlainTextEdit()
+        self.edges_text.setAccessibleName('Allowed directed edge pairs')
         form.addWidget(self.edges_text, 1)
+        self.edges_text.hide();self.advanced_edges.toggled.connect(self.edges_text.setVisible)
+        self.edges_text.textChanged.connect(self.update_edge_summary)
 
         edge_row = QHBoxLayout()
         gen_btn = QPushButton("Generate from selected nodes")
@@ -396,7 +403,14 @@ class RouteProfilesEditorV2(QDialog):
             self.profile_list.addItem(name)
         if self.profiles:
             self.profile_list.setCurrentRow(0)
+        else:self.graphical_nodes_btn.setEnabled(False)
         _polish_dialog(self)
+
+    def update_edge_summary(self):
+        try:
+            pairs=json.loads(self.edges_text.toPlainText().strip() or '[]')
+            self.edges_summary.setText(f'Allowed edges: {len(pairs)} directed connections selected' if pairs else 'Allowed edges: unrestricted (empty list)')
+        except (ValueError,TypeError):self.edges_summary.setText('Allowed edges: correct the advanced edge pairs before saving')
 
     def summarize(self, values):
         if not values:
@@ -488,6 +502,7 @@ class RouteProfilesEditorV2(QDialog):
         if not name:
             return
         self.current_profile = name
+        self.graphical_nodes_btn.setEnabled(True)
         profile = self.profiles[name]
         self.name_edit.setText(name)
         self.allowed_lifts = list(profile.get("allowed_lifts", []))
@@ -500,7 +515,7 @@ class RouteProfilesEditorV2(QDialog):
 
     def apply_profile_changes(self):
         if not self.current_profile:
-            return
+            return True
         try:
             new_name = self.name_edit.text().strip()
             if not new_name:
@@ -508,6 +523,8 @@ class RouteProfilesEditorV2(QDialog):
             edges = json.loads(self.edges_text.toPlainText().strip() or "[]")
             if not isinstance(edges, list):
                 raise ValueError("Allowed edges must be a JSON list")
+            if any(not isinstance(pair,(list,tuple)) or len(pair)!=2 or any(node not in self.point_names for node in pair) for pair in edges):
+                raise ValueError('Each allowed edge must contain two known node names')
             payload = {
                 "allowed_lifts": list(self.allowed_lifts),
                 "allowed_nodes": list(self.allowed_nodes),
@@ -520,11 +537,13 @@ class RouteProfilesEditorV2(QDialog):
                 self.current_profile = new_name
             else:
                 self.profiles[self.current_profile] = payload
+            return True
         except Exception as exc:
             QMessageBox.critical(self, "Invalid profile", str(exc))
+            return False
 
     def save_all(self):
-        self.apply_profile_changes()
+        if not self.apply_profile_changes():return
         self.on_save(self.profiles)
         self.accept()
 
@@ -539,17 +558,25 @@ class RouteProfilesEditorV2(QDialog):
 
         self.hide()
 
+        try:edges=json.loads(self.edges_text.toPlainText().strip() or '[]')
+        except ValueError:
+            self.show();QMessageBox.critical(self,'Invalid edges','Correct the advanced edge pairs before graphical selection.');return
+
         self.editor.start_route_profile_graphical_selection(
             allowed_point_names=set(self.point_names),
             selected_nodes=set(self.allowed_nodes),
             callback=self.apply_graphical_node_selection,
             return_window=self,
+            selected_edges=edges,
+            include_edges=True,
+            profile_name=self.current_profile,
         )
 
-    def apply_graphical_node_selection(self, selected_nodes):
+    def apply_graphical_node_selection(self, selected_nodes,selected_edges=None):
         self.allowed_nodes = sorted(selected_nodes)
         self.nodes_summary.setText(self.summarize(self.allowed_nodes))
-        self.fill_edges_from_nodes()
+        if selected_edges is None:self.fill_edges_from_nodes()
+        else:self.edges_text.setPlainText(json.dumps([list(pair) for pair in sorted(selected_edges)],indent=2))
         self.show()
         self.raise_()
         self.activateWindow()

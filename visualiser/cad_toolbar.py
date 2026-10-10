@@ -2,7 +2,7 @@
 from dataclasses import replace
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QAction, QActionGroup
-from PySide6.QtWidgets import QLabel, QToolBar
+from PySide6.QtWidgets import QLabel, QMenu, QToolBar, QToolButton
 
 
 class CadToolBar(QToolBar):
@@ -21,16 +21,31 @@ class CadToolBar(QToolBar):
         for title, mode, explanation in (
                 ('Select', 'select_move', 'Select graph objects; Shift changes selection. Drag a selected point or corridor to move the group. Escape cancels. Use Properties to edit.'),
                 ('Corridor', 'corridor_draw', 'Draw connected corridor segments. Snap to existing points and edges.'),
-                ('Node', 'corridor_node', 'Place a corridor node or insert a node into an existing corridor.'),
+                ('Edge', 'edge', 'Draw an edge between existing graph points: click the start, then the end. Escape cancels the chain. Set direction and chaining under More tools → Edit → Drawing behaviour.'),
+                ('Transition', 'corridor_node', 'Place a shared transition or junction node on the current floor, or insert a node into an existing corridor. Use Corridor to connect its lanes.'),
                 ('Location', 'location', 'Place a named simulation location.'),
-                ('Door', 'door', 'Place a door restriction on a corridor. Existing nodes and clear widths are retained; links split when placed between nodes.')):
+                ('Department', 'department', 'Place a department on the current floor, or click a department marker to edit it. Configure its workflows and associated locations.'),
+                ('Door', 'door', 'Place a door restriction on a corridor. Existing nodes and clear widths are retained; links split when placed between nodes.'),
+                ('Lift', 'lift', 'Connect floors using a lift. Place or edit its access point, then configure served floors and stops in the lift editor.')):
             action = self.command(title, lambda checked=False, value=mode: editor._set_edit_mode(value), explanation,
                                   checkable=True)
             self.mode_group.addAction(action)
             action.setProperty('cadIcon', {'select_move': 'select', 'corridor_draw': 'corridor',
-                                         'corridor_node': 'node'}.get(mode, mode))
+                                         'corridor_node': 'transition'}.get(mode, mode))
             self.mode_actions[mode] = action
+        self.departments_action = QAction('Manage departments…', self)
+        self.departments_action.setToolTip('Add, edit or remove departments and their workflow locations.')
+        self.departments_action.triggered.connect(lambda: editor.manage_departments())
+        self.departments_action.setProperty('cadIcon', 'department')
+        department_button = self.widgetForAction(self.mode_actions['department'])
+        self.departments_menu = QMenu(department_button)
+        self.departments_menu.addAction(self.departments_action)
+        department_button.setMenu(self.departments_menu)
+        department_button.setPopupMode(QToolButton.MenuButtonPopup)
         self.addSeparator()
+        self.route_views_action=self.command('Routes',lambda checked: editor.route_view_toolbar.set_expanded(checked),
+            'Show route profile views and colours for permitted and blocked graph directions.',checkable=True)
+        self.route_views_action.setProperty('cadIcon','edge')
         self.fit_action = self.command('Fit', editor.fit_view, 'Fit the current floor drawing into the available canvas.')
         self.fit_action.setProperty('cadIcon', 'fit')
         self.addSeparator()
@@ -49,6 +64,8 @@ class CadToolBar(QToolBar):
             editor.object_snap_check.toolTip(), checkable=True)
         self.object_snap_action.setChecked(editor.object_snap_check.isChecked())
         editor.object_snap_check.toggled.connect(self.object_snap_action.setChecked)
+        # Object snap targets live together in the bottom-right status bar.
+        self.removeAction(self.object_snap_action)
 
         self.grid_action = self.command('Grid', self.change_grid,
             'Show or hide the adaptive metre grid. This is a display setting; Snap is independent.', checkable=True)
@@ -105,7 +122,12 @@ class CadToolBar(QToolBar):
         self.focus_action.setChecked(workspace._canvas_focus)
         layout = workspace.stage == 'layout'
         self.setVisible(layout)
-        for action in (*self.mode_actions.values(), self.more_action):
+        for action in (*self.mode_actions.values(), self.departments_action, self.more_action):
             action.setEnabled(layout and not self.editor.project_editing_locked())
+        if getattr(self.editor,'route_profile_select_edges',False):
+            for mode,action in self.mode_actions.items():
+                if mode!='select_move':action.setEnabled(False)
+            self.departments_action.setEnabled(False)
+            self.more_action.setEnabled(False)
         self.focus_action.setEnabled(layout or workspace._canvas_focus)
         self.properties_action.setEnabled(workspace.stage in ('layout', 'configuration'))

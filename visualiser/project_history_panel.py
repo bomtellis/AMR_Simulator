@@ -43,7 +43,10 @@ class ProjectHistoryPanel(QWidget):
         self.compare_button.setEnabled(project is not None)
         self.restore_button.setEnabled(project is not None and not self.editor.project_editing_locked())
         self.summary.setText("Save as an AMR project to start revision history." if project is None else
-            f"{len(project.revisions)} saved revision(s). Restore saves your current edits first. Simulation results remain external. Differences are a snapshot; compare again after editing.")
+            f"{len(project.revisions)} saved revision(s). Restore saves your current edits first. "
+            "If Save fails, keep the editor open; Recovery copies can open an available snapshot, "
+            "which you must save to a new file. Simulation results remain external. "
+            "Differences are a snapshot; compare again after editing.")
         if project is not None:
             for rev in reversed(project.revisions):
                 self.revisions.addItem(f"{rev['created_utc'][:19]} UTC | {rev['label']} | {rev['id'][:8]}", rev["id"])

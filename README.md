@@ -15,13 +15,60 @@ the Python executable and `amr_app.py` work from another folder. The previous
 `visualiser/amr_editor_main.py` entry point remains available.
 
 Use **File → New project** (`Ctrl+N`) to start again, with Save/Discard/Cancel for
-unsaved work. Fresh workspaces save as compressed `.amrproj` files by default;
+unsaved work. New project setup opens here and when launching without a file.
+Choose a floor count and height, then optionally assign a DXF or PDF per floor.
+Floors start at 0; PDF assignments use the existing page, scale and alignment
+settings. **Skip setup** starts an empty project for configuration through the
+existing dialogs; **Cancel** keeps the current project. Created floors remain
+visible in Layout even without drawings. Fresh workspaces save as compressed `.amrproj` files by default;
 opened JSON configurations retain JSON saves. **Save project as** (`Ctrl+Shift+S`)
 converts an imported configuration to a portable project. Simulation outputs stay
 external. New projects require layout, robot and demand configuration before
 **Check → Simulate → Review → Report**. Offline installation remains release work.
 
 ## Engineering verification
+
+In **Layout**, choose **Edge** on the drawing toolbar and click two existing graph
+points to connect them. **Escape** cancels the current chain; **Undo/Redo** applies
+to each completed edge. Set **Bidirectional edges** and **Chain edge creation** in
+**More tools → Edit → Drawing behaviour**. Use **Corridor** to draw routes that
+also create new nodes.
+
+Choose **Department** on the Layout drawing toolbar to place a department marker
+on the current floor or edit one by clicking it. Its drop-down menu opens
+**Manage departments…** to add, edit or remove departments and configure their
+workflow locations. The full editor is also available under **Configuration → Departments**.
+
+The bottom-right **Object snap** controls let you enable **End** (graph points),
+**Mid** (corridor midpoints), **Perp** (perpendicular from the current anchor),
+and **Cross** (intersections) together. **Near** provides nearest-point/edge
+snapping when no enabled specific target is nearby. Targets compete by distance;
+exact coincidences still reuse existing graph geometry. Turn **Object snap** off
+to suspend attraction while keeping your chosen targets. **Grid snap** is
+independent. Drawing previews, commits and transform reference picking use the
+same enabled targets; the full tool tabs retain single-target presets.
+
+To change the level height after setup, open **Configuration → Building settings**,
+edit **Level height**, and choose **Save**. This shared distance between adjacent
+floors applies to all levels. The edit preserves effective lift speeds in metres
+per second and recalculates floors per second, so vertical travel times reflect
+the new height. It supports Undo/Redo; save the project to persist the change and
+rerun Project checks before simulating.
+
+Saved-run **Review → Playback** uses horizontal controls above the full-width
+map. **Display** contains visibility options and the optional legend; **Inspect**
+opens task, lift and payload monitors. Drag the divider above the timeline to
+resize it. Timeline backgrounds are cached for the visible area, and drag-to-seek
+updates are coalesced while retaining the final position on release. The run name
+and metadata replace the standalone viewer's loaded-file panel.
+
+Generated reports include the eight operational KPI groups for demand, service,
+capacity, efficiency, bottlenecks, reliability, resources and cost/sustainability.
+See [report KPI definitions and optional inputs](docs/report-kpis.md) for evidence
+limits, calculation rules and the accompanying CSV exports.
+Reports include a title page, linked contents and numbered headings. The
+[report structure and PDF insertion guide](docs/report-structure.md) explains
+SLA category assignments and adding selected or prepared sections to existing PDFs.
 
 The editor now opens compressed `.amrproj` files containing configuration,
 deduplicated drawings and saved revisions. See the
@@ -84,6 +131,16 @@ have their own timer from their release time; automatic idle parking trips are
 excluded.
 
 ## Managing inventory spaces across locations
+
+For one location, select it and choose **Properties > Create / edit spaces…**, or
+right-click it and choose **Inventory spaces**. The inventory editor opens maximized
+with a central CAD canvas, a spaces list, an explicit Properties panel, a metre grid,
+zoom/pan, multi-selection, drag movement and numeric centre/rotation fields. The toolbar
+and **Edit tools** menu retain payload/AMR creation, arrays, copy/paste, deletion,
+alignment, capacity arrangement and charger controls. Draft Undo/Redo stays inside
+the dialog; **Save and close** applies one project edit, while **Cancel** discards it.
+Part 4, Action 2 shows bay dimensions and labelled placement previews and can create
+four correctly positioned tutorial charging bays before robot types are configured.
 
 Open **Locations & Inventory Spaces** in the editor. The left list includes every
 location and drop-off zone; the right table edits its spaces and previews the layout.
@@ -523,3 +580,49 @@ Verbose evidence records `payload_source_spawned` with task, source, time and id
 Population summaries include `payload_source_additions` alongside peak active population.
 Counts remain available as `Simulation.source_payload_additions` without verbose logging.
 These are scenario supply requirements, not proof of a globally minimum container fleet.
+# Simple application delivery
+
+New-project setup and the shipped small-map practice input select Simple mode.
+Existing imported modes and historical projects keep their settings.
+Task generation uses focused tabs and a Department actions menu. Department
+settings use Details, Hours & waste, and Task locations & zones; save the child
+editor, then save the Departments list. Simulation settings keep four tabs;
+Show mode details reveals the full readiness findings without expanding the
+default form. Properties and advanced drawing tools remain optional.
+
+The current delivery excludes LTN tests and workloads. Reproduce the focused
+workflow QA with `.venv\Scripts\python.exe -m verification.simple_delivery qa
+--output verification/latest/simple-delivery/qa`. See
+[the delivery review](verification/SIMPLE_DELIVERY_REVIEW.md) for the source,
+installer, checks and known limits.
+
+The subsequent building-flow increment adds a live-control instruction bubble
+under Help > Building flow tutorial. It supplies three aligned 800 m² floors,
+checkpoints and dedicated/shared lift reference projects. Configuration > Plan
+lift locations requires reviewed DXF interpretation, proposes aligned sites and
+compares frozen scenarios with protected service to every floor/flow. Separate
+variants preserve the original design; explicit application supports undo.
+See [the illustrated guide](docs/building-tutorial/Building-Flow-Tutorial.pdf)
+and [increment review](verification/BUILDING_TUTORIAL_REVIEW.md). Its handover
+is under `installer/build/building-delivery`. The current source adds Number of
+floors to Building settings, and tutorial Next/Resume locates the relevant
+workspace. The bubble avoids panes/controls and can be dragged. Circulation
+uses numbered click markers, route previews and checked progression; missing
+links or incorrect properties are highlighted before Next is enabled.
+Facility placement also shows the next location's name, floor and coordinates,
+including while its naming dialog is open. Insertion tools share contextual
+coordinate feedback. All tutorial stages validate automatically; use Next when
+ready, and Details for full corrections. The bubble is an independent nonmodal
+dialog owned by the application, so temporary editors cannot close or delete it.
+Progress saves automatically beside the project as chapters, actions and practice
+change. The first save and Save as preserve it; Resume restores the saved position
+and skips completed chapters and verified actions. Shared transition instructions
+explicitly create the middle node at (3,10) on each floor before connecting lanes.
+Transition and Lift have distinct drawing toolbar icons: Transition places a
+node for corridor junctions on the current floor; Lift connects stops across floors.
+With enlarged text in a compact window, drawing tools show icons and keep their
+names in accessible labels and tooltips so both controls remain visible.
+Help > Restart tutorial bubble (also in its More menu) reopens the bubble at
+the current step without resetting project edits or checked progress.
+Installer work for these corrections is excluded at the user's request;
+the earlier building and Simple deliveries are preserved.

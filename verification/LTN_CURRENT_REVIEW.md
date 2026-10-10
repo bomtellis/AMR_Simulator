@@ -59,6 +59,6 @@ claim about physical walls or proof that no alternate geometric path exists.
 The invalid-local-manoeuvre bypass is not enabled in this input and was not
 switched on to make the measurement pass.
 
-Next: add a navigable Project checks warning identifying this entry/bay conflict
-before a run, with explicit scope and independent reference tests. Interactive
-LTN drawing/cursor/drag measurements remain open.
+Follow-up: the navigable Project checks warning and independent reference tests
+are recorded in `LOCAL_BAY_ENTRY_REVIEW.md`. Interactive LTN drawing/cursor/drag
+measurements remain open.
