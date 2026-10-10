@@ -31,6 +31,7 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+!installer/AMRSimulator.spec
 
 # Installer logs
 pip-log.txt
@@ -207,8 +208,48 @@ marimo/_lsp/
 __marimo__/
 
 # PDF
-*.pdf
+*.[pP][dD][fF]
+/installer/build/
+
+# Local AMR projects, including tutorial/lift-study sidecars and backups.
+# Keep checked-in JSON examples and verification reference data versionable.
+*.amrproj*
+
+# Generated simulation runs, reports and exports.
+*_results/
+results/
+run_[0-9]*/
+/output/
+/outputs/
+
+# Temporary work directories, editor recovery files and local backups.
+tmp/
+temp/
+.tmp/
+.temp/
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+
+# Local profiling output.
+*.prof
+*.pstats
+
+# Generated CAD drawings; retain required tutorial drawings.
+*.[dD][xX][fF]
+!docs/building-tutorial/*.[dD][xX][fF]
 
 # CSV
-*.csv
+*.[cC][sS][vV]
 simulation_steps.csv
+
+# Reproducible verification output is retained locally and as CI artifacts.
+# Keep reference cases, contracts, before-fix evidence and review summaries tracked.
+/verification/latest/
+/verification/stage1-tests.txt

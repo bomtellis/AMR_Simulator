@@ -2,12 +2,25 @@ from __future__ import annotations
 
 import math
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 import pandas as pd
 import json
+# The report CLI is also launched directly from this subdirectory.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from amr_location_inputs import location_outline_metrics
+from amr_payload_inputs import inventory_space_dimensions, payload_dimensions as resolved_payload_dimensions
+from amr_inventory_inputs import inventory_space_is_amr
+from amr_department_inputs import department_location_names
+try:
+    from .amr_energy_evidence import read_energy_evidence
+except ImportError:  # Standalone report CLI.
+    from amr_energy_evidence import read_energy_evidence
 
 COLUMN_ALIASES = {
     "timestamp": [
@@ -21,6 +34,7 @@ COLUMN_ALIASES = {
         "clock_time",
     ],
     "seconds": [
+        "sim_time_sec",
         "sim_time_s",
         "sim_time_seconds",
         "current_time",
@@ -44,6 +58,17 @@ COLUMN_ALIASES = {
         "task_duration_sec",
     ],
     "wait": ["wait_time_sec", "wait_seconds", "waiting_s", "queue_s"],
+    "task_release": [
+        "task_release_time_sec",
+        "release_time_sec",
+        "release_time",
+    ],
+    "task_target": [
+        "task_target_time_sec",
+        "target_time_sec",
+        "target_time",
+        "sla_target_sec",
+    ],
     "lift": ["lift", "lift_id", "elevator", "elevator_id"],
     "from": [
         "from_location",
@@ -133,6 +158,23 @@ def parse_time_column(df: pd.DataFrame) -> Tuple[pd.DataFrame, Context]:
     if cols["timestamp"]:
         df["_event_time"] = pd.to_datetime(df[cols["timestamp"]], errors="coerce")
         if df["_event_time"].notna().any():
+            # Older simulator CSVs formatted datetimes to whole seconds even
+            # though sim_time_sec retained millisecond precision. Reconstruct
+            # the exact datetimes from the common simulation epoch when both
+            # columns are available.
+            if cols["seconds"]:
+                seconds = pd.to_numeric(df[cols["seconds"]], errors="coerce")
+                valid = df["_event_time"].notna() & seconds.notna()
+                if valid.any():
+                    epochs = (
+                        df.loc[valid, "_event_time"]
+                        - pd.to_timedelta(seconds.loc[valid], unit="s")
+                    ).dt.ceil("s")
+                    if not epochs.empty:
+                        epoch = epochs.mode().iloc[0]
+                        df.loc[valid, "_event_time"] = epoch + pd.to_timedelta(
+                            seconds.loc[valid], unit="s"
+                        )
             return df, Context(cols=cols, has_datetime=True, time_col="_event_time")
     if cols["seconds"]:
         df["_event_time"] = pd.to_numeric(df[cols["seconds"]], errors="coerce")
@@ -143,12 +185,11 @@ def parse_time_column(df: pd.DataFrame) -> Tuple[pd.DataFrame, Context]:
 def fmt_ts(value, has_datetime: bool) -> str:
     if pd.isna(value):
         return "-"
-    return (
-        # pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S")
-        pd.Timestamp(value).strftime("%d/%m/%Y %H:%M:%S")
-        if has_datetime
-        else f"{float(value):,.1f}s"
-    )
+    if not has_datetime:
+        return f"{float(value):,.3f}s".replace(".000s", "s")
+    timestamp = pd.Timestamp(value)
+    formatted = timestamp.strftime("%d/%m/%Y %H:%M:%S.%f")
+    return formatted.rstrip("0").rstrip(".")
 
 
 def fmt_duration(seconds: Optional[float]) -> str:
@@ -311,18 +352,31 @@ def _payload_instance_column(df: pd.DataFrame) -> Optional[str]:
 
 
 def _completed_transport_movement_rows(df: pd.DataFrame) -> pd.DataFrame:
-    """Return one row per physical payload arrival where available.
+    """Return paired physical arrivals, excluding seeded and replacement stock.
 
-    The simulator writes event-level ``location_payload_enter`` rows when a
-    payload physically enters a location.  These rows carry ``payload_instance_id``
-    and are the preferred source for unique transported-item counts.  Segment or
-    task rows can repeat the same payload many times and must not be used for
-    this metric.
+    A stored or service arrival must follow an identified departure from another
+    location. Initial entries alone do not prove transportation. Input order is
+    chronological with original event order retained at equal timestamps.
     """
     if df is None or df.empty or "_event_text" not in df.columns:
         return pd.DataFrame()
     event_text = df["_event_text"].astype(str)
-    rows = df[event_text.str.fullmatch("location_payload_enter", case=False, na=False)].copy()
+    candidates = df[event_text.str.lower().isin({'location_payload_exit', 'location_payload_enter', 'payload_service_arrival'})]
+    departures, arrivals = {}, []
+    instance_col = _payload_instance_column(df)
+    for index, row in candidates.iterrows():
+        identity = _clean_payload_instance_id(row.get(instance_col)) if instance_col else ''
+        if not identity:
+            continue
+        if str(row['_event_text']).lower() == 'location_payload_exit':
+            departures[identity] = row
+        elif identity in departures:
+            previous = departures.pop(identity)
+            origin = safe_text(previous.get('from_location'))
+            destination = safe_text(row.get('to_location'))
+            if origin not in {'', '-'} and destination not in {'', '-'} and origin != destination:
+                arrivals.append(index)
+    rows = df.loc[arrivals].copy()
     if rows.empty:
         return rows
     if "payload" in rows.columns:
@@ -334,11 +388,9 @@ def _completed_transport_movement_rows(df: pd.DataFrame) -> pd.DataFrame:
 def build_payload_population_summary(df: pd.DataFrame) -> pd.DataFrame:
     """Return simulator-owned runtime payload population by payload type.
 
-    ``payload_population_summary`` rows are emitted by the simulator from the
-    payload instance registry. ``payload_runtime_population`` is the peak
-    simultaneous number of physical instances contained in the runtime, which is
-    the asset count used for sizing. It is deliberately separate from task count
-    and movement count.
+    Only physical_lifecycle_v1 rows establish peak active physical population.
+    Older summaries measured storage and included planned IDs in known totals;
+    they cannot establish these metrics and remain missing, not inferred zero.
     """
     columns = [
         "payload",
@@ -365,8 +417,10 @@ def build_payload_population_summary(df: pd.DataFrame) -> pd.DataFrame:
             return pd.Series(default, index=frame.index, dtype=float)
         return pd.to_numeric(frame[name], errors="coerce").fillna(default)
 
-    rows["_runtime_population"] = _num_col(rows, "payload_runtime_population")
-    rows["_known_instances"] = _num_col(rows, "payload_known_instances")
+    basis = rows.get('payload_population_basis', pd.Series('', index=rows.index))
+    verified_basis = basis.eq('physical_lifecycle_v1')
+    rows["_runtime_population"] = _num_col(rows, "payload_runtime_population", float('nan')).where(verified_basis)
+    rows["_known_instances"] = _num_col(rows, "payload_known_instances", float('nan')).where(verified_basis)
     rows["_weight"] = _num_col(rows, "payload_weight_kg")
 
     out = (
@@ -380,8 +434,8 @@ def build_payload_population_summary(df: pd.DataFrame) -> pd.DataFrame:
         .rename(columns={"_report_payload": "payload"})
         .sort_values("payload")
     )
-    out["total_runtime_payloads"] = out["total_runtime_payloads"].round().astype(int)
-    out["known_payload_instances"] = out["known_payload_instances"].round().astype(int)
+    out["total_runtime_payloads"] = out["total_runtime_payloads"].round()
+    out["known_payload_instances"] = out["known_payload_instances"].round()
     out["payload_weight_kg"] = out["payload_weight_kg"].round(1)
     return out[columns].reset_index(drop=True)
 
@@ -396,8 +450,8 @@ def build_payload_schedule(
 
     Prefer simulator movement rows because they identify the physical item using
     ``payload_instance_id``.  This avoids reporting task count as transported
-    item count.  If older CSVs do not contain movement rows, fall back to the
-    previous completed-task count so legacy reports still build.
+    item count. Older CSVs without physical IDs retain task counts but leave
+    transported-object and physical-population metrics unknown.
     """
     columns = [
         "payload",
@@ -419,7 +473,7 @@ def build_payload_schedule(
                 instance_id = _clean_payload_instance_id(row.get(instance_col)) if instance_col else ""
                 if not instance_id:
                     task_id = safe_text(row.get("task_id"))
-                    instance_id = f"legacy:{task_id}:{payload_name}:{idx}"
+                    instance_id = None
                 rows.append(
                     {
                         "payload_instance_id": instance_id,
@@ -430,11 +484,11 @@ def build_payload_schedule(
                 )
 
     if rows:
-        payload_events = pd.DataFrame(rows).drop_duplicates(["payload_instance_id", "payload"])
+        payload_events = pd.DataFrame(rows)
         payload_schedule = (
             payload_events.groupby("payload", dropna=False)
             .agg(
-                unique_payloads_moved=("payload_instance_id", "nunique"),
+                unique_payloads_moved=("payload_instance_id", lambda s: s.nunique() if s.notna().all() else float('nan')),
                 tasks=("task_id", lambda s: s.replace("-", pd.NA).dropna().nunique()),
                 payload_weight_kg=("payload_weight_kg", "first"),
             )
@@ -453,16 +507,16 @@ def build_payload_schedule(
                 how="outer",
             )
         payload_schedule["total_runtime_payloads"] = pd.to_numeric(
-            payload_schedule.get("total_runtime_payloads", payload_schedule.get("unique_payloads_moved")),
+            payload_schedule.get("total_runtime_payloads", pd.Series(float('nan'), index=payload_schedule.index)),
             errors="coerce",
-        ).fillna(pd.to_numeric(payload_schedule.get("unique_payloads_moved"), errors="coerce").fillna(0)).round().astype(int)
+        ).round()
         payload_schedule["known_payload_instances"] = pd.to_numeric(
-            payload_schedule.get("known_payload_instances", payload_schedule.get("total_runtime_payloads")),
+            payload_schedule.get("known_payload_instances", pd.Series(float('nan'), index=payload_schedule.index)),
             errors="coerce",
-        ).fillna(payload_schedule["total_runtime_payloads"]).round().astype(int)
+        ).round()
         payload_schedule["unique_payloads_moved"] = pd.to_numeric(
             payload_schedule.get("unique_payloads_moved"), errors="coerce"
-        ).fillna(0).round().astype(int)
+        ).round()
         payload_schedule["tasks"] = pd.to_numeric(payload_schedule.get("tasks"), errors="coerce").fillna(0).round().astype(int)
         payload_schedule["payload_weight_kg"] = pd.to_numeric(payload_schedule.get("payload_weight_kg"), errors="coerce").fillna(0.0).round(1)
         return payload_schedule[columns].sort_values("payload").reset_index(drop=True)
@@ -503,7 +557,7 @@ def build_payload_schedule(
     payload_schedule = (
         payload_events.groupby("payload", dropna=False)
         .agg(
-            unique_payloads_moved=("task_id", "count"),
+            unique_payloads_moved=("task_id", lambda s: float('nan')),
             tasks=("task_id", "count"),
             payload_weight_kg=("payload_weight_kg", "first"),
         )
@@ -522,14 +576,14 @@ def build_payload_schedule(
             how="outer",
         )
     payload_schedule["total_runtime_payloads"] = pd.to_numeric(
-        payload_schedule.get("total_runtime_payloads", payload_schedule.get("unique_payloads_moved")),
+        payload_schedule.get("total_runtime_payloads", pd.Series(float('nan'), index=payload_schedule.index)),
         errors="coerce",
-    ).fillna(pd.to_numeric(payload_schedule.get("unique_payloads_moved"), errors="coerce").fillna(0)).round().astype(int)
+    ).round()
     payload_schedule["known_payload_instances"] = pd.to_numeric(
-        payload_schedule.get("known_payload_instances", payload_schedule.get("total_runtime_payloads")),
+        payload_schedule.get("known_payload_instances", pd.Series(float('nan'), index=payload_schedule.index)),
         errors="coerce",
-    ).fillna(payload_schedule["total_runtime_payloads"]).round().astype(int)
-    payload_schedule["unique_payloads_moved"] = pd.to_numeric(payload_schedule.get("unique_payloads_moved"), errors="coerce").fillna(0).round().astype(int)
+    ).round()
+    payload_schedule["unique_payloads_moved"] = pd.to_numeric(payload_schedule.get("unique_payloads_moved"), errors="coerce").round()
     payload_schedule["tasks"] = pd.to_numeric(payload_schedule.get("tasks"), errors="coerce").fillna(0).round().astype(int)
     payload_schedule["payload_weight_kg"] = pd.to_numeric(payload_schedule.get("payload_weight_kg"), errors="coerce").fillna(0.0).round(1)
     return payload_schedule[columns].sort_values("payload").reset_index(drop=True)
@@ -1043,6 +1097,299 @@ def choose_task_endpoint(
 
 
 
+def _clean_text(value) -> str:
+    return _clean_payload_instance_id(value)
+
+
+def level_label(value) -> str:
+    """Keep named levels; format numeric simulator floors as L00, L01, L-01."""
+    text = _clean_text(value)
+    if not text:
+        return "Unknown"
+    try:
+        number = float(text)
+        if math.isfinite(number) and number.is_integer():
+            return f"L{int(number):02d}" if number >= 0 else f"L-{abs(int(number)):02d}"
+    except ValueError:
+        pass
+    return text
+
+
+def build_journey_flows(df, ctx, tasks, location_catalog=None, metadata=None):
+    """Task demand endpoints, independent of multi-stop leg overrides."""
+    columns = [
+        "task_id", "amr", "journey_type", "parent_task_id", "task_source",
+        "task_department", "payload", "payload_instance_id", "outcome",
+        "release_time", "assignment_time", "completion_time",
+        "origin_location", "origin_level", "origin_department",
+        "destination_location", "destination_level", "destination_department",
+        "cross_level", "endpoint_quality",
+    ]
+    group_columns = [
+        "journey_type", "origin_level", "origin_department",
+        "destination_level", "destination_department", "outcome",
+    ]
+    catalog = {} if location_catalog is None or location_catalog.empty else (
+        location_catalog.set_index("location").to_dict("index")
+    )
+    dept_names = (metadata or {}).get("department_names", {})
+    task_col = ctx.cols.get("task")
+    task_lookup = tasks.set_index("task_id").to_dict("index") if not tasks.empty else {}
+    rows = []
+    if not task_col:
+        return pd.DataFrame(columns=columns), pd.DataFrame(columns=group_columns + ["journeys"])
+    for task_id, events in df[df[task_col].notna()].groupby(task_col, sort=False):
+        task_id = str(task_id)
+        if task_id not in task_lookup or "," in task_id:
+            continue
+        events = events.sort_values(ctx.time_col, kind="stable")
+        event_names = events["_event_text"].astype(str).str.lower()
+        # Charging and other synthetic resource records are not delivery requests.
+        request = events[event_names.isin([
+            "task_generated", "waste_task_generated", "return_task_generated",
+            "task_released", "task_assigned", "multi_stop_task_assigned",
+        ])]
+        if request.empty:
+            continue
+
+        def first_value(name):
+            values = [_clean_text(v) for v in events.get(name, pd.Series(dtype=object))]
+            return next((v for v in values if v), "")
+
+        source = first_value("task_source")
+        is_return = source == "task_generation_return" or event_names.eq("return_task_generated").any()
+        empty_return = (not source and task_id.startswith("RETURN-" + str(task_lookup[task_id]["amr"]) + "-"))
+        parent = ""
+        if is_return:
+            for detail in events.get("details", pd.Series(dtype=object)):
+                match = re.fullmatch(r"Generated delayed return for (.+)", _clean_text(detail))
+                if match:
+                    parent = match.group(1)
+                    break
+            if not parent:
+                match = re.fullmatch(r"RETURN-(.+)-\d+", task_id)
+                if match and match.group(1) in task_lookup:
+                    parent = match.group(1)
+        task = task_lookup[task_id]
+        assigned = events[event_names.isin(["task_assigned", "multi_stop_task_assigned"])]
+        completed = events[event_names.isin(["task_complete", "task_completed", "multi_stop_task_complete"])]
+        failed = event_names.eq("task_failed").any()
+        outcome = "completed" if not completed.empty else "failed" if failed else "incomplete"
+        row = {
+            "task_id": task_id, "amr": task["amr"],
+            "journey_type": "Return" if is_return else "Empty AMR return" if empty_return else "Waste collection" if source == "department_waste" else "Delivery / other",
+            "parent_task_id": parent, "task_source": source,
+            "task_department": dept_names.get(first_value("department_id"), first_value("department_id")) or "Unknown",
+            "payload": task["payload"], "payload_instance_id": first_value("payload_instance_id"),
+            "outcome": outcome,
+            "release_time": fmt_ts(task["release"], ctx.has_datetime),
+            "assignment_time": fmt_ts(assigned.iloc[0][ctx.time_col], ctx.has_datetime) if not assigned.empty else "",
+            "completion_time": fmt_ts(completed.iloc[-1][ctx.time_col], ctx.has_datetime) if not completed.empty else "",
+        }
+        quality = []
+        for prefix, which, floor_key in (("origin", "from", "start_floor"), ("destination", "to", "end_floor")):
+            endpoint_col = ctx.cols.get(which)
+            endpoint = choose_task_endpoint(request, ctx, ctx.cols.get("from"), ctx.cols.get("to"), which)
+            endpoint = _clean_text(endpoint)
+            info = catalog.get(endpoint, {})
+            floor_col = ctx.cols.get(floor_key)
+            floor = None
+            if endpoint_col and floor_col:
+                matching = request[request[endpoint_col].map(_clean_text).eq(endpoint)]
+                floors = matching[floor_col].dropna()
+                if not floors.empty:
+                    floor = floors.iloc[0] if which == "from" else floors.iloc[-1]
+            if not _clean_text(floor):
+                floor = info.get("floor")
+            row[prefix + "_location"] = endpoint or "Unknown"
+            row[prefix + "_level"] = level_label(floor)
+            row[prefix + "_department"] = _clean_text(info.get("department")) or "Unknown"
+            if row[prefix + "_level"] == "Unknown" or row[prefix + "_department"] == "Unknown" or not endpoint:
+                quality.append(prefix + " metadata incomplete")
+        row["cross_level"] = ("Unknown" if "Unknown" in (row["origin_level"], row["destination_level"])
+                              else "Yes" if row["origin_level"] != row["destination_level"] else "No")
+        row["endpoint_quality"] = "; ".join(quality) or "Resolved"
+        rows.append(row)
+    detail = pd.DataFrame(rows, columns=columns)
+    summary = detail.groupby(group_columns, dropna=False).size().reset_index(name="journeys")
+    return detail, summary
+
+
+def _known_weight(value):
+    value = pd.to_numeric(value, errors="coerce")
+    return float(value) if pd.notna(value) and math.isfinite(float(value)) and value >= 0 else None
+
+
+def load_amr_weights(json_path: Path) -> Dict[str, float]:
+    """Read robot self-weight, distinct from payload capacity, for each instance."""
+    with open(json_path, encoding="utf-8") as source:
+        config = json.load(source)
+    weights = {}
+    for amr in config.get("amrs", []):
+        weight = next((value for key in ("weight_kg", "amr_weight_kg", "mass_kg")
+                       if (value := _known_weight(amr.get(key))) is not None), None)
+        name = str(amr.get("id", "")).strip()
+        if name and weight is not None:
+            weights[name] = weight
+            for number in range(1, int(amr.get("quantity", 1) or 1) + 1):
+                weights[f"{name}-{number}"] = weight
+    return weights
+
+
+def lift_payload_weight(event, ctx, payload_weights):
+    """Weigh the load actually onboard, including multiple copies of a payload."""
+    logged_weight = _known_weight(event.get("payload_weight_kg"))
+    if logged_weight is not None:
+        return logged_weight
+    raw_onboard = _clean_text(event.get("onboard_payloads"))
+    try:
+        onboard = json.loads(raw_onboard) if raw_onboard else None
+    except (ValueError, TypeError):
+        onboard = None
+    if isinstance(onboard, list):
+        # Reduced scenario logs can suppress all payload state. An empty array
+        # then means unavailable, rather than evidence of an unloaded robot.
+        scenario = str(event.get("scenario_mode", "")).strip().lower() in {"true", "1"}
+        if not onboard and scenario:
+            return None
+        total = 0.0
+        seen_instances = set()
+        for record in onboard:
+            if not isinstance(record, dict):
+                return None
+            instance = _clean_text(record.get("payload_instance_id"))
+            if instance and instance in seen_instances:
+                continue
+            if instance:
+                seen_instances.add(instance)
+            weight = _known_weight(record.get("payload_weight_kg", record.get("weight_kg")))
+            if weight is None:
+                names = split_payload_names(record.get("payload"))
+                if not names:
+                    continue
+                parts = [_known_weight(payload_weights.get(name)) for name in names]
+                if any(part is None for part in parts):
+                    return None
+                weight = sum(parts)
+            total += weight
+        return total
+    # Without an onboard snapshot, a task payload name alone does not establish
+    # that it was picked up yet. Leave that older log's load weight unknown.
+    return None
+
+
+def build_lift_movement_detail(lift_rows, ctx, payload_weights=None, amr_weights=None):
+    """One row per logged lift movement, including empty lift repositioning."""
+    columns = ["movement_id", "lift_id", "movement_type", "amr", "task_ids",
+               "start_time", "finish_time", "origin_level", "destination_level", "duration_s",
+               "origin_location", "destination_location", "travel_distance_m",
+               "amr_onboard", "direction", "endpoint_source", "payload_weight_kg", "amr_weight_kg"]
+    payload_weights = payload_weights or {}
+    amr_weights = amr_weights or {}
+    rows = []
+    if lift_rows.empty:
+        return pd.DataFrame(columns=columns)
+    for _, event in lift_rows.sort_values(ctx.time_col, kind="stable").iterrows():
+        start = event[ctx.time_col]
+        duration = float(event["lift_time_s"])
+        lift_id = _clean_text(event["_lift_id"])
+        reposition = str(event["_segment_text"]).lower() == "lift_reposition"
+        try:
+            details = json.loads(_clean_text(event.get("details")) or "{}")
+            details = details if isinstance(details, dict) else {}
+        except (ValueError, TypeError):
+            details = {}
+        floors, sources = [], []
+        for which, floor_key, node_key in (("from", "start_floor", "start_node"),
+                                           ("to", "end_floor", "end_node")):
+            # Reposition rows describe the waiting robot in the general columns.
+            # Even JSON from_floor/to_floor can be overwritten with its floor;
+            # the lift's own from/to node names retain the actual movement.
+            candidates = [details.get(which), event.get(node_key), event.get(ctx.cols.get(which))]
+            floor, source = None, "Unknown"
+            for candidate in candidates:
+                match = re.fullmatch(re.escape(lift_id) + r"-F(-?\d+)", _clean_text(candidate), re.I) if lift_id else None
+                if match:
+                    floor, source = int(match.group(1)), "lift node"
+                    break
+            if floor is None and not (reposition and "amr_wait_node" in details):
+                value = details.get(which + "_floor")
+                if _clean_text(value):
+                    floor, source = value, "segment floor"
+                elif not reposition:
+                    value = event.get(ctx.cols.get(floor_key))
+                    if _clean_text(value):
+                        floor, source = value, "event floor"
+            floors.append(floor)
+            sources.append(source)
+        numeric_floors = pd.to_numeric(pd.Series(floors), errors="coerce")
+        direction = "Unknown"
+        if numeric_floors.notna().all():
+            direction = "Up" if numeric_floors.iloc[1] > numeric_floors.iloc[0] else "Down" if numeric_floors.iloc[1] < numeric_floors.iloc[0] else "Same level"
+        distance = pd.to_numeric(details.get("vertical_distance_m", event.get(ctx.cols.get("distance"))), errors="coerce")
+        amr_id = _clean_text(event.get(ctx.cols.get("amr")))
+        payload_weight = amr_weight = None
+        if not reposition:
+            payload_weight = lift_payload_weight(event, ctx, payload_weights)
+            amr_weight = _known_weight(event.get("amr_weight_kg"))
+            if amr_weight is None:
+                amr_weight = _known_weight(amr_weights.get(amr_id))
+        rows.append({
+            "movement_id": len(rows) + 1, "lift_id": lift_id,
+            "movement_type": event["_segment_text"],
+            "amr": amr_id,
+            "task_ids": ",".join(_multi_stop_task_ids_from_row(event, ctx.cols.get("task"), "multi_stop_task_ids")),
+            "start_time": fmt_ts(start, ctx.has_datetime),
+            "finish_time": fmt_ts(add_seconds_to_event_time(start, duration, ctx.has_datetime), ctx.has_datetime),
+            "origin_level": level_label(floors[0]),
+            "destination_level": level_label(floors[1]),
+            "duration_s": duration,
+            "origin_location": level_label(floors[0]),
+            "destination_location": level_label(floors[1]),
+            "travel_distance_m": distance,
+            "amr_onboard": not reposition,
+            "direction": direction,
+            "endpoint_source": "; ".join(sources),
+            "payload_weight_kg": payload_weight,
+            "amr_weight_kg": amr_weight,
+        })
+    return pd.DataFrame(rows, columns=columns)
+
+
+def load_lift_trip_rows(csv_path: Path):
+    """Read the lift segments shared by movement and cohort CSV exports."""
+    frame, ctx = parse_time_column(pd.read_csv(csv_path, low_memory=False))
+    segment_col = ctx.cols.get("segment_type")
+    event_col = ctx.cols.get("event")
+    segments = frame[segment_col].fillna("").astype(str).str.lower() if segment_col else pd.Series("", index=frame.index)
+    if event_col:
+        segments = segments.where(segments.ne(""), frame[event_col].astype(str).str.lower().str.replace(r"^(?:multi_stop_)?segment_", "", regex=True))
+    frame = frame[segments.isin(["lift_transfer", "lift_reposition"])].copy()
+    frame["_segment_text"] = segments.loc[frame.index]
+    frame = derive_lift_columns(frame, ctx.cols)
+    duration_col = ctx.cols.get("duration")
+    frame["lift_time_s"] = pd.to_numeric(frame[duration_col], errors="coerce") if duration_col else float("nan")
+    frame = frame[frame["_lift_id"].notna() & frame["lift_time_s"].ge(0) & frame[ctx.time_col].notna()]
+    return frame, ctx
+
+
+def extract_lift_cohorts(csv_path: Path) -> dict:
+    """Restore the existing 5-minute/hourly export without task or PDF analysis."""
+    frame, ctx = load_lift_trip_rows(csv_path)
+    return {key: build_lift_trip_cohorts(frame, ctx, interval_minutes=minutes)
+            for key, minutes in (('lift_trip_cohorts_5min', 5), ('lift_trip_cohorts_hourly', 60))}
+
+
+def extract_lift_movements(csv_path: Path, config_json: Path = None) -> pd.DataFrame:
+    """Extract lift travel without running the full task/PDF analysis."""
+    frame, ctx = load_lift_trip_rows(csv_path)
+    return build_lift_movement_detail(
+        frame, ctx,
+        load_payload_weights(config_json) if config_json else {},
+        load_amr_weights(config_json) if config_json else {},
+    )
+
+
 def build_lift_usage_profile(
     lift_rows: pd.DataFrame,
     ctx: Context,
@@ -1055,6 +1402,42 @@ def build_lift_usage_profile(
     pattern rather than one very long date-time axis.
     """
     columns = ["interval", "interval_start_min", "lift_id", "trips"]
+    cohort = build_lift_trip_cohorts(
+        lift_rows, ctx, interval_minutes, include_date=False
+    )
+    if cohort.empty:
+        return pd.DataFrame(columns=columns)
+    return cohort[columns].copy()
+
+
+def build_lift_trip_cohorts(
+    lift_rows: pd.DataFrame,
+    ctx: Context,
+    interval_minutes: int,
+    include_date: bool = True,
+) -> pd.DataFrame:
+    """Return per-lift trip and travel totals in fixed cohorts.
+
+    Dated cohorts keep each simulation date separate. The existing 30-minute
+    time-of-day profile opts out explicitly so its historic daily-profile
+    behaviour remains unchanged. Every date/bucket/lift combination is retained,
+    including zero-trip buckets, so CSV timelines and PDF pivots stay complete.
+    """
+    columns = [
+        "cohort_date",
+        "cohort_start",
+        "cohort_end",
+        "interval",
+        "interval_end",
+        "interval_start_min",
+        "interval_minutes",
+        "lift_id",
+        "transfer_trips",
+        "reposition_trips",
+        "trips",
+        "travel_time_s",
+        "avg_trip_s",
+    ]
     if (
         lift_rows is None
         or lift_rows.empty
@@ -1078,34 +1461,74 @@ def build_lift_usage_profile(
     if ctx.has_datetime:
         event_time = pd.to_datetime(rows[ctx.time_col], errors="coerce")
         minute_of_day = event_time.dt.hour * 60 + event_time.dt.minute
+        cohort_day = event_time.dt.normalize()
     else:
         event_seconds = pd.to_numeric(rows[ctx.time_col], errors="coerce")
         minute_of_day = ((event_seconds % 86400) // 60).astype("float")
+        cohort_day = (event_seconds // 86400).astype("float")
 
     rows = rows.assign(
         _profile_lift_id=rows["_lift_id"].map(safe_text),
         _profile_minute=minute_of_day,
+        _profile_day=cohort_day,
     )
-    rows = rows[rows["_profile_minute"].notna()].copy()
+    rows = rows[
+        rows["_profile_minute"].notna() & rows["_profile_day"].notna()
+    ].copy()
     if rows.empty:
         return pd.DataFrame(columns=columns)
+
+    if include_date:
+        if ctx.has_datetime:
+            day_keys = pd.date_range(
+                rows["_profile_day"].min(),
+                rows["_profile_day"].max(),
+                freq="D",
+            ).tolist()
+        else:
+            first_day = int(rows["_profile_day"].min())
+            final_day = int(rows["_profile_day"].max())
+            day_keys = list(range(first_day, final_day + 1))
+            rows["_profile_day"] = rows["_profile_day"].astype(int)
+    else:
+        rows["_profile_day"] = 0
+        day_keys = [0]
 
     rows["_profile_bucket"] = (
         rows["_profile_minute"].astype(float) // interval_minutes
     ).astype(int).clip(lower=0, upper=bucket_count - 1)
+    segment_text = rows.get(
+        "_segment_text", pd.Series("", index=rows.index, dtype=str)
+    ).fillna("").astype(str).str.strip().str.lower()
+    rows["_transfer_trip"] = segment_text.eq("lift_transfer").astype(int)
+    rows["_reposition_trip"] = segment_text.eq("lift_reposition").astype(int)
+    rows["_profile_travel_time_s"] = pd.to_numeric(
+        rows.get("lift_time_s", pd.Series(0.0, index=rows.index)),
+        errors="coerce",
+    ).fillna(0.0).clip(lower=0.0)
 
     counts = (
-        rows.groupby(["_profile_bucket", "_profile_lift_id"], dropna=False)
-        .size()
-        .rename("trips")
+        rows.groupby(
+            ["_profile_day", "_profile_bucket", "_profile_lift_id"],
+            dropna=False,
+        )
+        .agg(
+            transfer_trips=("_transfer_trip", "sum"),
+            reposition_trips=("_reposition_trip", "sum"),
+            trips=("_profile_lift_id", "size"),
+            travel_time_s=("_profile_travel_time_s", "sum"),
+        )
         .reset_index()
     )
 
     index = pd.MultiIndex.from_product(
-        [buckets, lift_ids], names=["_profile_bucket", "_profile_lift_id"]
+        [day_keys, buckets, lift_ids],
+        names=["_profile_day", "_profile_bucket", "_profile_lift_id"],
     )
     counts = (
-        counts.set_index(["_profile_bucket", "_profile_lift_id"])
+        counts.set_index(
+            ["_profile_day", "_profile_bucket", "_profile_lift_id"]
+        )
         .reindex(index, fill_value=0)
         .reset_index()
     )
@@ -1117,9 +1540,315 @@ def build_lift_usage_profile(
 
     counts["interval_start_min"] = counts["_profile_bucket"] * interval_minutes
     counts["interval"] = counts["interval_start_min"].map(_label)
+    counts["interval_end"] = (
+        counts["interval_start_min"] + interval_minutes
+    ).map(_label)
+    if include_date and ctx.has_datetime:
+        counts["cohort_start"] = pd.to_datetime(counts["_profile_day"]) + pd.to_timedelta(
+            counts["interval_start_min"], unit="m"
+        )
+        counts["cohort_end"] = counts["cohort_start"] + pd.to_timedelta(
+            interval_minutes, unit="m"
+        )
+        counts["cohort_date"] = counts["cohort_start"].dt.strftime("%Y-%m-%d")
+        counts["interval"] = counts["cohort_start"].dt.strftime("%H:%M")
+        counts["interval_end"] = counts["cohort_end"].dt.strftime("%H:%M")
+    elif include_date:
+        counts["cohort_date"] = counts["_profile_day"].map(
+            lambda day: f"Day {int(day) + 1}"
+        )
+        counts["cohort_start"] = counts.apply(
+            lambda row: f"{row['cohort_date']} {row['interval']}", axis=1
+        )
+        counts["cohort_end"] = counts.apply(
+            lambda row: (
+                f"Day {int(row['_profile_day']) + 2} 00:00"
+                if int(row["interval_start_min"]) + interval_minutes >= 24 * 60
+                else f"{row['cohort_date']} {row['interval_end']}"
+            ),
+            axis=1,
+        )
+    else:
+        counts["cohort_date"] = ""
+        counts["cohort_start"] = counts["interval"]
+        counts["cohort_end"] = counts["interval_end"]
+    counts["interval_minutes"] = interval_minutes
     counts["lift_id"] = counts["_profile_lift_id"].map(safe_text)
-    counts["trips"] = pd.to_numeric(counts["trips"], errors="coerce").fillna(0).astype(int)
-    return counts[columns].sort_values(["interval_start_min", "lift_id"], key=lambda col: col.map(natural_key) if col.name == "lift_id" else col).reset_index(drop=True)
+    for column in ("transfer_trips", "reposition_trips", "trips"):
+        counts[column] = (
+            pd.to_numeric(counts[column], errors="coerce").fillna(0).astype(int)
+        )
+    counts["travel_time_s"] = pd.to_numeric(
+        counts["travel_time_s"], errors="coerce"
+    ).fillna(0.0)
+    counts["avg_trip_s"] = (
+        counts["travel_time_s"]
+        .div(counts["trips"].where(counts["trips"].gt(0)))
+        .fillna(0.0)
+    )
+    return counts[columns].sort_values(
+        ["cohort_start", "lift_id"],
+        key=lambda col: col.map(natural_key)
+        if col.name in {"cohort_start", "lift_id"}
+        else col,
+    ).reset_index(drop=True)
+
+
+def build_lift_wait_profile(
+    lift_wait_rows: pd.DataFrame,
+    ctx: Context,
+    interval_minutes: int = 30,
+    lift_ids: Optional[Iterable[str]] = None,
+) -> pd.DataFrame:
+    """Return each lift's time-of-day wait profile.
+
+    Positive AMR lift waits are aggregated across simulation days into fixed
+    clock-time buckets. Lifts with no waits are retained as zero-value series so
+    the report shows the whole used lift fleet, not only congested lifts.
+    """
+    columns = [
+        "interval",
+        "interval_start_min",
+        "lift_id",
+        "wait_events",
+        "mean_wait_s",
+        "max_wait_s",
+    ]
+    interval_minutes = max(1, int(interval_minutes or 30))
+    bucket_count = int(math.ceil((24 * 60) / interval_minutes))
+    buckets = list(range(bucket_count))
+    all_lift_ids = {
+        safe_text(value) for value in (lift_ids or []) if safe_text(value)
+    }
+
+    rows = lift_wait_rows.copy() if lift_wait_rows is not None else pd.DataFrame()
+    if not rows.empty and "_lift_id" in rows.columns:
+        all_lift_ids.update(
+            safe_text(value) for value in rows["_lift_id"].dropna() if safe_text(value)
+        )
+    ordered_lift_ids = sorted(all_lift_ids, key=natural_key)
+    if not ordered_lift_ids:
+        return pd.DataFrame(columns=columns)
+
+    if (
+        rows.empty
+        or "_lift_id" not in rows.columns
+        or "lift_wait_s" not in rows.columns
+        or ctx.time_col not in rows.columns
+    ):
+        aggregated = pd.DataFrame(
+            columns=[
+                "_profile_bucket",
+                "_profile_lift_id",
+                "wait_events",
+                "mean_wait_s",
+                "max_wait_s",
+            ]
+        )
+    else:
+        rows = rows[rows["_lift_id"].notna()].copy()
+        rows["lift_wait_s"] = pd.to_numeric(rows["lift_wait_s"], errors="coerce")
+        rows = rows[rows["lift_wait_s"].notna() & (rows["lift_wait_s"] > 0)].copy()
+        if ctx.has_datetime:
+            event_time = pd.to_datetime(rows[ctx.time_col], errors="coerce")
+            minute_of_day = event_time.dt.hour * 60 + event_time.dt.minute
+        else:
+            event_seconds = pd.to_numeric(rows[ctx.time_col], errors="coerce")
+            minute_of_day = ((event_seconds % 86400) // 60).astype("float")
+        rows = rows.assign(
+            _profile_lift_id=rows["_lift_id"].map(safe_text),
+            _profile_minute=minute_of_day,
+        )
+        rows = rows[rows["_profile_minute"].notna()].copy()
+        rows["_profile_bucket"] = (
+            rows["_profile_minute"].astype(float) // interval_minutes
+        ).astype(int).clip(lower=0, upper=bucket_count - 1)
+        aggregated = (
+            rows.groupby(["_profile_bucket", "_profile_lift_id"], dropna=False)
+            .agg(
+                wait_events=("lift_wait_s", "count"),
+                mean_wait_s=("lift_wait_s", "mean"),
+                max_wait_s=("lift_wait_s", "max"),
+            )
+            .reset_index()
+        )
+
+    index = pd.MultiIndex.from_product(
+        [buckets, ordered_lift_ids],
+        names=["_profile_bucket", "_profile_lift_id"],
+    )
+    aggregated = (
+        aggregated.set_index(["_profile_bucket", "_profile_lift_id"])
+        .reindex(index, fill_value=0)
+        .reset_index()
+    )
+    aggregated["interval_start_min"] = aggregated["_profile_bucket"] * interval_minutes
+    aggregated["interval"] = aggregated["interval_start_min"].map(
+        lambda minute: f"{int(minute // 60):02d}:{int(minute % 60):02d}"
+    )
+    aggregated["lift_id"] = aggregated["_profile_lift_id"].map(safe_text)
+    aggregated["wait_events"] = (
+        pd.to_numeric(aggregated["wait_events"], errors="coerce").fillna(0).astype(int)
+    )
+    for column in ("mean_wait_s", "max_wait_s"):
+        aggregated[column] = pd.to_numeric(
+            aggregated[column], errors="coerce"
+        ).fillna(0.0)
+    return aggregated[columns].sort_values(
+        ["interval_start_min", "lift_id"],
+        key=lambda col: col.map(natural_key) if col.name == "lift_id" else col,
+    ).reset_index(drop=True)
+
+
+SLA_BANDS = [
+    "Meets SLA",
+    "Missed by up to 1 minute",
+    "Missed by 1-5 minutes",
+    "Missed by 5-10 minutes",
+    "Missed by 10-30 minutes",
+    "Missed by 30-60 minutes",
+    "Missed by over 1 hour",
+    "Not delivered - failed",
+    "Not delivered - pending",
+]
+
+
+def _sla_band(outcome: str, lateness_s: Optional[float]) -> str:
+    outcome = str(outcome or "").strip().lower()
+    if outcome == "failed":
+        return "Not delivered - failed"
+    if outcome != "completed" or lateness_s is None or pd.isna(lateness_s):
+        return "Not delivered - pending"
+    lateness_s = float(lateness_s)
+    if lateness_s <= 0:
+        return "Meets SLA"
+    if lateness_s <= 60:
+        return "Missed by up to 1 minute"
+    if lateness_s <= 5 * 60:
+        return "Missed by 1-5 minutes"
+    if lateness_s <= 10 * 60:
+        return "Missed by 5-10 minutes"
+    if lateness_s <= 30 * 60:
+        return "Missed by 10-30 minutes"
+    if lateness_s <= 60 * 60:
+        return "Missed by 30-60 minutes"
+    return "Missed by over 1 hour"
+
+
+def build_task_sla_tables(
+    tasks: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Build SLA overview, band summary and missed-task detail tables."""
+    summary_columns = [
+        "sla_band",
+        "tasks",
+        "percentage_pct",
+        "mean_lateness_s",
+        "maximum_lateness_s",
+    ]
+    detail_columns = [
+        "sla_band",
+        "task_id",
+        "amr",
+        "origin",
+        "destination",
+        "release",
+        "finish",
+        "target_s",
+        "actual_release_to_delivery_s",
+        "lateness_s",
+        "outcome",
+    ]
+    overview_columns = [
+        "eligible_tasks",
+        "met_sla",
+        "delivered_late",
+        "not_delivered",
+        "compliance_pct",
+    ]
+    if tasks is None or tasks.empty or "target_s" not in tasks.columns:
+        return (
+            pd.DataFrame(columns=overview_columns),
+            pd.DataFrame(columns=summary_columns),
+            pd.DataFrame(columns=detail_columns),
+        )
+
+    eligible = tasks.copy()
+    eligible["target_s"] = pd.to_numeric(eligible["target_s"], errors="coerce")
+    eligible = eligible[eligible["target_s"].notna() & (eligible["target_s"] > 0)].copy()
+    if eligible.empty:
+        return (
+            pd.DataFrame(columns=overview_columns),
+            pd.DataFrame(columns=summary_columns),
+            pd.DataFrame(columns=detail_columns),
+        )
+
+    eligible["lateness_s"] = pd.to_numeric(
+        eligible.get("sla_lateness_s"), errors="coerce"
+    )
+    eligible["actual_release_to_delivery_s"] = pd.to_numeric(
+        eligible.get("sla_elapsed_s"), errors="coerce"
+    )
+    eligible["sla_band"] = eligible.apply(
+        lambda row: _sla_band(row.get("outcome", ""), row.get("lateness_s")),
+        axis=1,
+    )
+
+    total = len(eligible)
+    band_order = {name: index for index, name in enumerate(SLA_BANDS)}
+    summary_rows = []
+    for band in SLA_BANDS:
+        band_rows = eligible[eligible["sla_band"] == band]
+        lateness = pd.to_numeric(band_rows["lateness_s"], errors="coerce").dropna()
+        positive_lateness = lateness[lateness > 0]
+        summary_rows.append(
+            {
+                "sla_band": band,
+                "tasks": int(len(band_rows)),
+                "percentage_pct": round(len(band_rows) / total * 100, 1),
+                "mean_lateness_s": (
+                    float(positive_lateness.mean())
+                    if not positive_lateness.empty
+                    else 0.0 if band == "Meets SLA" else None
+                ),
+                "maximum_lateness_s": (
+                    float(positive_lateness.max())
+                    if not positive_lateness.empty
+                    else 0.0 if band == "Meets SLA" else None
+                ),
+            }
+        )
+    summary = pd.DataFrame(summary_rows, columns=summary_columns)
+
+    met_sla = int((eligible["sla_band"] == "Meets SLA").sum())
+    delivered_late = int(
+        eligible["sla_band"].str.startswith("Missed by ", na=False).sum()
+    )
+    not_delivered = total - met_sla - delivered_late
+    overview = pd.DataFrame(
+        [
+            {
+                "eligible_tasks": total,
+                "met_sla": met_sla,
+                "delivered_late": delivered_late,
+                "not_delivered": not_delivered,
+                "compliance_pct": round(met_sla / total * 100, 1),
+            }
+        ],
+        columns=overview_columns,
+    )
+
+    detail = eligible[eligible["sla_band"] != "Meets SLA"].copy()
+    for column in detail_columns:
+        if column not in detail.columns:
+            detail[column] = None
+    detail["_sla_order"] = detail["sla_band"].map(band_order).fillna(len(band_order))
+    detail = detail.sort_values(
+        ["_sla_order", "lateness_s", "task_id"],
+        ascending=[True, False, True],
+        na_position="last",
+    )
+    return overview, summary, detail[detail_columns].reset_index(drop=True)
 
 def extract_lift_and_floor(value) -> Tuple[Optional[str], Optional[int]]:
     if value is None or pd.isna(value):
@@ -1224,9 +1953,7 @@ def load_payload_dimensions(json_path: Path) -> pd.DataFrame:
         name = str(item.get("name", "")).strip()
         if not name:
             continue
-        length = _to_float(item.get("length_m"))
-        width = _to_float(item.get("width_m"))
-        height = _to_float(item.get("height_m"))
+        length, width, height = resolved_payload_dimensions(item)
         rows.append(
             {
                 "payload": name,
@@ -1571,7 +2298,7 @@ def load_task_generation_report_metadata(json_path: Path) -> dict:
         for category, cfg in task_locations.items():
             category_key = str(category).strip().lower()
             category_label = category_labels.get(category_key, str(category).title())
-            for loc_name in (cfg or {}).get("pickup_dropoff_locations", []) or []:
+            for loc_name in department_location_names(cfg):
                 if not loc_name:
                     continue
                 loc_text = str(loc_name).strip()
@@ -1626,41 +2353,101 @@ def load_location_catalog(json_path: Path) -> pd.DataFrame:
 
     location_to_department: Dict[str, str] = {}
     location_to_category: Dict[str, str] = {}
+    dropoff_zone_departments: Dict[str, set] = {}
+    dropoff_zone_categories: Dict[str, set] = {}
+    payload_definitions = {
+        str(payload.get("name", "") or "").strip(): payload
+        for payload in data.get("payloads", []) or []
+        if isinstance(payload, dict)
+        and str(payload.get("name", "") or "").strip()
+    }
     for dept in data.get("departments", []):
         dept_name = str(dept.get("name") or dept.get("id") or "-").strip() or "-"
         task_locations = dept.get("task_generation_locations", {}) or {}
         for category, cfg in task_locations.items():
-            for loc_name in (cfg or {}).get("pickup_dropoff_locations", []) or []:
+            category_name = str(category).title()
+            for loc_name in department_location_names(cfg):
                 if not loc_name:
                     continue
                 location_to_department[str(loc_name)] = dept_name
-                location_to_category[str(loc_name)] = str(category).title()
+                location_to_category[str(loc_name)] = category_name
+            zone_locations = department_location_names(cfg, zones=True)
+            for loc_name in zone_locations or []:
+                zone_name = str(loc_name or "").strip()
+                if not zone_name:
+                    continue
+                dropoff_zone_departments.setdefault(zone_name, set()).add(dept_name)
+                dropoff_zone_categories.setdefault(zone_name, set()).add(category_name)
 
     rows: List[dict] = []
     for loc in data.get("locations", []):
         name = str(loc.get("name", "")).strip()
         if not name:
             continue
-        bbox = loc.get("bounding_box", []) or []
-        length, width = polygon_dimensions(bbox)
-        area = polygon_area(bbox)
+        outline_metrics = location_outline_metrics(loc)
+        length, width, area = (outline_metrics[key] for key in ('length', 'width', 'area'))
         spaces = loc.get("inventory_spaces", None)
         spaces_list = spaces if isinstance(spaces, list) else []
         explicit_spaces = spaces is not None
-        inventory_area = sum(
-            polygon_area((space or {}).get("points", []) or []) for space in spaces_list
-        )
+        space_definitions = []
+        payload_area = 0.0
+        for space_index, space in enumerate(spaces_list, start=1):
+            if not isinstance(space, dict):
+                continue
+            if inventory_space_is_amr(space):
+                continue
+            bay_length, bay_width, bay_height = inventory_space_dimensions(space, payload_definitions, loc)
+            payload_area += location_outline_metrics(dict(x=loc.get('x', 0), y=loc.get('y', 0),
+                bounding_box=space.get('points', [])))['area']
+            allowed_payloads = sorted(
+                {
+                    str(slot.get("payload", "") or "").strip()
+                    for slot in space.get("payload_slots", []) or []
+                    if isinstance(slot, dict)
+                    and str(slot.get("payload", "") or "").strip()
+                } | ({str(space.get('payload', '')).strip()} & payload_definitions.keys())
+            )
+            space_definitions.append(
+                {
+                    "name": str(space.get("name", "") or "").strip() or f'Space {space_index}',
+                    "length_m": bay_length,
+                    "width_m": bay_width,
+                    "height_m": bay_height,
+                    "flexible": _to_bool(
+                        space.get(
+                            "flexible",
+                            space.get("flexible_payloads"),
+                        ),
+                        name in dropoff_zone_categories,
+                    ),
+                    "allowed_payloads": allowed_payloads,
+                }
+            )
         rows.append(
             {
                 "location": name,
-                "department": location_to_department.get(name, "-"),
-                "category": location_to_category.get(name, "-"),
+                "department": location_to_department.get(name)
+                or ", ".join(sorted(dropoff_zone_departments.get(name, set())))
+                or "-",
+                "category": location_to_category.get(name)
+                or ", ".join(sorted(dropoff_zone_categories.get(name, set())))
+                or "-",
+                "is_dropoff_zone": name in dropoff_zone_categories,
+                "dropoff_zone_departments": ", ".join(
+                    sorted(dropoff_zone_departments.get(name, set()))
+                ),
+                "dropoff_zone_categories": ", ".join(
+                    sorted(dropoff_zone_categories.get(name, set()))
+                ),
                 "floor": loc.get("floor", "-"),
                 "length_m": round(length, 2),
                 "width_m": round(width, 2),
                 "area_m2": round(area, 2),
-                "inventory_spaces_current": len(spaces_list),
-                "inventory_area_m2": round(inventory_area, 2),
+                "inventory_spaces_current": len(space_definitions),
+                "inventory_spaces_total": len(spaces_list),
+                "amr_spaces_current": sum(inventory_space_is_amr(space) for space in spaces_list),
+                "inventory_space_definitions": space_definitions,
+                "inventory_area_m2": round(payload_area, 2),
                 "inventory_spaces_defined": explicit_spaces,
             }
         )
@@ -2206,43 +2993,65 @@ def build_location_peak_occupancy(
             if volume > float(item.get("peak_volume_m3", 0.0)):
                 item["peak_volume_m3"] = volume
 
-        for _, row in movement_rows.iterrows():
-            location = row["_report_location"]
-            payload_name = row["_report_payload"]
-            area, volume = payload_lookup.get(payload_name, (0.0, 0.0))
-            synthetic_counter += 1
-            key = _instance_key(row, location, payload_name, synthetic_counter)
-            event = str(row.get("_event_text", "") or "").lower()
-            live = states.setdefault(location, {})
-            if event.endswith("enter"):
-                # A physical payload instance can only occupy one location at a
-                # time.  Some logs record the arrival more reliably than the
-                # departure, so clear the same instance from any previous
-                # location before adding it here.
-                previous_location = instance_locations.get(key)
-                if previous_location and previous_location != location:
-                    previous_live = states.get(previous_location, {})
-                    if key in previous_live:
-                        previous_live.pop(key, None)
-                        snapshot(previous_location)
-                live[key] = (payload_name, area, volume)
-                instance_locations[key] = location
-            elif event.endswith("exit"):
-                # Prefer exact instance removal, but fall back to the first matching
-                # payload at that location so legacy rows without instance IDs still
-                # form a useful occupancy timeline.
-                removed_key = ""
-                if key in live:
-                    live.pop(key, None)
-                    removed_key = key
-                else:
-                    match = next((k for k, v in live.items() if v[0] == payload_name), None)
-                    if match is not None:
-                        live.pop(match, None)
-                        removed_key = match
-                if removed_key:
-                    instance_locations.pop(removed_key, None)
-            snapshot(location)
+        for _, timestamp_rows in movement_rows.groupby(
+            ctx.time_col, sort=False, dropna=False
+        ):
+            affected_locations = set()
+            for _, row in timestamp_rows.iterrows():
+                location = row["_report_location"]
+                affected_locations.add(location)
+                payload_name = row["_report_payload"]
+                area, volume = payload_lookup.get(payload_name, (0.0, 0.0))
+                synthetic_counter += 1
+                key = _instance_key(row, location, payload_name, synthetic_counter)
+                raw_instance = str(
+                    row.get("payload_instance_id", "") or ""
+                ).strip()
+                has_explicit_instance = (
+                    bool(raw_instance)
+                    and raw_instance.lower() not in {"-", "nan", "none", "null"}
+                )
+                event = str(row.get("_event_text", "") or "").lower()
+                live = states.setdefault(location, {})
+                if event.endswith("enter"):
+                    # A physical payload instance can only occupy one location at a
+                    # time.  Some logs record the arrival more reliably than the
+                    # departure, so clear the same instance from any previous
+                    # location before adding it here.
+                    previous_location = instance_locations.get(key)
+                    if previous_location and previous_location != location:
+                        previous_live = states.get(previous_location, {})
+                        if key in previous_live:
+                            previous_live.pop(key, None)
+                            affected_locations.add(previous_location)
+                    live[key] = (payload_name, area, volume)
+                    instance_locations[key] = location
+                elif event.endswith("exit"):
+                    # Prefer exact instance removal, but fall back to the first
+                    # matching payload at that location for legacy rows without IDs.
+                    removed_key = ""
+                    if key in live:
+                        live.pop(key, None)
+                        removed_key = key
+                    elif not has_explicit_instance:
+                        match = next(
+                            (k for k, v in live.items() if v[0] == payload_name),
+                            None,
+                        )
+                        if match is not None:
+                            live.pop(match, None)
+                            removed_key = match
+                    if (
+                        removed_key
+                        and instance_locations.get(removed_key) == location
+                    ):
+                        instance_locations.pop(removed_key, None)
+
+            # All rows sharing a timestamp describe one stable simulation state.
+            # Sampling between an enter and exit at the same time creates a false
+            # one-row concurrency spike (for example 11 instead of 10 at D39).
+            for location in affected_locations:
+                snapshot(location)
 
         for location in list(states):
             snapshot(location)
@@ -2282,6 +3091,496 @@ def build_location_peak_occupancy(
     peak["department"] = peak["department"].fillna("-")
     peak["category"] = peak["category"].fillna("-")
     return peak[columns].sort_values(["department", "category", "location"]).reset_index(drop=True)
+
+
+def build_dropoff_zone_peak_occupancy(
+    df: pd.DataFrame,
+    ctx: Context,
+    location_catalog: Optional[pd.DataFrame],
+    location_peak_occupancy: pd.DataFrame,
+    payload_dimensions: Optional[pd.DataFrame] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Return drop-off-zone-specific capacity peaks and a network summary."""
+    detail_columns = [
+        "department",
+        "category",
+        "location",
+        "configured_spaces",
+        "peak_occupied_spaces",
+        "free_spaces_at_peak",
+        "space_shortfall_at_peak",
+        "peak_occupancy_pct",
+        "peak_area_used_m2",
+        "peak_volume_m3",
+        "capacity_basis",
+    ]
+    summary_columns = ["metric", "value"]
+    if (
+        location_catalog is None
+        or location_catalog.empty
+        or "is_dropoff_zone" not in location_catalog.columns
+    ):
+        return (
+            pd.DataFrame(columns=detail_columns),
+            pd.DataFrame(columns=summary_columns),
+        )
+
+    zone_catalog = location_catalog[
+        location_catalog["is_dropoff_zone"].fillna(False).astype(bool)
+    ].copy()
+    if zone_catalog.empty:
+        return (
+            pd.DataFrame(columns=detail_columns),
+            pd.DataFrame(columns=summary_columns),
+        )
+
+    zone_catalog = zone_catalog.drop_duplicates("location", keep="last")
+    zone_names = {
+        str(value or "").strip()
+        for value in zone_catalog["location"].tolist()
+        if str(value or "").strip()
+    }
+    peak = (
+        location_peak_occupancy.copy()
+        if location_peak_occupancy is not None
+        else pd.DataFrame()
+    )
+    peak_keep = [
+        column
+        for column in (
+            "location",
+            "peak_payload_count",
+            "peak_area_used_m2",
+            "peak_volume_m3",
+        )
+        if column in peak.columns
+    ]
+    if "location" not in peak_keep:
+        peak = pd.DataFrame(columns=["location"])
+    else:
+        peak = peak[peak_keep].drop_duplicates("location", keep="last")
+
+    zone_columns = [
+        column
+        for column in (
+            "location",
+            "department",
+            "category",
+            "inventory_spaces_current",
+            "inventory_space_definitions",
+        )
+        if column in zone_catalog.columns
+    ]
+    detail = zone_catalog[zone_columns].merge(peak, on="location", how="left")
+    for column in (
+        "inventory_spaces_current",
+        "peak_payload_count",
+        "peak_area_used_m2",
+        "peak_volume_m3",
+    ):
+        if column not in detail.columns:
+            detail[column] = 0
+        detail[column] = pd.to_numeric(detail[column], errors="coerce").fillna(0)
+
+    detail["configured_spaces"] = detail["inventory_spaces_current"].astype(int)
+    detail["peak_occupied_spaces"] = detail["peak_payload_count"].astype(int)
+    detail["free_spaces_at_peak"] = (
+        detail["configured_spaces"] - detail["peak_occupied_spaces"]
+    ).clip(lower=0).astype(int)
+    detail["space_shortfall_at_peak"] = (
+        detail["peak_occupied_spaces"] - detail["configured_spaces"]
+    ).clip(lower=0).astype(int)
+    detail["peak_occupancy_pct"] = (
+        detail["peak_occupied_spaces"]
+        .div(detail["configured_spaces"].where(detail["configured_spaces"] > 0))
+        .mul(100.0)
+        .fillna(0.0)
+        .round(1)
+    )
+    detail["peak_area_used_m2"] = detail["peak_area_used_m2"].round(2)
+    detail["peak_volume_m3"] = detail["peak_volume_m3"].round(2)
+    detail['capacity_basis'] = 'Count only (no compatible-bay evidence)'
+    if "department" not in detail.columns:
+        detail["department"] = "-"
+    if "category" not in detail.columns:
+        detail["category"] = "-"
+    detail = detail[detail_columns].sort_values(
+        ["department", "category", "location"],
+        key=lambda col: col.map(natural_key),
+    ).reset_index(drop=True)
+
+    # Reconstruct the true simultaneous count across all zones. Summing each
+    # location's independent peak would overstate demand when peaks occur at
+    # different times.
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    movement_rows = df[
+        event_text.str.fullmatch(
+            r"location_payload_(enter|exit)", case=False, na=False
+        )
+    ].copy()
+    location_source = next(
+        (
+            column
+            for column in ("to_location", "end_node", "from_location")
+            if column in movement_rows.columns
+        ),
+        None,
+    )
+    network_peak = 0
+    network_peak_time = None
+    payload_dimension_lookup = {}
+    if payload_dimensions is not None and not payload_dimensions.empty:
+        for _, payload_row in payload_dimensions.iterrows():
+            payload_name = str(payload_row.get("payload", "") or "").strip()
+            if payload_name:
+                payload_dimension_lookup[payload_name] = (
+                    _to_float(payload_row.get("payload_length_m"), 0.0),
+                    _to_float(payload_row.get("payload_width_m"), 0.0),
+                    _to_float(payload_row.get("payload_height_m"), 0.0),
+                )
+    zone_space_definitions = {
+        str(row.get("location", "") or "").strip(): list(
+            row.get("inventory_space_definitions", []) or []
+        )
+        for _, row in zone_catalog.iterrows()
+    }
+    zone_configured_counts = {
+        str(row.get("location", "") or "").strip(): int(
+            _to_float(row.get("inventory_spaces_current"), 0.0)
+        )
+        for _, row in zone_catalog.iterrows()
+    }
+    zone_dimensional_peaks: Dict[str, dict] = {}
+
+    def space_accepts_payload(space: dict, payload_name: str) -> bool:
+        dimensions = payload_dimension_lookup.get(payload_name)
+        allowed = {
+            str(value or "").strip()
+            for value in space.get("allowed_payloads", []) or []
+            if str(value or "").strip()
+        }
+        if not bool(space.get("flexible", False)) and allowed and payload_name not in allowed:
+            return False
+        if dimensions is None:
+            return True
+        payload_length, payload_width, payload_height = dimensions
+        length_m = _to_float(space.get("length_m"), 0.0)
+        width_m = _to_float(space.get("width_m"), 0.0)
+        height_m = _to_float(space.get("height_m"), 999999.0)
+        eps = 1e-6
+        fits_normal = (
+            payload_length <= length_m + eps and payload_width <= width_m + eps
+        )
+        fits_rotated = (
+            payload_length <= width_m + eps and payload_width <= length_m + eps
+        )
+        return (fits_normal or fits_rotated) and payload_height <= height_m + eps
+
+    def maximum_compatible_assignments(zone: str, payload_names: List[str]):
+        spaces = zone_space_definitions.get(zone, [])
+        geometry_known = bool(spaces) and all(
+            all(key in space and math.isfinite(_to_float(space[key], float('nan')))
+                and _to_float(space[key], -1) >= 0 for key in ('length_m', 'width_m', 'height_m'))
+            for space in spaces) and all(
+            name in payload_dimension_lookup and all(math.isfinite(value) and value > 0
+                for value in payload_dimension_lookup[name]) for name in payload_names)
+        if not geometry_known:
+            return min(
+                len(payload_names), zone_configured_counts.get(zone, len(spaces))
+            ), 'Count only (missing bay or payload dimensions)'
+        from amr_fleet_allocation import maximum_bay_assignment
+        candidates = {}
+        for payload_index, payload_name in enumerate(payload_names):
+            compatible_space_indexes = [
+                index
+                for index, space in enumerate(spaces)
+                if space_accepts_payload(space, payload_name)
+            ]
+            compatible_space_indexes.sort(
+                key=lambda index: (
+                    _to_float(spaces[index].get("length_m"), 0.0)
+                    * _to_float(spaces[index].get("width_m"), 0.0),
+                    index,
+                )
+            )
+            candidates[payload_index] = compatible_space_indexes
+        return len(maximum_bay_assignment(candidates)), 'Nominal compatible dimensions'
+    if location_source is not None and not movement_rows.empty:
+        movement_rows["_zone_location"] = movement_rows[location_source].map(
+            lambda value: str(value or "").strip()
+        )
+        movement_rows = movement_rows[
+            movement_rows["_zone_location"].isin(zone_names)
+        ].sort_values(ctx.time_col, kind="stable")
+        live_by_zone: Dict[str, Dict[str, str]] = {
+            zone_name: {} for zone_name in zone_names
+        }
+        instance_zone: Dict[str, str] = {}
+        synthetic_counter = 0
+
+        def clean_value(value) -> str:
+            text = str(value or "").strip()
+            return "" if text.lower() in {"", "-", "nan", "none", "null"} else text
+
+        for timestamp, timestamp_rows in movement_rows.groupby(
+            ctx.time_col, sort=False, dropna=False
+        ):
+            for _, row in timestamp_rows.iterrows():
+                zone = str(row.get("_zone_location", "") or "").strip()
+                payload = clean_value(row.get("payload", ""))
+                instance = clean_value(row.get("payload_instance_id", ""))
+                task_id = clean_value(row.get("task_id", ""))
+                if instance:
+                    key = f"instance:{instance}"
+                elif task_id:
+                    key = f"task:{task_id}:{payload}"
+                else:
+                    synthetic_counter += 1
+                    key = f"synthetic:{synthetic_counter}:{payload}"
+                event_name = str(row.get("_event_text", "") or "").lower()
+                live = live_by_zone.setdefault(zone, {})
+                if event_name.endswith("enter"):
+                    previous_zone = instance_zone.get(key)
+                    if previous_zone and previous_zone != zone:
+                        live_by_zone.setdefault(previous_zone, {}).pop(key, None)
+                    live[key] = payload
+                    instance_zone[key] = zone
+                else:
+                    removed_key = key if key in live else ""
+                    if not removed_key and not instance:
+                        removed_key = next(
+                            (
+                                existing_key
+                                for existing_key, existing_payload in live.items()
+                                if payload and existing_payload == payload
+                            ),
+                            "",
+                        )
+                    if removed_key:
+                        live.pop(removed_key, None)
+                        instance_zone.pop(removed_key, None)
+
+            occupied = sum(len(live) for live in live_by_zone.values())
+            if occupied > network_peak:
+                network_peak = occupied
+                network_peak_time = timestamp
+
+            for zone, live in live_by_zone.items():
+                payload_names = list(live.values())
+                matched, basis = maximum_compatible_assignments(zone, payload_names)
+                state = {
+                    "payload_count": len(payload_names),
+                    "matched_spaces": matched,
+                    "shortfall": max(0, len(payload_names) - matched),
+                    "free_spaces": max(
+                        0, zone_configured_counts.get(zone, 0) - matched
+                    ),
+                    "capacity_basis": basis,
+                }
+                previous = zone_dimensional_peaks.get(zone)
+                if previous is None or (
+                    state["payload_count"], state["shortfall"]
+                ) > (
+                    previous["payload_count"], previous["shortfall"]
+                ):
+                    zone_dimensional_peaks[zone] = state
+
+    if zone_dimensional_peaks:
+        for index, row in detail.iterrows():
+            state = zone_dimensional_peaks.get(str(row["location"]), {})
+            if not state:
+                continue
+            detail.at[index, "free_spaces_at_peak"] = int(
+                state.get("free_spaces", row["free_spaces_at_peak"])
+            )
+            detail.at[index, "space_shortfall_at_peak"] = int(
+                state.get("shortfall", row["space_shortfall_at_peak"])
+            )
+            detail.at[index, 'capacity_basis'] = state['capacity_basis']
+
+    configured_spaces = int(detail["configured_spaces"].sum())
+    single_zone_peak = int(detail["peak_occupied_spaces"].max() or 0)
+    summary_rows = [
+        {
+            "metric": "Maximum occupied spaces across all drop-off zones",
+            "value": network_peak,
+        },
+        {
+            "metric": "Time of simultaneous maximum",
+            "value": (
+                fmt_ts(network_peak_time, ctx.has_datetime)
+                if network_peak_time is not None and not pd.isna(network_peak_time)
+                else "Not available"
+            ),
+        },
+        {
+            "metric": "Highest occupied-space count at one drop-off zone",
+            "value": single_zone_peak,
+        },
+        {"metric": "Configured drop-off zones", "value": len(detail)},
+        {"metric": "Configured payload spaces across zones", "value": configured_spaces},
+        {"metric": "Capacity comparison basis", "value": '; '.join(
+            f'{zone}: {basis}' for zone, basis in zip(detail['location'], detail['capacity_basis']))},
+        {"metric": "Capacity interpretation", "value": 'Nominal configured payload bays; count-only comparisons do not establish dimensional fit. Excludes AMR bays. Does not prove live availability, parking access or swept clearance.'},
+    ]
+    return detail, pd.DataFrame(summary_rows, columns=summary_columns)
+
+
+def build_dropoff_zone_payloads_at_network_peak(
+    df: pd.DataFrame,
+    ctx: Context,
+    location_catalog: Optional[pd.DataFrame],
+) -> pd.DataFrame:
+    """List the physical payloads occupying drop-off zones at network peak."""
+    columns = [
+        "time_of_maximum",
+        "department",
+        "category",
+        "location",
+        "inventory_space",
+        "payload",
+        "payload_instance_id",
+        "task_id",
+        "dropped_at",
+    ]
+    if (
+        location_catalog is None
+        or location_catalog.empty
+        or "is_dropoff_zone" not in location_catalog.columns
+    ):
+        return pd.DataFrame(columns=columns)
+
+    zone_catalog = location_catalog[
+        location_catalog["is_dropoff_zone"].fillna(False).astype(bool)
+    ].drop_duplicates("location", keep="last")
+    if zone_catalog.empty:
+        return pd.DataFrame(columns=columns)
+    zone_names = {
+        str(value or "").strip()
+        for value in zone_catalog["location"].tolist()
+        if str(value or "").strip()
+    }
+
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    movement_rows = df[
+        event_text.str.fullmatch(
+            r"location_payload_(enter|exit)", case=False, na=False
+        )
+    ].copy()
+    if movement_rows.empty:
+        return pd.DataFrame(columns=columns)
+    location_source = next(
+        (
+            name
+            for name in ("to_location", "end_node", "from_location")
+            if name in movement_rows.columns
+        ),
+        None,
+    )
+    if location_source is None:
+        return pd.DataFrame(columns=columns)
+
+    def clean_value(value) -> str:
+        text = str(value or "").strip()
+        return "" if text.lower() in {"", "-", "nan", "none", "null"} else text
+
+    movement_rows["_zone_location"] = movement_rows[location_source].map(
+        clean_value
+    )
+    movement_rows = movement_rows[
+        movement_rows["_zone_location"].isin(zone_names)
+    ].sort_values(ctx.time_col, kind="stable")
+    live_by_zone: Dict[str, Dict[str, dict]] = {
+        zone_name: {} for zone_name in zone_names
+    }
+    instance_zone: Dict[str, str] = {}
+    synthetic_counter = 0
+    peak_count = 0
+    peak_time = None
+    peak_records: List[dict] = []
+
+    for timestamp, timestamp_rows in movement_rows.groupby(
+        ctx.time_col, sort=False, dropna=False
+    ):
+        for _, row in timestamp_rows.iterrows():
+            zone = clean_value(row.get("_zone_location", ""))
+            payload = clean_value(row.get("payload", ""))
+            instance = clean_value(row.get("payload_instance_id", ""))
+            task_id = clean_value(row.get("task_id", ""))
+            if instance:
+                key = f"instance:{instance}"
+            elif task_id:
+                key = f"task:{task_id}:{payload}"
+            else:
+                synthetic_counter += 1
+                key = f"synthetic:{synthetic_counter}:{payload}"
+            event_name = clean_value(row.get("_event_text", "")).lower()
+            live = live_by_zone.setdefault(zone, {})
+            if event_name.endswith("enter"):
+                previous_zone = instance_zone.get(key)
+                if previous_zone and previous_zone != zone:
+                    live_by_zone.setdefault(previous_zone, {}).pop(key, None)
+                live[key] = {
+                    "location": zone,
+                    "inventory_space": clean_value(row.get("inventory_space", "")),
+                    "payload": payload,
+                    "payload_instance_id": instance,
+                    "task_id": task_id,
+                    "dropped_at": timestamp,
+                }
+                instance_zone[key] = zone
+            else:
+                removed_key = key if key in live else ""
+                if not removed_key and not instance:
+                    removed_key = next(
+                        (
+                            existing_key
+                            for existing_key, record in live.items()
+                            if payload and record.get("payload") == payload
+                        ),
+                        "",
+                    )
+                if removed_key:
+                    live.pop(removed_key, None)
+                    instance_zone.pop(removed_key, None)
+
+        occupied = sum(len(live) for live in live_by_zone.values())
+        if occupied > peak_count:
+            peak_count = occupied
+            peak_time = timestamp
+            peak_records = [
+                dict(record)
+                for zone_live in live_by_zone.values()
+                for record in zone_live.values()
+            ]
+
+    if not peak_records:
+        return pd.DataFrame(columns=columns)
+
+    metadata = zone_catalog.set_index("location")
+    rows = []
+    for record in peak_records:
+        zone = record["location"]
+        zone_meta = metadata.loc[zone] if zone in metadata.index else {}
+        department = str(zone_meta.get("department", "-") or "-")
+        category = str(zone_meta.get("category", "-") or "-")
+        rows.append(
+            {
+                "time_of_maximum": fmt_ts(peak_time, ctx.has_datetime),
+                "department": department,
+                "category": category,
+                "location": zone,
+                "inventory_space": record["inventory_space"] or "Unassigned / overflow",
+                "payload": record["payload"] or "-",
+                "payload_instance_id": record["payload_instance_id"] or "-",
+                "task_id": record["task_id"] or "-",
+                "dropped_at": fmt_ts(record["dropped_at"], ctx.has_datetime),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns).sort_values(
+        ["location", "inventory_space", "payload_instance_id"],
+        key=lambda col: col.map(natural_key),
+    ).reset_index(drop=True)
 
 
 def apply_peak_occupancy_to_location_outputs(
@@ -2605,6 +3904,125 @@ def build_generated_task_category_summary(
     return pd.DataFrame(rows, columns=columns).sort_values("category").reset_index(drop=True)
 
 
+def build_deferred_release_analysis(
+    df: pd.DataFrame,
+    ctx: Context,
+    metadata: Optional[dict] = None,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Summarise jobs released after a preceding shared-zone return pickup."""
+    detail_columns = [
+        "category",
+        "department",
+        "dropoff_zone",
+        "task_id",
+        "scheduled_release",
+        "actual_release",
+        "blocking_return_task_id",
+        "delay_s",
+    ]
+    summary_columns = [
+        "category",
+        "dropoff_zone",
+        "deferred_jobs",
+        "total_delay_s",
+        "average_delay_s",
+        "maximum_delay_s",
+    ]
+    if df is None or df.empty:
+        return (
+            pd.DataFrame(columns=summary_columns),
+            pd.DataFrame(columns=detail_columns),
+        )
+
+    event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
+    released = df[
+        event_text.str.fullmatch("task_deferred_released", case=False, na=False)
+    ].copy()
+    if released.empty:
+        return (
+            pd.DataFrame(columns=summary_columns),
+            pd.DataFrame(columns=detail_columns),
+        )
+
+    metadata = metadata or {}
+    labels = {
+        str(key).strip().lower(): str(value).strip()
+        for key, value in (metadata.get("category_labels", {}) or {}).items()
+        if str(key).strip()
+    }
+    task_col = ctx.cols.get("task")
+    to_col = ctx.cols.get("to")
+    rows = []
+    for _, row in released.iterrows():
+        details = str(row.get("details", "") or "")
+
+        def detail_value(name: str) -> str:
+            match = re.search(
+                rf"(?:^|;\s*){re.escape(name)}=([^;]*)", details, re.I
+            )
+            return match.group(1).strip() if match else ""
+
+        delay_value = pd.to_numeric(
+            row.get("_wait_s", row.get("_duration_s", 0.0)), errors="coerce"
+        )
+        delay_s = 0.0 if pd.isna(delay_value) else float(delay_value)
+        actual_release = row.get(ctx.time_col)
+        if ctx.has_datetime:
+            scheduled_release = (
+                pd.Timestamp(actual_release) - pd.to_timedelta(delay_s, unit="s")
+                if pd.notna(actual_release)
+                else pd.NaT
+            )
+        else:
+            scheduled_release = (
+                float(actual_release) - delay_s if pd.notna(actual_release) else pd.NA
+            )
+
+        zone = detail_value("shared_dropoff_zone")
+        if not zone and to_col:
+            zone = str(row.get(to_col, "") or "").strip()
+        rows.append(
+            {
+                "category": _task_generation_category_from_row(row, labels),
+                "department": str(row.get("department_id", "") or "-").strip()
+                or "-",
+                "dropoff_zone": zone or "-",
+                "task_id": (
+                    str(row.get(task_col, "") or "").strip() if task_col else ""
+                ),
+                "scheduled_release": scheduled_release,
+                "actual_release": actual_release,
+                "blocking_return_task_id": detail_value(
+                    "blocking_return_task_id"
+                )
+                or "-",
+                "delay_s": round(delay_s, 3),
+            }
+        )
+
+    detail = pd.DataFrame(rows, columns=detail_columns)
+    detail = detail.sort_values(
+        ["actual_release", "category", "department", "task_id"]
+    ).reset_index(drop=True)
+    summary = (
+        detail.groupby(["category", "dropoff_zone"], dropna=False)
+        .agg(
+            deferred_jobs=("task_id", "count"),
+            total_delay_s=("delay_s", "sum"),
+            average_delay_s=("delay_s", "mean"),
+            maximum_delay_s=("delay_s", "max"),
+        )
+        .reset_index()
+    )
+    for column in ("total_delay_s", "average_delay_s", "maximum_delay_s"):
+        summary[column] = summary[column].round(3)
+    for column in ("scheduled_release", "actual_release"):
+        detail[column] = detail[column].map(
+            lambda value: fmt_ts(value, ctx.has_datetime)
+        )
+    return summary[summary_columns], detail[detail_columns]
+
+
 def _return_source_task_id(task_id: str) -> str:
     text = str(task_id or "").strip()
     if text.startswith("RETURN_GEN_"):
@@ -2697,7 +4115,7 @@ def _staff_handling_event_mask(df: pd.DataFrame) -> pd.Series:
     """
     event_text = df.get("_event_text", pd.Series("", index=df.index)).astype(str)
     return event_text.str.fullmatch(
-        r"(?:segment_)?(?:[a-z0-9]+(?:_[a-z0-9]+)*)_payload_handling",
+        r"(?:segment_)?(?:[a-z0-9]+(?:_[a-z0-9]+)*)_payload_(?:handling|exchange)",
         case=False,
         na=False,
     )
@@ -3208,32 +4626,8 @@ def build_payload_handling_timetable(
                 "shift_team": shift_team,
                 "task_id": task_id,
             }
-            staff_hours = _record_staff_hours(metadata, category_key, department_id, ready_start, ctx.has_datetime)
-            if (
-                category_key == "linen"
-                and staff_hours
-                and not _within_staff_hours(
-                    ready_start, ready_end, staff_hours, ctx.has_datetime
-                )
-            ):
-                ward_collection_rows.append(
-                    {
-                        "date": _event_date_label(ready_start, ctx.has_datetime),
-                        "day": day,
-                        "delivery_time": _event_time_hhmm(ready_start, ctx.has_datetime),
-                        "handling_finish": _event_time_hhmm(ready_end, ctx.has_datetime),
-                        "department": department,
-                        "location": location,
-                        "payload": payload,
-                        "task_id": task_id,
-                        "linen_staff_hours": f"{staff_hours[0]}-{staff_hours[1]}",
-                        "collection_by": "Ward staff",
-                        "reason": _ward_collection_reason(
-                            ready_start, ready_end, staff_hours, ctx.has_datetime
-                        ),
-                    }
-                )
-                continue
+            # Explicit events describe the recorded assignment; configuration
+            # hours must not reassign it to a different team after the run.
             records.append(record)
 
     # Supplement explicit staff rows with the legacy completed-to-return window
@@ -3446,6 +4840,47 @@ def build_payload_handling_timetable(
     return pd.DataFrame(rows, columns=columns)
 
 
+def _staff_resource_is_tracked(row: pd.Series) -> bool:
+    value = row.get("staff_resource_tracked")
+    if _clean_optional_text(value):
+        return _to_bool(value, True)
+    # Older simulator logs used this explicit sentinel before the boolean column.
+    return not _clean_optional_text(row.get("person_id")).endswith("-team-untracked")
+
+
+def _recorded_staff_busy_seconds(group: pd.DataFrame) -> Optional[float]:
+    """Union logged handling intervals per person; never fill missing evidence.
+
+    This excludes walking and covers only the supplied handling records. It is
+    not a utilisation percentage or a claim that the log covers the whole run.
+    """
+    intervals = {}
+    for _, row in group.iterrows():
+        person = _clean_optional_text(row.get("person_id"))
+        if not person or not _staff_resource_is_tracked(row):
+            return None
+        start, end = row.get("start_time"), row.get("end_time")
+        if pd.isna(start) or pd.isna(end) or start is None or end is None:
+            return None
+        try:
+            start, end = float(start), float(end)
+        except (TypeError, ValueError):
+            try:
+                start, end = pd.Timestamp(start).timestamp(), pd.Timestamp(end).timestamp()
+            except (TypeError, ValueError):
+                return None
+        if not math.isfinite(start) or not math.isfinite(end) or end < start:
+            return None
+        intervals.setdefault(person, []).append((start, end))
+    total = 0.0
+    for bookings in intervals.values():
+        finish = float('-inf')
+        for start, end in sorted(bookings):
+            total += max(0.0, end - max(start, finish))
+            finish = max(finish, end)
+    return total
+
+
 def build_staff_handling_summary(
     df: pd.DataFrame,
     ctx: Context,
@@ -3458,6 +4893,9 @@ def build_staff_handling_summary(
         "initial_people",
         "added_people",
         "total_handling_time_s",
+        "recorded_busy_time_s",
+        "evidence_notes",
+        "event_ids",
     ]
     if df is None or df.empty:
         return pd.DataFrame(columns=columns)
@@ -3506,28 +4944,6 @@ def build_staff_handling_summary(
         axis=1,
     )
 
-    def include_staff_row(row: pd.Series) -> bool:
-        category_key = str(row.get("_staff_category_key", "") or "").strip().lower()
-        if category_key != "linen":
-            return True
-        department_id = _clean_optional_text(row.get("department_id", ""))
-        start_value = row.get(ctx.time_col)
-        hours = _record_staff_hours(
-            metadata, category_key, department_id, start_value, ctx.has_datetime
-        )
-        if not hours:
-            return True
-        end_value = add_seconds_to_event_time(
-            start_value,
-            _to_float(row.get("_report_handling_duration_s"), 0.0),
-            ctx.has_datetime,
-        )
-        return _within_staff_hours(start_value, end_value, hours, ctx.has_datetime)
-
-    staff_rows = staff_rows[staff_rows.apply(include_staff_row, axis=1)].copy()
-    if staff_rows.empty:
-        return pd.DataFrame(columns=columns)
-
     rows = []
     for category_key, group in staff_rows.groupby("_staff_category_key", sort=True):
         category_key = str(category_key or "staff").strip().lower()
@@ -3572,17 +4988,10 @@ def build_staff_handling_summary(
             people_required = on_shift_people_required or len(person_ids)
         shift_multiplier = configured_shift_multiplier.get(category_key, 1.0)
         if "staff_shift_multiplier" in group.columns:
-            shift_multiplier = max(
-                shift_multiplier,
-                float(
-                    pd.to_numeric(
-                        group.get("staff_shift_multiplier", 1.0), errors="coerce"
-                    )
-                    .fillna(1.0)
-                    .max()
-                    or 1.0
-                ),
-            )
+            recorded_multiplier = pd.to_numeric(group["staff_shift_multiplier"], errors="coerce")
+            positive_multiplier = recorded_multiplier[recorded_multiplier > 0]
+            if not positive_multiplier.empty:
+                shift_multiplier = max(1.0, float(positive_multiplier.max()))
         if (
             "staff_on_shift_people_required" in group.columns
             and shift_multiplier > 1.0
@@ -3598,20 +5007,24 @@ def build_staff_handling_summary(
             )
         initial_people = max(1, int(configured_initial.get(category_key, 1) or 1))
         if "staff_initial_rostered_people" in group.columns:
-            initial_people = max(
-                initial_people,
-                int(
-                    pd.to_numeric(
-                        group.get("staff_initial_rostered_people", 0),
-                        errors="coerce",
-                    )
-                    .fillna(0)
-                    .max()
-                    or 0
-                ),
-            )
+            recorded_initial = pd.to_numeric(group["staff_initial_rostered_people"], errors="coerce")
+            positive_initial = recorded_initial[recorded_initial > 0]
+            if not positive_initial.empty:
+                initial_people = int(positive_initial.max())
         elif shift_multiplier > 1.0:
             initial_people = int(math.ceil(initial_people * shift_multiplier))
+        untracked = ~group.apply(_staff_resource_is_tracked, axis=1)
+        if untracked.all():
+            people_required = initial_people = 0
+        busy_seconds = _recorded_staff_busy_seconds(group)
+        notes = ["Recorded handling intervals only; excludes travel"]
+        if busy_seconds is None:
+            notes.append("Busy time unknown: missing person/interval evidence or untracked staff")
+        fallback = group.get("staff_working_hours_fallback", pd.Series(None, index=group.index, dtype=object))
+        if fallback.map(lambda value: False if pd.isna(value) else _to_bool(value, False)).any():
+            notes.append("Working-hours fallback: capacity against the schedule is not established")
+        if fallback.isna().any() or fallback.map(lambda value: _clean_optional_text(value) == '').any():
+            notes.append("Working-hours fallback status unavailable in legacy records")
         duration = pd.to_numeric(
             group.get("_report_handling_duration_s", 0.0),
             errors="coerce",
@@ -3624,6 +5037,12 @@ def build_staff_handling_summary(
                 "initial_people": initial_people,
                 "added_people": max(0, people_required - initial_people),
                 "total_handling_time_s": float(duration.sum()),
+                "recorded_busy_time_s": busy_seconds,
+                "evidence_notes": "; ".join(notes),
+                "event_ids": ", ".join(dict.fromkeys(
+                    value for value in group.get("event_id", pd.Series(dtype=str)).map(_clean_optional_text)
+                    if value
+                )),
             }
         )
 
@@ -3642,11 +5061,20 @@ def analyse(
     location_catalog: Optional[pd.DataFrame] = None,
     payload_dimensions: Optional[pd.DataFrame] = None,
     task_generation_metadata: Optional[dict] = None,
+    amr_weights: Optional[Dict[str, float]] = None,
+    kpi_config: Optional[dict] = None,
 ) -> Dict[str, pd.DataFrame]:
     payload_weights = payload_weights or {}
+    energy_evidence = read_energy_evidence(csv_path)
+    energy_summary = pd.DataFrame([
+        {'metric': record['title'], 'planned_kwh': record['value_kwh'],
+         'attributed_observed_kwh': record['observed_kwh'],
+         'coverage': 'Full bound attribution' if record['known'] else 'Not established'}
+        for record in energy_evidence['sources'].values()
+    ])
     raw = pd.read_csv(csv_path, low_memory=False)
     df, ctx = parse_time_column(raw)
-    df = df.sort_values(ctx.time_col).reset_index(drop=True)
+    df = df.sort_values(ctx.time_col, kind='stable').reset_index(drop=True)
     cols = ctx.cols
 
     amr_col = cols["amr"]
@@ -3685,6 +5113,9 @@ def analyse(
     )
     task_generation_summary = build_generated_task_category_summary(
         df, ctx, task_generation_metadata
+    )
+    deferred_release_summary, deferred_release_detail = (
+        build_deferred_release_analysis(df, ctx, task_generation_metadata)
     )
     ward_collection_rows: List[dict] = []
     payload_handling_timetable = build_payload_handling_timetable(
@@ -3739,6 +5170,7 @@ def analyse(
 
     task_rows: List[dict] = []
     active_intervals: List[Tuple[float, float]] = []
+    task_target_col = ctx.cols.get("task_target")
 
     raw_task_ids = [str(x).strip() for x in df[task_col].dropna().tolist() if str(x).strip()]
     single_task_ids = {task_id for task_id in raw_task_ids if "," not in task_id}
@@ -3757,7 +5189,12 @@ def analyse(
         first = g.iloc[0]
         last = g.iloc[-1]
         start_row = g[g["_event_text"].str.contains(ASSIGN_PATTERNS, na=False)].head(1)
-        end_row = g[g["_event_text"].str.contains(COMPLETE_PATTERNS, na=False)].tail(1)
+        completion_mask = g["_event_text"].str.contains(
+            COMPLETE_PATTERNS, na=False
+        ) & ~g["_event_text"].str.contains(
+            r"task_release|task released", case=False, na=False
+        )
+        end_row = g[completion_mask].tail(1)
         fail_row = g[g["_event_text"].str.contains(FAIL_PATTERNS, na=False)].tail(1)
         start = (
             start_row.iloc[0][ctx.time_col]
@@ -3791,6 +5228,37 @@ def analyse(
             end = multi_stop_leg_override.get("finish", end)
             duration_s = multi_stop_leg_override.get("duration_s", duration_s)
             wait_s = multi_stop_leg_override.get("wait_s", wait_s)
+
+        target_s = None
+        if task_target_col and task_target_col in g.columns:
+            target_values = pd.to_numeric(
+                g[task_target_col], errors="coerce"
+            ).dropna()
+            positive_targets = target_values[target_values > 0]
+            if not positive_targets.empty:
+                target_s = float(positive_targets.iloc[0])
+
+        release_event_rows = g[
+            g["_event_text"].str.contains(
+                r"task_released|task released|task_generated|waste_task_generated|return_task_generated",
+                case=False,
+                na=False,
+            )
+        ]
+        release = (
+            release_event_rows.iloc[0][ctx.time_col]
+            if not release_event_rows.empty
+            else None
+        )
+        if release is None or pd.isna(release):
+            release = first[ctx.time_col]
+
+        sla_elapsed_s = None
+        sla_lateness_s = None
+        if outcome == "completed" and target_s is not None:
+            sla_elapsed_s = time_delta_seconds(release, end, ctx.has_datetime)
+            if sla_elapsed_s is not None:
+                sla_lateness_s = float(sla_elapsed_s) - float(target_s)
 
         payload = (
             primary_payload_name(g[payload_col].dropna().iloc[0])
@@ -3867,6 +5335,10 @@ def analyse(
                 "pending_reason": pending_reason,
                 "start": start,
                 "finish": end,
+                "release": release,
+                "target_s": target_s,
+                "sla_elapsed_s": sla_elapsed_s,
+                "sla_lateness_s": sla_lateness_s,
                 "duration_s": duration_s,
                 "wait_s": wait_s,
                 "origin": safe_text(origin),
@@ -3888,6 +5360,12 @@ def analyse(
     # How many tasks did each AMR complete
 
     tasks = pd.DataFrame(task_rows)
+    journey_detail, journey_flow_summary = build_journey_flows(
+        df, ctx, tasks, location_catalog, task_generation_metadata
+    )
+    task_sla_overview, task_sla_summary, task_sla_detail = build_task_sla_tables(
+        tasks
+    )
     completed = tasks[tasks["outcome"] == "completed"].copy()
     failed = tasks[tasks["outcome"] == "failed"].copy()
     pending_tasks = tasks[tasks["outcome"] == "incomplete"].copy()
@@ -4180,7 +5658,6 @@ def analyse(
                 errors="coerce",
             )
             .fillna(0.0)
-            .round(3)
         )
 
         recharge_summary["recharge_time_s"] = (
@@ -4211,7 +5688,6 @@ def analyse(
             errors="coerce",
         )
         .fillna(0.0)
-        .round(3)
     )
 
     amr_summary = amr_summary.merge(
@@ -4241,6 +5717,13 @@ def analyse(
         lift_rows["lift_time_s"].notna() & (lift_rows["lift_time_s"] >= 0)
     ].copy()
     lift_usage_profile = build_lift_usage_profile(lift_rows, ctx, interval_minutes=30)
+    lift_movement_detail = build_lift_movement_detail(lift_rows, ctx, payload_weights, amr_weights)
+    lift_trip_cohorts_5min = build_lift_trip_cohorts(
+        lift_rows, ctx, interval_minutes=5
+    )
+    lift_trip_cohorts_hourly = build_lift_trip_cohorts(
+        lift_rows, ctx, interval_minutes=60
+    )
     lift_busy_intervals_by_lift, lift_busy_summary = build_lift_busy_intervals(
         lift_rows, ctx
     )
@@ -4294,7 +5777,9 @@ def analyse(
         lift_summary["idle_pct"] = (
             (100 - lift_summary["utilisation_pct"]).clip(lower=0).round(1)
         )
-        lift_summary["lift_energy_kwh"] = lift_summary["lift_energy_kwh"].round(4)
+        lift_summary["lift_energy_kwh"] = (
+            lift_summary['lift_id'].map(energy_evidence['lifts']).fillna(0.0)
+            if energy_evidence['sources']['lift_supply']['known'] else float('nan'))
 
     # Lift Wait times
 
@@ -4305,6 +5790,72 @@ def analyse(
     ).fillna(0)
 
     lift_wait_rows = lift_wait_rows[lift_wait_rows["lift_wait_s"] > 0].copy()
+
+    reported_lift_ids = (
+        lift_summary["lift_id"].dropna().map(safe_text).tolist()
+        if "lift_id" in lift_summary.columns
+        else []
+    )
+    lift_wait_profile = build_lift_wait_profile(
+        lift_wait_rows,
+        ctx,
+        interval_minutes=30,
+        lift_ids=reported_lift_ids,
+    )
+
+    if lift_wait_rows.empty:
+        wait_statistics = pd.DataFrame(
+            columns=[
+                "lift_id",
+                "wait_events",
+                "minimum_wait_s",
+                "mean_wait_s",
+                "maximum_wait_s",
+                "total_wait_s",
+            ]
+        )
+    else:
+        wait_statistics = (
+            lift_wait_rows.groupby("_lift_id", dropna=False)["lift_wait_s"]
+            .agg(
+                wait_events="count",
+                minimum_wait_s="min",
+                mean_wait_s="mean",
+                maximum_wait_s="max",
+                total_wait_s="sum",
+            )
+            .reset_index()
+            .rename(columns={"_lift_id": "lift_id"})
+        )
+        wait_statistics["lift_id"] = wait_statistics["lift_id"].map(safe_text)
+
+    summary_lift_ids = sorted(
+        set(reported_lift_ids)
+        | set(wait_statistics.get("lift_id", pd.Series(dtype=str)).dropna().map(safe_text)),
+        key=natural_key,
+    )
+    lift_wait_summary = pd.DataFrame(
+        {"lift_id": pd.Series(summary_lift_ids, dtype=str)}
+    ).merge(
+        wait_statistics,
+        on="lift_id",
+        how="left",
+    )
+    if not lift_wait_summary.empty:
+        lift_wait_summary["wait_events"] = (
+            pd.to_numeric(lift_wait_summary["wait_events"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+        for column in (
+            "minimum_wait_s",
+            "mean_wait_s",
+            "maximum_wait_s",
+            "total_wait_s",
+        ):
+            lift_wait_summary[column] = pd.to_numeric(
+                lift_wait_summary[column], errors="coerce"
+            ).fillna(0.0)
 
     if lift_wait_rows.empty:
         lift_wait_schedule = pd.DataFrame(
@@ -4590,7 +6141,7 @@ def analyse(
             },
             {
                 "item": "Payload schedule",
-                "detail": "Uses simulator payload_population_summary rows for total runtime payloads, and keeps unique transported instances and task count as separate diagnostics.",
+                "detail": "Physical lifecycle population includes stored, carried, staged and unconfirmed issued containers; planned and removed objects are excluded from the peak. Older storage-only summaries do not prove this population and display missing values. Unique transported IDs, issued identities and task counts are separate diagnostics.",
             },
             {
                 "item": "Peak location occupancy",
@@ -4619,6 +6170,19 @@ def analyse(
 
     location_peak_occupancy = build_location_peak_occupancy(
         df, ctx, location_catalog, payload_dimensions
+    )
+    (
+        dropoff_zone_peak_occupancy,
+        dropoff_zone_occupancy_summary,
+    ) = build_dropoff_zone_peak_occupancy(
+        df,
+        ctx,
+        location_catalog,
+        location_peak_occupancy,
+        payload_dimensions,
+    )
+    dropoff_zone_payloads_at_network_peak = (
+        build_dropoff_zone_payloads_at_network_peak(df, ctx, location_catalog)
     )
     (
         location_space_utilisation,
@@ -4681,26 +6245,17 @@ def analyse(
             ).fillna(0.0).sum()
         )
         if not payload_schedule.empty and "total_runtime_payloads" in payload_schedule.columns:
-            peak_payload_count = int(
-                pd.to_numeric(
-                    payload_schedule.get("total_runtime_payloads", pd.Series(dtype=float)),
-                    errors="coerce",
-                ).fillna(0).sum()
-            )
+            values = pd.to_numeric(payload_schedule['total_runtime_payloads'], errors='coerce')
+            peak_payload_count = str(int(values.sum())) if values.notna().all() else 'Not established'
         else:
-            peak_payload_count = int(
-                pd.to_numeric(
-                    location_peak_occupancy.get("peak_payload_count", pd.Series(dtype=float)),
-                    errors="coerce",
-                ).fillna(0).max()
-            )
+            peak_payload_count = 'Not established'
         summary = pd.concat(
             [
                 summary,
                 pd.DataFrame(
                     [
                         {
-                            "metric": "Total runtime payload population",
+                            "metric": "Sum of per-type peak payload populations",
                             "value": f"{peak_payload_count}",
                         },
                         {
@@ -4790,10 +6345,33 @@ def analyse(
         ]
     )
 
+    try:
+        from .amr_report_kpis import build_kpis
+    except ImportError:
+        from amr_report_kpis import build_kpis
+    kpi_inputs = dict(kpi_config or {})
+    if 'amrs' not in kpi_inputs and amr_parameters is not None:
+        kpi_inputs['amrs'] = amr_parameters.to_dict('records')
+    kpis = build_kpis(df, ctx, tasks, journey_detail, config=kpi_inputs,
+        metadata=task_generation_metadata, staff_summary=staff_handling_summary,
+        energy_evidence=energy_evidence, target_util=target_amr_util)
+    try:
+        from .amr_report_sla import build_sla_assignments
+    except ImportError:
+        from amr_report_sla import build_sla_assignments
+    kpis.update(build_sla_assignments(kpi_config, kpis['kpi_requests']))
+
     return {
+        **kpis,
         "summary": summary,
+        "journey_observation": {
+            "start": fmt_ts(t0, ctx.has_datetime),
+            "finish": fmt_ts(t1, ctx.has_datetime),
+        },
         "scenario_impact": scenario_impact,
         "task_generation_summary": task_generation_summary,
+        "deferred_release_summary": deferred_release_summary,
+        "deferred_release_detail": deferred_release_detail,
         "payload_handling_timetable": payload_handling_timetable,
         "linen_ward_collection": linen_ward_collection,
         "staff_hours_summary": staff_hours_summary,
@@ -4802,15 +6380,31 @@ def analyse(
         "amr_route_summary": amr_route_summary,
         "utilisation_summary": amr_utilisation,
         "lift_summary": lift_summary,
+        "energy_summary": energy_summary,
+        "energy_evidence": energy_evidence,
+        "battery_balance": pd.DataFrame(energy_evidence['battery']['records']),
         "lift_usage_profile": lift_usage_profile,
+        "journey_detail": journey_detail,
+        "journey_flow_summary": journey_flow_summary,
+        "lift_movement_detail": lift_movement_detail,
+        "lift_trip_cohorts_5min": lift_trip_cohorts_5min,
+        "lift_trip_cohorts_hourly": lift_trip_cohorts_hourly,
+        "lift_wait_summary": lift_wait_summary,
+        "lift_wait_profile": lift_wait_profile,
         "tasks": tasks.sort_values(["amr", "start", "task_id"]).reset_index(drop=True),
         "pending_tasks": pending_tasks.reset_index(drop=True),
+        "task_sla_overview": task_sla_overview,
+        "task_sla_summary": task_sla_summary,
+        "task_sla_detail": task_sla_detail,
         "methodology": methodology,
         "payload_schedule": payload_schedule,
         "location_space_utilisation": location_space_utilisation,
         "failed_delivery_summary": failed_delivery_summary,
         "location_recommendations": location_recommendations,
         "location_peak_occupancy": location_peak_occupancy,
+        "dropoff_zone_peak_occupancy": dropoff_zone_peak_occupancy,
+        "dropoff_zone_occupancy_summary": dropoff_zone_occupancy_summary,
+        "dropoff_zone_payloads_at_network_peak": dropoff_zone_payloads_at_network_peak,
         "failed_payload_sizes": failed_payload_sizes,
         "lift_wait_schedule": lift_wait_schedule,
         "recharge_summary": recharge_summary,

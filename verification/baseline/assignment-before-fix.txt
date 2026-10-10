@@ -1,0 +1,61 @@
+test_capacity_approximation_changes_at_loaded_envelope_boundary (test_engineering_reference.RoutingReferenceTests.test_capacity_approximation_changes_at_loaded_envelope_boundary) ... ok
+test_door_restricts_both_incident_directions (test_engineering_reference.RoutingReferenceTests.test_door_restricts_both_incident_directions) ... ok
+test_explicit_distance_overrides_drawing_distance (test_engineering_reference.RoutingReferenceTests.test_explicit_distance_overrides_drawing_distance) ... ok
+test_legacy_task_allowances_extend_profile_and_dirty_label_selects_profile (test_engineering_reference.RoutingReferenceTests.test_legacy_task_allowances_extend_profile_and_dirty_label_selects_profile) ... ok
+test_one_way_edges_do_not_create_return_path (test_engineering_reference.RoutingReferenceTests.test_one_way_edges_do_not_create_return_path) ... ok
+test_payload_at_clear_width_fits_but_oversize_does_not (test_engineering_reference.RoutingReferenceTests.test_payload_at_clear_width_fits_but_oversize_does_not) ... ok
+test_profile_allowed_edges_are_directional_and_empty_means_unrestricted (test_engineering_reference.RoutingReferenceTests.test_profile_allowed_edges_are_directional_and_empty_means_unrestricted) ... ok
+test_rotating_payload_changes_required_cross_width (test_engineering_reference.RoutingReferenceTests.test_rotating_payload_changes_required_cross_width) ... ok
+test_three_four_five_triangle_distance_and_duration (test_engineering_reference.RoutingReferenceTests.test_three_four_five_triangle_distance_and_duration) ... ok
+test_unloaded_robot_must_fit_door (test_engineering_reference.RoutingReferenceTests.test_unloaded_robot_must_fit_door) ... ok
+test_wider_alternative_is_used_and_cached_separately (test_engineering_reference.RoutingReferenceTests.test_wider_alternative_is_used_and_cached_separately) ... ok
+test_width_filter_does_not_bypass_profile_restrictions (test_engineering_reference.RoutingReferenceTests.test_width_filter_does_not_bypass_profile_restrictions) ... ok
+test_charge_estimate_uses_passable_empty_and_loaded_routes (test_engineering_reference.ServiceReferenceTests.test_charge_estimate_uses_passable_empty_and_loaded_routes) ... FAIL
+test_fast_and_full_assignment_estimates_use_the_passable_detour (test_engineering_reference.ServiceReferenceTests.test_fast_and_full_assignment_estimates_use_the_passable_detour) ...
+  test_fast_and_full_assignment_estimates_use_the_passable_detour (test_engineering_reference.ServiceReferenceTests.test_fast_and_full_assignment_estimates_use_the_passable_detour) (fast_assignment_estimates=True) ... FAIL
+test_fast_estimate_rejects_a_door_the_load_cannot_pass (test_engineering_reference.ServiceReferenceTests.test_fast_estimate_rejects_a_door_the_load_cannot_pass) ... FAIL
+test_location_reservations_allow_touching_intervals (test_engineering_reference.ServiceReferenceTests.test_location_reservations_allow_touching_intervals) ... ok
+test_one_delivery_duration_and_repeatability (test_engineering_reference.ServiceReferenceTests.test_one_delivery_duration_and_repeatability) ... ok
+test_overlapping_reservations_wait_until_capacity_is_available (test_engineering_reference.ServiceReferenceTests.test_overlapping_reservations_wait_until_capacity_is_available) ... ok
+test_oversize_delivery_fails_instead_of_staying_pending (test_engineering_reference.ServiceReferenceTests.test_oversize_delivery_fails_instead_of_staying_pending) ... ok
+test_saved_review_scenarios_match_hand_calculations (test_engineering_reference.ServiceReferenceTests.test_saved_review_scenarios_match_hand_calculations) ... ok
+test_sequential_reservations_do_not_count_as_simultaneous (test_engineering_reference.ServiceReferenceTests.test_sequential_reservations_do_not_count_as_simultaneous) ... ok
+
+======================================================================
+FAIL: test_charge_estimate_uses_passable_empty_and_loaded_routes (test_engineering_reference.ServiceReferenceTests.test_charge_estimate_uses_passable_empty_and_loaded_routes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_engineering_reference.py", line 186, in test_charge_estimate_uses_passable_empty_and_loaded_routes
+    self.assertEqual((10, 10), charge.call_args.args[2:4])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Tuples differ: (10, 10) != (5.0, 5.0)
+
+First differing element 0:
+10
+5.0
+
+- (10, 10)
++ (5.0, 5.0)
+
+======================================================================
+FAIL: test_fast_and_full_assignment_estimates_use_the_passable_detour (test_engineering_reference.ServiceReferenceTests.test_fast_and_full_assignment_estimates_use_the_passable_detour) (fast_assignment_estimates=True)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_engineering_reference.py", line 166, in test_fast_and_full_assignment_estimates_use_the_passable_detour
+    self.assertAlmostEqual(14, estimate["duration"], delta=1e-8)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 14 != 9.0 within 1e-08 delta (5.0 difference)
+
+======================================================================
+FAIL: test_fast_estimate_rejects_a_door_the_load_cannot_pass (test_engineering_reference.ServiceReferenceTests.test_fast_estimate_rejects_a_door_the_load_cannot_pass)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_engineering_reference.py", line 173, in test_fast_estimate_rejects_a_door_the_load_cannot_pass
+    self.assertIsNone(sim._estimate_task_for_amr(sim.amrs[0], Task("T", "A", "B", "Box")))
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'task_start_time': 0.0, 'finish_time': 9.0, 'duration': 9.0, 'segments': [{'type': 'pickup', 'location': 'A', 'duration': 2.0}, {'type': 'dropoff', 'location': 'B', 'duration': 2.0, 'inventory_space': ''}], 'end_location': 'B', 'energy_kwh': 0.0010781249999999999, 'battery_soc_after': 99.98921875, 'corridor_energy_kwh': 0.0010781249999999999, 'lift_energy_kwh': 0.0, 'lift_empty_sec_total': 0.0, 'lift_loaded_sec_total': 0.0, 'amr_inventory_space': '', 'payload_slot': 'Slot 1', 'payload_orientation': 'lengthways'} is not None
+
+----------------------------------------------------------------------
+Ran 21 tests in 0.007s
+
+FAILED (failures=3)

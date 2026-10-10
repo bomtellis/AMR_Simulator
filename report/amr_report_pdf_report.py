@@ -5,8 +5,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import copy
 import io
+import math
+import numbers
 import re
 import tempfile
+from datetime import datetime
 from xml.sax.saxutils import escape
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
@@ -31,8 +34,10 @@ from reportlab.lib.colors import Color
 from reportlab.lib.pagesizes import A0, A3, A4, landscape
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
 from reportlab.platypus import (
     BaseDocTemplate,
+    CondPageBreak,
     Flowable,
     Frame,
     NextPageTemplate,
@@ -43,6 +48,7 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from reportlab.platypus.tableofcontents import TableOfContents
 try:
     from svglib.svglib import svg2rlg
 except Exception:  # SVG conversion is optional when --omit-drawings is used
@@ -53,6 +59,7 @@ from amr_report_analysis import fmt_duration, fmt_ts
 
 REPORT_SECTIONS = [
     ("front_summary", "Executive summary"),
+    ("operational_kpis", "Operational KPIs (demand, service, capacity and cost)"),
     ("scenario_impact", "Scenario impact and resilience"),
     ("method", "Method"),
     ("amr_list", "AMR list"),
@@ -60,14 +67,21 @@ REPORT_SECTIONS = [
     ("amr_utilisation", "AMR utilisation and recharge"),
     ("payload_summary", "Payload summary"),
     ("pending_tasks", "Pending tasks"),
+    ("task_sla", "Task SLA performance"),
+    ("sla_categories", "SLA categories and assigned targets"),
     ("failed_delivery", "Failed delivery analysis"),
     ("lift_usage", "Lift usage and waits"),
+    ("journey_flows", "Journey origins, destinations and returns"),
     ("lift_usage_profile", "Lift usage profile"),
+    ("lift_trip_cohorts", "Lift trip cohorts"),
+    ("lift_wait_profiles", "Lift wait time profiles"),
     ("generated_tasks", "Generated task category summary"),
+    ("deferred_releases", "Deferred task releases"),
     ("staff_handling", "Category staff handling"),
     ("staff_timetable", "Staff handling timetable"),
     ("location_space", "Location space utilisation"),
     ("peak_occupancy", "Peak location occupancy"),
+    ("dropoff_zone_occupancy", "Drop-off zone peak occupancy"),
     ("location_recommendations", "Location storage recommendations"),
     ("task_detail", "Task detail grouped by AMR"),
     ("heatmaps", "Congestion heatmaps"),
@@ -78,8 +92,10 @@ DEFAULT_REPORT_SECTION_ORDER = [section_id for section_id, _label in REPORT_SECT
 
 REPORT_SECTION_PAGE_TEMPLATES = {
     "front_summary": "standard",
+    "operational_kpis": "landscape",
     "scenario_impact": "landscape",
     "generated_tasks": "landscape",
+    "deferred_releases": "a3_landscape",
     "staff_handling": "standard",
     "staff_timetable": "a3_landscape",
     "method": "standard",
@@ -87,13 +103,19 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "amr_fleet": "landscape",
     "amr_utilisation": "landscape",
     "lift_usage": "landscape",
+    "journey_flows": "a3_landscape",
     "lift_usage_profile": "a3_landscape",
+    "lift_trip_cohorts": "a3_landscape",
+    "lift_wait_profiles": "a3_landscape",
     "payload_summary": "standard",
     "location_space": "a3_landscape",
     "peak_occupancy": "a3_landscape",
+    "dropoff_zone_occupancy": "a3_landscape",
     "failed_delivery": "a3_landscape",
     "location_recommendations": "a3_landscape",
     "pending_tasks": "a3_landscape",
+    "task_sla": "a3_landscape",
+    "sla_categories": "landscape",
     "task_detail": "a3_landscape",
     "heatmaps": "a0_landscape",
 }
@@ -161,21 +183,61 @@ class SectionedStory:
 
         return cleaned
 
-    def flowables(self) -> List:
+    def flowables(self, styles=None) -> List:
+        styles = styles or make_styles()
         result = []
         first_section = True
-        for section_id in self.section_order:
+        for number, section_id in enumerate(self.section_order, 1):
             section_flowables = self._normalised_section_content(
                 self.sections.get(section_id, [])
             )
             if not section_flowables:
-                continue
+                section_flowables = [Paragraph('No records in the observed period.', styles['BodyText'])]
 
             template_id = REPORT_SECTION_PAGE_TEMPLATES.get(section_id, "standard")
             result.append(NextPageTemplate(template_id))
             if not first_section:
                 result.append(PageBreak())
-            result.extend(section_flowables)
+            title = f'{number} {REPORT_SECTION_LABELS[section_id]}'
+            def heading(text, level, key, style):
+                paragraph = Paragraph(text, style)
+                paragraph._report_heading = (level, paragraph.getPlainText(), key)
+                return paragraph
+            if section_id == 'heatmaps' and isinstance(section_flowables[0], FloorOverlayFlowable):
+                # Heatmaps occupy the complete frame; draw their title inside the overlay.
+                section_flowables[0]._report_heading = (0, title, section_id)
+                for floor_number, overlay in enumerate((f for f in section_flowables if isinstance(f, FloorOverlayFlowable)), 1):
+                    floor_title = f'{number}.{floor_number} Floor {overlay.floor_label}'
+                    overlay.report_title = title + ' / ' + floor_title
+                    overlay._report_floor_heading = (1, floor_title, f'{section_id}-floor-{floor_number}')
+            else:
+                result.append(heading(escape(title), 0, section_id, styles['Section']))
+            sub = child = 0
+            parent_seen = False
+            for flowable in section_flowables:
+                if isinstance(flowable, Paragraph) and flowable.style.name in ('Section', 'Heading1', 'Heading2', 'Heading3'):
+                    text = flowable.getPlainText()
+                    if text.lower() == REPORT_SECTION_LABELS[section_id].lower():
+                        continue
+                    if section_id == 'operational_kpis':
+                        match = re.match(r'^1\.(\d+)\s+(.*)', text)
+                        if match:
+                            sub, child = int(match[1]), 0
+                            prefix, text, level = f'{number}.{sub}', match[2], 1
+                        else:
+                            child += 1
+                            prefix, level = f'{number}.{max(sub, 1)}.{child}', 2
+                    elif flowable.style.name == 'Heading3' and parent_seen:
+                        child += 1
+                        prefix, level = f'{number}.{sub}.{child}', 2
+                    else:
+                        sub += 1
+                        child = 0
+                        prefix, level = f'{number}.{sub}', 1
+                        parent_seen = flowable.style.name != 'Heading3'
+                    flowable = heading(escape(f'{prefix} {text}'), level,
+                                       f'{section_id}-{sub}-{child}', styles['Subsection'] if level == 1 else styles['Heading3'])
+                result.append(flowable)
             first_section = False
         return result
 
@@ -226,10 +288,20 @@ def make_styles():
             spaceAfter=4,
         )
     )
+    styles.add(ParagraphStyle(name='Subsection', parent=styles['Section'], fontSize=12, leading=15))
     return styles
 
 
 class NumberedDocTemplate(BaseDocTemplate):
+    def afterFlowable(self, flowable):
+        for entry in (getattr(flowable, '_report_heading', None), getattr(flowable, '_report_floor_heading', None)):
+            if not entry:
+                continue
+            level, text, key = entry
+            self.canv.bookmarkPage(key)
+            self.canv.addOutlineEntry(text, key, level=level, closed=False)
+            self.notify('TOCEntry', (level, escape(text), self.page, key))
+
     def __init__(self, filename, first_template_id: str = "standard", **kwargs):
         super().__init__(filename, **kwargs)
 
@@ -344,10 +416,13 @@ class NumberedDocTemplate(BaseDocTemplate):
         canvas.setFillColor(colors.HexColor("#666666"))
 
         page_width, page_height = canvas._pagesize
+        header = doc.title
+        while pdfmetrics.stringWidth(header, 'Helvetica', 8) > page_width - doc.leftMargin - doc.rightMargin:
+            header = header[:-4] + '...'
         canvas.drawString(
             doc.leftMargin,
             page_height - 12 * mm,
-            "AMR Simulation Performance Report",
+            header,
         )
         canvas.drawRightString(
             page_width - doc.rightMargin,
@@ -364,21 +439,78 @@ def natural_key(s):
     )
 
 
+class PageWidthTable(Table):
+    """Fit report tables to the actual frame, including split continuations.
+
+    Section widths express column proportions, not a fixed paper size. ReportLab
+    creates split pieces using this class, so repeated headers and continuation
+    pages retain the same sizing rule on portrait and landscape templates.
+    """
+
+    def _fit_frame(self, available_width):
+        if getattr(self, '_report_frame_width', None) == available_width:
+            return
+        if not hasattr(self, '_report_column_weights'):
+            self._report_column_weights = tuple(float(w) for w in self._argW)
+            minimums = []
+            for cell, style in zip(self._cellvalues[0], self._cellStyles[0]):
+                if isinstance(cell, (list, tuple)):
+                    cell = cell[0] if cell else None
+                if isinstance(cell, Paragraph):
+                    word_width = max((pdfmetrics.stringWidth(word, cell.style.fontName, cell.style.fontSize)
+                                      for word in cell.getPlainText().split()), default=0)
+                else:
+                    word_width = 0
+                minimums.append(word_width + style.leftPadding + style.rightPadding + 2)
+            self._report_column_minimums = tuple(minimums)
+
+        weights = self._report_column_weights
+        minimums = self._report_column_minimums
+        widths = [0.0] * len(weights)
+        remaining = set(range(len(weights)))
+        budget = available_width
+        if sum(minimums) > available_width:
+            # Extremely dense tables still stay inside the page; paragraphs can
+            # wrap long words when no allocation can satisfy every header.
+            widths = [available_width * w / sum(minimums) for w in minimums]
+        else:
+            while remaining:
+                total_weight = sum(weights[i] for i in remaining)
+                shares = {i: budget * weights[i] / total_weight for i in remaining}
+                constrained = {i for i in remaining if shares[i] < minimums[i]}
+                if not constrained:
+                    for i, width in shares.items():
+                        widths[i] = width
+                    break
+                for i in constrained:
+                    widths[i] = minimums[i]
+                    budget -= widths[i]
+                remaining -= constrained
+        widths[-1] += available_width - sum(widths)
+        self._argW = self._colWidths = widths
+        self.__dict__.pop('_width_calculated_once', None)
+        self._report_frame_width = available_width
+
+    def wrap(self, availWidth, availHeight):
+        self._fit_frame(availWidth)
+        return super().wrap(availWidth, availHeight)
+
+    def split(self, availWidth, availHeight):
+        self._fit_frame(availWidth)
+        return super().split(availWidth, availHeight)
+
+
 def table_from_df(
     df: pd.DataFrame,
     col_widths: List[float],
     styles,
     right_align: Optional[List[int]] = None,
+    format_values: bool = True,
 ) -> Table:
     df = df.loc[:, ~pd.Index(df.columns).duplicated()].copy()
     col_widths = list(col_widths[: len(df.columns)])
     if len(col_widths) < len(df.columns):
         col_widths.extend([20 * mm] * (len(df.columns) - len(col_widths)))
-    max_width = landscape(A4)[0] - 30 * mm
-    total_width = sum(col_widths)
-    if total_width > max_width:
-        scale = max_width / total_width
-        col_widths = [w * scale for w in col_widths]
 
     header_style = ParagraphStyle(
         "TblHead",
@@ -397,11 +529,11 @@ def table_from_df(
 
     header = [Paragraph(str(c), header_style) for c in df.columns]
     rows = []
-    for row in df.fillna("-").astype(str).values.tolist():
+    for row in df.fillna("-").itertuples(index=False, name=None):
         rows.append(
             [
                 Paragraph(
-                    cell.replace("&", "&amp;")
+                    (format_report_cell(cell) if format_values else str(cell)).replace("&", "&amp;")
                     .replace("<", "&lt;")
                     .replace(">", "&gt;"),
                     body_style,
@@ -411,7 +543,7 @@ def table_from_df(
         )
 
     data = [header] + rows
-    tbl = Table(data, colWidths=col_widths, repeatRows=1)
+    tbl = PageWidthTable(data, colWidths=col_widths, repeatRows=1, hAlign='LEFT')
     style = TableStyle(
         [
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#D9E2F3")),
@@ -438,6 +570,77 @@ def table_from_df(
             style.add("ALIGN", (idx, 1), (idx, -1), "RIGHT")
     tbl.setStyle(style)
     return tbl
+
+
+def format_report_cell(value) -> str:
+    """Use consistent precision for measured values without altering counts or IDs."""
+    if isinstance(value, numbers.Real) and not isinstance(value, (bool, numbers.Integral)):
+        return f"{value:.2f}" if math.isfinite(value) else "-"
+    text = str(value)
+    match = re.fullmatch(r"([+-]?\d+(?:,\d{3})*\.\d+)(\s*(?:%|[A-Za-z][A-Za-z0-9²³/ ]*))?", text)
+    if match:
+        number, suffix = match.groups()
+        precision = f"{float(number.replace(',', '')):,.2f}" if "," in number else f"{float(number):.2f}"
+        return precision + (suffix or "")
+    return text
+
+
+def lift_trip_cohort_matrix(cohort_df: pd.DataFrame) -> pd.DataFrame:
+    """Pivot a long lift cohort result into a report-friendly trip matrix."""
+    if (
+        cohort_df is None
+        or cohort_df.empty
+        or not {
+            "cohort_date",
+            "cohort_start",
+            "interval",
+            "interval_start_min",
+            "lift_id",
+            "trips",
+        }.issubset(
+            cohort_df.columns
+        )
+    ):
+        return pd.DataFrame()
+
+    rows = cohort_df.copy()
+    rows["interval_start_min"] = pd.to_numeric(
+        rows["interval_start_min"], errors="coerce"
+    )
+    rows["trips"] = pd.to_numeric(rows["trips"], errors="coerce").fillna(0)
+    rows = rows[rows["interval_start_min"].notna()].copy()
+    if rows.empty:
+        return pd.DataFrame()
+
+    lift_ids = sorted(
+        rows["lift_id"].dropna().astype(str).unique().tolist(), key=natural_key
+    )
+    matrix = rows.pivot_table(
+        index=[
+            "cohort_start",
+            "cohort_date",
+            "interval_start_min",
+            "interval",
+        ],
+        columns="lift_id",
+        values="trips",
+        aggfunc="sum",
+        fill_value=0,
+    ).reset_index()
+    for lift_id in lift_ids:
+        if lift_id not in matrix.columns:
+            matrix[lift_id] = 0
+    matrix = matrix.sort_values("cohort_start")
+    matrix = matrix[["cohort_date", "interval"] + lift_ids]
+    for lift_id in lift_ids:
+        matrix[lift_id] = (
+            pd.to_numeric(matrix[lift_id], errors="coerce").fillna(0).astype(int)
+        )
+    matrix["Total"] = matrix[lift_ids].sum(axis=1).astype(int)
+    matrix = matrix[matrix["Total"] > 0].copy()
+    return matrix.rename(
+        columns={"cohort_date": "Date", "interval": "Time"}
+    ).reset_index(drop=True)
 
 
 CATEGORY_PALETTE = [
@@ -472,14 +675,38 @@ def contrasting_text_colour(hex_colour: str) -> Color:
     return colors.black if brightness > 150 else colors.white
 
 
-class LiftUsageProfileChart(Flowable):
-    """A3-friendly line chart showing lift trips by 30-minute time-of-day bucket."""
+def fmt_wait_duration(value) -> str:
+    """Format wait durations without hiding positive sub-second values."""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return fmt_duration(value)
+    if 0 < seconds < 1:
+        return f"{seconds:.2f} s"
+    return fmt_duration(seconds)
 
-    def __init__(self, profile_df: pd.DataFrame, width: float, height: float):
+
+class LiftUsageProfileChart(Flowable):
+    """A3-friendly line chart showing one metric per lift and time bucket."""
+
+    def __init__(
+        self,
+        profile_df: pd.DataFrame,
+        width: float,
+        height: float,
+        value_column: str = "trips",
+        y_axis_label: str = "Trips per 30 minute interval",
+        empty_message: str = "No lift usage profile data was available.",
+        integer_ticks: bool = True,
+    ):
         super().__init__()
         self.profile_df = profile_df.copy() if profile_df is not None else pd.DataFrame()
         self.width = float(width)
         self.height = float(height)
+        self.value_column = str(value_column or "trips")
+        self.y_axis_label = str(y_axis_label or "")
+        self.empty_message = str(empty_message or "No lift profile data was available.")
+        self.integer_ticks = bool(integer_ticks)
 
     def wrap(self, availWidth, availHeight):
         self.width = min(self.width, availWidth)
@@ -502,17 +729,19 @@ class LiftUsageProfileChart(Flowable):
         if df.empty:
             c.setFillColor(colors.HexColor("#666666"))
             c.setFont("Helvetica", 10)
-            c.drawString(x0, y0 + plot_h / 2, "No lift usage profile data was available.")
+            c.drawString(x0, y0 + plot_h / 2, self.empty_message)
             c.restoreState()
             return
 
         df["interval_start_min"] = pd.to_numeric(df.get("interval_start_min"), errors="coerce")
-        df["trips"] = pd.to_numeric(df.get("trips"), errors="coerce").fillna(0)
+        df[self.value_column] = pd.to_numeric(
+            df.get(self.value_column), errors="coerce"
+        ).fillna(0)
         df = df[df["interval_start_min"].notna()].copy()
         if df.empty:
             c.setFillColor(colors.HexColor("#666666"))
             c.setFont("Helvetica", 10)
-            c.drawString(x0, y0 + plot_h / 2, "No lift usage profile data was available.")
+            c.drawString(x0, y0 + plot_h / 2, self.empty_message)
             c.restoreState()
             return
 
@@ -522,9 +751,18 @@ class LiftUsageProfileChart(Flowable):
             c.restoreState()
             return
 
-        max_y = int(max(1, df["trips"].max()))
-        tick_count = min(6, max_y + 1)
-        y_ticks = sorted(set(int(round(i * max_y / max(1, tick_count - 1))) for i in range(tick_count)))
+        max_y = max(1.0, float(df[self.value_column].max()))
+        tick_count = 6
+        if self.integer_ticks:
+            max_y = float(max(1, int(math.ceil(max_y))))
+            y_ticks = sorted(
+                set(
+                    int(round(i * max_y / max(1, tick_count - 1)))
+                    for i in range(tick_count)
+                )
+            )
+        else:
+            y_ticks = [i * max_y / max(1, tick_count - 1) for i in range(tick_count)]
         if y_ticks[0] != 0:
             y_ticks.insert(0, 0)
 
@@ -543,7 +781,8 @@ class LiftUsageProfileChart(Flowable):
             c.setStrokeColor(colors.HexColor("#E6EEF8"))
             c.line(x0, y, x0 + plot_w, y)
             c.setFillColor(colors.HexColor("#666666"))
-            c.drawRightString(x0 - 3 * mm, y - 2, str(tick))
+            tick_label = str(int(tick)) if self.integer_ticks else fmt_duration(tick)
+            c.drawRightString(x0 - 3 * mm, y - 2, tick_label)
 
         c.setStrokeColor(colors.HexColor("#17365D"))
         c.setLineWidth(0.8)
@@ -568,7 +807,7 @@ class LiftUsageProfileChart(Flowable):
         c.saveState()
         c.translate(x0 - 14 * mm, y0 + plot_h / 2)
         c.rotate(90)
-        c.drawCentredString(0, 0, "Trips per 30 minute interval")
+        c.drawCentredString(0, 0, self.y_axis_label)
         c.restoreState()
 
         palette = [
@@ -579,7 +818,11 @@ class LiftUsageProfileChart(Flowable):
             sub = df[df["lift_id"].astype(str) == lift_id].set_index("interval_start_min")
             points = []
             for minute in intervals:
-                value = sub["trips"].get(minute, 0) if "trips" in sub.columns else 0
+                value = (
+                    sub[self.value_column].get(minute, 0)
+                    if self.value_column in sub.columns
+                    else 0
+                )
                 points.append((x_pos(minute), y_pos(value)))
             if len(points) < 2:
                 continue
@@ -691,11 +934,6 @@ def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
         "Sun": "Sunday",
     }
     col_widths = [36 * mm] + [34 * mm] * len(day_cols)
-    max_width = landscape(A4)[0] - 30 * mm
-    total_width = sum(col_widths)
-    if total_width > max_width:
-        scale = max_width / total_width
-        col_widths = [w * scale for w in col_widths]
 
     header_style = ParagraphStyle(
         "TimetableHead",
@@ -798,7 +1036,7 @@ def payload_timetable_table(df: pd.DataFrame, styles) -> Table:
                 )
             body_row_index += 1
 
-    tbl = Table(
+    tbl = PageWidthTable(
         data,
         colWidths=col_widths,
         repeatRows=1,
@@ -849,11 +1087,31 @@ def compute_floor_extents(floor_df: pd.DataFrame) -> tuple[float, float, float, 
     return xmin, xmax, ymin, ymax
 
 
-def get_dxf_extents(dxf_path: str) -> tuple[float, float, float, float]:
-    import ezdxf
-    from ezdxf import bbox
+DXF_UNIT_TO_METRES = {
+    0: None,  # Unitless
+    1: 0.0254,  # Inches
+    2: 0.3048,  # Feet
+    4: 0.001,  # Millimetres
+    5: 0.01,  # Centimetres
+    6: 1.0,  # Metres
+    7: 1000.0,  # Kilometres
+    10: 0.9144,  # Yards
+    14: 0.1,  # Decimetres
+    21: 1200.0 / 3937.0,  # US survey feet
+}
 
-    doc = ezdxf.readfile(dxf_path)
+
+def get_dxf_unit_scale(doc) -> float:
+    """Return the drawing-unit-to-metre scale used by the live map viewer."""
+    try:
+        insunits = int(doc.header.get("$INSUNITS", 0) or 0)
+    except Exception:
+        insunits = 0
+    scale = DXF_UNIT_TO_METRES.get(insunits)
+    return 1.0 if scale is None else float(scale)
+
+
+def _get_raw_dxf_extents(doc) -> tuple[float, float, float, float]:
     msp = doc.modelspace()
 
     # --- Attempt 1: bbox (fast)
@@ -906,6 +1164,21 @@ def get_dxf_extents(dxf_path: str) -> tuple[float, float, float, float]:
     return 0.0, 100.0, 0.0, 100.0
 
 
+def get_dxf_extents(dxf_path: str) -> tuple[float, float, float, float]:
+    """Return DXF extents in metres so they align with simulation coordinates."""
+    import ezdxf
+
+    doc = ezdxf.readfile(dxf_path)
+    unit_scale = get_dxf_unit_scale(doc)
+    xmin, xmax, ymin, ymax = _get_raw_dxf_extents(doc)
+    return (
+        xmin * unit_scale,
+        xmax * unit_scale,
+        ymin * unit_scale,
+        ymax * unit_scale,
+    )
+
+
 def get_cached_dxf_svg_path(dxf_path: str) -> Path:
     dxf_file = Path(dxf_path)
     cache_dir = Path(tempfile.gettempdir()) / "amr_report_dxf_cache"
@@ -922,10 +1195,10 @@ def render_dxf_to_svg(
     if ezdxf is None or layout is None or SVGBackend is None or Frontend is None or RenderContext is None:
         raise RuntimeError("ezdxf is required to render DXF drawings. Use --omit-drawings to skip drawing overlays.")
 
-    xmin, xmax, ymin, ymax = get_dxf_extents(dxf_path)
-
     doc = ezdxf.readfile(dxf_path)
     msp = doc.modelspace()
+    unit_scale = get_dxf_unit_scale(doc)
+    raw_xmin, raw_xmax, raw_ymin, raw_ymax = _get_raw_dxf_extents(doc)
 
     backend = SVGBackend()
     ctx = RenderContext(doc)
@@ -939,8 +1212,8 @@ def render_dxf_to_svg(
     # Draw the whole layout so the backend builds its render box properly
     Frontend(ctx, backend).draw_layout(msp, finalize=True)
 
-    data_w = max(xmax - xmin, 1.0)
-    data_h = max(ymax - ymin, 1.0)
+    data_w = max(raw_xmax - raw_xmin, 1.0)
+    data_h = max(raw_ymax - raw_ymin, 1.0)
 
     page = layout.Page(
         data_w,
@@ -961,7 +1234,7 @@ def render_dxf_to_svg(
 <svg xmlns="http://www.w3.org/2000/svg"
      width="{data_w}mm"
      height="{data_h}mm"
-     viewBox="{xmin} {ymin} {data_w} {data_h}">
+     viewBox="{raw_xmin} {raw_ymin} {data_w} {data_h}">
 </svg>
 """
 
@@ -1021,7 +1294,12 @@ def render_dxf_to_svg(
     )
 
     Path(output_path).write_text(svg_string, encoding="utf-8")
-    return xmin, xmax, ymin, ymax
+    return (
+        raw_xmin * unit_scale,
+        raw_xmax * unit_scale,
+        raw_ymin * unit_scale,
+        raw_ymax * unit_scale,
+    )
 
 
 def load_svg_as_drawing(svg_path: str):
@@ -1095,7 +1373,7 @@ class FloorOverlayFlowable(Flowable):
         canvas.drawString(
             plot_x,
             height - 8 * mm,
-            f"Congestion heatmap - Floor {self.floor_label}",
+            getattr(self, 'report_title', f"Congestion heatmap - Floor {self.floor_label}"),
         )
 
         if self.floor_df.empty:
@@ -1254,6 +1532,82 @@ def prepare_heatmap_floor(
     }
 
 
+def append_kpi_story(story, results, styles):
+    summary = results.get('kpi_summary', pd.DataFrame())
+    story.section('operational_kpis')
+    if summary.empty:
+        story.append(Paragraph('Operational KPI evidence is unavailable for this report.', styles['BodyText']))
+        return
+
+    def table(key, columns, labels, widths, limit=None):
+        frame = results.get(key, pd.DataFrame()).copy()
+        if frame.empty:
+            story.append(Paragraph('No records in the observed period.', styles['BodyText']))
+            return
+        if limit and len(frame) > limit:
+            story.append(Paragraph(f'First {limit} of {len(frame):,} records shown. The accompanying {key} CSV contains every record.', styles['Small']))
+            frame = frame.head(limit)
+        frame = frame.reindex(columns=columns)
+        for column in frame.columns:
+            if column == 'reason':
+                frame[column] = frame[column].map(lambda v: str(v)[:280] + ('...' if len(str(v)) > 280 else ''))
+            elif pd.api.types.is_numeric_dtype(frame[column]):
+                frame[column] = frame[column].map(lambda v: '-' if pd.isna(v) else
+                    f'{v:,.6g}' if 0 < abs(v) < .01 else f'{v:,.2f}'.rstrip('0').rstrip('.'))
+        story.append(table_from_df(frame.rename(columns=dict(zip(columns, labels))), [w*mm for w in widths], styles, format_values=False))
+
+    observation = results.get('kpi_observation', {})
+    for index, group in enumerate(summary.group.drop_duplicates(), 1):
+        if index > 1:
+            story.append(PageBreak())
+        story.append(Paragraph(f'1.{index} {escape(group)}', styles['Section']))
+        if index == 1:
+            story.append(Paragraph('Operational KPIs cover delivery and collection requests in the observed run. '
+                'Unavailable values require additional evidence; estimates and supplied inputs are labelled. '
+                'Empty vehicle returns and charging records are excluded from request counts. '
+                f"Observed duration (h:mm:ss or m:ss): {fmt_duration(observation.get('horizon_s', 0))}; fleet: {observation.get('fleet', 0):g} vehicles. "
+                f"Request-time fallback used for {observation.get('request_time_fallbacks', 0)} tasks.", styles['BodyText']))
+        metrics = summary[summary.group.eq(group)].copy()
+        metrics['Result'] = metrics.apply(lambda row: 'Unavailable' if pd.isna(row.value) else
+            f'{row.value:,.6g}' + ' ' + row.unit, axis=1)
+        story.append(table_from_df(metrics[['metric', 'Result', 'status', 'basis']].rename(
+            columns={'metric': 'KPI', 'status': 'Evidence', 'basis': 'Definition and scope'}),
+            [48*mm, 32*mm, 32*mm, 145*mm], styles, format_values=False))
+        story.append(Spacer(1, 10))
+        if group == 'Demand':
+            story.append(Paragraph('Hourly requests and fleet use', styles['Section']))
+            table('kpi_hourly', ['hour', 'observed_minutes', 'requests', 'tasks_per_hour', 'fleet_utilisation_pct'],
+                ['Hour', 'Minutes observed', 'Requests', 'Requests/h', 'Fleet use %'], [53, 45, 40, 48, 50])
+        elif group == 'Service':
+            story.append(Paragraph('Service performance by logistics stream', styles['Section']))
+            table('kpi_streams', ['stream', 'requests', 'completed', 'mean_delivery_s', 'p95_delivery_s', 'sla_assessed', 'compliance_pct', 'overdue', 'overdue_pct'],
+                ['Stream', 'Requests', 'Completed', 'Mean (s)', 'P95 (s)', 'SLA assessed', 'SLA %', 'Overdue', 'Overdue %'],
+                [43, 25, 27, 27, 27, 29, 25, 25, 29])
+            story.append(Spacer(1, 10))
+            if not results.get('kpi_overdue', pd.DataFrame()).empty:
+                story.append(CondPageBreak(70*mm))
+            story.append(Paragraph('Overdue tasks and recorded reasons', styles['Section']))
+            table('kpi_overdue', ['task_id', 'stream', 'outcome', 'target_s', 'overdue_s', 'reason'],
+                ['Task', 'Stream', 'Outcome', 'Target (s)', 'Overdue (s)', 'Recorded reason'], [47, 35, 25, 27, 28, 95], limit=100)
+        elif group == 'Efficiency':
+            story.append(Paragraph('Distance by service and route', styles['Section']))
+            story.append(Paragraph('Shared movement distance is allocated equally across completed tasks named on the segment. '
+                'Unassigned empty and charging travel is included in the fleet KPI but has no service-route allocation.', styles['Small']))
+            table('kpi_routes', ['stream', 'origin', 'destination', 'completed', 'allocated_distance_m', 'distance_per_delivery_m'],
+                ['Stream', 'Origin', 'Destination', 'Completed', 'Distance (m)', 'Metres/task'], [35, 62, 62, 29, 35, 34], limit=100)
+        elif group == 'Bottleneck':
+            story.append(Paragraph('Queue time by location and cause', styles['Section']))
+            table('kpi_queues', ['location', 'cause', 'waits', 'total_wait_s', 'mean_wait_s', 'max_wait_s'],
+                ['Location', 'Cause', 'Waits', 'Total (s)', 'Mean (s)', 'Maximum (s)'], [53, 78, 23, 34, 34, 35], limit=100)
+        elif group == 'Resources':
+            story.append(Paragraph('Charging locations and infrastructure', styles['Section']))
+            table('kpi_chargers', ['location', 'configured_chargers', 'peak_charging', 'charging_hours', 'recommended_with_spare', 'charger_type'],
+                ['Location', 'Chargers', 'Peak charging', 'Charge hours', 'With spare', 'Type'], [58, 31, 34, 33, 31, 70])
+            rates = ', '.join(str(v) for v in observation.get('charge_rates_kw', []) if v is not None and str(v) != '-')
+            story.append(Paragraph('Configured vehicle charge rates (kW): ' + escape(rates or 'Unavailable') +
+                '. Charger recommendations reflect observed use; confirm compatibility, access and future demand before sizing.', styles['Small']))
+
+
 def build_report(
     results: Dict[str, pd.DataFrame],
     csv_path: Path,
@@ -1262,6 +1616,7 @@ def build_report(
     heatmap_workers: Optional[int] = None,
     include_drawings: bool = True,
     report_sections: Optional[Sequence[str]] = None,
+    report_title: str = "AMR Simulation Performance Report",
 ) -> None:
     styles = make_styles()
     selected_section_order = normalise_report_sections(report_sections)
@@ -1272,13 +1627,13 @@ def build_report(
     )
     doc = NumberedDocTemplate(
         str(pdf_path),
-        first_template_id=first_template_id,
+        first_template_id='standard',
         pagesize=A4,
         leftMargin=15 * mm,
         rightMargin=15 * mm,
         topMargin=18 * mm,
         bottomMargin=15 * mm,
-        title="AMR Simulation Performance Report",
+        title=report_title,
         author="",
     )
 
@@ -1294,8 +1649,6 @@ def build_report(
     # --- START front page ---
     story.section("front_summary")
     story += [
-        Paragraph("AMR Simulation Performance Report", styles["ReportTitle"]),
-        Paragraph(f"Source CSV: {csv_path.name}", styles["ReportSub"]),
         Paragraph(
             "This report summarises task completion, wait time, lift usage, and resource recommendations derived from the simulation event log.",
             styles["BodyText"],
@@ -1306,6 +1659,49 @@ def build_report(
         NextPageTemplate("landscape"),
         PageBreak(),
     ]
+
+    append_kpi_story(story, results, styles)
+
+    story.section('sla_categories')
+    story.append(Paragraph('SLA categories and assigned targets', styles['Section']))
+    story.append(Paragraph('Only positive delivery targets and timeframe deadlines are SLA assignments. '
+        'The clock starts at task release and ends at recorded task completion. '
+        'Effective rules include department and group overrides; disabled generation rules are excluded. '
+        'Observed targets below reflect the actual run, including targets that differ from configuration.', styles['BodyText']))
+    story.append(Paragraph('Configured assignments', styles['Section']))
+    assignments = results.get('sla_assignments', pd.DataFrame()).copy()
+    if assignments.empty:
+        story.append(Paragraph('No enabled SLA assignments found in the supplied configuration. '
+                               'Supply the matching configuration to list configured categories.', styles['BodyText']))
+    else:
+        category_rows = []
+        for category, rules in assignments.groupby('category', sort=True):
+            targets = [f'{v:g} s ({v/60:.6g} min)' for v in sorted(rules.target_s.dropna().unique())]
+            deadlines = rules.loc[rules.target_s.isna(), 'detail'].str.extract(r'Complete by (\S+)')[0].dropna().unique()
+            targets += ['Deadline ' + value for value in sorted(deadlines)]
+            category_rows.append({'Category': category, 'Rules': len(rules), 'Scopes': rules.scope.nunique(),
+                                  'Assigned targets': '; '.join(targets)})
+        story.append(table_from_df(pd.DataFrame(category_rows), [45*mm, 25*mm, 25*mm, 162*mm], styles, format_values=False))
+        story.append(Paragraph('Assignment detail', styles['Section']))
+        assignments['target_s'] = assignments.target_s.map(lambda v: 'Deadline rule' if pd.isna(v) else f'{v:g} s / {v/60:.6g} min')
+        story.append(table_from_df(assignments[['category', 'scope', 'task_type', 'target_s', 'detail', 'source']].rename(
+            columns={'category': 'Category', 'scope': 'Scope', 'task_type': 'Task type', 'target_s': 'Target',
+                     'detail': 'SLA detail', 'source': 'Rule source'}),
+            [30*mm, 40*mm, 28*mm, 23*mm, 91*mm, 45*mm], styles, format_values=False))
+    story.append(Paragraph('Targets recorded in this run', styles['Section']))
+    observed = results.get('sla_observed_targets', pd.DataFrame()).copy()
+    if observed.empty:
+        story.append(Paragraph('No requests with a positive SLA target were recorded.', styles['BodyText']))
+    else:
+        observed['target_s'] = observed.target_s.map(lambda v: f'{v:g}')
+        observed['compliance_pct'] = observed.compliance_pct.map(lambda v: '-' if pd.isna(v) else f'{v:.2f}')
+        story.append(table_from_df(observed[['category', 'target_s', 'requests', 'completed', 'overdue', 'assessed', 'compliance_pct']].rename(
+            columns={'category': 'Logistics stream', 'target_s': 'Target (s)', 'requests': 'Requests', 'completed': 'Completed',
+                     'overdue': 'Overdue', 'assessed': 'Assessed', 'compliance_pct': 'Compliance %'}),
+            [62*mm, 30*mm, 30*mm, 33*mm, 30*mm, 30*mm, 42*mm], styles, format_values=False))
+    story.append(Paragraph('Compliance counts completed tasks within target, divided by assessed tasks: '
+        'completed, failed/cancelled, or already overdue. Pending tasks before their deadline are excluded. '
+        'The accompanying CSVs contain the configured assignments and observed target groups.', styles['Small']))
 
     scenario_impact_df = results.get("scenario_impact", pd.DataFrame()).copy()
     story.section("scenario_impact")
@@ -1382,6 +1778,122 @@ def build_report(
             )
         )
 
+    deferred_summary_df = results.get(
+        "deferred_release_summary", pd.DataFrame()
+    ).copy()
+    deferred_detail_df = results.get(
+        "deferred_release_detail", pd.DataFrame()
+    ).copy()
+    story.section("deferred_releases")
+    story += [
+        Paragraph("Deferred task releases", styles["Section"]),
+        Paragraph(
+            "This section shows how the optional shared-zone workflow changed "
+            "job release times. Lower-priority tasks using the option wait until "
+            "the preceding return has collected its payload and freed the "
+            "drop-off-zone inventory space; unchecked priority categories "
+            "continue to release normally.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+    if deferred_detail_df.empty:
+        story.append(
+            Paragraph(
+                "No jobs were deferred pending a return inventory-space pickup.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        total_jobs = int(len(deferred_detail_df))
+        total_delay = float(
+            pd.to_numeric(
+                deferred_detail_df.get("delay_s", 0.0), errors="coerce"
+            )
+            .fillna(0.0)
+            .sum()
+        )
+        average_delay = total_delay / total_jobs if total_jobs else 0.0
+        maximum_delay = float(
+            pd.to_numeric(
+                deferred_detail_df.get("delay_s", 0.0), errors="coerce"
+            )
+            .fillna(0.0)
+            .max()
+        )
+        story += [
+            Paragraph(
+                f"<b>{total_jobs}</b> deferred job(s); total workflow deferral "
+                f"<b>{escape(fmt_duration(total_delay))}</b>, average "
+                f"<b>{escape(fmt_duration(average_delay))}</b>, maximum "
+                f"<b>{escape(fmt_duration(maximum_delay))}</b>.",
+                styles["BodyText"],
+            ),
+            Spacer(1, 8),
+        ]
+
+        if not deferred_summary_df.empty:
+            for column in (
+                "total_delay_s",
+                "average_delay_s",
+                "maximum_delay_s",
+            ):
+                if column in deferred_summary_df.columns:
+                    deferred_summary_df[column] = deferred_summary_df[column].map(
+                        fmt_duration
+                    )
+            deferred_summary_df = deferred_summary_df.rename(
+                columns={
+                    "category": "Category",
+                    "dropoff_zone": "Shared drop-off zone",
+                    "deferred_jobs": "Deferred jobs",
+                    "total_delay_s": "Total delay",
+                    "average_delay_s": "Average delay",
+                    "maximum_delay_s": "Maximum delay",
+                }
+            )
+            story.append(
+                table_from_df(
+                    deferred_summary_df,
+                    [42 * mm, 58 * mm, 28 * mm, 35 * mm, 35 * mm, 35 * mm],
+                    styles,
+                    right_align=[2],
+                )
+            )
+            story.append(Spacer(1, 10))
+
+        deferred_detail_df["delay_s"] = deferred_detail_df["delay_s"].map(
+            fmt_duration
+        )
+        deferred_detail_df = deferred_detail_df.rename(
+            columns={
+                "category": "Category",
+                "department": "Department",
+                "dropoff_zone": "Shared zone",
+                "task_id": "Deferred job",
+                "scheduled_release": "Scheduled release",
+                "actual_release": "Actual release",
+                "blocking_return_task_id": "Return that cleared space",
+                "delay_s": "Deferral",
+            }
+        )
+        story.append(
+            table_from_df(
+                deferred_detail_df,
+                [
+                    32 * mm,
+                    25 * mm,
+                    38 * mm,
+                    52 * mm,
+                    42 * mm,
+                    42 * mm,
+                    62 * mm,
+                    28 * mm,
+                ],
+                styles,
+            )
+        )
+
     staff_df = results.get("staff_handling_summary", pd.DataFrame()).copy()
     story.section("staff_handling")
     story += [
@@ -1396,17 +1908,22 @@ def build_report(
             )
         )
     else:
+        staff_evidence = staff_df.reindex(columns=[
+            "category", "recorded_busy_time_s", "evidence_notes"
+        ]).copy()
+        staff_df = staff_df[["category", "handling_tasks", "people_required",
+                             "initial_people", "added_people", "total_handling_time_s"]]
         staff_df["total_handling_time_s"] = staff_df["total_handling_time_s"].map(
             lambda x: fmt_duration(x) if isinstance(x, (int, float)) else x
         )
         staff_df = staff_df.rename(
             columns={
                 "category": "Category",
-                "handling_tasks": "Handled payloads",
+                "handling_tasks": "Handling records",
                 "people_required": "People required",
                 "initial_people": "Initial",
                 "added_people": "Added",
-                "total_handling_time_s": "Handling time",
+                "total_handling_time_s": "Task handling time",
             }
         )
         story.append(
@@ -1417,6 +1934,24 @@ def build_report(
                 right_align=[1, 2, 3, 4],
             )
         )
+        story.append(Paragraph(
+            "Task handling time sums the handling and exchange records. Shared "
+            "batches can overlap, so this is not staff busy time or a count of unique "
+            "physical payloads. Recorded busy handling time merges overlapping "
+            "intervals for each person, then sums across people. It excludes travel "
+            "and covers only the supplied records; no utilisation percentage is inferred.",
+            styles["BodyText"],
+        ))
+        staff_evidence["recorded_busy_time_s"] = staff_evidence["recorded_busy_time_s"].map(
+            lambda value: "Unknown" if pd.isna(value) else fmt_duration(value)
+        )
+        staff_evidence["evidence_notes"] = staff_evidence["evidence_notes"].fillna("Evidence unavailable")
+        story.append(table_from_df(
+            staff_evidence.rename(columns={"category": "Category",
+                                           "recorded_busy_time_s": "Recorded busy handling",
+                                           "evidence_notes": "Evidence and limits"}),
+            [38 * mm, 28 * mm, 110 * mm], styles,
+        ))
 
     payload_timetable_df = results.get("payload_handling_timetable", pd.DataFrame()).copy()
     ward_collection_df = results.get("linen_ward_collection", pd.DataFrame()).copy()
@@ -1683,7 +2218,7 @@ def build_report(
 
     amr_df_table = table_from_df(
         amr_df,
-        [20 * mm, 14 * mm, 18 * mm, 14 * mm, 14 * mm, 22 * mm, 20 * mm, 18 * mm, 22 * mm, 18 * mm, 20 * mm][: len(amr_df.columns)],
+        [25 * mm, 17 * mm, 29 * mm, 17 * mm, 18 * mm, 29 * mm, 26 * mm, 22 * mm, 27 * mm, 29 * mm, 23 * mm][: len(amr_df.columns)],
         styles,
         right_align=list(range(1, len(amr_df.columns))),
     )
@@ -1761,7 +2296,8 @@ def build_report(
     # --- END AMR Utilisation Summary ---
 
     # --- START AMR Recharge Summary ---
-    story += [Spacer(1, 8), Paragraph("AMR recharge summary", styles["Section"])]
+    story += [Spacer(1, 8), Paragraph("Scheduled AMR recharge summary", styles["Section"])]
+    story.append(Paragraph('Recharge segments describe scheduled input. The battery balance below uses only energy credited to the model battery.', styles['BodyText']))
     recharge_df = results["recharge_summary"].copy()
 
     if recharge_df.empty:
@@ -1774,6 +2310,9 @@ def build_report(
     else:
         recharge_df["recharge_time_s"] = recharge_df["recharge_time_s"].map(
             fmt_duration
+        )
+        recharge_df["recharge_energy_kwh"] = recharge_df["recharge_energy_kwh"].map(
+            lambda value: f'{value:.2f}' if pd.notna(value) else 'Unknown'
         )
         recharge_df = recharge_df.rename(
             columns={
@@ -1796,6 +2335,27 @@ def build_report(
 
     # --- END AMR Recharge Summary ---
 
+    battery_df = results.get('battery_balance', pd.DataFrame()).copy()
+    story.append(Paragraph('Recorded model battery balance', styles['Section']))
+    story.append(Paragraph(
+        'Initial + applied charge - planned traction = final model battery. Delivery traction is booked when a route is committed. '
+        'In-place route charging is credited during commitment; separate charging is credited on completion. '
+        'This verifies model accounting, not measured or continuously interpolated battery state. All energy values are kWh.',
+        styles['BodyText']))
+    if battery_df.empty:
+        story.append(Paragraph('Battery balance is not established by this log.', styles['BodyText']))
+    else:
+        for column in ('initial_kwh', 'applied_charge_kwh', 'planned_traction_kwh', 'final_kwh', 'residual_kwh'):
+            battery_df.loc[~battery_df['known'].astype(bool), column] = float('nan')
+            battery_df[column] = battery_df[column].map(
+                lambda value: f'{value:.2f}' if pd.notna(value) else 'Unknown')
+        battery_df = battery_df[['amr_id', 'initial_kwh', 'applied_charge_kwh', 'planned_traction_kwh',
+                                 'final_kwh', 'residual_kwh', 'status']].rename(columns={
+            'amr_id': 'AMR', 'initial_kwh': 'Initial', 'applied_charge_kwh': 'Applied charge',
+            'planned_traction_kwh': 'Traction', 'final_kwh': 'Final', 'residual_kwh': 'Residual', 'status': 'Evidence'})
+        story.append(table_from_df(battery_df, [28 * mm, 24 * mm, 27 * mm, 24 * mm, 24 * mm, 25 * mm, 30 * mm], styles))
+    story.append(PageBreak())
+
     # --- START Lift usage Summary ---
 
     story.section("lift_usage")
@@ -1805,7 +2365,20 @@ def build_report(
         Spacer(1, 8),
     ]
 
-    story += [Spacer(1, 8), Paragraph("Lift energy consumption", styles["Section"])]
+    story += [Spacer(1, 8), Paragraph("Recorded route-plan energy", styles["Section"])]
+    story.append(Paragraph(
+        "Movement records are counted once, including shared journeys. Values describe "
+        "planned energy, not measured execution. Charging input and stationary robot "
+        "auxiliaries are excluded. Missing or legacy attribution is not zero consumption.",
+        styles['BodyText']))
+    energy_df = results.get('energy_summary', pd.DataFrame()).copy()
+    if not energy_df.empty:
+        energy_df['planned_kwh'] = energy_df['planned_kwh'].map(
+            lambda value: f'{value:.2f}' if pd.notna(value) else 'Not established')
+        energy_df = energy_df[['metric', 'planned_kwh', 'coverage']].rename(columns={
+            'metric': 'Source', 'planned_kwh': 'Plan kWh', 'coverage': 'Evidence'})
+        story.append(table_from_df(energy_df, [66 * mm, 44 * mm, 60 * mm], styles))
+    story += [Spacer(1, 8), Paragraph("Lift route-plan energy", styles["Section"])]
 
     lift_df = results["lift_summary"].copy()
     if lift_df.empty:
@@ -1821,12 +2394,15 @@ def build_report(
             "trips": lift_df["trips"].sum(),
             "total_lift_time_s": lift_df["total_lift_time_s"].sum(),
             "avg_trip_s": lift_df["avg_trip_s"].mean(),
-            "lift_energy_kwh": lift_df["lift_energy_kwh"].sum(),
+            "lift_energy_kwh": (lift_df["lift_energy_kwh"].sum()
+                                if lift_df["lift_energy_kwh"].notna().all() else float('nan')),
             "utilisation_pct": "",
             "idle_pct": "",
         }
 
         lift_df = pd.concat([lift_df, pd.DataFrame([lift_df_total])], ignore_index=True)
+        lift_df['lift_energy_kwh'] = lift_df['lift_energy_kwh'].map(
+            lambda value: f'{value:.2f}' if pd.notna(value) else 'Not established')
         lift_df["total_lift_time_s"] = lift_df["total_lift_time_s"].map(
             lambda x: fmt_duration(x) if isinstance(x, (int, float)) else x
         )
@@ -1839,7 +2415,7 @@ def build_report(
                 "lift_id": "Lift",
                 "trips": "Trips",
                 "total_lift_time_s": "Total lift time",
-                "lift_energy_kwh": "kWh Consumed",
+                "lift_energy_kwh": "Plan kWh",
                 "avg_trip_s": "Avg trip",
                 "utilisation_pct": "Util %",
                 "idle_pct": "Idle %",
@@ -1909,6 +2485,186 @@ def build_report(
 
     # --- END Lift usage profile graph ---
 
+    story.section("journey_flows")
+    observation = results.get("journey_observation", {})
+    story += [
+        Paragraph("Journey origins, destinations and returns", styles["Section"]),
+        Paragraph(
+            f"Source: {escape(csv_path.name)}. Observation: "
+            f"{escape(str(observation.get('start', 'Unknown')))} to "
+            f"{escape(str(observation.get('finish', 'Unknown')))}.", styles["BodyText"]),
+        Paragraph(
+            "Each journey is a delivery, collection or recorded empty AMR return task. Origins and destinations use "
+            "the recorded request endpoints; no L00 start or finish is assumed. Numeric "
+            "floor 0 is shown as L00. Return rows use their own recorded pickup and drop-off, "
+            "which may include shared drop-off zones. Department lists describe the endpoint; "
+            "the requesting department is recorded separately in the journey CSV.", styles["BodyText"]),
+        Paragraph(
+            "Counts cover the source simulation and separate completed, failed and incomplete "
+            "requests. Task counts are not lift trip counts: multi-stop tasks may share an AMR. "
+            "The companion _journeys.csv includes locations, levels, departments, payloads, "
+            "assignment/completion times and parent task IDs for recorded returns. "
+            "_journey_flows.csv contains this summary. _lift_movements.csv records actual "
+            "lift transfers and empty lift repositioning with times, levels and task IDs. "
+            "Empty AMR travel can also appear in lift transfers. Unknown metadata remains "
+            "explicit; supply the simulation's matching JSON configuration for departments.", styles["BodyText"]),
+        Spacer(1, 8),
+    ]
+    flows = results.get("journey_flow_summary", pd.DataFrame()).copy()
+    if flows.empty:
+        story.append(Paragraph("No task request endpoints were available in the event log.", styles["BodyText"]))
+    else:
+        story.append(table_from_df(flows.rename(columns={
+            "journey_type": "Journey type", "origin_level": "From level",
+            "origin_department": "From department", "destination_level": "To level",
+            "destination_department": "To department", "outcome": "Outcome", "journeys": "Journeys",
+        }), [34*mm, 22*mm, 120*mm, 22*mm, 120*mm, 32*mm, 25*mm], styles, right_align=[6]))
+
+    # --- START Lift trip cohorts ---
+
+    story.section("lift_trip_cohorts")
+    story += [
+        Paragraph("Lift trip cohorts", styles["Section"]),
+        Paragraph(
+            "Lift transfer and reposition trips are grouped into chronological "
+            "date-and-time cohorts. Each cell is the total number of trips made "
+            "by that lift in the cohort. The tables show cohorts containing at "
+            "least one movement; the companion CSV retains the complete timeline, "
+            "including zero-movement cohorts, and also separates transfer and "
+            "reposition trips and includes travel-time totals.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    hourly_matrix = lift_trip_cohort_matrix(
+        results.get("lift_trip_cohorts_hourly", pd.DataFrame())
+    )
+    five_minute_matrix = lift_trip_cohort_matrix(
+        results.get("lift_trip_cohorts_5min", pd.DataFrame())
+    )
+    if hourly_matrix.empty and five_minute_matrix.empty:
+        story.append(
+            Paragraph(
+                "No lift_transfer or lift_reposition segments were available for "
+                "lift trip cohorts.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        if not hourly_matrix.empty:
+            story += [
+                Paragraph("Hourly trips per lift", styles["Heading3"]),
+                table_from_df(
+                    hourly_matrix,
+                    [28 * mm, 24 * mm]
+                    + [20 * mm] * max(0, len(hourly_matrix.columns) - 2),
+                    styles,
+                    right_align=list(range(1, len(hourly_matrix.columns))),
+                ),
+            ]
+        if not five_minute_matrix.empty:
+            if not hourly_matrix.empty:
+                story.append(PageBreak())
+            story += [
+                Paragraph("5-minute trips per lift", styles["Heading3"]),
+                Paragraph(
+                    "The calendar date is retained so the same clock time on "
+                    "different simulation days is never combined.",
+                    styles["BodyText"],
+                ),
+                Spacer(1, 6),
+                table_from_df(
+                    five_minute_matrix,
+                    [28 * mm, 24 * mm]
+                    + [20 * mm] * max(0, len(five_minute_matrix.columns) - 2),
+                    styles,
+                    right_align=list(range(1, len(five_minute_matrix.columns))),
+                ),
+            ]
+
+    # --- END Lift trip cohorts ---
+
+    # --- START Lift wait time profiles ---
+
+    story.section("lift_wait_profiles")
+    story += [
+        Paragraph("Lift wait time profiles", styles["Section"]),
+        Paragraph(
+            "Wait statistics use positive AMR lift-wait events. The profile shows "
+            "the mean wait in each 30-minute time-of-day interval, aggregated across "
+            "all simulation days. Lifts without a recorded wait remain visible with zero values.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    lift_wait_summary_df = results.get(
+        "lift_wait_summary", pd.DataFrame()
+    ).copy()
+    if lift_wait_summary_df.empty:
+        story.append(
+            Paragraph(
+                "No lift usage or lift wait events were available for wait statistics.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        for column in (
+            "minimum_wait_s",
+            "mean_wait_s",
+            "maximum_wait_s",
+            "total_wait_s",
+        ):
+            lift_wait_summary_df[column] = lift_wait_summary_df[column].map(
+                fmt_wait_duration
+            )
+        lift_wait_summary_df = lift_wait_summary_df.rename(
+            columns={
+                "lift_id": "Lift",
+                "wait_events": "Wait events",
+                "minimum_wait_s": "Minimum wait",
+                "mean_wait_s": "Mean wait",
+                "maximum_wait_s": "Maximum wait",
+                "total_wait_s": "Total wait",
+            }
+        )
+        story.append(
+            table_from_df(
+                lift_wait_summary_df,
+                [30 * mm, 25 * mm, 34 * mm, 34 * mm, 34 * mm, 34 * mm],
+                styles,
+                right_align=[1],
+            )
+        )
+        story.append(Spacer(1, 10))
+
+    lift_wait_profile_df = results.get(
+        "lift_wait_profile", pd.DataFrame()
+    ).copy()
+    if lift_wait_profile_df.empty:
+        story.append(
+            Paragraph(
+                "No lift wait profile data was available.", styles["BodyText"]
+            )
+        )
+    else:
+        a3_width, _a3_height = landscape(A3)
+        chart_width = a3_width - doc.leftMargin - doc.rightMargin
+        story.append(
+            LiftUsageProfileChart(
+                lift_wait_profile_df,
+                chart_width,
+                145 * mm,
+                value_column="mean_wait_s",
+                y_axis_label="Mean lift wait per 30 minute interval",
+                empty_message="No lift wait profile data was available.",
+                integer_ticks=False,
+            )
+        )
+
+    # --- END Lift wait time profiles ---
+
     # --- START Lift wait Summary ---
 
     schedule_story += [
@@ -1964,6 +2720,9 @@ def build_report(
         NextPageTemplate("standard"),
         PageBreak(),
         Paragraph("Payload summary", styles["Section"]),
+        Paragraph("Runtime payloads is the peak per payload type, including stored, carried, staged and unconfirmed containers. "
+                  "Issued instances includes physical containers later removed; planned-only IDs are excluded. "
+                  "A dash means the available log does not establish that value. Older storage-only population summaries are insufficient.", styles["BodyText"]),
     ]
 
     payload_df = results["payload_schedule"].copy()
@@ -1981,13 +2740,13 @@ def build_report(
                 "total_runtime_payloads": "Runtime payloads",
                 "unique_payloads_moved": "Unique transported",
                 "tasks": "Tasks using payload",
-                "known_payload_instances": "Known instances",
+                "known_payload_instances": "Issued instances",
                 "payload_weight_kg": "Payload kg",
             }
         )
         display_cols = [
             c
-            for c in ["Payload", "Runtime payloads", "Unique transported", "Tasks using payload", "Known instances", "Payload kg"]
+            for c in ["Payload", "Runtime payloads", "Unique transported", "Tasks using payload", "Issued instances", "Payload kg"]
             if c in payload_df.columns
         ]
         payload_df = payload_df[display_cols]
@@ -2155,6 +2914,173 @@ def build_report(
         )
 
     # --- END Peak location occupancy ---
+
+    # --- START Drop-off zone peak occupancy ---
+
+    story.section("dropoff_zone_occupancy")
+    story += [
+        PageBreak(),
+        Paragraph("Drop-off zone peak occupancy", styles["Section"]),
+        Paragraph(
+            "This section includes only locations assigned as department drop-off zones. "
+            "It reports the maximum number of flexible payload spaces occupied at any "
+            "time in each zone and the true simultaneous maximum across all zones. "
+            "The simultaneous total is reconstructed from payload enter/exit events; it "
+            "does not add together per-zone peaks that occurred at different times.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    zone_summary_df = results.get(
+        "dropoff_zone_occupancy_summary", pd.DataFrame()
+    ).copy()
+    zone_peak_df = results.get(
+        "dropoff_zone_peak_occupancy", pd.DataFrame()
+    ).copy()
+    zone_peak_payloads_df = results.get(
+        "dropoff_zone_payloads_at_network_peak", pd.DataFrame()
+    ).copy()
+    if zone_peak_df.empty:
+        story.append(
+            Paragraph(
+                "No configured department drop-off zones were found. Provide the "
+                "simulation JSON and assign drop-off-zone locations to department "
+                "task categories to populate this section.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        if not zone_summary_df.empty:
+            zone_summary_df = zone_summary_df.rename(
+                columns={"metric": "Metric", "value": "Value"}
+            )
+            story += [
+                Paragraph("Drop-off zone network maximum", styles["Heading3"]),
+                table_from_df(
+                    zone_summary_df,
+                    [95 * mm, 55 * mm],
+                    styles,
+                    right_align=[1],
+                ),
+                Spacer(1, 10),
+            ]
+
+        if not zone_peak_payloads_df.empty:
+            maximum_time = str(
+                zone_peak_payloads_df.iloc[0].get("time_of_maximum", "") or ""
+            )
+            zone_peak_payloads_df = zone_peak_payloads_df.rename(
+                columns={
+                    "department": "Department",
+                    "location": "Drop-off zone",
+                    "inventory_space": "Inventory space",
+                    "payload": "Payload",
+                    "payload_instance_id": "Payload instance",
+                    "task_id": "Task",
+                    "dropped_at": "Dropped into zone",
+                }
+            )
+            zone_peak_payloads_df = zone_peak_payloads_df[
+                [
+                    column
+                    for column in (
+                        "Department",
+                        "Drop-off zone",
+                        "Inventory space",
+                        "Payload",
+                        "Payload instance",
+                        "Task",
+                        "Dropped into zone",
+                    )
+                    if column in zone_peak_payloads_df.columns
+                ]
+            ]
+            story += [
+                Paragraph(
+                    f"Payloads held at simultaneous maximum ({maximum_time})",
+                    styles["Heading3"],
+                ),
+                Paragraph(
+                    "These are the physical payloads occupying drop-off-zone "
+                    "inventory spaces at the instant the network-wide maximum occurred.",
+                    styles["BodyText"],
+                ),
+                Spacer(1, 5),
+                table_from_df(
+                    zone_peak_payloads_df,
+                    [
+                        34 * mm,
+                        38 * mm,
+                        38 * mm,
+                        38 * mm,
+                        42 * mm,
+                        34 * mm,
+                        42 * mm,
+                    ][: len(zone_peak_payloads_df.columns)],
+                    styles,
+                ),
+                Spacer(1, 10),
+            ]
+
+        # Keep the heading with at least the table header and first data row.
+        story.append(CondPageBreak(35 * mm))
+        story.append(Paragraph("Peak by drop-off zone", styles["Heading3"]))
+
+        zone_peak_df = zone_peak_df.rename(
+            columns={
+                "department": "Department",
+                "category": "Assigned categories",
+                "location": "Drop-off zone",
+                "configured_spaces": "Configured spaces",
+                "peak_occupied_spaces": "Max occupied spaces",
+                "free_spaces_at_peak": "Free at peak",
+                "space_shortfall_at_peak": "Shortfall at peak",
+                "peak_occupancy_pct": "Peak occupancy %",
+                "peak_area_used_m2": "Peak area used m2",
+                "peak_volume_m3": "Peak volume m3",
+            }
+        )
+        zone_peak_df = zone_peak_df[
+            [
+                column
+                for column in (
+                    "Department",
+                    "Assigned categories",
+                    "Drop-off zone",
+                    "Configured spaces",
+                    "Max occupied spaces",
+                    "Free at peak",
+                    "Shortfall at peak",
+                    "Peak occupancy %",
+                    "Peak area used m2",
+                    "Peak volume m3",
+                )
+                if column in zone_peak_df.columns
+            ]
+        ]
+        zone_widths = {
+            "Department": 32 * mm,
+            "Assigned categories": 38 * mm,
+            "Drop-off zone": 40 * mm,
+            "Configured spaces": 23 * mm,
+            "Max occupied spaces": 27 * mm,
+            "Free at peak": 20 * mm,
+            "Shortfall at peak": 23 * mm,
+            "Peak occupancy %": 23 * mm,
+            "Peak area used m2": 23 * mm,
+            "Peak volume m3": 23 * mm,
+        }
+        story.append(
+            table_from_df(
+                zone_peak_df,
+                [zone_widths.get(column, 22 * mm) for column in zone_peak_df.columns],
+                styles,
+                right_align=list(range(3, len(zone_peak_df.columns))),
+            )
+        )
+
+    # --- END Drop-off zone peak occupancy ---
 
     # --- START Failed delivery analysis ---
 
@@ -2387,6 +3313,163 @@ def build_report(
 
     # --- END Pending tasks ---
 
+    # --- START Task SLA performance ---
+
+    story.section("task_sla")
+    story += [
+        Paragraph("Task SLA performance", styles["Section"]),
+        Paragraph(
+            "Only tasks with a positive target_time are included. The SLA clock starts "
+            "when the task is released and stops when delivery completes. Compliance is "
+            "therefore measured against release time plus the configured target duration. "
+            "Failed and still-pending tasks are retained as not delivered.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+    ]
+
+    sla_overview_df = results.get("task_sla_overview", pd.DataFrame()).copy()
+    sla_summary_df = results.get("task_sla_summary", pd.DataFrame()).copy()
+    sla_detail_df = results.get("task_sla_detail", pd.DataFrame()).copy()
+
+    if sla_overview_df.empty:
+        story.append(
+            Paragraph(
+                "No tasks with a defined positive SLA target were identified in the simulation event log.",
+                styles["BodyText"],
+            )
+        )
+    else:
+        sla_overview_df["compliance_pct"] = sla_overview_df["compliance_pct"].map(
+            lambda value: f"{float(value):.2f}%"
+        )
+        sla_overview_df = sla_overview_df.rename(
+            columns={
+                "eligible_tasks": "SLA tasks",
+                "met_sla": "Met SLA",
+                "delivered_late": "Delivered late",
+                "not_delivered": "Not delivered",
+                "compliance_pct": "Compliance",
+            }
+        )
+        story.append(
+            table_from_df(
+                sla_overview_df,
+                [28 * mm, 28 * mm, 34 * mm, 34 * mm, 30 * mm],
+                styles,
+                right_align=[0, 1, 2, 3, 4],
+            )
+        )
+
+        story += [Spacer(1, 10), Paragraph("SLA bands", styles["Heading3"])]
+        for column in ("mean_lateness_s", "maximum_lateness_s"):
+            sla_summary_df[column] = sla_summary_df[column].map(
+                lambda value: (
+                    fmt_wait_duration(value) if not pd.isna(value) else "-"
+                )
+            )
+        sla_summary_df["percentage_pct"] = sla_summary_df["percentage_pct"].map(
+            lambda value: f"{float(value):.2f}%"
+        )
+        sla_summary_df = sla_summary_df.rename(
+            columns={
+                "sla_band": "SLA band",
+                "tasks": "Tasks",
+                "percentage_pct": "% of SLA tasks",
+                "mean_lateness_s": "Mean lateness",
+                "maximum_lateness_s": "Maximum lateness",
+            }
+        )
+        story.append(
+            table_from_df(
+                sla_summary_df,
+                [65 * mm, 20 * mm, 30 * mm, 34 * mm, 38 * mm],
+                styles,
+                right_align=[1, 2],
+            )
+        )
+
+        story += [
+            Spacer(1, 12),
+            Paragraph("Missed and undelivered SLA tasks", styles["Heading3"]),
+        ]
+        if sla_detail_df.empty:
+            story.append(
+                Paragraph(
+                    "Every task with a defined SLA target met its deadline.",
+                    styles["BodyText"],
+                )
+            )
+        else:
+            has_dt = pd.api.types.is_datetime64_any_dtype(
+                sla_detail_df["release"]
+            ) or any(
+                hasattr(value, "strftime")
+                for value in sla_detail_df["release"].dropna().tolist()
+            )
+            for column in ("release", "finish"):
+                sla_detail_df[column] = sla_detail_df[column].map(
+                    lambda value: fmt_ts(value, has_dt) if not pd.isna(value) else "-"
+                )
+            for column in (
+                "target_s",
+                "actual_release_to_delivery_s",
+                "lateness_s",
+            ):
+                sla_detail_df[column] = sla_detail_df[column].map(
+                    lambda value: (
+                        fmt_wait_duration(value) if not pd.isna(value) else "-"
+                    )
+                )
+            sla_detail_df = sla_detail_df.rename(
+                columns={
+                    "sla_band": "SLA band",
+                    "task_id": "Task",
+                    "amr": "AMR",
+                    "origin": "From",
+                    "destination": "To",
+                    "release": "Released",
+                    "finish": "Delivered / last seen",
+                    "target_s": "Target",
+                    "actual_release_to_delivery_s": "Actual",
+                    "lateness_s": "Late by",
+                }
+            )
+            sla_detail_df = sla_detail_df[
+                [
+                    "SLA band",
+                    "Task",
+                    "AMR",
+                    "From",
+                    "To",
+                    "Released",
+                    "Delivered / last seen",
+                    "Target",
+                    "Actual",
+                    "Late by",
+                ]
+            ]
+            story.append(
+                table_from_df(
+                    sla_detail_df,
+                    [
+                        48 * mm,
+                        30 * mm,
+                        18 * mm,
+                        28 * mm,
+                        28 * mm,
+                        31 * mm,
+                        36 * mm,
+                        24 * mm,
+                        24 * mm,
+                        24 * mm,
+                    ],
+                    styles,
+                )
+            )
+
+    # --- END Task SLA performance ---
+
     report_progress(9, 11, "Adding AMR sections")
 
     # --- START AMR Task Summary ---
@@ -2557,5 +3640,16 @@ def build_report(
     # --- END Heat map ---
 
     report_progress(10, 11, "Building PDF")
-    doc.build(story.flowables())
+    toc = TableOfContents()
+    toc.levelStyles = [ParagraphStyle(name=f'TOC{level}', fontName='Helvetica-Bold' if level == 0 else 'Helvetica',
+        fontSize=10 if level == 0 else 9, leading=13, leftIndent=level*12, firstLineIndent=0,
+        spaceBefore=7 if level == 0 else 3, textColor=colors.HexColor('#17365D')) for level in range(3)]
+    front_matter = [Spacer(1, 42*mm), Paragraph(escape(report_title), styles['ReportTitle']),
+        Spacer(1, 8*mm), Paragraph('Simulation analysis and operational performance', styles['ReportSub']),
+        Paragraph('Source: ' + escape(csv_path.name), styles['BodyText']),
+        Paragraph('Generated: ' + datetime.now().strftime('%d %B %Y %H:%M'), styles['BodyText']),
+        Spacer(1, 12*mm), Paragraph(f'{len(selected_section_order)} selected report sections', styles['BodyText']),
+        PageBreak(), Paragraph('Contents', styles['ReportTitle']), toc,
+        NextPageTemplate(first_template_id), PageBreak()]
+    doc.multiBuild(front_matter + story.flowables(styles))
     report_progress(11, 11, "PDF complete")

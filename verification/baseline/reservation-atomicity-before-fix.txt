@@ -1,0 +1,70 @@
+test_exception_after_energy_consumption_restores_committed_state (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_exception_after_energy_consumption_restores_committed_state) ... FAIL
+test_insufficient_battery_rolls_back_corridors_and_inventory (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_insufficient_battery_rolls_back_corridors_and_inventory) ... FAIL
+test_insufficient_battery_rolls_back_lift_position_wear_and_bookings (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_insufficient_battery_rolls_back_lift_position_wear_and_bookings) ... FAIL
+test_rejected_capacity_commit_leaves_no_route_or_bay_reservations (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_rejected_capacity_commit_leaves_no_route_or_bay_reservations) ... FAIL
+test_stale_assignment_name_cannot_overwrite_another_active_task_claim (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_stale_assignment_name_cannot_overwrite_another_active_task_claim) ... FAIL
+test_successful_two_bay_commit_keeps_distinct_claims (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_successful_two_bay_commit_keeps_distinct_claims) ... ok
+test_two_payloads_cannot_both_estimate_the_same_single_bay (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_two_payloads_cannot_both_estimate_the_same_single_bay) ... FAIL
+
+======================================================================
+FAIL: test_exception_after_energy_consumption_restores_committed_state (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_exception_after_energy_consumption_restores_committed_state)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_reservation_atomicity.py", line 85, in test_exception_after_energy_consumption_restores_committed_state
+    self.assertEqual(before, resource_state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'map[30 chars]s': {}, 'location_reservation_max_duration': {[1168 chars]: 0}} != {'map[30 chars]s': {'A': [(0.0, 2.0)], 'B': [(7.0, 9.0), (11.[1541 chars]: 0}}
+Diff is 5514 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_insufficient_battery_rolls_back_corridors_and_inventory (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_insufficient_battery_rolls_back_corridors_and_inventory)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_reservation_atomicity.py", line 64, in test_insufficient_battery_rolls_back_corridors_and_inventory
+    self.assertEqual(before, resource_state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'map[30 chars]s': {}, 'location_reservation_max_duration': {[1164 chars]: 0}} != {'map[30 chars]s': {'A': [(0.0, 2.0)], 'B': [(7.0, 9.0), (11.[1524 chars]: 0}}
+Diff is 5392 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_insufficient_battery_rolls_back_lift_position_wear_and_bookings (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_insufficient_battery_rolls_back_lift_position_wear_and_bookings)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_reservation_atomicity.py", line 74, in test_insufficient_battery_rolls_back_lift_position_wear_and_bookings
+    self.assertEqual(before, resource_state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'map[30 chars]s': {}, 'location_reservation_max_duration': {[2804 chars]: 0}} != {'map[30 chars]s': {'A': [(0.0, 2.0)], 'B': [(4.0, 6.0), (8.0[3233 chars]: 0}}
+Diff is 8935 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_rejected_capacity_commit_leaves_no_route_or_bay_reservations (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_rejected_capacity_commit_leaves_no_route_or_bay_reservations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_reservation_atomicity.py", line 56, in test_rejected_capacity_commit_leaves_no_route_or_bay_reservations
+    self.assertEqual(before, resource_state(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'map[30 chars]s': {}, 'location_reservation_max_duration': {[813 chars]: 0}} != {'map[30 chars]s': {'A': [(0.0, 2.0)], 'B': [(7.0, 9.0), (9.5[1170 chars]: 0}}
+Diff is 3870 characters long. Set self.maxDiff to None to see it.
+
+======================================================================
+FAIL: test_stale_assignment_name_cannot_overwrite_another_active_task_claim (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_stale_assignment_name_cannot_overwrite_another_active_task_claim)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_reservation_atomicity.py", line 100, in test_stale_assignment_name_cannot_overwrite_another_active_task_claim
+    self.assertIsNone(sim._reserve_inventory_space_for_task(tasks[1], sim.payloads['Box']))
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'name': 'Bay-1', 'points': [], 'payload_slots': [{'payload': 'Box'}], 'length_m': 2.0, 'width_m': 2.0, 'height_m': 2.0, 'flexible': False, 'occupied': False, 'payload': '', 'payload_instance_id': '', 'reserved_by_task': 'T2', 'task_id': '', 'space_type': '', 'stores_amr': False, 'amr_type': '', 'amr_id': '', 'reserved_by_amr': '', 'has_charger': False} is not None
+
+======================================================================
+FAIL: test_two_payloads_cannot_both_estimate_the_same_single_bay (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_two_payloads_cannot_both_estimate_the_same_single_bay)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_reservation_atomicity.py", line 49, in test_two_payloads_cannot_both_estimate_the_same_single_bay
+    self.assertIsNone(plan)
+    ~~~~~~~~~~~~~~~~~^^^^^^
+AssertionError: {'multi_stop': True, 'tasks': [Task(id='T1', pickup='A', dropoff='B', payload='Box', release_time=0.0, target_time=0.0, quantity=1, priority=100, created_during_runtime=False, labels=[], route_profile=None, allowed_lifts=[], allowed_nodes=[], allowed_edges=[], task_source='', department_id='', waste_stream='', waste_volume_m3=0.0, container_type='', pending_reason='', assigned_inventory_space='', payload_instance_id='', is_return_task=False, dropoff_zone='', final_destination='', final_destination_candidates=[], tracked_item_exchange=False, exchange_mode='', tracked_item_source_payload='', tracked_items={}, generated_volume_m3=0.0, return_enabled=False, return_payload='', return_delay_minutes=0.0, return_route_profile='', return_priority=0, release_next_after_return_pickup=False, generator_release_spacing_key='', generator_collection_task_id='', generator_scheduled_release_time=0.0, generator_deferred_by_task_id='', generator_deferred_by_return_task_id='', requires_staff=False, staff_initial_count=1, staff_resource_name='', staff_category_key='', staff_movement_policy='batch_same_location', staff_shift_pattern='none', staff_handling_minutes=0.0, staff_handoff_only=False, staff_collection_delay_minutes=0.0, dropoff_zone_capacity_policy='wait_for_space', staff_use_custom_working_hours=False, staff_working_hours={}, staff_department_fallback_enabled=False, staff_department_fallback_resource_name='Department team', staff_shift_start_time='', staff_shift_end_time='', staff_shift_days_active=[], staff_shift_work_days=0, staff_shift_rest_days=0, payload_orientation='lengthways', wash_cycle_required=False), Task(id='T2', pickup='A', dropoff='B', payload='Box', release_time=0.0, target_time=0.0, quantity=1, priority=100, created_during_runtime=False, labels=[], route_profile=None, allowed_lifts=[], allowed_nodes=[], allowed_edges=[], task_source='', department_id='', waste_stream='', waste_volume_m3=0.0, container_type='', pending_reason='', assigned_inventory_space='', payload_instance_id='', is_return_task=False, dropoff_zone='', final_destination='', final_destination_candidates=[], tracked_item_exchange=False, exchange_mode='', tracked_item_source_payload='', tracked_items={}, generated_volume_m3=0.0, return_enabled=False, return_payload='', return_delay_minutes=0.0, return_route_profile='', return_priority=0, release_next_after_return_pickup=False, generator_release_spacing_key='', generator_collection_task_id='', generator_scheduled_release_time=0.0, generator_deferred_by_task_id='', generator_deferred_by_return_task_id='', requires_staff=False, staff_initial_count=1, staff_resource_name='', staff_category_key='', staff_movement_policy='batch_same_location', staff_shift_pattern='none', staff_handling_minutes=0.0, staff_handoff_only=False, staff_collection_delay_minutes=0.0, dropoff_zone_capacity_policy='wait_for_space', staff_use_custom_working_hours=False, staff_working_hours={}, staff_department_fallback_enabled=False, staff_department_fallback_resource_name='Department team', staff_shift_start_time='', staff_shift_end_time='', staff_shift_days_active=[], staff_shift_work_days=0, staff_shift_rest_days=0, payload_orientation='lengthways', wash_cycle_required=False)], 'task_start_time': 0.0, 'finish_time': 11.0, 'duration': 11.0, 'segments': [{'type': 'pickup', 'location': 'A', 'duration': 2.0, 'task_id': 'T1,T2', 'task_ids': ['T1', 'T2'], 'payload': 'Box,Box', 'payload_instance_id': ',', 'slot_name': 'Two,One', 'inventory_space': '', 'multi_stop_task_ids': ['T1', 'T2']}, {'type': 'dropoff', 'location': 'B', 'duration': 2.0, 'task_id': 'T1', 'task_ids': ['T1'], 'payload': 'Box', 'payload_instance_id': '', 'slot_name': 'Two', 'inventory_space': '', 'multi_stop_task_ids': ['T1', 'T2']}, {'type': 'dropoff', 'location': 'B', 'duration': 2.0, 'task_id': 'T2', 'task_ids': ['T2'], 'payload': 'Box', 'payload_instance_id': '', 'slot_name': 'One', 'inventory_space': '', 'multi_stop_task_ids': ['T1', 'T2']}], 'end_location': 'B', 'energy_kwh': 0.0011145833333333333, 'battery_soc_after': 99.98885416666667, 'corridor_energy_kwh': 0.0011145833333333333, 'lift_energy_kwh': 0.0, 'lift_empty_sec_total': 0.0, 'lift_loaded_sec_total': 0.0, 'slot_assignments': {'T2': 'One', 'T1': 'Two'}} is not None
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.013s
+
+FAILED (failures=6)

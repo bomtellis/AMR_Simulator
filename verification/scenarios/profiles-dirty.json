@@ -1,0 +1,187 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T00:00:00",
+    "end_datetime": "2026-01-05T00:10:00",
+    "precompute_static_routes": false
+  },
+  "building": {
+    "charge_location": "A",
+    "enable_idle_return": false,
+    "load_unload_time_sec": 2,
+    "edge_slowdown_per_amr": 0
+  },
+  "locations": [
+    {
+      "name": "A",
+      "floor": 0,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "name": "B",
+      "floor": 0,
+      "x": 6,
+      "y": 8
+    }
+  ],
+  "corridors": {
+    "auto_connect": false,
+    "nodes": [
+      {
+        "name": "Shared",
+        "floor": 0,
+        "x": 1,
+        "y": 0
+      },
+      {
+        "name": "Clean",
+        "floor": 0,
+        "x": 3,
+        "y": 1
+      },
+      {
+        "name": "Dirty",
+        "floor": 0,
+        "x": 3,
+        "y": -1
+      }
+    ],
+    "edges": [
+      {
+        "from": "A",
+        "to": "Shared",
+        "distance_m": 2,
+        "width_m": 3
+      },
+      {
+        "from": "Shared",
+        "to": "Clean",
+        "distance_m": 4,
+        "width_m": 3
+      },
+      {
+        "from": "Clean",
+        "to": "B",
+        "distance_m": 4,
+        "width_m": 3
+      },
+      {
+        "from": "Shared",
+        "to": "Dirty",
+        "distance_m": 6,
+        "width_m": 3
+      },
+      {
+        "from": "Dirty",
+        "to": "B",
+        "distance_m": 6,
+        "width_m": 3
+      },
+      {
+        "from": "A",
+        "to": "B",
+        "distance_m": 1,
+        "width_m": 3
+      }
+    ]
+  },
+  "payloads": [
+    {
+      "name": "Box",
+      "weight_kg": 10,
+      "length_m": 1.0,
+      "width_m": 0.7,
+      "height_m": 1,
+      "allowed_carry_orientations": [
+        "lengthways"
+      ]
+    }
+  ],
+  "amrs": [
+    {
+      "id": "R",
+      "quantity": 1,
+      "length_m": 1,
+      "width_m": 0.6,
+      "payload_capacity_kg": 100,
+      "payload_length_capacity_m": 2,
+      "payload_width_capacity_m": 2,
+      "payload_height_capacity_m": 2,
+      "speed_m_per_sec": 2,
+      "battery_capacity_kwh": 10,
+      "battery_charge_rate_kw": 2,
+      "recharge_threshold_percent": 1
+    }
+  ],
+  "lifts": [],
+  "tasks": [
+    {
+      "id": "T",
+      "pickup": "A",
+      "dropoff": "B",
+      "payload": "Box",
+      "route_profile": "dirty"
+    }
+  ],
+  "task_generation": {
+    "enabled": false
+  },
+  "route_profiles": {
+    "clean": {
+      "allowed_edges": [
+        [
+          "A",
+          "Shared"
+        ],
+        [
+          "Shared",
+          "A"
+        ],
+        [
+          "Shared",
+          "Clean"
+        ],
+        [
+          "Clean",
+          "Shared"
+        ],
+        [
+          "Clean",
+          "B"
+        ],
+        [
+          "B",
+          "Clean"
+        ]
+      ]
+    },
+    "dirty": {
+      "allowed_edges": [
+        [
+          "A",
+          "Shared"
+        ],
+        [
+          "Shared",
+          "A"
+        ],
+        [
+          "Shared",
+          "Dirty"
+        ],
+        [
+          "Dirty",
+          "Shared"
+        ],
+        [
+          "Dirty",
+          "B"
+        ],
+        [
+          "B",
+          "Dirty"
+        ]
+      ]
+    }
+  }
+}

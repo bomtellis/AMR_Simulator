@@ -1,0 +1,17 @@
+D053: existing drawing getters add empty configuration lists during read-only layout display.
+
+test_reading_missing_drawing_lists_does_not_dirty_project (tests.test_project_workspace.ProjectWorkspaceUiTests.test_reading_missing_drawing_lists_does_not_dirty_project) ... FAIL
+
+======================================================================
+FAIL: test_reading_missing_drawing_lists_does_not_dirty_project (tests.test_project_workspace.ProjectWorkspaceUiTests.test_reading_missing_drawing_lists_does_not_dirty_project)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_project_workspace.py", line 201, in test_reading_missing_drawing_lists_does_not_dirty_project
+    self.assertFalse(self.editor.has_unsaved_changes())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+----------------------------------------------------------------------
+Ran 1 test in 0.025s
+
+FAILED (failures=1)

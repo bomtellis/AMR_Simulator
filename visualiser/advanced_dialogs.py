@@ -308,6 +308,14 @@ class RouteProfilesEditorV2(QDialog):
         self.allowed_nodes = []
 
         root_layout = QVBoxLayout(self)
+        guidance = QLabel(
+            "Profiles define the allowed routes: include a shared section in each profile that may use it. "
+            "Empty lists mean unrestricted; edge pairs are directional. Task allowances extend profile allowances. "
+            "Profiles apply after pickup. Empty approach, charging and idle-return journeys are unrestricted by profiles. "
+            "Set a return profile explicitly when a return must follow a particular route."
+        )
+        guidance.setWordWrap(True)
+        root_layout.addWidget(guidance)
         layout = QHBoxLayout()
         root_layout.addLayout(layout, 1)
         splitter = QSplitter()
@@ -352,13 +360,20 @@ class RouteProfilesEditorV2(QDialog):
         nodes_row.addWidget(pick_nodes)
         profile_form.addRow("Allowed nodes", nodes_row)
 
-        graphical_nodes_btn = QPushButton("Graphical...")
-        graphical_nodes_btn.clicked.connect(self.pick_nodes_graphically)
-        nodes_row.addWidget(graphical_nodes_btn)
+        self.graphical_nodes_btn = QPushButton("Select nodes and edges in Layout")
+        self.graphical_nodes_btn.clicked.connect(self.pick_nodes_graphically)
+        form.addWidget(self.graphical_nodes_btn)
 
-        form.addWidget(QLabel("Allowed edges as JSON array pairs"))
+        self.edges_summary=QLabel();self.edges_summary.setWordWrap(True)
+        form.addWidget(self.edges_summary)
+        self.advanced_edges=QPushButton('Advanced edge pairs')
+        self.advanced_edges.setCheckable(True);form.addWidget(self.advanced_edges)
+
         self.edges_text = QPlainTextEdit()
+        self.edges_text.setAccessibleName('Allowed directed edge pairs')
         form.addWidget(self.edges_text, 1)
+        self.edges_text.hide();self.advanced_edges.toggled.connect(self.edges_text.setVisible)
+        self.edges_text.textChanged.connect(self.update_edge_summary)
 
         edge_row = QHBoxLayout()
         gen_btn = QPushButton("Generate from selected nodes")
@@ -388,11 +403,18 @@ class RouteProfilesEditorV2(QDialog):
             self.profile_list.addItem(name)
         if self.profiles:
             self.profile_list.setCurrentRow(0)
+        else:self.graphical_nodes_btn.setEnabled(False)
         _polish_dialog(self)
+
+    def update_edge_summary(self):
+        try:
+            pairs=json.loads(self.edges_text.toPlainText().strip() or '[]')
+            self.edges_summary.setText(f'Allowed edges: {len(pairs)} directed connections selected' if pairs else 'Allowed edges: unrestricted (empty list)')
+        except (ValueError,TypeError):self.edges_summary.setText('Allowed edges: correct the advanced edge pairs before saving')
 
     def summarize(self, values):
         if not values:
-            return "None"
+            return "Unrestricted (empty list)"
         if len(values) <= 6:
             return ", ".join(values)
         return f"{len(values)} selected"
@@ -461,17 +483,26 @@ class RouteProfilesEditorV2(QDialog):
 
     def fill_edges_from_nodes(self):
         allowed = set(self.allowed_nodes)
-        profile_edges = [
-            [e["from"], e["to"]]
-            for e in self.corridor_edges
-            if e["from"] in allowed and e["to"] in allowed
-        ]
+        profile_edges = []
+        seen = set()
+        for edge in self.corridor_edges:
+            a, b = edge["from"], edge["to"]
+            if a not in allowed or b not in allowed:
+                continue
+            pairs = [(a, b)]
+            if edge.get("bidirectional", True):
+                pairs.append((b, a))
+            for pair in pairs:
+                if pair not in seen:
+                    seen.add(pair)
+                    profile_edges.append(list(pair))
         self.edges_text.setPlainText(json.dumps(profile_edges, indent=2))
 
     def on_profile_select(self, name):
         if not name:
             return
         self.current_profile = name
+        self.graphical_nodes_btn.setEnabled(True)
         profile = self.profiles[name]
         self.name_edit.setText(name)
         self.allowed_lifts = list(profile.get("allowed_lifts", []))
@@ -484,7 +515,7 @@ class RouteProfilesEditorV2(QDialog):
 
     def apply_profile_changes(self):
         if not self.current_profile:
-            return
+            return True
         try:
             new_name = self.name_edit.text().strip()
             if not new_name:
@@ -492,6 +523,8 @@ class RouteProfilesEditorV2(QDialog):
             edges = json.loads(self.edges_text.toPlainText().strip() or "[]")
             if not isinstance(edges, list):
                 raise ValueError("Allowed edges must be a JSON list")
+            if any(not isinstance(pair,(list,tuple)) or len(pair)!=2 or any(node not in self.point_names for node in pair) for pair in edges):
+                raise ValueError('Each allowed edge must contain two known node names')
             payload = {
                 "allowed_lifts": list(self.allowed_lifts),
                 "allowed_nodes": list(self.allowed_nodes),
@@ -504,11 +537,13 @@ class RouteProfilesEditorV2(QDialog):
                 self.current_profile = new_name
             else:
                 self.profiles[self.current_profile] = payload
+            return True
         except Exception as exc:
             QMessageBox.critical(self, "Invalid profile", str(exc))
+            return False
 
     def save_all(self):
-        self.apply_profile_changes()
+        if not self.apply_profile_changes():return
         self.on_save(self.profiles)
         self.accept()
 
@@ -523,17 +558,25 @@ class RouteProfilesEditorV2(QDialog):
 
         self.hide()
 
+        try:edges=json.loads(self.edges_text.toPlainText().strip() or '[]')
+        except ValueError:
+            self.show();QMessageBox.critical(self,'Invalid edges','Correct the advanced edge pairs before graphical selection.');return
+
         self.editor.start_route_profile_graphical_selection(
             allowed_point_names=set(self.point_names),
             selected_nodes=set(self.allowed_nodes),
             callback=self.apply_graphical_node_selection,
             return_window=self,
+            selected_edges=edges,
+            include_edges=True,
+            profile_name=self.current_profile,
         )
 
-    def apply_graphical_node_selection(self, selected_nodes):
+    def apply_graphical_node_selection(self, selected_nodes,selected_edges=None):
         self.allowed_nodes = sorted(selected_nodes)
         self.nodes_summary.setText(self.summarize(self.allowed_nodes))
-        self.fill_edges_from_nodes()
+        if selected_edges is None:self.fill_edges_from_nodes()
+        else:self.edges_text.setPlainText(json.dumps([list(pair) for pair in sorted(selected_edges)],indent=2))
         self.show()
         self.raise_()
         self.activateWindow()
@@ -601,6 +644,15 @@ class TaskFormDialog(QDialog):
         self.route_profile_combo.addItems(self.profile_names)
         self.route_profile_combo.setCurrentText(self.seed.get("route_profile", ""))
 
+        self.instance_edit = QLineEdit(str(self.seed.get('payload_instance_id', '') or ''))
+        self.instance_edit.setPlaceholderText('Optional for ordinary tasks; required for recovery')
+        self.instance_edit.setAccessibleName('Physical container ID')
+        self.recovery_check = QCheckBox('Recover a container staged after a failed return')
+        self.recovery_check.setChecked(bool(self.seed.get('recover_staged_payload', False)))
+        self.recovery_check.setToolTip('Use the exact container ID and pickup location from run evidence. '
+            'The new run must reach that staged recovery state. Normal route, robot and storage checks apply; '
+            'unconfirmed arrivals cannot be recovered with this option.')
+
         form.addRow("ID", self.id_edit)
         form.addRow("Pickup", pickup_row)
         form.addRow("Dropoff", dropoff_row)
@@ -610,6 +662,8 @@ class TaskFormDialog(QDialog):
         form.addRow("Priority", self.priority_edit)
         form.addRow("Labels (comma-separated)", self.labels_edit)
         form.addRow("Route profile", self.route_profile_combo)
+        form.addRow('Container ID', self.instance_edit)
+        form.addRow('Recovery', self.recovery_check)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -650,7 +704,13 @@ class TaskFormDialog(QDialog):
                 raise ValueError("Dropoff is required")
             if not self.payload_combo.currentText().strip():
                 raise ValueError("Payload is required")
+            if self.recovery_check.isChecked() and not self.instance_edit.text().strip():
+                raise ValueError('Recovery requires the exact staged container ID from run evidence.')
+            if self.recovery_check.isChecked() and (self.seed.get('return_enabled') or self.seed.get('requires_staff')
+                    or (self.seed.get('dropoff_zone') and self.seed.get('final_destination'))):
+                raise ValueError('Create a direct recovery task without a further return or staff handoff.')
             self.result = {
+                **deepcopy(self.seed),
                 "id": self.id_edit.text().strip(),
                 "pickup": self.pickup_edit.text().strip(),
                 "dropoff": self.dropoff_edit.text().strip(),
@@ -660,9 +720,12 @@ class TaskFormDialog(QDialog):
                 "priority": int(self.priority_edit.value()),
                 "labels": [x.strip() for x in self.labels_edit.text().split(",")],
                 "route_profile": self.route_profile_combo.currentText().strip(),
+                "payload_instance_id": self.instance_edit.text().strip(),
+                "recover_staged_payload": self.recovery_check.isChecked(),
                 "manual_task": True,
                 "manual_single_payload_only": True,
             }
+            self.result.pop('release_time', None)  # The form edits the explicit date/time.
             super().accept()
         except Exception as exc:
             QMessageBox.critical(self, "Invalid task", str(exc))
@@ -1649,6 +1712,8 @@ class TaskEditorWindow(QMainWindow):
         ("priority", "Priority", 80),
         ("labels", "Labels", 150),
         ("route_profile", "Route profile", 120),
+        ("payload_instance_id", "Container ID", 180),
+        ("recover_staged_payload", "Recovery", 90),
     ]
 
     def __init__(
@@ -1727,6 +1792,8 @@ class TaskEditorWindow(QMainWindow):
             item.get("priority", ""),
             ", ".join(item.get("labels", [])),
             item.get("route_profile", ""),
+            item.get('payload_instance_id', ''),
+            'Yes' if item.get('recover_staged_payload', False) else 'No',
         ]
         for col, value in enumerate(values):
             self.table.setItem(row, col, QTableWidgetItem(str(value)))

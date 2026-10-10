@@ -1,10 +1,13 @@
+import argparse
 import ast
 import copy
 import csv
 from bisect import bisect_right
 import json
 import math
+import multiprocessing as mp
 import os
+import queue
 import re
 import shutil
 import sys
@@ -15,7 +18,32 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from dxf_scene import DXFScene
+try:
+    from .dxf_scene import DXFScene
+    from .graph_navigation import zoom_at_cursor
+except ImportError:  # Direct script execution from the visualiser directory.
+    from dxf_scene import DXFScene
+    from graph_navigation import zoom_at_cursor
+try:
+    from .staff_route_geometry import (
+        interpolate_staff_route,
+        person_position_behind_payload,
+        shortest_staff_route_points,
+    )
+    from .playback_state import (
+        onboard_snapshot_is_authoritative,
+        row_completes_payload_transport,
+    )
+except ImportError:  # Direct script execution from the visualiser directory.
+    from staff_route_geometry import (
+        interpolate_staff_route,
+        person_position_behind_payload,
+        shortest_staff_route_points,
+    )
+    from playback_state import (
+        onboard_snapshot_is_authoritative,
+        row_completes_payload_transport,
+    )
 
 from PySide6.QtGui import (
     QBrush,
@@ -29,6 +57,7 @@ from PySide6.QtGui import (
     QSurfaceFormat,
     QFontDatabase,
     QPixmap,
+    QWindow,
 )
 from PySide6.QtCore import QPointF, QTimer, Qt, QRectF, QRect, QObject, Signal, QThread
 from PySide6.QtWidgets import (
@@ -72,6 +101,8 @@ from PySide6.QtWidgets import (
     QListWidget,
     QFrame,
     QLineEdit,
+    QDockWidget,
+    QToolBar,
 )
 
 try:
@@ -100,6 +131,7 @@ class LayoutModel:
         self.task_end_time: Optional[datetime] = None
         self.simulation_start_time: Optional[datetime] = None
         self.simulation_end_time: Optional[datetime] = None
+        self._staff_route_cache: Dict[Tuple[str, str, str], List[dict]] = {}
 
     @staticmethod
     def _parse_datetime(value: str) -> Optional[datetime]:
@@ -156,13 +188,17 @@ class LayoutModel:
 
     def load(self, path: str):
         with open(path, "r", encoding="utf-8") as f:
-            self.data = json.load(f)
+            self.load_data(json.load(f))
+
+    def load_data(self, data):
+        self.data = copy.deepcopy(data)
         self._rebuild_points()
         self._rebuild_task_timeline()
         self._rebuild_simulation_timeline()
 
     def _rebuild_points(self):
         self.points = {}
+        self._staff_route_cache.clear()
         for item in self.data.get("locations", []):
             self.points[item["name"]] = {**item, "kind": "location"}
         for item in self.data.get("corridors", {}).get("nodes", []):
@@ -176,6 +212,26 @@ class LayoutModel:
                     "y": pos["y"],
                     "kind": "lift_node",
                 }
+
+    def staff_route_points(
+        self, start_name: str, end_name: str, preferred_lift_id: str = ""
+    ) -> List[dict]:
+        key = (
+            str(start_name or "").strip(),
+            str(end_name or "").strip(),
+            str(preferred_lift_id or "").strip(),
+        )
+        cached = self._staff_route_cache.get(key)
+        if cached is None:
+            cached = shortest_staff_route_points(
+                self.data,
+                self.points,
+                key[0],
+                key[1],
+                key[2],
+            )
+            self._staff_route_cache[key] = cached
+        return cached
 
     def edges_for_floor(self, floor: int) -> List[dict]:
         edges = []
@@ -201,6 +257,8 @@ class SimulationLog:
         self._location_event_start_times: Dict[str, List[datetime]] = {}
         self._events_by_lift: Dict[str, List[VisualEvent]] = {}
         self._lift_event_start_times: Dict[str, List[datetime]] = {}
+        self._person_events_by_id: Dict[str, List[VisualEvent]] = {}
+        self._person_event_start_times: Dict[str, List[datetime]] = {}
         self.initial_amr_home_spaces: Dict[str, dict] = {}
         self._state_checkpoints: List[tuple] = []
         self._state_checkpoint_stride = 1000
@@ -331,6 +389,7 @@ class SimulationLog:
         self.end_time = max((e.end_time for e in self.events), default=None)
         self._rebuild_location_event_index()
         self._rebuild_lift_event_index()
+        self._rebuild_person_event_index()
         self._rebuild_initial_amr_home_spaces()
         self._rebuild_state_checkpoints()
         self.reset_playback_cursor()
@@ -342,7 +401,7 @@ class SimulationLog:
         for event in self.events:
             row = event.row
             event_type = str(row.get("event_type", "") or "").strip()
-            if event_type != "initial_amr_charging_location":
+            if event_type not in ("initial_amr_charging_location", "initial_amr_placement"):
                 continue
             amr_id = str(row.get("amr_id", "") or "").strip()
             space_name = str(row.get("amr_inventory_space", "") or "").strip()
@@ -430,6 +489,130 @@ class SimulationLog:
         idx = self.location_event_index_at(location_name, current_time)
         return events[:idx]
 
+    @staticmethod
+    def _detail_metadata(details: str, *labels: str) -> str:
+        text = str(details or "")
+        for label in labels:
+            match = re.search(
+                rf"(?:^|;)\s*{re.escape(label)}\s*=\s*([^;]+)",
+                text,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                return match.group(1).strip()
+        return ""
+
+    @staticmethod
+    def _format_event_datetime(value: Optional[datetime]) -> str:
+        if value is None:
+            return "-"
+        if value.microsecond:
+            return value.isoformat(sep=" ", timespec="milliseconds")
+        return value.isoformat(sep=" ", timespec="seconds")
+
+    def failed_task_rows(self) -> List[dict]:
+        """Return failure rows enriched with each task's true final destination."""
+        metadata_by_task: Dict[str, dict] = {}
+        for event in self.events:
+            row = event.row
+            task_id = str(row.get("task_id", "") or "").strip()
+            if not task_id:
+                continue
+            details = str(row.get("details", "") or "")
+            final_destination = (
+                str(row.get("final_destination", "") or "").strip()
+                or self._detail_metadata(
+                    details, "final destination", "final_destination"
+                )
+            )
+            dropoff_zone = (
+                str(row.get("dropoff_zone", "") or "").strip()
+                or self._detail_metadata(
+                    details, "AMR drop-off zone", "dropoff_zone"
+                )
+            )
+            if final_destination or dropoff_zone:
+                metadata = metadata_by_task.setdefault(task_id, {})
+                if final_destination:
+                    metadata["final_destination"] = final_destination
+                if dropoff_zone:
+                    metadata["dropoff_zone"] = dropoff_zone
+
+        rows: List[dict] = []
+        for event in self.events:
+            row = event.row
+            if str(row.get("event_type", "") or "").strip().lower() != "task_failed":
+                continue
+
+            task_id = str(row.get("task_id", "") or "").strip()
+            metadata = metadata_by_task.get(task_id, {})
+            details = str(row.get("details", "") or "").strip()
+            task_source = str(row.get("task_source", "") or "").strip()
+            pickup = str(row.get("from_location", "") or "").strip()
+            amr_destination = str(row.get("to_location", "") or "").strip()
+            final_destination = str(
+                row.get("final_destination", "")
+                or metadata.get("final_destination", "")
+                or ""
+            ).strip()
+            dropoff_zone = str(
+                row.get("dropoff_zone", "")
+                or metadata.get("dropoff_zone", "")
+                or ""
+            ).strip()
+
+            # Return tasks travel from the ward/drop-off zone back to the
+            # service location. Older CSVs predate explicit destination fields.
+            if not final_destination:
+                final_destination = amr_destination
+            if not dropoff_zone:
+                if task_source.lower().endswith("_return"):
+                    dropoff_zone = pickup
+                elif amr_destination != final_destination:
+                    dropoff_zone = amr_destination
+
+            failure_time = (
+                self._parse_datetime(str(row.get("sim_datetime", "") or ""))
+                or event.start_time
+            )
+            reason = str(
+                row.get("pending_reason", "")
+                or row.get("failure_reason", "")
+                or details
+                or row.get("status", "")
+                or "Task failed"
+            ).strip()
+
+            rows.append(
+                {
+                    "failure_time": failure_time,
+                    "failure_time_display": self._format_event_datetime(failure_time),
+                    "task_id": task_id or "-",
+                    "payload": str(row.get("payload", "") or "-").strip() or "-",
+                    "final_destination": final_destination or "-",
+                    "dropoff_zone": dropoff_zone or "-",
+                    "pickup": pickup or "-",
+                    "amr_destination": amr_destination or "-",
+                    "department_id": str(
+                        row.get("department_id", "") or "-"
+                    ).strip()
+                    or "-",
+                    "amr_id": str(row.get("amr_id", "") or "-").strip() or "-",
+                    "task_source": task_source or "-",
+                    "reason": reason,
+                    "inspection_location": final_destination or amr_destination or pickup,
+                    "raw": row,
+                }
+            )
+
+        rows.sort(
+            key=lambda item: (
+                item.get("failure_time") or datetime.min,
+                str(item.get("task_id", "")),
+            )
+        )
+        return rows
+
     def _event_lift_keys(self, row: dict) -> set:
         """Return lift ids referenced by a CSV row for fast lift monitor rebuilds."""
         keys = set()
@@ -473,6 +656,111 @@ class SimulationLog:
         starts = self._lift_event_start_times.get(lift_id, [])
         idx = bisect_right(starts, current_time)
         return events[:idx]
+
+    def _rebuild_person_event_index(self) -> None:
+        """Index staff rows separately because they intentionally have no AMR id."""
+        self._person_events_by_id = {}
+        self._person_event_start_times = {}
+        dropoff_zone_task_ids = {
+            str(event.row.get("task_id", "") or "").strip()
+            for event in self.events
+            if str(event.row.get("event_type", "") or "").strip().lower()
+            == "staff_payload_transport"
+            and str(event.row.get("task_id", "") or "").strip()
+        }
+        supported_events = {
+            "staff_travel",
+            "staff_payload_transport",
+            "staff_payload_handling",
+            "staff_payload_exchange",
+        }
+        for event in self.events:
+            person_id = str(event.row.get("person_id", "") or "").strip()
+            event_type = str(event.row.get("event_type", "") or "").strip().lower()
+            task_id = str(event.row.get("task_id", "") or "").strip()
+            if (
+                person_id
+                and task_id in dropoff_zone_task_ids
+                and event_type in supported_events
+            ):
+                self._person_events_by_id.setdefault(person_id, []).append(event)
+        for person_id, events in self._person_events_by_id.items():
+            events.sort(key=lambda item: item.start_time)
+            self._person_event_start_times[person_id] = [
+                item.start_time for item in events
+            ]
+
+    def active_person_states_at(self, current_time: datetime) -> Dict[str, dict]:
+        """Return interpolated staff states active at the playback timestamp."""
+        if current_time is None:
+            return {}
+        states: Dict[str, dict] = {}
+        for person_id, events in self._person_events_by_id.items():
+            starts = self._person_event_start_times.get(person_id, [])
+            idx = bisect_right(starts, current_time)
+            if idx <= 0:
+                continue
+
+            active_event = None
+            # Staff rows are normally non-overlapping. Inspect a few preceding
+            # rows to remain robust around equal timestamps and zero-duration rows.
+            for event in reversed(events[max(0, idx - 4):idx]):
+                if event.start_time <= current_time <= event.end_time:
+                    active_event = event
+                    break
+            if active_event is None:
+                continue
+
+            row = active_event.row
+            start_x = self._float_or_none(row.get("start_x"))
+            start_y = self._float_or_none(row.get("start_y"))
+            end_x = self._float_or_none(row.get("end_x"))
+            end_y = self._float_or_none(row.get("end_y"))
+            start_floor = self._int_or_none(row.get("start_floor"))
+            end_floor = self._int_or_none(row.get("end_floor"))
+            duration = max(
+                (active_event.end_time - active_event.start_time).total_seconds(),
+                0.001,
+            )
+            fraction = max(
+                0.0,
+                min(
+                    1.0,
+                    (current_time - active_event.start_time).total_seconds()
+                    / duration,
+                ),
+            )
+            x = (
+                start_x + ((end_x - start_x) * fraction)
+                if start_x is not None and end_x is not None
+                else (end_x if end_x is not None else start_x)
+            )
+            y = (
+                start_y + ((end_y - start_y) * fraction)
+                if start_y is not None and end_y is not None
+                else (end_y if end_y is not None else start_y)
+            )
+            floor = start_floor
+            if start_floor != end_floor and fraction >= 1.0:
+                floor = end_floor
+            elif floor is None:
+                floor = end_floor
+
+            states[person_id] = {
+                "person_id": person_id,
+                "x": x,
+                "y": y,
+                "floor": floor,
+                "fraction": fraction,
+                "event_type": str(row.get("event_type", "") or "").strip(),
+                "status": str(row.get("status", "") or "").strip(),
+                "payload": str(row.get("payload", "") or "").strip(),
+                "task_id": str(row.get("task_id", "") or "").strip(),
+                "from_location": str(row.get("from_location", "") or "").strip(),
+                "to_location": str(row.get("to_location", "") or "").strip(),
+                "raw": row,
+            }
+        return states
 
     def _new_state_accumulators(self):
         return {}, [], {}, {}
@@ -551,7 +839,10 @@ class SimulationLog:
     ) -> None:
         row = event.row
         amr_id = (row.get("amr_id") or "").strip()
-        if not amr_id:
+        if not amr_id or row.get('event_type') in (
+                'battery_balance_summary', 'geometric_recovery_search', 'task_geometry_unresolved'):
+            # A run-level accounting record has no physical pose. In particular
+            # it must not erase a taskless trajectory starting at time zero.
             recent_events.append(
                 {"timestamp": min(current_time, event.end_time), "row": row}
             )
@@ -609,6 +900,8 @@ class SimulationLog:
 
     def _refresh_state_position(self, state: dict, current_time: datetime) -> None:
         row = state.get("raw", {}) or {}
+        state.pop('geometry_heading', None)
+        state.pop('geometry_error', None)
         start_x = self._float_or_none(row.get("start_x"))
         start_y = self._float_or_none(row.get("start_y"))
         start_floor = self._int_or_none(row.get("start_floor"))
@@ -650,6 +943,19 @@ class SimulationLog:
             state["floor"] = end_floor if end_floor is not None else start_floor
             state["path"] = None
             state["segment_fraction"] = 1.0
+        if row.get('motion_model') == 'geometric_v1':
+            from amr_trajectories import trajectory_from_dict, TrajectoryError
+            encoded = row.get('trajectory_json', '')
+            try:
+                if state.get('_trajectory_encoded') != encoded:
+                    state['_trajectory'] = trajectory_from_dict(json.loads(encoded))
+                    state['_trajectory_encoded'] = encoded
+                trajectory = state['_trajectory']
+                pose = trajectory.pose_at_time(state['segment_fraction'] * trajectory.duration_sec)
+                state.update(x=pose.x, y=pose.y, geometry_heading=pose.heading, path=None)
+            except (ValueError, TypeError, KeyError, TrajectoryError) as exc:
+                # Missing/malformed geometric evidence never becomes straight interpolation.
+                state.update(x=None, y=None, path=None, geometry_error=str(exc))
         task_id = state.get("task_id")
         assignment_start = state.get("_assignment_start") or start_dt
         state["task_runtime_sec"] = (
@@ -718,7 +1024,12 @@ class SimulationLog:
         checkpoint_idx, payload = self._state_checkpoints[pos]
         return checkpoint_idx, self._copy_state_accumulators(payload)
 
-    def load(self, path: str):
+    def load(self, path: str, *, parallel=True):
+        if not parallel:
+            # Read-only loading for a background thread inside the project UI.
+            self.events = _parse_visual_event_chunk_file_process(path)
+            self._rebuild_event_index()
+            return
         self.events = []
         self._event_start_times = []
         chunk_size = 10000
@@ -843,7 +1154,7 @@ class SimulationLog:
 
 
 class GraphicsView(QGraphicsView):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, use_opengl=True):
         super().__init__(parent)
         self._last_pan_pos = None
         self._zoom_callback = None
@@ -864,7 +1175,8 @@ class GraphicsView(QGraphicsView):
         self.opengl_enabled = False
         self.opengl_error = ""
         self.graphics_backend = "raster"
-        self.enable_opengl_viewport()
+        if use_opengl:
+            self.enable_opengl_viewport()
 
     def enable_opengl_viewport(self) -> bool:
         """Use an OpenGL-backed viewport when available.
@@ -915,11 +1227,9 @@ class GraphicsView(QGraphicsView):
         self.viewport().update()
 
     def wheelEvent(self, event):
-        factor = 1.1 if event.angleDelta().y() > 0 else 0.9
-        self.scale(factor, factor)
-        if self._zoom_callback:
+        changed = zoom_at_cursor(self, event)
+        if changed and self._zoom_callback:
             self._zoom_callback()
-        self.viewport().update()
         event.accept()
 
     def mousePressEvent(self, event):
@@ -1649,6 +1959,7 @@ class LocationInventorySpacesDialog(QDialog):
         ("length_m", "Length m", 90),
         ("width_m", "Width m", 90),
         ("height_m", "Height m", 90),
+        ("flexible", "Flexible", 80),
         ("occupied", "Occupied", 90),
         ("payload", "Payload", 160),
         ("task_id", "Task", 120),
@@ -1703,6 +2014,80 @@ class LocationInventorySpacesDialog(QDialog):
                     col,
                     QTableWidgetItem(str(value if value not in (None, "") else "-")),
                 )
+
+
+class PayloadSpaceMaximumUtilisationDialog(QDialog):
+    columns = [
+        ("space", "Payload space", 190),
+        ("ever_occupied", "Ever occupied", 105),
+        ("entries", "Payload entries", 105),
+        ("occupied_duration", "Occupied time", 125),
+        ("utilisation_percent", "Time utilised %", 115),
+        ("first_occupied", "First occupied", 165),
+        ("last_released", "Last released", 165),
+        ("occupied_at_peak", "Occupied at peak", 120),
+    ]
+
+    def __init__(self, parent, location_name: str, summary: dict, rows: List[dict]):
+        super().__init__(parent)
+        self.setWindowTitle(f"Maximum payload-space utilisation - {location_name}")
+        self.resize(1120, 500)
+
+        layout = QVBoxLayout(self)
+        peak_time = str(summary.get("peak_time", "-") or "-")
+        horizon = str(summary.get("horizon", "-") or "-")
+        maximum = int(summary.get("maximum_occupied_spaces", 0) or 0)
+        configured = int(summary.get("configured_spaces", 0) or 0)
+        peak_pct = float(summary.get("maximum_utilisation_percent", 0.0) or 0.0)
+        overflow = int(summary.get("overflow_at_peak", 0) or 0)
+        summary_label = QLabel(
+            f"Location: {location_name}\n"
+            f"Maximum occupied payload spaces: {maximum} / {configured} "
+            f"({peak_pct:.1f}%)\n"
+            f"Peak time: {peak_time} | Simulation horizon: {horizon} | "
+            f"Overflow at peak: {overflow}"
+        )
+        summary_label.setWordWrap(True)
+        layout.addWidget(summary_label)
+
+        note = QLabel(
+            "Maximum occupancy is reconstructed over the complete loaded simulation, "
+            "not just the current playback time. Time utilisation is the percentage "
+            "of the simulation horizon for which each payload space was occupied. "
+            + str(summary.get("assignment_note", "") or "")
+        )
+        note.setWordWrap(True)
+        layout.addWidget(note)
+
+        table = QTableWidget(0, len(self.columns))
+        table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SingleSelection)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        for index, (_key, _heading, width) in enumerate(self.columns):
+            table.setColumnWidth(index, width)
+        layout.addWidget(table, 1)
+
+        for row_data in rows:
+            row = table.rowCount()
+            table.insertRow(row)
+            for column, (key, _heading, _width) in enumerate(self.columns):
+                value = row_data.get(key, "")
+                table.setItem(
+                    row,
+                    column,
+                    QTableWidgetItem(str(value if value not in (None, "") else "-")),
+                )
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(self.accept)
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        button_row.addWidget(close_btn)
+        layout.addLayout(button_row)
 
 
 class AmrPayloadMonitorDialog(QDialog):
@@ -2196,6 +2581,305 @@ class AmrTimelineWidget(QWidget):
             parent.on_timeline_seek(new_time)
 
 
+class AuxiliaryTimelineWindow(QMainWindow):
+    """Timeline window rendered entirely inside the auxiliary GUI process."""
+
+    def __init__(self, event_queue):
+        super().__init__()
+        self._event_queue = event_queue
+        self.setWindowTitle("AMR Timeline")
+        self.resize(1400, 420)
+
+        root = QWidget(self)
+        layout = QVBoxLayout(root)
+        layout.setContentsMargins(4, 4, 4, 4)
+        self.timeline_widget = AmrTimelineWidget(self)
+        self.timeline_scroll = QScrollArea(self)
+        self.timeline_scroll.setWidgetResizable(False)
+        self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.timeline_scroll.setWidget(self.timeline_widget)
+        self.timeline_scroll.horizontalScrollBar().valueChanged.connect(
+            self.timeline_widget.update
+        )
+        self.timeline_scroll.verticalScrollBar().valueChanged.connect(
+            self.timeline_widget.update
+        )
+        layout.addWidget(self.timeline_scroll, 1)
+        self.setCentralWidget(root)
+
+    def _send_event(self, message: dict) -> None:
+        try:
+            self._event_queue.put_nowait(message)
+        except Exception:
+            pass
+
+    def on_timeline_seek(self, new_time: datetime):
+        self.timeline_widget.current_time = new_time
+        self.timeline_widget.update()
+        self._send_event({"type": "timeline_seek", "time": new_time})
+
+    def set_timeline_data(self, message: dict) -> None:
+        self.timeline_widget.set_data(
+            message.get("timeline_data", []),
+            message.get("start_time"),
+            message.get("end_time"),
+            message.get("current_time"),
+        )
+
+    def set_current_time(self, value: Optional[datetime]) -> None:
+        self.timeline_widget.current_time = value
+        self.timeline_widget.update()
+
+    def center_on_time(self, value: Optional[datetime]) -> None:
+        if value is None:
+            return
+        x = self.timeline_widget._time_to_x(value)
+        bar = self.timeline_scroll.horizontalScrollBar()
+        bar.setValue(
+            max(0, int(x - (self.timeline_scroll.viewport().width() / 2)))
+        )
+        self.timeline_widget.update()
+
+    def set_zoom_preset(self, text: str) -> None:
+        text = str(text or "").strip()
+        if text == "Fit":
+            total_seconds = self.timeline_widget._timeline_seconds()
+            visible_width = max(
+                300,
+                self.timeline_scroll.viewport().width()
+                - self.timeline_widget.left_pad
+                - self.timeline_widget.right_pad,
+            )
+            seconds = (
+                total_seconds / visible_width
+                if total_seconds > 0
+                else self.timeline_widget.default_seconds_per_pixel
+            )
+        else:
+            mapping = {
+                "15 min": 15 * 60,
+                "30 min": 30 * 60,
+                "1 hour": 60 * 60,
+                "3 hours": 3 * 60 * 60,
+                "6 hours": 6 * 60 * 60,
+                "12 hours": 12 * 60 * 60,
+                "1 day": 24 * 60 * 60,
+            }
+            window_seconds = mapping.get(text)
+            if window_seconds is None:
+                return
+            visible_width = max(
+                300,
+                self.timeline_scroll.viewport().width()
+                - self.timeline_widget.left_pad
+                - self.timeline_widget.right_pad,
+            )
+            seconds = window_seconds / visible_width
+        self.timeline_widget.set_zoom_seconds_per_pixel(seconds)
+        self.center_on_time(self.timeline_widget.current_time)
+
+    def closeEvent(self, event):
+        self._send_event({"type": "timeline_visible", "visible": False})
+        super().closeEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._send_event(
+            {
+                "type": "timeline_visible",
+                "visible": True,
+                "window_id": int(self.winId()),
+            }
+        )
+
+
+def run_auxiliary_gui_process(command_queue, event_queue) -> None:
+    """Run timeline and lift-monitor drawing in an independent Qt process."""
+    app = QApplication([])
+    configure_application_font(app)
+    timeline_window = AuxiliaryTimelineWindow(event_queue)
+    timeline_window.show()
+    lift_dialog = None
+    latest_lift_states: List[dict] = []
+
+    def send_event(message: dict) -> None:
+        try:
+            event_queue.put_nowait(message)
+        except Exception:
+            pass
+
+    def lift_closed(*_args) -> None:
+        send_event({"type": "lift_visible", "visible": False})
+
+    def process_commands() -> None:
+        nonlocal lift_dialog, latest_lift_states
+        for _index in range(200):
+            try:
+                message = command_queue.get_nowait()
+            except queue.Empty:
+                break
+            except Exception:
+                app.quit()
+                return
+
+            message_type = str(message.get("type", "") or "")
+            if message_type == "shutdown":
+                app.quit()
+                return
+            if message_type == "timeline_data":
+                timeline_window.set_timeline_data(message)
+            elif message_type == "timeline_time":
+                timeline_window.set_current_time(message.get("time"))
+            elif message_type == "timeline_center":
+                timeline_window.center_on_time(message.get("time"))
+            elif message_type == "timeline_zoom":
+                timeline_window.set_zoom_preset(message.get("preset", ""))
+            elif message_type == "timeline_zoom_factor":
+                timeline_window.timeline_widget.zoom_by_factor(
+                    message.get("factor", 1.0), message.get("anchor_time")
+                )
+            elif message_type == "show_timeline":
+                timeline_window.show()
+                send_event(
+                    {
+                        "type": "timeline_window_id",
+                        "window_id": int(timeline_window.winId()),
+                    }
+                )
+            elif message_type == "lift_states":
+                latest_lift_states = list(message.get("states", []) or [])
+                if lift_dialog is not None and lift_dialog.isVisible():
+                    lift_dialog.update_states(latest_lift_states)
+            elif message_type == "show_lift":
+                if lift_dialog is None:
+                    lift_dialog = LiftMonitorDialog()
+                    lift_dialog.finished.connect(lift_closed)
+                lift_dialog.set_lifts(latest_lift_states)
+                lift_dialog.show()
+                lift_dialog.raise_()
+                lift_dialog.activateWindow()
+                send_event({"type": "lift_visible", "visible": True})
+
+    command_timer = QTimer()
+    command_timer.setInterval(25)
+    command_timer.timeout.connect(process_commands)
+    command_timer.start()
+    app.exec()
+    send_event({"type": "process_stopped"})
+
+
+class FailedTasksDialog(QDialog):
+    columns = [
+        ("failure_time_display", "Failed at", 185),
+        ("task_id", "Task", 230),
+        ("payload", "Payload", 160),
+        ("final_destination", "Final destination", 180),
+        ("dropoff_zone", "AMR drop-off zone", 180),
+        ("pickup", "Pickup", 170),
+        ("department_id", "Department", 105),
+        ("amr_id", "AMR", 90),
+        ("reason", "Failure reason", 430),
+    ]
+
+    def __init__(self, parent, rows: List[dict]):
+        super().__init__(parent)
+        self.setWindowTitle("Failed tasks")
+        self.resize(1600, 720)
+        self.rows = list(rows or [])
+        self.selected_failure = None
+
+        layout = QVBoxLayout(self)
+
+        summary = QLabel(
+            f"Failed tasks: {len(self.rows)}. Select a row and choose "
+            "View at destination, or double-click it."
+        )
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel("Filter"))
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText(
+            "Task, payload, destination, drop-off zone, department or reason"
+        )
+        self.filter_edit.textChanged.connect(self._apply_filter)
+        filter_row.addWidget(self.filter_edit, 1)
+        layout.addLayout(filter_row)
+
+        self.table = QTableWidget(0, len(self.columns))
+        self.table.setHorizontalHeaderLabels(
+            [heading for _key, heading, _width in self.columns]
+        )
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
+        self.table.itemSelectionChanged.connect(self._update_view_button)
+        self.table.cellDoubleClicked.connect(self._view_row)
+        for index, (_key, _heading, width) in enumerate(self.columns):
+            self.table.setColumnWidth(index, width)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.table, 1)
+
+        buttons = QHBoxLayout()
+        buttons.addStretch(1)
+        self.view_button = QPushButton("View at destination")
+        self.view_button.setEnabled(False)
+        self.view_button.clicked.connect(self._view_selected)
+        buttons.addWidget(self.view_button)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.reject)
+        buttons.addWidget(close_button)
+        layout.addLayout(buttons)
+
+        self._populate_table()
+
+    def _populate_table(self):
+        self.table.setSortingEnabled(False)
+        for record in self.rows:
+            row_index = self.table.rowCount()
+            self.table.insertRow(row_index)
+            for column_index, (key, _heading, _width) in enumerate(self.columns):
+                item = QTableWidgetItem(str(record.get(key, "-") or "-"))
+                item.setToolTip(str(record.get("reason", "") or ""))
+                if column_index == 0:
+                    item.setData(Qt.UserRole, record)
+                self.table.setItem(row_index, column_index, item)
+        self.table.setSortingEnabled(True)
+
+    def _record_for_row(self, row_index: int) -> Optional[dict]:
+        item = self.table.item(row_index, 0)
+        return item.data(Qt.UserRole) if item is not None else None
+
+    def _update_view_button(self):
+        self.view_button.setEnabled(bool(self.table.selectionModel().selectedRows()))
+
+    def _apply_filter(self, text: str):
+        needle = str(text or "").strip().lower()
+        for row_index in range(self.table.rowCount()):
+            record = self._record_for_row(row_index) or {}
+            haystack = " ".join(
+                str(record.get(key, "") or "")
+                for key, _heading, _width in self.columns
+            ).lower()
+            self.table.setRowHidden(row_index, bool(needle and needle not in haystack))
+
+    def _view_row(self, row_index: int, _column_index: int):
+        record = self._record_for_row(row_index)
+        if record is None:
+            return
+        self.selected_failure = record
+        self.accept()
+
+    def _view_selected(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+        self._view_row(selected_rows[0].row(), 0)
+
+
 class LocationInventoryPayloadDialog(QDialog):
     columns = [
         ("space", "Inventory space", 180),
@@ -2311,6 +2995,11 @@ class SimulationVisualizer(QMainWindow):
         self._lift_monitor_state_cache_value = None
         self._last_lift_monitor_update_wall_time = 0.0
         self._lift_monitor_update_interval_sec = 0.25
+        self._last_timeline_playhead_update_wall_time = 0.0
+        self._timeline_playhead_update_interval_sec = 0.10
+        self._lift_monitor_timeline_update_interval_sec = 0.50
+        self._last_graph_update_wall_time = 0.0
+        self._lift_monitor_graph_update_interval_sec = 0.25
 
         self.current_json_path: Optional[str] = None
         self.current_dxf_path: Optional[str] = None
@@ -2323,7 +3012,19 @@ class SimulationVisualizer(QMainWindow):
         self._inventory_cache_max_entries = 6000
         self._room_payload_cache_key = None
         self._brush_texture_cache: Dict[Tuple[str, int], QBrush] = {}
-        self.lift_monitor_dialog: Optional[LiftMonitorDialog] = None
+        self._aux_gui_process = None
+        self._aux_gui_command_queue = None
+        self._aux_gui_event_queue = None
+        self._aux_lift_monitor_visible = False
+        self._aux_timeline_visible = False
+        self._aux_timeline_window_id = 0
+        self._aux_timeline_foreign_window = None
+        self._aux_timeline_container = None
+        self._timeline_docked_min_height = 130
+        self._timeline_floating_min_size = (700, 280)
+        self._aux_gui_event_timer = QTimer(self)
+        self._aux_gui_event_timer.setInterval(50)
+        self._aux_gui_event_timer.timeout.connect(self._poll_aux_gui_events)
         self.amr_payload_monitor_dialog: Optional[AmrPayloadMonitorDialog] = None
         self.play_timer = QTimer(self)
         self.play_timer.timeout.connect(self._tick)
@@ -2412,16 +3113,60 @@ class SimulationVisualizer(QMainWindow):
         self.ensure_dxf_floor_loaded(floor)
 
     def _build_ui(self):
+        self.project_ribbon = QToolBar("Project and navigation", self)
+        self.project_ribbon.setObjectName("projectNavigationRibbon")
+        self.project_ribbon.setMovable(True)
+        self.project_ribbon.setFloatable(True)
+        self.project_ribbon.setAllowedAreas(
+            Qt.TopToolBarArea
+            | Qt.BottomToolBarArea
+            | Qt.LeftToolBarArea
+            | Qt.RightToolBarArea
+        )
+        self.project_ribbon.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        self.addToolBar(Qt.TopToolBarArea, self.project_ribbon)
+
+        def add_ribbon_action(text, callback, tooltip=""):
+            action = self.project_ribbon.addAction(text)
+            action.triggered.connect(callback)
+            if tooltip:
+                action.setToolTip(tooltip)
+                action.setStatusTip(tooltip)
+            return action
+
+        add_ribbon_action("Open JSON", self.open_json, "Load an AMR layout JSON model.")
+        add_ribbon_action("Open DXF", self.open_dxf, "Load a DXF drawing for the current floor.")
+        add_ribbon_action(
+            "Reload DXF",
+            self.reload_current_floor_dxf,
+            "Reload the current floor's DXF drawing.",
+        )
+        self.project_ribbon.addSeparator()
+        add_ribbon_action("Open Simulation", self.open_csv, "Load a simulation results CSV.")
+        self.project_ribbon.addSeparator()
+        add_ribbon_action("Jump to Task", self.open_task_jump_dialog)
+        add_ribbon_action(
+            "Failed Tasks",
+            self.open_failed_tasks_dialog,
+            "Browse failures and jump to the exact failure time and final destination.",
+        )
+        add_ribbon_action(
+            "Tasks by Location / Department",
+            self.open_tasks_by_location_department_dialog,
+        )
+
         root = QWidget()
         self.setCentralWidget(root)
         layout = QHBoxLayout(root)
+        layout.setContentsMargins(0, 0, 0, 0)
 
         side = QWidget()
-        side.setFixedWidth(340)
+        side.setMinimumWidth(250)
+        side.setMaximumWidth(480)
         side_layout = QVBoxLayout(side)
 
         self.graphics_scene = QGraphicsScene(self)
-        self.view = GraphicsView(self)
+        self.view = GraphicsView(self, use_opengl=not getattr(self, "embedded", False))
         self.view.setScene(self.graphics_scene)
         self.view.set_callbacks(
             zoom_callback=self.on_zoom,
@@ -2451,15 +3196,8 @@ class SimulationVisualizer(QMainWindow):
             side_layout.addWidget(btn)
             return btn
 
-        add_btn("Open Layout JSON", self.open_json)
-        add_btn("Open DXF", self.open_dxf)
-        add_btn("Reload Current Floor DXF", self.reload_current_floor_dxf)
-        add_btn("Open Simulation CSV", self.open_csv)
-        add_btn("Jump to Task", self.open_task_jump_dialog)
-        add_btn(
-            "Tasks by Location / Department",
-            self.open_tasks_by_location_department_dialog,
-        )
+        add_btn("Timeline", self.open_timeline_window)
+        add_btn("Failed Tasks", self.open_failed_tasks_dialog)
         add_btn("Lift Monitor", self.open_lift_monitor_dialog)
         add_btn("AMR Payload Monitor", self.open_amr_payload_monitor_dialog)
         add_btn("Fit View", self.fit_view)
@@ -2507,6 +3245,18 @@ class SimulationVisualizer(QMainWindow):
         self.show_room_payloads_check.setChecked(True)
         self.show_room_payloads_check.toggled.connect(self.refresh_dynamic_scene)
         side_layout.addWidget(self.show_room_payloads_check)
+
+        self.show_staff_handoffs_check = QCheckBox(
+            "Show drop-off-zone staff handoffs"
+        )
+        self.show_staff_handoffs_check.setChecked(True)
+        self.show_staff_handoffs_check.setToolTip(
+            "Animate the person carrying a payload from its drop-off zone to the "
+            "final destination, manoeuvring full/empty exchanges, and returning "
+            "the empty/equivalent payload."
+        )
+        self.show_staff_handoffs_check.toggled.connect(self.refresh_dynamic_scene)
+        side_layout.addWidget(self.show_staff_handoffs_check)
 
         self.live_waste_fill_check = QCheckBox("Update waste fill rate during playback")
         self.live_waste_fill_check.setChecked(True)
@@ -2564,9 +3314,10 @@ class SimulationVisualizer(QMainWindow):
         self.event_box = None
 
         self.timeline_panel = QWidget()
-        timeline_panel_layout = QVBoxLayout(self.timeline_panel)
-        timeline_panel_layout.setContentsMargins(0, 0, 0, 0)
-        timeline_panel_layout.setSpacing(4)
+        self.timeline_panel.setMinimumHeight(0)
+        self.timeline_panel_layout = QVBoxLayout(self.timeline_panel)
+        self.timeline_panel_layout.setContentsMargins(0, 0, 0, 0)
+        self.timeline_panel_layout.setSpacing(4)
 
         timeline_controls = QHBoxLayout()
         timeline_controls.setContentsMargins(6, 4, 6, 0)
@@ -2633,32 +3384,41 @@ class SimulationVisualizer(QMainWindow):
         timeline_controls.addWidget(QLabel("Zoom"))
         timeline_controls.addWidget(self.timeline_zoom_combo)
 
-        self.timeline_widget = AmrTimelineWidget(self)
-
-        self.timeline_scroll = QScrollArea()
-        self.timeline_scroll.setWidgetResizable(False)
-        self.timeline_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.timeline_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.timeline_scroll.setWidget(self.timeline_widget)
-        self.timeline_scroll.horizontalScrollBar().valueChanged.connect(
-            self.timeline_widget.update
+        self.timeline_process_note = QLabel(
+            "Connecting to the separate timeline GUI process..."
         )
-        self.timeline_scroll.verticalScrollBar().valueChanged.connect(
-            self.timeline_widget.update
-        )
+        self.timeline_process_note.setAlignment(Qt.AlignCenter)
+        self.timeline_process_note.setWordWrap(True)
 
-        timeline_panel_layout.addLayout(timeline_controls)
-        timeline_panel_layout.addWidget(self.timeline_scroll, 1)
+        self.timeline_panel_layout.addLayout(timeline_controls)
+        self.timeline_panel_layout.addWidget(self.timeline_process_note, 1)
 
-        self.main_splitter = QSplitter(Qt.Vertical)
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.addWidget(side)
         self.main_splitter.addWidget(self.view)
-        self.main_splitter.addWidget(self.timeline_panel)
-        self.main_splitter.setStretchFactor(0, 5)
+        self.main_splitter.setStretchFactor(0, 0)
         self.main_splitter.setStretchFactor(1, 1)
-        self.main_splitter.setSizes([760, 220])
-
-        layout.addWidget(side)
+        self.main_splitter.setSizes([320, 1280])
         layout.addWidget(self.main_splitter, 1)
+
+        self.timeline_dock = QDockWidget("Timeline", self)
+        self.timeline_dock.setObjectName("timelineDock")
+        self.timeline_dock.setAllowedAreas(
+            Qt.BottomDockWidgetArea | Qt.TopDockWidgetArea
+        )
+        self.timeline_dock.setFeatures(
+            QDockWidget.DockWidgetMovable
+            | QDockWidget.DockWidgetFloatable
+            | QDockWidget.DockWidgetClosable
+        )
+        self.timeline_dock.setMinimumHeight(self._timeline_docked_min_height)
+        self.timeline_dock.topLevelChanged.connect(
+            self._on_timeline_dock_top_level_changed
+        )
+        self.timeline_dock.setWidget(self.timeline_panel)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.timeline_dock)
+        self.resizeDocks([self.timeline_dock], [260], Qt.Vertical)
 
     def _location_by_name(self, location_name):
         for location in self.layout_model.data.get("locations", []):
@@ -3056,18 +3816,12 @@ class SimulationVisualizer(QMainWindow):
             return True
 
         bbox_points = [(lx, ly)]
-        for point in location.get("bounding_box", []) or []:
-            if not isinstance(point, dict):
-                continue
-            try:
-                bbox_points.append(
-                    (
-                        lx + float(point.get("dx", point.get("x", 0.0)) or 0.0),
-                        ly + float(point.get("dy", point.get("y", 0.0)) or 0.0),
-                    )
-                )
-            except Exception:
-                pass
+        from amr_location_inputs import location_outline_points
+        try:
+            bbox_points.extend((p['x'], p['y']) for p in location_outline_points(location))
+        except ValueError:
+            # Older result layouts may predate input validation; retain their location marker.
+            pass
 
         for space in location.get("inventory_spaces", []) or []:
             bbox_points.extend(self._space_points_world(location, space))
@@ -3100,9 +3854,159 @@ class SimulationVisualizer(QMainWindow):
         self._lift_monitor_state_cache_key = None
         self._lift_monitor_state_cache_value = None
         self._last_play_tick_wall_time = None
+        self._last_timeline_playhead_update_wall_time = 0.0
+        self._last_graph_update_wall_time = 0.0
         self._room_payload_cache_key = None
         if hasattr(self, "sim_log") and self.sim_log is not None:
             self.sim_log.reset_playback_cursor()
+
+    def _ensure_aux_gui_process(self) -> bool:
+        process = self._aux_gui_process
+        if process is not None and process.is_alive():
+            return True
+
+        try:
+            context = mp.get_context("spawn")
+            self._aux_gui_command_queue = context.Queue()
+            self._aux_gui_event_queue = context.Queue()
+            self._aux_gui_process = context.Process(
+                target=run_auxiliary_gui_process,
+                args=(self._aux_gui_command_queue, self._aux_gui_event_queue),
+                name="AMR timeline and lift GUI",
+                daemon=True,
+            )
+            self._aux_gui_process.start()
+            self._aux_gui_event_timer.start()
+            return True
+        except Exception as exc:
+            self.status_label.setText(
+                f"Could not start timeline/lift GUI process: {exc}"
+            )
+            self._aux_gui_process = None
+            return False
+
+    def _send_aux_gui_command(self, message: dict) -> bool:
+        if not self._ensure_aux_gui_process():
+            return False
+        try:
+            self._aux_gui_command_queue.put_nowait(message)
+            return True
+        except Exception:
+            return False
+
+    def _attach_aux_timeline_window(self, window_id) -> None:
+        try:
+            native_id = int(window_id or 0)
+        except Exception:
+            native_id = 0
+        if native_id <= 0 or native_id == self._aux_timeline_window_id:
+            return
+
+        foreign_window = QWindow.fromWinId(native_id)
+        if foreign_window is None:
+            self.timeline_process_note.setText(
+                "The timeline process is running, but its window could not be docked."
+            )
+            return
+
+        old_container = self._aux_timeline_container
+        self._aux_timeline_foreign_window = foreign_window
+        self._aux_timeline_container = QWidget.createWindowContainer(
+            foreign_window, self.timeline_panel
+        )
+        # Keep the canvas small enough that the dock separator can be dragged
+        # down to the compact docked minimum.
+        self._aux_timeline_container.setMinimumHeight(70)
+        self.timeline_panel_layout.addWidget(self._aux_timeline_container, 1)
+        self.timeline_process_note.hide()
+        self._aux_timeline_window_id = native_id
+        if old_container is not None:
+            old_container.deleteLater()
+
+    def _detach_aux_timeline_window(self) -> None:
+        if self._aux_timeline_container is not None:
+            self._aux_timeline_container.deleteLater()
+        self._aux_timeline_container = None
+        self._aux_timeline_foreign_window = None
+        self._aux_timeline_window_id = 0
+        if hasattr(self, "timeline_process_note"):
+            self.timeline_process_note.setText(
+                "Connecting to the separate timeline GUI process..."
+            )
+            self.timeline_process_note.show()
+
+    def _on_timeline_dock_top_level_changed(self, floating: bool) -> None:
+        if floating:
+            minimum_width, minimum_height = self._timeline_floating_min_size
+            self.timeline_dock.setMinimumSize(minimum_width, minimum_height)
+        else:
+            self.timeline_dock.setMinimumWidth(0)
+            self.timeline_dock.setMinimumHeight(self._timeline_docked_min_height)
+
+    def _poll_aux_gui_events(self) -> None:
+        process = self._aux_gui_process
+        if process is not None and not process.is_alive():
+            self._aux_gui_event_timer.stop()
+            self._detach_aux_timeline_window()
+            self._aux_gui_process = None
+            self._aux_lift_monitor_visible = False
+            self._aux_timeline_visible = False
+            return
+
+        event_queue = self._aux_gui_event_queue
+        if event_queue is None:
+            return
+        latest_seek = None
+        for _index in range(200):
+            try:
+                message = event_queue.get_nowait()
+            except queue.Empty:
+                break
+            except Exception:
+                break
+            message_type = str(message.get("type", "") or "")
+            if message_type == "timeline_seek":
+                latest_seek = message.get("time")
+            elif message_type == "timeline_visible":
+                self._aux_timeline_visible = bool(message.get("visible", False))
+                self._attach_aux_timeline_window(message.get("window_id"))
+            elif message_type == "timeline_window_id":
+                self._attach_aux_timeline_window(message.get("window_id"))
+            elif message_type == "lift_visible":
+                visible = bool(message.get("visible", False))
+                self._aux_lift_monitor_visible = visible
+                if not visible:
+                    self._last_timeline_playhead_update_wall_time = 0.0
+                    self._last_graph_update_wall_time = 0.0
+            elif message_type == "process_stopped":
+                self._aux_lift_monitor_visible = False
+                self._aux_timeline_visible = False
+        if isinstance(latest_seek, datetime):
+            self.on_timeline_seek(latest_seek)
+
+    def open_timeline_window(self):
+        if hasattr(self, "timeline_dock"):
+            self.timeline_dock.show()
+            self.timeline_dock.raise_()
+        self._send_aux_gui_command({"type": "show_timeline"})
+        self.refresh_timeline()
+
+    def _shutdown_aux_gui_process(self) -> None:
+        process = self._aux_gui_process
+        if process is None:
+            return
+        try:
+            if process.is_alive() and self._aux_gui_command_queue is not None:
+                self._aux_gui_command_queue.put_nowait({"type": "shutdown"})
+            process.join(timeout=1.5)
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=0.5)
+        except Exception:
+            pass
+        self._detach_aux_timeline_window()
+        self._aux_gui_process = None
+        self._aux_gui_event_timer.stop()
 
     def _current_event_index(self) -> int:
         if not self.current_time or not self.sim_log.events:
@@ -3233,6 +4137,7 @@ class SimulationVisualizer(QMainWindow):
         else:
             self._dynamic_draw_layer = "amr"
         self.draw_dynamic_state_qt(self.current_floor())
+        self.draw_staff_handoff_state_qt(self.current_floor())
         self.dynamic_items = self.room_payload_items + self.amr_dynamic_items
         self.dynamic_text_records = (
             self.room_payload_text_records + self.amr_dynamic_text_records
@@ -3698,7 +4603,7 @@ class SimulationVisualizer(QMainWindow):
                 continue
             ax, ay = self.world_to_scene(a["x"], a["y"])
             bx, by = self.world_to_scene(b["x"], b["y"])
-            self.draw_line_item(ax, ay, bx, by, "#5f8dd3", 0.0)
+            self.draw_line_item(ax, ay, bx, by, getattr(self, 'layout_edge_colour', '#5f8dd3'), 0.0)
 
         for name, point in self.layout_model.points_for_floor(floor).items():
             if not self._point_in_world_rect(
@@ -4445,6 +5350,111 @@ class SimulationVisualizer(QMainWindow):
             return True
         return any(self._slot_is_amr_slot(slot) for slot in space.get("payload_slots", []) or [])
 
+    def _location_is_dropoff_zone(self, location_name: str) -> bool:
+        return any(
+            str(location_name or "").strip()
+            in (
+                category_locations.get(
+                    "dropoff_zone_locations",
+                    category_locations.get("drop_off_zone_locations", []),
+                )
+                or []
+            )
+            for department in self.layout_model.data.get("departments", []) or []
+            if isinstance(department, dict)
+            for category_locations in (
+                department.get("task_generation_locations", {}) or {}
+            ).values()
+            if isinstance(category_locations, dict)
+        )
+
+    def _payload_config_by_name(self, payload_name: str) -> dict:
+        payload_name = str(payload_name or "").strip()
+        return next(
+            (
+                payload
+                for payload in self.layout_model.data.get("payloads", []) or []
+                if str(payload.get("name", "") or "").strip() == payload_name
+            ),
+            {},
+        )
+
+    @staticmethod
+    def _inventory_space_dimensions(space: dict) -> Tuple[float, float, float]:
+        points = list(space.get("points", []) or [])
+        xs = []
+        ys = []
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            try:
+                xs.append(float(point.get("dx", point.get("x", 0.0)) or 0.0))
+                ys.append(float(point.get("dy", point.get("y", 0.0)) or 0.0))
+            except (TypeError, ValueError):
+                continue
+        point_length = abs(max(xs) - min(xs)) if xs else 0.0
+        point_width = abs(max(ys) - min(ys)) if ys else 0.0
+        return (
+            float(space.get("length_m", point_length) or point_length or 0.0),
+            float(space.get("width_m", point_width) or point_width or 0.0),
+            float(space.get("height_m", 999999.0) or 999999.0),
+        )
+
+    def _inventory_space_can_fit_payload_name(
+        self, location_name: str, space: dict, payload_name: str
+    ) -> bool:
+        if not isinstance(space, dict) or self._space_is_amr_space(space):
+            return False
+        payload_name = str(payload_name or "").strip()
+        if not payload_name:
+            return True
+        flexible = self._bool_from_config_value(
+            space.get("flexible", space.get("flexible_payloads")),
+            self._location_is_dropoff_zone(location_name),
+        )
+        allowed_payloads = {
+            str(slot.get("payload", "") or "").strip()
+            for slot in space.get("payload_slots", []) or []
+            if isinstance(slot, dict) and str(slot.get("payload", "") or "").strip()
+        }
+        if not flexible and allowed_payloads and payload_name not in allowed_payloads:
+            return False
+        payload = self._payload_config_by_name(payload_name)
+        if not payload:
+            return not allowed_payloads or payload_name in allowed_payloads or flexible
+        payload_length = float(payload.get("length_m", 0.0) or 0.0)
+        payload_width = float(payload.get("width_m", 0.0) or 0.0)
+        payload_height = float(payload.get("height_m", 0.0) or 0.0)
+        length_m, width_m, height_m = self._inventory_space_dimensions(space)
+        eps = 1e-6
+        fits_normal = (
+            payload_length <= length_m + eps and payload_width <= width_m + eps
+        )
+        fits_rotated = (
+            payload_length <= width_m + eps and payload_width <= length_m + eps
+        )
+        return (fits_normal or fits_rotated) and payload_height <= height_m + eps
+
+    def _inventory_space_fit_score_for_payload_name(
+        self, space: dict, payload_name: str
+    ) -> Tuple[float, float]:
+        payload = self._payload_config_by_name(payload_name)
+        length_m, width_m, height_m = self._inventory_space_dimensions(space)
+        if not payload:
+            return (length_m * width_m, max(length_m, width_m))
+        payload_length = float(payload.get("length_m", 0.0) or 0.0)
+        payload_width = float(payload.get("width_m", 0.0) or 0.0)
+        payload_height = float(payload.get("height_m", 0.0) or 0.0)
+        slacks = []
+        if payload_length <= length_m + 1e-6 and payload_width <= width_m + 1e-6:
+            slacks.append((length_m - payload_length) + (width_m - payload_width))
+        if payload_length <= width_m + 1e-6 and payload_width <= length_m + 1e-6:
+            slacks.append((width_m - payload_length) + (length_m - payload_width))
+        height_slack = (
+            0.0 if height_m >= 999998.0 else max(0.0, height_m - payload_height)
+        )
+        return (min(slacks or [float("inf")]) + height_slack, length_m * width_m)
+
     def _amr_slot_rotation_deg(self, space: dict, fallback: float = 0.0) -> float:
         for slot in space.get("payload_slots", []) or []:
             if not self._slot_is_amr_slot(slot):
@@ -5126,6 +6136,8 @@ class SimulationVisualizer(QMainWindow):
         return float(start_deg) + (delta * frac)
 
     def _amr_heading_radians_for_state(self, state: dict) -> float:
+        if state.get('geometry_heading') is not None:
+            return state['geometry_heading']
         raw = state.get("raw", {}) or {}
         start_rot = state.get("amr_rotation_start_deg")
         end_rot = state.get("amr_rotation_end_deg")
@@ -5182,6 +6194,24 @@ class SimulationVisualizer(QMainWindow):
         if home and self._state_is_stationary_at_location(state, str(home.get("location", "") or "")):
             return True
         return False
+
+    def _amr_reference_position_for_state(self, state):
+        """Locate the configured point from the frozen layout and body pose."""
+        from amr_reference_inputs import reference_point_options
+        identity = str(state.get('amr_id') or (state.get('raw') or {}).get('amr_id') or '')
+        for robot in self.layout_model.data.get('amrs', []):
+            base = str(robot.get('id', ''))
+            if identity != base and identity.rsplit('-', 1)[0] != base:
+                continue
+            try:
+                options = reference_point_options(robot.get('manoeuvring', {}))
+            except ValueError:
+                return None
+            dx, dy = options['reference_longitudinal_mm']/1000, options['reference_lateral_mm']/1000
+            heading = self._amr_heading_radians_for_state(state)
+            return (float(state['x'])+dx*math.cos(heading)-dy*math.sin(heading),
+                    float(state['y'])+dx*math.sin(heading)+dy*math.cos(heading))
+        return None
 
     def _draw_amr_box_colored_qt(self, state: dict, fill="#4da3ff"):
         x = float(state["x"])
@@ -5361,15 +6391,45 @@ class SimulationVisualizer(QMainWindow):
         return lifts
 
     def _clear_lift_monitor_dialog_reference(self, *_args):
-        self.lift_monitor_dialog = None
+        self._aux_lift_monitor_visible = False
+        self._last_timeline_playhead_update_wall_time = 0.0
+        self._last_graph_update_wall_time = 0.0
+
+    def _lift_monitor_is_visible(self) -> bool:
+        return bool(self._aux_lift_monitor_visible)
+
+    def _timeline_playhead_update_due(self, now: Optional[float] = None) -> bool:
+        now = time.monotonic() if now is None else float(now)
+        interval = (
+            self._lift_monitor_timeline_update_interval_sec
+            if self._lift_monitor_is_visible()
+            else self._timeline_playhead_update_interval_sec
+        )
+        if (
+            now - self._last_timeline_playhead_update_wall_time
+            < interval
+        ):
+            return False
+        self._last_timeline_playhead_update_wall_time = now
+        return True
+
+    def _graph_update_due(self, now: Optional[float] = None) -> bool:
+        if not self.is_playing or not self._lift_monitor_is_visible():
+            return True
+        now = time.monotonic() if now is None else float(now)
+        if (
+            now - self._last_graph_update_wall_time
+            < self._lift_monitor_graph_update_interval_sec
+        ):
+            return False
+        self._last_graph_update_wall_time = now
+        return True
 
     def _clear_amr_payload_monitor_dialog_reference(self, *_args):
         self.amr_payload_monitor_dialog = None
 
     def update_lift_monitor_dialog(self, force: bool = False):
-        if self.lift_monitor_dialog is None:
-            return
-        if not self.lift_monitor_dialog.isVisible():
+        if not self._aux_lift_monitor_visible:
             return
 
         # The lift monitor used to rebuild from the whole event history every
@@ -5387,7 +6447,9 @@ class SimulationVisualizer(QMainWindow):
         self._last_lift_monitor_update_wall_time = now
 
         lift_states = self.build_lift_monitor_state()
-        self.lift_monitor_dialog.update_states(lift_states)
+        self._send_aux_gui_command(
+            {"type": "lift_states", "states": lift_states}
+        )
         if hasattr(self, "lift_dialog") and self.lift_dialog.isVisible():
             self.lift_dialog.update_from_time(self.current_time)
 
@@ -5399,19 +6461,13 @@ class SimulationVisualizer(QMainWindow):
             )
             return
 
-        # Reuse if already open
-        if self.lift_monitor_dialog and self.lift_monitor_dialog.isVisible():
-            self.lift_monitor_dialog.raise_()
-            self.lift_monitor_dialog.activateWindow()
-            return
-
-        self.lift_monitor_dialog = LiftMonitorDialog(self)
-        self.lift_monitor_dialog.setAttribute(Qt.WA_DeleteOnClose, True)
-        self.lift_monitor_dialog.destroyed.connect(
-            self._clear_lift_monitor_dialog_reference
+        self._aux_lift_monitor_visible = True
+        self._send_aux_gui_command(
+            {"type": "lift_states", "states": lift_states}
         )
-        self.lift_monitor_dialog.set_lifts(lift_states)
-        self.lift_monitor_dialog.show()
+        self._send_aux_gui_command({"type": "show_lift"})
+        self._last_timeline_playhead_update_wall_time = 0.0
+        self._last_graph_update_wall_time = 0.0
 
     def _configured_amr_slot_summary_by_base_id(self) -> Dict[str, str]:
         summaries: Dict[str, str] = {}
@@ -5573,7 +6629,9 @@ class SimulationVisualizer(QMainWindow):
 
             # Authoritative state from the latest patched simulator.
             parsed_onboard = self._parse_onboard_payloads_from_row(row)
-            if parsed_onboard is not None:
+            if parsed_onboard is not None and onboard_snapshot_is_authoritative(
+                row, parsed_onboard
+            ):
                 amr_payloads = {}
                 for item in parsed_onboard:
                     item = dict(item)
@@ -5594,12 +6652,7 @@ class SimulationVisualizer(QMainWindow):
                     amr_payloads[item["task_id"]] = item
                 continue
 
-            if grouped_records and (
-                "dropoff" in text
-                or "drop_off" in text
-                or "unload" in text
-                or "complete" in text
-            ):
+            if grouped_records and row_completes_payload_transport(row):
                 for item in grouped_records:
                     amr_payloads.pop(item["task_id"], None)
                 continue
@@ -5625,12 +6678,7 @@ class SimulationVisualizer(QMainWindow):
                     ).strip(),
                     "updated": event.start_time,
                 }
-            elif (
-                "dropoff" in text
-                or "drop_off" in text
-                or "unload" in text
-                or "complete" in text
-            ):
+            elif row_completes_payload_transport(row):
                 amr_payloads.pop(task_id, None)
 
         amr_ids = sorted(set(amr_states.keys()) | set(last_seen.keys()))
@@ -5658,6 +6706,22 @@ class SimulationVisualizer(QMainWindow):
                 slots_text = str(len(payload_records))
 
             updated = last_seen.get(amr_id) or state.get("timestamp")
+            monitor_status = state.get("status") or state.get("event_type") or "-"
+            state_end = state.get("end_time")
+            segment_name = str(state.get("segment_type", "") or "").strip().lower()
+            if (
+                str(monitor_status).strip().lower() == "completed"
+                and isinstance(state_end, datetime)
+                and self.current_time < state_end
+            ):
+                monitor_status = {
+                    "pickup": "loading",
+                    "dropoff": "unloading",
+                    "corridor": "in transit",
+                    "local_manoeuvre": "manoeuvring",
+                    "lift_loaded": "in lift",
+                    "lift_travel": "in lift",
+                }.get(segment_name, "in progress")
             rows.append(
                 {
                     "amr_id": amr_id,
@@ -5665,7 +6729,7 @@ class SimulationVisualizer(QMainWindow):
                     "payload_count": len(payload_records),
                     "slots": slots_text,
                     "task_ids": task_text or (state.get("task_id") or "-"),
-                    "status": state.get("status") or state.get("event_type") or "-",
+                    "status": monitor_status,
                     "segment_type": state.get("segment_type") or "-",
                     "from_location": state.get("from_location")
                     or state.get("start_node")
@@ -6053,6 +7117,10 @@ class SimulationVisualizer(QMainWindow):
             return "dropoff"
         if event_type == "location_payload_exit":
             return "pickup"
+        if event_type == "payload_service_arrival":
+            # A bin can arrive for servicing without entering inventory. Do not
+            # let the legacy substring matcher read "payload" as a load action.
+            return ""
 
         # Generated rows and assignment rows are task metadata, not physical
         # inventory movement.  Most generated rows also have no AMR id.
@@ -6476,27 +7544,31 @@ class SimulationVisualizer(QMainWindow):
                 )
             )
 
+        spaces_by_name: Dict[str, dict] = {}
         slot_payloads_by_space: Dict[str, set] = {}
         for idx, space in enumerate(spaces, start=1):
             if not isinstance(space, dict):
                 continue
             space_name = str(space.get("name", "")).strip() or f"Inventory {idx}"
-            slot_payloads = set()
-            for slot in space.get("payload_slots", []) or []:
-                if not isinstance(slot, dict):
-                    continue
-                slot_payload = str(slot.get("payload", "") or "").strip()
-                if slot_payload:
-                    slot_payloads.add(slot_payload)
-            slot_payloads_by_space[space_name] = slot_payloads
+            spaces_by_name[space_name] = space
+            slot_payloads_by_space[space_name] = {
+                str(slot.get("payload", "") or "").strip()
+                for slot in space.get("payload_slots", []) or []
+                if isinstance(slot, dict)
+                and str(slot.get("payload", "") or "").strip()
+            }
 
         def row_allows_payload(row: dict, payload_name: str) -> bool:
             payload_name = str(payload_name or "").strip()
             if not payload_name:
                 return True
             space_name = str(row.get("space", "") or "").strip()
-            slot_payloads = slot_payloads_by_space.get(space_name, set())
-            return not slot_payloads or payload_name in slot_payloads
+            space = spaces_by_name.get(space_name)
+            if space is None:
+                return bool(row.get("_capacity_overflow"))
+            return self._inventory_space_can_fit_payload_name(
+                location_name, space, payload_name
+            )
 
         def compatible_space_row(space_name: str, payload_name: str):
             target = self._find_inventory_space_row(rows, space_name)
@@ -6510,15 +7582,21 @@ class SimulationVisualizer(QMainWindow):
                 or csv_row.get("container_type", "")
                 or ""
             ).strip()
-            target = self._best_empty_inventory_row_for_replacement(rows, csv_row)
-            if target is not None and row_allows_payload(target, payload_name):
-                return target
-            for candidate in rows:
-                if str(candidate.get("payload", "-")).strip() not in {"", "-"}:
-                    continue
-                if row_allows_payload(candidate, payload_name):
-                    return candidate
-            return None
+            candidates = [
+                candidate
+                for candidate in rows
+                if str(candidate.get("payload", "-")).strip() in {"", "-"}
+                and row_allows_payload(candidate, payload_name)
+            ]
+            if not candidates:
+                return None
+            return min(
+                candidates,
+                key=lambda candidate: self._inventory_space_fit_score_for_payload_name(
+                    spaces_by_name.get(str(candidate.get("space", "") or ""), {}),
+                    payload_name,
+                ),
+            )
 
         seeded_rows = self._seeded_waste_container_rows_for_location(location_name)
         if seeded_rows:
@@ -6595,7 +7673,7 @@ class SimulationVisualizer(QMainWindow):
                         space_name = str(candidate.get("space", "") or "").strip()
                         if seeded_payload in slot_payloads_by_space.get(
                             space_name, set()
-                        ):
+                        ) and row_allows_payload(candidate, seeded_payload):
                             existing = candidate
                             break
 
@@ -6607,7 +7685,9 @@ class SimulationVisualizer(QMainWindow):
                         candidate_payload = str(
                             candidate.get("payload", "-") or "-"
                         ).strip()
-                        if candidate_payload in {"", "-"}:
+                        if candidate_payload in {"", "-"} and row_allows_payload(
+                            candidate, seeded_payload
+                        ):
                             existing = candidate
                             break
 
@@ -6622,17 +7702,33 @@ class SimulationVisualizer(QMainWindow):
             self._trim_inventory_rows_cache()
             return [dict(row) for row in result]
 
-        for event in self.sim_log.events_for_location_until(
+        location_events = self.sim_log.events_for_location_until(
             location_name, self.current_time
-        ):
+        )
+        has_authoritative_payload_events = any(
+            str(event.row.get("event_type", "") or "").strip().lower()
+            in {"location_payload_enter", "location_payload_exit"}
+            for event in location_events
+        )
+        overflow_sequence = 0
+
+        for event in location_events:
             row = event.row
-            if (
-                str(row.get("event_type", "") or "").strip().lower()
-                == "mass_collection_visit"
-            ):
+            event_type = str(row.get("event_type", "") or "").strip().lower()
+            if event_type == "mass_collection_visit":
                 self._apply_mass_collection_inventory_event(
                     rows, row, event.start_time, location_name
                 )
+                continue
+            if (
+                has_authoritative_payload_events
+                and event_type
+                not in {"location_payload_enter", "location_payload_exit"}
+            ):
+                # New simulator logs provide exact physical instance transitions.
+                # Combining them with legacy inferred segment pickup/drop-off rows
+                # removes or adds the same payload twice and understates occupancy
+                # at the report's peak timestamp.
                 continue
 
             physical_event_kind = self._inventory_physical_payload_event_kind(row)
@@ -6715,7 +7811,25 @@ class SimulationVisualizer(QMainWindow):
                     or compatible_empty_row(row)
                 )
                 if target is None:
-                    continue
+                    # Keep payloads that exceed the configured space count visible.
+                    # Otherwise the report can correctly show a shortfall while the
+                    # payload dialog appears to contain only the few instances that
+                    # happened to obtain a drawn space.
+                    overflow_sequence += 1
+                    target = self._enrich_payload_row_details(
+                        {
+                            "space": f"Unassigned overflow {overflow_sequence}",
+                            "payload": "-",
+                            "payload_instance_id": "-",
+                            "task_id": "-",
+                            "amr_id": "-",
+                            "status": "Capacity overflow",
+                            "timestamp": "-",
+                            "source": "Simulation CSV (capacity overflow)",
+                            "_capacity_overflow": True,
+                        }
+                    )
+                    rows.append(target)
 
                 # A returned waste bin has been emptied at the waste destination,
                 # so when it comes back to the department its fill restarts from
@@ -6742,15 +7856,25 @@ class SimulationVisualizer(QMainWindow):
                         "task_id": str(row.get("task_id", "")).strip() or "-",
                         "amr_id": str(row.get("amr_id", "")).strip() or "-",
                         "status": (
-                            "Returned empty"
-                            if str(row.get("task_id", "")).upper().startswith("RETURN")
-                            else "Occupied"
+                            "Capacity overflow"
+                            if target.get("_capacity_overflow")
+                            else (
+                                "Returned empty"
+                                if str(row.get("task_id", "")).upper().startswith(
+                                    "RETURN"
+                                )
+                                else "Occupied"
+                            )
                         ),
                         "timestamp": event.start_time.strftime("%Y-%m-%d %H:%M:%S"),
                         "fill_start_time": event.start_time.strftime(
                             "%Y-%m-%d %H:%M:%S"
                         ),
-                        "source": "Simulation CSV",
+                        "source": (
+                            "Simulation CSV (capacity overflow)"
+                            if target.get("_capacity_overflow")
+                            else "Simulation CSV"
+                        ),
                         **csv_details,
                     }
                 )
@@ -6759,14 +7883,22 @@ class SimulationVisualizer(QMainWindow):
             if is_pickup and self._event_location_matches(row, location_name, "pickup"):
                 payload = str(row.get("payload", "")).strip()
                 instance_id = str(row.get("payload_instance_id", "") or "").strip()
-                target = (
-                    self._find_inventory_row_by_payload_instance(rows, instance_id)
-                    or compatible_space_row(
-                        self._inventory_space_name_from_event(row, "pickup"), payload
-                    )
-                    or self._find_seeded_inventory_row_for_payload_event(rows, row)
+                target = self._find_inventory_row_by_payload_instance(
+                    rows, instance_id
                 )
-                if target is None and payload:
+                if not (
+                    target is None
+                    and has_authoritative_payload_events
+                    and instance_id
+                ):
+                    target = target or compatible_space_row(
+                        self._inventory_space_name_from_event(row, "pickup"), payload
+                    ) or self._find_seeded_inventory_row_for_payload_event(rows, row)
+                if (
+                    target is None
+                    and payload
+                    and not (has_authoritative_payload_events and instance_id)
+                ):
                     for candidate in rows:
                         if (
                             str(candidate.get("payload", "")).strip() == payload
@@ -6775,6 +7907,9 @@ class SimulationVisualizer(QMainWindow):
                             target = candidate
                             break
                 if target is None:
+                    continue
+                if target.get("_capacity_overflow"):
+                    rows.remove(target)
                     continue
                 target.update(
                     {
@@ -6798,6 +7933,28 @@ class SimulationVisualizer(QMainWindow):
                     }
                 )
                 target.update(self._enrich_payload_row_details(target))
+
+                replacement = next(
+                    (
+                        candidate
+                        for candidate in rows
+                        if candidate.get("_capacity_overflow")
+                        and row_allows_payload(
+                            target, str(candidate.get("payload", "") or "")
+                        )
+                    ),
+                    None,
+                )
+                if replacement is not None:
+                    freed_space = str(target.get("space", "") or "")
+                    replacement_state = dict(replacement)
+                    rows.remove(replacement)
+                    replacement_state["space"] = freed_space
+                    replacement_state["status"] = "Occupied"
+                    replacement_state["source"] = "Simulation CSV"
+                    replacement_state.pop("_capacity_overflow", None)
+                    target.update(replacement_state)
+                    target.update(self._enrich_payload_row_details(target))
 
         # Re-enrich every row at the current timeline position.  This is what
         # makes waste container labels/tooltips continue to fill while the
@@ -6838,6 +7995,12 @@ class SimulationVisualizer(QMainWindow):
                     "length_m": space.get("length_m", space.get("length", "")),
                     "width_m": space.get("width_m", space.get("width", "")),
                     "height_m": space.get("height_m", space.get("height", "")),
+                    "flexible": (
+                        "Yes"
+                        if bool(space.get("flexible", False))
+                        or self._location_is_dropoff_zone(location_name)
+                        else "No"
+                    ),
                     "occupied": "Yes" if occupied else "No",
                     "payload": payload if occupied else "Empty",
                     "task_id": live_row.get("task_id", space.get("task_id", "-")),
@@ -6886,6 +8049,296 @@ class SimulationVisualizer(QMainWindow):
             rows,
             self.current_time,
         )
+        dialog.exec()
+
+    def _maximum_payload_space_utilisation_for_location(
+        self, location_name: str
+    ) -> Tuple[dict, List[dict]]:
+        location = self._location_by_name(location_name)
+        if not location or not self.sim_log.events:
+            return {}, []
+
+        configured_spaces = []
+        configured_space_defs: Dict[str, dict] = {}
+        seen_space_names = set()
+        for index, space in enumerate(
+            location.get("inventory_spaces", []) or [], start=1
+        ):
+            if not isinstance(space, dict) or self._space_is_amr_space(space):
+                continue
+            name = str(space.get("name", "") or "").strip() or f"Inventory {index}"
+            if name in seen_space_names:
+                continue
+            configured_spaces.append(name)
+            configured_space_defs[name] = space
+            seen_space_names.add(name)
+        if not configured_spaces:
+            return {}, []
+
+        all_location_events = list(
+            self.sim_log._events_by_location.get(str(location_name), []) or []
+        )
+        authoritative_events = [
+            event
+            for event in all_location_events
+            if str(event.row.get("event_type", "") or "").strip().lower()
+            in {"location_payload_enter", "location_payload_exit"}
+        ]
+        authoritative_mode = bool(authoritative_events)
+        events = authoritative_events or [
+            event
+            for event in all_location_events
+            if self._inventory_physical_payload_event_kind(event.row)
+            in {"pickup", "dropoff"}
+        ]
+        events.sort(key=lambda event: event.start_time)
+        if not events:
+            return {}, []
+
+        start_time = self.sim_log.start_time or events[0].start_time
+        end_time = self.sim_log.end_time or max(event.end_time for event in events)
+        horizon_seconds = max((end_time - start_time).total_seconds(), 0.0)
+
+        occupied_by_space: Dict[str, dict] = {}
+        instance_to_space: Dict[str, str] = {}
+        occupied_seconds = {name: 0.0 for name in configured_spaces}
+        entry_counts = {name: 0 for name in configured_spaces}
+        first_occupied: Dict[str, datetime] = {}
+        last_released: Dict[str, datetime] = {}
+        overflow_counter = 0
+        inferred_assignment = False
+        synthetic_counter = 0
+        previous_time = start_time
+        maximum_occupied = 0
+        peak_time = start_time
+        spaces_at_peak = set()
+
+        def clean(value) -> str:
+            text = str(value or "").strip()
+            return "" if text.lower() in {"", "-", "nan", "none", "null"} else text
+
+        def record_elapsed(until: datetime) -> None:
+            nonlocal previous_time
+            seconds = max((until - previous_time).total_seconds(), 0.0)
+            if seconds > 0:
+                for space_name in occupied_by_space:
+                    if space_name in occupied_seconds:
+                        occupied_seconds[space_name] += seconds
+            previous_time = max(previous_time, until)
+
+        grouped_events: Dict[datetime, List[VisualEvent]] = {}
+        for event in events:
+            grouped_events.setdefault(event.start_time, []).append(event)
+
+        for timestamp in sorted(grouped_events):
+            record_elapsed(timestamp)
+            for event in grouped_events[timestamp]:
+                row = event.row
+                event_kind = self._inventory_physical_payload_event_kind(row)
+                if not event_kind or not self._event_location_matches(
+                    row, location_name, event_kind
+                ):
+                    continue
+
+                payload = clean(row.get("payload", "") or row.get("container_type", ""))
+                instance_id = clean(row.get("payload_instance_id", ""))
+                task_id = clean(row.get("task_id", ""))
+                if instance_id:
+                    instance_key = f"instance:{instance_id}"
+                elif task_id:
+                    instance_key = f"task:{task_id}:{payload}"
+                else:
+                    synthetic_counter += 1
+                    instance_key = f"synthetic:{synthetic_counter}:{payload}"
+
+                explicit_space = clean(
+                    self._inventory_space_name_from_event(row, event_kind)
+                )
+                if event_kind == "dropoff":
+                    if instance_key in instance_to_space:
+                        continue
+                    target_space = ""
+                    if (
+                        explicit_space in configured_spaces
+                        and explicit_space not in occupied_by_space
+                        and self._inventory_space_can_fit_payload_name(
+                            location_name,
+                            configured_space_defs[explicit_space],
+                            payload,
+                        )
+                    ):
+                        target_space = explicit_space
+                    if not target_space:
+                        inferred_assignment = True
+                        candidates = [
+                            name
+                            for name in configured_spaces
+                            if name not in occupied_by_space
+                            and self._inventory_space_can_fit_payload_name(
+                                location_name,
+                                configured_space_defs[name],
+                                payload,
+                            )
+                        ]
+                        if candidates:
+                            target_space = min(
+                                candidates,
+                                key=lambda name: self._inventory_space_fit_score_for_payload_name(
+                                    configured_space_defs[name], payload
+                                ),
+                            )
+                    if not target_space:
+                        overflow_counter += 1
+                        target_space = f"Unassigned overflow {overflow_counter}"
+                    occupied_by_space[target_space] = {
+                        "instance_key": instance_key,
+                        "payload": payload,
+                    }
+                    instance_to_space[instance_key] = target_space
+                    if target_space in entry_counts:
+                        entry_counts[target_space] += 1
+                        first_occupied.setdefault(target_space, timestamp)
+                else:
+                    target_space = instance_to_space.get(instance_key, "")
+                    if not target_space and authoritative_mode and instance_id:
+                        # An exact instance exit for an instance not currently at
+                        # this location is stale/duplicated bookkeeping. Never
+                        # remove a different same-type payload in its place.
+                        continue
+                    if not target_space and explicit_space in occupied_by_space:
+                        target_space = explicit_space
+                    if not target_space and payload:
+                        target_space = next(
+                            (
+                                name
+                                for name, item in occupied_by_space.items()
+                                if str(item.get("payload", "") or "") == payload
+                            ),
+                            "",
+                        )
+                    if target_space:
+                        removed = occupied_by_space.pop(target_space, {})
+                        removed_key = str(removed.get("instance_key", "") or "")
+                        if removed_key:
+                            instance_to_space.pop(removed_key, None)
+                        if target_space in last_released or target_space in configured_spaces:
+                            last_released[target_space] = timestamp
+                        if target_space in configured_spaces:
+                            overflow_space = next(
+                                (
+                                    name
+                                    for name in occupied_by_space
+                                    if name not in configured_spaces
+                                    and self._inventory_space_can_fit_payload_name(
+                                        location_name,
+                                        configured_space_defs[target_space],
+                                        str(
+                                            occupied_by_space[name].get("payload", "")
+                                            or ""
+                                        ),
+                                    )
+                                ),
+                                "",
+                            )
+                            if overflow_space:
+                                replacement = occupied_by_space.pop(overflow_space)
+                                occupied_by_space[target_space] = replacement
+                                replacement_key = str(
+                                    replacement.get("instance_key", "") or ""
+                                )
+                                if replacement_key:
+                                    instance_to_space[replacement_key] = target_space
+                                entry_counts[target_space] += 1
+                                first_occupied.setdefault(target_space, timestamp)
+
+            current_occupied = len(occupied_by_space)
+            if current_occupied > maximum_occupied:
+                maximum_occupied = current_occupied
+                peak_time = timestamp
+                spaces_at_peak = set(occupied_by_space)
+
+        record_elapsed(end_time)
+        configured_count = len(configured_spaces)
+        peak_percent = (
+            (maximum_occupied / configured_count) * 100.0
+            if configured_count > 0
+            else 0.0
+        )
+        rows = []
+        for space_name in configured_spaces:
+            seconds = float(occupied_seconds.get(space_name, 0.0) or 0.0)
+            rows.append(
+                {
+                    "space": space_name,
+                    "ever_occupied": "Yes" if entry_counts.get(space_name, 0) else "No",
+                    "entries": int(entry_counts.get(space_name, 0) or 0),
+                    "occupied_duration": SimulationLog._format_runtime(seconds),
+                    "utilisation_percent": (
+                        f"{(seconds / horizon_seconds) * 100.0:.1f}"
+                        if horizon_seconds > 0
+                        else "0.0"
+                    ),
+                    "first_occupied": (
+                        first_occupied[space_name].strftime("%Y-%m-%d %H:%M:%S")
+                        if space_name in first_occupied
+                        else "-"
+                    ),
+                    "last_released": (
+                        last_released[space_name].strftime("%Y-%m-%d %H:%M:%S")
+                        if space_name in last_released
+                        else "-"
+                    ),
+                    "occupied_at_peak": "Yes" if space_name in spaces_at_peak else "No",
+                }
+
+            )
+
+        summary = {
+            "maximum_occupied_spaces": maximum_occupied,
+            "configured_spaces": configured_count,
+            "maximum_utilisation_percent": peak_percent,
+            "peak_time": peak_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "horizon": SimulationLog._format_runtime(horizon_seconds),
+            "overflow_at_peak": max(0, maximum_occupied - configured_count),
+            "assignment_note": (
+                "Individual-space allocation was inferred because the CSV "
+                "does not name inventory spaces. Compatible spaces are selected by "
+                "dimensional best fit; location-wide maximum occupancy is still "
+                "based on unique payload instances."
+                if inferred_assignment
+                else "Individual-space allocation uses the inventory-space names in the CSV."
+            ),
+        }
+        return summary, rows
+
+    def show_maximum_payload_space_utilisation(self, location_name: str) -> None:
+        if not self.sim_log.events:
+            QMessageBox.information(
+                self,
+                "Maximum payload-space utilisation",
+                "Load a simulation CSV before calculating maximum utilisation.",
+            )
+            return
+        summary, rows = self._maximum_payload_space_utilisation_for_location(
+            location_name
+        )
+        if not rows:
+            QMessageBox.information(
+                self,
+                f"Maximum payload-space utilisation - {location_name}",
+                "No configured payload inventory spaces or physical payload events "
+                "were found for this location.",
+            )
+            return
+        dialog = PayloadSpaceMaximumUtilisationDialog(
+            self,
+            location_name,
+            summary,
+            rows,
+        )
+        note = str(summary.get("assignment_note", "") or "").strip()
+        if note:
+            dialog.setToolTip(note)
         dialog.exec()
 
     def show_dropoff_tasks_at_node(self, node_name: str):
@@ -7001,9 +8454,16 @@ class SimulationVisualizer(QMainWindow):
                     name
                 ),
             )
-            self.node_context_menu.addAction(
-                "Show inventory payloads",
+            payload_menu = self.node_context_menu.addMenu("Payloads")
+            payload_menu.addAction(
+                "View current payloads",
                 lambda checked=False, name=node_name: self.show_location_inventory_payloads(
+                    name
+                ),
+            )
+            payload_menu.addAction(
+                "Find maximum space utilisation",
+                lambda checked=False, name=node_name: self.show_maximum_payload_space_utilisation(
                     name
                 ),
             )
@@ -7119,15 +8579,163 @@ class SimulationVisualizer(QMainWindow):
             )
             self.event_box.append(line)
 
-    def _scroll_timeline_to_time(self, value: Optional[datetime]):
-        if value is None or not hasattr(self, "timeline_widget"):
+    def draw_staff_handoff_state_qt(self, floor: int) -> None:
+        """Draw staff and their payload during a drop-off-zone handoff cycle."""
+        if (
+            not self.current_time
+            or not self.sim_log.events
+            or not getattr(self, "show_staff_handoffs_check", None)
+            or not self.show_staff_handoffs_check.isChecked()
+        ):
             return
-        self.refresh_timeline()
-        x = self.timeline_widget._time_to_x(value)
-        bar = self.timeline_scroll.horizontalScrollBar()
-        target = int(x - (self.timeline_scroll.viewport().width() / 2))
-        bar.setValue(max(0, min(bar.maximum(), target)))
-        self.timeline_widget.update()
+
+        visible_world = self._visible_world_rect(margin_m=6.0)
+        states = self.sim_log.active_person_states_at(self.current_time)
+        for person_id, state in states.items():
+            x = self._float_or_none(state.get("x"))
+            y = self._float_or_none(state.get("y"))
+            event_type = str(state.get("event_type", "") or "").strip().lower()
+            status = str(state.get("status", "") or "").strip().lower()
+            payload = str(state.get("payload", "") or "").strip()
+            row = state.get("raw", {}) or {}
+            carrying = event_type == "staff_payload_transport" and bool(payload)
+            manoeuvring = event_type == "staff_payload_exchange" and bool(payload)
+
+            start_x = self._float_or_none(row.get("start_x"))
+            start_y = self._float_or_none(row.get("start_y"))
+            end_x = self._float_or_none(row.get("end_x"))
+            end_y = self._float_or_none(row.get("end_y"))
+            dx = (end_x - start_x) if start_x is not None and end_x is not None else 1.0
+            dy = (end_y - start_y) if start_y is not None and end_y is not None else 0.0
+            heading_length = max(math.hypot(dx, dy), 0.001)
+            heading_dx = dx / heading_length
+            heading_dy = dy / heading_length
+
+            # Staff transport rows aggregate a complete handoff leg. Rebuild its
+            # configured graph path and interpolate by travelled route distance
+            # so people and payloads follow corridor turns instead of cutting a
+            # straight line through rooms and walls.
+            if event_type in {"staff_travel", "staff_payload_transport"}:
+                route = self.layout_model.staff_route_points(
+                    state.get("from_location", ""),
+                    state.get("to_location", ""),
+                    str(row.get("lift_id", "") or "").strip(),
+                )
+                route_state = interpolate_staff_route(
+                    route,
+                    float(state.get("fraction", 0.0) or 0.0),
+                    float(
+                        (self.layout_model.data.get("building", {}) or {}).get(
+                            "floor_height_m", 4.0
+                        )
+                        or 4.0
+                    ),
+                )
+                if route_state is not None:
+                    x = float(route_state["x"])
+                    y = float(route_state["y"])
+                    state["floor"] = int(route_state["floor"])
+                    heading_dx = float(route_state["heading_dx"])
+                    heading_dy = float(route_state["heading_dy"])
+
+            if state.get("floor") is None or int(state["floor"]) != int(floor):
+                continue
+            if x is None or y is None or not self._point_in_world_rect(
+                x, y, visible_world
+            ):
+                continue
+
+            heading_deg = math.degrees(math.atan2(heading_dy, heading_dx))
+
+            person_x = x
+            person_y = y
+            if carrying or manoeuvring:
+                payload_length, _payload_width = self._payload_dimensions_for_name(
+                    payload
+                )
+                person_x, person_y = person_position_behind_payload(
+                    x,
+                    y,
+                    heading_dx,
+                    heading_dy,
+                    payload_length,
+                )
+                if manoeuvring:
+                    payload_status = "Full / empty payload exchange"
+                else:
+                    payload_status = (
+                        "Empty return"
+                        if status == "staff_payload_return"
+                        else "Staff delivery"
+                    )
+                self._draw_payload_box_at_world(
+                    x,
+                    y,
+                    payload,
+                    rotation_deg=heading_deg,
+                    status=payload_status,
+                    source="Drop-off-zone staff handoff",
+                    row_details={
+                        "payload": payload,
+                        "status": payload_status,
+                        "source": "Drop-off-zone staff handoff",
+                        "payload_instance_id": str(
+                            row.get("payload_instance_id", "") or ""
+                        ),
+                    },
+                )
+
+            sx, sy = self.world_to_scene(person_x, person_y)
+            radius = 0.32
+            person_item = QGraphicsEllipseItem(
+                sx - radius,
+                sy - radius,
+                radius * 2.0,
+                radius * 2.0,
+            )
+            person_item.setBrush(QBrush(QColor("#f4d35e")))
+            person_item.setPen(QPen(QColor("#5c4813"), 0.0))
+            person_item.setCacheMode(QGraphicsItem.DeviceCoordinateCache)
+            person_item.setData(0, "staff_handoff_person")
+            person_item.setData(1, person_id)
+            action = "Handling at destination"
+            if manoeuvring:
+                action = "Swapping the full and empty payloads"
+            elif carrying:
+                action = (
+                    "Returning payload to zone"
+                    if status == "staff_payload_return"
+                    else "Collecting and taking payload to destination"
+                )
+            elif event_type == "staff_travel":
+                action = "Walking to drop-off zone"
+            person_item.setToolTip(
+                f"{person_id}\n{action}\n"
+                f"{state.get('from_location', '')} → {state.get('to_location', '')}\n"
+                f"Payload: {payload or '-'}"
+            )
+            self.graphics_scene.addItem(person_item)
+            self._active_dynamic_items().append(person_item)
+
+            if self.show_labels_check.isChecked():
+                label = person_id
+                if manoeuvring:
+                    label += "\nExchange"
+                elif carrying:
+                    label += "\nReturn" if status == "staff_payload_return" else "\nCollect / deliver"
+                self.draw_text_item(
+                    sx + 0.38,
+                    sy - 0.38,
+                    label,
+                    color="#f4d35e",
+                    dynamic=True,
+                    pixel_size=7,
+                )
+
+    def _scroll_timeline_to_time(self, value: Optional[datetime]):
+        if value is None:
+            return
+        self._send_aux_gui_command({"type": "timeline_center", "time": value})
 
     def _clamp_to_sim_range(self, value: datetime) -> datetime:
         if self.sim_log.start_time and value < self.sim_log.start_time:
@@ -7174,56 +8782,19 @@ class SimulationVisualizer(QMainWindow):
         self.view.viewport().update()
 
     def zoom_timeline(self, factor: float):
-        if not hasattr(self, "timeline_widget"):
-            return
         anchor = self.current_time or self.sim_log.start_time
-        self.timeline_widget.zoom_by_factor(factor, anchor)
+        self._send_aux_gui_command(
+            {
+                "type": "timeline_zoom_factor",
+                "factor": float(factor),
+                "anchor_time": anchor,
+            }
+        )
 
     def on_timeline_zoom_changed(self, text: str):
-        if not hasattr(self, "timeline_widget"):
-            return
-        text = str(text or "").strip().lower()
-        seconds = None
-        if text == "fit":
-            total_seconds = 0.0
-            if self.sim_log.start_time and self.sim_log.end_time:
-                total_seconds = max(
-                    1.0,
-                    (self.sim_log.end_time - self.sim_log.start_time).total_seconds(),
-                )
-            visible_width = max(
-                300,
-                self.timeline_scroll.viewport().width()
-                - self.timeline_widget.left_pad
-                - self.timeline_widget.right_pad,
-            )
-            seconds = (
-                total_seconds / visible_width
-                if total_seconds > 0
-                else self.timeline_widget.default_seconds_per_pixel
-            )
-        else:
-            mapping = {
-                "15 min": 15 * 60,
-                "30 min": 30 * 60,
-                "1 hour": 60 * 60,
-                "3 hours": 3 * 60 * 60,
-                "6 hours": 6 * 60 * 60,
-                "12 hours": 12 * 60 * 60,
-                "1 day": 24 * 60 * 60,
-            }
-            window_seconds = mapping.get(text)
-            if window_seconds:
-                visible_width = max(
-                    300,
-                    self.timeline_scroll.viewport().width()
-                    - self.timeline_widget.left_pad
-                    - self.timeline_widget.right_pad,
-                )
-                seconds = window_seconds / visible_width
-        if seconds is not None:
-            self.timeline_widget.set_zoom_seconds_per_pixel(seconds)
-            self._scroll_timeline_to_time(self.current_time or self.sim_log.start_time)
+        self._send_aux_gui_command(
+            {"type": "timeline_zoom", "preset": str(text or "")}
+        )
 
     def update_time_display(self):
         if not self.current_time:
@@ -7252,12 +8823,13 @@ class SimulationVisualizer(QMainWindow):
         self.time_label.setText(
             f"Current: {self.current_time.strftime('%Y-%m-%d %H:%M:%S')}\nStart: {start}\nEnd: {end}"
         )
-        # Do not rebuild the full AMR timeline on every playback tick.  The
-        # blocks only change when the CSV/layout changes; during playback only
-        # the playhead needs repainting.
-        if hasattr(self, "timeline_widget"):
-            self.timeline_widget.current_time = self.current_time
-            self.timeline_widget.update()
+        # The blocks only change when the CSV/layout changes. Throttle even the
+        # inexpensive playhead repaint during playback, with a lower rate while
+        # the lift monitor has priority for UI updates.
+        if not self.is_playing or self._timeline_playhead_update_due():
+            self._send_aux_gui_command(
+                {"type": "timeline_time", "time": self.current_time}
+            )
         self.update_lift_monitor_dialog()
         self.update_amr_payload_monitor_dialog()
 
@@ -7304,8 +8876,8 @@ class SimulationVisualizer(QMainWindow):
             self._last_play_tick_wall_time = None
             self.play_timer.stop()
         self.update_time_display()
-        self.refresh_dynamic_scene()
-        self.view.viewport().update()
+        if self._graph_update_due(now):
+            self.refresh_dynamic_scene()
 
     def step_seconds(self, seconds: int):
         if not self.current_time:
@@ -7369,14 +8941,34 @@ class SimulationVisualizer(QMainWindow):
         self.fit_view()
         self.view.viewport().update()
 
-    def open_json(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Open Layout JSON", "", "JSON files (*.json)"
-        )
-        if not path:
-            return
+    def load_json_file(self, path: str) -> bool:
+        try:
+            self.layout_model.load(path)
+        except json.JSONDecodeError as exc:
+            QMessageBox.critical(
+                self,
+                "Could not load layout JSON",
+                f"{Path(path).name} is not valid JSON.\n\n{exc}",
+            )
+            self.set_status("Layout JSON load failed: invalid JSON syntax")
+            return False
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Could not load layout JSON",
+                f"{Path(path).name} could not be read.\n\n{exc}",
+            )
+            self.set_status("Layout JSON load failed: file could not be read")
+            return False
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Could not load layout JSON",
+                f"{Path(path).name} could not be loaded.\n\n{exc}",
+            )
+            self.set_status("Layout JSON load failed")
+            return False
 
-        self.layout_model.load(path)
         self.current_json_path = path
         self._invalidate_runtime_caches()
 
@@ -7400,6 +8992,15 @@ class SimulationVisualizer(QMainWindow):
 
         self.start_loading_floor_dxfs_from_json()
         self.set_status(f"Loaded layout {Path(path).name}")
+        return True
+
+    def open_json(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Layout JSON", "", "JSON files (*.json)"
+        )
+        if not path:
+            return
+        self.load_json_file(path)
 
     def open_dxf(self):
         path, _ = QFileDialog.getOpenFileName(self, "Open DXF", "", "DXF files (*.dxf)")
@@ -7424,13 +9025,34 @@ class SimulationVisualizer(QMainWindow):
             label=f"Loading DXF for floor {floor}...",
         )
 
-    def open_csv(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Open Simulation CSV", "", "CSV files (*.csv)"
-        )
-        if not path:
-            return
-        self.sim_log.load(path)
+    def load_csv_file(self, path: str) -> bool:
+        try:
+            self.sim_log.load(path)
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Could not load simulation CSV",
+                f"{Path(path).name} could not be read.\n\n{exc}",
+            )
+            self.set_status("Simulation CSV load failed: file could not be read")
+            return False
+        except csv.Error as exc:
+            QMessageBox.critical(
+                self,
+                "Could not load simulation CSV",
+                f"{Path(path).name} is not a valid CSV file.\n\n{exc}",
+            )
+            self.set_status("Simulation CSV load failed: invalid CSV")
+            return False
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Could not load simulation CSV",
+                f"{Path(path).name} could not be loaded.\n\n{exc}",
+            )
+            self.set_status("Simulation CSV load failed")
+            return False
+
         self.current_csv_path = path
         self._invalidate_runtime_caches()
         self.update_follow_amr_options()
@@ -7438,7 +9060,10 @@ class SimulationVisualizer(QMainWindow):
             QMessageBox.critical(
                 self, "No events", "No timestamped rows were found in the CSV."
             )
-            return
+            self.current_csv_path = None
+            self.update_loaded_files()
+            self.set_status("Simulation CSV load failed: no timestamped event rows")
+            return False
         self.update_loaded_files()
         self._sync_timeline_from_layout_and_csv()
         self.on_timeline_zoom_changed(self.timeline_zoom_combo.currentText())
@@ -7446,6 +9071,15 @@ class SimulationVisualizer(QMainWindow):
         self.set_status(
             f"Loaded simulation CSV {Path(path).name} with {len(self.sim_log.events)} events"
         )
+        return True
+
+    def open_csv(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Simulation CSV", "", "CSV files (*.csv)"
+        )
+        if not path:
+            return
+        self.load_csv_file(path)
 
     def _content_bounds(self):
         floor = self.current_floor()
@@ -8050,6 +9684,86 @@ class SimulationVisualizer(QMainWindow):
         )
         return rows
 
+    def navigate_to_failed_task(self, failure: dict) -> str:
+        """Seek to a failure and focus the best available destination node."""
+        failure_time = failure.get("failure_time")
+        if failure_time is None:
+            return ""
+
+        if self.is_playing:
+            self.is_playing = False
+            self.play_timer.stop()
+            self.play_btn.setText("Play")
+            self._last_play_tick_wall_time = None
+
+        self.current_time = failure_time
+        self._invalidate_runtime_caches()
+        self.update_time_display()
+        self.refresh_dynamic_scene()
+        self._scroll_timeline_to_time(self.current_time)
+
+        requested_location = str(
+            failure.get("inspection_location", "")
+            or failure.get("final_destination", "")
+            or ""
+        ).strip()
+        fallback_location = str(failure.get("amr_destination", "") or "").strip()
+        focus_location = requested_location
+        point = self.layout_model.points.get(focus_location, {})
+        if not point and fallback_location:
+            focus_location = fallback_location
+            point = self.layout_model.points.get(focus_location, {})
+
+        if point:
+            try:
+                self.set_floor(int(point.get("floor", self.current_floor())))
+                sx, sy = self.world_to_scene(
+                    point.get("x", 0.0), point.get("y", 0.0)
+                )
+                self.view.centerOn(sx, sy)
+            except (TypeError, ValueError):
+                pass
+
+        task_id = str(failure.get("task_id", "") or "").strip()
+        timestamp = self.sim_log._format_event_datetime(failure_time)
+        if point:
+            self.set_status(
+                f"Failed task {task_id}: {timestamp} at {focus_location}"
+            )
+        else:
+            self.set_status(
+                f"Failed task {task_id}: {timestamp}; destination "
+                f"{requested_location or '-'} is not present in the loaded layout"
+            )
+        self.view.viewport().update()
+        return focus_location if point else ""
+
+    def open_failed_tasks_dialog(self):
+        if not self.sim_log.events:
+            QMessageBox.information(
+                self,
+                "No simulation loaded",
+                "Load a simulation CSV first.",
+            )
+            return
+
+        failures = self.sim_log.failed_task_rows()
+        if not failures:
+            QMessageBox.information(
+                self,
+                "No failed tasks",
+                "No task_failed rows were found in the simulation log.",
+            )
+            return
+
+        dialog = FailedTasksDialog(self, failures)
+        if dialog.exec() != QDialog.Accepted or not dialog.selected_failure:
+            return
+
+        focus_location = self.navigate_to_failed_task(dialog.selected_failure)
+        if focus_location:
+            self.show_location_inventory_payloads(focus_location)
+
     def open_tasks_by_location_department_dialog(self):
         if not self.layout_model.data and not self.sim_log.events:
             QMessageBox.information(
@@ -8376,24 +10090,28 @@ class SimulationVisualizer(QMainWindow):
         return start_time, end_time
 
     def refresh_timeline(self):
-        if not hasattr(self, "timeline_widget"):
-            return
-
         timeline_data = self.build_amr_timeline_data() if self.sim_log.events else []
         start_time, end_time = self._timeline_display_range(timeline_data)
-        self.timeline_widget.set_data(
-            timeline_data,
-            start_time,
-            end_time,
-            self.current_time,
+        self._send_aux_gui_command(
+            {
+                "type": "timeline_data",
+                "timeline_data": timeline_data,
+                "start_time": start_time,
+                "end_time": end_time,
+                "current_time": self.current_time,
+            }
         )
 
     def on_timeline_seek(self, new_time: datetime):
         self.current_time = new_time
         self.update_time_display()
         self.refresh_dynamic_scene()
-        self.refresh_timeline()
         self.view.viewport().update()
+
+    def closeEvent(self, event):
+        self.play_timer.stop()
+        self._shutdown_aux_gui_process()
+        super().closeEvent(event)
 
 
 def configure_application_font(app: QApplication) -> None:
@@ -8411,7 +10129,23 @@ def configure_application_font(app: QApplication) -> None:
     app.setFont(font)
 
 
-if __name__ == "__main__":
+def _parse_visualiser_args(argv: List[str]):
+    parser = argparse.ArgumentParser(description="AMR simulation visualiser")
+    parser.add_argument(
+        "--config",
+        help="Open the selected AMR simulator layout JSON after startup.",
+    )
+    parser.add_argument(
+        "--csv",
+        help="Open the selected AMR simulation event CSV after startup.",
+    )
+    args, _unknown = parser.parse_known_args(argv)
+    return args
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    mp.freeze_support()
+    args = _parse_visualiser_args(sys.argv[1:] if argv is None else argv)
     if QOpenGLWidget is not None:
         default_format = QSurfaceFormat()
         default_format.setDepthBufferSize(24)
@@ -8425,4 +10159,18 @@ if __name__ == "__main__":
     configure_application_font(app)
     window = SimulationVisualizer()
     window.show()
-    sys.exit(app.exec())
+
+    def load_startup_files():
+        config_loaded = True
+        if args.config:
+            config_loaded = window.load_json_file(args.config)
+        if args.csv and config_loaded:
+            window.load_csv_file(args.csv)
+
+    if args.config or args.csv:
+        QTimer.singleShot(0, load_startup_files)
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

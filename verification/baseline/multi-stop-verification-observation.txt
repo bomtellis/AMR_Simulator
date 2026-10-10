@@ -1,0 +1,21 @@
+Observed 2026-10-02 during the D015/D016 verification checkpoint.
+
+Initial command:
+.venv/Scripts/python.exe -m verification.run --output verification/latest
+
+The process exited with code 1 after approximately 2.47 seconds and returned
+no console output. The test log ended at:
+test_background_build_completes_and_shows_origin
+(test_demand_preview.DemandPreviewUiTests) ...
+
+No traceback or Qt diagnostic was captured. A six-hour LTN run was executing
+concurrently. Concurrency is context, not a proven explanation.
+
+Two subsequent full-suite invocations with -X faulthandler passed all 380 tests.
+The second also regenerated the evidence page after its review text was updated.
+Twenty fresh-process repetitions of this individual UI test, also using
+faulthandler, returned exit code 0. The individual outputs are retained locally
+in verification/latest/preview-ui-repeatability.json.
+
+Disposition: unexplained, not reproduced in the diagnostic attempts; retain as
+a release-verification follow-up. No application UI repair is claimed.

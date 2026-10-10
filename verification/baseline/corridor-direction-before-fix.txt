@@ -1,0 +1,18 @@
+D052: current acceptance test against the on_left_click handler from d75b49d.
+Other code uses the current checkout. Expected reproduction: unchecked direction still allows reverse routing.
+
+test_connect_tool_unchecked_direction_is_one_way (tests.test_corridor_drawing.CorridorDrawingUiTests.test_connect_tool_unchecked_direction_is_one_way) ... FAIL
+
+======================================================================
+FAIL: test_connect_tool_unchecked_direction_is_one_way (tests.test_corridor_drawing.CorridorDrawingUiTests.test_connect_tool_unchecked_direction_is_one_way)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_corridor_drawing.py", line 202, in test_connect_tool_unchecked_direction_is_one_way
+    self.assertIsNone(sim._shortest_path_same_floor(0, 'B', 'A'))
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'distance_m': 10.0, 'edges': [{'to': 'A', 'distance_m': 10.0, 'bidirectional': True, 'configured_width_m': 2.4, 'width_m': 2.4, 'door_restricted': False, 'door_nodes': [], 'people_area_type': 'none', 'people_profile_ids': [], 'from': 'B'}]} is not None
+
+----------------------------------------------------------------------
+Ran 1 test in 0.024s
+
+FAILED (failures=1)

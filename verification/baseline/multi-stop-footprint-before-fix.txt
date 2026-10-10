@@ -1,0 +1,31 @@
+test_delivered_wide_payload_stops_restricting_corridor_clearance (tests.test_multi_stop_route_rules.MultiStopRouteRulesTests.test_delivered_wide_payload_stops_restricting_corridor_clearance) ... FAIL
+test_future_wide_pickup_does_not_restrict_loaded_approach (tests.test_multi_stop_route_rules.MultiStopRouteRulesTests.test_future_wide_pickup_does_not_restrict_loaded_approach) ... FAIL
+
+======================================================================
+FAIL: test_delivered_wide_payload_stops_restricting_corridor_clearance (tests.test_multi_stop_route_rules.MultiStopRouteRulesTests.test_delivered_wide_payload_stops_restricting_corridor_clearance)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_multi_stop_route_rules.py", line 196, in test_delivered_wide_payload_stops_restricting_corridor_clearance
+    self.assertEqual([('A', 'Y'), ('Y', 'B'), ('B', 'C')], self.edges(plan))
+                                                           ~~~~~~~~~~^^^^^^
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_multi_stop_route_rules.py", line 59, in edges
+    self.assertIsNotNone(plan)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^
+AssertionError: unexpectedly None
+
+======================================================================
+FAIL: test_future_wide_pickup_does_not_restrict_loaded_approach (tests.test_multi_stop_route_rules.MultiStopRouteRulesTests.test_future_wide_pickup_does_not_restrict_loaded_approach)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_multi_stop_route_rules.py", line 210, in test_future_wide_pickup_does_not_restrict_loaded_approach
+    self.assertEqual([('A', 'P'), ('P', 'Y'), ('Y', 'B')], self.edges(plan))
+                                                           ~~~~~~~~~~^^^^^^
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_multi_stop_route_rules.py", line 59, in edges
+    self.assertIsNotNone(plan)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^
+AssertionError: unexpectedly None
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.002s
+
+FAILED (failures=2)

@@ -1,0 +1,48 @@
+test_exchange_staging_remains_part_of_population (tests.test_payload_lifecycle.PayloadLifecycleTests.test_exchange_staging_remains_part_of_population) ... FAIL
+test_failure_after_pickup_keeps_an_unconfirmed_physical_object (tests.test_payload_lifecycle.PayloadLifecycleTests.test_failure_after_pickup_keeps_an_unconfirmed_physical_object) ... FAIL
+test_planned_task_ids_are_not_reported_as_issued_objects (tests.test_payload_lifecycle.PayloadLifecycleTests.test_planned_task_ids_are_not_reported_as_issued_objects) ... FAIL
+test_two_in_transit_objects_count_towards_physical_population (tests.test_payload_lifecycle.PayloadLifecycleTests.test_two_in_transit_objects_count_towards_physical_population) ... FAIL
+
+======================================================================
+FAIL: test_exchange_staging_remains_part_of_population (tests.test_payload_lifecycle.PayloadLifecycleTests.test_exchange_staging_remains_part_of_population)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_lifecycle.py", line 39, in test_exchange_staging_remains_part_of_population
+    self.assertEqual(2, sim.payload_population_peak['Box'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 1
+
+======================================================================
+FAIL: test_failure_after_pickup_keeps_an_unconfirmed_physical_object (tests.test_payload_lifecycle.PayloadLifecycleTests.test_failure_after_pickup_keeps_an_unconfirmed_physical_object)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_lifecycle.py", line 48, in test_failure_after_pickup_keeps_an_unconfirmed_physical_object
+    self.assertEqual('unconfirmed', sim.payload_instance_store._known_instances['BOX-1'].status)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'unconfirmed' != 'known'
+- unconfirmed
++ known
+
+
+======================================================================
+FAIL: test_planned_task_ids_are_not_reported_as_issued_objects (tests.test_payload_lifecycle.PayloadLifecycleTests.test_planned_task_ids_are_not_reported_as_issued_objects)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_lifecycle.py", line 21, in test_planned_task_ids_are_not_reported_as_issued_objects
+    self.assertEqual(0, row['payload_known_instances'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 1
+
+======================================================================
+FAIL: test_two_in_transit_objects_count_towards_physical_population (tests.test_payload_lifecycle.PayloadLifecycleTests.test_two_in_transit_objects_count_towards_physical_population)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_lifecycle.py", line 29, in test_two_in_transit_objects_count_towards_physical_population
+    self.assertEqual(2, sim.payload_population_peak['Box'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 0
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.006s
+
+FAILED (failures=4)

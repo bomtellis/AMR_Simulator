@@ -1,0 +1,561 @@
+{
+  "dimensions": {
+    "lift_wear_percent_per_journey": 0.0,
+    "floors": 10,
+    "robots_per_floor": 6,
+    "tasks_per_day": 1000,
+    "days": 7
+  },
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "input_sha256": "0c767e2d396c4ff89cf8670c730c3a0c021e3cc6af48245a02f0091318b3d348",
+  "project_bytes": 45350,
+  "save_seconds": 0.0403628998901695,
+  "open_seconds": 0.021960699930787086,
+  "configuration_roundtrip_matches": true,
+  "execution_and_exports_seconds": 100.27375440020114,
+  "simulated_last_event_sec": 554565.4068627451,
+  "robot_count": 60,
+  "expected_tasks": 7000,
+  "completed_tasks": 7000,
+  "failed_tasks": 0,
+  "pending_tasks": 0,
+  "all_expected_completed": true,
+  "pending_task_details": [],
+  "final_robots": [
+    {
+      "id": "Robot-F0-1",
+      "location": "Destination-0",
+      "battery_soc_percent": 20.010186887254857,
+      "is_charging": false,
+      "available_time": 189228.54901960786,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-2",
+      "location": "Destination-1",
+      "battery_soc_percent": 20.27129289215685,
+      "is_charging": false,
+      "available_time": 187077.3725490196,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-3",
+      "location": "Destination-0",
+      "battery_soc_percent": 20.02558210784306,
+      "is_charging": false,
+      "available_time": 373548.54901960783,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-4",
+      "location": "Destination-1",
+      "battery_soc_percent": 20.26210171568672,
+      "is_charging": false,
+      "available_time": 369954.43137254904,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-5",
+      "location": "Destination-1",
+      "battery_soc_percent": 20.313242953431452,
+      "is_charging": false,
+      "available_time": 376080.54901960783,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-6",
+      "location": "Destination-3",
+      "battery_soc_percent": 20.188419117647335,
+      "is_charging": false,
+      "available_time": 373626.431372549,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F1-1",
+      "location": "Destination-0",
+      "battery_soc_percent": 20.030177696078475,
+      "is_charging": false,
+      "available_time": 378588.54901960783,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-2",
+      "location": "Destination-0",
+      "battery_soc_percent": 22.367876838235468,
+      "is_charging": false,
+      "available_time": 554268.5490196078,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-3",
+      "location": "Destination-3",
+      "battery_soc_percent": 25.918045343137315,
+      "is_charging": false,
+      "available_time": 554332.5490196078,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-4",
+      "location": "Destination-3",
+      "battery_soc_percent": 25.512484681372793,
+      "is_charging": false,
+      "available_time": 554349.3725490196,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-5",
+      "location": "Destination-1",
+      "battery_soc_percent": 27.823016237745172,
+      "is_charging": false,
+      "available_time": 554277.3725490195,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-6",
+      "location": "Destination-1",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 1939.3333333333333,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F2-1",
+      "location": "Destination-3",
+      "battery_soc_percent": 20.274509803921596,
+      "is_charging": false,
+      "available_time": 188949.3725490196,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-2",
+      "location": "Destination-3",
+      "battery_soc_percent": 20.219286151961146,
+      "is_charging": false,
+      "available_time": 186429.3725490196,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-3",
+      "location": "Destination-4",
+      "battery_soc_percent": 20.19270833333338,
+      "is_charging": false,
+      "available_time": 442812.54901960783,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-4",
+      "location": "Destination-4",
+      "battery_soc_percent": 20.123314950980316,
+      "is_charging": false,
+      "available_time": 191532.54901960786,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-5",
+      "location": "Destination-5",
+      "battery_soc_percent": 20.18629748774528,
+      "is_charging": false,
+      "available_time": 194421.3725490196,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-6",
+      "location": "Destination-4",
+      "battery_soc_percent": 33.36167279411779,
+      "is_charging": false,
+      "available_time": 554412.5490196078,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F3-1",
+      "location": "Destination-7",
+      "battery_soc_percent": 20.166773897058903,
+      "is_charging": false,
+      "available_time": 373036.54901960783,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-2",
+      "location": "Destination-5",
+      "battery_soc_percent": 20.284926470588157,
+      "is_charging": false,
+      "available_time": 375498.431372549,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-3",
+      "location": "Destination-5",
+      "battery_soc_percent": 20.013794424020695,
+      "is_charging": false,
+      "available_time": 434898.43137254904,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-4",
+      "location": "Destination-5",
+      "battery_soc_percent": 21.404718137255006,
+      "is_charging": false,
+      "available_time": 554418.4313725489,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-5",
+      "location": "Destination-7",
+      "battery_soc_percent": 24.57904411764705,
+      "is_charging": false,
+      "available_time": 554476.549019608,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-6",
+      "location": "Destination-7",
+      "battery_soc_percent": 25.318282781862784,
+      "is_charging": false,
+      "available_time": 554490.431372549,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F4-1",
+      "location": "Destination-5",
+      "battery_soc_percent": 20.074371936274936,
+      "is_charging": false,
+      "available_time": 185778.43137254904,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 20.2241881127451,
+      "is_charging": false,
+      "available_time": 190605.3725490196,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 20.274425551470408,
+      "is_charging": false,
+      "available_time": 446565.4068627451,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-4",
+      "location": "Destination-8",
+      "battery_soc_percent": 43.564506740194275,
+      "is_charging": false,
+      "available_time": 554564.5490196078,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 87.72631740195932,
+      "is_charging": false,
+      "available_time": 554565.4068627451,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 98.47725183823533,
+      "is_charging": false,
+      "available_time": 7708.549019607843,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F5-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.12193627450979,
+      "is_charging": false,
+      "available_time": 8428.549019607844,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.14192708333331,
+      "is_charging": false,
+      "available_time": 9148.549019607844,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.12193627450979,
+      "is_charging": false,
+      "available_time": 9868.549019607844,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.14192708333331,
+      "is_charging": false,
+      "available_time": 10588.549019607844,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.12193627450979,
+      "is_charging": false,
+      "available_time": 11308.549019607844,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 98.4634650735294,
+      "is_charging": false,
+      "available_time": 194188.54901960786,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F6-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 96.42532169117655,
+      "is_charging": false,
+      "available_time": 194908.54901960786,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-2",
+      "location": "Destination-7",
+      "battery_soc_percent": 20.128163296568825,
+      "is_charging": false,
+      "available_time": 542610.4313725489,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 98.47265625,
+      "is_charging": false,
+      "available_time": 195628.54901960786,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13733149509802,
+      "is_charging": false,
+      "available_time": 196348.54901960786,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 98.47265625,
+      "is_charging": false,
+      "available_time": 197068.54901960786,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13733149509802,
+      "is_charging": false,
+      "available_time": 197788.54901960786,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F7-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13733149509802,
+      "is_charging": false,
+      "available_time": 198508.54901960786,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.1173406862745,
+      "is_charging": false,
+      "available_time": 199228.54901960786,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13733149509802,
+      "is_charging": false,
+      "available_time": 199948.54901960786,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.1173406862745,
+      "is_charging": false,
+      "available_time": 200668.54901960786,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13733149509802,
+      "is_charging": false,
+      "available_time": 201388.54901960786,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.1173406862745,
+      "is_charging": false,
+      "available_time": 202108.54901960786,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F8-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 97.40487132352942,
+      "is_charging": false,
+      "available_time": 4845.3725490196075,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.47886029411765,
+      "is_charging": false,
+      "available_time": 2672.549019607843,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 1143.3333333333333,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.14652267156865,
+      "is_charging": false,
+      "available_time": 3392.549019607843,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 1863.3333333333333,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.14652267156865,
+      "is_charging": false,
+      "available_time": 4112.549019607843,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F9-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.79120710784312,
+      "is_charging": false,
+      "available_time": 436.156862745098,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 787.3333333333334,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.79120710784312,
+      "is_charging": false,
+      "available_time": 1156.1568627450981,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 1507.3333333333333,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.79120710784312,
+      "is_charging": false,
+      "available_time": 1876.1568627450981,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 2227.3333333333335,
+      "home_charge_location": "Source-9"
+    }
+  ],
+  "final_lifts": [
+    {
+      "id": "Lift-1",
+      "health_percent": 100.0,
+      "journeys_completed": 1757
+    },
+    {
+      "id": "Lift-2",
+      "health_percent": 100.0,
+      "journeys_completed": 1747
+    }
+  ],
+  "outcome_sha256": "2a734aee76172e098e7c274dd508405226a6e6713b59f164023acb05faa014d2",
+  "run_directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\workload-scale-constant-health\\results\\run_20261004_153025_7oyyiiux",
+  "output_bytes": 209126480,
+  "warning_review": "Automatically acknowledged for this controlled benchmark, not human approval.",
+  "lift_wear_assumption": "Explicit sensitivity case: 0.0 percentage points lost per journey. This does not model maintenance.",
+  "limitations": [
+    "Controlled simple-mode workload, not LTN or detailed traffic validation.",
+    "Ten-hour daily release window; every fourth task goes to the next floor when multiple floors exist.",
+    "Two lift banks, 100 m straight floor routes, one payload type, six robot bays per floor at default scale.",
+    "No geometric walls, drawings, staffing or dynamic demand; live GUI responsiveness is not measured.",
+    "No agreed runtime threshold. Each invocation measures one fresh process."
+  ],
+  "reconciliation": [
+    {
+      "outcome": "completed",
+      "recorded_summary_count": 7000,
+      "event_count": 7000,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    },
+    {
+      "outcome": "failed",
+      "recorded_summary_count": 0,
+      "event_count": 0,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    },
+    {
+      "outcome": "pending at stop",
+      "recorded_summary_count": 0,
+      "event_count": 0,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    }
+  ],
+  "reconciliation_matches": true,
+  "investigation_seconds": 4.1144560999237,
+  "peak_working_set_bytes": 948539392,
+  "input_unchanged": true
+}

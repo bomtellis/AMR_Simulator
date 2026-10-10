@@ -1,0 +1,116 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T00:00:00",
+    "end_datetime": "2026-01-05T00:10:00",
+    "precompute_static_routes": false,
+    "max_task_deferral_minutes": 1,
+    "task_release_stagger_sec": 0
+  },
+  "building": {
+    "charge_location": "A",
+    "enable_idle_return": false,
+    "load_unload_time_sec": 2,
+    "edge_slowdown_per_amr": 0
+  },
+  "locations": [
+    {
+      "name": "A",
+      "floor": 0,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "name": "B",
+      "floor": 0,
+      "x": 6,
+      "y": 8,
+      "wash_cycle_required": true,
+      "wash_location": "B",
+      "wash_cycle_duration_sec": 60
+    }
+  ],
+  "corridors": {
+    "auto_connect": false,
+    "nodes": [
+      {
+        "name": "Door",
+        "floor": 0,
+        "x": 3,
+        "y": 4,
+        "has_door": true,
+        "door_clear_width_m": 0.8
+      }
+    ],
+    "edges": [
+      {
+        "from": "A",
+        "to": "Door",
+        "width_m": 3
+      },
+      {
+        "from": "Door",
+        "to": "B",
+        "width_m": 3
+      }
+    ]
+  },
+  "payloads": [
+    {
+      "name": "Box",
+      "weight_kg": 10,
+      "length_m": 1.0,
+      "width_m": 0.7,
+      "height_m": 1,
+      "allowed_carry_orientations": [
+        "lengthways"
+      ]
+    }
+  ],
+  "amrs": [
+    {
+      "id": "R",
+      "quantity": 3,
+      "length_m": 1,
+      "width_m": 0.6,
+      "payload_capacity_kg": 100,
+      "payload_length_capacity_m": 2,
+      "payload_width_capacity_m": 2,
+      "payload_height_capacity_m": 2,
+      "speed_m_per_sec": 2,
+      "battery_capacity_kwh": 10,
+      "battery_charge_rate_kw": 2,
+      "recharge_threshold_percent": 1
+    }
+  ],
+  "lifts": [],
+  "tasks": [
+    {
+      "id": "DELIVER",
+      "pickup": "A",
+      "dropoff": "B",
+      "payload": "Box",
+      "payload_instance_id": "BOX-1"
+    },
+    {
+      "id": "COLLECT",
+      "pickup": "B",
+      "dropoff": "A",
+      "payload": "Box",
+      "payload_instance_id": "BOX-1",
+      "is_return_task": true,
+      "release_time": 10
+    },
+    {
+      "id": "COMPETING-COLLECT",
+      "pickup": "B",
+      "dropoff": "A",
+      "payload": "Box",
+      "payload_instance_id": "BOX-1",
+      "is_return_task": true,
+      "release_time": 10
+    }
+  ],
+  "task_generation": {
+    "enabled": false
+  }
+}

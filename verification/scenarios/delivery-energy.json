@@ -1,0 +1,138 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T00:00:00",
+    "end_datetime": "2026-01-05T00:10:00",
+    "precompute_static_routes": false,
+    "task_release_stagger_sec": 0
+  },
+  "building": {
+    "charge_location": "A",
+    "enable_idle_return": false,
+    "load_unload_time_sec": 2,
+    "edge_slowdown_per_amr": 0,
+    "floor_height_m": 3
+  },
+  "locations": [
+    {
+      "name": "A",
+      "floor": 0,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "name": "B",
+      "floor": 1,
+      "x": 6,
+      "y": 8
+    }
+  ],
+  "corridors": {
+    "auto_connect": false,
+    "nodes": [],
+    "edges": [
+      {
+        "from": "A",
+        "to": "L1-F0",
+        "width_m": 3,
+        "distance_m": 1
+      },
+      {
+        "from": "L1-F1",
+        "to": "B",
+        "width_m": 3,
+        "distance_m": 1
+      }
+    ]
+  },
+  "payloads": [
+    {
+      "name": "Box",
+      "weight_kg": 10,
+      "length_m": 1.0,
+      "width_m": 0.7,
+      "height_m": 1,
+      "allowed_carry_orientations": [
+        "lengthways"
+      ]
+    }
+  ],
+  "amrs": [
+    {
+      "id": "R",
+      "quantity": 1,
+      "length_m": 1,
+      "width_m": 0.6,
+      "payload_capacity_kg": 100,
+      "payload_length_capacity_m": 2,
+      "payload_width_capacity_m": 2,
+      "payload_height_capacity_m": 2,
+      "speed_m_per_sec": 2,
+      "battery_capacity_kwh": 10,
+      "battery_charge_rate_kw": 2,
+      "recharge_threshold_percent": 1,
+      "multi_stop_enabled": true,
+      "payload_slots": [
+        {
+          "payload_capacity_kg": 100,
+          "payload_length_capacity_m": 2,
+          "payload_width_capacity_m": 2,
+          "payload_height_capacity_m": 2,
+          "name": "One"
+        },
+        {
+          "payload_capacity_kg": 100,
+          "payload_length_capacity_m": 2,
+          "payload_width_capacity_m": 2,
+          "payload_height_capacity_m": 2,
+          "name": "Two"
+        }
+      ],
+      "motor_power_w": 960,
+      "battery_soc_percent": 50
+    }
+  ],
+  "lifts": [
+    {
+      "id": "L1",
+      "served_floors": [
+        0,
+        1
+      ],
+      "speed_floors_per_sec": 1,
+      "door_time_sec": 0,
+      "boarding_time_sec": 2,
+      "floor_locations": {
+        "0": {
+          "x": 1,
+          "y": 0
+        },
+        "1": {
+          "x": 1,
+          "y": 0
+        }
+      },
+      "capacity_length_m": 5,
+      "capacity_width_m": 5,
+      "capacity_height_m": 5,
+      "capacity_size_units": 10,
+      "health_loss_per_journey_percent": 0,
+      "car_mass_kg": 1000,
+      "counterweight_ratio": 0,
+      "travel_efficiency": 1,
+      "regen_efficiency": 0,
+      "standby_power_w": 100,
+      "door_power_w": 0
+    }
+  ],
+  "tasks": [
+    {
+      "id": "ENERGY-1",
+      "pickup": "A",
+      "dropoff": "B",
+      "payload": "Box"
+    }
+  ],
+  "task_generation": {
+    "enabled": false
+  }
+}

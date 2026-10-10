@@ -77,6 +77,18 @@ class Task:
     assigned_inventory_space: str = ""
     payload_instance_id: str = ""
     is_return_task: bool = False
+    recover_staged_payload: bool = False
+    manual_task: bool = False
+    manual_single_payload_only: bool = False
+
+    # Optional department drop-off-zone hand-off. ``dropoff`` remains the AMR
+    # destination, while ``final_destination`` is the department location served
+    # by a person after the AMR has staged the payload at ``dropoff_zone``.
+    # Keeping the two locations explicit avoids treating staff movement as an
+    # AMR leg and preserves backwards compatibility for direct deliveries.
+    dropoff_zone: str = ""
+    final_destination: str = ""
+    final_destination_candidates: List[str] = field(default_factory=list)
 
     # Tracked item exchange metadata. These fields are populated by automatic
     # task generation when a payload has track_items enabled. They are kept on
@@ -94,15 +106,41 @@ class Task:
     return_delay_minutes: float = 0.0
     return_route_profile: str = ""
     return_priority: int = 0
-    requires_staff: bool = False
+    # When enabled, generated tasks using the same drop-off zone are released
+    # one cycle at a time. The next task is released as soon as the preceding
+    # return physically collects its payload from the zone inventory space.
+    release_next_after_return_pickup: bool = False
+    generator_release_spacing_key: str = ""
+    generator_collection_task_id: str = ""
+    generator_scheduled_release_time: float = 0.0
+    generator_deferred_by_task_id: str = ""
+    generator_deferred_by_return_task_id: str = ""
+    # None preserves the legacy category fallback; explicit False disables it.
+    requires_staff: Optional[bool] = None
     staff_initial_count: int = 1
     staff_resource_name: str = ""
     staff_category_key: str = ""
     staff_movement_policy: str = "batch_same_location"
     staff_shift_pattern: str = "none"
     staff_handling_minutes: float = 0.0
+    # Movement-only handoffs perform the payload swap at the destination with
+    # no dwell between the outward and return staff transport legs.
+    staff_handoff_only: bool = False
+    # Extra response time allowed between the AMR staging the payload and a
+    # person collecting it from the drop-off zone.
+    staff_collection_delay_minutes: float = 0.0
+    # ``allow_temporary_overflow`` lets a generated staff hand-off complete
+    # even when every configured zone bay is occupied. The payload remains
+    # logically present and is included in zone utilisation/shortfall reports.
+    dropoff_zone_capacity_policy: str = "wait_for_space"
     staff_use_custom_working_hours: bool = False
     staff_working_hours: Dict[str, dict] = field(default_factory=dict)
+    # An untracked department team can complete a drop-off-zone hand-off when
+    # the primary category staff are outside their configured working hours.
+    # Unlike the primary team, this fallback has no shared pool, roster or
+    # movement history; it only models the zone <-> department payload legs.
+    staff_department_fallback_enabled: bool = False
+    staff_department_fallback_resource_name: str = "Department team"
     staff_shift_start_time: str = ""
     staff_shift_end_time: str = ""
     staff_shift_days_active: List[str] = field(default_factory=list)
@@ -215,6 +253,7 @@ class AMR:
     total_busy_time: float = 0.0
     total_charge_time: float = 0.0
     total_energy_used_kwh: float = 0.0
+    total_energy_charged_kwh: float = 0.0
     is_charging: bool = False
     payload: str = ""
     payload_instance_id: str = ""
@@ -257,4 +296,5 @@ class AMR:
         return (missing_kwh / max(self.battery_charge_rate_kw, 1e-9)) * 3600.0
 
     def charge_to_full(self):
+        self.total_energy_charged_kwh += max(0.0, self.battery_capacity_kwh - self.battery_energy_kwh())
         self.battery_soc_percent = 100.0

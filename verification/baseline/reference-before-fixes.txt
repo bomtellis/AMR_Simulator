@@ -1,0 +1,65 @@
+test_capacity_approximation_changes_at_loaded_envelope_boundary (test_engineering_reference.RoutingReferenceTests.test_capacity_approximation_changes_at_loaded_envelope_boundary) ... ok
+test_door_restricts_both_incident_directions (test_engineering_reference.RoutingReferenceTests.test_door_restricts_both_incident_directions) ... ok
+test_legacy_task_allowances_extend_profile_and_dirty_label_selects_profile (test_engineering_reference.RoutingReferenceTests.test_legacy_task_allowances_extend_profile_and_dirty_label_selects_profile) ... ok
+test_one_way_edges_do_not_create_return_path (test_engineering_reference.RoutingReferenceTests.test_one_way_edges_do_not_create_return_path) ... ok
+test_payload_at_clear_width_fits_but_oversize_does_not (test_engineering_reference.RoutingReferenceTests.test_payload_at_clear_width_fits_but_oversize_does_not) ...
+  test_payload_at_clear_width_fits_but_oversize_does_not (test_engineering_reference.RoutingReferenceTests.test_payload_at_clear_width_fits_but_oversize_does_not) (width=0.80001) ... FAIL
+test_profile_allowed_edges_are_directional_and_empty_means_unrestricted (test_engineering_reference.RoutingReferenceTests.test_profile_allowed_edges_are_directional_and_empty_means_unrestricted) ... ok
+test_rotating_payload_changes_required_cross_width (test_engineering_reference.RoutingReferenceTests.test_rotating_payload_changes_required_cross_width) ... FAIL
+test_three_four_five_triangle_distance_and_duration (test_engineering_reference.RoutingReferenceTests.test_three_four_five_triangle_distance_and_duration) ... ok
+test_unloaded_robot_must_fit_door (test_engineering_reference.RoutingReferenceTests.test_unloaded_robot_must_fit_door) ... FAIL
+test_wider_alternative_is_used_and_cached_separately (test_engineering_reference.RoutingReferenceTests.test_wider_alternative_is_used_and_cached_separately) ... FAIL
+test_location_reservations_allow_touching_intervals (test_engineering_reference.ServiceReferenceTests.test_location_reservations_allow_touching_intervals) ... ok
+test_one_delivery_duration_and_repeatability (test_engineering_reference.ServiceReferenceTests.test_one_delivery_duration_and_repeatability) ... ok
+test_overlapping_reservations_wait_until_capacity_is_available (test_engineering_reference.ServiceReferenceTests.test_overlapping_reservations_wait_until_capacity_is_available) ... ok
+test_sequential_reservations_do_not_count_as_simultaneous (test_engineering_reference.ServiceReferenceTests.test_sequential_reservations_do_not_count_as_simultaneous) ... FAIL
+
+======================================================================
+FAIL: test_payload_at_clear_width_fits_but_oversize_does_not (test_engineering_reference.RoutingReferenceTests.test_payload_at_clear_width_fits_but_oversize_does_not) (width=0.80001)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_engineering_reference.py", line 82, in test_payload_at_clear_width_fits_but_oversize_does_not
+    self.assertEqual(fits, self.segments(sim) is not None)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False != True
+
+======================================================================
+FAIL: test_rotating_payload_changes_required_cross_width (test_engineering_reference.RoutingReferenceTests.test_rotating_payload_changes_required_cross_width)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_engineering_reference.py", line 91, in test_rotating_payload_changes_required_cross_width
+    self.assertIsNone(self.segments(sim, orientation="sideways"))
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ([{'type': 'corridor', 'from': 'A', 'to': 'Door', 'duration': 2.5, 'distance_m': 5.0, 'speed_factor': 1.0, 'congestion_count': 0, 'people_count': 0, 'people_groups': '', 'people_speed_factor': 1.0, 'people_delay_sec': 0.0, 'scenario_name': '', 'scenario_reason': '', 'scenario_delay_sec': 0.0, 'route_lane_count': 1, 'corridor_width_m': 0.8, 'configured_corridor_width_m': 3.0, 'door_restricted': True, 'door_nodes': 'Door', 'lane_width_m': 0.4, 'carrying_length_m': 1.0, 'payload_orientation': 'sideways'}, {'type': 'corridor', 'from': 'Door', 'to': 'B', 'duration': 2.5, 'distance_m': 5.0, 'speed_factor': 1.0, 'congestion_count': 0, 'people_count': 0, 'people_groups': '', 'people_speed_factor': 1.0, 'people_delay_sec': 0.0, 'scenario_name': '', 'scenario_reason': '', 'scenario_delay_sec': 0.0, 'route_lane_count': 1, 'corridor_width_m': 0.8, 'configured_corridor_width_m': 3.0, 'door_restricted': True, 'door_nodes': 'Door', 'lane_width_m': 0.4, 'carrying_length_m': 1.0, 'payload_orientation': 'sideways'}], 5.0, 10.0) is not None
+
+======================================================================
+FAIL: test_unloaded_robot_must_fit_door (test_engineering_reference.RoutingReferenceTests.test_unloaded_robot_must_fit_door)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_engineering_reference.py", line 86, in test_unloaded_robot_must_fit_door
+    self.assertIsNone(self.segments(Simulation(self.config), payload=False))
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ([{'type': 'corridor', 'from': 'A', 'to': 'Door', 'duration': 2.5, 'distance_m': 5.0, 'speed_factor': 1.0, 'congestion_count': 0, 'people_count': 0, 'people_groups': '', 'people_speed_factor': 1.0, 'people_delay_sec': 0.0, 'scenario_name': '', 'scenario_reason': '', 'scenario_delay_sec': 0.0, 'route_lane_count': 1, 'corridor_width_m': 0.8, 'configured_corridor_width_m': 3.0, 'door_restricted': True, 'door_nodes': 'Door', 'lane_width_m': 0.4, 'carrying_length_m': 1.0, 'payload_orientation': ''}, {'type': 'corridor', 'from': 'Door', 'to': 'B', 'duration': 2.5, 'distance_m': 5.0, 'speed_factor': 1.0, 'congestion_count': 0, 'people_count': 0, 'people_groups': '', 'people_speed_factor': 1.0, 'people_delay_sec': 0.0, 'scenario_name': '', 'scenario_reason': '', 'scenario_delay_sec': 0.0, 'route_lane_count': 1, 'corridor_width_m': 0.8, 'configured_corridor_width_m': 3.0, 'door_restricted': True, 'door_nodes': 'Door', 'lane_width_m': 0.4, 'carrying_length_m': 1.0, 'payload_orientation': ''}], 5.0, 10.0) is not None
+
+======================================================================
+FAIL: test_wider_alternative_is_used_and_cached_separately (test_engineering_reference.RoutingReferenceTests.test_wider_alternative_is_used_and_cached_separately)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_engineering_reference.py", line 100, in test_wider_alternative_is_used_and_cached_separately
+    self.assertEqual(20, self.segments(sim)[2])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 20 != 10.0
+
+======================================================================
+FAIL: test_sequential_reservations_do_not_count_as_simultaneous (test_engineering_reference.ServiceReferenceTests.test_sequential_reservations_do_not_count_as_simultaneous)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_engineering_reference.py", line 166, in test_sequential_reservations_do_not_count_as_simultaneous
+    self.assertEqual(0, sim._find_next_available_time("A", 0, 10))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 5
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.005s
+
+FAILED (failures=5)

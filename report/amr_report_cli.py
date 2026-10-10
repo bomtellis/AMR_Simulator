@@ -7,6 +7,11 @@ def parse_args():
     )
     parser.add_argument("csv", nargs="?", help="Path to the simulation CSV")
     parser.add_argument("-o", "--output", help="Path to the PDF report", default=None)
+    parser.add_argument('--existing-pdf', help='Insert selected sections into this PDF; original pages are preserved.')
+    parser.add_argument('--insert-after-page', type=int, default=None,
+                        help='Insert after this existing page (0 = before first page); default appends.')
+    parser.add_argument('--insert-pdf', help='Insert an already prepared PDF, skipping analysis. Requires --existing-pdf and --output.')
+    parser.add_argument('--report-title', help='Title on the cover, headers and PDF metadata.')
     parser.add_argument(
         "--target-amr-util",
         type=float,
@@ -21,7 +26,7 @@ def parse_args():
     )
     parser.add_argument(
         "--config-json",
-        help="Path to simulator JSON config for payload weights",
+        help="Path to matching simulator JSON for levels, departments, payloads and resource parameters",
         default=None,
     )
     parser.add_argument(
@@ -48,6 +53,14 @@ def parse_args():
         default=None,
     )
     parser.add_argument(
+        "--lift-cohorts-csv",
+        help=(
+            "Path for the 5-minute and hourly per-lift cohort CSV. "
+            "Defaults to <output PDF stem>_lift_cohorts.csv."
+        ),
+        default=None,
+    )
+    parser.add_argument(
         "--report-sections",
         help=(
             "Comma-separated report section IDs to include, in output order. "
@@ -55,6 +68,20 @@ def parse_args():
         ),
         default=None,
     )
+    parser.add_argument(
+        "--lift-movements-csv", "--lift-travel-csv",
+        help="Lift travel/destinations CSV path; defaults to <output PDF stem>_lift_movements.csv.",
+        default=None,
+    )
+    parser.add_argument(
+        "--lift-csv-only", action="store_true",
+        help="Export only lift travel/destinations CSV, without generating a PDF or other tables.",
+    )
+    parser.add_argument('--department-review-dir', help='Export separate department review files per category into this folder.')
+    parser.add_argument('--department-review-formats', choices=['both', 'pdf', 'xlsx'], default='both',
+                        help='Department review formats: PDF and Excel by default.')
+    parser.add_argument('--department-review-only', action='store_true',
+                        help='Export department reviews only, without the main report or lift CSVs.')
     parser.add_argument(
         "--select-report-sections",
         action="store_true",

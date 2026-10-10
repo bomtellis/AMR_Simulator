@@ -1,0 +1,119 @@
+{
+  "simulation": {
+    "start_datetime": "2026-01-05T00:00:00",
+    "end_datetime": "2026-01-05T00:10:00",
+    "precompute_static_routes": false
+  },
+  "building": {
+    "charge_location": "A",
+    "enable_idle_return": false,
+    "load_unload_time_sec": 2
+  },
+  "locations": [
+    {
+      "name": "A",
+      "floor": 0,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "name": "B",
+      "floor": 0,
+      "x": 6,
+      "y": 8
+    }
+  ],
+  "corridors": {
+    "auto_connect": false,
+    "nodes": [
+      {
+        "name": "Door",
+        "floor": 0,
+        "x": 3,
+        "y": 4,
+        "has_door": true,
+        "door_clear_width_m": 0.8
+      }
+    ],
+    "edges": [
+      {
+        "from": "A",
+        "to": "Door",
+        "width_m": 3
+      },
+      {
+        "from": "Door",
+        "to": "B",
+        "width_m": 3
+      }
+    ]
+  },
+  "payloads": [
+    {
+      "name": "Box",
+      "weight_kg": 10,
+      "length_m": 1.0,
+      "width_m": 0.7,
+      "height_m": 1,
+      "allowed_carry_orientations": [
+        "lengthways"
+      ]
+    }
+  ],
+  "amrs": [
+    {
+      "id": "R",
+      "quantity": 1,
+      "length_m": 1,
+      "width_m": 0.6,
+      "payload_capacity_kg": 100,
+      "payload_length_capacity_m": 2,
+      "payload_width_capacity_m": 2,
+      "payload_height_capacity_m": 2,
+      "speed_m_per_sec": 2,
+      "battery_capacity_kwh": 10,
+      "battery_charge_rate_kw": 2,
+      "recharge_threshold_percent": 1
+    }
+  ],
+  "lifts": [],
+  "tasks": [],
+  "task_generation": {
+    "enabled": true,
+    "categories": {
+      "stores": {
+        "enabled": true,
+        "generation_mode": "scheduled",
+        "scheduled_times": [
+          "00:01"
+        ],
+        "pickup_location": "A",
+        "dropoff_location": "B",
+        "payload": "Box",
+        "priority": 40,
+        "dropoff_zone_capacity_policy": "wait_for_space",
+        "department_groups": [
+          {
+            "id": "G",
+            "departments": [
+              "D"
+            ],
+            "payload": {
+              "enabled": true,
+              "priority": 7
+            }
+          }
+        ]
+      }
+    }
+  },
+  "departments": [
+    {
+      "id": "D",
+      "name": "Department",
+      "enabled": true,
+      "operating_start_time": "00:00",
+      "operating_end_time": "24:00"
+    }
+  ]
+}

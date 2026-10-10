@@ -1,0 +1,114 @@
+test_dirty_label_fallback_is_retained_by_return_and_explicit_profile_wins (test_route_profiles.RouteProfileAcceptanceTests.test_dirty_label_fallback_is_retained_by_return_and_explicit_profile_wins) ... ok
+test_effective_generated_profile_is_checked_after_group_override (test_route_profiles.RouteProfileAcceptanceTests.test_effective_generated_profile_is_checked_after_group_override) ...
+  test_effective_generated_profile_is_checked_after_group_override (test_route_profiles.RouteProfileAcceptanceTests.test_effective_generated_profile_is_checked_after_group_override) (effective='typo') ... FAIL
+test_empty_approach_is_unrestricted_but_loaded_leg_uses_profile (test_route_profiles.RouteProfileAcceptanceTests.test_empty_approach_is_unrestricted_but_loaded_leg_uses_profile) ... ok
+test_executed_clean_and_dirty_deliveries_match_hand_calculations (test_route_profiles.RouteProfileAcceptanceTests.test_executed_clean_and_dirty_deliveries_match_hand_calculations) ... ok
+test_implicit_missing_dirty_profile_blocks_project_checks (test_route_profiles.RouteProfileAcceptanceTests.test_implicit_missing_dirty_profile_blocks_project_checks) ... FAIL
+test_removed_profile_edge_fails_without_using_unrestricted_shortcut (test_route_profiles.RouteProfileAcceptanceTests.test_removed_profile_edge_fails_without_using_unrestricted_shortcut) ... ok
+test_return_uses_explicit_profile_and_blank_does_not_inherit_outbound (test_route_profiles.RouteProfileAcceptanceTests.test_return_uses_explicit_profile_and_blank_does_not_inherit_outbound) ... ok
+test_shared_profiles_are_explained_as_supported_and_empty_policy_is_visible (test_route_profiles.RouteProfileAcceptanceTests.test_shared_profiles_are_explained_as_supported_and_empty_policy_is_visible) ... FAIL
+test_shared_stem_and_separate_branches_in_both_directions_and_cache (test_route_profiles.RouteProfileAcceptanceTests.test_shared_stem_and_separate_branches_in_both_directions_and_cache) ... ok
+test_unknown_enabled_return_profile_rejects_outbound_before_movement (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_enabled_return_profile_rejects_outbound_before_movement) ... FAIL
+test_unknown_explicit_and_implicit_profiles_reject_static_tasks (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_explicit_and_implicit_profiles_reject_static_tasks) ...
+  test_unknown_explicit_and_implicit_profiles_reject_static_tasks (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_explicit_and_implicit_profiles_reject_static_tasks) (fields={'route_profile': 'typo'}) ... FAIL
+  test_unknown_explicit_and_implicit_profiles_reject_static_tasks (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_explicit_and_implicit_profiles_reject_static_tasks) (fields={'labels': ['dirty']}) ... FAIL
+test_unknown_profile_cannot_be_resolved_as_unrestricted (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_profile_cannot_be_resolved_as_unrestricted) ... FAIL
+test_unknown_runtime_task_profile_is_rejected_before_assignment (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_runtime_task_profile_is_rejected_before_assignment) ... FAIL
+test_selected_nodes_generate_both_directions_only_for_two_way_corridors (test_route_profiles.RouteProfileEditorTests.test_selected_nodes_generate_both_directions_only_for_two_way_corridors) ... FAIL
+
+======================================================================
+FAIL: test_effective_generated_profile_is_checked_after_group_override (test_route_profiles.RouteProfileAcceptanceTests.test_effective_generated_profile_is_checked_after_group_override) (effective='typo')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 154, in test_effective_generated_profile_is_checked_after_group_override
+    with self.assertRaisesRegex(ValueError, "[Rr]oute profile.*typo"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_implicit_missing_dirty_profile_blocks_project_checks (test_route_profiles.RouteProfileAcceptanceTests.test_implicit_missing_dirty_profile_blocks_project_checks)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 162, in test_implicit_missing_dirty_profile_blocks_project_checks
+    self.assertFalse(report.can_run(config))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false
+
+======================================================================
+FAIL: test_shared_profiles_are_explained_as_supported_and_empty_policy_is_visible (test_route_profiles.RouteProfileAcceptanceTests.test_shared_profiles_are_explained_as_supported_and_empty_policy_is_visible)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 168, in test_shared_profiles_are_explained_as_supported_and_empty_policy_is_visible
+    self.assertNotIn('PROFILE_SEPARATION', {f.code for f in report.findings})
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'PROFILE_SEPARATION' unexpectedly found in {'MODEL_SCOPE', 'PROFILE_SEPARATION'}
+
+======================================================================
+FAIL: test_unknown_enabled_return_profile_rejects_outbound_before_movement (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_enabled_return_profile_rejects_outbound_before_movement)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 137, in test_unknown_enabled_return_profile_rejects_outbound_before_movement
+    with self.assertRaisesRegex(ValueError, "[Rr]oute profile.*typo"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_unknown_explicit_and_implicit_profiles_reject_static_tasks (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_explicit_and_implicit_profiles_reject_static_tasks) (fields={'route_profile': 'typo'})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 118, in test_unknown_explicit_and_implicit_profiles_reject_static_tasks
+    with self.assertRaisesRegex(ValueError, "[Rr]oute profile.*(typo|dirty)"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_unknown_explicit_and_implicit_profiles_reject_static_tasks (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_explicit_and_implicit_profiles_reject_static_tasks) (fields={'labels': ['dirty']})
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 118, in test_unknown_explicit_and_implicit_profiles_reject_static_tasks
+    with self.assertRaisesRegex(ValueError, "[Rr]oute profile.*(typo|dirty)"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_unknown_profile_cannot_be_resolved_as_unrestricted (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_profile_cannot_be_resolved_as_unrestricted)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 123, in test_unknown_profile_cannot_be_resolved_as_unrestricted
+    with self.assertRaisesRegex(ValueError, "[Rr]oute profile.*typo"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_unknown_runtime_task_profile_is_rejected_before_assignment (test_route_profiles.RouteProfileAcceptanceTests.test_unknown_runtime_task_profile_is_rejected_before_assignment)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 128, in test_unknown_runtime_task_profile_is_rejected_before_assignment
+    with self.assertRaisesRegex(ValueError, "[Rr]oute profile.*typo"):
+         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+======================================================================
+FAIL: test_selected_nodes_generate_both_directions_only_for_two_way_corridors (test_route_profiles.RouteProfileEditorTests.test_selected_nodes_generate_both_directions_only_for_two_way_corridors)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_profiles.py", line 188, in test_selected_nodes_generate_both_directions_only_for_two_way_corridors
+    self.assertEqual([['A', 'Shared'], ['Shared', 'A'], ['Shared', 'B']], pairs)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [['A', 'Shared'], ['Shared', 'A'], ['Shared', 'B']] != [['A', 'Shared'], ['Shared', 'B'], ['A', 'Shared']]
+
+First differing element 1:
+['Shared', 'A']
+['Shared', 'B']
+
+- [['A', 'Shared'], ['Shared', 'A'], ['Shared', 'B']]
+?                                 -  -        -----
+
++ [['A', 'Shared'], ['Shared', 'B'], ['A', 'Shared']]
+?                              +++++++
+
+
+----------------------------------------------------------------------
+Ran 14 tests in 0.075s
+
+FAILED (failures=9)

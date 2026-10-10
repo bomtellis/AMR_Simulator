@@ -1,0 +1,27 @@
+test_explicit_recovery_can_claim_failed_return_stock (tests.test_staged_recovery.StagedRecoveryTests.test_explicit_recovery_can_claim_failed_return_stock) ... FAIL
+test_failed_route_rolls_back_claim_and_keeps_staged_stock (tests.test_staged_recovery.StagedRecoveryTests.test_failed_route_rolls_back_claim_and_keeps_staged_stock) ... ok
+test_recovery_does_not_accept_unconfirmed_arrival_or_wrong_location (tests.test_staged_recovery.StagedRecoveryTests.test_recovery_does_not_accept_unconfirmed_arrival_or_wrong_location) ... ok
+test_recovery_moves_original_empty_without_freeing_the_full_bin_bay (tests.test_staged_recovery.StagedRecoveryTests.test_recovery_moves_original_empty_without_freeing_the_full_bin_bay) ... FAIL
+
+======================================================================
+FAIL: test_explicit_recovery_can_claim_failed_return_stock (tests.test_staged_recovery.StagedRecoveryTests.test_explicit_recovery_can_claim_failed_return_stock)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_staged_recovery.py", line 31, in test_explicit_recovery_can_claim_failed_return_stock
+    self.assertIsNotNone(sim._estimate_task_for_amr(sim.amrs[0], task, reserve=True))
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: unexpectedly None
+
+======================================================================
+FAIL: test_recovery_moves_original_empty_without_freeing_the_full_bin_bay (tests.test_staged_recovery.StagedRecoveryTests.test_recovery_moves_original_empty_without_freeing_the_full_bin_bay)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_staged_recovery.py", line 38, in test_recovery_moves_original_empty_without_freeing_the_full_bin_bay
+    self.assertIsNotNone(sim._estimate_task_for_amr(sim.amrs[0], task, reserve=True))
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: unexpectedly None
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.003s
+
+FAILED (failures=2)

@@ -1,0 +1,9 @@
+D051: investigation source path is overwritten by energy-source iteration.
+Baseline commit: 42b598a (the source loop defect predates this checkpoint).
+Reproducing command:
+.venv/Scripts/python.exe -m unittest tests.test_lift_evidence.LiftEvidenceIntegrationTests.test_investigation_keeps_the_original_log_source_path -v
+
+Expected: the original absolute path ending in simulation_steps.csv.
+Observed: 'lift_supply'.
+One test failed before renaming the loop variable. The same wrong text was
+visible in the Results Investigation header during screenshot review.

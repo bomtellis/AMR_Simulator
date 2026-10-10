@@ -1,0 +1,1088 @@
+{
+  "dimensions": {
+    "floors": 10,
+    "robots_per_floor": 6,
+    "tasks_per_day": 1000,
+    "days": 7
+  },
+  "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "input_sha256": "906490b2e29bd7b4a48f95fc813e8a331ac4cc0bbc084545b7e704a6ed20816b",
+  "project_bytes": 45323,
+  "save_seconds": 0.04115590010769665,
+  "open_seconds": 0.02083709998987615,
+  "configuration_roundtrip_matches": true,
+  "execution_and_exports_seconds": 213.4062017998658,
+  "simulated_last_event_sec": 554556.5500196079,
+  "robot_count": 60,
+  "expected_tasks": 7000,
+  "completed_tasks": 6455,
+  "failed_tasks": 457,
+  "pending_tasks": 88,
+  "all_expected_completed": false,
+  "pending_task_details": [
+    {
+      "task_id": "D7-T126",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T136",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T146",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T156",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T166",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T176",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T186",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T196",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T206",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T216",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T226",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T236",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T246",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T256",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T266",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T276",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T286",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T296",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T306",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T316",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T326",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T336",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T346",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T356",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T366",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T376",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T386",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T396",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T406",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T416",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T426",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T436",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T446",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T456",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T466",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T476",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T486",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T496",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T506",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T516",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T526",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T536",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T546",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T556",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T566",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T576",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T586",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T596",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T606",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T616",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T626",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T636",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T646",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T656",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T666",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T676",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T686",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T696",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T706",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T716",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T726",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T736",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T746",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T756",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T766",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T776",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T786",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T796",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T806",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T816",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T826",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T836",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T846",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T856",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T866",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T876",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T886",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T896",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T906",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T916",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T926",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T936",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T946",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T956",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T966",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T976",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T986",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    },
+    {
+      "task_id": "D7-T996",
+      "pickup": "Source-5",
+      "dropoff": "Destination-5",
+      "last_pending_reason": "AMR Robot-F4-6: no reachable available charger with onward work within usable full-battery energy"
+    }
+  ],
+  "final_robots": [
+    {
+      "id": "Robot-F0-1",
+      "location": "Destination-1",
+      "battery_soc_percent": 20.19592524509804,
+      "is_charging": false,
+      "available_time": 188166.89533476662,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-2",
+      "location": "Destination-1",
+      "battery_soc_percent": 20.23575367647048,
+      "is_charging": false,
+      "available_time": 191767.20803501105,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-3",
+      "location": "Destination-1",
+      "battery_soc_percent": 20.223651960784245,
+      "is_charging": false,
+      "available_time": 351228.54901960783,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-4",
+      "location": "Destination-1",
+      "battery_soc_percent": 20.148820465686033,
+      "is_charging": false,
+      "available_time": 373215.6771492102,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-5",
+      "location": "Destination-0",
+      "battery_soc_percent": 20.09237132352954,
+      "is_charging": false,
+      "available_time": 377878.61290536507,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F0-6",
+      "location": "Destination-0",
+      "battery_soc_percent": 20.048791188401633,
+      "is_charging": false,
+      "available_time": 378598.6921997133,
+      "home_charge_location": "Source-0"
+    },
+    {
+      "id": "Robot-F1-1",
+      "location": "Destination-7",
+      "battery_soc_percent": 20.241344975490243,
+      "is_charging": false,
+      "available_time": 535764.5490196078,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-2",
+      "location": "Destination-0",
+      "battery_soc_percent": 24.633404023013874,
+      "is_charging": false,
+      "available_time": 554232.5490196078,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-3",
+      "location": "Destination-1",
+      "battery_soc_percent": 26.480602335564203,
+      "is_charging": false,
+      "available_time": 554268.5490196078,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-4",
+      "location": "Destination-1",
+      "battery_soc_percent": 91.3701093598349,
+      "is_charging": false,
+      "available_time": 437297.9317356572,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-5",
+      "location": "Destination-3",
+      "battery_soc_percent": 30.040922287527856,
+      "is_charging": false,
+      "available_time": 554340.5490196078,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F1-6",
+      "location": "Destination-1",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 1939.3333333333333,
+      "home_charge_location": "Source-1"
+    },
+    {
+      "id": "Robot-F2-1",
+      "location": "Destination-1",
+      "battery_soc_percent": 96.10217524509807,
+      "is_charging": false,
+      "available_time": 6000.790833209858,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-2",
+      "location": "Destination-1",
+      "battery_soc_percent": 88.75076593137258,
+      "is_charging": false,
+      "available_time": 15361.369532428358,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-3",
+      "location": "Destination-1",
+      "battery_soc_percent": 70.66459865196089,
+      "is_charging": false,
+      "available_time": 35522.737053795885,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 20.279871323529584,
+      "is_charging": false,
+      "available_time": 192031.0549126269,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-5",
+      "location": "Destination-1",
+      "battery_soc_percent": 56.89407169117642,
+      "is_charging": false,
+      "available_time": 101763.92768185216,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F2-6",
+      "location": "Destination-1",
+      "battery_soc_percent": 60.350030637254974,
+      "is_charging": false,
+      "available_time": 103204.05526093932,
+      "home_charge_location": "Source-2"
+    },
+    {
+      "id": "Robot-F3-1",
+      "location": "Destination-1",
+      "battery_soc_percent": 62.03821997549032,
+      "is_charging": false,
+      "available_time": 104644.17384565847,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-2",
+      "location": "Destination-1",
+      "battery_soc_percent": 49.52703737745112,
+      "is_charging": false,
+      "available_time": 119045.32006241161,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-3",
+      "location": "Destination-1",
+      "battery_soc_percent": 31.601639093137397,
+      "is_charging": false,
+      "available_time": 193207.39575708887,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-4",
+      "location": "Destination-3",
+      "battery_soc_percent": 20.30983821631163,
+      "is_charging": false,
+      "available_time": 208390.21306429547,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-5",
+      "location": "Destination-4",
+      "battery_soc_percent": 20.156251544132825,
+      "is_charging": false,
+      "available_time": 285139.3676585619,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F3-6",
+      "location": "Destination-3",
+      "battery_soc_percent": 20.062374894601483,
+      "is_charging": false,
+      "available_time": 287586.43137254904,
+      "home_charge_location": "Source-3"
+    },
+    {
+      "id": "Robot-F4-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 20.11082723676692,
+      "is_charging": false,
+      "available_time": 198511.30462981382,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-2",
+      "location": "Destination-1",
+      "battery_soc_percent": 43.8521752612504,
+      "is_charging": false,
+      "available_time": 349452.5958193326,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-3",
+      "location": "Destination-5",
+      "battery_soc_percent": 20.091613265650196,
+      "is_charging": false,
+      "available_time": 380901.5032482873,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-4",
+      "location": "Destination-4",
+      "battery_soc_percent": 91.55435837387316,
+      "is_charging": false,
+      "available_time": 554376.5490196078,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-5",
+      "location": "Destination-4",
+      "battery_soc_percent": 92.98062193627466,
+      "is_charging": false,
+      "available_time": 540340.2171568379,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F4-6",
+      "location": "Destination-5",
+      "battery_soc_percent": 20.0902627776855,
+      "is_charging": false,
+      "available_time": 522732.54901960783,
+      "home_charge_location": "Source-4"
+    },
+    {
+      "id": "Robot-F5-1",
+      "location": "Destination-3",
+      "battery_soc_percent": 26.60687311207376,
+      "is_charging": false,
+      "available_time": 462910.6058962302,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-2",
+      "location": "Destination-7",
+      "battery_soc_percent": 50.73702530035412,
+      "is_charging": false,
+      "available_time": 554484.5490196078,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 35.50284463721422,
+      "is_charging": false,
+      "available_time": 554556.5490196078,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 74.81544262974919,
+      "is_charging": false,
+      "available_time": 462766.58927114937,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.12193627450979,
+      "is_charging": false,
+      "available_time": 8428.691696056112,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F5-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 96.4156709558824,
+      "is_charging": false,
+      "available_time": 107069.97183839977,
+      "home_charge_location": "Source-5"
+    },
+    {
+      "id": "Robot-F6-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 97.46691176470591,
+      "is_charging": false,
+      "available_time": 9148.70707431909,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 97.44439338235296,
+      "is_charging": false,
+      "available_time": 107789.99063260139,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-3",
+      "location": "Destination-7",
+      "battery_soc_percent": 20.170044264645888,
+      "is_charging": false,
+      "available_time": 291333.37254901964,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13273590686273,
+      "is_charging": false,
+      "available_time": 108510.02081304033,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 98.46806066176472,
+      "is_charging": false,
+      "available_time": 109230.03974473431,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F6-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13273590686273,
+      "is_charging": false,
+      "available_time": 109950.06253312135,
+      "home_charge_location": "Source-6"
+    },
+    {
+      "id": "Robot-F7-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13273590686273,
+      "is_charging": false,
+      "available_time": 110670.0815823369,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.1194087009804,
+      "is_charging": false,
+      "available_time": 111390.10451240648,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13273590686273,
+      "is_charging": false,
+      "available_time": 112110.12368024132,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.1127450980392,
+      "is_charging": false,
+      "available_time": 112830.14290236059,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13273590686273,
+      "is_charging": false,
+      "available_time": 113550.16604088443,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F7-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.1127450980392,
+      "is_charging": false,
+      "available_time": 114270.1853832442,
+      "home_charge_location": "Source-7"
+    },
+    {
+      "id": "Robot-F8-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 97.75007659313727,
+      "is_charging": false,
+      "available_time": 114990.21255504763,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 98.80085784313727,
+      "is_charging": false,
+      "available_time": 4122.43137254902,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 1135.3393378367107,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 98.78707107843135,
+      "is_charging": false,
+      "available_time": 115710.23983535227,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 1863.3573693874143,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F8-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.13273590686273,
+      "is_charging": false,
+      "available_time": 3392.597164041143,
+      "home_charge_location": "Source-8"
+    },
+    {
+      "id": "Robot-F9-1",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.79120710784312,
+      "is_charging": false,
+      "available_time": 436.156862745098,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-2",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 787.3333333333334,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-3",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.79120710784312,
+      "is_charging": false,
+      "available_time": 1156.1568627450981,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-4",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 1507.3333333333333,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-5",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.79120710784312,
+      "is_charging": false,
+      "available_time": 1876.1568627450981,
+      "home_charge_location": "Source-9"
+    },
+    {
+      "id": "Robot-F9-6",
+      "location": "Destination-9",
+      "battery_soc_percent": 99.81119791666666,
+      "is_charging": false,
+      "available_time": 2227.3333333333335,
+      "home_charge_location": "Source-9"
+    }
+  ],
+  "final_lifts": [
+    {
+      "id": "Lift-1",
+      "health_percent": 19.95,
+      "journeys_completed": 1601
+    },
+    {
+      "id": "Lift-2",
+      "health_percent": 19.95,
+      "journeys_completed": 1601
+    }
+  ],
+  "outcome_sha256": "5533ebb0acf18c26ca65e27822bb0029a02be9dbeeb17ca842f33a88d5bfc22c",
+  "run_directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\latest\\workload-scale-floor-screen\\results\\run_20261004_152258_7r7ssiag",
+  "output_bytes": 201869344,
+  "warning_review": "Automatically acknowledged for this controlled benchmark, not human approval.",
+  "limitations": [
+    "Controlled simple-mode workload, not LTN or detailed traffic validation.",
+    "Ten-hour daily release window; every fourth task goes to the next floor when multiple floors exist.",
+    "Two lift banks, 100 m straight floor routes, one payload type, six robot bays per floor at default scale.",
+    "No geometric walls, drawings, staffing or dynamic demand; live GUI responsiveness is not measured.",
+    "No agreed runtime threshold. Each invocation measures one fresh process."
+  ],
+  "reconciliation": [
+    {
+      "outcome": "completed",
+      "recorded_summary_count": 6455,
+      "event_count": 6455,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    },
+    {
+      "outcome": "failed",
+      "recorded_summary_count": 457,
+      "event_count": 457,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    },
+    {
+      "outcome": "pending at stop",
+      "recorded_summary_count": 88,
+      "event_count": 88,
+      "matches": true,
+      "missing_from_events": [],
+      "missing_from_summary": []
+    }
+  ],
+  "reconciliation_matches": true,
+  "investigation_seconds": 3.7538421999197453,
+  "peak_working_set_bytes": 901869568,
+  "input_unchanged": true
+}

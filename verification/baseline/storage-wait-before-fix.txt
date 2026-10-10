@@ -1,0 +1,16 @@
+test_returns_free_the_single_bay_for_each_later_delivery (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_returns_free_the_single_bay_for_each_later_delivery) ... FAIL
+
+======================================================================
+FAIL: test_returns_free_the_single_bay_for_each_later_delivery (tests.test_route_reservation_atomicity.ReservationAtomicityTests.test_returns_free_the_single_bay_for_each_later_delivery)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_route_reservation_atomicity.py", line 183, in test_returns_free_the_single_bay_for_each_later_delivery
+    self.assertEqual(set(), sim.failed_task_ids)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Items in the second set but not the first:
+'T2'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.006s
+
+FAILED (failures=1)

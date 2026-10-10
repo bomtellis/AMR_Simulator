@@ -1,0 +1,69 @@
+test_regular_dropoff_keeps_ordinary_storage_events (test_payload_conservation.PayloadConservationTests.test_regular_dropoff_keeps_ordinary_storage_events) ... ok
+test_same_bin_service_cycle_has_two_transfers_and_no_tracking_conflict (test_payload_conservation.PayloadConservationTests.test_same_bin_service_cycle_has_two_transfers_and_no_tracking_conflict) ... FAIL
+test_service_arrival_never_adds_the_bin_to_finite_storage (test_payload_conservation.PayloadConservationTests.test_service_arrival_never_adds_the_bin_to_finite_storage) ... FAIL
+test_service_arrival_retained_in_playback_without_becoming_storage (test_payload_conservation.PayloadConservationTests.test_service_arrival_retained_in_playback_without_becoming_storage) ... FAIL
+
+======================================================================
+FAIL: test_same_bin_service_cycle_has_two_transfers_and_no_tracking_conflict (test_payload_conservation.PayloadConservationTests.test_same_bin_service_cycle_has_two_transfers_and_no_tracking_conflict)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_conservation.py", line 62, in test_same_bin_service_cycle_has_two_transfers_and_no_tracking_conflict
+    self.assertEqual([
+    ~~~~~~~~~~~~~~~~^^
+        ('location_payload_enter', 'A', 0),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+        ('location_payload_enter', 'A', 18),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ], [(r['event_type'], r['to_location'], float(r['sim_time_sec'])) for r in movement])
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [('lo[24 chars]A', 0), ('location_payload_exit', 'A', 2), ('p[101 chars] 18)] != [('lo[24 chars]A', 0.0), ('location_payload_exit', 'A', 2.0),[72 chars]8.0)]
+
+First differing element 2:
+('payload_service_arrival', 'B', 9)
+('location_payload_exit', 'B', 11.0)
+
+First list contains 1 additional elements.
+First extra element 4:
+('location_payload_enter', 'A', 18)
+
+- [('location_payload_enter', 'A', 0),
++ [('location_payload_enter', 'A', 0.0),
+?                                  ++
+
+-  ('location_payload_exit', 'A', 2),
++  ('location_payload_exit', 'A', 2.0),
+?                                  ++
+
+-  ('payload_service_arrival', 'B', 9),
+-  ('location_payload_exit', 'B', 11),
++  ('location_payload_exit', 'B', 11.0),
+?                                   ++
+
+-  ('location_payload_enter', 'A', 18)]
++  ('location_payload_enter', 'A', 18.0)]
+?                                    ++
+
+
+======================================================================
+FAIL: test_service_arrival_never_adds_the_bin_to_finite_storage (test_payload_conservation.PayloadConservationTests.test_service_arrival_never_adds_the_bin_to_finite_storage)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_conservation.py", line 84, in test_service_arrival_never_adds_the_bin_to_finite_storage
+    self.assertEqual(1, len(arrivals))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0
+
+======================================================================
+FAIL: test_service_arrival_retained_in_playback_without_becoming_storage (test_payload_conservation.PayloadConservationTests.test_service_arrival_retained_in_playback_without_becoming_storage)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_payload_conservation.py", line 106, in test_service_arrival_retained_in_playback_without_becoming_storage
+    self.assertEqual(1, len(arrivals))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.065s
+
+FAILED (failures=3)

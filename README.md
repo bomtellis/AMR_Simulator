@@ -1,5 +1,93 @@
 # Autonomous Mobile Robot Simulator
 
+## Open the engineering workbench
+
+From an existing environment with the project dependencies installed:
+
+```powershell
+.\.venv\Scripts\python.exe amr_app.py
+.\.venv\Scripts\python.exe amr_app.py "path\to\project.amrproj"
+```
+
+The launch command also accepts JSON. Add `--without-drawings` to inspect or
+repair a configuration without loading its drawing underlays. Absolute paths to
+the Python executable and `amr_app.py` work from another folder. The previous
+`visualiser/amr_editor_main.py` entry point remains available.
+
+Use **File → New project** (`Ctrl+N`) to start again, with Save/Discard/Cancel for
+unsaved work. New project setup opens here and when launching without a file.
+Choose a floor count and height, then optionally assign a DXF or PDF per floor.
+Floors start at 0; PDF assignments use the existing page, scale and alignment
+settings. **Skip setup** starts an empty project for configuration through the
+existing dialogs; **Cancel** keeps the current project. Created floors remain
+visible in Layout even without drawings. Fresh workspaces save as compressed `.amrproj` files by default;
+opened JSON configurations retain JSON saves. **Save project as** (`Ctrl+Shift+S`)
+converts an imported configuration to a portable project. Simulation outputs stay
+external. New projects require layout, robot and demand configuration before
+**Check → Simulate → Review → Report**. Offline installation remains release work.
+
+## Engineering verification
+
+In **Layout**, choose **Edge** on the drawing toolbar and click two existing graph
+points to connect them. **Escape** cancels the current chain; **Undo/Redo** applies
+to each completed edge. Set **Bidirectional edges** and **Chain edge creation** in
+**More tools → Edit → Drawing behaviour**. Use **Corridor** to draw routes that
+also create new nodes.
+
+Choose **Department** on the Layout drawing toolbar to place a department marker
+on the current floor or edit one by clicking it. Its drop-down menu opens
+**Manage departments…** to add, edit or remove departments and configure their
+workflow locations. The full editor is also available under **Configuration → Departments**.
+
+The bottom-right **Object snap** controls let you enable **End** (graph points),
+**Mid** (corridor midpoints), **Perp** (perpendicular from the current anchor),
+and **Cross** (intersections) together. **Near** provides nearest-point/edge
+snapping when no enabled specific target is nearby. Targets compete by distance;
+exact coincidences still reuse existing graph geometry. Turn **Object snap** off
+to suspend attraction while keeping your chosen targets. **Grid snap** is
+independent. Drawing previews, commits and transform reference picking use the
+same enabled targets; the full tool tabs retain single-target presets.
+
+To change the level height after setup, open **Configuration → Building settings**,
+edit **Level height**, and choose **Save**. This shared distance between adjacent
+floors applies to all levels. The edit preserves effective lift speeds in metres
+per second and recalculates floors per second, so vertical travel times reflect
+the new height. It supports Undo/Redo; save the project to persist the change and
+rerun Project checks before simulating.
+
+Saved-run **Review → Playback** uses horizontal controls above the full-width
+map. **Display** contains visibility options and the optional legend; **Inspect**
+opens task, lift and payload monitors. Drag the divider above the timeline to
+resize it. Timeline backgrounds are cached for the visible area, and drag-to-seek
+updates are coalesced while retaining the final position on release. The run name
+and metadata replace the standalone viewer's loaded-file panel.
+
+Generated reports include the eight operational KPI groups for demand, service,
+capacity, efficiency, bottlenecks, reliability, resources and cost/sustainability.
+See [report KPI definitions and optional inputs](docs/report-kpis.md) for evidence
+limits, calculation rules and the accompanying CSV exports.
+Reports include a title page, linked contents and numbered headings. The
+[report structure and PDF insertion guide](docs/report-structure.md) explains
+SLA category assignments and adding selected or prepared sections to existing PDFs.
+
+The editor now opens compressed `.amrproj` files containing configuration,
+deduplicated drawings and saved revisions. See the
+[project storage review guide](verification/PROJECT_STORAGE_REVIEW.md).
+Export JSON for the existing simulator and launcher; results remain external.
+Unsaved-work safeguards and automatic recovery copies are described in the
+[recovery review guide](verification/RECOVERY_REVIEW.md).
+Use **Edit → Undo / Redo** for completed changes; see the
+[undo and redo review guide](verification/UNDO_REDO_REVIEW.md) for scope and limits.
+**Home → Project runs** can save, check and simulate a project revision, then open
+its results in the editor. See the [project runs review guide](verification/PROJECT_RUNS_REVIEW.md).
+
+The first verification checkpoint provides independently calculated routing,
+door-width, service-time, reservation and task-generation reference cases, plus
+a searchable evidence pack and an inventory of settings still requiring review.
+See [verification/README.md](verification/README.md) for the three review projects,
+known limitations and commands to reproduce the results. This is verification of
+specific model behaviour, not a claim of full simulator validation.
+
 ***Project licensed under AGPL.***
 
 This script simulates paths taken by autonomous mobile robots around a facility to deliver payloads to destinations.
@@ -17,6 +105,137 @@ The graph nodes and edges are ***explictly*** defined in the json file.
     ^C to quit and save .csv default name = "simulation_steps.csv"
     Use --verbose-csv path_to_file.csv to name file
 ```
+
+## Local manoeuvre override
+
+In **Simulation settings → Initial conditions → Inventory and container state**,
+**Ignore invalid local manoeuvres** optionally replaces a failed local inventory-bay
+path with direct movement. It defaults to off. Distance and travel time remain
+included, and movement event details record `unverified_direct_fallback` plus the
+original failure reason. Project checks warn when it is enabled. This option
+does not bypass corridor, door, traffic or malformed-coordinate checks.
+
+## Limiting task deferral
+
+In **Simulation settings → Run period**, set **Maximum task deferral** in minutes
+and save the configuration. The JSON field is `simulation.max_task_deferral_minutes`;
+for example, `30` allows up to 30 minutes from a task's scheduled release to AMR
+assignment. `0` (the default, displayed as **Unlimited**) disables the limit.
+
+The timer includes both waiting for a preceding return pickup and waiting for an
+available AMR. Releasing a deferred task or retrying assignment does not restart
+it. A task still unassigned at the deadline fails and is removed from the waiting
+queue, with its waiting time and failure reason recorded in the existing failure
+logs and exports. Assigned journeys continue normally. Collection/return tasks
+have their own timer from their release time; automatic idle parking trips are
+excluded.
+
+## Managing inventory spaces across locations
+
+For one location, select it and choose **Properties > Create / edit spaces…**, or
+right-click it and choose **Inventory spaces**. The inventory editor opens maximized
+with a central CAD canvas, a spaces list, an explicit Properties panel, a metre grid,
+zoom/pan, multi-selection, drag movement and numeric centre/rotation fields. The toolbar
+and **Edit tools** menu retain payload/AMR creation, arrays, copy/paste, deletion,
+alignment, capacity arrangement and charger controls. Draft Undo/Redo stays inside
+the dialog; **Save and close** applies one project edit, while **Cancel** discards it.
+Part 4, Action 2 shows bay dimensions and labelled placement previews and can create
+four correctly positioned tutorial charging bays before robot types are configured.
+
+Open **Locations & Inventory Spaces** in the editor. The left list includes every
+location and drop-off zone; the right table edits its spaces and previews the layout.
+Changes remain in a draft while navigating. **Save all** updates the editor's
+configuration; **Cancel** discards the draft. Save the JSON normally to persist it to disk.
+
+- Select payload bays and choose **Detach payloads in scope** to remove their
+  payload template and make them flexible. Any payload fitting length, width and
+  height may use them, including a 90-degree turn. AMR/charger bays are skipped.
+- Edit flexible length/width, height, name and bay angle directly in the table.
+  **Attach payload to selected** restores a fixed template. Add, duplicate and
+  delete spaces here, or add AMR bays and toggle their charger checkbox.
+- Choose **Selected spaces**, **Current location**, **Selected locations**, or
+  **All locations**, then apply the length/width fields. Only flexible payload bays
+  are resized; detach fixed payload templates first. Centres and angles are kept.
+  Review the preview for clearance/overlap after resizing; bays are not repacked.
+- **Select similar locations** matches the current location's payload-space count
+  and bay orientations, allowing the displayed angle tolerance (default 5 degrees).
+  It ignores AMR bays, position, payload type and dimensions. Headings differing by
+  180 degrees match. The matching locations are selected and become the bulk scope.
+
+## Exporting journey flows for a lift engineer
+
+For lift travel alone, choose **Lift travel CSV** in the report dialog and tick
+**Export lift travel CSV only (skip PDF)**. The command-line equivalent is:
+
+```powershell
+python report/amr_report_main.py ltn_full_20260910.csv --lift-csv-only --lift-travel-csv output/lift_travel.csv
+```
+
+The CSV contains one row per lift transfer or empty lift reposition: lift ID,
+origin/destination levels, start/finish time, duration in seconds,
+travel distance in metres, direction, AMR and task IDs, and whether the AMR is
+onboard. For repositioning, the AMR/task identify the request served; the AMR is
+waiting rather than travelling. Lift node endpoints take precedence over the
+robot's logged floor, which can remain unchanged during repositioning. Missing
+endpoints are marked `Unknown`. Multiple tasks sharing a movement stay on one row.
+The `origin_location` and `destination_location` columns contain level labels only
+(for example, `L00` and `L02`), matching `origin_level` and `destination_level`.
+
+`payload_weight_kg` and `amr_weight_kg` are populated only on AMR-carrying lift
+transfers; empty lift reposition rows leave both blank. Supply `--config-json`
+(or select the matching JSON in the dialog) to resolve weights. Payload weight
+sums the actual onboard payload instances, so approach travel before pickup has
+zero payload weight even when the task names a future load. Unknown/suppressed
+loads remain blank. Explicit logged weights take precedence over configuration.
+
+Set each AMR type's **Unloaded weight** in its editor's physical settings. This
+saves `weight_kg` in its JSON entry; the report maps it to individual robots
+(for example, `AMR-C` to `AMR-C-1`, `AMR-C-2`, etc.). Payload capacity is not robot
+self-weight. Unspecified AMR weights remain blank. For a weighted CSV:
+
+```powershell
+python report/amr_report_main.py ltn_full_20260910.csv --config-json ltn.json --lift-csv-only --lift-travel-csv output/lift_travel.csv
+```
+
+Normal report generation also writes this CSV automatically. Set its output with
+`--lift-movements-csv` (alias `--lift-travel-csv`), or leave it blank to save
+`<report>_lift_movements.csv` beside the PDF. CSV-only mode does not need a JSON config.
+
+The report tool includes **Journey origins, destinations and returns** in the
+report section selector (`journey_flows` on the command line). For example:
+
+```powershell
+python report/amr_report_main.py ltn_full_20260910.csv --config-json ltn.json --output output/pdf/vertical_transport.pdf --report-sections journey_flows --omit-drawings
+```
+
+Every report run, including the report dialog, writes three CSVs beside its PDF:
+
+- `<report>_journeys.csv`: one row per recorded task request, with origin and
+  destination locations, levels and departments, payload, requesting department,
+  status, release/assignment/completion times and the parent task ID for identifiable
+  payload returns. Empty AMR return tasks are labelled separately.
+- `<report>_journey_flows.csv`: task counts by journey type, origin/destination
+  level and department, and outcome. Failed/incomplete requests remain separate.
+- `<report>_lift_movements.csv`: one row per logged lift transfer or empty lift
+  reposition, with lift, AMR, task IDs, start/finish times and levels. Multi-stop
+  tasks sharing a lift movement do not create extra movement rows.
+
+Use the matching simulation JSON for department and location metadata. Logged
+endpoint floors take precedence, with JSON floors as a fallback. Numeric floor 0
+is displayed as L00; missing metadata is `Unknown`. Shared endpoint departments
+are listed together; `task_department` identifies the requesting department.
+No L00 origin/destination or reverse route is assumed. Return pickups can differ
+from the original delivery endpoint because of staff transfers to drop-off zones.
+Assignment time is dispatch time, not payload pickup time. CSV times include dates
+when the source does, otherwise elapsed seconds. Counts span the entire source log.
+
+Journey counts represent tasks, not AMR or lift trips. Use lift movements for
+vertical transport demand, including empty AMR travel and lift repositioning;
+use task IDs to join to journey endpoints. Movements without task IDs (for example,
+some charging travel) cannot be linked to delivery tasks. A return's parent ID is
+blank when the log does not establish a link. Legacy logs without request events
+cannot supply a complete journey table. Department mappings reflect the supplied
+configuration, so use the configuration saved for the simulation run.
 
 ## Defining the simulation parameters
 ```
@@ -188,3 +407,222 @@ AMRs are the robots that move around a facility to transport goods.
     },
 ]
 ```
+
+## Department service review exports
+
+In the reporting dialog, select the simulation event CSV and matching configuration
+JSON, enable **Export category reviews**, and choose **PDF and Excel (.xlsx)**,
+**PDF only**, or **Excel (.xlsx) only**. Use **Reviews only** to skip the main report
+and lift exports. The review folder receives a separate file for every configured
+category, including a clearly empty review for inactive categories.
+
+```powershell
+python report/amr_report_main.py simulation_steps.csv --config-json hospital.json --department-review-only --department-review-dir department_reviews --department-review-formats both
+```
+
+Each category review includes a directory of configured departments, effective
+generation rules (including department groups and waste streams), Monday-Sunday
+delivery/collection counts, payload routes, and a timetable separating configured
+release/fill times from actual deliveries and collections. The PDF gives the
+category timetable with exact times and department IDs; Excel also provides a
+department-by-department timetable and the full generated-task audit. Excel's
+amber current-service and owner-comment fields are blank for department review.
+The **Difference** column calculates simulated total minus the entered current total.
+
+PDF export also writes `<category>_executive_summary.pdf`, a single portrait A4
+page with key service statements and a timeline of configuration schedules,
+generated tasks, actual deliveries and actual collections. The same executive
+page opens the full review. Up to eight calendar dates are shown individually;
+longer intervals overlay all events by weekday, explicitly labelled on the page.
+
+Counts use completed tasks with service times in the configuration's half-open
+simulation interval. Delivery time is the staff final arrival where logged,
+otherwise AMR drop-off completion. Collection time is AMR pickup completion at the
+department or shared zone. Return container deliveries count as deliveries; staff
+return legs and robot accommodation trips do not count again. Weekdays are calendar
+days; coverage hours make partial days explicit. Late/incomplete/unclassified
+tasks remain in the audit. The supplied configuration's hash is recorded because
+the log itself cannot establish that the supplied JSON matches the simulated run.
+
+PDF uses the reporting tool's existing ReportLab dependency. Excel export uses
+Node.js and `@oai/artifact-tool`; the bundled Codex runtime is detected automatically.
+For another installation, set `AMR_REPORT_NODE` to the Node executable and
+`AMR_REPORT_NODE_MODULES` to its `node_modules` directory containing that package.
+PDF-only exports do not require Node. The retained Analytics Dashboard reference
+in `report/assets/department_review_template.xlsx` supplies the workbook template;
+its synthetic marketing content is replaced with category service data.
+
+## Department drop-off zones
+
+A department category can associate its normal pickup/drop-off locations with one
+or more intermediate drop-off zones. The normal locations remain the final human
+destinations; the AMR stages the payload at a zone, department staff complete the
+last leg, and return the configured empty/equivalent payload to that zone for the
+AMR return journey.
+
+```json
+{
+  "id": "D1",
+  "name": "Ward 1",
+  "task_generation_locations": {
+    "catering": {
+      "pickup_dropoff_locations": ["Ward-1A"],
+      "dropoff_zone_locations": ["Ward-1-Drop-Zone"]
+    }
+  }
+}
+```
+
+Drop-off zones are ordinary placed locations. Configure their existing
+`inventory_spaces` as **Flexible payload spaces** to let different payload types
+use any space whose maximum length, width and height they fit. Payloads may rotate
+90 degrees in plan. The simulator assigns the smallest available compatible space
+first, preserving larger spaces for larger payloads. New and existing department
+drop-off-zone spaces default to flexible; other inventory spaces can opt in from
+the Inventory Spaces editor. Multiple spaces provide the zone's simultaneous
+holding capacity.
+
+In the Department editor, use **New drop-off zone → Create and assign** to name
+and place a zone, then assign that one location to any number of selected task
+categories in the same operation.
+
+For a generated delivery using a zone:
+
+- `Task.dropoff` and `Task.dropoff_zone` are the AMR staging location.
+- `Task.final_destination` is the associated department location.
+- staff and a return task are enabled automatically;
+- `return_payload` selects the empty/equivalent type, falling back to the outbound
+  payload type when it is blank;
+- `staff_collection_delay_minutes` adds a configurable response delay between AMR
+  drop-off and staff collection;
+- staff handling occurs within the configured `return_delay_minutes` window at
+  the final destination. The longer of `staff_handling_minutes` and
+  `return_delay_minutes` determines the destination dwell, matching the original
+  direct-delivery return timing; calculated walking time from the zone and back
+  remains additional;
+- `dropoff_zone_capacity_policy` can either wait for a compatible free space or
+  allow temporary overflow. This setting is category-wide: all departments in
+  the category use the same policy, and legacy department override values are
+  ignored. Overflow applies only when the payload fits a configured zone space,
+  keeps generated tasks from failing during a temporary occupancy peak, and
+  remains visible in zone utilisation/shortfall reporting;
+- `release_next_after_return_pickup` optionally serialises lower-priority
+  workflows that share a drop-off zone. The next checked task is held until the
+  preceding return collects its payload and frees the zone inventory space.
+  Unchecked priority categories continue to release normally.
+
+Global staff settings provide the walking speed, lift allowance and default
+payload-handling time used by every drop-off-zone handoff. A category/department
+handling value of `0` uses that global default. The global short-exchange threshold
+can hold the delivering AMR at the zone until the returned payload is ready,
+preventing it from accepting intervening work during a quick exchange.
+
+Set `staff_department_fallback_enabled` on a category or department override to
+let an untracked department team complete the zone-to-department-to-zone handoff
+when the primary staff team cannot finish it within its current working period.
+`staff_department_fallback_resource_name` controls the label used in event logs.
+Fallback assignments are auditable but do not enter the primary staff pool,
+consume central staffing capacity, retain movement history, or delay another
+department fallback. Once the return payload reaches the zone, its AMR return
+task is released and collection is autonomous.
+
+`staff_handoff_only` removes destination dwell for movement-only workflows such
+as Linen: the person delivers the incoming trolley, takes the previous return
+trolley immediately, and places it in the zone for autonomous AMR collection.
+Where a department category has several destination locations, the simulator
+orders them by staff graph-route distance from the zone and selects the nearest
+available location; an occupied or reserved location causes it to try the next
+candidate.
+
+Tracked exchange deliveries leave the newly delivered full payload at the final
+destination and bring the previous empty/equivalent payload back to the zone as a
+different physical instance. This supports Linen-style full-for-empty swaps while
+keeping destination and zone populations stable across repeated visits.
+When the same tracked payload is assigned to several department destination
+locations, `consumption_per_day` remains the department's total demand. The
+simulator divides that demand evenly between the physical resources, tracks each
+container's balance independently, and targets replenishment at the resource that
+reaches its threshold.
+
+The simulation visualiser shows this handoff when **Show drop-off-zone staff
+handoffs** is enabled: the assigned person carries the delivered payload to the
+final destination, handles it there, and returns the configured empty/equivalent
+payload to the zone. Exchange tasks additionally show the person manoeuvring the
+full/empty payload swap, while a held AMR remains visible at the zone. Right-click
+a location and select **Payloads → Find maximum
+space utilisation** to inspect its peak occupied-space count, peak timestamp, and
+the utilisation history of every configured space. The PDF report includes a **Drop-off zone peak occupancy**
+section with each zone's maximum occupied spaces and the true simultaneous
+maximum across all configured zones.
+
+Static tasks can opt into the same workflow by supplying both `dropoff_zone` and
+`final_destination`; the simulator routes their AMR leg to `dropoff_zone`.
+
+### Unattended engineering verification
+
+For unattended engineering verification, run
+`python -m verification.run --isolated --output verification/latest/isolated`.
+Each test module runs in a fresh process with a 180-second limit, preventing Qt
+state retained by earlier modules from slowing later UI tests. Module logs,
+stack snapshots and per-test evidence remain under the output folder. Crashes,
+timeouts and missing results fail verification explicitly. Omit `--isolated` to
+retain the shared-process suite for integration diagnostics.
+
+### Payload supply at depleted sources
+
+Simulation settings > Initial conditions > **Spawn payloads when pickup stock is exhausted**
+(`simulation.spawn_payloads_when_empty`, default false) reuses eligible unreserved stock
+first, then supplies a unique payload at actual pickup. Route estimates create no stock.
+Exact IDs, same-container returns, staged recovery and reserved empty-bin exchanges
+still require physical stock. Ordinary outbound creation rules are unchanged.
+
+Verbose evidence records `payload_source_spawned` with task, source, time and identity.
+Population summaries include `payload_source_additions` alongside peak active population.
+Counts remain available as `Simulation.source_payload_additions` without verbose logging.
+These are scenario supply requirements, not proof of a globally minimum container fleet.
+# Simple application delivery
+
+New-project setup and the shipped small-map practice input select Simple mode.
+Existing imported modes and historical projects keep their settings.
+Task generation uses focused tabs and a Department actions menu. Department
+settings use Details, Hours & waste, and Task locations & zones; save the child
+editor, then save the Departments list. Simulation settings keep four tabs;
+Show mode details reveals the full readiness findings without expanding the
+default form. Properties and advanced drawing tools remain optional.
+
+The current delivery excludes LTN tests and workloads. Reproduce the focused
+workflow QA with `.venv\Scripts\python.exe -m verification.simple_delivery qa
+--output verification/latest/simple-delivery/qa`. See
+[the delivery review](verification/SIMPLE_DELIVERY_REVIEW.md) for the source,
+installer, checks and known limits.
+
+The subsequent building-flow increment adds a live-control instruction bubble
+under Help > Building flow tutorial. It supplies three aligned 800 m² floors,
+checkpoints and dedicated/shared lift reference projects. Configuration > Plan
+lift locations requires reviewed DXF interpretation, proposes aligned sites and
+compares frozen scenarios with protected service to every floor/flow. Separate
+variants preserve the original design; explicit application supports undo.
+See [the illustrated guide](docs/building-tutorial/Building-Flow-Tutorial.pdf)
+and [increment review](verification/BUILDING_TUTORIAL_REVIEW.md). Its handover
+is under `installer/build/building-delivery`. The current source adds Number of
+floors to Building settings, and tutorial Next/Resume locates the relevant
+workspace. The bubble avoids panes/controls and can be dragged. Circulation
+uses numbered click markers, route previews and checked progression; missing
+links or incorrect properties are highlighted before Next is enabled.
+Facility placement also shows the next location's name, floor and coordinates,
+including while its naming dialog is open. Insertion tools share contextual
+coordinate feedback. All tutorial stages validate automatically; use Next when
+ready, and Details for full corrections. The bubble is an independent nonmodal
+dialog owned by the application, so temporary editors cannot close or delete it.
+Progress saves automatically beside the project as chapters, actions and practice
+change. The first save and Save as preserve it; Resume restores the saved position
+and skips completed chapters and verified actions. Shared transition instructions
+explicitly create the middle node at (3,10) on each floor before connecting lanes.
+Transition and Lift have distinct drawing toolbar icons: Transition places a
+node for corridor junctions on the current floor; Lift connects stops across floors.
+With enlarged text in a compact window, drawing tools show icons and keep their
+names in accessible labels and tooltips so both controls remain visible.
+Help > Restart tutorial bubble (also in its More menu) reopens the bubble at
+the current step without resetting project edits or checked progress.
+Installer work for these corrections is excluded at the user's request;
+the earlier building and Simple deliveries are preserved.

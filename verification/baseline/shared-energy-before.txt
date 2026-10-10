@@ -1,0 +1,15 @@
+test_task_records_do_not_repeat_shared_journey_energy_as_task_energy (tests.test_energy_reporting.EnergyReportingTests.test_task_records_do_not_repeat_shared_journey_energy_as_task_energy) ... FAIL
+
+======================================================================
+FAIL: test_task_records_do_not_repeat_shared_journey_energy_as_task_energy (tests.test_energy_reporting.EnergyReportingTests.test_task_records_do_not_repeat_shared_journey_energy_as_task_energy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_energy_reporting.py", line 31, in test_task_records_do_not_repeat_shared_journey_energy_as_task_energy
+    self.assertIsNone(record['energy_kwh'])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0.0087 is not None
+
+----------------------------------------------------------------------
+Ran 1 test in 0.014s
+
+FAILED (failures=1)

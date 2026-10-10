@@ -1,0 +1,309 @@
+"""Run with: python -m verification.run --output verification/latest.
+
+Exit status is nonzero for failed tests or broken evidence links. Passing tests
+never promote a partially verified feature to a fully verified feature.
+"""
+from __future__ import annotations
+
+import argparse
+import faulthandler
+import hashlib
+import html
+import importlib.metadata
+import json
+import os
+import platform
+import subprocess
+import sys
+import time
+import unittest
+import zipfile
+from datetime import datetime, timezone
+from pathlib import Path
+from xml.etree import ElementTree as ET
+
+from verification.inventory import ROOT, build_inventory, link_evidence, source_paths
+
+
+class EvidenceResult(unittest.TextTestResult):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cases = []
+        self.started = {}
+        self.outcomes = {}
+
+    def startTest(self, test):
+        super().startTest(test)
+        self.started[test.id()] = time.perf_counter()
+
+    def addSuccess(self, test):
+        super().addSuccess(test)
+        self.outcomes.setdefault(test.id(), ("passed", ""))
+
+    def addFailure(self, test, err):
+        super().addFailure(test, err)
+        self.outcomes[test.id()] = ("failed", self._exc_info_to_string(err, test))
+
+    def addError(self, test, err):
+        super().addError(test, err)
+        self.outcomes[test.id()] = ("error", self._exc_info_to_string(err, test))
+
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        self.outcomes[test.id()] = ("skipped", reason)
+
+    def addExpectedFailure(self, test, err):
+        super().addExpectedFailure(test, err)
+        self.outcomes[test.id()] = ("expected_failure", self._exc_info_to_string(err, test))
+
+    def addUnexpectedSuccess(self, test):
+        super().addUnexpectedSuccess(test)
+        self.outcomes[test.id()] = ("unexpected_success", "Expected failure now passes; review the test.")
+
+    def addSubTest(self, test, subtest, err):
+        super().addSubTest(test, subtest, err)
+        if err is not None:
+            previous = self.outcomes.get(test.id(), ("failed", ""))[1]
+            self.outcomes[test.id()] = ("failed", previous + self._exc_info_to_string(err, subtest))
+
+    def stopTest(self, test):
+        status, details = self.outcomes.get(test.id(), ("error", "No recorded outcome"))
+        self.cases.append({"id": test.id(), "status": status, "details": details,
+                           "seconds": round(time.perf_counter() - self.started[test.id()], 6)})
+        super().stopTest(test)
+
+
+def git(*args):
+    try:
+        result = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unavailable"
+
+
+def source_manifest():
+    paths = source_paths() + list((ROOT / "tests").glob("*.py"))
+    paths += list((ROOT / "verification").glob("*.py")) + list((ROOT / "verification").glob("*.json"))
+    paths += list((ROOT / "verification/scenarios").glob("*.json"))
+    paths += list(ROOT.glob("*.json")) + list(ROOT.glob("requirements*.txt"))
+    paths += list((ROOT / "report").glob("*.mjs")) + list((ROOT / "report/assets").glob("*.xlsx"))
+    hashes = {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in sorted(set(paths))}
+    return {"files": hashes, "sha256": hashlib.sha256(
+        json.dumps(hashes, sort_keys=True).encode()).hexdigest()}
+
+
+def write_json(path, value):
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def ltn_audit():
+    from visualiser.models import JsonStore
+    from visualiser.project_checks import check_project
+    start = time.perf_counter()
+    path = ROOT / "ltn.json"
+    raw = path.read_bytes()
+    store = JsonStore.from_file(str(path))
+    findings = store.validate()
+    checks = check_project(json.loads(raw), base_path=path.parent)
+    return {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw),
+            "load_and_check_seconds": round(time.perf_counter() - start, 6),
+            "locations": len(store.data.get("locations", [])),
+            "nodes": len(store.data.get("corridors", {}).get("nodes", [])),
+            "edges": len(store.data.get("corridors", {}).get("edges", [])),
+            "findings": findings,
+            "project_checks": checks.to_dict(),
+            "scope": "Load, legacy editor validation and structured preflight; not a full LTN simulation or numerical validation."}
+
+
+def write_junit(path, cases):
+    suite = ET.Element("testsuite", name="AMR engineering verification", tests=str(len(cases)),
+                       failures=str(sum(c["status"] in ("failed", "unexpected_success") for c in cases)),
+                       errors=str(sum(c["status"] == "error" for c in cases)),
+                       skipped=str(sum(c["status"] in ("skipped", "expected_failure") for c in cases)))
+    for case in cases:
+        class_name, _, name = case["id"].rpartition(".")
+        node = ET.SubElement(suite, "testcase", classname=class_name, name=name, time=str(case["seconds"]))
+        if case["status"] != "passed":
+            tag = "skipped" if case["status"] in ("skipped", "expected_failure") else "error" if case["status"] == "error" else "failure"
+            ET.SubElement(node, tag, message=case["status"]).text = case["details"]
+    ET.ElementTree(suite).write(path, encoding="utf-8", xml_declaration=True)
+
+
+def write_report(path, report):
+    esc = lambda value: html.escape(str(value))
+    rows = []
+    for feature in report["features"]:
+        tests = "".join(f'<li>{esc(c["status"])} — {esc(c["id"])}</li>' for c in feature["evidence"])
+        rows.append(f'<article><h2>{esc(feature["id"])} · {esc(feature["title"])}</h2>'
+                    f'<p class="status">{esc(feature["status"].replace("_", " "))}</p>'
+                    f'<p>{esc(feature["contract"])}</p><p><strong>Limitations:</strong> {esc(feature["limitations"])}</p>'
+                    f'<details><summary>{len(feature["evidence"])} linked tests</summary><ul>{tests}</ul></details></article>')
+    options = "".join(
+        f'<tr><td>{esc(o["path"])}</td><td>{esc(o["disposition"])}</td><td>{esc(o["units"])}</td>'
+        f'<td>{esc(o["meaning"])}<br>{esc(o["precedence"])}'
+        f'<details><summary>Contract and acceptance evidence</summary>'
+        f'<p>Support: {esc(o.get("support_status", "not individually reviewed"))}</p>'
+        f'<p>Related field contract: {esc(o.get("related_contract") or "None")}</p>'
+        f'<p>Runtime default: {esc(o.get("runtime_default", "not reviewed"))}</p>'
+        f'<p>Editor/import: {esc(o.get("editor_behaviour", "not reviewed"))}</p>'
+        f'<p>Validation: {esc(o.get("validation", "not reviewed"))}</p>'
+        f'<p>Limitations: {esc(o.get("limitations", "not reviewed"))}</p>'
+        f'<p>Source definitions: {esc("; ".join(s["reference"] + (" at line " + str(s["line"]) if s["resolved"] else " — UNRESOLVED") for s in o.get("source_evidence", [])))}</p>'
+        f'<p>Tests: {esc("; ".join(c["status"] + " — " + c["id"] for c in o.get("evidence", [])))}</p>'
+        f'</details></td></tr>'
+        for o in report["options"])
+    counts = report["counts"]
+    audit_rows = ''.join(f'<tr><td>{esc(row["family"])}</td><td>{row["total"]}</td>'
+        f'<td>{row["reviewed"]}</td><td>{row["unreviewed"]}</td>'
+        f'<td>{row["reviewed_with_passing_evidence"]}</td></tr>'
+        for row in report['option_audit']['families'])
+    path.write_text(f'''<!doctype html><html lang="en"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>AMR engineering verification</title>
+<style>body{{font:17px/1.5 system-ui,sans-serif;background:#f5f7fa;color:#172635;max-width:1150px;margin:auto;padding:24px}}
+h1,h2{{line-height:1.2}}article,.panel{{background:white;border:1px solid #b3c2d0;border-radius:8px;padding:20px;margin:16px 0}}
+.status{{font-weight:700;color:#334d65}}table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{text-align:left;border:1px solid #b3c2d0;padding:8px;overflow-wrap:anywhere}}
+input{{font:inherit;padding:10px;width:90%;margin:8px 0}}summary{{cursor:pointer}}a{{color:#174c94}}li{{overflow-wrap:anywhere}}
+@media print{{body{{padding:0}}details{{display:block}}}}</style>
+<h1>AMR engineering verification</h1><p>Engineering verification checkpoints · {esc(report["created_utc"])}</p>
+<div class="panel"><h2>{counts["passed"]} / {counts["total"]} tests passed</h2>
+<p><strong>This is not full simulator validation.</strong> Verified claims apply only to the stated reference cases. Partial and unsupported features remain visible below.</p>
+<p>Rollback commit: 07a059a · tested source fingerprint: <code>{esc(report["source"]["sha256"])}</code></p>
+<p>{len(report["options"])} observed/documented option paths; {counts["unreviewed_options"]} require individual semantic review.</p>
+<p><a href="evidence.json">Complete machine-readable evidence</a> · <a href="tests.txt">Test log</a> · <a href="options.json">Option inventory</a> · <a href="source-key-candidates.json">Additional source-key candidates</a> · <a href="source-snapshot.zip">Tested source snapshot</a></p></div>
+<div class="panel"><h2>Configuration audit remaining</h2>
+<p>{esc(report['option_audit']['scope'])}</p>
+<p>Reviewed dispositions: {esc(report['option_audit']['reviewed_statuses'])}. A partial contract stays partial when its references pass.</p>
+<p><a href="audit-backlog.json">Exact remaining option paths and family counts</a></p>
+<table><thead><tr><th>Family</th><th>Total paths</th><th>Reviewed</th><th>Unreviewed</th><th>Reviewed with passing linked tests</th></tr></thead><tbody>{audit_rows}</tbody></table></div>
+<div class="panel"><h2>Changes to review</h2><ul>
+<li>Routing and door option contracts now include runtime defaults, editor/import behaviour, validation limits, source symbols and linked acceptance results. New-project defaults are distinguished from omitted values in imported projects. Partial support is retained even when its reference tests pass.</li>
+<li>Local route failures preserve endpoints and reject blocked straight fallbacks. Prepared runs fingerprint all root and visualiser/report Python modules; older results retain an explicit source-coverage warning.</li>
+<li>Multi-stop journeys now enforce the common node, edge and lift permissions of payloads currently onboard, updating after pickup and delivery. Straight clearance also follows the actual onboard payloads. Incompatible batches can use separate valid journeys.</li>
+<li>Scheduled and timeframe demand now releases at exact calendar times, including overnight department opening adjustments. Consumption remains polled; resource waits and configured staggering still affect assignment.</li>
+<li>Same-container service arrivals are recorded separately from stored inventory, so payload movement evidence can reconcile without inflating storage counts.</li>
+<li>Project runs joins saved revisions, reviewed preflight, separate-process simulation and results investigation. External folders record immutable input checksums and project/revision/software identities. Moved runs are matched by identity and saved configuration.</li>
+<li>Shared undo/redo groups completed configuration edits and canvas drags, preserves history across saves, and starts fresh when another document opens. Finish active editing windows before undoing.</li>
+<li>Unsaved-work prompts protect open/close. Separate recovery copies capture edits and available drawings every 30 seconds; recovery opens as unsaved work without overwriting the original.</li>
+<li>Portable .amrproj storage packages configuration, deduplicated drawings and saved revisions. Atomic saves protect the previous file; restore preserves current edits first. Results stay external.</li>
+<li>Results investigation links task timelines and defined metrics to event records, using saved input snapshots rather than the current editor project.</li>
+<li>New exports retain stable event/journey IDs and checksum-bound input/software evidence. Legacy and missing evidence remain explicit.</li>
+<li>Demand preview adds a task table, hourly timetable, filters and per-rule explanations of effective settings and precedence.</li>
+<li>Runtime-dependent demand remains unknown; simple fixed schedules have independent count reconciliation. Returns are not counted as fixed tasks.</li>
+<li>Project checks now show searchable findings, affected objects, explanations and navigation in the editor.</li>
+<li>Launcher runs block detected input errors, require warning acknowledgement, and save checks alongside the exact reviewed configuration.</li>
+<li>Robot and payload width now exclude impassable corridors/doors while allowing wider alternative routes.</li>
+<li>Location capacity counts actual simultaneous occupancy, using half-open time intervals.</li>
+<li>Enabled groups activate generation under disabled category defaults; grouped services no longer create an extra default task.</li>
+<li>PDF test dependency declared; LTN bay regression updated to its saved four-bay layout.</li></ul>
+<p>LTN load/check: {esc(report["ltn"].get("load_and_check_seconds", "not measured"))} s; {len(report["ltn"].get("findings", []))} existing validation findings. Full week simulation not run at this gate.</p></div>
+<div class="panel"><h2>Your review checkpoint</h2><p>Open the three JSON examples in verification/scenarios in the existing editor or simulator. Expected results: door-pass — one delivery in 9 seconds; door-blocked — one explicit failed task; door-detour — one delivery in 14 seconds via the 20 metre alternative.</p>
+<p>Multi-stop review: open multi-stop-shared.json and multi-stop-separate.json. Both complete two tasks. The shared case uses one 20 m journey, with final delivery at 16 seconds; the separate case uses two journeys, with final delivery at 28 seconds. <a href="../MULTI_STOP_ROUTING_REVIEW.md">Calculations and limits</a>.</p>
+<p>Exact schedule review: generation-final-interval.json starts its one task at 00:01:00 and finishes at 00:01:09. <a href="../SCHEDULED_DISPATCH_REVIEW.md">Calendar cases and changed LTN timings</a>. The <a href="../ROADMAP.md">full completion ledger</a> remains open.</p>
+<p>Open Home → Project checks in the editor. Filter findings, navigate to an affected object, edit it and confirm the checks become stale. Recheck before exporting. In the launcher, review and acknowledge warnings before running, then inspect project_checks.json in the run folder.</p>
+<p>Open Home → Demand preview → Build preview. Inspect Tasks, Timetable and Rules and reconciliation. Select a task for its origin and effective settings; edit the project and confirm the preview becomes stale.</p>
+<p>Open Home → Results investigation or Investigate Results in the launcher. Select a full event CSV, inspect a task, then select a metric to see its contributing records. Planned segments do not establish completion; missing evidence is not zero activity.</p>
+<p>Use Home → Save project as, then Project revisions to compare and restore a saved configuration. Move the project without the original drawings and reopen it. Export JSON for the existing simulator.</p>
+<p>Use Edit → Undo / Redo (Ctrl+Z / Ctrl+Y) after dragging a node, deleting a linked node or editing settings. A drag is one step; deleting a node restores its edges with it. Undo back to saved values clears unsaved state. Open/recovery/revision restore starts a new undo history.</p>
+<p>Open Home → Project runs → Save, check and simulate. Review warnings, run the nine-second reference case, then investigate it. Move a completed folder and use Locate moved run.</p>
+<p>Change a setting and verify Save / Discard / Cancel when opening or closing. After 30 seconds outside modal editing, use Home → Recover unsaved work. Recover to a new filename and confirm the original remains unchanged. Hover over the filename for recovery status.</p>
+<p><a href="ltn-project-checks.json">LTN structured findings</a> reflects the current saved project. Previously reported references may have been corrected. Complex calendars without an independent expected count are marked not assessed. The remaining option audit, complete report reconciliation, unified application and new geometry remain later work.</p></div>
+<label for="filter">Filter features and settings</label><input id="filter" type="search" placeholder="Try doors, charging, route profiles…">
+{''.join(rows)}<h2>Configuration option inventory</h2><p>{esc(report["inventory_scope"])}</p>
+<p>Source-key matches are discovery aids. A documented description alone is not an individually reviewed contract. Expand each contract for defaults, validation, limitations, source and test results. Passing reference tests do not remove a partial disposition. See editor_defaults.json for new-project defaults.</p>
+<table><thead><tr><th>Setting</th><th>Disposition</th><th>Units</th><th>Contract</th></tr></thead><tbody>{options}</tbody></table>
+<script>document.getElementById('filter').addEventListener('input',e=>{{const q=e.target.value.toLowerCase();document.querySelectorAll('article,tbody tr').forEach(n=>n.hidden=!n.textContent.toLowerCase().includes(q));}});</script></html>''', encoding="utf-8")
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, default=ROOT / "verification/latest")
+    parser.add_argument('--isolated', action='store_true', help='Run each test module in a fresh process (180 second module limit).')
+    args = parser.parse_args(argv)
+    output = args.output.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.chdir(ROOT)
+    fingerprint = source_manifest()
+    # Preserve the actual tested code/configuration, including uncommitted
+    # sources, so future edits cannot erase this evidence's reproducibility.
+    with zipfile.ZipFile(output / "source-snapshot.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, expected in fingerprint["files"].items():
+            data = (ROOT / name).read_bytes()
+            if hashlib.sha256(data).hexdigest() != expected:
+                raise RuntimeError(f"Source changed while snapshotting: {name}")
+            archive.writestr(name, data)
+    inventory = build_inventory()
+    started = time.perf_counter()
+    if args.isolated:
+        from verification.isolated import run_modules
+        result = run_modules(ROOT / 'tests', output)
+    else:
+        result = run_in_process(output)
+    cases = result.cases
+    return finish_report(output, fingerprint, inventory, started, result, cases, args.isolated)
+
+
+def run_in_process(output):
+    with (output / "tests.txt").open("w", encoding="utf-8") as log, \
+            (output / "test-stacks.txt").open("w", encoding="utf-8") as stacks:
+        suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
+        # Keep useful diagnostics even if a native UI test waits in a modal
+        # dialog. These periodic snapshots are not test timeout/failure verdicts.
+        faulthandler.dump_traceback_later(120, repeat=True, file=stacks)
+        try:
+            result = unittest.TextTestRunner(stream=log, verbosity=2, resultclass=EvidenceResult).run(suite)
+        finally:
+            faulthandler.cancel_dump_traceback_later()
+    return result
+
+
+def finish_report(output, fingerprint, inventory, started, result, cases, isolated=False):
+    features = link_evidence(inventory["features"], cases)
+    from verification.inventory import link_option_evidence, link_option_sources, summarize_option_audit
+    options = link_option_sources(link_option_evidence(inventory["options"], cases))
+    broken_links = [f'{feature["id"]}: {pattern}' for feature in features
+                    for pattern in feature["unmatched_test_patterns"]]
+    broken_links.extend(f'{option["path"]}: {pattern}' for option in options
+                        for pattern in option["unmatched_test_patterns"])
+    broken_links.extend(f'{option["path"]}: unresolved source {source["reference"]}' for option in options
+                        for source in option['source_evidence'] if not source['resolved'])
+    packages = {}
+    for name in ("PySide6", "numpy", "pandas", "reportlab", "pypdf", "ezdxf"):
+        try:
+            packages[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            packages[name] = "not installed"
+    try:
+        ltn = ltn_audit()
+    except Exception as exc:
+        ltn = {"findings": [f"Load/check failed: {exc}"]}
+    report = {
+        'test_execution': 'isolated_modules' if isolated else 'in_process',
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "python": sys.version, "platform": platform.platform(), "packages": packages,
+        "git_commit": git("rev-parse", "HEAD"), "git_status": git("status", "--porcelain"),
+        "source": fingerprint, "source_unchanged_during_tests": fingerprint == source_manifest(),
+        "seconds": round(time.perf_counter() - started, 6),
+        "counts": {"total": len(cases), "passed": sum(c["status"] == "passed" for c in cases),
+                   "unreviewed_options": sum(o["disposition"] != "reviewed_contract" for o in options)},
+        "test_cases": cases, "features": features, "options": options,
+        "option_audit": summarize_option_audit(options),
+        "inventory_scope": inventory["scope"], "broken_evidence_links": broken_links, "ltn": ltn,
+    }
+    write_json(output / "evidence.json", report)
+    write_json(output / 'ltn-project-checks.json', ltn.get('project_checks', {'error': 'Checks did not complete'}))
+    write_json(output / "options.json", options)
+    write_json(output / 'audit-backlog.json', report['option_audit'])
+    write_json(output / "source-key-candidates.json", inventory["source_key_candidates"])
+    write_json(output / "editor_defaults.json", inventory["editor_defaults"])
+    write_junit(output / "junit.xml", cases)
+    write_report(output / "index.html", report)
+    passed = result.wasSuccessful() and not broken_links and report["source_unchanged_during_tests"]
+    print(f'{report["counts"]["passed"]}/{len(cases)} tests passed; {len(broken_links)} broken evidence links.')
+    print(f'Review pack: {output / "index.html"}')
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

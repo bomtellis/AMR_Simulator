@@ -56,22 +56,61 @@ class PayloadInstanceStore:
         self._counts_by_payload: Dict[str, int] = {}
         self._counts_by_location_payload: Dict[str, Dict[str, int]] = {}
         self._known_payload_names = set()
-        # Registry of every physical payload instance that has existed during
-        # the simulation.  _records only contains currently stored instances,
-        # so reports need this registry to distinguish asset population from
-        # task count or movement count.
+        # Registered identities include planned objects as well as issued ones.
+        # Lifecycle state distinguishes creation, movement, staging and removal;
+        # _records remains the index of currently available stored inventory.
         self._known_instances: Dict[str, PayloadInstanceRecord] = {}
         # Exact payload reservations are owned by task id.  This prevents two
         # generated tasks from binding to the same shared physical container and
         # allows a failed/deferred task to release only its own reservation.
         self._reservations: Dict[str, str] = {}
+        # Registration may precede physical creation. Issued IDs must never be
+        # recreated merely because they are currently in transit or removed.
+        self._issued_instances = set()
+        self._creation_claims: Dict[str, str] = {}
+        self._lifecycle_counts: Dict[str, Dict[str, int]] = {}
         self._counter = 0
 
     def make_instance_id(self, payload_name: str, task_id: str = "") -> str:
-        self._counter += 1
         base = safe_token(payload_name)
-        task = safe_token(task_id) if task_id else f"{self._counter:06d}"
-        return f"{base}-{task}-{self._counter:06d}"
+        while True:
+            self._counter += 1
+            task = safe_token(task_id) if task_id else f"{self._counter:06d}"
+            candidate = f"{base}-{task}-{self._counter:06d}"
+            if candidate not in self._known_instances and candidate not in self._creation_claims:
+                return candidate
+
+    def release_creation_claim(self, instance_id: str, task_id: str) -> None:
+        if self._creation_claims.get(instance_id) == task_id:
+            self._creation_claims.pop(instance_id, None)
+
+    def transition(self, payload_name: str, instance_id: str, state: str, location: str = '') -> None:
+        """Retain physical identity outside storage; counts are incremental."""
+        if state not in {'planned', 'stored', 'in_transit', 'staged', 'unconfirmed', 'removed'}:
+            raise ValueError(f'Unknown payload lifecycle state: {state}')
+        self.register_instance(payload_name, instance_id)
+        record = self._known_instances.get(clean_text(instance_id))
+        if record is None:
+            return
+        counts = self._lifecycle_counts.setdefault(record.payload, {})
+        if record.status != state:
+            counts[record.status] = counts.get(record.status, 0) - 1
+            counts[state] = counts.get(state, 0) + 1
+            record.status = state
+        record.location = clean_text(location)
+        if state != 'planned':
+            self._issued_instances.add(record.instance_id)
+        if state in {'stored', 'in_transit', 'removed'}:
+            record.metadata.pop('recovery_required', None)
+
+    def lifecycle_counts(self) -> Dict[str, Dict[str, int]]:
+        return {payload: dict(counts) for payload, counts in self._lifecycle_counts.items()}
+
+    def active_counts(self) -> Dict[str, int]:
+        """Issued objects still in the model, including unresolved arrivals."""
+        return {payload: sum(counts.get(state, 0) for state in
+                             ('stored', 'in_transit', 'staged', 'unconfirmed'))
+                for payload, counts in self._lifecycle_counts.items()}
 
     def register_instance(
         self,
@@ -93,9 +132,11 @@ class PayloadInstanceStore:
                 payload=payload_name,
                 location=clean_text(location_name),
                 source_task_id=clean_text(source_task_id),
-                status="known",
+                status="planned",
                 metadata=dict(metadata or {}),
             )
+            counts = self._lifecycle_counts.setdefault(payload_name, {})
+            counts['planned'] = counts.get('planned', 0) + 1
             return
         if not existing.payload:
             existing.payload = payload_name
@@ -153,6 +194,7 @@ class PayloadInstanceStore:
             status="stored",
             metadata=dict(metadata or {}),
         )
+        self.transition(payload_name, instance_id, 'stored', location_name)
         self._by_location.setdefault(location_name, {})[instance_id] = None
         self._counts_by_payload[payload_name] = (
             int(self._counts_by_payload.get(payload_name, 0) or 0) + 1
@@ -206,11 +248,13 @@ class PayloadInstanceStore:
         excluding_owner = clean_text(excluding_owner)
         return bool(owner and owner != excluding_owner)
 
-    def reserve_instance(self, instance_id: str, task_id: str) -> bool:
+    def reserve_instance(self, instance_id: str, task_id: str, *, allow_staged_recovery: bool = False) -> bool:
         """Atomically reserve an existing payload instance for one task."""
         instance_id = clean_text(instance_id)
         task_id = clean_text(task_id)
-        if not instance_id or not task_id or instance_id not in self._records:
+        staged = self._known_instances.get(instance_id) if allow_staged_recovery else None
+        eligible_staging = bool(staged and staged.status == 'staged' and staged.metadata.get('recovery_required'))
+        if not instance_id or not task_id or (instance_id not in self._records and not eligible_staging):
             return False
         owner = self.reservation_owner(instance_id)
         if owner and owner != task_id:
@@ -256,6 +300,7 @@ class PayloadInstanceStore:
             self._decrement_payload_count(record.payload)
             self._decrement_location_payload_count(location_name, record.payload)
             record.status = "picked_up"
+            self.transition(record.payload, record.instance_id, 'in_transit', location_name)
             return record
 
         for candidate_id in tuple(self._by_location.get(location_name, {})):
@@ -272,6 +317,7 @@ class PayloadInstanceStore:
             self._decrement_payload_count(record.payload)
             self._decrement_location_payload_count(location_name, record.payload)
             record.status = "picked_up"
+            self.transition(record.payload, record.instance_id, 'in_transit', location_name)
             return record
 
         return None
@@ -306,5 +352,5 @@ class PayloadInstanceStore:
         return set(self._known_payload_names)
 
     def known_records(self) -> List[PayloadInstanceRecord]:
-        """Return every physical payload instance observed during runtime."""
+        """Return registered identities, including those still only planned."""
         return list(self._known_instances.values())

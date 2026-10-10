@@ -107,6 +107,7 @@ class DXFScene:
         msp = doc.modelspace()
         entities: List[Dict] = []
         all_points = []
+        active_layer = '0'
 
         def scale_value(value):
             return float(value) * unit_scale
@@ -115,6 +116,7 @@ class DXFScene:
             return scale_value(point[0]), scale_value(point[1])
 
         def append_entity(entity: Dict):
+            entity['layer'] = active_layer
             if "bbox" not in entity or entity["bbox"] is None:
                 entity["bbox"] = cls._bbox_from_points(entity.get("points", []))
             entities.append(entity)
@@ -232,6 +234,8 @@ class DXFScene:
                     continue
 
         def load_insert(entity, doc_ref):
+            nonlocal active_layer
+            insert_layer = active_layer
             try:
                 block = doc_ref.blocks.get(entity.dxf.name)
             except Exception:
@@ -255,6 +259,8 @@ class DXFScene:
 
             for child in block:
                 try:
+                    child_layer = str(getattr(child.dxf, 'layer', '0') or '0')
+                    active_layer = insert_layer if child_layer == '0' else child_layer
                     dtype = child.dxftype()
                     if dtype == "LINE":
                         s = child.dxf.start
@@ -302,6 +308,7 @@ class DXFScene:
                     continue
 
         for entity in msp:
+            active_layer = str(getattr(entity.dxf, 'layer', '0') or '0')
             dtype = entity.dxftype()
             if dtype == "LINE":
                 start = entity.dxf.start
@@ -377,6 +384,20 @@ class DXFScene:
         )
 
     def populate_graphics_scene(self, scene: QGraphicsScene, view_scale: float = 1.0):
+        # Batch paths within each layer; toggling never needs another file read.
+        layers = {}
+        for entity in self.entities:
+            layers.setdefault(str(entity.get('layer') or '0'), []).append(entity)
+        created = []
+        for name, entities in layers.items():
+            layer = self.from_content(self.path, entities, self.bounds)
+            items = layer._populate_layer(scene, view_scale)
+            for item in items:
+                item.setData(10, name)
+            created.extend(items)
+        return created
+
+    def _populate_layer(self, scene: QGraphicsScene, view_scale: float = 1.0):
         pen_line = QPen(QColor("#858585"))
         pen_line.setWidthF(0.0)
 

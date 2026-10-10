@@ -1,0 +1,194 @@
+{
+  "baseline_simulator": "2551213",
+  "expected_identical_pose_movement_seconds": 0,
+  "observed_identical_pose_movement_seconds": 0.5131237667463875,
+  "observed_identical_pose_distance_m": 1.026247533492775,
+  "observed_charge_intervals": [
+    {
+      "amr_id": "R-2",
+      "location": "C",
+      "space": "Charger",
+      "start_time": 15.0,
+      "end_time": 22.380000000000003,
+      "duration_sec": 7.380000000000001,
+      "reason": "route_energy"
+    },
+    {
+      "amr_id": "R-1",
+      "location": "C",
+      "space": "Charger",
+      "start_time": 27.380000000000003,
+      "end_time": 34.86262475334928,
+      "duration_sec": 7.482624753349277,
+      "reason": "route_energy"
+    }
+  ],
+  "failed_tasks": [],
+  "simultaneous_completion_case": {
+    "config": {
+      "simulation": {
+        "start_datetime": "2026-01-05T00:00:00",
+        "end_datetime": "2026-01-05T00:10:00",
+        "precompute_static_routes": false,
+        "enable_opportunity_charging": false,
+        "task_release_stagger_sec": 0
+      },
+      "building": {
+        "charge_location": "C",
+        "enable_idle_return": false,
+        "load_unload_time_sec": 2,
+        "amr_spacing_m": 0,
+        "node_clearance_time_sec": 0,
+        "edge_slowdown_per_amr": 0
+      },
+      "locations": [
+        {
+          "name": "A",
+          "floor": 0,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "name": "C",
+          "floor": 0,
+          "x": 10,
+          "y": 0,
+          "inventory_spaces": [
+            {
+              "name": "Charger",
+              "length_m": 2,
+              "width_m": 2,
+              "height_m": 2,
+              "stores_amr": true,
+              "has_charger": true
+            },
+            {
+              "name": "Parking",
+              "length_m": 2,
+              "width_m": 2,
+              "height_m": 2,
+              "stores_amr": true,
+              "has_charger": false
+            }
+          ]
+        },
+        {
+          "name": "B",
+          "floor": 0,
+          "x": -40,
+          "y": 0
+        }
+      ],
+      "corridors": {
+        "auto_connect": false,
+        "nodes": [],
+        "edges": [
+          {
+            "from": "A",
+            "to": "C",
+            "width_m": 3,
+            "distance_m": 10
+          },
+          {
+            "from": "A",
+            "to": "B",
+            "width_m": 3,
+            "distance_m": 40
+          }
+        ]
+      },
+      "payloads": [
+        {
+          "name": "Box",
+          "weight_kg": 10,
+          "length_m": 1.0,
+          "width_m": 0.7,
+          "height_m": 1,
+          "allowed_carry_orientations": [
+            "lengthways"
+          ]
+        }
+      ],
+      "amrs": [
+        {
+          "id": "R",
+          "quantity": 2,
+          "length_m": 1,
+          "width_m": 0.6,
+          "payload_capacity_kg": 100,
+          "payload_length_capacity_m": 2,
+          "payload_width_capacity_m": 2,
+          "payload_height_capacity_m": 2,
+          "speed_m_per_sec": 2,
+          "battery_capacity_kwh": 0.01,
+          "battery_charge_rate_kw": 3.6,
+          "recharge_threshold_percent": 0,
+          "motor_power_w": 960,
+          "battery_soc_percent": 50
+        }
+      ],
+      "lifts": [],
+      "tasks": [
+        {
+          "id": "FIRST1",
+          "pickup": "C",
+          "dropoff": "A",
+          "payload": "Box"
+        },
+        {
+          "id": "FIRST2",
+          "pickup": "C",
+          "dropoff": "A",
+          "payload": "Box"
+        },
+        {
+          "id": "LONG1",
+          "pickup": "A",
+          "dropoff": "B",
+          "payload": "Box",
+          "release_time": 10
+        },
+        {
+          "id": "LONG2",
+          "pickup": "A",
+          "dropoff": "B",
+          "payload": "Box",
+          "release_time": 10
+        }
+      ],
+      "task_generation": {
+        "enabled": false
+      }
+    },
+    "charge_intervals": [
+      {
+        "amr_id": "R-1",
+        "location": "C",
+        "space": "Charger",
+        "start_time": 16.025968194987975,
+        "end_time": 23.811161833985572,
+        "duration_sec": 7.785193638997596,
+        "reason": "route_energy"
+      },
+      {
+        "amr_id": "R-2",
+        "location": "C",
+        "space": "Charger",
+        "start_time": 16.025968194987975,
+        "end_time": 23.811161833985572,
+        "duration_sec": 7.785193638997596,
+        "reason": "route_energy"
+      }
+    ],
+    "failed_tasks": [
+      {
+        "sim_time_sec": 16.026,
+        "sim_datetime": "2026-01-05 00:00:16.025",
+        "task_id": "CHARGE-R-2",
+        "reason": "No charger-equipped AMR space available at C",
+        "dropoff": "C"
+      }
+    ],
+    "applied_charge_kwh": 0.015570387277995191
+  }
+}

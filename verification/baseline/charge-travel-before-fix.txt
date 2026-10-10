@@ -1,0 +1,85 @@
+test_charger_trip_can_use_reserve_but_not_more_than_available_energy (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_charger_trip_can_use_reserve_but_not_more_than_available_energy) ... FAIL
+test_cross_floor_charger_reserves_both_corridor_legs (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_cross_floor_charger_reserves_both_corridor_legs) ... FAIL
+test_estimate_reports_energy_without_spending_it (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_estimate_reports_energy_without_spending_it) ... FAIL
+test_insufficient_battery_rejects_trip_without_spending_or_reserving (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_insufficient_battery_rejects_trip_without_spending_or_reserving) ... FAIL
+test_legacy_recharge_entry_point_completes_a_real_charge_cycle (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_legacy_recharge_entry_point_completes_a_real_charge_cycle) ... FAIL
+test_travel_energy_extends_charge_duration_and_reconciles_log (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_travel_energy_extends_charge_duration_and_reconciles_log) ... FAIL
+test_two_charging_trips_respect_single_corridor_capacity (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_two_charging_trips_respect_single_corridor_capacity) ... FAIL
+test_waiting_does_not_count_as_motor_travel (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_waiting_does_not_count_as_motor_travel) ... FAIL
+
+======================================================================
+FAIL: test_charger_trip_can_use_reserve_but_not_more_than_available_energy (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_charger_trip_can_use_reserve_but_not_more_than_available_energy)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_charge_travel_reference.py", line 73, in test_charger_trip_can_use_reserve_but_not_more_than_available_energy
+    self.assertAlmostEqual(0, sim.amrs[0].battery_soc_percent)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 != 0.01 within 7 places (0.01 difference)
+
+======================================================================
+FAIL: test_cross_floor_charger_reserves_both_corridor_legs (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_cross_floor_charger_reserves_both_corridor_legs)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_charge_travel_reference.py", line 94, in test_cross_floor_charger_reserves_both_corridor_legs
+    self.assertTrue(sim.edge_reservations[sim._physical_edge_key('A', 'L1-F0')])
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: [] is not true
+
+======================================================================
+FAIL: test_estimate_reports_energy_without_spending_it (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_estimate_reports_energy_without_spending_it)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_charge_travel_reference.py", line 43, in test_estimate_reports_energy_without_spending_it
+    self.assertAlmostEqual(0.001, plan.get('amr_energy_kwh', 0))
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0.001 != 0 within 7 places (0.001 difference)
+
+======================================================================
+FAIL: test_insufficient_battery_rejects_trip_without_spending_or_reserving (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_insufficient_battery_rejects_trip_without_spending_or_reserving)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_charge_travel_reference.py", line 66, in test_insufficient_battery_rejects_trip_without_spending_or_reserving
+    self.assertIsNone(sim._plan_return_to_charge(sim.amrs[0], sim.locations['A'], 0, reserve=True))
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'segments': [{'type': 'corridor', 'from': 'A', 'to': 'B', 'duration': 5.0, 'distance_m': 10, 'speed_factor': 1.0, 'congestion_count': 0, 'people_count': 0, 'people_groups': '', 'people_speed_factor': 1.0, 'people_delay_sec': 0.0, 'scenario_name': '', 'scenario_reason': '', 'scenario_delay_sec': 0.0, 'route_lane_count': 1, 'corridor_width_m': 0.8, 'configured_corridor_width_m': 0.8, 'door_restricted': False, 'door_nodes': '', 'lane_width_m': 0.4, 'carrying_length_m': 1.0, 'payload_orientation': 'lengthways'}], 'travel_sec': 5.0, 'distance_m': 10.0, 'finish_time': 5.0, 'end_location': 'B', 'charge_location': 'B', 'amr_inventory_space': ''} is not None
+
+======================================================================
+FAIL: test_legacy_recharge_entry_point_completes_a_real_charge_cycle (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_legacy_recharge_entry_point_completes_a_real_charge_cycle)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_charge_travel_reference.py", line 105, in test_legacy_recharge_entry_point_completes_a_real_charge_cycle
+    self.assertEqual(100, amr.battery_soc_percent)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 100 != 50.0
+
+======================================================================
+FAIL: test_travel_energy_extends_charge_duration_and_reconciles_log (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_travel_energy_extends_charge_duration_and_reconciles_log)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_charge_travel_reference.py", line 50, in test_travel_energy_extends_charge_duration_and_reconciles_log
+    self.assertAlmostEqual(49.99, amr.battery_soc_percent)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 49.99 != 50.0 within 7 places (0.00999999999999801 difference)
+
+======================================================================
+FAIL: test_two_charging_trips_respect_single_corridor_capacity (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_two_charging_trips_respect_single_corridor_capacity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_charge_travel_reference.py", line 35, in test_two_charging_trips_respect_single_corridor_capacity
+    self.assertEqual(10, second['finish_time'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 10 != 5.0
+
+======================================================================
+FAIL: test_waiting_does_not_count_as_motor_travel (tests.test_charge_travel_reference.ChargeTravelReferenceTests.test_waiting_does_not_count_as_motor_travel)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_charge_travel_reference.py", line 80, in test_waiting_does_not_count_as_motor_travel
+    self.assertAlmostEqual(0.001, sim.amrs[0].total_energy_used_kwh)
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0.001 != 0.0 within 7 places (0.001 difference)
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.030s
+
+FAILED (failures=8)

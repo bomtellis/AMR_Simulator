@@ -1,0 +1,7 @@
+Baseline: c0b1411
+D054 cross-floor edge finding: /corridors/edges/1
+Before: selected point Door; edge record None
+After: property target ('edges', (1,)); edge record 1
+D055 missing drawing created after check, same configuration.
+Before is_stale: False
+After is_stale: True

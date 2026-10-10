@@ -1,4 +1,9 @@
+from amr_inventory_inputs import (inventory_space_is_amr, inventory_space_amr_types,
+                                  inventory_slot_is_amr, inventory_slot_amr_type)
+from amr_fleet_allocation import (configured_charge_locations, configured_fleet_bay_plan, validate_charge_inputs)
 import json
+import os
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -11,6 +16,22 @@ LOGISTICS_TASK_GENERATION_CATEGORIES = [
     ("stores", "Stores"),
     ("ssd", "SSD"),
 ]
+
+
+def polygon_dimensions_from_points(points) -> Tuple[float, float]:
+    xs = []
+    ys = []
+    for point in points or []:
+        if not isinstance(point, dict):
+            continue
+        try:
+            xs.append(float(point.get("dx", point.get("x", 0.0)) or 0.0))
+            ys.append(float(point.get("dy", point.get("y", 0.0)) or 0.0))
+        except (TypeError, ValueError):
+            continue
+    if not xs or not ys:
+        return 0.0, 0.0
+    return abs(max(xs) - min(xs)), abs(max(ys) - min(ys))
 
 
 def _parse_hhmm_to_minutes(value, default=None):
@@ -39,81 +60,19 @@ def _minutes_to_hhmm(value):
 
 
 def calculated_operating_hours_per_day(dept: dict) -> float:
+    from amr_generation_inputs import department_schedule_minutes
     dept = dept or {}
-    start = _parse_hhmm_to_minutes(dept.get("operating_start_time"), 0)
-    end = _parse_hhmm_to_minutes(dept.get("operating_end_time"), None)
-    if end is None:
-        legacy_hours = max(
-            0.0, min(float(dept.get("hours_operated_per_day", 24.0) or 24.0), 24.0)
-        )
-        if legacy_hours >= 24.0:
-            end = start + (24 * 60)
-            dept["operating_end_time"] = "24:00"
-        else:
-            end = start + int(round(legacy_hours * 60.0))
-            dept["operating_end_time"] = _minutes_to_hhmm(end)
-    if end == start:
-        return 24.0
-    if end < start:
-        end += 24 * 60
-    return round(max(0.0, min((end - start) / 60.0, 24.0)), 4)
+    start, end = department_schedule_minutes(dept)
+    if not str(dept.get('operating_end_time', '') or '').strip():
+        # Only midnight can use 24:00. Later next-day endings must wrap.
+        dept['operating_end_time'] = _minutes_to_hhmm(end if end == 1440 else end % 1440)
+    return (end - start) / 60.0
 
 
 def normalise_amr_payload_slots(amr: dict) -> list:
-    """Return payload slot definitions, migrating legacy single-capacity AMRs."""
-    if not isinstance(amr, dict):
-        amr = {}
-
-    slots = amr.get("payload_slots", [])
-    clean = []
-
-    if isinstance(slots, list):
-        for idx, slot in enumerate(slots, start=1):
-            if not isinstance(slot, dict):
-                continue
-            clean_slot = {
-                "name": str(slot.get("name", "")).strip() or f"Slot {idx}",
-                "payload_capacity_kg": float(
-                    slot.get("payload_capacity_kg", 0.0) or 0.0
-                ),
-                "payload_length_capacity_m": float(
-                    slot.get("payload_length_capacity_m", 0.0) or 0.0
-                ),
-                "payload_width_capacity_m": float(
-                    slot.get("payload_width_capacity_m", 0.0) or 0.0
-                ),
-                "payload_height_capacity_m": float(
-                    slot.get("payload_height_capacity_m", 0.0) or 0.0
-                ),
-                "allowed_payload_orientations": [
-                    str(x).strip().lower()
-                    for x in (slot.get("allowed_payload_orientations") or ["lengthways", "sideways"])
-                    if str(x).strip().lower() in {"lengthways", "sideways"}
-                ] or ["lengthways"],
-            }
-            clean.append(clean_slot)
-
-    if not clean:
-        clean = [
-            {
-                "name": "Slot 1",
-                "payload_capacity_kg": float(
-                    amr.get("payload_capacity_kg", 100) or 100
-                ),
-                "payload_length_capacity_m": float(
-                    amr.get("payload_length_capacity_m", 1.0) or 1.0
-                ),
-                "payload_width_capacity_m": float(
-                    amr.get("payload_width_capacity_m", 1.0) or 1.0
-                ),
-                "payload_height_capacity_m": float(
-                    amr.get("payload_height_capacity_m", 1.0) or 1.0
-                ),
-                "allowed_payload_orientations": ["lengthways", "sideways"],
-            }
-        ]
-
-    return clean
+    """Shared runtime/editor resolution of explicit and legacy capacities."""
+    from amr_robot_inputs import normalise_amr_payload_slots as resolve
+    return resolve(amr)
 
 
 def amr_supports_manual_tasks(amr: dict) -> bool:
@@ -134,12 +93,15 @@ def default_task_generation_category(label: str) -> dict:
         "exchange_mode": "top_up_only",
         "return_enabled": False,
         "return_payload": "",
+        "release_next_after_return_pickup": False,
         "requires_staff": False,
         "staff_initial_count": 1,
         "staff_resource_name": "",
         "staff_movement_policy": "batch_same_location",
         "staff_shift_pattern": "none",
         "staff_handling_minutes": 15.0,
+        "staff_collection_delay_minutes": 0.0,
+        "dropoff_zone_capacity_policy": "allow_temporary_overflow",
         "staff_use_custom_working_hours": False,
         "staff_working_hours": {},
         "reusable_return_pool_enabled": False,
@@ -169,6 +131,7 @@ def default_staff_task_generation_config() -> dict:
         "walking_speed_m_per_sec": 1.2,
         "lift_wait_seconds": 30.0,
         "default_handling_minutes": 15.0,
+        "amr_hold_for_exchange_max_minutes": 20.0,
         "shift_patterns": {
             # ``none`` is the existing category value for a non-rotating team.
             # It now uses these global fixed hours without changing legacy JSON.
@@ -215,6 +178,7 @@ def normalise_staff_task_generation_config(value: Optional[dict]) -> dict:
         ("walking_speed_m_per_sec", 0.1),
         ("lift_wait_seconds", 0.0),
         ("default_handling_minutes", 0.0),
+        ("amr_hold_for_exchange_max_minutes", 0.0),
     ):
         try:
             result[field_name] = max(
@@ -355,10 +319,17 @@ def default_task_generation_config() -> dict:
 
 
 def merge_task_generation_defaults(value: Optional[dict]) -> dict:
+    from amr_generation_inputs import validate_generation_inputs
+    if value is not None:
+        validate_generation_inputs({'task_generation': value})
     merged = default_task_generation_config()
     if not isinstance(value, dict):
         return merged
 
+    # This simulator setting has no category control. Opening/saving the editor
+    # must not replace an explicit polling interval with the engine fallback.
+    if "update_interval_sec" in value:
+        merged["update_interval_sec"] = deepcopy(value["update_interval_sec"])
     merged["enabled"] = bool(value.get("enabled", merged["enabled"]))
     merged["staff_config"] = normalise_staff_task_generation_config(
         value.get("staff_config", value.get("staff", {}))
@@ -367,7 +338,11 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
     if isinstance(value.get("department_waste"), dict):
         merged["department_waste"].update(value.get("department_waste", {}))
 
+    unspecified_staff = set()
     incoming_categories = value.get("categories", {})
+    if 'waste' not in incoming_categories and not isinstance(value.get('waste'), dict):
+        # Do not silently replace legacy waste generation with a new-project rule.
+        merged['categories']['waste']['enabled'] = False
     if isinstance(incoming_categories, dict):
         for key, incoming in incoming_categories.items():
             if key not in merged["categories"]:
@@ -376,13 +351,34 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
                 )
             elif isinstance(incoming, dict):
                 merged["categories"][key].update(incoming)
+            if isinstance(incoming, dict):
+                # Runtime omission means every weekday; templates are for new rules.
+                merged["categories"][key]["days_active"] = deepcopy(incoming.get("days_active", []))
+                if 'requires_staff' not in incoming and 'staff_required' not in incoming:
+                    unspecified_staff.add(key)
+                # New-project category templates may require staff (Stores),
+                # but an imported rule without that option uses runtime false.
+                # Do not introduce a shift/handling delay merely by opening it.
+                merged["categories"][key]["requires_staff"] = incoming.get(
+                    "requires_staff", incoming.get("staff_required", False))
+                merged["categories"][key]["staff_handling_minutes"] = incoming.get(
+                    "staff_handling_minutes", 0.0)
 
     # Support older experiments where categories were stored directly under task_generation.
     for key, _label in LOGISTICS_TASK_GENERATION_CATEGORIES:
         if isinstance(value.get(key), dict):
+            if 'requires_staff' not in value[key] and 'staff_required' not in value[key]:
+                unspecified_staff.add(key)
+            else:
+                unspecified_staff.discard(key)
             merged["categories"][key].update(value[key])
+            merged["categories"][key]["days_active"] = deepcopy(value[key].get("days_active", []))
+            merged["categories"][key]["requires_staff"] = value[key].get(
+                "requires_staff", value[key].get("staff_required", False))
+            merged["categories"][key]["staff_handling_minutes"] = value[key].get(
+                "staff_handling_minutes", 0.0)
 
-    for category in merged["categories"].values():
+    for category_key, category in merged["categories"].items():
         if not isinstance(category, dict):
             continue
         dropoff_locations = category.get("dropoff_locations")
@@ -405,6 +401,9 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
         category["requires_staff"] = bool(
             category.get("requires_staff", category.get("staff_required", False))
         )
+        if category_key in unspecified_staff:
+            # Omission carries legacy semantics and must survive save/reopen.
+            category.pop("requires_staff")
         try:
             category["staff_initial_count"] = max(
                 1, int(float(category.get("staff_initial_count", 1) or 1))
@@ -430,6 +429,25 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
             )
         except Exception:
             category["staff_handling_minutes"] = 15.0
+        try:
+            category["staff_collection_delay_minutes"] = max(
+                0.0,
+                float(category.get("staff_collection_delay_minutes", 0.0) or 0.0),
+            )
+        except Exception:
+            category["staff_collection_delay_minutes"] = 0.0
+        capacity_policy = str(
+            category.get(
+                "dropoff_zone_capacity_policy", "allow_temporary_overflow"
+            )
+            or ""
+        ).strip().lower()
+        if capacity_policy not in {
+            "wait_for_space",
+            "allow_temporary_overflow",
+        }:
+            capacity_policy = "allow_temporary_overflow"
+        category["dropoff_zone_capacity_policy"] = capacity_policy
         category["staff_use_custom_working_hours"] = bool(
             category.get("staff_use_custom_working_hours", False)
         )
@@ -439,23 +457,10 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
         )
         category["run_every_fortnight"] = bool(category.get("run_every_fortnight", False))
 
-    # Keep the legacy department_waste mirror in step for older configs/tools.
-    # It is not a separate editor workflow; Waste stream volume settings live on
-    # departments[].waste_streams[] and are consumed by the Waste task generator.
+    # Legacy enablement/priority are independent inputs. The settings dialog can
+    # explicitly update them, but importing must not infer a migration from defaults.
     if "waste" in merged["categories"]:
         merged["categories"]["waste"]["uses_department_waste_streams"] = True
-        merged["department_waste"]["enabled"] = bool(
-            merged["categories"]["waste"].get(
-                "enabled", merged["department_waste"].get("enabled", True)
-            )
-        )
-        merged["department_waste"]["priority"] = int(
-            float(
-                merged["categories"]["waste"].get(
-                    "priority", merged["department_waste"].get("priority", 60)
-                )
-            )
-        )
 
     return merged
 
@@ -466,12 +471,15 @@ DEFAULT_JSON = {
         "end_datetime": "2026-01-06T06:00:00",
         "tick_rate": 1000,
         "generated_task_release_stagger_sec": 0.25,
+        "max_task_deferral_minutes": 0.0,
         "precompute_static_routes": True,
         "route_precompute_max_pairs": 100000,
         "max_multi_stop_candidate_tasks": 8,
         "max_single_candidate_tasks": 8,
         "max_assignments_per_tick": 25,
         "assignment_continue_delay_sec": 0.001,
+        "enable_opportunity_charging": False,
+        "opportunity_charging_idle_period_sec": 900.0,
         "seed_waste_stream_containers_at_start": False,
         "disable_inventory_spaces": False,
         "scenario_mode": False,
@@ -506,6 +514,7 @@ DEFAULT_JSON = {
         "scenarios": [],
     },
     "floor_dxf_files": [],
+    "floor_pdf_underlays": [],
     "tasks": [],
     "task_generation": default_task_generation_config(),
     "route_profiles": {
@@ -520,6 +529,32 @@ DEFAULT_JSON = {
 
 class JsonStore:
     def __init__(self, data: Optional[dict] = None):
+        from visualiser.model_layers import validate as validate_layers
+        validate_layers(data)
+        from amr_simulation_inputs import validate_simulation_inputs
+        validate_simulation_inputs(data)
+        # Explicit mode selections can be saved as incomplete authoring drafts.
+        # Project Checks and Simulation enforce their full physical readiness.
+        # Keep the import-validation contract of older geometric studies.
+        simulation = data.get('simulation', {}) if isinstance(data, dict) else {}
+        if not isinstance(simulation, dict) or 'mode' not in simulation:
+            from amr_geometric_routing import validate_geometry_inputs
+            validate_geometry_inputs(data)
+        from amr_routing_inputs import validate_routing_inputs
+        validate_routing_inputs(data)
+        from amr_lift_inputs import validate_lift_inputs
+        validate_lift_inputs(data)
+        from amr_robot_inputs import validate_robot_inputs
+        validate_robot_inputs(data)
+        from amr_payload_inputs import validate_payload_inputs
+        validate_payload_inputs(data)
+        from amr_inventory_inputs import validate_inventory_inputs
+        validate_inventory_inputs(data)
+        from amr_location_inputs import validate_location_inputs
+        validate_location_inputs(data)
+        validate_charge_inputs(data)
+        from amr_generation_inputs import validate_generation_inputs
+        validate_generation_inputs(data)
         self.data = deepcopy(data) if data else deepcopy(DEFAULT_JSON)
         self.ensure_simulation_defaults()
         self.ensure_task_generation_defaults()
@@ -533,63 +568,35 @@ class JsonStore:
         self.ensure_scenario_defaults()
 
     def ensure_simulation_defaults(self) -> None:
+        from amr_simulation_inputs import resolved_simulation_settings
         simulation = self.data.setdefault("simulation", {})
-        default_simulation = DEFAULT_JSON.get("simulation", {})
-        simulation.setdefault(
-            "start_datetime",
-            default_simulation.get("start_datetime", "2026-01-05T06:00:00"),
-        )
-        simulation.setdefault(
-            "end_datetime",
-            default_simulation.get("end_datetime", "2026-01-06T06:00:00"),
-        )
-        simulation.setdefault("tick_rate", default_simulation.get("tick_rate", 1000))
-        simulation.setdefault(
-            "generated_task_release_stagger_sec",
-            default_simulation.get("generated_task_release_stagger_sec", 0.25),
-        )
-        simulation.setdefault(
-            "precompute_static_routes",
-            default_simulation.get("precompute_static_routes", True),
-        )
-        simulation.setdefault(
-            "route_precompute_max_pairs",
-            default_simulation.get("route_precompute_max_pairs", 100000),
-        )
-        simulation.setdefault(
-            "max_multi_stop_candidate_tasks",
-            default_simulation.get("max_multi_stop_candidate_tasks", 8),
-        )
-        simulation.setdefault(
-            "max_single_candidate_tasks",
-            default_simulation.get("max_single_candidate_tasks", 8),
-        )
-        simulation.setdefault(
-            "max_assignments_per_tick",
-            default_simulation.get("max_assignments_per_tick", 25),
-        )
-        simulation.setdefault(
-            "assignment_continue_delay_sec",
-            default_simulation.get("assignment_continue_delay_sec", 0.001),
-        )
-        simulation.setdefault(
-            "seed_waste_stream_containers_at_start",
-            default_simulation.get("seed_waste_stream_containers_at_start", False),
-        )
-        simulation.setdefault(
-            "disable_inventory_spaces",
-            default_simulation.get("disable_inventory_spaces", False),
-        )
+        for key, value in resolved_simulation_settings(simulation).items():
+            simulation.setdefault(key, value)
+        # Imported omission retains the runtime's duration/static-release fallback.
+        # A new project already has explicit dates in DEFAULT_JSON.
 
     def ensure_department_defaults(self) -> None:
+        from amr_department_inputs import department_location_names
         for dept in self.data.setdefault("departments", []):
             dept.setdefault("enabled", True)
             dept.setdefault("operating_start_time", "00:00")
             if not str(dept.get("operating_end_time", "") or "").strip():
                 calculated_operating_hours_per_day(dept)
             dept["hours_operated_per_day"] = calculated_operating_hours_per_day(dept)
-            dept.setdefault("days_active", ["mon", "tue", "wed", "thu", "fri"])
+            # Imported omission means unrestricted weekdays in the runtime.
+            # New-department controls may still explicitly choose weekdays.
+            dept.setdefault("days_active", [])
             dept.setdefault("waste_streams", [])
+            category_locations = dept.get("task_generation_locations", {}) or {}
+            if isinstance(category_locations, dict):
+                for key, raw_entry in list(category_locations.items()):
+                    destinations = department_location_names(raw_entry)
+                    zones = department_location_names(raw_entry, zones=True)
+                    if not isinstance(raw_entry, dict):
+                        raw_entry = {}
+                        category_locations[key] = raw_entry
+                    raw_entry['pickup_dropoff_locations'] = destinations
+                    raw_entry['dropoff_zone_locations'] = zones
 
     def ensure_mass_collection_defaults(self) -> None:
         clean = []
@@ -701,16 +708,19 @@ class JsonStore:
                 }
 
             payload["items"] = clean
-            orientations = payload.get("allowed_carry_orientations", ["lengthways", "sideways"])
-            if isinstance(orientations, str):
-                orientations = [x.strip() for x in orientations.split(",")]
-            payload["allowed_carry_orientations"] = [
-                str(x).strip().lower()
-                for x in (orientations or [])
-                if str(x).strip().lower() in {"lengthways", "sideways"}
-            ] or ["lengthways"]
+            from amr_robot_inputs import normalise_orientations
+            payload['allowed_carry_orientations'] = normalise_orientations(
+                payload.get('allowed_carry_orientations', ['lengthways', 'sideways']))
 
     def ensure_location_defaults(self) -> None:
+        payload_by_name = {
+            str(payload.get("name", "") or "").strip(): payload
+            for payload in self.data.get("payloads", []) or []
+            if isinstance(payload, dict)
+            and str(payload.get("name", "") or "").strip()
+        }
+        from amr_department_inputs import department_zone_names
+        dropoff_zone_names = department_zone_names(self.data)
         for location in self.data.setdefault("locations", []):
             location.setdefault("wash_cycle_required", False)
             location.setdefault("wash_cycle_duration_sec", 300.0)
@@ -720,14 +730,23 @@ class JsonStore:
             for space in location.setdefault("inventory_spaces", []):
                 if not isinstance(space, dict):
                     continue
-                is_amr = bool(space.get("stores_amr", False)) or str(space.get("space_type", "")).lower() == "amr"
-                for slot in space.get("payload_slots", []) or []:
-                    if isinstance(slot, dict) and (str(slot.get("slot_type", "")).lower() == "amr" or str(slot.get("amr_type", "")).strip()):
-                        is_amr = True
+                is_amr = inventory_space_is_amr(space)
+                for slot in space.get('payload_slots', []) or []:
+                    if inventory_slot_is_amr(slot) and 'amr' in slot:
+                        slot.setdefault('amr_type', inventory_slot_amr_type(slot))
                 if is_amr:
                     space.setdefault("has_charger", False)
+                else:
+                    from amr_payload_inputs import inventory_space_dimensions
+                    length, width, height = inventory_space_dimensions(space, payload_by_name, location)
+                    for field, value in zip(('length_m', 'width_m', 'height_m'), (length, width, height)):
+                        space.setdefault(field, value)
+                    space.setdefault('flexible', space.get('flexible_payloads',
+                        str(location.get('name', '') or '').strip() in dropoff_zone_names))
 
     def ensure_corridor_defaults(self) -> None:
+        from amr_routing_inputs import validate_routing_inputs
+        validate_routing_inputs(self.data)
         building = self.data.setdefault("building", {})
         default_width = float(building.get("default_corridor_width_m", 2.4) or 2.4)
         default_door_width = float(building.get("default_door_clear_width_m", 0.9) or 0.9)
@@ -738,19 +757,13 @@ class JsonStore:
             if not isinstance(node, dict):
                 continue
             node["has_door"] = bool(node.get("has_door", False))
-            try:
-                node["door_clear_width_m"] = max(0.1, float(node.get("door_clear_width_m", default_door_width) or default_door_width))
-            except Exception:
-                node["door_clear_width_m"] = default_door_width
+            node["door_clear_width_m"] = float(node.get("door_clear_width_m", default_door_width))
 
         for edge in corridors.setdefault("edges", []):
             if not isinstance(edge, dict):
                 continue
             edge.setdefault("bidirectional", True)
-            try:
-                edge["width_m"] = max(0.1, float(edge.get("width_m", default_width) or default_width))
-            except Exception:
-                edge["width_m"] = default_width
+            edge["width_m"] = float(edge.get("width_m", default_width))
             area = str(edge.get("people_area_type", "none") or "none").strip().lower()
             if area == "mixed":
                 area = "both"
@@ -872,16 +885,12 @@ class JsonStore:
             # Keep the legacy top-level fields populated from the first slot so older
             # simulator/reporting code continues to read a sensible single-slot value.
             primary = slots[0]
-            amr["payload_capacity_kg"] = float(primary.get("payload_capacity_kg", 0.0))
-            amr["payload_length_capacity_m"] = float(
-                primary.get("payload_length_capacity_m", 0.0)
-            )
-            amr["payload_width_capacity_m"] = float(
-                primary.get("payload_width_capacity_m", 0.0)
-            )
-            amr["payload_height_capacity_m"] = float(
-                primary.get("payload_height_capacity_m", 0.0)
-            )
+            from amr_robot_inputs import CAPACITIES
+            for field in CAPACITIES:
+                if field in primary:
+                    amr[field] = float(primary[field])
+            # Missing draft fields stay missing; fabricating zero would make
+            # the saved draft fail explicit-value validation on reopening.
             amr["manual_task_compatible"] = len(slots) == 1
             amr["multi_stop_enabled"] = bool(
                 amr.get("multi_stop_enabled", len(slots) > 1) and len(slots) > 1
@@ -922,8 +931,16 @@ class JsonStore:
         self.ensure_amr_defaults()
         self.ensure_department_defaults()
         self.ensure_mass_collection_defaults()
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.data, f, indent=2)
+        destination = Path(path)
+        fd, temporary = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(self.data, f, indent=2, allow_nan=False)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temporary, destination)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
 
     def floor_dxf_path(self, floor: int) -> Optional[str]:
         for entry in self.data.get("floor_dxf_files", []):
@@ -936,14 +953,7 @@ class JsonStore:
         return None
 
     def charge_locations(self) -> list:
-        building = self.data.setdefault("building", {})
-        locations = building.get("charge_locations")
-
-        if isinstance(locations, list):
-            return [str(x).strip() for x in locations if str(x).strip()]
-
-        legacy = str(building.get("charge_location", "")).strip()
-        return [legacy] if legacy else []
+        return configured_charge_locations(self.data)
 
     def set_charge_locations(self, locations: list) -> None:
         self.data.setdefault("building", {})["charge_locations"] = [
@@ -969,6 +979,37 @@ class JsonStore:
         self.data["floor_dxf_files"] = [
             entry
             for entry in self.data.get("floor_dxf_files", [])
+            if int(entry.get("floor", -(10**9))) != int(floor)
+        ]
+
+    def floor_pdf_underlay(self, floor: int) -> Optional[dict]:
+        for entry in self.data.get("floor_pdf_underlays", []):
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    return deepcopy(entry)
+            except Exception:
+                continue
+        return None
+
+    def set_floor_pdf_underlay(self, floor: int, mapping: dict) -> None:
+        entries = self.data.setdefault("floor_pdf_underlays", [])
+        payload = deepcopy(mapping)
+        payload["floor"] = int(floor)
+        for entry in entries:
+            try:
+                if int(entry.get("floor")) == int(floor):
+                    entry.clear()
+                    entry.update(payload)
+                    return
+            except Exception:
+                continue
+        entries.append(payload)
+        entries.sort(key=lambda item: int(item.get("floor", 0)))
+
+    def clear_floor_pdf_underlay(self, floor: int) -> None:
+        self.data["floor_pdf_underlays"] = [
+            entry
+            for entry in self.data.get("floor_pdf_underlays", [])
             if int(entry.get("floor", -(10**9))) != int(floor)
         ]
 
@@ -1003,11 +1044,12 @@ class JsonStore:
                     "y": pos["y"],
                     "kind": "lift_node",
                     "lift_id": lift_id,
+                    "editor_layer": pos.get('editor_layer', 'Default'),
                 }
 
         for dept in self.data.get("departments", []):
             name = str(dept.get("name", "")).strip()
-            if not name:
+            if not name or name in result:
                 continue
             try:
                 floor = int(dept.get("floor", 0))
@@ -1023,6 +1065,7 @@ class JsonStore:
                 "y": y,
                 "kind": "department",
                 "department_id": str(dept.get("id", "")).strip() or name,
+                "editor_layer": dept.get('editor_layer', 'Default'),
             }
 
         return result
@@ -1075,6 +1118,8 @@ class JsonStore:
         return edges
 
     def add_corridor_node(self, name: str, floor: int, x: float, y: float) -> None:
+        from visualiser.model_layers import drawing_attributes
+        attributes = drawing_attributes(self.data)
         default_door_width = float(self.data.get("building", {}).get("default_door_clear_width_m", 0.9) or 0.9)
         self.data["corridors"]["nodes"].append(
             {
@@ -1083,11 +1128,42 @@ class JsonStore:
                 "x": round(x, 3),
                 "y": round(y, 3),
                 "has_door": False,
+                **attributes,
                 "door_clear_width_m": default_door_width,
             }
         )
 
+    def subdivide_corridors(self, cuts):
+        try:
+            from .corridor_editing import subdivide
+        except ImportError:
+            from corridor_editing import subdivide
+        updated, chains = subdivide(self.data, self.all_points(), cuts)
+        self.data = updated
+        return chains
+
+    def draw_corridor_step(self, start, floor, x, y, *, snap=True, bidirectional=True, exact=False, grid_spacing=1.0, object_snap=True, angle_step=None, snap_mode="nearest", connect_crossings=False):
+        try:
+            from .corridor_editing import draw_step
+        except ImportError:
+            from corridor_editing import draw_step
+        updated, target = draw_step(self.data, self.all_points(), start, floor, x, y,
+                                    snap=snap, bidirectional=bidirectional, exact=exact,
+                                    grid_spacing=grid_spacing, object_snap=object_snap, angle_step=angle_step, snap_mode=snap_mode,
+                                    connect_crossings=connect_crossings)
+        self.data = updated
+        return target
+
+    def connect_corridor(self, start, finish, bidirectional=True):
+        try:
+            from .corridor_editing import connect
+        except ImportError:
+            from corridor_editing import connect
+        return connect(self.data, self.all_points(), start, finish, bidirectional)
+
     def add_location(self, name: str, floor: int, x: float, y: float) -> None:
+        from visualiser.model_layers import drawing_attributes
+        attributes = drawing_attributes(self.data)
         self.data["locations"].append(
             {
                 "name": name,
@@ -1095,6 +1171,7 @@ class JsonStore:
                 "x": round(x, 3),
                 "y": round(y, 3),
                 "bounding_box": [],
+                **attributes,
                 "wash_cycle_required": False,
                 "wash_cycle_duration_sec": 300.0,
                 "wash_location": "",
@@ -1103,43 +1180,30 @@ class JsonStore:
         )
 
     def set_location_bounding_box(self, location_name: str, points: list) -> None:
+        from amr_location_inputs import location_outline_points, validate_location_inputs
         for item in self.data.get("locations", []):
             if item.get("name") == location_name:
+                candidate = dict(item, bounding_box=deepcopy(points))
+                validate_location_inputs({'locations': [candidate]})
+                absolute = location_outline_points(candidate)
                 lx = float(item.get("x", 0.0))
                 ly = float(item.get("y", 0.0))
-                item["bounding_box"] = [
-                    {
-                        "dx": round(float(p["x"]) - lx, 3),
-                        "dy": round(float(p["y"]) - ly, 3),
-                    }
-                    for p in points
-                ]
+                normalized = []
+                for original, point in zip(points, absolute):
+                    stored = deepcopy(original)
+                    if 'dx' not in original or 'dy' not in original:
+                        stored.update(dx=point['x'] - lx, dy=point['y'] - ly)
+                    stored.pop('x', None)
+                    stored.pop('y', None)
+                    normalized.append(stored)
+                candidate['bounding_box'] = normalized
+                validate_location_inputs({'locations': [candidate]})
+                item['bounding_box'] = normalized
                 return
 
     def location_bounding_box_metrics(self, location_name: str) -> dict:
-        points = self.get_location_bounding_box_points(location_name)
-        if len(points) < 3:
-            return {"length": 0.0, "width": 0.0, "area": 0.0}
-
-        xs = [float(p["x"]) for p in points]
-        ys = [float(p["y"]) for p in points]
-
-        length = max(xs) - min(xs)
-        width = max(ys) - min(ys)
-
-        area = 0.0
-        for i, p1 in enumerate(points):
-            p2 = points[(i + 1) % len(points)]
-            area += (float(p1["x"]) * float(p2["y"])) - (
-                float(p2["x"]) * float(p1["y"])
-            )
-        area = abs(area) / 2.0
-
-        return {
-            "length": round(length, 3),
-            "width": round(width, 3),
-            "area": round(area, 3),
-        }
+        from amr_location_inputs import location_outline_metrics
+        return location_outline_metrics(self.get_location(location_name) or {})
 
     def remove_location_bounding_box(self, location_name: str) -> None:
         for item in self.data.get("locations", []):
@@ -1148,31 +1212,8 @@ class JsonStore:
                 return
 
     def get_location_bounding_box_points(self, location_name: str) -> list:
-        for item in self.data.get("locations", []):
-            if item.get("name") == location_name:
-                lx = float(item.get("x", 0.0))
-                ly = float(item.get("y", 0.0))
-
-                points = []
-                for p in item.get("bounding_box", []):
-                    if "dx" in p and "dy" in p:
-                        points.append(
-                            {
-                                "x": round(lx + float(p["dx"]), 3),
-                                "y": round(ly + float(p["dy"]), 3),
-                            }
-                        )
-                    else:
-                        # Backwards compatibility for old absolute boxes
-                        points.append(
-                            {
-                                "x": round(float(p["x"]), 3),
-                                "y": round(float(p["y"]), 3),
-                            }
-                        )
-                return points
-
-        return []
+        from amr_location_inputs import location_outline_points
+        return location_outline_points(self.get_location(location_name) or {})
 
     def get_location(self, location_name: str) -> Optional[dict]:
         for item in self.data.get("locations", []):
@@ -1190,74 +1231,51 @@ class JsonStore:
         location = self.get_location(location_name)
         if not location:
             return
+        from amr_inventory_inputs import validate_inventory_inputs
+        from amr_payload_inputs import inventory_space_dimensions
 
-        lx = float(location.get("x", 0.0))
-        ly = float(location.get("y", 0.0))
-
+        # Validate the proposed input before normalisation can discard malformed data.
+        validate_inventory_inputs({"locations": [{"inventory_spaces": spaces}]})
+        lx, ly = float(location.get("x", 0.0)), float(location.get("y", 0.0))
+        payloads = {p["name"]: p for p in self.data.get("payloads", []) if "name" in p}
+        from amr_department_inputs import department_zone_names
+        dropoffs = department_zone_names(self.data)
         clean_spaces = []
         for idx, space in enumerate(spaces, start=1):
-            name = str(space.get("name", "")).strip() or f"Inventory {idx}"
+            clean = deepcopy(space)
+            clean["name"] = space.get("name", "") or f"Space {idx}"
             points = []
-
-            for p in space.get("points", []):
-                if "dx" in p and "dy" in p:
-                    points.append(
-                        {
-                            "dx": round(float(p["dx"]), 3),
-                            "dy": round(float(p["dy"]), 3),
-                        }
-                    )
+            for point in space.get("points", []):
+                if "dx" in point and "dy" in point:
+                    points.append({"dx": float(point["dx"]), "dy": float(point["dy"])})
                 else:
-                    points.append(
-                        {
-                            "dx": round(float(p["x"]) - lx, 3),
-                            "dy": round(float(p["y"]) - ly, 3),
-                        }
-                    )
-
-            payload_slots = []
+                    points.append({"dx": float(point["x"]) - lx, "dy": float(point["y"]) - ly})
+            clean["points"] = points
+            slots = []
             for slot in space.get("payload_slots", []):
-                if not isinstance(slot, dict):
-                    continue
-                slot_type = str(slot.get("slot_type", "") or "").strip().lower()
-                clean_slot = {
-                    "rotation_deg": round(
-                        float(slot.get("rotation_deg", 0.0) or 0.0), 3
-                    ),
-                }
-                if slot_type == "amr" or str(slot.get("amr_type", "") or "").strip():
-                    amr_type = str(slot.get("amr_type", slot.get("amr", "")) or "").strip()
-                    if not amr_type:
-                        continue
-                    clean_slot["slot_type"] = "amr"
-                    clean_slot["amr_type"] = amr_type
-                else:
-                    payload_name = str(slot.get("payload", "")).strip()
-                    if not payload_name:
-                        continue
-                    clean_slot["payload"] = payload_name
+                item = deepcopy(slot)
+                if inventory_slot_is_amr(slot):
+                    item['slot_type'] = 'amr'
+                    item['amr_type'] = inventory_slot_amr_type(slot)
+                item["rotation_deg"] = float(slot.get("rotation_deg", 0))
                 if "dx" in slot and "dy" in slot:
-                    clean_slot["dx"] = round(float(slot.get("dx", 0.0)), 3)
-                    clean_slot["dy"] = round(float(slot.get("dy", 0.0)), 3)
+                    item.update(dx=float(slot["dx"]), dy=float(slot["dy"]))
                 else:
-                    clean_slot["dx"] = round(float(slot.get("x", lx)) - lx, 3)
-                    clean_slot["dy"] = round(float(slot.get("y", ly)) - ly, 3)
-                payload_slots.append(clean_slot)
-
-            if len(points) >= 3:
-                clean_space = {
-                    "name": name,
-                    "points": points,
-                    "payload_slots": payload_slots,
-                }
-                if bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr":
-                    clean_space["space_type"] = "amr"
-                    clean_space["stores_amr"] = True
-                for runtime_key in ("amr_id", "occupied", "reserved_by_amr", "timestamp"):
-                    if runtime_key in space:
-                        clean_space[runtime_key] = space.get(runtime_key)
-                clean_spaces.append(clean_space)
-
+                    item.update(dx=float(slot.get("x", lx)) - lx, dy=float(slot.get("y", ly)) - ly)
+                item.pop("x", None)
+                item.pop("y", None)
+                slots.append(item)
+            clean["payload_slots"] = slots
+            length, width, height = inventory_space_dimensions(clean, payloads, location)
+            clean.update(length_m=length, width_m=width, height_m=height)
+            clean["flexible"] = space.get("flexible", space.get("flexible_payloads", location_name in dropoffs))
+            slot_amr_type = next((slot.get('amr_type', '') for slot in slots
+                                  if slot.get('slot_type') == 'amr'), '')
+            if inventory_space_is_amr(clean):
+                clean.update(space_type='amr', stores_amr=True,
+                             has_charger=space.get('has_charger', False))
+                clean['amr_type'] = space.get('amr_type') or slot_amr_type
+            clean_spaces.append(clean)
         location["inventory_spaces"] = clean_spaces
 
     def inventory_space_points_absolute(self, location_name: str, space: dict) -> list:
@@ -1315,9 +1333,10 @@ class JsonStore:
             if not (e["from"] == from_name and e["to"] == to_name)
         ]
 
-    def set_point_position(self, name: str, x: float, y: float) -> None:
-        x = round(x, 3)
-        y = round(y, 3)
+    def set_point_position(self, name: str, x: float, y: float, *, exact=False) -> None:
+        original_x, original_y = x, y
+        x = x if exact else round(x, 3)
+        y = y if exact else round(y, 3)
         for item in self.data.get("locations", []):
             if item["name"] == name:
                 item["x"] = x
@@ -1330,8 +1349,11 @@ class JsonStore:
                 return
         for item in self.data.get("departments", []):
             if str(item.get("name", "")) == name:
-                item["x"] = x
-                item["y"] = y
+                from amr_department_inputs import validate_department_inputs
+                proposed = dict(item, x=original_x, y=original_y)
+                validate_department_inputs({'departments': [proposed]})
+                item["x"] = float(original_x)
+                item["y"] = float(original_y)
                 return
 
         if "-F" in name:
@@ -1350,6 +1372,18 @@ class JsonStore:
         for item in self.data.get("locations", []):
             if item["name"] == old_name:
                 item["name"] = new_name
+            if item.get('wash_location') == old_name:
+                item['wash_location'] = new_name
+        building = self.data.get('building', {})
+        if str(building.get('charge_location', '')).strip() == old_name:
+            building['charge_location'] = new_name
+        charging = building.get('charge_locations')
+        if isinstance(charging, list):
+            building['charge_locations'] = [new_name if value.strip() == old_name else value for value in charging]
+        elif isinstance(charging, str):
+            parts = charging.split(',')
+            if any(value.strip() == old_name for value in parts):
+                building['charge_locations'] = ','.join(new_name if value.strip() == old_name else value for value in parts)
         for item in self.data.get("corridors", {}).get("nodes", []):
             if item["name"] == old_name:
                 item["name"] = new_name
@@ -1361,20 +1395,43 @@ class JsonStore:
         for item in self.data.get("departments", []):
             if str(item.get("name", "")) == old_name:
                 item["name"] = new_name
-            item["waste_pickup_locations"] = [
-                new_name if x == old_name else x
-                for x in item.get("waste_pickup_locations", [])
-            ]
-            waste_cfg = item.get("waste", {}) or {}
-            if waste_cfg.get("pickup_location") == old_name:
-                waste_cfg["pickup_location"] = new_name
-            if waste_cfg.get("dropoff_location") == old_name:
-                waste_cfg["dropoff_location"] = new_name
+            def renamed(value):
+                if isinstance(value, str):
+                    return new_name if value.strip() == old_name else value
+                return [new_name if name.strip() == old_name else name for name in value]
+            if 'waste_pickup_locations' in item:
+                item['waste_pickup_locations'] = renamed(item['waste_pickup_locations'])
+            waste_cfg = item.get('waste', {})
+            for key in ('pickup_location', 'dropoff_location', 'pickup_locations', 'dropoff_locations'):
+                if key in waste_cfg:
+                    waste_cfg[key] = renamed(waste_cfg[key])
+            category_locations = item.get("task_generation_locations", {}) or {}
+            if isinstance(category_locations, dict):
+                for entry in category_locations.values():
+                    if not isinstance(entry, dict):
+                        continue
+                    for key in (
+                        "pickup_dropoff_locations",
+                        "dropoff_zone_locations",
+                        "drop_off_zone_locations",
+                        "locations",
+                    ):
+                        if isinstance(entry.get(key), list):
+                            entry[key] = [
+                                new_name if str(value) == old_name else value
+                                for value in entry[key]
+                            ]
+                        elif isinstance(entry.get(key), str) and entry[key].strip() == old_name:
+                            entry[key] = new_name
         for task in self.data.get("tasks", []):
             if task.get("pickup") == old_name:
                 task["pickup"] = new_name
             if task.get("dropoff") == old_name:
                 task["dropoff"] = new_name
+            if task.get("dropoff_zone") == old_name:
+                task["dropoff_zone"] = new_name
+            if task.get("final_destination") == old_name:
+                task["final_destination"] = new_name
         for profile in self.data.get("route_profiles", {}).values():
             profile["allowed_nodes"] = [
                 new_name if x == old_name else x
@@ -1445,6 +1502,8 @@ class JsonStore:
         if isinstance(entry, dict):
             for key in (
                 "pickup_dropoff_locations",
+                "dropoff_zone_locations",
+                "drop_off_zone_locations",
                 "locations",
                 "pickup_locations",
                 "dropoff_locations",
@@ -1493,6 +1552,8 @@ class JsonStore:
                     if isinstance(entry, dict):
                         for key in (
                             "pickup_dropoff_locations",
+                            "dropoff_zone_locations",
+                            "drop_off_zone_locations",
                             "locations",
                             "pickup_locations",
                             "dropoff_locations",
@@ -1509,27 +1570,8 @@ class JsonStore:
                                 )
                                 removed_here += removed
 
-                        # Keep the two supported list keys synchronised when either exists.
-                        primary = entry.get("pickup_dropoff_locations")
-                        legacy = entry.get("locations")
-                        if isinstance(primary, list) or isinstance(legacy, list):
-                            merged = []
-                            seen = set()
-                            for value in (primary if isinstance(primary, list) else []):
-                                text = str(value).strip()
-                                if text and text not in seen:
-                                    merged.append(value)
-                                    seen.add(text)
-                            for value in (legacy if isinstance(legacy, list) else []):
-                                text = str(value).strip()
-                                if text and text not in seen:
-                                    merged.append(value)
-                                    seen.add(text)
-                            entry["pickup_dropoff_locations"] = list(merged)
-                            entry["locations"] = list(merged)
-
-                        if removed_here and not self._entry_has_location_references(entry):
-                            remove_categories.append(category_key)
+                        # Keep explicit empty modern values and metadata. Merging aliases
+                        # would revive destinations that the modern value had overridden.
                     else:
                         cleaned, removed_here = self._remove_location_name_from_value(entry, location_name)
                         if removed_here:
@@ -1647,31 +1689,44 @@ class JsonStore:
         next_num = (max(nums) + 1) if nums else 1
         return f"D{next_num}"
 
-    def upsert_department(self, payload: dict) -> None:
+    def upsert_department(self, payload: dict, *, previous_id=None) -> None:
+        from amr_generation_inputs import validate_generation_inputs
+        from amr_department_inputs import department_identity
+        validate_generation_inputs({'departments': [payload]})
         payload = dict(payload or {})
         payload.setdefault("operating_start_time", "00:00")
         if not str(payload.get("operating_end_time", "") or "").strip():
             calculated_operating_hours_per_day(payload)
         payload["hours_operated_per_day"] = calculated_operating_hours_per_day(payload)
         payload.setdefault("days_active", ["mon", "tue", "wed", "thu", "fri"])
-        items = self.data.setdefault("departments", [])
-        dept_id = str(payload.get("id", "")).strip()
+        items = deepcopy(self.data.get("departments", []))
+        dept_id = department_identity(payload)
+        original = previous_id if previous_id is not None else dept_id
         existing = next(
-            (x for x in items if str(x.get("id", "")).strip() == dept_id),
+            (x for x in items if department_identity(x) == original),
             None,
         )
+        if previous_id is not None and existing is None:
+            raise ValueError('The original department no longer exists; reopen the editor.')
         if existing is None:
             items.append(payload)
         else:
             existing.clear()
             existing.update(payload)
+        changes = {original: dept_id} if previous_id is not None and original != dept_id else {}
+        self.replace_departments(items, id_changes=changes)
+
+    def replace_departments(self, items, *, id_changes=None):
+        from amr_department_inputs import replace_departments
+        self.data = replace_departments(self.data, items, id_changes)
 
     def delete_department(self, dept_id: str) -> None:
-        self.data["departments"] = [
+        from amr_department_inputs import department_identity
+        self.replace_departments([
             x
             for x in self.data.get("departments", [])
-            if str(x.get("id", "")).strip() != str(dept_id).strip()
-        ]
+            if department_identity(x) != str(dept_id).strip()
+        ])
 
     def upsert_waste_stream(self, payload: dict) -> None:
         items = self.data.setdefault("waste_streams", [])
@@ -1705,10 +1760,10 @@ class JsonStore:
         floor_locations: Dict[int, Tuple[float, float]],
         speed_m_per_sec: float = 1.8,
         door_time_sec: float = 4,
-        boarding_time_sec: float = 6,
-        capacity_length_m: float = 1.0,
-        capacity_width_m: float = 1.0,
-        capacity_height_m: float = 2.0,
+        boarding_time_sec: float = 5,
+        capacity_length_m: float = 2.8,
+        capacity_width_m: float = 1.8,
+        capacity_height_m: float = 2.1,
         car_mass_kg: float = 1200.0,
         counterweight_ratio: float = 0.5,
         travel_efficiency: float = 0.75,
@@ -1734,7 +1789,7 @@ class JsonStore:
             "id": lift_id,
             "served_floors": sorted(served_floors),
             "speed_m_per_sec": round(float(speed_m_per_sec), 3),
-            "speed_floors_per_sec": round(float(speed_m_per_sec) / max(floor_height_m, 1e-9), 3),
+            "speed_floors_per_sec": round(float(speed_m_per_sec), 3) / floor_height_m,
             "door_time_sec": door_time_sec,
             "boarding_time_sec": boarding_time_sec,
             "capacity_length_m": capacity_length_m,
@@ -1762,6 +1817,11 @@ class JsonStore:
                 for f, pos in floor_locations.items()
             },
         }
+        from amr_lift_inputs import validate_lift_inputs
+        candidates = [payload if row is lift else row for row in self.data['lifts']]
+        if lift is None:
+            candidates.append(payload)
+        validate_lift_inputs({**self.data, 'lifts': candidates}, require_speed=True, require_complete=True)
         if lift is None:
             self.data["lifts"].append(payload)
         else:
@@ -1938,23 +1998,18 @@ class JsonStore:
     def _inventory_space_accepts_amr_type(self, location: dict, space: dict, amr_type: dict) -> bool:
         if not isinstance(space, dict):
             return False
-        stores_amr = bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr"
-        slot_amr_type = str(space.get("amr_type", "") or "").strip()
-        for slot in space.get("payload_slots", []) or []:
-            if not isinstance(slot, dict):
-                continue
-            if str(slot.get("slot_type", "") or "").strip().lower() == "amr" or str(slot.get("amr_type", "") or "").strip():
-                stores_amr = True
-                slot_amr_type = slot_amr_type or str(slot.get("amr_type", "") or "").strip()
-        if not stores_amr:
+        if not inventory_space_is_amr(space):
             return False
+        allowed = inventory_space_amr_types(space)
         amr_id = str(amr_type.get("id", "") or "").strip()
-        if slot_amr_type and slot_amr_type != amr_id:
+        quantity = int(amr_type.get("quantity", 1))
+        instance_allowed = any(value.startswith(amr_id + "-") and value[len(amr_id)+1:].isdecimal()
+                               and 1 <= int(value[len(amr_id)+1:]) <= quantity for value in allowed)
+        if allowed and amr_id not in allowed and not instance_allowed:
             return False
-        point_length, point_width = self._space_points_dimensions_for_location(location, space)
-        length_m = float(space.get("length_m", space.get("length", point_length)) or point_length or 0.0)
-        width_m = float(space.get("width_m", space.get("width", point_width)) or point_width or 0.0)
-        height_m = float(space.get("height_m", space.get("height", 999999.0)) or 999999.0)
+        from amr_payload_inputs import inventory_space_dimensions
+        payloads = {p['name']: p for p in self.data.get('payloads', []) if 'name' in p}
+        length_m, width_m, height_m = inventory_space_dimensions(space, payloads, location)
         amr_length = float(amr_type.get("length_m", 0.8) or 0.8)
         amr_width = float(amr_type.get("width_m", 0.6) or 0.6)
         amr_height = float(amr_type.get("height_m", 1.2) or 1.2)
@@ -1973,62 +2028,16 @@ class JsonStore:
         return (fits_normal or fits_rotated) and _fits(amr_height, height_m)
 
     def _amr_charge_space_validation_errors(self) -> List[str]:
-        errors = []
-        locations = self.data.get("locations", []) or []
-        locations_by_name = {str(loc.get("name", "") or "").strip(): loc for loc in locations}
-        building = self.data.get("building", {}) or {}
-        charge_locations = building.get("charge_locations")
-        if isinstance(charge_locations, str):
-            charge_locations = [x.strip() for x in charge_locations.split(",")]
-        if not isinstance(charge_locations, list) or not charge_locations:
-            legacy = str(building.get("charge_location", "") or "").strip()
-            charge_locations = [legacy] if legacy else []
-        charge_locations = [str(x).strip() for x in charge_locations if str(x).strip()]
-        if not charge_locations:
+        # Kept as an adapter for callers of the historical validation API.
+        from amr_fleet_allocation import charge_input_findings
+        errors = [message for _path, message in charge_input_findings(self.data, check_references=True)]
+        if errors:
             return errors
-
-        for loc_name in charge_locations:
-            if loc_name not in locations_by_name and loc_name not in self.names_in_use():
-                errors.append(f"Charging location not found: {loc_name}")
-
-        charge_location_dicts = [locations_by_name[name] for name in charge_locations if name in locations_by_name]
-        for amr_type in self.data.get("amrs", []) or []:
-            amr_id = str(amr_type.get("id", "") or "").strip() or "AMR"
-            try:
-                required = max(0, int(float(amr_type.get("quantity", 1) or 1)))
-            except Exception:
-                required = 1
-            compatible = 0
-            compatible_by_location = {}
-            configured_slots_by_location = {}
-            for location in charge_location_dicts:
-                location_name = str(location.get("name", "") or "").strip()
-                for space in location.get("inventory_spaces", []) or []:
-                    slot_mentions_amr = False
-                    for slot in space.get("payload_slots", []) or []:
-                        if not isinstance(slot, dict):
-                            continue
-                        if (
-                            str(slot.get("slot_type", "") or "").strip().lower() == "amr"
-                            or str(slot.get("amr_type", "") or "").strip()
-                        ):
-                            slot_mentions_amr = True
-                            break
-                    if bool(space.get("stores_amr", False)) or str(space.get("space_type", "") or "").strip().lower() == "amr" or slot_mentions_amr:
-                        configured_slots_by_location[location_name] = configured_slots_by_location.get(location_name, 0) + 1
-                    if self._inventory_space_accepts_amr_type(location, space, amr_type):
-                        compatible += 1
-                        compatible_by_location[location_name] = compatible_by_location.get(location_name, 0) + 1
-            if compatible < required:
-                detail_parts = [
-                    f"{name}: {compatible_by_location.get(name, 0)} compatible / {configured_slots_by_location.get(name, 0)} AMR slot(s)"
-                    for name in charge_locations
-                ]
-                detail = "; ".join(detail_parts) if detail_parts else "no configured charging locations"
-                errors.append(
-                    f"AMR type {amr_id} requires {required} compatible charging inventory space(s), "
-                    f"but only {compatible} found at configured charging location(s). {detail}."
-                )
+        plan = configured_fleet_bay_plan(self.data)
+        matched, required = len(plan['charger_assignment']), len(plan['robot_ids'])
+        if plan['explicit_bays'] and matched < required:
+            errors.append(f"Fleet requires {required} distinct charger-equipped AMR spaces to start every robot on a charger; "
+                          f"only {matched} can be assigned simultaneously. Shared and instance-restricted bays count once.")
         return errors
 
     def people_movements(self) -> list:
@@ -2047,7 +2056,7 @@ class JsonStore:
         self.data["scenario_testing"] = dict(value or {})
         self.ensure_scenario_defaults()
 
-    def validate(self) -> List[str]:
+    def validate(self, *, include_charge_capacity=True) -> List[str]:
         errors = []
         names = self.names_in_use()
 
@@ -2144,7 +2153,25 @@ class JsonStore:
             )
             waste = dept.get("waste", {}) or {}
 
-            for loc in dept.get("waste_pickup_locations", []):
+            category_locations = dept.get("task_generation_locations", {}) or {}
+            if isinstance(category_locations, dict):
+                for category_key, entry in category_locations.items():
+                    if not isinstance(entry, dict):
+                        continue
+                    zones = entry.get(
+                        "dropoff_zone_locations",
+                        entry.get("drop_off_zone_locations", []),
+                    )
+                    if isinstance(zones, str):
+                        zones = [zones]
+                    for loc in zones or []:
+                        if loc not in location_names:
+                            errors.append(
+                                f"Department {dept_name} {category_key} has unknown drop-off zone location: {loc}"
+                            )
+
+            from amr_department_inputs import department_location_names
+            for loc in department_location_names(dept.get('waste_pickup_locations', [])):
                 if loc not in location_names:
                     errors.append(
                         f"Department {dept_name} has unknown waste pickup location: {loc}"
@@ -2232,7 +2259,48 @@ class JsonStore:
                 errors.append(f"Duplicate DXF mapping for floor {floor}")
             seen_floors.add(floor)
 
-        errors.extend(self._amr_charge_space_validation_errors())
+        seen_pdf_floors = set()
+        for entry in self.data.get("floor_pdf_underlays", []):
+            if not isinstance(entry, dict):
+                errors.append(f"Invalid floor_pdf_underlays entry: {entry}")
+                continue
+            try:
+                floor = int(entry.get("floor"))
+            except Exception:
+                errors.append(
+                    f"PDF underlay mapping has invalid floor: {entry.get('floor')}"
+                )
+                continue
+            filepath = str(entry.get("filepath") or "").strip()
+            if not filepath:
+                errors.append(
+                    f"PDF underlay mapping for floor {floor} has empty filepath"
+                )
+            for key, label in (
+                ("paper_width_mm", "paper width"),
+                ("paper_height_mm", "paper height"),
+                ("scale_denominator", "drawing scale"),
+            ):
+                try:
+                    if float(entry.get(key, 0.0)) <= 0:
+                        raise ValueError
+                except Exception:
+                    errors.append(
+                        f"PDF underlay mapping for floor {floor} has invalid {label}"
+                    )
+            try:
+                if int(entry.get("page", 1)) < 1:
+                    raise ValueError
+            except Exception:
+                errors.append(
+                    f"PDF underlay mapping for floor {floor} has invalid page"
+                )
+            if floor in seen_pdf_floors:
+                errors.append(f"Duplicate PDF underlay mapping for floor {floor}")
+            seen_pdf_floors.add(floor)
+
+        if include_charge_capacity:
+            errors.extend(self._amr_charge_space_validation_errors())
         errors.extend(self._graph_access_validation_errors())
 
         return errors

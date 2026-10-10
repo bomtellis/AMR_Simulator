@@ -1,0 +1,39 @@
+test_timeframe_starts_at_window_start_between_polls (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_timeframe_starts_at_window_start_between_polls) ... FAIL
+test_staff_spaced_timeframe_releases_each_slot_between_polls (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_staff_spaced_timeframe_releases_each_slot_between_polls) ... FAIL
+
+======================================================================
+FAIL: test_timeframe_starts_at_window_start_between_polls (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_timeframe_starts_at_window_start_between_polls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 136, in test_timeframe_starts_at_window_start_between_polls
+    self.assertEqual([60], self.starts(self.run_sim(config)))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60] != [600.0]
+
+First differing element 0:
+60
+600.0
+
+- [60]
++ [600.0]
+
+======================================================================
+FAIL: test_staff_spaced_timeframe_releases_each_slot_between_polls (tests.test_scheduled_dispatch.ScheduledDispatchTests.test_staff_spaced_timeframe_releases_each_slot_between_polls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scheduled_dispatch.py", line 148, in test_staff_spaced_timeframe_releases_each_slot_between_polls
+    self.assertEqual([60, 120, 180], self.starts(sim))
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Lists differ: [60, 120, 180] != [600.0, 609.0, 626.025]
+
+First differing element 0:
+60
+600.0
+
+- [60, 120, 180]
++ [600.0, 609.0, 626.025]
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.004s
+
+FAILED (failures=2)
