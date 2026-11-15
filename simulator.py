@@ -9,15 +9,23 @@ import threading
 import time
 import uuid
 from copy import copy
+from functools import wraps
 from datetime import timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from amr_event_store import EventValues
 from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
-from amr_route_reservations import RouteReservationTransaction
+from amr_route_reservations import (RouteReservationTransaction, LiftReservations,
+                                    latest_lift_reservation)
+from amr_scenario_routing import departure_state
 from amr_routing_inputs import validate_routing_inputs
+from amr_fm_logistics import category_policy, reactive_hold, task_tags
+from amr_floor_routing import (connecting_lift_plan, lift_plan_segments, lift_plan_journeys,
+                               advance_lift_wear, projected_lift, lift_policy_key)
+from amr_forced_floor import enabled as forced_floor_enabled, requires_lift_route
 from amr_lift_inputs import validate_lift_inputs
 from amr_robot_inputs import validate_robot_inputs, normalise_amr_payload_slots, normalise_orientations
 from amr_payload_inputs import validate_payload_inputs, payload_dimensions, inventory_space_dimensions
@@ -31,7 +39,7 @@ from amr_simulation_inputs import (validate_simulation_inputs, resolved_simulati
                                    simulation_horizon_seconds)
 from amr_geometric_routing import (validate_geometry_inputs, geometry_enabled,
                                    route_trajectory, first_route_slot)
-from amr_trajectories import TrajectoryError, Pose, footprint
+from amr_trajectories import TrajectoryError, Pose, footprint, normalise_angle_deg
 from amr_initial_placements import resolve_initial_placements
 from amr_occupancy_ledger import OccupancyLedger
 from amr_occupancy_plan import occupancy_plan
@@ -61,6 +69,7 @@ from amr_sim_time_utils import (
     SimulationClock,
     format_duration,
     parse_datetime,
+    parse_hhmm_to_minutes,
     parse_release_time,
 )
 
@@ -71,6 +80,23 @@ class LocalManoeuvreError(ValueError):
     def __init__(self, reason, detail):
         self.reason = reason
         super().__init__(f"Local manoeuvre {reason}: {detail}")
+
+
+def _close_failed_initialisation(function):
+    @wraps(function)
+    def guarded(self, *args, **kwargs):
+        try:
+            return function(self, *args, **kwargs)
+        except BaseException:
+            executor = getattr(self, 'routing_executor', None)
+            if executor is not None:
+                executor.shutdown(wait=True, cancel_futures=True)
+                self.routing_executor = None
+            store = getattr(self, 'event_store', None)
+            if store is not None and not store.closed:
+                store.close(flush=store.path is not None)
+            raise
+    return guarded
 
 
 def _bool_from_config(value, default: bool = False) -> bool:
@@ -143,12 +169,32 @@ def _config_contains_enabled_bool_key(config, key_names) -> bool:
 
 
 class Simulation:
+    @_close_failed_initialisation
     def __init__(
         self,
         config: dict,
         verbose: bool = False,
         verbose_csv_path: Optional[str] = None,
+        progress_callback=None,
+        runtime_inputs=None,
+        runtime_backend='compact',
+        defer_exports=False,
+        event_store_path=None,
+        event_baseline=None,
+        memory_event_limit=None,
+        cancel_requested=None,
     ):
+        self.progress_callback = progress_callback
+        self.cancel_requested = cancel_requested
+        self.memory_event_limit = memory_event_limit
+        if memory_event_limit is not None and (
+                not verbose or runtime_backend != 'compact' or verbose_csv_path or event_store_path or event_baseline):
+            raise ValueError('Memory runs require full compact storage without output paths.')
+        self._check_run_cancelled()
+        if runtime_backend not in ('compact', 'reference'):
+            raise ValueError('runtime_backend must be compact or reference')
+        self.runtime_backend = runtime_backend
+        self.defer_exports = defer_exports
         validate_simulation_inputs(config)
         validate_geometry_inputs(config)
         validate_routing_inputs(config)
@@ -161,6 +207,18 @@ class Simulation:
         validate_generation_inputs(config)
         from amr_department_inputs import validate_department_inputs
         validate_department_inputs(config, require_identity=True)
+        from amr_runtime_data import COMPILER_VERSION, compile_runtime_inputs, runtime_identity
+        self.runtime_inputs = None
+        if runtime_backend == 'compact':
+            self.runtime_inputs = runtime_inputs or compile_runtime_inputs(config)
+            if self.runtime_inputs.version != COMPILER_VERSION:
+                raise ValueError('Compiled runtime inputs use an obsolete compiler version')
+            if self.runtime_inputs.identity != runtime_identity(config):
+                raise ValueError('Compiled runtime inputs do not match the configuration')
+            source_config = self.runtime_inputs.source
+            config = self.runtime_inputs.execution_config()
+        else:
+            source_config = json.loads(json.dumps(config))
         self.location_reservations = defaultdict(list)
         self.config = config
         self.geometric_motion = geometry_enabled(config)
@@ -172,7 +230,7 @@ class Simulation:
         self.geometric_recovery_outcomes = []
         self.geometric_termination = None
         self.run_id = uuid.uuid4().hex
-        self._evidence_inputs = json.loads(json.dumps(config))
+        self._evidence_inputs = source_config
         self._evidence_config_hash = config_hash(self._evidence_inputs)
         self._evidence_software = software_snapshot() if verbose else None
         self._evidence_event_capabilities = ['payload_service_arrivals', 'staged_payload_recovery',
@@ -204,12 +262,20 @@ class Simulation:
         self.scenario_mode = bool(scenario_cfg.get("enabled", False))
         self.scenario_name = str(scenario_cfg.get("active_scenario", "Normal operation") or "Normal operation")
         self.scenario_enhanced_logging = bool(scenario_cfg.get("enhanced_logging", False))
+        self._stress_logged_task_ids = set()
+        self._stress_released_task_ids = set()
+        # Full normal-run logs can also supply a later stress-study baseline.
+        self._stress_evidence = bool(verbose or scenario_cfg.get('study_evidence'))
+        if self._stress_evidence:
+            self._evidence_event_capabilities.append('stress_task_obligations_v1')
         self.scenario_description = ""
         self.scenario_events: List[dict] = []
         if self.scenario_mode and self.scenario_name != "Normal operation":
             for scenario in scenario_cfg.get("scenarios", []) or []:
                 if str(scenario.get("name", "") or "").strip() == self.scenario_name:
-                    self.scenario_description = str(scenario.get("description", "") or "")
+                    original = next((entry for entry in self._evidence_inputs.get('scenario_testing', {}).get('scenarios', [])
+                                     if entry.get('name') == self.scenario_name), scenario)
+                    self.scenario_description = str(original.get('description', '') or '')
                     self.scenario_events = [dict(x) for x in scenario.get("events", []) or [] if isinstance(x, dict)]
                     break
         else:
@@ -237,6 +303,12 @@ class Simulation:
         self.verbose = verbose
         self.verbose_csv_path = verbose_csv_path
         self.verbose_rows: List[dict] = []
+        self.event_store = None
+        if verbose and runtime_backend == 'compact':
+            from amr_event_store import EventStore, EventRows
+            store_path = event_store_path or (str(verbose_csv_path) + '.sqlite' if verbose_csv_path and defer_exports else None)
+            self.event_store = EventStore(store_path, baseline=event_baseline, memory_limit=memory_event_limit)
+            self.verbose_rows = EventRows(self.event_store)
         # Keep verbose logging bounded. Long simulations can produce hundreds
         # of thousands of rows; retaining every row until shutdown caused both
         # memory growth and progressively slower list/GC behaviour. Rows are
@@ -342,7 +414,7 @@ class Simulation:
         self.node_reservation_max_duration: Dict[str, float] = defaultdict(float)
         self.lift_reservations: Dict[
             str, List[Tuple[float, float, int, int, str]]
-        ] = defaultdict(list)
+        ] = defaultdict(LiftReservations)
         self.node_clearance_time_sec = float(
             building_cfg.get("node_clearance_time_sec", 0.5)
         )
@@ -355,6 +427,7 @@ class Simulation:
         self.lift_health_speed_factor_cache: Dict[Tuple, float] = {}
         self.lift_vertical_seconds_cache: Dict[Tuple, float] = {}
         self.lift_plan_estimate_cache: Dict[Tuple, Optional[dict]] = {}
+        self._forced_lift_estimate_batch = None
         self.corridor_lane_capacity_cache: Dict[Tuple, Tuple[int, float, float]] = {}
         self.route_feasibility_cache: Dict[Tuple, bool] = {}
         self.route_feasibility_cache_max_entries = max(
@@ -385,7 +458,7 @@ class Simulation:
             ),
         )
         self._generated_release_stagger_counts: Dict[float, int] = defaultdict(int)
-        max_deferral_minutes = float(sim_cfg.get("max_task_deferral_minutes", 0.0) or 0.0)
+        max_deferral_minutes = sim_cfg['max_task_deferral_minutes']
         if not math.isfinite(max_deferral_minutes) or max_deferral_minutes < 0:
             raise ValueError("max_task_deferral_minutes must be a finite, non-negative number (0 = unlimited).")
         self.max_task_deferral_sec = max_deferral_minutes * 60.0
@@ -698,6 +771,9 @@ class Simulation:
                 speed_floors_per_sec=float(item["speed_floors_per_sec"]),
                 door_time_sec=float(item.get("door_time_sec", 4.0)),
                 boarding_time_sec=float(item.get("boarding_time_sec", 5.0)),
+                transfer_timing_mode=item.get('transfer_timing_mode', 'fixed'),
+                usage_mode=item.get('usage_mode', 'fm'),
+                amr_access_windows=[dict(window) for window in item.get('amr_access_windows', [])],
                 floor_locations=floor_locations,
                 capacity_length_m=float(item.get("capacity_length_m", 2.8)),
                 capacity_width_m=float(item.get("capacity_width_m", 1.8)),
@@ -746,6 +822,7 @@ class Simulation:
         )
         self._build_floor_graphs(config.get("corridors", {}))
         self._precompute_static_routes()
+        self._check_run_cancelled()
         self._init_people_movements(config.get("people_movements", []))
 
         # Parse AMRS from configuration
@@ -775,6 +852,8 @@ class Simulation:
                         amr_type.get("payload_size_capacity", 1.0)
                     ),
                     speed_m_per_sec=float(amr_type["speed_m_per_sec"]),
+                    lift_entry_speed_m_per_sec=amr_type.get('lift_entry_speed_m_per_sec'),
+                    lift_exit_speed_m_per_sec=amr_type.get('lift_exit_speed_m_per_sec'),
                     motor_power_w=float(amr_type.get("motor_power_w", 750.0)),
                     battery_capacity_kwh=float(
                         amr_type.get("battery_capacity_kwh", 5.0)
@@ -808,6 +887,11 @@ class Simulation:
                     and len(payload_slots) > 1
                 )
                 amr.manual_task_compatible = len(payload_slots) == 1
+                if runtime_backend == 'compact':
+                    from amr_runtime_data import freeze
+                    for attribute in ('payload_slots', 'manoeuvring', 'movement'):
+                        if hasattr(amr, attribute):
+                            setattr(amr, attribute, freeze(getattr(amr, attribute)))
                 self.amrs.append(amr)
 
         self.amrs_by_id: Dict[str, AMR] = {amr.id: amr for amr in self.amrs}
@@ -860,6 +944,8 @@ class Simulation:
                 task.return_enabled = True
                 if not str(getattr(task, "return_payload", "") or "").strip():
                     task.return_payload = str(task.payload or "").strip()
+            if task.release_time > self.task_generation_horizon_sec:
+                continue
             self._prepare_task_payload_instance(task)
             initial_tasks.append(task)
 
@@ -1974,7 +2060,7 @@ class Simulation:
         rules: Optional[dict] = None,
         start_time_value: Optional[float] = None,
     ) -> float:
-        if from_loc.floor == to_loc.floor:
+        if from_loc.floor == to_loc.floor and not requires_lift_route(self.config, from_loc, to_loc):
             route = self._same_floor_segments(
                 amr,
                 from_loc,
@@ -2051,6 +2137,8 @@ class Simulation:
                 with RouteReservationTransaction(self, amr, tasks) as transaction:
                     result = self._estimate_multi_stop_for_amr_impl(
                         amr, tasks, reserve=True, force_charge=force_charge)
+                    if forced_floor_enabled(self.config) and self.stop_requested:
+                        result = None
                     retry = bool(result and result.get('_retry_after_charge'))
                     transaction.committed = (result is not None and not retry
                                              and not result.get('_requires_route_charge'))
@@ -2093,6 +2181,13 @@ class Simulation:
             elif kind == 'lift_reposition':
                 # Whole lift-journey supply is carried once by its transfer.
                 segment.update(energy_kwh=0.0, energy_source='lift_supply')
+            elif kind == 'lift_transfer' and segment.get('entry_edge'):
+                power = (loaded_power_w(amr, self._make_aggregate_payload(list(onboard.values())))
+                         if onboard else idle_move_power_w(amr))
+                energy = energy_for_travel_kwh(power,
+                    segment['entry_time_sec'] + segment['exit_time_sec'])
+                segment['amr_transfer_energy_kwh'] = energy
+                total += energy
         return total
 
     def _estimate_multi_stop_for_amr_impl(
@@ -2201,7 +2296,7 @@ class Simulation:
                 location_a, location_b, current_time_value, payload_for_leg, rules=None
             ):
                 nonlocal total, lift_energy_kwh_total, lift_empty_sec_total, lift_loaded_sec_total
-                if location_a.floor == location_b.floor:
+                if location_a.floor == location_b.floor and not requires_lift_route(self.config, location_a, location_b):
                     route = self._same_floor_segments(
                         amr,
                         location_a,
@@ -2239,108 +2334,14 @@ class Simulation:
                 )
                 if plan is None:
                     return math.inf, None, 0.0, 0.0
-                leg_lift_energy = total_lift_energy_kwh(
-                    lift=plan["lift"],
-                    payload=payload_for_leg,
-                    floor_height_m=self.floor_height_m,
-                    reposition_floor_delta=(
-                        plan["reposition_to_floor"] - plan["reposition_from_floor"]
-                    ),
-                    loaded_floor_delta=(location_b.floor - location_a.floor),
-                    wait_time_sec=plan["wait_time"],
-                    door_time_sec=plan["lift"].door_time_sec,
-                    boarding_time_sec=plan["lift"].boarding_time_sec,
-                )
-                lift_energy_kwh_total += leg_lift_energy
-                lift_empty_sec_total += float(plan.get("reposition_sec", 0.0))
-                lift_loaded_sec_total += float(plan.get("loaded_travel_sec", 0.0))
-                if reserve:
-                    self._reserve_corridor_segments(
-                        amr, plan["to_lift_segments"], current_time_value
-                    )
-                    self._reserve_corridor_segments(
-                        amr, plan["from_lift_segments"], plan["lift_finish"]
-                    )
-                    self._reserve_lift_wait_node(plan, amr)
-                    self._reserve_lift_journey(plan, amr.id)
-                    self._apply_lift_journey_wear(
-                        plan["lift"],
-                        journey_operating_sec=float(plan.get("reposition_sec", 0.0))
-                        + float(plan.get("loaded_travel_sec", 0.0)),
-                        journey_finish_time=plan["lift_finish"],
-                    )
-                transfer_segments = list(plan["to_lift_segments"])
-                if plan["wait_time"] > 0:
-                    transfer_segments.append(
-                        {
-                            "type": "wait_for_lift",
-                            "lift_id": plan["lift"].id,
-                            "from": plan["lift_wait_node"],
-                            "to": plan["lift_wait_node"],
-                            "duration": plan["wait_time"],
-                            "distance_m": 0.0,
-                        }
-                    )
-                if plan.get("reposition_sec", 0.0) > 0:
-                    transfer_segments.append(
-                        {
-                            "type": "lift_reposition",
-                            "lift_id": plan["lift"].id,
-                            "from": f"{plan['lift'].id}-F{plan['reposition_from_floor']}",
-                            "to": f"{plan['lift'].id}-F{plan['reposition_to_floor']}",
-                            "amr_wait_node": plan["lift_wait_node"],
-                            "from_floor": plan["reposition_from_floor"],
-                            "to_floor": plan["reposition_to_floor"],
-                            "wait_time": 0.0,
-                            "duration": plan["reposition_sec"],
-                            "distance_m": abs(
-                                plan["reposition_to_floor"]
-                                - plan["reposition_from_floor"]
-                            )
-                            * self.floor_height_m,
-                            "vertical_distance_m": abs(
-                                plan["reposition_to_floor"]
-                                - plan["reposition_from_floor"]
-                            )
-                            * self.floor_height_m,
-                        }
-                    )
-                transfer_segments.append(
-                    {
-                        "type": "lift_transfer",
-                        "energy_kwh": leg_lift_energy,
-                        "energy_source": "lift_supply",
-                        "lift_id": plan["lift"].id,
-                        "from": plan["origin_lift"].name,
-                        "to": plan["destination_lift"].name,
-                        "from_floor": location_a.floor,
-                        "to_floor": location_b.floor,
-                        "wait_time": 0.0,
-                        "duration": max(
-                            0.0,
-                            plan["lift_finish"]
-                            - plan.get(
-                                "reposition_finish",
-                                plan["lift_start"] + plan.get("reposition_sec", 0.0),
-                            ),
-                        ),
-                        "distance_m": plan["vertical_distance_m"],
-                        "vertical_distance_m": plan["vertical_distance_m"],
-                    }
-                )
-                transfer_segments.extend(plan["from_lift_segments"])
-                segment_duration = plan["final_finish"] - current_time_value
+                transfer_segments, energy, distance, empty_sec, loaded_sec = lift_plan_segments(
+                    self, plan, amr, payload_for_leg, current_time_value, reserve=reserve)
+                lift_energy_kwh_total += energy
+                lift_empty_sec_total += empty_sec
+                lift_loaded_sec_total += loaded_sec
+                segment_duration = plan['final_finish'] - current_time_value
                 total += segment_duration
-                return (
-                    plan["final_finish"],
-                    transfer_segments,
-                    segment_duration,
-                    (
-                        plan["to_lift_distance_m"]
-                        + plan["vertical_distance_m"]
-                        + plan["from_lift_distance_m"]
-                    ),
-                )
+                return plan['final_finish'], transfer_segments, segment_duration, distance
 
             grouped_legs: List[Tuple[str, List[Task]]] = []
             idx = 0
@@ -3643,14 +3644,6 @@ class Simulation:
         raise LocalManoeuvreError('search_exhausted',
                                  f'no clear local path found from {start} to {end}')
 
-    def _normalise_angle_deg(self, value: float) -> float:
-        return (float(value) + 180.0) % 360.0 - 180.0
-
-    def _angle_lerp_deg(self, start_deg: float, end_deg: float, frac: float) -> float:
-        frac = max(0.0, min(1.0, float(frac)))
-        delta = self._normalise_angle_deg(float(end_deg) - float(start_deg))
-        return float(start_deg) + (delta * frac)
-
     def _amr_vehicle_turning_radius_m(self, amr: AMR) -> float:
         """Approximate a reversible AMR steering radius from its footprint."""
         length = float(getattr(amr, "length_m", 1.0) or 1.0)
@@ -3672,8 +3665,8 @@ class Simulation:
         """Choose forwards or backwards body heading closest to the preferred heading."""
         forward = float(movement_heading_deg)
         reverse = float(movement_heading_deg) + 180.0
-        df = abs(self._normalise_angle_deg(forward - preferred_heading_deg))
-        dr = abs(self._normalise_angle_deg(reverse - preferred_heading_deg))
+        df = abs(normalise_angle_deg(forward - preferred_heading_deg))
+        dr = abs(normalise_angle_deg(reverse - preferred_heading_deg))
         return reverse if dr < df else forward
 
     def _insert_vehicle_alignment_waypoint(
@@ -3784,7 +3777,7 @@ class Simulation:
             getattr(amr, "rotation_deg", target_heading_deg) or target_heading_deg
         )
         if (math.hypot(start[0] - end[0], start[1] - end[1]) <= 1e-9
-                and abs(self._normalise_angle_deg(initial_heading_deg - target_heading_deg)) <= 1e-9):
+                and abs(normalise_angle_deg(initial_heading_deg - target_heading_deg)) <= 1e-9):
             return [], 0.0, 0.0
         cache_key = (
             str(location_name or "").strip(),
@@ -3846,7 +3839,7 @@ class Simulation:
             # Travel time includes a small steering/alignment allowance so tight
             # local manoeuvres are visibly slower than corridor travel.
             turn_delta = abs(
-                self._normalise_angle_deg(desired_end_heading - previous_body_heading)
+                normalise_angle_deg(desired_end_heading - previous_body_heading)
             )
             turn_allowance = (turn_delta / 90.0) * (radius / max(speed, 1e-9))
             duration = (dist / speed) + max(0.0, turn_allowance)
@@ -5331,6 +5324,10 @@ class Simulation:
             (end_dt - origin).total_seconds(),
         )
 
+    @staticmethod
+    def _staff_handling_finish(task, start, duration):
+        return max(start + duration, getattr(task, 'fm_handoff_earliest_return', 0.0))
+
     def _next_staff_assignment_window(
         self,
         task: Task,
@@ -5367,7 +5364,7 @@ class Simulation:
             travel_start = max(earliest_travel_start, handling_start - travel)
             travel_finish = travel_start + travel
             handling_start = max(handling_start, travel_finish)
-            finish_time = handling_start + handling
+            finish_time = self._staff_handling_finish(task, handling_start, handling)
             if finish_time <= period_end + 1e-9:
                 return {
                     "travel_start_time": travel_start,
@@ -5390,7 +5387,7 @@ class Simulation:
             "travel_start_time": travel_start,
             "travel_finish_time": travel_finish,
             "start_time": handling_start,
-            "finish_time": handling_start + handling,
+            "finish_time": self._staff_handling_finish(task, handling_start, handling),
             "work_period_start": None,
             "work_period_end": None,
             "working_hours_fallback": True,
@@ -5404,7 +5401,7 @@ class Simulation:
     ) -> bool:
         """Return whether the primary team can finish a hand-off if begun now."""
         requested = max(0.0, float(requested_start or 0.0))
-        finish = requested + max(0.0, float(handling_duration_sec or 0.0))
+        finish = self._staff_handling_finish(task, requested, max(0.0, float(handling_duration_sec or 0.0)))
         reference_dt = self.clock.sim_seconds_to_datetime(requested)
         day_start = reference_dt.replace(hour=0, minute=0, second=0, microsecond=0)
         # The previous day is needed for overnight primary-team shifts.
@@ -5432,7 +5429,8 @@ class Simulation:
             or "Department team"
         ).strip()
         start = max(0.0, float(requested_start or 0.0))
-        duration = max(0.0, float(handling_duration_sec or 0.0))
+        duration = self._staff_handling_finish(
+            task, start, max(0.0, float(handling_duration_sec or 0.0))) - start
         category_key = str(staff_cfg.get("category_key", "staff") or "staff")
         fallback_category_key = f"{category_key}_department_fallback"
         person_id = f"{department_id or 'department'}-team-untracked"
@@ -5715,7 +5713,7 @@ class Simulation:
             if location_name and active_assignment is not None:
                 active_start = float(active_assignment["start_time"])
                 active_finish = float(active_assignment.get("finish_time", 0.0) or 0.0)
-                batch_finish = max(baseline_start + duration, active_finish)
+                batch_finish = max(self._staff_handling_finish(task, baseline_start, duration), active_finish)
                 period_end = baseline_window.get("work_period_end")
                 # Share only a service already in progress at the requested window.
                 # A future booking is not a reason to postpone an earlier delivery,
@@ -5731,7 +5729,7 @@ class Simulation:
                     actual_start = max(
                         baseline_start, float(active_assignment.get("start_time", baseline_start) or baseline_start)
                     )
-                    finish_time = max(actual_start + duration, active_finish)
+                    finish_time = max(self._staff_handling_finish(task, actual_start, duration), active_finish)
                     if person_index < len(available_times):
                         available_times[person_index] = max(
                             float(available_times[person_index] or 0.0), finish_time
@@ -5746,7 +5744,7 @@ class Simulation:
                         "requested_start_time": round(requested_start, 3),
                         "start_time": round(actual_start, 3),
                         "finish_time": round(finish_time, 3),
-                        "duration_sec": round(duration, 3),
+                        "duration_sec": round(self._staff_handling_finish(task, actual_start, duration) - actual_start, 3),
                         "location": location_name,
                         "payload": self._payload_log_name(getattr(task, "payload", "")),
                         "people_required": self._staff_rostered_count(
@@ -5882,7 +5880,7 @@ class Simulation:
             "requested_start_time": round(requested_start, 3),
             "start_time": round(actual_start, 3),
             "finish_time": round(finish_time, 3),
-            "duration_sec": round(duration, 3),
+            "duration_sec": round(self._staff_handling_finish(task, actual_start, duration) - actual_start, 3),
             "location": location_name,
             "payload": self._payload_log_name(getattr(task, "payload", "")),
             "people_required": self._staff_rostered_count(
@@ -6164,9 +6162,12 @@ class Simulation:
             # handling with a 45-minute return delay gives a 45-minute destination
             # dwell, not 60 minutes. Walking time remains additional because the
             # person must still reach the final destination and return to the zone.
+            if (return_enabled and task_tags(task)['category'] == 'catering'
+                    and getattr(task, 'fm_cohort_id', '')):
+                task.fm_handoff_earliest_return = task.fm_deadline + delay_sec + zone_travel_sec
             destination_dwell_sec = (
                 0.0
-                if bool(getattr(task, "staff_handoff_only", False))
+                if bool(getattr(task, "staff_handoff_only", False)) and not getattr(task, 'fm_handoff_earliest_return', 0.0)
                 else max(
                     self._staff_handling_duration_sec(task, 0.0),
                     delay_sec,
@@ -6213,6 +6214,15 @@ class Simulation:
             task, finish_time + collection_delay_sec, handling_duration_sec
         )
         self._log_staff_handling_assignment(task, staff_assignment)
+        if uses_dropoff_zone and getattr(task, 'fm_cohort_id', ''):
+            if not staff_assignment or staff_assignment.get('working_hours_fallback'):
+                self.log_step(event_time=finish_time, event_type='fm_handoff_blocked',
+                              task_id=task.id, from_location=dropoff_zone, to_location=final_destination,
+                              status='pending', details='No staffed window for the department handoff')
+                return
+            arrival = float(staff_assignment['start_time']) + zone_travel_sec
+            self.push_event(arrival, 'fm_department_arrival',
+                            {'task': task, 'destination': final_destination})
         if not return_enabled:
             return
 
@@ -6224,6 +6234,8 @@ class Simulation:
 
         self.synthetic_task_counter += 1
         return_release_time = finish_time + (0.0 if uses_dropoff_zone else delay_sec)
+        if not uses_dropoff_zone and task_tags(task)['category'] == 'catering' and getattr(task, 'fm_cohort_id', ''):
+            return_release_time = max(finish_time, getattr(task, 'fm_deadline', None) or finish_time) + delay_sec
         if staff_assignment is not None:
             return_release_time = max(
                 return_release_time, float(staff_assignment.get("finish_time", finish_time) or finish_time)
@@ -6294,7 +6306,10 @@ class Simulation:
         # Dynamic waste/shared-bin metadata must follow the return task so the
         # payload instance still knows which shared physical container group it
         # belongs to after it is returned to the department/shared waste room.
+        return_task.staff_category_key = getattr(task, 'staff_category_key', '')
+        return_task.fm_cohort_id = getattr(task, 'fm_cohort_id', '')
         return_task.container_group = str(getattr(task, "container_group", "") or "")
+        return_task._stress_service_key = 'return:' + str(getattr(task, '_stress_service_key', task.id))
         return_task.shared_container_group = str(
             getattr(task, "shared_container_group", "") or ""
         )
@@ -6463,6 +6478,8 @@ class Simulation:
         if return_task.release_time <= max(self.current_time, finish_time) + 1e-9:
             self._prepare_task_payload_instance(return_task)
             self._queue_pending_task(return_task)
+            if not self._stress_evidence:
+                self._log_task_released(return_task, return_task.release_time)
         else:
             self.schedule_task_release(return_task)
 
@@ -6826,6 +6843,9 @@ class Simulation:
             self.payload_instance_store.release_creation_claim(instance_id, task.id)
 
     def _fail_task(self, task: Task, reason: str, now: Optional[float] = None) -> None:
+        if self._stress_evidence:
+            self._log_task_released(task, self.current_time if now is None else now,
+                obligation_only=not self.config.get('scenario_testing', {}).get('study_evidence'))
         self._task_deferrals.pop(task.id, None)
         reason = str(reason or "Task failed").strip()
         self._set_task_pending_reason(task, reason)
@@ -6947,7 +6967,14 @@ class Simulation:
         allowed_nodes = tuple(sorted(rules.get("allowed_nodes", set())))
         allowed_edges = tuple(sorted(rules.get("allowed_edges", set())))
         blocked = tuple(sorted(rules.get("blocked_route_dimensions", set())))
-        return (allowed_lifts, allowed_nodes, allowed_edges, blocked)
+        key = (allowed_lifts, allowed_nodes, allowed_edges, blocked)
+        if rules.get('bed_fallback_search'):
+            key += ('bed_fallback_search',)
+        if rules.get("profile_applied") and forced_floor_enabled(self.config):
+            from amr_forced_floor import lift_preference_key
+            if lift_preference_key(self.config):
+                return key + (True,)
+        return key
 
     def _empty_route_rules(self) -> dict:
         return {
@@ -6986,6 +7013,7 @@ class Simulation:
 
         if profile_name:
             profile = self._require_route_profile(profile_name, task.id)
+            rules["profile_applied"] = True
             rules["allowed_lifts"].update(profile.get("allowed_lifts", []))
             rules["allowed_nodes"].update(profile.get("allowed_nodes", []))
             rules["allowed_edges"].update(
@@ -7051,6 +7079,8 @@ class Simulation:
                 if not combined[dimension]:
                     blocked.add(dimension)
         combined["blocked_route_dimensions"] = blocked
+        if any(rules.get("profile_applied") for rules in resolved):
+            combined["profile_applied"] = True
         return combined
 
     def _build_floor_graphs(self, corridor_cfg: dict):
@@ -7250,12 +7280,14 @@ class Simulation:
 
         Equal clock times retain the legacy all-day meaning.
         """
+        if event.get('start_datetime') or event.get('end_datetime'):
+            return (parse_datetime(event['start_datetime']), parse_datetime(event['end_datetime']))
         days = {str(x).strip().lower()[:3] for x in (event.get('days_active', []) or []) if str(x).strip()}
         if days and ['mon','tue','wed','thu','fri','sat','sun'][day.weekday()] not in days:
             return None
         midnight = day.replace(hour=0, minute=0, second=0, microsecond=0)
-        start = self._parse_hhmm_to_minutes(event.get('start_time'), 0)
-        end = self._parse_hhmm_to_minutes(event.get('end_time'), 1440)
+        start = parse_hhmm_to_minutes(event.get('start_time'), 0)
+        end = parse_hhmm_to_minutes(event.get('end_time'), 1440)
         if start == end:
             return midnight, midnight + timedelta(days=1)
         return (midnight + timedelta(minutes=start),
@@ -7306,7 +7338,7 @@ class Simulation:
             state["availability_percent"] = min(state["availability_percent"], availability)
             state["speed_factor"] = min(state["speed_factor"], speed_factor)
             state["notes"] = str(event.get("notes", "") or state["notes"])
-            if availability <= 0.0:
+            if availability <= 0.0 or speed_factor <= 0.0:
                 seconds_to_end = max((window[1] - dt).total_seconds() for window in active)
                 state["blocked_until"] = max(state["blocked_until"], float(sim_time_sec) + seconds_to_end)
         return state
@@ -7602,8 +7634,8 @@ class Simulation:
                 "direct_corridor_profile": direct_corridor_profile,
             }
             self.people_movements.append(profile)
-            start_min = self._parse_hhmm_to_minutes(profile["start_time"], 0)
-            end_min = self._parse_hhmm_to_minutes(
+            start_min = parse_hhmm_to_minutes(profile["start_time"], 0)
+            end_min = parse_hhmm_to_minutes(
                 profile["end_time"], 24 * 60
             )
             for day_index in range(day_count):
@@ -7757,16 +7789,22 @@ class Simulation:
             return
 
         def run_job(job):
+            self._check_run_cancelled()
             floor, start_name, end_name = job
             self._shortest_path_same_floor(floor, start_name, end_name)
 
         if self.routing_executor is None or len(jobs) < 128:
-            for job in jobs:
+            last_update = 0.0
+            for index, job in enumerate(jobs, 1):
                 run_job(job)
+                if self.progress_callback and time.monotonic() - last_update >= 1:
+                    last_update = time.monotonic()
+                    self.progress_callback(dict(phase=f'Preparing static floor routes: {index} / {len(jobs)}'))
             return
 
         futures = [self.routing_executor.submit(run_job, job) for job in jobs]
         for future in as_completed(futures):
+            self._check_run_cancelled()
             try:
                 future.result()
             except Exception:
@@ -7989,14 +8027,23 @@ class Simulation:
     def _remember_route_object(self, value) -> None:
         transaction = getattr(self, '_route_reservation_transaction', None)
         if transaction is not None:
-            transaction.remember_dict(value if isinstance(value, dict) else vars(value))
+            if isinstance(value, dict):
+                transaction.remember_dict(value)
+            else:
+                transaction.remember_entity(value)
+
+    def _insert_route_reservation(self, mapping, key, item):
+        transaction = getattr(self, '_route_reservation_transaction', None)
+        if transaction is not None and self.runtime_backend == 'compact':
+            transaction.insert_sorted(mapping, key, item)
+        else:
+            self._remember_route_mapping(mapping, key)
+            insort_right(mapping[key], item)
 
     def _reserve_location(self, location_name: str, start_time: float, end_time: float):
-        self._remember_route_mapping(self.location_reservations, location_name)
         self._remember_route_mapping(self.location_reservation_max_duration, location_name)
-        reservations = self.location_reservations[location_name]
         item = (start_time, end_time)
-        insort_right(reservations, item)
+        self._insert_route_reservation(self.location_reservations, location_name, item)
         self.location_reservation_max_duration[location_name] = max(
             self.location_reservation_max_duration.get(location_name, 0.0),
             max(0.0, float(end_time) - float(start_time)),
@@ -8026,6 +8073,8 @@ class Simulation:
         if task.id in self.failed_task_ids:
             return
         self._start_task_deferral_limit(task)
+        if getattr(task, 'fm_deadline', None) is not None:
+            task.target_time = max(1e-9, task.fm_deadline - task.release_time)
         self._prepare_task_payload_instance(task)
         self._validate_task_route_profiles(task)
         self.push_event(task.release_time, "task_release", {"task": task})
@@ -8059,12 +8108,35 @@ class Simulation:
         self._fail_task(task, reason, now=now)
         return True
 
-    def _log_task_released(self, task: Task, event_time: float) -> None:
+    def _log_task_released(self, task: Task, event_time: float, *, obligation_only=False) -> None:
+        if self._stress_evidence:
+            if task.id not in self._stress_logged_task_ids:
+                self._stress_logged_task_ids.add(task.id)
+                key = str(getattr(task, '_stress_service_key', task.id))
+                self.log_step(event_time=event_time, event_type='stress_task_obligation', task_id=task.id,
+                    details=json.dumps(dict(key=key, idle=bool(getattr(task, 'is_idle_return', False)),
+                        signature=[task.pickup, task.dropoff, task.payload, task.quantity,
+                                   task.task_source, task.department_id, task.waste_stream,
+                                   task.waste_volume_m3, task.route_profile],
+                        expected_return=('return:' + key) if getattr(task, 'return_enabled', False) else None)))
+            if obligation_only or task.id in self._stress_released_task_ids:
+                return
+            self._stress_released_task_ids.add(task.id)
         self.log_step(
             event_time=event_time,
             event_type="task_released",
             task_id=task.id,
-            details=f"Task {task.id} released",
+            details=json.dumps(dict(
+                task_tags(task), quantity=task.quantity,
+                original=getattr(task, 'fm_original_release', task.release_time),
+                planned=getattr(task, 'fm_planned_release', task.release_time),
+                deadline=(getattr(task, 'fm_deadline', None)
+                          or getattr(task, 'timeframe_deadline_time', None)
+                          or (task.release_time + task.target_time if task.target_time > 0 else None)),
+                hold_reason=getattr(task, 'fm_hold_reason', ''),
+                final_destination=getattr(task, 'final_destination', '') or task.dropoff,
+                handoff=bool(task.dropoff_zone and task.final_destination != task.dropoff),
+            ), ensure_ascii=False),
             from_location=task.pickup,
             to_location=task.dropoff,
             payload_name=self._payload_log_name(task.payload),
@@ -8383,29 +8455,13 @@ class Simulation:
         dt = self.clock.sim_seconds_to_datetime(sim_time_sec)
         return ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][dt.weekday()]
 
-    def _parse_hhmm_to_minutes(self, value, default=None):
-        text = str(value or "").strip()
-        if not text:
-            return default
-        try:
-            parts = text.split(":")
-            hour = int(parts[0])
-            minute = int(parts[1]) if len(parts) > 1 else 0
-            if hour == 24 and minute == 0:
-                return 24 * 60
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return (hour * 60) + minute
-        except Exception:
-            return default
-        return default
-
     def _department_operating_start_minutes(self, dept: dict) -> int:
         return int(
-            self._parse_hhmm_to_minutes(dept.get("operating_start_time"), 0) or 0
+            parse_hhmm_to_minutes(dept.get("operating_start_time"), 0) or 0
         )
 
     def _department_operating_end_minutes(self, dept: dict) -> int:
-        explicit = self._parse_hhmm_to_minutes(dept.get("operating_end_time"), None)
+        explicit = parse_hhmm_to_minutes(dept.get("operating_end_time"), None)
         if explicit is not None:
             return int(explicit)
         start = self._department_operating_start_minutes(dept)
@@ -8598,6 +8654,9 @@ class Simulation:
     def _queue_pending_task(self, task: Task):
         if task.id in self.failed_task_ids:
             return
+        if self._stress_evidence:
+            self._log_task_released(task, max(self.current_time, task.release_time),
+                obligation_only=not self.config.get('scenario_testing', {}).get('study_evidence'))
         self._validate_task_route_profiles(task)
         self._start_task_deferral_limit(task)
         self.pending_task_counter += 1
@@ -8654,7 +8713,7 @@ class Simulation:
 
     def _physical_edge_key(self, a_name: str, b_name: str) -> Tuple[str, str]:
         # Same physical corridor edge in either direction.
-        return tuple(sorted((a_name, b_name)))
+        return (a_name, b_name) if a_name <= b_name else (b_name, a_name)
 
     def _spacing_time_sec(self, amr: AMR) -> float:
         return self.amr_spacing_m / max(amr.speed_m_per_sec, 1e-9)
@@ -8781,22 +8840,18 @@ class Simulation:
         edge_key = self._physical_edge_key(from_name, to_name)
         item = (start_time, end_time, amr_id)
 
-        self._remember_route_mapping(self.edge_reservations, edge_key)
         self._remember_route_mapping(self.edge_reservation_max_duration, edge_key)
         directed_key = (from_name, to_name)
-        self._remember_route_mapping(self.directed_edge_reservations, directed_key)
         self._remember_route_mapping(self.directed_edge_reservation_max_duration, directed_key)
 
-        reservations = self.edge_reservations[edge_key]
-        insort_right(reservations, item)
+        self._insert_route_reservation(self.edge_reservations, edge_key, item)
         interval_duration = max(0.0, float(end_time) - float(start_time))
         self.edge_reservation_max_duration[edge_key] = max(
             self.edge_reservation_max_duration.get(edge_key, 0.0), interval_duration
         )
 
         directed_key = (from_name, to_name)
-        directed_reservations = self.directed_edge_reservations[directed_key]
-        insort_right(directed_reservations, item)
+        self._insert_route_reservation(self.directed_edge_reservations, directed_key, item)
         self.directed_edge_reservation_max_duration[directed_key] = max(
             self.directed_edge_reservation_max_duration.get(directed_key, 0.0),
             interval_duration,
@@ -8809,11 +8864,9 @@ class Simulation:
         end_time: float,
         amr_id: str,
     ):
-        self._remember_route_mapping(self.node_reservations, node_name)
         self._remember_route_mapping(self.node_reservation_max_duration, node_name)
-        reservations = self.node_reservations[node_name]
         item = (start_time, end_time, amr_id)
-        insort_right(reservations, item)
+        self._insert_route_reservation(self.node_reservations, node_name, item)
         self.node_reservation_max_duration[node_name] = max(
             self.node_reservation_max_duration.get(node_name, 0.0),
             max(0.0, float(end_time) - float(start_time)),
@@ -8878,7 +8931,7 @@ class Simulation:
                     t += duration
                     continue
                 if transaction is not None:
-                    transaction.remember_mapping(self.geometric_route_reservations, floor)
+                    transaction.remember_mapping_appends(self.geometric_route_reservations, floor)
                 if segment.get('reservation_policy') == 'swept_time_v1':
                     self.geometric_route_reservations[floor].extend({
                         **cell,'start':t+cell['start'],'end':t+cell['end'],'owner':amr.id}
@@ -9055,6 +9108,10 @@ class Simulation:
         start_heading_deg: Optional[float] = None,
         movement: str = 'forward',
     ) -> Optional[Tuple[List[dict], float, float]]:
+        # Lift events are applied by lift planning; they do not change floor routes.
+        scenario_routing = self.scenario_mode and any(
+            event.get('resource_type') in ('corridor', 'corridor_node', 'amr')
+            for event in self.scenario_events)
         required_width = self._required_corridor_width(amr,payload,orientation)
         if self.geometric_motion and movement == 'lateral':
             length = amr.length_m
@@ -9065,6 +9122,12 @@ class Simulation:
             start.floor, start.name, end.name, rules=rules,
             minimum_width_m=required_width,
         )
+        if scenario_routing and not self.geometric_motion:
+            from amr_scenario_routing import earliest_route
+            if start_time_value is None:
+                start_time_value = self.current_time
+            route = earliest_route(self, amr, start, end, rules, required_width,
+                                   start_time_value, payload, orientation)
         if route is None:
             return None
         if self.geometric_motion:
@@ -9130,8 +9193,10 @@ class Simulation:
         total_duration = 0.0
         current = start_time_value
         spacing_time = self._spacing_time_sec(amr)
+        speed = max(float(amr.speed_m_per_sec), 1e-9)
+        has_people = bool(self.people_edge_reservations)
         for edge in route["edges"]:
-            base_duration = float(edge["distance_m"]) / max(float(amr.speed_m_per_sec), 1e-9)
+            base_duration = float(edge["distance_m"]) / speed
             lane_count, lane_width, carrying_length = self._corridor_lane_capacity(edge, amr, payload, orientation)
             congestion_count = 0
             people_count = 0
@@ -9146,25 +9211,12 @@ class Simulation:
                 duration = base_duration
                 speed_factor = 1.0
             else:
-                corridor_id = f"{edge['from']} -> {edge['to']}"
-                corridor_factor, blocked_until, corridor_notes = self._resource_speed_factor(
-                    "corridor", corridor_id, current
-                )
-                from_node_factor, from_node_blocked, from_node_notes = self._resource_speed_factor(
-                    "corridor_node", edge["from"], current
-                )
-                to_node_factor, to_node_blocked, to_node_notes = self._resource_speed_factor(
-                    "corridor_node", edge["to"], current
-                )
-                amr_factor, amr_blocked_until, amr_notes = self._resource_speed_factor(
-                    "amr", amr.id, current
-                )
-                blocked_until = max(
-                    blocked_until,
-                    from_node_blocked,
-                    to_node_blocked,
-                    amr_blocked_until,
-                )
+                if scenario_routing:
+                    blocked_until, scenario_factor, scenario_notes = departure_state(self, amr, edge, current, base_duration)
+                else:
+                    blocked_until = float(current)
+                if not math.isfinite(blocked_until):
+                    return None
                 if blocked_until > current + 1e-9:
                     scenario_wait = blocked_until - current
                     if collect_segments:
@@ -9176,40 +9228,16 @@ class Simulation:
                             "distance_m": 0.0,
                             "scenario_name": self.scenario_name,
                             "scenario_reason": (
-                                corridor_notes
-                                or from_node_notes
-                                or to_node_notes
-                                or amr_notes
-                                or "Configured resource outage"
+                                scenario_notes or "Configured resource outage"
                             ),
                         })
                     total_duration += scenario_wait
                     current = blocked_until
-                    corridor_factor, _blocked, corridor_notes = self._resource_speed_factor(
-                        "corridor", corridor_id, current
-                    )
-                    from_node_factor, _blocked, from_node_notes = self._resource_speed_factor(
-                        "corridor_node", edge["from"], current
-                    )
-                    to_node_factor, _blocked, to_node_notes = self._resource_speed_factor(
-                        "corridor_node", edge["to"], current
-                    )
-                    amr_factor, _blocked, amr_notes = self._resource_speed_factor(
-                        "amr", amr.id, current
-                    )
-                scenario_factor = min(
-                    corridor_factor or 1e-9,
-                    from_node_factor or 1e-9,
-                    to_node_factor or 1e-9,
-                    amr_factor or 1e-9,
-                )
-                scenario_notes = (
-                    corridor_notes or from_node_notes or to_node_notes or amr_notes
-                )
                 edge_key = self._physical_edge_key(edge["from"], edge["to"])
                 congestion_count = self._edge_recent_demand(edge_key, current)
                 congestion_factor = max(self.min_congestion_speed_factor, 1.0 - congestion_count * self.edge_slowdown_per_amr)
-                people_count, people_factor, people_groups = self._people_on_edge(edge_key, current, base_duration)
+                if has_people:
+                    people_count, people_factor, people_groups = self._people_on_edge(edge_key, current, base_duration)
                 speed_factor = max(0.01, min(congestion_factor, people_factor, scenario_factor))
                 travel_duration = base_duration / speed_factor
                 edge_start, _ = self._find_next_edge_start(
@@ -9217,6 +9245,23 @@ class Simulation:
                     spacing_time=spacing_time, directed_edge_key=(edge["from"], edge["to"]),
                     max_concurrency=lane_count,
                 )
+                if scenario_routing:
+                    while edge_start > current + 1e-9:
+                        ready, next_factor, next_notes = departure_state(self, amr, edge, edge_start, base_duration)
+                        if not math.isfinite(ready):
+                            return None
+                        scenario_factor = next_factor
+                        scenario_notes = next_notes or scenario_notes
+                        if has_people:
+                            people_count, people_factor, people_groups = self._people_on_edge(edge_key, ready, base_duration)
+                        speed_factor = max(.01, min(congestion_factor, people_factor, scenario_factor))
+                        travel_duration = base_duration / speed_factor
+                        next_start, _ = self._find_next_edge_start(edge_key=edge_key, requested_start=ready,
+                            duration=travel_duration, spacing_time=spacing_time,
+                            directed_edge_key=(edge['from'], edge['to']), max_concurrency=lane_count)
+                        if abs(next_start - edge_start) <= 1e-9:
+                            break
+                        edge_start = next_start
                 edge_wait = max(0.0, edge_start - current)
                 if edge_wait > 0:
                     if collect_segments:
@@ -9271,9 +9316,9 @@ class Simulation:
                         speed_factor = minimum_active_factor
                 else:
                     duration = travel_duration
-            people_delay = max(0.0, base_duration / max(people_factor, 1e-9) - base_duration) if people_count else 0.0
-            scenario_delay = max(0.0, base_duration / max(scenario_factor, 1e-9) - base_duration) + scenario_wait if self.scenario_mode else 0.0
             if collect_segments:
+                people_delay = max(0.0, base_duration / max(people_factor, 1e-9) - base_duration) if people_count else 0.0
+                scenario_delay = max(0.0, base_duration / max(scenario_factor, 1e-9) - base_duration) + scenario_wait if self.scenario_mode else 0.0
                 segments.append({
                     "type": "corridor", "from": edge["from"], "to": edge["to"],
                     "duration": duration, "distance_m": edge["distance_m"],
@@ -9341,20 +9386,31 @@ class Simulation:
         reposition_start: float,
         reposition_sec: float,
         loaded_travel_sec: float,
+        amr: Optional[AMR] = None,
+        transfer_times=None,
     ) -> Tuple[float, float, float, float]:
+        from amr_lift_transfer import transfer_seconds
+        entry_sec, exit_sec = transfer_times if transfer_times is not None else transfer_seconds(lift, amr)
         reposition_finish = float(reposition_start) + float(reposition_sec)
         board_start = reposition_finish
-        loaded_start = board_start + lift.door_time_sec + lift.boarding_time_sec
+        loaded_start = board_start + lift.door_time_sec + entry_sec
         loaded_finish = loaded_start + loaded_travel_sec
-        unload_finish = loaded_finish + lift.door_time_sec + lift.boarding_time_sec
+        unload_finish = loaded_finish + lift.door_time_sec + exit_sec
         return reposition_finish, loaded_start, loaded_finish, unload_finish
 
-    def _find_lift_journey_slot(
+    def _find_lift_journey_slot(self, lift, arrival_at_lift, origin_floor, destination_floor,
+                                *, prior_journeys=(), amr=None, transfer_times=None):
+        from amr_bed_lifts import access_slot
+        return access_slot(self, lift, arrival_at_lift, origin_floor, destination_floor,
+                           prior_journeys=prior_journeys, amr=amr, transfer_times=transfer_times)
+
+    def _find_unrestricted_lift_journey_slot(
         self,
         lift: Lift,
         arrival_at_lift: float,
         origin_floor: int,
         destination_floor: int,
+        *, prior_journeys=(), amr: Optional[AMR] = None, transfer_times=None,
     ) -> dict:
         """Find a slot without changing the assumptions of committed journeys.
 
@@ -9365,6 +9421,12 @@ class Simulation:
         not invent an unrecorded reset trip or retime another robot's route.
         """
         reservations = self.lift_reservations.get(lift.id, [])
+        if prior_journeys:
+            local = [(leg['lift_start'], leg['lift_finish'],
+                      leg['origin_lift'].floor, leg['destination_lift'].floor, '')
+                     for leg in prior_journeys if leg['lift'].id == lift.id]
+            if local:
+                reservations = sorted([*reservations, *local])
         initial_floor = int(
             self.lift_initial_floors.get(lift.id, getattr(lift, "current_floor", 0))
         )
@@ -9378,22 +9440,27 @@ class Simulation:
             else 0.0,
         )
 
+        from amr_lift_transfer import transfer_seconds
+        entry_sec, exit_sec = transfer_times if transfer_times is not None else transfer_seconds(lift, amr)
+
         def service_at(start, from_floor):
             reposition_sec = self._lift_vertical_seconds(lift, from_floor, origin_floor, at_time=start)
-            loaded_start = start + reposition_sec + lift.door_time_sec + lift.boarding_time_sec
+            loaded_start = start + reposition_sec + lift.door_time_sec + entry_sec
             # Outages can make a candidate impossible. Avoid passing infinity
             # into the scenario clock while evaluating the rest of that slot.
             loaded_travel_sec = (self._lift_vertical_seconds(
                 lift, origin_floor, destination_floor, at_time=loaded_start)
                 if math.isfinite(loaded_start) else math.inf)
             reposition_finish, loaded_start, loaded_finish, unload_finish = (
-                self._lift_service_finish_time(lift, start, reposition_sec, loaded_travel_sec))
+                self._lift_service_finish_time(lift, start, reposition_sec, loaded_travel_sec, amr, (entry_sec, exit_sec)))
             return {
                 'lift_start': start, 'lift_finish': unload_finish,
                 'reposition_from_floor': from_floor, 'reposition_to_floor': origin_floor,
                 'reposition_sec': reposition_sec, 'reposition_finish': reposition_finish,
                 'loaded_start': loaded_start, 'loaded_finish': loaded_finish,
                 'loaded_travel_sec': loaded_travel_sec,
+                'entry_time_sec': entry_sec, 'exit_time_sec': exit_sec,
+                'entry_start_sec': loaded_start - entry_sec,
             }
 
         reliability_ordered = (
@@ -9401,7 +9468,7 @@ class Simulation:
             or float(lift.mean_time_between_failures_hours or 0.0) > 0.0
         )
         if reservations and reliability_ordered:
-            tail = max(reservations, key=lambda reservation: reservation[1])
+            tail = latest_lift_reservation(reservations)
             previous_finish, previous_floor = float(tail[1]), int(tail[3])
         else:
             for next_start, next_finish, _next_origin, next_destination, _owner in reservations:
@@ -9418,7 +9485,6 @@ class Simulation:
 
     def _reserve_lift_journey(self, plan: dict, amr_id: str = "") -> None:
         lift = plan["lift"]
-        self._remember_route_mapping(self.lift_reservations, lift.id)
         self._remember_route_object(lift)
         item = (
             float(plan["lift_start"]),
@@ -9427,12 +9493,8 @@ class Simulation:
             int(plan["destination_lift"].floor),
             str(amr_id or ""),
         )
-        insort_right(self.lift_reservations[lift.id], item)
-        tail = max(
-            self.lift_reservations[lift.id],
-            key=lambda reservation: reservation[1],
-            default=None,
-        )
+        self._insert_route_reservation(self.lift_reservations, lift.id, item)
+        tail = latest_lift_reservation(self.lift_reservations[lift.id])
         if tail is not None:
             lift.available_time = max(
                 float(getattr(lift, "failed_until", 0.0) or 0.0),
@@ -9466,13 +9528,15 @@ class Simulation:
         interval_finish = max(interval_start, float(wait_finish))
         for candidate in candidates:
             available = True
-            for reserved_start, reserved_finish, _owner in self.node_reservations.get(
-                candidate, []
-            ):
-                if (
-                    float(reserved_start) - spacing_time < interval_finish
-                    and float(reserved_finish) + spacing_time > interval_start
-                ):
+            reservations = self.node_reservations.get(candidate, ())
+            first = self._reservation_scan_start(
+                reservations, interval_start, spacing_time,
+                self.node_reservation_max_duration.get(candidate, math.inf))
+            for index in range(first, len(reservations)):
+                reserved_start, reserved_finish, _owner = reservations[index]
+                if float(reserved_start) - spacing_time >= interval_finish:
+                    break
+                if float(reserved_finish) + spacing_time > interval_start:
                     available = False
                     break
             if available:
@@ -9491,6 +9555,31 @@ class Simulation:
         self._reserve_node(wait_node, wait_start, wait_finish, amr.id)
 
     def _nearest_compatible_lift_plan(
+        self, ready_time, amr, from_loc, to_loc, payload, rules=None,
+        orientation="lengthways", collect_segments=True,
+    ):
+        if requires_lift_route(self.config, from_loc, to_loc):
+            from amr_forced_floor import forced_lift_plan
+            planner = forced_lift_plan
+        else:
+            planner = connecting_lift_plan
+        from amr_bed_lifts import select_plan
+        return select_plan(self, planner, ready_time, amr,
+                           from_loc, to_loc, payload, rules, orientation, collect_segments)
+
+    def _lift_same_floor_route(self, cache, amr, start, finish, **options):
+        """Exact reuse within one read-only lift search; never across commits."""
+        if cache is None:
+            return self._same_floor_segments(amr, start, finish, **options)
+        key = (start.name, finish.name, options.get('start_time_value'))
+        if key in cache:
+            return cache[key]
+        result = self._same_floor_segments(amr, start, finish, **options)
+        if len(cache) < 4096:
+            cache[key] = result
+        return result
+
+    def _direct_lift_plan(
         self,
         ready_time: float,
         amr: AMR,
@@ -9500,13 +9589,15 @@ class Simulation:
         rules: Optional[dict] = None,
         orientation: str = "lengthways",
         collect_segments: bool = True,
+        *, only_lift=None, prior_journeys=(), _route_cache=None,
     ) -> Optional[dict]:
         best_plan = None
         best_finish = math.inf
         rules = rules or self._empty_route_rules()
         cache_key = None
-        if not collect_segments:
+        if not collect_segments and only_lift is None and not prior_journeys:
             cache_key = (
+                lift_policy_key(self.config),
                 int(getattr(self, "route_estimate_cache_version", 0)),
                 round(float(ready_time or 0.0), 6),
                 str(getattr(amr, "id", "") or ""),
@@ -9525,7 +9616,14 @@ class Simulation:
             if cache_key in self.lift_plan_estimate_cache:
                 return self.lift_plan_estimate_cache[cache_key]
 
-        for lift in self.lifts:
+        self._check_run_cancelled()
+        for actual_lift in self.lifts:
+            if (only_lift is not None and actual_lift.id != only_lift
+                    and not self.scenario_mode and not self.geometric_motion):
+                continue
+            lift = projected_lift(actual_lift, prior_journeys)
+            if only_lift is not None and lift.id != only_lift:
+                continue
             if not self._lift_allowed(lift, rules):
                 continue
             if not lift.can_serve(from_loc.floor, to_loc.floor):
@@ -9546,32 +9644,70 @@ class Simulation:
             if not self._node_allowed(destination_lift.name, rules):
                 continue
 
+            entry_edge = exit_edge = None
+            approach_target, departure_start = origin_lift, destination_lift
+            transfer_times = None
+            graph_timing = getattr(lift, 'transfer_timing_mode', 'fixed') == 'speed_based'
+            if graph_timing:
+                from amr_lift_transfer import graph_transfer_connectors, transfer_seconds
+                links = graph_transfer_connectors(self, amr, from_loc, to_loc,
+                    origin_lift, destination_lift, payload, rules, orientation)
+                if links is None:
+                    continue
+                entry_edge, exit_edge = links
+                approach_target = self.graph_nodes[entry_edge['from']]
+                departure_start = self.graph_nodes[exit_edge['to']]
+                transfer_times = transfer_seconds(lift, amr, entry_edge['distance_m'], exit_edge['distance_m'])
+
             ##
-            to_lift_route = self._same_floor_segments(
-                amr,
-                from_loc,
-                origin_lift,
-                rules=rules,
-                start_time_value=ready_time,
-                payload=payload,
-                orientation=orientation,
-                collect_segments=collect_segments,
-            )
+            if _route_cache is None:
+                to_lift_route = self._same_floor_segments(
+                    amr,
+                    from_loc,
+                    approach_target,
+                    rules=rules,
+                    start_time_value=ready_time,
+                    payload=payload,
+                    orientation=orientation,
+                    collect_segments=collect_segments,
+                )
+            else:
+                to_lift_route = self._lift_same_floor_route(
+                    _route_cache,
+                    amr,
+                    from_loc,
+                    approach_target,
+                    rules=rules,
+                    start_time_value=ready_time,
+                    payload=payload,
+                    orientation=orientation,
+                    collect_segments=collect_segments,
+                )
             if to_lift_route is None:
                 continue
 
             to_lift_segments, to_lift_sec, to_lift_distance_m = to_lift_route
 
             arrival_at_lift = ready_time + to_lift_sec
-            lift_slot = self._find_lift_journey_slot(
-                lift,
-                arrival_at_lift,
-                int(from_loc.floor),
-                int(to_loc.floor),
-            )
+            if graph_timing:
+                from amr_lift_transfer import connector_journey_slot
+                lift_slot = connector_journey_slot(self, lift, arrival_at_lift,
+                    int(from_loc.floor), int(to_loc.floor), amr, transfer_times,
+                    entry_edge, exit_edge, prior_journeys)
+                if lift_slot is None:
+                    continue
+            else:
+                lift_slot = self._find_lift_journey_slot(lift, arrival_at_lift,
+                    int(from_loc.floor), int(to_loc.floor), prior_journeys=prior_journeys,
+                    amr=amr, transfer_times=transfer_times)
             lift_start = lift_slot["lift_start"]
             lift_finish = lift_slot["lift_finish"]
             if not math.isfinite(lift_finish):
+                continue
+            # Simple outgoing travel is nonnegative. Preserve strict winner
+            # comparison and lift iteration order, including equal finishes.
+            # Detailed alternatives still need their geometric certification.
+            if not self.geometric_motion and lift_finish >= best_finish:
                 continue
             lift_wait_node = self._lift_wait_node_for_plan(
                 to_lift_segments,
@@ -9580,17 +9716,32 @@ class Simulation:
                 lift_slot["reposition_finish"],
                 amr,
             )
+            if graph_timing:
+                lift_wait_node = approach_target.name
 
-            from_lift_route = self._same_floor_segments(
-                amr,
-                destination_lift,
-                to_loc,
-                rules=rules,
-                start_time_value=lift_finish,
-                payload=payload,
-                orientation=orientation,
-                collect_segments=collect_segments,
-            )
+            if _route_cache is None:
+                from_lift_route = self._same_floor_segments(
+                    amr,
+                    departure_start,
+                    departure_start if graph_timing and to_loc.name == destination_lift.name else to_loc,
+                    rules=rules,
+                    start_time_value=lift_finish,
+                    payload=payload,
+                    orientation=orientation,
+                    collect_segments=collect_segments,
+                )
+            else:
+                from_lift_route = self._lift_same_floor_route(
+                    _route_cache,
+                    amr,
+                    departure_start,
+                    departure_start if graph_timing and to_loc.name == destination_lift.name else to_loc,
+                    rules=rules,
+                    start_time_value=lift_finish,
+                    payload=payload,
+                    orientation=orientation,
+                    collect_segments=collect_segments,
+                )
             if from_lift_route is None:
                 continue
 
@@ -9602,13 +9753,16 @@ class Simulation:
             if final_finish < best_finish:
                 best_finish = final_finish
                 best_plan = {
-                    "lift": lift,
+                    "lift": actual_lift,
                     "origin_lift": origin_lift,
                     "destination_lift": destination_lift,
                     "to_lift_segments": to_lift_segments,
                     "from_lift_segments": from_lift_segments,
                     "to_lift_distance_m": to_lift_distance_m,
                     "from_lift_distance_m": from_lift_distance_m,
+                    "destination_walking_distance_m": from_lift_distance_m + (exit_edge['distance_m'] if exit_edge else 0.0),
+                    "routing_end_location": departure_start if graph_timing and to_loc.name == destination_lift.name else to_loc,
+                    "entry_edge": entry_edge, "exit_edge": exit_edge,
                     "to_lift_sec": to_lift_sec,
                     "from_lift_sec": from_lift_sec,
                     "lift_start": lift_start,
@@ -9625,6 +9779,9 @@ class Simulation:
                     "loaded_travel_sec": lift_slot["loaded_travel_sec"],
                     "reposition_start": lift_start,
                     "reposition_finish": lift_slot["reposition_finish"],
+                    "entry_time_sec": lift_slot["entry_time_sec"],
+                    "exit_time_sec": lift_slot["exit_time_sec"],
+                    "entry_start_sec": lift_slot["entry_start_sec"],
                     "loaded_start": lift_slot["loaded_start"],
                     "loaded_finish": lift_slot["loaded_finish"],
                 }
@@ -9762,7 +9919,7 @@ class Simulation:
             ):
                 continue
 
-            if current_loc.floor == charge_loc.floor:
+            if current_loc.floor == charge_loc.floor and not requires_lift_route(self.config, current_loc, charge_loc):
                 route = self._same_floor_segments(
                     amr, current_loc, charge_loc, start_time_value=now,
                     payload=self.payloads.get(EMPTY_PAYLOAD_NAME), orientation="lengthways",
@@ -9780,7 +9937,8 @@ class Simulation:
                 if plan is None:
                     continue
                 finish = plan["final_finish"]
-                travel_segments = plan['to_lift_segments'] + plan['from_lift_segments']
+                travel_segments = [segment for leg in lift_plan_journeys(plan)
+                                   for segment in leg['to_lift_segments'] + leg['from_lift_segments']]
             if for_charging and self._charge_motor_energy_kwh(amr, travel_segments) > amr.battery_energy_kwh() + 1e-12:
                 continue
             if finish < best_finish:
@@ -9795,29 +9953,7 @@ class Simulation:
         journey_finish_time: Optional[float] = None,
     ) -> None:
         self._remember_route_object(lift)
-        lift.apply_journey_wear()
-        lift.operating_time_since_failure_sec += max(
-            0.0, float(journey_operating_sec or 0.0)
-        )
-
-        health_factor = max(0.1, min(1.0, float(getattr(lift, "health_percent", 100.0) or 0.0) / 100.0))
-        mtbf_sec = (
-            max(0.0, float(lift.mean_time_between_failures_hours or 0.0)) * 3600.0 * health_factor
-        )
-        if mtbf_sec <= 0.0:
-            return
-        if lift.operating_time_since_failure_sec < mtbf_sec:
-            return
-
-        repair_sec = max(0.0, float(lift.mean_time_to_repair_hours or 0.0)) * 3600.0
-        start_repair = max(
-            float(lift.available_time),
-            float(journey_finish_time or lift.available_time),
-        )
-        lift.failed_until = start_repair + repair_sec
-        lift.available_time = max(lift.available_time, lift.failed_until)
-        lift.failures_count += 1
-        lift.operating_time_since_failure_sec = 0.0
+        advance_lift_wear(lift, journey_operating_sec, journey_finish_time)
 
     def _plan_return_to_charge(
         self,
@@ -9847,8 +9983,10 @@ class Simulation:
         # Empty travel uses the existing 75% motor-power approximation. Explicit
         # waits and vertical lift travel do not consume traction motor energy.
         return energy_for_travel_kwh(idle_move_power_w(amr), sum(
-            float(segment.get('duration', 0)) for segment in segments
-            if segment.get('type') == 'corridor'))
+            (float(segment.get('duration', 0)) if segment.get('type') == 'corridor'
+             else segment.get('entry_time_sec', 0) + segment.get('exit_time_sec', 0))
+            for segment in segments if segment.get('type') == 'corridor'
+            or (segment.get('type') == 'lift_transfer' and segment.get('entry_edge'))))
 
     def _finalise_charge_travel(self, amr, plan, start_time, *, reserve,
                                 initial_location=None, initial_heading=None):
@@ -9921,7 +10059,7 @@ class Simulation:
             ):
                 return None
 
-        if current_loc.floor == charge_loc.floor:
+        if current_loc.floor == charge_loc.floor and not requires_lift_route(self.config, current_loc, charge_loc):
             try:
                 route = self._same_floor_segments(
                     amr, current_loc, charge_loc, start_time_value=current_time_value,
@@ -9958,106 +10096,18 @@ class Simulation:
         if plan is None:
             return None
 
-        transfer_segments = list(plan["to_lift_segments"])
-
-        if plan["wait_time"] > 0:
-            transfer_segments.append(
-                {
-                    "type": "wait_for_lift",
-                    "lift_id": plan["lift"].id,
-                    "from": plan["lift_wait_node"],
-                    "to": plan["lift_wait_node"],
-                    "duration": plan["wait_time"],
-                    "distance_m": 0.0,
-                }
-            )
-
-        if plan.get("reposition_sec", 0.0) > 0:
-            transfer_segments.append(
-                {
-                    "type": "lift_reposition",
-                    "lift_id": plan["lift"].id,
-                    "from": f"{plan['lift'].id}-F{plan['reposition_from_floor']}",
-                    "to": f"{plan['lift'].id}-F{plan['reposition_to_floor']}",
-                    "amr_wait_node": plan["lift_wait_node"],
-                    "from_floor": plan["reposition_from_floor"],
-                    "to_floor": plan["reposition_to_floor"],
-                    "wait_time": 0.0,
-                    "duration": plan["reposition_sec"],
-                    "distance_m": abs(
-                        plan["reposition_to_floor"] - plan["reposition_from_floor"]
-                    )
-                    * self.floor_height_m,
-                    "vertical_distance_m": abs(
-                        plan["reposition_to_floor"] - plan["reposition_from_floor"]
-                    )
-                    * self.floor_height_m,
-                }
-            )
-
-        transfer_segments.append(
-            {
-                "type": "lift_transfer",
-                "lift_id": plan["lift"].id,
-                "from": plan["origin_lift"].name,
-                "to": plan["destination_lift"].name,
-                "from_floor": current_loc.floor,
-                "to_floor": charge_loc.floor,
-                "wait_time": 0.0,
-                "duration": max(
-                    0.0,
-                    plan["lift_finish"]
-                    - plan.get(
-                        "reposition_finish",
-                        plan["lift_start"] + plan.get("reposition_sec", 0.0),
-                    ),
-                ),
-                "distance_m": plan["vertical_distance_m"],
-                "vertical_distance_m": plan["vertical_distance_m"],
-            }
-        )
-
-        transfer_segments.extend(plan["from_lift_segments"])
-
-        lift_energy = total_lift_energy_kwh(
-            lift=plan['lift'], payload=dummy_payload, floor_height_m=self.floor_height_m,
-            reposition_floor_delta=plan['reposition_to_floor'] - plan['reposition_from_floor'],
-            loaded_floor_delta=charge_loc.floor - current_loc.floor,
-            wait_time_sec=plan['wait_time'], door_time_sec=plan['lift'].door_time_sec,
-            boarding_time_sec=plan['lift'].boarding_time_sec)
-        # Attribute infrastructure energy once to the transfer record, including
-        # its repositioning/standby overhead, independently of AMR battery use.
-        for segment in transfer_segments:
-            if segment.get('type') == 'lift_transfer':
-                segment['energy_kwh'] = lift_energy
-                segment['energy_source'] = 'lift_supply'
-
+        transfer_segments, lift_energy, distance, _, _ = lift_plan_segments(
+            self, plan, amr, dummy_payload, current_time_value,
+            reserve=reserve, reserve_corridors=False)
         if reserve:
-            self._reserve_lift_wait_node(plan, amr)
-            self._reserve_lift_journey(plan, amr.id)
-            self._apply_lift_journey_wear(
-                plan["lift"],
-                journey_operating_sec=float(plan.get("reposition_sec", 0.0))
-                + float(plan.get("loaded_travel_sec", 0.0)),
-                journey_finish_time=plan["lift_finish"],
-            )
             amr.location_name = charge_loc.name
-
         return {
             "segments": transfer_segments,
             "travel_sec": plan["final_finish"] - current_time_value,
-            "lift_energy_kwh": lift_energy,
-            "distance_m": (
-                plan["to_lift_distance_m"]
-                + plan["vertical_distance_m"]
-                + plan["from_lift_distance_m"]
-            ),
-            "finish_time": plan["final_finish"],
-            "end_location": charge_loc.name,
+            "lift_energy_kwh": lift_energy, "distance_m": distance,
+            "finish_time": plan["final_finish"], "end_location": charge_loc.name,
             "charge_location": charge_loc.name,
-            "amr_inventory_space": str(
-                (reserved_charge_space or {}).get("name", "") or ""
-            ),
+            "amr_inventory_space": str((reserved_charge_space or {}).get("name", "") or ""),
         }
 
     def _amr_is_at_operational_charger(self, amr: AMR) -> bool:
@@ -10372,6 +10422,7 @@ class Simulation:
 
     def _estimate_task_for_amr(self, amr: AMR, task: Task, reserve: bool = False,
                               *, return_charge_request: bool = False):
+        self._check_run_cancelled()
         # A charge changes all subsequent resource times. Discard the first
         # attempt before constructing the route again; never shift reservations
         # or reuse a trajectory computed before charging.
@@ -10382,6 +10433,8 @@ class Simulation:
                 with RouteReservationTransaction(self, amr, [task]) as transaction:
                     result = self._estimate_task_for_amr_impl(
                         amr, task, reserve=True, force_charge=force_charge)
+                    if forced_floor_enabled(self.config) and self.stop_requested:
+                        result = None
                     retry = bool(result and result.get('_retry_after_charge'))
                     transaction.committed = (result is not None and not retry
                                              and not result.get('_requires_route_charge'))
@@ -10497,7 +10550,7 @@ class Simulation:
 
             to_pickup_sec = 0.0
             loaded_sec = 0.0
-            if amr_loc.floor == pickup_loc.floor:
+            if amr_loc.floor == pickup_loc.floor and not requires_lift_route(self.config, amr_loc, pickup_loc):
                 to_pickup_route = self._shortest_path_same_floor(
                     amr_loc.floor,
                     amr_loc.name,
@@ -10509,7 +10562,7 @@ class Simulation:
                     to_pickup_sec = float(to_pickup_route["distance_m"]) / max(
                         float(amr.speed_m_per_sec), 1e-9
                     )
-            if pickup_loc.floor == dropoff_loc.floor:
+            if pickup_loc.floor == dropoff_loc.floor and not requires_lift_route(self.config, pickup_loc, dropoff_loc):
                 loaded_route = self._shortest_path_same_floor(
                     pickup_loc.floor,
                     pickup_loc.name,
@@ -10563,7 +10616,7 @@ class Simulation:
             ) -> Tuple[float, Location, Optional[List[dict]], float]:
                 nonlocal total, planning_heading
 
-                if location_a.floor == location_b.floor:
+                if location_a.floor == location_b.floor and not requires_lift_route(self.config, location_a, location_b):
                     if (
                         not reserve
                         and not self.geometric_motion
@@ -10641,120 +10694,20 @@ class Simulation:
                 if plan is None:
                     return math.inf, location_b, None, 0.0
 
-                nonlocal lift_energy_kwh_total
-                leg_lift_energy = total_lift_energy_kwh(
-                    lift=plan["lift"],
-                    payload=payload_for_leg or self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
-                    floor_height_m=self.floor_height_m,
-                    reposition_floor_delta=(
-                        plan["reposition_to_floor"] - plan["reposition_from_floor"]
-                    ),
-                    loaded_floor_delta=(location_b.floor - location_a.floor),
-                    wait_time_sec=plan["wait_time"],
-                    door_time_sec=plan["lift"].door_time_sec,
-                    boarding_time_sec=plan["lift"].boarding_time_sec,
-                )
-                lift_energy_kwh_total += leg_lift_energy
-
-                segment_duration = plan["final_finish"] - current_time_value
+                nonlocal lift_energy_kwh_total, lift_empty_sec_total, lift_loaded_sec_total
+                transfer_segments, energy, _, empty_sec, loaded_sec = lift_plan_segments(
+                    self, plan, amr,
+                    payload_for_leg or self.payloads.get(EMPTY_PAYLOAD_NAME, payload),
+                    current_time_value, reserve=reserve)
+                lift_energy_kwh_total += energy
+                lift_empty_sec_total += empty_sec
+                lift_loaded_sec_total += loaded_sec
+                for segment in transfer_segments:
+                    if segment.get('motion_model') == 'geometric_v1':
+                        planning_heading = segment['amr_rotation_end_deg']
+                segment_duration = plan['final_finish'] - current_time_value
                 total += segment_duration
-
-                nonlocal lift_empty_sec_total, lift_loaded_sec_total
-                lift_empty_sec_total += float(plan.get("reposition_sec", 0.0))
-                lift_loaded_sec_total += float(plan.get("loaded_travel_sec", 0.0))
-
-                if reserve:
-                    self._reserve_corridor_segments(
-                        amr=amr,
-                        segments=plan["to_lift_segments"],
-                        start_time=current_time_value,
-                    )
-                    self._reserve_corridor_segments(
-                        amr=amr,
-                        segments=plan["from_lift_segments"],
-                        start_time=plan["lift_finish"],
-                    )
-                    self._reserve_lift_wait_node(plan, amr)
-                    self._reserve_lift_journey(plan, amr.id)
-                    self._apply_lift_journey_wear(
-                        plan["lift"],
-                        journey_operating_sec=float(plan.get("reposition_sec", 0.0))
-                        + float(plan.get("loaded_travel_sec", 0.0)),
-                        journey_finish_time=plan["lift_finish"],
-                    )
-
-                transfer_segments = list(plan["to_lift_segments"])
-
-                if plan["wait_time"] > 0:
-                    transfer_segments.append(
-                        {
-                            "type": "wait_for_lift",
-                            "lift_id": plan["lift"].id,
-                            "from": plan["lift_wait_node"],
-                            "to": plan["lift_wait_node"],
-                            "duration": plan["wait_time"],
-                            "distance_m": 0.0,
-                        }
-                    )
-
-                if plan.get("reposition_sec", 0.0) > 0:
-                    transfer_segments.append(
-                        {
-                            "type": "lift_reposition",
-                            "lift_id": plan["lift"].id,
-                            "from": f"{plan['lift'].id}-F{plan['reposition_from_floor']}",
-                            "to": f"{plan['lift'].id}-F{plan['reposition_to_floor']}",
-                            "amr_wait_node": plan["lift_wait_node"],
-                            "from_floor": plan["reposition_from_floor"],
-                            "to_floor": plan["reposition_to_floor"],
-                            "wait_time": 0.0,
-                            "duration": plan["reposition_sec"],
-                            "distance_m": abs(
-                                plan["reposition_to_floor"]
-                                - plan["reposition_from_floor"]
-                            )
-                            * self.floor_height_m,
-                            "vertical_distance_m": abs(
-                                plan["reposition_to_floor"]
-                                - plan["reposition_from_floor"]
-                            )
-                            * self.floor_height_m,
-                            "energy_kwh": 0.0,
-                        }
-                    )
-
-                transfer_segments.append(
-                    {
-                        "type": "lift_transfer",
-                        "lift_id": plan["lift"].id,
-                        "from": plan["origin_lift"].name,
-                        "to": plan["destination_lift"].name,
-                        "from_floor": location_a.floor,
-                        "to_floor": location_b.floor,
-                        "wait_time": 0.0,
-                        "duration": max(
-                            0.0,
-                            plan["lift_finish"]
-                            - plan.get(
-                                "reposition_finish",
-                                plan["lift_start"] + plan.get("reposition_sec", 0.0),
-                            ),
-                        ),
-                        "distance_m": plan["vertical_distance_m"],
-                        "vertical_distance_m": plan["vertical_distance_m"],
-                        "energy_kwh": leg_lift_energy,
-                        "energy_source": "lift_supply",
-                    }
-                )
-
-                transfer_segments.extend(plan["from_lift_segments"])
-
-                return (
-                    plan["final_finish"],
-                    location_b,
-                    transfer_segments,
-                    segment_duration,
-                )
+                return plan['final_finish'], location_b, transfer_segments, segment_duration
 
             travel_to_pickup_sec = 0.0
             planning_heading = float(getattr(amr, 'rotation_deg', 0.0))
@@ -11049,6 +11002,8 @@ class Simulation:
             if reserve and exc.reason in ('traffic_blocked', 'invalid_waiting_position', 'search_limit'):
                 self._traffic_commit_blocked_tasks.add(task.id)
             return None
+        except InterruptedError:
+            raise
         except Exception as exc:
             print(f"_estimate_task_for_amr failed for {task.id} on {amr.id}: {exc}")
             return None
@@ -11064,7 +11019,7 @@ class Simulation:
         payload_name = getattr(payload, "name", str(getattr(task, "payload", "") or ""))
         rules = self._resolve_task_route_rules(task) or {}
         rules_key = self._rules_cache_key(rules)
-        return (
+        key = (
             int(getattr(self, "route_estimate_cache_version", 0)),
             self._route_estimate_time_bucket(
                 max(
@@ -11087,6 +11042,10 @@ class Simulation:
             str(getattr(task, "payload_instance_id", "") or ""),
             rules_key,
         )
+
+        if forced_floor_enabled(self.config):
+            return key + (lift_policy_key(self.config),)
+        return key
 
     def _get_cached_task_estimate(self, amr: AMR, task: Task) -> Optional[dict]:
         return self.route_estimate_cache.get(self._route_estimate_cache_key(amr, task))
@@ -11180,12 +11139,20 @@ class Simulation:
             getattr(self, "parallel_routing_min_jobs", 64) or 64
         ):
             results = []
-            for job in jobs:
-                try:
-                    results.append((job, job["fn"](*job.get("args", ()))))
-                except Exception as exc:
-                    print(f"Route estimate job failed: {exc}")
-                    results.append((job, None))
+            previous = self._forced_lift_estimate_batch
+            if forced_floor_enabled(self.config) and not self.scenario_mode and not self.geometric_motion:
+                self._forced_lift_estimate_batch = {}
+            try:
+                for job in jobs:
+                    try:
+                        results.append((job, job["fn"](*job.get("args", ()))))
+                    except InterruptedError:
+                        raise
+                    except Exception as exc:
+                        print(f"Route estimate job failed: {exc}")
+                        results.append((job, None))
+            finally:
+                self._forced_lift_estimate_batch = previous
             return results
 
         futures = {
@@ -11197,6 +11164,8 @@ class Simulation:
             job = futures[future]
             try:
                 estimate = future.result()
+            except InterruptedError:
+                raise
             except Exception as exc:
                 print(f"Parallel estimate job failed: {exc}")
                 estimate = None
@@ -11348,6 +11317,12 @@ class Simulation:
             return True
         origin = self._geometric_graph_location(amr.location_name)
         pickup = self._task_pickup_location(task)
+        if origin is not None and pickup is not None and forced_floor_enabled(self.config):
+            key = ('forced', amr.id, origin.name, pickup.name, lift_policy_key(self.config))
+            if key not in cache:
+                cache[key] = self._route_possible_between_locations(amr, origin, pickup,
+                    self.payloads[EMPTY_PAYLOAD_NAME])
+            return cache[key]
         if origin is None or pickup is None or origin.floor == pickup.floor:
             return True
         key = (origin.floor, pickup.floor)
@@ -11547,6 +11522,11 @@ class Simulation:
                 return cached
 
         try:
+            if requires_lift_route(self.config, from_loc, to_loc):
+                from amr_forced_floor import structural_route_possible
+                result = structural_route_possible(self, amr, from_loc, to_loc, payload, rules)
+                self._route_feasibility_cache_set(cache_key, result)
+                return result
             if from_loc.floor == to_loc.floor:
                 orientations = {
                     orientation
@@ -11569,35 +11549,13 @@ class Simulation:
                 self._route_feasibility_cache_set(cache_key, result)
                 return result
 
-            # Terminal feasibility is structural. A scheduled outage or repair
-            # cannot turn an otherwise usable lift route into permanent failure.
-            orientations = {orientation for slot in self._runtime_amr_payload_slots(amr)
-                            for orientation in self._compatible_payload_orientations(payload, slot)}
-            if is_empty_payload_name(payload.name):
-                orientations = {'lengthways'}
-            result = False
-            for lift in self.lifts:
-                if (not lift.can_serve(from_loc.floor, to_loc.floor)
-                        or not self._lift_allowed(lift, rules)
-                        or self._lift_health_speed_factor(lift) <= 0):
-                    continue
-                origin = self._lift_location_on_floor(lift, from_loc.floor)
-                destination = self._lift_location_on_floor(lift, to_loc.floor)
-                if not self._node_allowed(origin.name, rules) or not self._node_allowed(destination.name, rules):
-                    continue
-                for orientation in orientations:
-                    width = self._required_corridor_width(amr, payload, orientation)
-                    if (lift.can_fit(payload, amr, orientation=orientation)
-                            and self._shortest_path_same_floor(from_loc.floor, from_loc.name, origin.name,
-                                rules=rules, minimum_width_m=width) is not None
-                            and self._shortest_path_same_floor(to_loc.floor, destination.name, to_loc.name,
-                                rules=rules, minimum_width_m=width) is not None):
-                        result = True
-                        break
-                if result:
-                    break
+            from amr_floor_routing import structural_route_possible
+            result = structural_route_possible(self, amr, from_loc, to_loc, payload, rules)
+
             self._route_feasibility_cache_set(cache_key, result)
             return result
+        except InterruptedError:
+            raise
         except Exception:
             self._route_feasibility_cache_set(cache_key, False)
             return False
@@ -11617,7 +11575,7 @@ class Simulation:
             return None
         rules = rules or self._empty_route_rules()
         lift_state = ()
-        if from_loc.floor != to_loc.floor:
+        if from_loc.floor != to_loc.floor or requires_lift_route(self.config, from_loc, to_loc):
             lift_state = tuple(
                 (
                     lift.id,
@@ -11635,7 +11593,7 @@ class Simulation:
                     ),
                 )
                 for lift in self.lifts
-                if lift.can_serve(from_loc.floor, to_loc.floor)
+                if (forced_floor_enabled(self.config) or lift.can_serve(from_loc.floor, to_loc.floor))
                 and self._lift_allowed(lift, rules)
             )
         return (
@@ -11654,6 +11612,7 @@ class Simulation:
             float(getattr(payload, "height_m", 0.0) or 0.0),
             self._rules_cache_key(rules),
             lift_state,
+            lift_policy_key(self.config),
         )
 
     def _route_feasibility_cache_set(
@@ -11764,6 +11723,9 @@ class Simulation:
             )
             for amr in compatible_amrs
         )
+        if not dropoff_reachable and requires_lift_route(self.config, pickup_loc, dropoff_loc):
+            return (f"No permitted AMR route from {pickup_name} to {dropoff_name} "
+                    f"via mandatory floor {self.config['building']['force_via_floor']}")
         if not dropoff_reachable and pickup_loc.floor != dropoff_loc.floor:
             serving_lifts = [
                 lift
@@ -11966,7 +11928,7 @@ class Simulation:
         """Reserve both plans without publishing events, logs or pending changes."""
         original = self.geometric_occupancy
         with RouteReservationTransaction(self,requester,[task]) as transaction:
-            transaction.remember_dict(vars(blocker))
+            transaction.remember_entity(blocker)
             transaction.remember_immutable_attribute(self,'geometric_occupancy')
             self.geometric_occupancy = original.provisional_replace_plan(
                 blocker.id,now,plan['occupancy_claims'])
@@ -12154,6 +12116,8 @@ class Simulation:
 
             precommitted_plan = None
             choice = self._select_best_assignment()
+            if forced_floor_enabled(self.config) and self.stop_requested:
+                return
             if choice is None:
                 choice = self._try_geometric_yield(self.current_time)
                 if choice:
@@ -12188,6 +12152,8 @@ class Simulation:
             if isinstance(task_or_tasks, list):
                 tasks = task_or_tasks
                 committed = self._estimate_multi_stop_for_amr(amr, tasks, reserve=True, return_charge_request=True)
+                if forced_floor_enabled(self.config) and self.stop_requested:
+                    return
 
                 if committed and committed.get('_requires_route_charge'):
                     if self._dispatch_required_route_charge(amr, tasks, committed):
@@ -12309,6 +12275,8 @@ class Simulation:
             task = task_or_tasks
             committed = (precommitted_plan if precommitted_plan is not None else
                          self._estimate_task_for_amr(amr, task, reserve=True, return_charge_request=True))
+            if forced_floor_enabled(self.config) and self.stop_requested:
+                return
 
             if committed and committed.get('_requires_route_charge'):
                 if self._dispatch_required_route_charge(amr, task, committed):
@@ -12450,6 +12418,11 @@ class Simulation:
                     )
                 )
                 segment_payload_name = task.payload if segment_has_payload else ""
+                if segment_type in {'lift_transfer', 'lift_reposition'}:
+                    segment['fm_lift'] = {
+                        'tasks': [task_tags(task)],
+                        'loaded': bool(carrying_payload and segment_type == 'lift_transfer'),
+                    }
                 segment_payload_instance_id = (
                     getattr(task, "payload_instance_id", "")
                     if segment_has_payload
@@ -12813,6 +12786,13 @@ class Simulation:
             segment_payload_name = _payload_name_for_ids(visible_task_ids)
             segment_payload_instance_id = _payload_instance_for_ids(visible_task_ids)
             segment_payload_slot = _payload_slot_for_ids(visible_task_ids)
+            if segment_type in {'lift_transfer', 'lift_reposition'}:
+                loaded = bool(onboard_after and segment_type == 'lift_transfer')
+                relevant_ids = sorted(onboard_after) if loaded else visible_task_ids or all_task_ids
+                segment['fm_lift'] = {
+                    'tasks': [task_tags(tasks_by_id[key]) for key in relevant_ids if key in tasks_by_id],
+                    'loaded': loaded,
+                }
 
             self.log_step(
                 event_time=segment_start_time,
@@ -12879,9 +12859,8 @@ class Simulation:
         index = self._generated_release_stagger_counts[key]
         self._generated_release_stagger_counts[key] += 1
         if index > 0:
-            task.release_time = release_time + (
-                index * self.generated_release_stagger_sec
-            )
+            task.release_time = min(self.task_generation_horizon_sec,
+                release_time + index * self.generated_release_stagger_sec)
 
     def _log_generated_task_record(self, record) -> None:
         task = record.task
@@ -12940,6 +12919,46 @@ class Simulation:
             getattr(task, "generator_release_spacing_key", "") or ""
         ).strip()
         return spacing_key.split(":", 1)[1] if spacing_key.startswith("dropoff:") else spacing_key
+
+    def _consider_fm_hold(self, task, generator, instance, now, latest):
+        next_check, reason = reactive_hold(self, task, now, latest, instance, generator)
+        if next_check > now:
+            task.fm_planned_release = next_check
+            task.fm_hold_reason = reason
+            self.push_event(next_check, 'fm_reactive_release', {
+                'task': task, 'generator': generator, 'instance': instance, 'latest': latest})
+            return True
+        if getattr(task, 'fm_hold_reason', '').startswith('Held'):
+            reason = f"{task.fm_hold_reason}. Released: {reason}"
+        task.fm_hold_reason = reason
+        task.fm_planned_release = now
+        task.release_time = now
+        return False
+
+    def _start_fm_hold(self, record):
+        task = record.task
+        policy = category_policy(self.config.get('task_generation', {}), task_tags(task)['category'])
+        allowance = policy.get('hold_seconds', 0)
+        if not allowance or not {'sporadic', 'threshold'}.intersection(task.labels):
+            return False
+        task.fm_original_release = task.release_time
+        task.fm_deadline = task.release_time + task.target_time if task.target_time > 0 else None
+        if record.deferred:
+            task.fm_hold_reason = 'Native dependency takes precedence'
+            return False
+        for generator in self.task_generation_manager.generators:
+            instance = next((row for row in getattr(generator, 'instances', ())
+                             if row['key'] == record.rule_id), None)
+            if instance is None:
+                continue
+            ready = max(self.current_time, task.release_time)
+            latest = min(ready + allowance, self.task_generation_horizon_sec)
+            if self.max_task_deferral_sec > 0:
+                latest = min(latest, task.release_time + self.max_task_deferral_sec - 1e-6)
+            self._start_task_deferral_limit(task)
+            return self._consider_fm_hold(task, generator, instance, ready, latest)
+        task.fm_hold_reason = 'No safe hold available for this generation rule'
+        return False
 
     def _schedule_generated_task_record(
         self, record, release_time_override: Optional[float] = None
@@ -13015,6 +13034,8 @@ class Simulation:
         if bool(getattr(task, "release_next_after_return_pickup", False)):
             task.generator_scheduled_release_time = float(task.release_time)
         self._log_generated_task_record(record)
+        if self._start_fm_hold(record):
+            return
 
         if bool(getattr(record, "deferred", False)):
             self._start_task_deferral_limit(task)
@@ -13106,10 +13127,23 @@ class Simulation:
                 self.geometric_route_reservations.pop(floor, None)
 
     def run(self):
+        try:
+            return self._run_impl()
+        except BaseException:
+            if self.event_store is not None and not self.event_store.closed:
+                self.event_store.close(flush=self.event_store.path is not None)
+            raise
+
+    def _check_run_cancelled(self):
+        if self.cancel_requested and self.cancel_requested():
+            raise InterruptedError('Simulation cancelled')
+
+    def _run_impl(self):
         self.wall_start_time = time.time()
 
         try:
             while True:
+                self._check_run_cancelled()
                 with self.lock:
                     if not self.events:
                         break
@@ -13131,7 +13165,8 @@ class Simulation:
                     break
         finally:
             if self.routing_executor is not None:
-                self.routing_executor.shutdown(wait=True, cancel_futures=False)
+                cancelled = bool(self.cancel_requested and self.cancel_requested())
+                self.routing_executor.shutdown(wait=True, cancel_futures=cancelled)
                 self.routing_executor = None
 
         if not self.stop_requested and self.geometric_termination is None and not self.events:
@@ -13163,9 +13198,10 @@ class Simulation:
                         to_location=task.dropoff)
         from amr_pending_evidence import record_pending_at_stop
         record_pending_at_stop(self)
-        self._print_progress_complete()
-        self.print_short_summary()
-        print()
+        if self.memory_event_limit is None:
+            self._print_progress_complete()
+            self.print_short_summary()
+            print()
 
     def _queue_same_time_task_releases(self, event: Event) -> List[Task]:
         """Queue the current task release and all other releases at the same
@@ -13222,6 +13258,18 @@ class Simulation:
                 event.time,
             )
             self._try_assign_tasks(event.time)
+        elif event.event_type == 'fm_reactive_release':
+            task = event.payload['task']
+            if task.id not in self.failed_task_ids and not self._consider_fm_hold(
+                    task, event.payload['generator'], event.payload['instance'],
+                    event.time, event.payload['latest']):
+                self.schedule_task_release(task)
+        elif event.event_type == 'fm_department_arrival':
+            task = event.payload['task']
+            if task.id not in self.failed_task_ids:
+                self.log_step(event_time=event.time, event_type='fm_department_arrival',
+                              task_id=task.id, to_location=event.payload['destination'],
+                              status='late' if event.time > task.fm_deadline else 'on_time')
         elif event.event_type == "task_release":
             self._queue_same_time_task_releases(event)
             self._try_assign_tasks(event.time)
@@ -13793,6 +13841,8 @@ class Simulation:
                     segment_end_floor = segment_start_floor
                 duration = segment.get("duration", 0.0)
                 segment_end_time = segment_start_time + duration
+                if segment_type in {'lift_transfer', 'lift_reposition'}:
+                    segment['fm_lift'] = {'tasks': [], 'loaded': False}
 
                 self.log_step(
                     event_time=segment_start_time,
@@ -14184,17 +14234,21 @@ class Simulation:
         for task in tasks:
             self._task_journeys[task.id] = journey_id
 
-    def _append_verbose_row(self, row: dict):
-        """Append a verbose row and stream a bounded chunk to disk when full."""
+    def _append_verbose_row(self, row: dict | EventValues, *, precise_time=None):
+        """Assign the event identity and write through the selected log backend."""
         if not self.verbose:
             return
+        if not isinstance(row, EventValues):
+            row = dict(row)
         with self._verbose_write_lock:
             self._evidence_sequence += 1
-            row = dict(row)
-            row['event_id'] = f'{self.run_id}:{self._evidence_sequence:012d}'
-            row['run_id'] = self.run_id
-            row['journey_id'] = row.get('journey_id') or self._task_journeys.get(str(row.get('task_id', '')).split(',')[0].strip(), '')
-            row.update(self._task_provenance.get(str(row.get('task_id', '')), {}))
+            task_id = str(row.get('task_id', ''))
+            row.update(dict(event_id=f'{self.run_id}:{self._evidence_sequence:012d}', run_id=self.run_id,
+                journey_id=row.get('journey_id') or self._task_journeys.get(task_id.split(',')[0].strip(), '')))
+            row.update(self._task_provenance.get(task_id, {}))
+            if self.event_store is not None:
+                self.event_store.append(row, precise_time=precise_time, playback=self._row_is_visualiser_relevant(row))
+                return row['event_id']
             self.verbose_rows.append(row)
             if (
                 self.verbose_csv_path
@@ -14203,8 +14257,23 @@ class Simulation:
                 self._flush_verbose_rows_to_csv()
             return row['event_id']
 
+    def _append_event_values(self, values, *, precise_time):
+        row = (EventValues(self._log_event_fields, values) if self.event_store is not None
+               else dict(zip(self._log_event_fields, values)))
+        return self._append_verbose_row(row, precise_time=precise_time)
+
     def _flush_verbose_rows_to_csv(self) -> int:
         """Write the current verbose row buffer without rebuilding the CSV."""
+        if self.event_store is not None:
+            self.event_store.flush()
+            if self.verbose_csv_path and not self.defer_exports:
+                with open(self.verbose_csv_path, 'w', encoding='utf-8', newline='') as stream:
+                    writer = csv.DictWriter(stream, fieldnames=self._verbose_fieldnames(), extrasaction='ignore')
+                    writer.writeheader()
+                    writer.writerows(self.verbose_rows)
+                self._verbose_csv_started = True
+                self._verbose_rows_written = len(self.verbose_rows)
+            return 0
         if not self.verbose_csv_path or not self.verbose_rows:
             return 0
         with self._verbose_write_lock:
@@ -14253,6 +14322,9 @@ class Simulation:
         value = self.clock.format_sim_time(key)
         self._format_sim_time_cache[key] = value
         return value
+
+    # Names are stored once; the hot logger emits only a positional value vector.
+    _log_event_fields = ('sim_time_sec', 'sim_datetime', 'event_type', 'task_id', 'amr_id', 'payload', 'payload_instance_id', 'from_location', 'to_location', 'lift_id', 'duration_sec', 'wait_time_sec', 'distance_m', 'task_duration_sec', 'task_release_time_sec', 'task_target_time_sec', 'amr_location_before', 'amr_location_after', 'details', 'journey_id', 'motion_model', 'trajectory_json', 'traffic_json', 'segment_type', 'start_time', 'end_time', 'start_node', 'end_node', 'start_x', 'start_y', 'start_floor', 'end_x', 'end_y', 'end_floor', 'status', 'energy_kwh', 'battery_soc_before', 'battery_soc_after', 'is_charging', 'amr_inventory_space', 'inventory_space', 'inventory_space_name', 'amr_rotation_deg', 'amr_rotation_start_deg', 'amr_rotation_end_deg', 'task_source', 'department_id', 'waste_stream', 'waste_volume_m3', 'container_type', 'pending_reason', 'payload_slot', 'onboard_payloads', 'onboard_slots', 'multi_stop_task_ids', 'multi_stop_pickup_count', 'multi_stop_dropoff_count', 'generation_component', 'tracked_item_exchange', 'dropoff_zone', 'exchange_mode', 'tracked_item_source_payload', 'tracked_items', 'person_resource', 'person_id', 'people_required', 'staff_on_shift_people_required', 'staff_shift_pattern', 'staff_shift_team', 'staff_shift_multiplier', 'staff_initial_on_shift_people', 'staff_initial_rostered_people', 'staff_wait_for_travel_sec', 'staff_working_hours_fallback', 'staff_resource_tracked', 'scenario_mode', 'scenario_name', 'scenario_delay_sec', 'scenario_reason', 'people_count', 'people_groups', 'people_speed_factor', 'people_delay_sec', 'route_lane_count', 'corridor_width_m', 'configured_corridor_width_m', 'door_restricted', 'door_nodes', 'lane_width_m', 'carrying_length_m', 'payload_orientation', 'wash_cycle', 'lift_health_percent', 'lift_operational', 'charger_space')
 
     def log_step(
         self,
@@ -14330,6 +14402,10 @@ class Simulation:
         if not self.verbose:
             return
 
+        if (event_type in ('task_complete', 'multi_stop_task_complete')
+                and self._stress_evidence):
+            self.log_step(event_time=event_time, event_type='stress_task_completion', task_id=task_id,
+                          details=json.dumps({'completion_time_sec': float(event_time)}))
         reduced_scenario_logging = self.scenario_mode and not self.scenario_enhanced_logging
         event_key = str(event_type or "").strip().lower()
         if reduced_scenario_logging and (
@@ -14459,172 +14535,145 @@ class Simulation:
                 if amr_rotation_end_deg is None:
                     amr_rotation_end_deg = amr_rotation_deg
 
-        return self._append_verbose_row(
-            {
-                # Existing schema
-                "sim_time_sec": round(event_time, 3),
-                "sim_datetime": self._format_sim_time_cached(event_time),
-                "event_type": event_type,
-                "task_id": task_id,
-                "amr_id": amr_id,
-                "payload": self._payload_log_name(payload_name),
-                "payload_instance_id": payload_instance_id,
-                "from_location": from_location,
-                "to_location": to_location,
-                "lift_id": lift_id,
-                "duration_sec": round(duration_sec, 3),
-                "wait_time_sec": round(wait_time_sec, 3),
-                "distance_m": round(distance_m, 3),
-                "task_duration_sec": round(task_duration_sec, 3),
-                "task_release_time_sec": (
-                    round(float(task_release_time_sec), 3)
+        return self._append_event_values(
+            (
+                (round(event_time, 3)),
+                (self._format_sim_time_cached(event_time)),
+                (event_type),
+                (task_id),
+                (amr_id),
+                (self._payload_log_name(payload_name)),
+                (payload_instance_id),
+                (from_location),
+                (to_location),
+                (lift_id),
+                (round(duration_sec, 3)),
+                (round(wait_time_sec, 3)),
+                (round(distance_m, 3)),
+                (round(task_duration_sec, 3)),
+                (round(float(task_release_time_sec), 3)
                     if task_release_time_sec is not None
-                    else ""
-                ),
-                "task_target_time_sec": (
-                    round(float(task_target_time_sec), 3)
+                    else ""),
+                (round(float(task_target_time_sec), 3)
                     if task_target_time_sec is not None
-                    else ""
-                ),
-                "amr_location_before": amr_location_before,
-                "amr_location_after": amr_location_after,
-                "details": details,
-                "journey_id": journey_id,
-                "motion_model": segment_meta.get('motion_model', ''),
-                "trajectory_json": json.dumps(segment_meta['trajectory']) if 'trajectory' in segment_meta else '',
-                "traffic_json": json.dumps({key:segment_meta[key] for key in
+                    else ""),
+                (amr_location_before),
+                (amr_location_after),
+                (details),
+                (journey_id),
+                (segment_meta.get('motion_model', '')),
+                (json.dumps(segment_meta['trajectory']) if 'trajectory' in segment_meta else ''),
+                (json.dumps({key:segment_meta[key] for key in
                     ('reservation_policy','lane_sections','loaded_length_m','loaded_width_m',
                      'wall_clearance_m','robot_clearance_m','traffic_blockers')
-                    if key in segment_meta}) if ('reservation_policy' in segment_meta or 'traffic_blockers' in segment_meta) else '',
-                # New schema
-                "segment_type": segment_type,
-                "start_time": self._format_sim_time_cached(start_time),
-                "end_time": self._format_sim_time_cached(end_time),
-                "start_node": start_node,
-                "end_node": end_node,
-                "start_x": start_x,
-                "start_y": start_y,
-                "start_floor": start_floor,
-                "end_x": end_x,
-                "end_y": end_y,
-                "end_floor": end_floor,
-                "status": status,
-                "energy_kwh": energy_kwh,
-                "battery_soc_before": (
-                    round(float(battery_soc_before), 2)
+                    if key in segment_meta}) if ('reservation_policy' in segment_meta or 'traffic_blockers' in segment_meta) else ''),
+                (segment_type),
+                (self._format_sim_time_cached(start_time)),
+                (self._format_sim_time_cached(end_time)),
+                (start_node),
+                (end_node),
+                (start_x),
+                (start_y),
+                (start_floor),
+                (end_x),
+                (end_y),
+                (end_floor),
+                (status),
+                (energy_kwh),
+                (round(float(battery_soc_before), 2)
                     if battery_soc_before is not None
-                    else ""
-                ),
-                "battery_soc_after": (
-                    round(float(battery_soc_after), 2)
+                    else ""),
+                (round(float(battery_soc_after), 2)
                     if battery_soc_after is not None
-                    else ""
-                ),
-                "is_charging": bool(is_charging) if is_charging is not None else False,
-                "amr_inventory_space": amr_inventory_space,
-                "inventory_space": inventory_space,
-                "inventory_space_name": inventory_space,
-                "amr_rotation_deg": (
-                    round(float(amr_rotation_deg), 3)
+                    else ""),
+                (bool(is_charging) if is_charging is not None else False),
+                (amr_inventory_space),
+                (inventory_space),
+                (inventory_space),
+                (round(float(amr_rotation_deg), 3)
                     if amr_rotation_deg is not None
-                    else ""
-                ),
-                "amr_rotation_start_deg": (
-                    round(float(amr_rotation_start_deg), 3)
+                    else ""),
+                (round(float(amr_rotation_start_deg), 3)
                     if amr_rotation_start_deg is not None
-                    else ""
-                ),
-                "amr_rotation_end_deg": (
-                    round(float(amr_rotation_end_deg), 3)
+                    else ""),
+                (round(float(amr_rotation_end_deg), 3)
                     if amr_rotation_end_deg is not None
-                    else ""
-                ),
-                "task_source": task_source,
-                "department_id": department_id,
-                "waste_stream": waste_stream,
-                "waste_volume_m3": round(float(waste_volume_m3 or 0.0), 6),
-                "container_type": container_type,
-                "pending_reason": pending_reason,
-                "payload_slot": payload_slot,
-                "onboard_payloads": (
-                    json.dumps(onboard_payloads, ensure_ascii=False)
+                    else ""),
+                (task_source),
+                (department_id),
+                (waste_stream),
+                (round(float(waste_volume_m3 or 0.0), 6)),
+                (container_type),
+                (pending_reason),
+                (payload_slot),
+                (json.dumps(onboard_payloads, ensure_ascii=False)
                     if onboard_payloads
-                    else "[]"
-                ),
-                "onboard_slots": (
-                    json.dumps(onboard_slots, ensure_ascii=False)
+                    else "[]"),
+                (json.dumps(onboard_slots, ensure_ascii=False)
                     if onboard_slots
-                    else "[]"
-                ),
-                "multi_stop_task_ids": (
-                    json.dumps(multi_stop_task_ids, ensure_ascii=False)
+                    else "[]"),
+                (json.dumps(multi_stop_task_ids, ensure_ascii=False)
                     if multi_stop_task_ids
-                    else "[]"
-                ),
-                "multi_stop_pickup_count": int(multi_stop_pickup_count or 0),
-                "multi_stop_dropoff_count": int(multi_stop_dropoff_count or 0),
-                "generation_component": generation_component,
-                "tracked_item_exchange": bool(tracked_item_exchange),
-                "dropoff_zone": dropoff_zone,
-                "exchange_mode": exchange_mode,
-                "tracked_item_source_payload": tracked_item_source_payload,
-                "tracked_items": (
-                    json.dumps(tracked_items, ensure_ascii=False)
+                    else "[]"),
+                (int(multi_stop_pickup_count or 0)),
+                (int(multi_stop_dropoff_count or 0)),
+                (generation_component),
+                (bool(tracked_item_exchange)),
+                (dropoff_zone),
+                (exchange_mode),
+                (tracked_item_source_payload),
+                (json.dumps(tracked_items, ensure_ascii=False)
                     if tracked_items
-                    else "{}"
-                ),
-                "person_resource": person_resource,
-                "person_id": person_id,
-                "people_required": int(people_required or 0),
-                "staff_on_shift_people_required": int(
+                    else "{}"),
+                (person_resource),
+                (person_id),
+                (int(people_required or 0)),
+                (int(
                     staff_on_shift_people_required or 0
-                ),
-                "staff_shift_pattern": staff_shift_pattern,
-                "staff_shift_team": staff_shift_team,
-                "staff_shift_multiplier": float(staff_shift_multiplier or 1.0),
-                "staff_initial_on_shift_people": int(
+                )),
+                (staff_shift_pattern),
+                (staff_shift_team),
+                (float(staff_shift_multiplier or 1.0)),
+                (int(
                     staff_initial_on_shift_people or 0
-                ),
-                "staff_initial_rostered_people": int(
+                )),
+                (int(
                     staff_initial_rostered_people or 0
-                ),
-                "staff_wait_for_travel_sec": round(
+                )),
+                (round(
                     float(staff_wait_for_travel_sec or 0.0), 3
-                ),
-                "staff_working_hours_fallback": staff_working_hours_fallback,
-                "staff_resource_tracked": staff_resource_tracked,
-                "scenario_mode": bool(self.scenario_mode),
-                "scenario_name": self.scenario_name if self.scenario_mode else "Normal operation",
-                "scenario_delay_sec": round(scenario_delay_value, 3),
-                "scenario_reason": str(segment_meta.get("scenario_reason", "") or ""),
-                "people_count": people_count_value,
-                "people_groups": str(segment_meta.get("people_groups", "") or ""),
-                "people_speed_factor": round(float(segment_meta.get("people_speed_factor", 1.0) or 1.0), 4),
-                "people_delay_sec": round(people_delay_value, 3),
-                "route_lane_count": int(float(segment_meta.get("route_lane_count", 0) or 0)),
-                "corridor_width_m": round(float(segment_meta.get("corridor_width_m", 0.0) or 0.0), 3),
-                "configured_corridor_width_m": round(float(segment_meta.get("configured_corridor_width_m", segment_meta.get("corridor_width_m", 0.0)) or 0.0), 3),
-                "door_restricted": bool(segment_meta.get("door_restricted", False)),
-                "door_nodes": str(segment_meta.get("door_nodes", "") or ""),
-                "lane_width_m": round(float(segment_meta.get("lane_width_m", 0.0) or 0.0), 3),
-                "carrying_length_m": round(float(segment_meta.get("carrying_length_m", 0.0) or 0.0), 3),
-                "payload_orientation": str(segment_meta.get("payload_orientation", "") or ""),
-                "wash_cycle": str(segment_type or segment_meta.get("type", "")).strip().lower() == "wash_cycle",
-                "lift_health_percent": (
-                    round(float(getattr(next((x for x in self.lifts if x.id == lift_id), None), "health_percent", 0.0)), 3)
-                    if lift_id else ""
-                ),
-                "lift_operational": (
-                    self._lift_health_speed_factor(next((x for x in self.lifts if x.id == lift_id), None)) > 0.0
-                    if lift_id and any(x.id == lift_id for x in self.lifts) else ""
-                ),
-                "charger_space": bool(
+                )),
+                (staff_working_hours_fallback),
+                (staff_resource_tracked),
+                (bool(self.scenario_mode)),
+                (self.scenario_name if self.scenario_mode else "Normal operation"),
+                (round(scenario_delay_value, 3)),
+                (str(segment_meta.get("scenario_reason", "") or "")),
+                (people_count_value),
+                (str(segment_meta.get("people_groups", "") or "")),
+                (round(float(segment_meta.get("people_speed_factor", 1.0) or 1.0), 4)),
+                (round(people_delay_value, 3)),
+                (int(float(segment_meta.get("route_lane_count", 0) or 0))),
+                (round(float(segment_meta.get("corridor_width_m", 0.0) or 0.0), 3)),
+                (round(float(segment_meta.get("configured_corridor_width_m", segment_meta.get("corridor_width_m", 0.0)) or 0.0), 3)),
+                (bool(segment_meta.get("door_restricted", False))),
+                (str(segment_meta.get("door_nodes", "") or "")),
+                (round(float(segment_meta.get("lane_width_m", 0.0) or 0.0), 3)),
+                (round(float(segment_meta.get("carrying_length_m", 0.0) or 0.0), 3)),
+                (str(segment_meta.get("payload_orientation", "") or "")),
+                (str(segment_type or segment_meta.get("type", "")).strip().lower() == "wash_cycle"),
+                (round(float(getattr(next((x for x in self.lifts if x.id == lift_id), None), "health_percent", 0.0)), 3)
+                    if lift_id else ""),
+                (self._lift_health_speed_factor(next((x for x in self.lifts if x.id == lift_id), None)) > 0.0
+                    if lift_id and any(x.id == lift_id for x in self.lifts) else ""),
+                (bool(
                     amr_inventory_space and any(
                         self._space_name(space) == amr_inventory_space and self._inventory_space_has_charger(space)
                         for spaces in self.inventory_spaces_by_location.values() for space in spaces
                     )
-                ),
-            }
+                )),
+            ),
+            precise_time=event_time,
         )
 
     def _record_committed_segment_impacts(self, segments: List[dict]) -> None:
@@ -14977,7 +15026,43 @@ class Simulation:
         """Flush the bounded verbose buffer and append final summary rows."""
         if not self.verbose_csv_path:
             return
+        if getattr(self, '_compact_finalized', False):
+            if not self.defer_exports:
+                from amr_event_store import export_rows
+                export_rows(self.event_store.path, self.verbose_csv_path, self._verbose_fieldnames())
+                write_run_evidence(self, self.verbose_csv_path)
+            return
 
+        self._append_final_evidence_rows()
+        if self.event_store is None or self.event_store.path is None:
+            self._flush_verbose_rows_to_csv()
+            if self.event_store is None:
+                self._ensure_verbose_csv_header()
+        else:
+            from amr_event_store import export_rows
+            from amr_run_evidence import write_compact_evidence
+            from amr_run_exports import save_report_state
+            self.event_store.flush()
+            save_report_state(self)
+            write_compact_evidence(self)
+            if self.defer_exports:
+                return
+            export_rows(self.event_store.path, self.verbose_csv_path, self._verbose_fieldnames())
+        write_run_evidence(self, self.verbose_csv_path)
+
+    def finalize_memory_evidence(self):
+        from amr_run_exports import save_report_state
+        if self.memory_event_limit is None or getattr(self, '_compact_finalized', False):
+            raise ValueError('This is not an unfinished memory run.')
+        self._check_run_cancelled()
+        self._append_final_evidence_rows()
+        self.event_store.flush()
+        save_report_state(self, cancel=self.cancel_requested)
+        size = self.event_store.seal_memory()
+        self._compact_finalized = True
+        return size
+
+    def _append_final_evidence_rows(self):
         self._flush_charger_queue_waits()
         self._append_scenario_summary_row()
         if not (self.scenario_mode and not self.scenario_enhanced_logging):
@@ -15037,10 +15122,6 @@ class Simulation:
             for request in requests:
                 self.log_step(event_time=self.current_time, event_type='tracked_stock_request',
                               task_id=request['task_id'], status=request['status'], details=json.dumps(request))
-        self._flush_verbose_rows_to_csv()
-        self._ensure_verbose_csv_header()
-        write_run_evidence(self, self.verbose_csv_path)
-
     def _row_is_visualiser_relevant(self, row: dict) -> bool:
         """Return True for verbose rows needed by the playback visualiser.
 
@@ -15112,6 +15193,11 @@ class Simulation:
         output_path = str(path or "simulation_visualiser_steps.csv")
         self.write_verbose_csv()
         fieldnames = self._visualiser_fieldnames()
+        if self.event_store is not None and self.event_store.path is not None:
+            from amr_event_store import export_rows
+            export_rows(self.event_store.path, output_path, fieldnames, playback_only=True)
+            write_run_evidence(self, output_path, kind='playback')
+            return output_path
 
         source_path = str(self.verbose_csv_path or "").strip()
         if source_path and os.path.exists(source_path):
@@ -15237,13 +15323,21 @@ class Simulation:
 
         return max(times)
 
-    def _print_progress(self):
+    def _print_progress(self, phase='Running simulation'):
         now_wall = time.time()
 
         if now_wall - self.last_progress_update < self.progress_update_interval:
             return
 
         self.last_progress_update = now_wall
+
+        if self.progress_callback:
+            self.progress_callback(dict(phase=phase, sim_time_sec=self.current_time,
+                horizon_sec=self.task_generation_horizon_sec, completed=len(self.completed_task_records),
+                failed=len(self.failed_task_ids), pending=sum(not self._pending_task_removed(task)
+                    for _, _, _, task in self.pending_tasks)))
+        if self.memory_event_limit is not None:
+            return
 
         elapsed = now_wall - self.wall_start_time
 
@@ -15587,6 +15681,8 @@ class Simulation:
         }
 
     def _create_idle_return_task(self, amr: AMR, now: float) -> Optional[Task]:
+        if self._amr_is_stowed_at_configured_charge_space(amr):
+            return None
         charge_location = self._charge_location_for_idle_return(amr, now)
         if not charge_location or charge_location not in self.locations:
             return None
@@ -15595,8 +15691,6 @@ class Simulation:
         # without creating a zero-length movement.  When that bay has become
         # unavailable, continue into the atomic all-charger reservation below
         # so another configured charging location is tried immediately.
-        if self._amr_is_stowed_at_configured_charge_space(amr):
-            return None
         if self._amr_is_at_configured_charge_location(amr):
             if self._occupy_amr_inventory_space(amr, amr.location_name) is not None:
                 return None
@@ -16099,6 +16193,8 @@ def main():
     parser.add_argument("--route-lengths-csv", type=str, default=None, help="All-pairs graph route length CSV path.")
     parser.add_argument("--charger-estimate-csv", type=str, default=None, help="Charger demand and shortfall CSV path.")
     parser.add_argument("--scenario-impact-csv", type=str, default=None, help="Scenario operational impact CSV path.")
+    parser.add_argument('--exports', default='', help='Comma-separated output keys to expand after the run (otherwise compact evidence only).')
+    parser.add_argument('--runtime-backend', choices=('compact', 'reference'), default='compact')
     args = parser.parse_args()
 
     if args.write_example:
@@ -16111,7 +16207,11 @@ def main():
         )
 
     config = load_json(args.config)
-    sim = Simulation(config, verbose=args.verbose, verbose_csv_path=args.verbose_csv)
+    output_csv = Path(args.verbose_csv)
+    unique_store = output_csv.with_name(output_csv.stem + '.' + uuid.uuid4().hex[:12] + '.sqlite')
+    sim = Simulation(config, verbose=True, verbose_csv_path=args.verbose_csv,
+                     runtime_backend=args.runtime_backend, defer_exports=args.runtime_backend == 'compact',
+                     event_store_path=unique_store if args.runtime_backend == 'compact' else None)
 
     input_thread = None
     if args.interactive:
@@ -16125,11 +16225,50 @@ def main():
 
     # print(json.dumps(sim.summary(), indent=2))
     sim.write_verbose_csv()
+    print(f'Canonical run evidence: {sim.event_store.path if sim.event_store is not None else args.verbose_csv}')
+    requested = set(filter(None, args.exports.split(',')))
+    if args.runtime_backend == 'compact':
+        from amr_export_execution import materialise_exports
+        config_path = Path(args.config).resolve()
+        destinations = {}
+        for key, explicit, suffix in (
+            ('transport_matrix_csv', args.transport_matrix_csv, 'transport_matrix'),
+            ('route_lengths_csv', args.route_lengths_csv, 'route_lengths'),
+            ('charger_estimate_csv', args.charger_estimate_csv, 'charger_estimate'),
+            ('scenario_impact_csv', args.scenario_impact_csv, 'scenario_impact')):
+            if explicit or key in requested:
+                requested.add(key)
+                destinations[key] = explicit or str(config_path.with_name(f'{config_path.stem}_{suffix}.csv'))
+        if args.failed_tasks_csv or 'failed_tasks_csv' in requested:
+            requested.add('failed_tasks_csv')
+            destinations['failed_tasks_csv'] = default_failed_tasks_csv_path(
+                config, config_path=args.config, explicit_path=args.failed_tasks_csv)
+        if args.verbose or 'steps_csv' in requested:
+            requested.add('steps_csv')
+            destinations['steps_csv'] = args.verbose_csv
+        if args.visualiser_csv or 'visualiser_csv' in requested:
+            requested.add('visualiser_csv')
+            destinations['visualiser_csv'] = args.visualiser_csv or 'simulation_visualiser_steps.csv'
+        if requested:
+            print('Expanding requested outputs in a RAM-limited background process...', flush=True)
+            def feedback(message):
+                print(message.get('phase', 'Expanding outputs') +
+                      (f" ({message['events']} events)" if 'events' in message else ''), flush=True)
+            from amr_project_runs import OUTPUTS
+            ordered = [key for key in OUTPUTS if key in requested]
+            if len(ordered) != len(requested):
+                raise ValueError('Unknown simulation output requested')
+            published = materialise_exports(sim.event_store.path, ordered,
+                                             destinations=destinations, progress=feedback)
+            for key, path in published.items():
+                print(f'{key}: {path}', flush=True)
+        return
     failed_tasks_csv_path = default_failed_tasks_csv_path(
         config, config_path=args.config, explicit_path=args.failed_tasks_csv
     )
-    failed_tasks_csv_path = sim.write_failed_tasks_csv(failed_tasks_csv_path)
-    print(f"Failed tasks CSV written to {failed_tasks_csv_path}")
+    if args.failed_tasks_csv or 'failed_tasks_csv' in requested:
+        failed_tasks_csv_path = sim.write_failed_tasks_csv(failed_tasks_csv_path)
+        print(f"Failed tasks CSV written to {failed_tasks_csv_path}")
 
     config_path = Path(args.config).resolve()
     export_paths = {
@@ -16138,20 +16277,23 @@ def main():
         "Charger estimate": args.charger_estimate_csv or str(config_path.with_name(f"{config_path.stem}_charger_estimate.csv")),
         "Scenario impact": args.scenario_impact_csv or str(config_path.with_name(f"{config_path.stem}_scenario_impact.csv")),
     }
-    written_exports = {
-        "Transport matrix": sim.write_transport_matrix_csv(export_paths["Transport matrix"]),
-        "Route lengths": sim.write_route_lengths_csv(export_paths["Route lengths"]),
-        "Charger estimate": sim.write_charger_estimate_csv(export_paths["Charger estimate"]),
-        "Scenario impact": sim.write_scenario_impact_csv(export_paths["Scenario impact"]),
-    }
+    written_exports = {}
+    for label, key, explicit in [('Transport matrix', 'transport_matrix_csv', args.transport_matrix_csv),
+        ('Route lengths', 'route_lengths_csv', args.route_lengths_csv),
+        ('Charger estimate', 'charger_estimate_csv', args.charger_estimate_csv),
+        ('Scenario impact', 'scenario_impact_csv', args.scenario_impact_csv)]:
+        if explicit or key in requested:
+            written_exports[label] = getattr(sim, 'write_' + key)(export_paths[label])
     for label, output_path in written_exports.items():
         print(f"{label} CSV written to {output_path}")
 
-    if args.verbose:
+    if args.verbose or 'steps_csv' in requested:
+        sim.defer_exports = False
+        sim.write_verbose_csv()
         print(f"Verbose CSV written to {args.verbose_csv}")
-        if args.visualiser_csv:
-            visualiser_csv_path = sim.write_visualiser_csv(args.visualiser_csv)
-            print(f"Visualiser CSV written to {visualiser_csv_path}")
+    if args.visualiser_csv or 'visualiser_csv' in requested:
+        visualiser_csv_path = sim.write_visualiser_csv(args.visualiser_csv)
+        print(f"Visualiser CSV written to {visualiser_csv_path}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,150 @@
+LTN CPU OPTIMISATION — IMPLEMENTED AND VERIFIED, 12 October 2026
+
+The full seven-day LTN CPU simulation now takes 160.105 seconds against
+357.453 seconds for the preserved original source: 55.21% less time
+(2.23x the execution rate). Complete normalised task-record, event-stream
+and operational final-state hashes are identical. The production changes are
+in simulator.py, amr_route_reservations.py and amr_sim_task_generation.py.
+
+IMPLEMENTED CHANGES
+
+1. Idle returns: _create_idle_return_task checks whether the robot is already
+stowed before doing any charging-destination routing. Other stowing, return,
+charger-admission and reservation decisions retain their existing rules.
+
+2. Lift booking tails: LiftReservations keeps complete list-compatible history
+and an exact maximum-finish booking. It updates the index for insertion,
+append, replacement, deletion, sorting, reversal and rollback. Equal finish
+values still select the first entry, just like max. Plain lists supplied by
+callers use the original linear maximum. The reliability-ordered slot query
+and post-commit state update use this index; the no-wear/no-failure gap search
+retains its existing floor-continuity and reservation logic.
+
+3. Calendar caching: department operating periods are cached by their operative
+schedule values, requested datetime, timezone identity and fold. The cache is
+bounded at 8,192 entries, distinguishes raw argument types, and returns fresh
+lists around immutable periods. Edited schedules get new keys. An explicit
+allow-list with no valid day remains closed; overnight windows, equal clock
+24-hour rules, legacy hours and active-day checks retain existing semantics.
+Excluded timeframe members now also cache their existing (0, total) fallback;
+the requested payload count and allocation among active members do not change.
+
+4. Lift alternatives: in Simple mode, outgoing corridor travel and wait-node
+selection are skipped only when the lift's own finish time already cannot
+beat the best complete finish. Outgoing travel is nonnegative, and the existing
+strict comparison/iteration order preserves ties. Detailed mode still performs
+all outgoing geometric evaluations and certification, including losing lifts.
+
+5. Corridor overhead: robot speed is resolved once per leg; empty people-history
+queries and inactive scenario dispatch are skipped; physical-edge keys use a
+direct ordering comparison; and reporting-only delay calculations are omitted
+when segments are not requested. Active people/scenario effects, corridor
+capacity, congestion, FIFO reservations, node waits, energy and event times
+continue through their existing calculations. No coarse time steps, rounded
+estimates or approximate route shortlist were introduced.
+
+The original project's demand, inventory, robot fleet, lift wear/repair,
+charging, return and 20-minute deferral settings were preserved. Mode remains
+CPU Simple for LTN; no GPU, native acceleration or new parallel execution was
+introduced. Project inputs were not edited.
+
+FULL-WEEK MEASUREMENTS AND PARITY
+
+                                 Original source       Final optimised source
+Run completion including seal       357.453 s                160.105 s
+Initialisation                        1.605 s                  1.556 s
+Execution                           354.293 s                157.137 s
+Evidence finalisation                 1.555 s                  1.411 s
+Peak parent memory                    414.9 MiB                391.3 MiB
+CSV expansion, timed separately       5.678 s                  5.757 s
+
+Period: 1 January 2026 05:00 through 8 January 2026 05:00.
+Outcomes in both runs: 2,935 completed, 4,946 failed, no pending tasks.
+All failed IDs, pending IDs, completion records and final simulation end time
+match, including the existing operational failures. Performance improvement
+was not obtained by dropping work or changing resource assumptions.
+
+Matched task-record hash:
+aae86a5da221b659e40a25649fe03172665ee70e0f5f58ad16f9c49b45d4cae4
+Matched normalised event-stream hash:
+d630380e3e6d49e004d26a6ae3187c7110e27f75e95c46f875ea7a7bfe414ebb
+Matched hashed operational final state (resources, robots, payload inventory):
+03a0b49ecc73a9fad54a620cea25cfcc32287cf82b28ae3bb3fa998cf7ac51f5
+
+The measurements are one fresh-process sample per source tree. Interpreter and
+machine-load variation are not estimated by a confidence interval. A preceding
+optimisation run took 157.970 seconds with the same complete outcomes; its
+calendar-cache key preceded the final type-separation hardening, so it is not
+pooled into a same-version median. Timing excludes profiling and exhaustive
+outcome hashing/CSV expansion, and includes canonical evidence finalisation.
+
+REGRESSION AND DIFFERENTIAL CHECKS
+
+All 47 saved verification/scenarios projects ran successfully under both the
+original source and the final code. Each case matches on complete normalised
+operational events, task records/outcomes, and hashed resource/robot/payload
+final state. The cases include Simple/Detailed motion, recovery, routing
+restrictions, lift reservation/repair, charging, stock and returns.
+
+The final broad check ran 837 tests across 74 modules:
+834 passed, 3 failed, no errors. All three failures reproduce on the
+preserved original source, with the same assertions. They were not changed to
+make the optimisation suite pass:
+- GeometricStopTests.test_rejected_joint_admission_keeps_blockage_evidence
+- GeometricStopTests.test_unfitting_retreat_stops_with_bound_reason_not_task_failure
+  Both expect blocked run evidence but currently observe finished.
+- RequiredChargeDispatchTests.test_selecting_a_charge_request_does_not_spend_or_reserve
+  It expects an empty event queue but an existing deferral timeout remains.
+
+The 13 new optimisation edge-case tests all pass. They cover tied/nonmonotonic
+booking ends, arbitrary list mutations, copy and rollback, raw schedule types,
+mutable schedules, timezone/local-day boundaries, negative allocation caching,
+Simple-vs-Detailed lift pruning and active-vs-empty people checks.
+An earlier focused check passed 204 tests; final calendar/contract checks passed
+67 tests. Those totals overlap the broad run and are not added to it.
+
+SOURCE BINDING AND TOOLING
+
+The original working-tree application source was preserved in
+verification/cpu-optimisation-reference-20261012 before production edits. Its
+manifest matches the frozen reference run's recorded source fingerprint. The
+final run's source fingerprint matches the current application files.
+The incremental production/test diff is saved as
+verification/cpu-optimisation-changes-20261012.patch, so pre-existing working-tree
+changes can be distinguished from this optimisation.
+
+The CPU benchmark helper now records the source fingerprint already bound to
+the engine at initialisation, rather than rehashing a potentially edited tree
+after execution. It accepts --source-tree for a controlled single-sample
+reference run. Older profiling replay tools recognise implemented optimisations
+and do not try to apply their prototypes twice.
+
+Original-source SHA-256:
+77bff95c13f2130eb78dd8eb40586b81b00f86583e91972fe80348e790892f55
+Final-source SHA-256:
+f966786d8b81209b58f719074786e5e73184704342c26920b9091e0034cb4d48
+Unchanged input configuration SHA-256:
+e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b
+
+ARTIFACTS / REPRODUCTION
+
+Full reference: verification/ltn-cpu-frozen-reference-20261012.json
+Full final run: verification/ltn-cpu-after-optimisation-final-20261012.json
+Structured proof: verification/cpu-optimisation-verification-20261012.json
+Scenario before/after: verification/cpu-scenarios-before-20261012.json and
+verification/cpu-scenarios-after-final-20261012.json
+Final test output: verification/cpu-optimisation-final-broad-tests-20261012.txt
+Original failure reproduction: verification/cpu-optimisation-preexisting-failures-20261012.txt
+New edge-case tests: tests/test_cpu_optimisation.py
+
+In the repository PowerShell, use fresh output filenames:
+.\.venv\Scripts\python.exe verification/benchmark_computation.py --sample cpu --source-tree verification/cpu-optimisation-reference-20261012 --output verification/new-reference.json
+.\.venv\Scripts\python.exe verification/benchmark_computation.py --sample cpu --output verification/new-optimised.json
+.\.venv\Scripts\python.exe verification/compare_cpu_scenarios.py --source verification/cpu-optimisation-reference-20261012 --output verification/new-scenarios-before.json
+.\.venv\Scripts\python.exe verification/compare_cpu_scenarios.py --output verification/new-scenarios-after.json
+
+For timings, OMP_NUM_THREADS, OPENBLAS_NUM_THREADS, MKL_NUM_THREADS and
+NUMEXPR_NUM_THREADS were 1; PYTHONIOENCODING was utf-8. Tests use QT_QPA_PLATFORM
+=offscreen and the repository tmp directory to avoid the sandbox's restricted
+default temporary directory. No simulator algorithm depends on those test-only
+settings.

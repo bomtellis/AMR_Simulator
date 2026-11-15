@@ -19,6 +19,24 @@ def parse_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def parse_hhmm_to_minutes(value, default=None):
+    """Parse schedule clock time, including 24:00 as the end of a day."""
+    text = str(value or "").strip()
+    if not text:
+        return default
+    try:
+        parts = text.split(":")
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+        if hour == 24 and minute == 0:
+            return 24 * 60
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return (hour * 60) + minute
+    except (TypeError, ValueError):
+        return default
+    return default
+
+
 def format_duration(seconds: float) -> str:
     total_seconds = int(round(seconds))
     days, remainder = divmod(total_seconds, 86400)

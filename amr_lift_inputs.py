@@ -112,6 +112,11 @@ def lift_structure_findings(config, *, require_complete=False):
 
 def lift_input_findings(config, *, require_speed=False, require_complete=False):
     yield from lift_structure_findings(config, require_complete=require_complete)
+    if isinstance(config, dict):
+        from amr_lift_transfer import transfer_input_findings
+        yield from transfer_input_findings(config)
+        from amr_bed_lifts import bed_lift_input_findings
+        yield from bed_lift_input_findings(config)
     if not isinstance(config, dict) or not isinstance(config.get('lifts', []), list):
         return
     for index, lift in enumerate(config.get('lifts', [])):

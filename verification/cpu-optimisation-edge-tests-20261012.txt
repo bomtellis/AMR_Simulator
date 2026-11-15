@@ -1,0 +1,18 @@
+test_equal_instants_in_different_zones_keep_their_local_active_day (tests.test_cpu_optimisation.CalendarCacheTests.test_equal_instants_in_different_zones_keep_their_local_active_day) ... ok
+test_excluded_member_fallback_is_cached_without_redistribution (tests.test_cpu_optimisation.CalendarCacheTests.test_excluded_member_fallback_is_cached_without_redistribution) ... ok
+test_legacy_hours_equal_clocks_and_bounded_cache_hits (tests.test_cpu_optimisation.CalendarCacheTests.test_legacy_hours_equal_clocks_and_bounded_cache_hits) ... ok
+test_overnight_mutation_disabled_days_and_result_isolation (tests.test_cpu_optimisation.CalendarCacheTests.test_overnight_mutation_disabled_days_and_result_isolation) ... ok
+test_raw_clock_types_do_not_share_a_cache_entry (tests.test_cpu_optimisation.CalendarCacheTests.test_raw_clock_types_do_not_share_a_cache_entry) ... ok
+test_detailed_lift_alternatives_still_require_outgoing_geometry (tests.test_cpu_optimisation.CorridorFastPathTests.test_detailed_lift_alternatives_still_require_outgoing_geometry) ... ok
+test_no_people_skips_queries_without_changing_reserved_traffic_timing (tests.test_cpu_optimisation.CorridorFastPathTests.test_no_people_skips_queries_without_changing_reserved_traffic_timing) ... ok
+test_people_overlap_still_changes_duration_and_report_fields (tests.test_cpu_optimisation.CorridorFastPathTests.test_people_overlap_still_changes_duration_and_report_fields) ... ok
+test_simple_lift_bound_skips_only_a_proven_nonwinning_alternative (tests.test_cpu_optimisation.CorridorFastPathTests.test_simple_lift_bound_skips_only_a_proven_nonwinning_alternative) ... ok
+test_stowed_idle_return_exits_before_destination_search (tests.test_cpu_optimisation.CorridorFastPathTests.test_stowed_idle_return_exits_before_destination_search) ... ok
+test_mutations_match_linear_max_including_ties_and_out_of_order_ends (tests.test_cpu_optimisation.LiftBookingIndexTests.test_mutations_match_linear_max_including_ties_and_out_of_order_ends) ... ok
+test_plain_lists_keep_max_finish_and_first_on_ties (tests.test_cpu_optimisation.LiftBookingIndexTests.test_plain_lists_keep_max_finish_and_first_on_ties) ... ok
+test_rollback_restores_tail_and_complete_booking_history (tests.test_cpu_optimisation.LiftBookingIndexTests.test_rollback_restores_tail_and_complete_booking_history) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.007s
+
+OK

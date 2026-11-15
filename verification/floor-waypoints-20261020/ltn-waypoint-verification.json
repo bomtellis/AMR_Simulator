@@ -1,0 +1,82 @@
+{
+  "route_definitions": 468,
+  "newly_blocked_routes": [],
+  "routes": [
+    {
+      "destination": "D18-LINEN",
+      "floor": 1,
+      "rides": [
+        {
+          "lift": "Lift-2",
+          "from_floor": 0,
+          "to_floor": 2
+        },
+        {
+          "lift": "Lift-2",
+          "from_floor": 2,
+          "to_floor": 1
+        }
+      ]
+    },
+    {
+      "destination": "AMR-CENTRE",
+      "floor": 2,
+      "rides": [
+        {
+          "lift": "Lift-2",
+          "from_floor": 0,
+          "to_floor": 2
+        }
+      ]
+    },
+    {
+      "destination": "D29-LINEN",
+      "floor": 3,
+      "rides": [
+        {
+          "lift": "Lift-3",
+          "from_floor": 0,
+          "to_floor": 2
+        },
+        {
+          "lift": "Lift-3",
+          "from_floor": 2,
+          "to_floor": 3
+        }
+      ]
+    },
+    {
+      "destination": "D35-LINEN",
+      "floor": 4,
+      "rides": [
+        {
+          "lift": "Lift-3",
+          "from_floor": 0,
+          "to_floor": 2
+        },
+        {
+          "lift": "Lift-3",
+          "from_floor": 2,
+          "to_floor": 4
+        }
+      ]
+    },
+    {
+      "destination": "D41-LINEN",
+      "floor": 5,
+      "rides": [
+        {
+          "lift": "Lift-3",
+          "from_floor": 0,
+          "to_floor": 2
+        },
+        {
+          "lift": "Lift-3",
+          "from_floor": 2,
+          "to_floor": 5
+        }
+      ]
+    }
+  ],
+  "preexisting_blocked_routes": 0
+}

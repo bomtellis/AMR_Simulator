@@ -80,6 +80,8 @@ def robot_input_findings(config, *, require_complete=False):
                 ids.add(identity)
         for field in POSITIVE:
             yield from number(robot, field, path)
+        for field in ('lift_entry_speed_m_per_sec', 'lift_exit_speed_m_per_sec'):
+            yield from number(robot, field, path)
         yield from number(robot, 'motor_power_w', path, exclusive=False)
         for field in PERCENT:
             yield from number(robot, field, path, exclusive=False, maximum=100)

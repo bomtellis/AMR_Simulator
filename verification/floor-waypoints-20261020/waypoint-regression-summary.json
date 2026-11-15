@@ -1,0 +1,6 @@
+{
+  "tests_run": 254,
+  "failures": [],
+  "errors": [],
+  "excluded_baseline_failure": "tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_selecting_a_charge_request_does_not_spend_or_reserve"
+}

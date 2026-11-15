@@ -1,0 +1,28 @@
+{
+  "files": {
+    "amr_contingency_inputs.py": {
+      "before": "d500b845a08513aa74eb1af850c24f7dc8e18d80c3fa607c0344c192264cf838",
+      "after": "b735020e2ee58831ec6a3c9104f424549992f2af7b523ff400cca4efc4ca35f9"
+    },
+    "visualiser/contingency_panel.py": {
+      "before": "56a9109c4d8259edc1f4e1dc5b5617451656b0264e48417d6f0dafc811cc78e4",
+      "after": "7d7d640c771b27fa60c6222657360e773cd6e302578d9b439b62c50e2fd8943c"
+    },
+    "docs/ui/human-contingency.md": {
+      "before": "dfa60b5a88bd920266e490e440a602745370dc2a1bbeeb2152274611bf2403e1",
+      "after": "c155efc05d94278f147fc591241254b2acfb166de3a16671013a6bcd3946644e"
+    },
+    "docs/ui/contingency-layout-brief.md": {
+      "before": null,
+      "after": "0ab316fc02bd8d87cb3e137a1ff5e130cf55d7767ecccd921dcf5e9f8044598f"
+    },
+    "tests/test_contingency_prefill.py": {
+      "before": null,
+      "after": "4d31dcdfaa4268718dcaa092c0a6fe7b9f4bede113993a941f2966a1d1632012"
+    },
+    "tests/test_human_contingency_ui.py": {
+      "before": "2db12985a4a4bc892f16cc95cd896a731f074dc54d1e74b08c0e3cdd29e76812",
+      "after": "dd7a4633f0437946a8b2c55e4a379e8d5bcc1440d4a9da47100212a33156740e"
+    }
+  }
+}

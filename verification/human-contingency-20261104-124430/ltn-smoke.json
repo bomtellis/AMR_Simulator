@@ -1,0 +1,11 @@
+{
+  "test_only": true,
+  "services": [
+    "stores"
+  ],
+  "seconds": 0.47575119999964954,
+  "obligations": 24,
+  "completed": 24,
+  "passed": true,
+  "sample_issues": []
+}

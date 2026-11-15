@@ -214,6 +214,7 @@ def build_demand_preview(config, *, end_datetime=None):
                           'explanation': 'Waste accumulation and collection depend on runtime state; no fixed total is claimed.',
                           'effective_config': {}, 'field_sources': {}})
             continue
+        generator._fm_horizon = duration
         for instance in generator.instances:
             cfg = {k: copy.deepcopy(v) for k, v in instance['cfg'].items() if k not in {'department_groups', 'departments'}}
             mode = cfg.get('generation_mode', 'scheduled')

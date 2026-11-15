@@ -1,0 +1,142 @@
+{
+  "date": "2026-11-09",
+  "project": "C:/Users/tombe/Documents/AMR_Simulator/ltn.amrproj",
+  "project_sha256": "8e4fef5da487581d57ce873efc459f4c30d9fa566da03c3b7691e7a6b40bf4bb",
+  "input_sha256": "e1dd44fc5b843ceb01c134b83e1f941bcc4cc892892f1fc3841540e061be904f",
+  "routing_settings": {
+    "load_unload_time_sec": 20.0,
+    "floor_height_m": 4.0,
+    "amr_centre": "AMR-CENTRE",
+    "idle_return_window_sec": 300.0,
+    "enable_idle_return": true,
+    "amr_spacing_m": 1,
+    "node_clearance_time_sec": 0.5,
+    "edge_max_concurrency": 3,
+    "edge_congestion_window_sec": 30.0,
+    "edge_slowdown_per_amr": 0.15,
+    "min_congestion_speed_factor": 0.45,
+    "charge_locations": [
+      "AMR-Accommodation",
+      "AMR-CENTRE"
+    ],
+    "default_door_clear_width_m": 0.9,
+    "destination_side_lift_floors": [
+      2
+    ],
+    "lift_transfer_floor": 2,
+    "mandatory_floor_waypoints": [
+      {
+        "from_floor": 0,
+        "to_floors": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "via_floor": 2
+      }
+    ]
+  },
+  "baseline": {
+    "sim_time": 277330.0,
+    "completed": 2041,
+    "failed": 0,
+    "events": 96515,
+    "event_sha256": "7104122c4b41a76fb845b8ea1e36c668637cd959f92789a70906de576c64a173",
+    "component_hashes": {
+      "records": "215ec5794f61f3520bc6613a223813ee819b12c5d5cfa3008569f7442b2fff06",
+      "failed": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c",
+      "amrs": "cfef048dd2a27489159d2bba2547fc22e80354609e5a0c2d46ad4cb9eadc14ac",
+      "lifts": "37339e0ea7dac87a847ae5759d4759799cda4351442343ef46868833ab2cdb16",
+      "lift_reservations": "1f38c87a81f10f6080edef6de9b1a93213eb4b6bd61fa0216c77dacbcaef3c79",
+      "edge_reservations": "054fe17b85246ff9cbb2857206e4be97e4a10c89ac1c858db220b4b4f5dba6fc",
+      "node_reservations": "bf88310730c277e36b142d4ef051fb3ced659f905ca716c9dec25ac6c0e59599",
+      "location_reservations": "cdfe982e366294f544e0b1bfff5e4677b244b39657dcf5c1d6ed3e7083e418ac",
+      "inventory_spaces_by_location": "f5d2797b2382a40668f3860b896f3c3ba0d66e3d31c18ae788c2d4f0c4d5c6ca",
+      "pending": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c"
+    },
+    "root": "C:\\Users\\tombe\\Documents\\AMR_Simulator",
+    "initialization_sec": 1.555256300001929,
+    "run_sec": 1200.4849412000003,
+    "busy_sample_sec": 41.12784359999932,
+    "full_finished": false,
+    "configured_horizon": "2026-01-08T05:00:00"
+  },
+  "optimised_same_stop": {
+    "sim_time": 277330.0,
+    "completed": 2041,
+    "failed": 0,
+    "events": 96515,
+    "event_sha256": "7104122c4b41a76fb845b8ea1e36c668637cd959f92789a70906de576c64a173",
+    "component_hashes": {
+      "records": "215ec5794f61f3520bc6613a223813ee819b12c5d5cfa3008569f7442b2fff06",
+      "failed": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c",
+      "amrs": "cfef048dd2a27489159d2bba2547fc22e80354609e5a0c2d46ad4cb9eadc14ac",
+      "lifts": "37339e0ea7dac87a847ae5759d4759799cda4351442343ef46868833ab2cdb16",
+      "lift_reservations": "1f38c87a81f10f6080edef6de9b1a93213eb4b6bd61fa0216c77dacbcaef3c79",
+      "edge_reservations": "054fe17b85246ff9cbb2857206e4be97e4a10c89ac1c858db220b4b4f5dba6fc",
+      "node_reservations": "bf88310730c277e36b142d4ef051fb3ced659f905ca716c9dec25ac6c0e59599",
+      "location_reservations": "cdfe982e366294f544e0b1bfff5e4677b244b39657dcf5c1d6ed3e7083e418ac",
+      "inventory_spaces_by_location": "f5d2797b2382a40668f3860b896f3c3ba0d66e3d31c18ae788c2d4f0c4d5c6ca",
+      "pending": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c"
+    },
+    "root": "waypoint-optimisation-work",
+    "initialization_sec": 1.5660114999991492,
+    "run_sec": 68.48812239999825,
+    "busy_sample_sec": 1.0878502999985358,
+    "full_finished": false,
+    "configured_horizon": "2026-01-08T05:00:00"
+  },
+  "optimised_full_week": {
+    "sim_time": 610693.7886885167,
+    "completed": 4944,
+    "failed": 0,
+    "events": 231099,
+    "event_sha256": "855306ea979035c065291c426705465397207f429f6f7ce7466a0434ffbe4cb8",
+    "component_hashes": {
+      "records": "ca328b8b78d126388dc35e44db9923ed85273fee40d771a418b91b1861aff5f3",
+      "failed": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c",
+      "amrs": "34071dc1f2243a5266d68825fda7c7dc7a68cc6c0bf9014a154e892dea80ad35",
+      "lifts": "6c605dd5ff842973d736edcf1ac35d5e9029925d33089cc9dd9446f52be6871e",
+      "lift_reservations": "dbd27664aaca1d61dc5e46089bf758829f21361daf9b6ce3906e35d2b1baf608",
+      "edge_reservations": "6bb49d1e6c6565ce23582cfafd1737fe7e95cc133700479731dfca9cd6adf93b",
+      "node_reservations": "60ae1715f83b25fa8db2ca6bb1758139f2078a1fe13b2db8cc27a1ba0735ed3e",
+      "location_reservations": "b5f296e5056d412ee9c42ccc873b75ff6bb52c7f683426559c2a9fb3510a01ab",
+      "inventory_spaces_by_location": "b6c2210dc68a5de7b57ff895e6c13b58bb3052cd81c2b133460548c5d28a4f44",
+      "pending": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c"
+    },
+    "root": "waypoint-optimisation-work",
+    "initialization_sec": 1.5786977999996452,
+    "run_sec": 193.01869369999986,
+    "busy_sample_sec": 1.0966526999982307,
+    "full_finished": true,
+    "configured_horizon": "2026-01-08T05:00:00"
+  },
+  "comparison": "Exact decoded events and full precision encoded component hashes; only run UUID normalised. Original bounded at 1200 wall seconds; not a full-week original comparison.",
+  "regressions": {
+    "main_suite": {
+      "tests": 284,
+      "failures": 0,
+      "errors": 0
+    },
+    "additional_suite": {
+      "tests": 87,
+      "failures": 1,
+      "errors": 0
+    },
+    "differential_suite": {
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "route_queries": 480,
+      "scenario_queries": 8,
+      "complete_simulations": 4
+    },
+    "pre_existing_failure": "tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_selecting_a_charge_request_does_not_spend_or_reserve: expects no events after energy deferral; original and changed both contain task_deferral_timeout. Reproduced on unmodified live source."
+  },
+  "production_sha256": {
+    "simulator.py": "0f0de3d29338fe3cc0fad11161ada9f125ea30d5089ca3d551ed679dc4b0a207",
+    "amr_floor_routing.py": "da47a7d7d6f8089f7b51be6faa082b10c5bfd3f0a7452647cc016592e85f4e1f"
+  }
+}

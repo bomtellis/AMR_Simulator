@@ -59,6 +59,29 @@ class BuildingSettingsUiTests(unittest.TestCase):
     setUp = editing.CorridorEditingUiTests.setUp
     tearDown = editing.CorridorEditingUiTests.tearDown
 
+    def test_waypoint_rule_is_one_undo_step_and_survives_project_reopen(self):
+        from tests.test_floor_waypoints import floor_config
+        self.editor.store = JsonStore(floor_config(waypoint=False))
+        self.editor._reset_edit_history()
+        before = deepcopy(self.editor.store.data)
+        def save(dialog):
+            dialog.add_waypoint_rule()
+            dialog.accept()
+            return QDialog.Accepted
+        with patch.object(BuildingSettingsDialog, 'exec', new=save):
+            self.editor.manage_building_settings()
+        after = deepcopy(self.editor.store.data)
+        self.assertEqual([dict(from_floor=0,to_floors=[1,2,3,4,5],via_floor=2)],
+                         after['building']['mandatory_floor_waypoints'])
+        self.assertTrue(self.editor.undo_edit())
+        self.assertEqual(before,self.editor.store.data)
+        self.assertTrue(self.editor.redo_edit())
+        self.assertEqual(after,self.editor.store.data)
+        target = Path(self.temp.name) / 'waypoint.amrproj'
+        with patch.object(QFileDialog, 'getSaveFileName', return_value=(str(target), '')):
+            self.assertTrue(self.editor.save_project(save_as=True))
+        self.assertEqual(after,Project.open(target).configuration())
+
     def test_floor_count_adds_empty_floors_and_is_undoable(self):
         self.editor.store=JsonStore()
         self.editor.store.data['building']['floor_count']=1

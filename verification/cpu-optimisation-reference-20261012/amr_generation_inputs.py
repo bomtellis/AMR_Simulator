@@ -1,0 +1,345 @@
+"""Raw generation checks shared by import, preflight and runtime entry points.
+
+This is a bounded contract, not a complete schema. Never mutate, fill defaults,
+or recursively interpret unrelated user metadata as generator configuration.
+"""
+import math
+import re
+
+
+MODES = {'scheduled', 'scheduled_threshold', 'scheduled_sporadic', 'threshold',
+         'continuous', 'sporadic', 'hybrid', 'timeframe'}
+PATTERNS = {'none', 'four_on_four_off_12h'}
+PATTERN_ALIASES = {'4_on_4_off_12h', 'four_on_four_off', 'four_on_four_off_12_hour'}
+LEGACY_CATEGORIES = {'catering', 'pharmacy', 'linen', 'waste', 'stores', 'ssd'}
+FLAGS = {'enabled', 'requires_staff', 'staff_required', 'return_enabled',
+         'tracked_item_exchange', 'release_next_after_return_pickup',
+         'staff_use_custom_working_hours', 'staff_department_fallback_enabled',
+         'staff_handoff_only', 'run_every_fortnight', 'reusable_return_pool_enabled'}
+FLAGS |= {'initial_container_present', 'shared_container'}
+COUNTS = {'staff_initial_count', 'timeframe_payload_multiple', 'payload_multiple'}
+DURATIONS = {'return_delay_minutes', 'staff_handling_minutes', 'staff_collection_delay_minutes'}
+DAYS = {'mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'}
+
+
+def department_schedule_minutes(department):
+    """Resolved daily interval; equal clocks (including zero legacy hours) mean 24h.
+
+    Input validation is separate. Retain legacy whole-hour clock strings and
+    minute rounding of the hours fallback; explicit end time takes precedence.
+    """
+    def minutes(value, fallback):
+        if value is None or not str(value).strip():
+            return fallback
+        parts = str(value).strip().split(':')
+        return int(parts[0]) * 60 + (int(parts[1]) if len(parts) > 1 else 0)
+    start = minutes(department.get('operating_start_time'), 0)
+    end = minutes(department.get('operating_end_time'), None)
+    if end is None:
+        end = start + round(float(department.get('hours_operated_per_day', 24)) * 60)
+    if end <= start:
+        end += 24 * 60
+    return start, end
+
+
+def generation_mode_explanation(mode):
+    """User-facing demand semantics shared by preview and editing controls."""
+    return {
+        'scheduled': 'Clock times create tasks. Frequency does not add work in scheduled mode.',
+        'threshold': 'Continuous volume and whole frequency events fill the pool. Each threshold releases one collection.',
+        'continuous': 'Continuous volume accumulates without dispatching collections by itself.',
+        'sporadic': 'Frequency accumulates deterministic events per 24 eligible hours, not random arrivals. Whole events create tasks at an open generation poll.',
+        'hybrid': 'Continuous volume fills the threshold pool. Sporadic frequency events create separate tasks and contribute their volume only once; they do not also fill the pool.',
+        'scheduled_sporadic': 'Clock-scheduled tasks and deterministic frequency events are separate demand components.',
+        'scheduled_threshold': 'For waste, clock times add one event volume to the pool; continuous volume and frequency fill events also accumulate. Other categories create clock-scheduled tasks plus threshold collections.',
+        'timeframe': 'Configured payload counts are distributed across the timeframe and eligible calendar windows.',
+    }.get(mode, '')
+
+
+def department_waste_hourly_rate(department):
+    """Legacy empirical rate in m3/hour; coefficients are user-supplied."""
+    waste = department.get('waste', {})
+    start, end = department_schedule_minutes(department)
+    hours = (end - start) / 60
+    alpha, beta, gamma = (float(waste.get(key, 0)) for key in ('alpha', 'beta', 'gamma'))
+    beds, turnover, staff = (float(department.get(key, 0)) for key in ('bed_count', 'patient_turnover', 'staff_count'))
+    return alpha * beds + beta * (turnover / hours) + gamma * staff
+
+
+def generation_input_findings(config):
+    """Return (severity, JSON pointer, explanation) triples, including warnings."""
+    findings = []
+    if not isinstance(config, dict):
+        return findings
+    from amr_department_inputs import department_input_findings
+    findings.extend(('error', path, message) for path, message in department_input_findings(config))
+
+    def pointer(path, key):
+        return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
+
+    def error(path, message):
+        findings.append(('error', path, message))
+
+    def obj(value, path):
+        if not isinstance(value, dict):
+            error(path, 'Expected a JSON object; this value cannot be interpreted as generation settings.')
+            return None
+        return value
+
+    def number(row, path, name, minimum=0, positive=False, integer=False, maximum=None):
+        if name not in row:
+            return
+        try:
+            value = float(row[name])
+            valid = (not isinstance(row[name], bool) and math.isfinite(value)
+                     and (value > minimum if positive else value >= minimum)
+                     and (not integer or value.is_integer())
+                     and (maximum is None or value <= maximum))
+        except (TypeError, ValueError, OverflowError):
+            valid = False
+        if not valid:
+            qualifier = 'integer' if integer else 'number'
+            bound = 'greater than' if positive else 'at least'
+            upper = '' if maximum is None else f' and at most {maximum}'
+            error(pointer(path, name), f'{name} must be a finite {qualifier} {bound} {minimum}{upper}; booleans are not numbers.')
+
+    def flags(row, path, names):
+        for name in sorted(names):
+            if name in row and not isinstance(row[name], bool):
+                error(pointer(path, name), f'{name} must be a JSON boolean (true or false). Omit it to use the default.')
+
+    def clock(row, path, name):
+        if name not in row:
+            return
+        value = row[name]
+        if (not isinstance(value, str) or
+                not (re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', value.strip())
+                     or (name == 'end_time' and value.strip() == '24:00'))):
+            error(pointer(path, name), f'{name} must be a valid HH:MM time (24:00 is permitted for end_time).')
+
+    def rule(value, path):
+        row = obj(value, path)
+        if row is None:
+            return
+        flags(row, path, FLAGS)
+        if 'exchange_mode' in row and (not isinstance(row['exchange_mode'], str)
+                or row['exchange_mode'] not in {'top_up_only', 'full_exchange', 'replace_empty', ''}):
+            error(pointer(path, 'exchange_mode'), 'exchange_mode must be top_up_only, full_exchange or replace_empty.')
+        for name in sorted(COUNTS):
+            number(row, path, name, minimum=1, integer=True)
+        for name in sorted(DURATIONS):
+            number(row, path, name)
+        for name in ('base_daily_volume_m3', 'threshold_volume_m3', 'frequency_per_day', 'volume_per_event_m3'):
+            number(row, path, name)
+        number(row, path, 'container_capacity_m3', positive=True)
+        number(row, path, 'full_threshold_fraction', positive=True, maximum=1)
+        if 'generation_mode' in row:
+            mode = row['generation_mode']
+            if not isinstance(mode, str) or (mode.strip() and mode.strip() not in MODES):
+                error(pointer(path, 'generation_mode'), 'Unsupported generation mode. Use: ' + ', '.join(sorted(MODES)) + '.')
+        if 'staff_shift_pattern' in row:
+            pattern = row['staff_shift_pattern']
+            if not isinstance(pattern, str) or (pattern.strip().lower() and pattern.strip().lower() not in PATTERNS | PATTERN_ALIASES):
+                error(pointer(path, 'staff_shift_pattern'), 'Unsupported staff pattern. Use none or four_on_four_off_12h.')
+        if 'staff_working_hours' in row:
+            weekly_path = pointer(path, 'staff_working_hours')
+            weekly = obj(row['staff_working_hours'], weekly_path)
+            if weekly is not None:
+                for day, hours in weekly.items():
+                    day_path = pointer(weekly_path, day)
+                    if day not in DAYS:
+                        error(day_path, 'Unknown weekday; use mon, tue, wed, thu, fri, sat or sun.')
+                    hours = obj(hours, day_path)
+                    if hours is not None:
+                        flags(hours, day_path, {'enabled'})
+                        clock(hours, day_path, 'start_time')
+                        clock(hours, day_path, 'end_time')
+
+    def category(value, path):
+        rule(value, path)
+        if not isinstance(value, dict):
+            return
+        if 'departments' in value:
+            overrides = obj(value['departments'], pointer(path, 'departments'))
+            if overrides is not None:
+                for name, override in overrides.items():
+                    rule(override, pointer(pointer(path, 'departments'), name))
+        if 'department_groups' in value:
+            groups_path = pointer(path, 'department_groups')
+            groups = value['department_groups']
+            if not isinstance(groups, list):
+                error(groups_path, 'department_groups must be a list of JSON objects.')
+            else:
+                for index, group in enumerate(groups):
+                    group_path = pointer(groups_path, index)
+                    group = obj(group, group_path)
+                    if group is not None and 'departments' in group:
+                        members = group['departments']
+                        if (not isinstance(members, list) or any(not isinstance(member, str) or not member
+                                or member != member.strip() for member in members)):
+                            error(pointer(group_path, 'departments'), 'Group departments must be a list of nonblank department identities.')
+                        elif len(set(members)) != len(members):
+                            error(pointer(group_path, 'departments'), 'A department may occur only once within a group; separate groups can represent separate services.')
+                    if group is not None and 'payload' in group:
+                        rule(group['payload'], pointer(group_path, 'payload'))
+
+    def staff(value, path):
+        row = obj(value, path)
+        if row is None:
+            return
+        flags(row, path, {'enabled', 'spread_timeframe_tasks', 'space_timeframe_tasks'})
+        number(row, path, 'walking_speed_m_per_sec', positive=True)
+        for name in ('lift_wait_seconds', 'default_handling_minutes', 'amr_hold_for_exchange_max_minutes'):
+            number(row, path, name)
+        if 'shift_patterns' not in row:
+            return
+        patterns_path = pointer(path, 'shift_patterns')
+        patterns = obj(row['shift_patterns'], patterns_path)
+        if patterns is None:
+            return
+        for name, pattern in patterns.items():
+            pattern_path = pointer(patterns_path, name)
+            if name not in PATTERNS:
+                error(pattern_path, 'Only none and four_on_four_off_12h global pattern definitions are supported.')
+            pattern = obj(pattern, pattern_path)
+            if pattern is None:
+                continue
+            clock(pattern, pattern_path, 'start_time')
+            clock(pattern, pattern_path, 'end_time')
+            if name == 'four_on_four_off_12h' and 'days_active' in pattern:
+                days = pattern['days_active']
+                if isinstance(days, str):
+                    days = days.split(',')
+                if isinstance(days, list):
+                    selected = {str(day).strip().lower()[:3] for day in days} & DAYS
+                    if selected and selected != DAYS:
+                        findings.append(('warning', pointer(pattern_path, 'days_active'),
+                            'Rotating staff ignores days_active; generation and handling use all seven weekdays with alternating teams.'))
+            for field in ('work_days', 'rest_days'):
+                number(pattern, pattern_path, field, integer=True)
+                if field in pattern:
+                    try:
+                        value = float(pattern[field])
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    expected = 4 if name == 'four_on_four_off_12h' else 0
+                    if math.isfinite(value) and value >= 0 and value.is_integer() and value != expected:
+                        findings.append(('warning', pointer(pattern_path, field),
+                            f'Custom {field}={pattern[field]} is not implemented. The {name} allocator uses {expected}; this setting is ignored.'))
+
+    if 'task_generation' in config:
+        path = '/task_generation'
+        generation = obj(config['task_generation'], path)
+        if generation is not None:
+            flags(generation, path, {'enabled'})
+            # Zero is a retained legacy value; the simulator applies its 60 s minimum.
+            number(generation, path, 'update_interval_sec')
+            for name in ('staff_config', 'staff'):
+                if name in generation:
+                    staff(generation[name], pointer(path, name))
+            if 'categories' in generation:
+                cats_path = pointer(path, 'categories')
+                categories = obj(generation['categories'], cats_path)
+                if categories is not None:
+                    for name, value in categories.items():
+                        category(value, pointer(cats_path, name))
+            for name in sorted(LEGACY_CATEGORIES | {'department_waste'}):
+                if name in generation:
+                    category(generation[name], pointer(path, name))
+    payloads = config.get('payloads', [])
+    if isinstance(payloads, list):
+        for index, payload in enumerate(payloads):
+            if not isinstance(payload, dict):
+                continue
+            path = f'/payloads/{index}'
+            flags(payload, path, {'track_items'})
+            if 'items' not in payload:
+                continue
+            items = obj(payload['items'], pointer(path, 'items'))
+            if items is None:
+                continue
+            for name, value in items.items():
+                item_path = pointer(pointer(path, 'items'), name)
+                item = obj(value, item_path)
+                if item is None:
+                    continue
+                number(item, item_path, 'max', positive=True)
+                number(item, item_path, 'top_up_threshold')
+                number(item, item_path, 'consumption_per_day')
+                try:
+                    if 'top_up_threshold' in item and float(item['top_up_threshold']) > float(item.get('max', 100)):
+                        error(pointer(item_path, 'top_up_threshold'), 'top_up_threshold must not exceed max.')
+                except (TypeError, ValueError, OverflowError):
+                    pass
+                if payload.get('track_items') and item.get('usage_rate') not in (None, '', 'continuous'):
+                    findings.append(('warning', pointer(item_path, 'usage_rate'),
+                        'Tracked consumption uses a continuous consumption_per_day rate during active hours. '
+                        'The usage_rate label does not implement a separate schedule or stochastic process.'))
+            if payload.get('track_items'):
+                for field in ('source_location', 'exchange_payload'):
+                    values = {str(item.get(field) or '').strip() for item in items.values() if isinstance(item, dict)} - {''}
+                    if len(values) > 1:
+                        findings.append(('warning', pointer(path, 'items'),
+                            f'A replenishment containing several {field} values does not visit or load all of them. '
+                            'Mixed-source/mixed-payload routing is not implemented; use separate modeled services.'))
+    streams = config.get('waste_streams', [])
+    if isinstance(streams, list):
+        for index, stream in enumerate(streams):
+            rule(stream, f'/waste_streams/{index}')
+    departments = config.get('departments', [])
+    if not isinstance(departments, list):
+        error('/departments', 'Departments must be a list of JSON objects.')
+    else:
+        for index, department in enumerate(departments):
+            path = f'/departments/{index}'
+            if obj(department, path) is None:
+                continue
+            flags(department, path, {'enabled'})
+            for key in ('bed_count', 'patient_turnover', 'staff_count'):
+                number(department, path, key)
+            number(department, path, 'hours_operated_per_day', maximum=24)
+            for key in ('operating_start_time', 'operating_end_time'):
+                if key not in department:
+                    continue
+                value = department[key]
+                if not isinstance(value, str) or (value.strip() and not (
+                    re.fullmatch(r'(?:[01]?\d|2[0-3])(?::[0-5]\d)?', value.strip())
+                    or (key == 'operating_end_time' and value.strip() == '24:00'))):
+                    error(pointer(path, key), 'Use a valid hour or HH:MM clock, or blank for the default; 24:00 is allowed only for the end.')
+            if 'days_active' in department:
+                days = department['days_active']
+                if not isinstance(days, list) or any(not isinstance(day, str) or day.strip().lower() not in DAYS for day in days):
+                    error(pointer(path, 'days_active'), 'Use a list of mon, tue, wed, thu, fri, sat, sun; empty means every day.')
+            if 'waste' in department:
+                rule(department['waste'], pointer(path, 'waste'))
+                if isinstance(department['waste'], dict):
+                    for coefficient in ('alpha', 'beta', 'gamma'):
+                        number(department['waste'], pointer(path, 'waste'), coefficient)
+                    try:
+                        rate = department_waste_hourly_rate(department)
+                    except (ValueError, TypeError, OverflowError, ZeroDivisionError):
+                        pass  # Malformed scalars and clocks have individual findings above.
+                    else:
+                        if not math.isfinite(rate):
+                            error(pointer(path, 'waste'), 'The combined demographic waste rate must be finite; these values overflow the hourly calculation.')
+            streams = department.get('waste_streams', [])
+            if isinstance(streams, list):
+                for stream_index, stream in enumerate(streams):
+                    # A bare stream name is a supported department reference.
+                    if not isinstance(stream, str):
+                        rule(stream, pointer(pointer(path, 'waste_streams'), stream_index))
+            else:
+                error(pointer(path, 'waste_streams'), 'waste_streams must be a list of names or JSON objects.')
+    tasks = config.get('tasks', [])
+    if isinstance(tasks, list):
+        for index, task in enumerate(tasks):
+            if isinstance(task, dict):
+                rule(task, f'/tasks/{index}')
+    return findings
+
+
+def validate_generation_inputs(config):
+    errors = [(path, message) for severity, path, message in generation_input_findings(config)
+              if severity == 'error']
+    if errors:
+        raise ValueError('Invalid generation inputs: ' + '; '.join(f'{path}: {message}' for path, message in errors))

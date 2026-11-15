@@ -1,0 +1,11 @@
+{
+  "source": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\ltn_results\\run_20261012_202248_2f6_trf6\\simulation_steps.csv.sqlite",
+  "benchmark_copy": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\output-size-ltn-benchmark.sqlite",
+  "events": 238466,
+  "original_bytes": 406777856,
+  "compressed_bytes": 154337280,
+  "reduction_percent": 62.06,
+  "decoded_evidence_sha256": "0d9a7aa12c2c1661b309215986e4c80850f47607c2de84bf6cc9d7f9c937ba9d",
+  "exact_match": true,
+  "elapsed_sec": 40.847
+}

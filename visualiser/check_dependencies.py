@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 
-GRAPH = ('locations', 'corridors', 'lifts')
+GRAPH = ('locations', 'corridors', 'lifts', 'building')
 GROUPS = {
     'structure': ('Section structure', ('*',)),
     'generation': ('Generation input contracts', ('task_generation', 'departments', 'tasks', 'waste_streams', 'payloads')),
@@ -91,7 +91,7 @@ def dependencies(finding):
     return ('*',)
 
 
-def drawing_state(config, base_path=None):
+def drawing_state(config, base_path=None, *, asset_refs=None):
     state = {}
     if not isinstance(config, dict):
         return state
@@ -102,6 +102,9 @@ def drawing_state(config, base_path=None):
         for entry in entries:
             value = entry.get('filepath') if isinstance(entry, dict) else None
             if isinstance(value, str) and value:
+                if asset_refs is not None and value.startswith('amr-asset:'):
+                    state[value] = value in asset_refs
+                    continue
                 path = Path(value)
                 if not path.is_absolute() and base_path:
                     path = Path(base_path) / path
@@ -113,9 +116,12 @@ def drawing_state(config, base_path=None):
     return state
 
 
-def current_drawings(recorded):
+def current_drawings(recorded, *, asset_refs=None):
     result = {}
     for name in recorded:
+        if asset_refs is not None and name.startswith('amr-asset:'):
+            result[name] = name in asset_refs
+            continue
         try:
             result[name] = Path(name).is_file()
         except (OSError, ValueError):

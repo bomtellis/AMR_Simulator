@@ -217,6 +217,7 @@ class GeometricTrafficTests(unittest.TestCase):
 
     def test_lane_shift_is_checked_against_real_obstacles(self):
         config = traffic_config()
+        config['simulation']['max_task_deferral_minutes'] = 0
         config['geometry']['floors'][0]['obstacles'] = [[9,-1.5,11,-.7]]
         sim = Simulation(config,verbose=True)
         with contextlib.redirect_stdout(io.StringIO()): sim.run()

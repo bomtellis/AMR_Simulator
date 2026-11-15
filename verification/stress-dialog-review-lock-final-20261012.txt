@@ -1,0 +1,10 @@
+Failed to find real location of C:\Users\tombe\AppData\Local\Programs\Python\Python313\python.exe
+test_review_actions_lock_immediately_when_resume_starts (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_review_actions_lock_immediately_when_resume_starts) ... ok
+test_results_corridor_highlight_and_save_unique_editable_scenario (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_results_corridor_highlight_and_save_unique_editable_scenario) ... ok
+test_investigation_and_playback_use_selected_evidence (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_investigation_and_playback_use_selected_evidence) ... ok
+test_restore_settings_allows_resume_after_setup_edit (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_restore_settings_allows_resume_after_setup_edit) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 16.292s
+
+OK

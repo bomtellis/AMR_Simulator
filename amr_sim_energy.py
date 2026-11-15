@@ -88,11 +88,14 @@ def total_lift_energy_kwh(
     wait_time_sec: float,
     door_time_sec: float,
     boarding_time_sec: float = 0.0,
+    entry_time_sec: float = None,
+    exit_time_sec: float = None,
 ) -> float:
     stationary_time_sec = (
         max(0.0, wait_time_sec)
         + max(0.0, door_time_sec) * 2
-        + max(0.0, boarding_time_sec) * 2
+        + max(0.0, boarding_time_sec if entry_time_sec is None else entry_time_sec)
+        + max(0.0, boarding_time_sec if exit_time_sec is None else exit_time_sec)
     )
     return (
         lift_travel_energy_kwh(

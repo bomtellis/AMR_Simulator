@@ -1,0 +1,33 @@
+{
+  "seconds": 10.779,
+  "status": "budget_exhausted",
+  "old_bytes": 78754424,
+  "new_bytes": 51405442,
+  "progress_updates": 15,
+  "variants": {
+    "dedicated_current": {
+      "trials": 1,
+      "completed": 0,
+      "obligations": 26217,
+      "diagnostics": []
+    },
+    "shared_current": {
+      "trials": 1,
+      "completed": 0,
+      "obligations": 26217,
+      "diagnostics": []
+    },
+    "dedicated_buffered": {
+      "trials": 1,
+      "completed": 0,
+      "obligations": 26217,
+      "diagnostics": []
+    },
+    "shared_buffered": {
+      "trials": 1,
+      "completed": 0,
+      "obligations": 26217,
+      "diagnostics": []
+    }
+  }
+}

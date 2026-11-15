@@ -66,7 +66,7 @@ class SimulationModeEvidenceTests(unittest.TestCase):
                 sim.push_event(3, 'mode_test_stop', {})
 
         with patch.object(Simulation, '_handle_event', handle), contextlib.redirect_stdout(io.StringIO()):
-            simulation = execute(directory)
+            simulation = execute(directory, runtime_backend='reference')
         return directory, simulation
 
     @staticmethod

@@ -4,11 +4,13 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import copy
+import hashlib
 import io
 import math
 import numbers
 import re
 import tempfile
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from xml.sax.saxutils import escape
 from pathlib import Path
@@ -55,12 +57,19 @@ except Exception:  # SVG conversion is optional when --omit-drawings is used
     svg2rlg = None
 
 from amr_report_analysis import fmt_duration, fmt_ts
+from amr_report_drawing_cache import (
+    DrawingPreparationCache, load_bounds, save_bounds, load_scene, save_scene,
+    simplify_groups, write_svg,
+)
 
 
 REPORT_SECTIONS = [
     ("front_summary", "Executive summary"),
     ("operational_kpis", "Operational KPIs (demand, service, capacity and cost)"),
+    ("lift_performance_comparison", "Lift preference performance comparison"),
     ("scenario_impact", "Scenario impact and resilience"),
+    ("stress_tests", "Stress-test comparison"),
+    ("human_contingency", "Human contingency staffing"),
     ("method", "Method"),
     ("amr_list", "AMR list"),
     ("amr_fleet", "AMR fleet summary"),
@@ -71,8 +80,11 @@ REPORT_SECTIONS = [
     ("sla_categories", "SLA categories and assigned targets"),
     ("failed_delivery", "Failed delivery analysis"),
     ("lift_usage", "Lift usage and waits"),
+    ("lift_movements_by_level", "Lift movements by level"),
     ("journey_flows", "Journey origins, destinations and returns"),
     ("lift_usage_profile", "Lift usage profile"),
+    ("lift_movement_stacks", "Lift movements by purpose - stacked bars"),
+    ("lift_movement_daily", "Lift movements by purpose - daily charts"),
     ("lift_trip_cohorts", "Lift trip cohorts"),
     ("lift_wait_profiles", "Lift wait time profiles"),
     ("generated_tasks", "Generated task category summary"),
@@ -88,12 +100,15 @@ REPORT_SECTIONS = [
 ]
 
 REPORT_SECTION_LABELS = dict(REPORT_SECTIONS)
-DEFAULT_REPORT_SECTION_ORDER = [section_id for section_id, _label in REPORT_SECTIONS]
+DEFAULT_REPORT_SECTION_ORDER = [section_id for section_id, _label in REPORT_SECTIONS if section_id not in (
+    'stress_tests', 'human_contingency', 'lift_movement_stacks', 'lift_movement_daily', 'lift_performance_comparison')]
 
 REPORT_SECTION_PAGE_TEMPLATES = {
     "front_summary": "standard",
     "operational_kpis": "landscape",
+    "lift_performance_comparison": "standard",
     "scenario_impact": "landscape",
+    "stress_tests": "landscape",
     "generated_tasks": "landscape",
     "deferred_releases": "a3_landscape",
     "staff_handling": "standard",
@@ -103,8 +118,11 @@ REPORT_SECTION_PAGE_TEMPLATES = {
     "amr_fleet": "landscape",
     "amr_utilisation": "landscape",
     "lift_usage": "landscape",
+    "lift_movements_by_level": "standard",
     "journey_flows": "a3_landscape",
     "lift_usage_profile": "a3_landscape",
+    "lift_movement_stacks": "a3_landscape",
+    "lift_movement_daily": "a3_landscape",
     "lift_trip_cohorts": "a3_landscape",
     "lift_wait_profiles": "a3_landscape",
     "payload_summary": "standard",
@@ -1180,10 +1198,16 @@ def get_dxf_extents(dxf_path: str) -> tuple[float, float, float, float]:
 
 
 def get_cached_dxf_svg_path(dxf_path: str) -> Path:
-    dxf_file = Path(dxf_path)
+    dxf_file = Path(dxf_path).resolve()
     cache_dir = Path(tempfile.gettempdir()) / "amr_report_dxf_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    stamp = f"{dxf_file.stem}_{int(dxf_file.stat().st_mtime)}.svg"
+    # Frozen runs copy the same drawing into different directories. Key by
+    # content so all those runs reuse it, while same-named changed drawings
+    # cannot collide (even when their size and timestamp are unchanged).
+    with dxf_file.open('rb') as stream:
+        digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    identity = f"world-bounds-v2|{getattr(ezdxf, '__version__', '')}|{digest}"
+    stamp = hashlib.sha256(identity.encode("utf-8")).hexdigest() + ".svg"
     return cache_dir / stamp
 
 
@@ -1212,12 +1236,12 @@ def render_dxf_to_svg(
     # Draw the whole layout so the backend builds its render box properly
     Frontend(ctx, backend).draw_layout(msp, finalize=True)
 
-    data_w = max(raw_xmax - raw_xmin, 1.0)
-    data_h = max(raw_ymax - raw_ymin, 1.0)
+    data_w = raw_xmax - raw_xmin
+    data_h = raw_ymax - raw_ymin
 
     page = layout.Page(
-        data_w,
-        data_h,
+        max(data_w, 1.0),
+        max(data_h, 1.0),
         layout.Units.mm,
         margins=layout.Margins.all(0),
     )
@@ -1227,7 +1251,25 @@ def render_dxf_to_svg(
             fit_page=False,
             scale=1.0,
         )
-        svg_string = backend.get_string(page, settings=settings)
+        from ezdxf.math import BoundingBox2d, Vec3
+
+        # The backend otherwise recentres its *visible* geometry, whose bounds
+        # can differ from entity bounds (hidden layers, text, curves). Both the
+        # underlay and heatmap must keep the same world-coordinate frame.
+        render_box = BoundingBox2d([(raw_xmin, raw_ymin), (raw_xmax, raw_ymax)])
+        root = backend.get_xml_root_element(page, settings=settings, render_box=render_box)
+
+        # ezdxf rounds paper sizes to 0.1 mm. Use the transformed world bounds
+        # as the SVG viewport to remove that padding/rounding, including for
+        # drawings smaller than one drawing unit. SVG Y runs down the page.
+        transform = backend.transformation_matrix
+        top_left = transform.transform(Vec3(raw_xmin, raw_ymax))
+        bottom_right = transform.transform(Vec3(raw_xmax, raw_ymin))
+        root.set("width", f"{data_w}mm")
+        root.set("height", f"{data_h}mm")
+        root.set("viewBox", f"{top_left.x} {top_left.y} "
+                 f"{bottom_right.x - top_left.x} {bottom_right.y - top_left.y}")
+        svg_string = ET.tostring(root, encoding="unicode", xml_declaration=True)
     except ValueError:
         # Fallback for DXFs where ezdxf still reports an empty render box
         svg_string = f"""<?xml version="1.0" encoding="utf-8"?>
@@ -1293,7 +1335,7 @@ def render_dxf_to_svg(
         svg_string,
     )
 
-    Path(output_path).write_text(svg_string, encoding="utf-8")
+    write_svg(output_path, svg_string)
     return (
         raw_xmin * unit_scale,
         raw_xmax * unit_scale,
@@ -1303,11 +1345,19 @@ def render_dxf_to_svg(
 
 
 def load_svg_as_drawing(svg_path: str):
+    svg = Path(svg_path)
+    cached = load_scene(svg)
+    if cached is not None:
+        return cached
     if svg2rlg is None:
         raise RuntimeError(
             "svglib is required to render DXF drawings. Use --omit-drawings to skip drawing overlays."
         )
-    return svg2rlg(io.BytesIO(Path(svg_path).read_bytes()))
+    drawing = svg2rlg(io.BytesIO(svg.read_bytes()))
+    if drawing is not None:
+        simplify_groups(drawing)
+        save_scene(svg, drawing)
+    return drawing
 
 
 def thin_drawing_strokes(node, factor: float) -> None:
@@ -1351,6 +1401,8 @@ class FloorOverlayFlowable(Flowable):
         self.extents = extents
         self.width = width
         self.height = height
+        self._scaled_drawing = None
+        self._drawing_scale = None
 
     def wrap(self, availWidth, availHeight):
         return self.width, self.height
@@ -1400,17 +1452,20 @@ class FloorOverlayFlowable(Flowable):
         offset_y = plot_y + (plot_h - scaled_h) / 2
 
         if self.dxf_drawing is not None:
-            drawing = copy.deepcopy(self.dxf_drawing)
-            d_w = float(getattr(drawing, "width", scaled_w) or scaled_w)
-            d_h = float(getattr(drawing, "height", scaled_h) or scaled_h)
+            d_w = float(getattr(self.dxf_drawing, "width", scaled_w) or scaled_w)
+            d_h = float(getattr(self.dxf_drawing, "height", scaled_h) or scaled_h)
             if d_w > 0 and d_h > 0:
                 d_scale = min(scaled_w / d_w, scaled_h / d_h)
-                drawing.scale(d_scale, d_scale)
-
-                # Compensate for stroke widths thickening when the whole drawing is scaled up
-                thin_drawing_strokes(drawing, d_scale)
-
-                renderPDF.draw(drawing, canvas, offset_x, offset_y)
+                # multiBuild lays out the report repeatedly for the contents.
+                # Keep one scaled copy across passes; never mutate the shared
+                # source used by other floors or differently sized flowables.
+                if self._drawing_scale != d_scale:
+                    drawing = copy.deepcopy(self.dxf_drawing)
+                    drawing.scale(d_scale, d_scale)
+                    thin_drawing_strokes(drawing, d_scale)
+                    self._scaled_drawing = drawing
+                    self._drawing_scale = d_scale
+                renderPDF.draw(self._scaled_drawing, canvas, offset_x, offset_y)
 
         canvas.setStrokeColor(colors.black)
         canvas.rect(offset_x, offset_y, scaled_w, scaled_h, stroke=1, fill=0)
@@ -1499,6 +1554,7 @@ def prepare_heatmap_floor(
     floor_df: pd.DataFrame,
     floor_dxf_map: Dict[int, str],
     include_drawings: bool = True,
+    drawing_cache=None,
 ) -> tuple[int, dict]:
     floor_df = floor_df.sort_values("congestion_score", ascending=False).reset_index(
         drop=True
@@ -1509,19 +1565,23 @@ def prepare_heatmap_floor(
 
     if dxf_path:
         cached_svg = get_cached_dxf_svg_path(dxf_path)
+        def prepare():
+            if not cached_svg.exists():
+                bounds = render_dxf_to_svg(dxf_path, output_path=str(cached_svg))
+                save_bounds(cached_svg, bounds)
+            else:
+                bounds = load_bounds(cached_svg)
+                if bounds is None:
+                    bounds = get_dxf_extents(dxf_path)
+                    save_bounds(cached_svg, bounds)
+            try:
+                drawing = load_svg_as_drawing(str(cached_svg))
+            except Exception:
+                drawing = None
+            return bounds, drawing
 
-        if not cached_svg.exists():
-            extents = render_dxf_to_svg(
-                dxf_path,
-                output_path=str(cached_svg),
-            )
-        else:
-            extents = get_dxf_extents(dxf_path)
-
-        try:
-            dxf_drawing = load_svg_as_drawing(str(cached_svg))
-        except Exception:
-            dxf_drawing = None
+        extents, dxf_drawing = (prepare() if drawing_cache is None else
+                               drawing_cache.get(str(cached_svg), prepare))
     else:
         extents = compute_floor_extents(floor_df)
 
@@ -1608,6 +1668,104 @@ def append_kpi_story(story, results, styles):
                 '. Charger recommendations reflect observed use; confirm compatibility, access and future demand before sizing.', styles['Small']))
 
 
+def append_performance_comparison(story, comparison, styles):
+    base, trial = comparison['baseline'], comparison['scenario']
+
+    def display(value, pattern):
+        return 'Unavailable' if value is None else format(value, pattern)
+
+    def percentage_change(value, noun):
+        change = (value - 1) * 100
+        if abs(change) < .05:
+            return f'{noun} matched the baseline.'
+        return f'{noun} was {abs(change):.1f}% {"higher" if change > 0 else "lower"} than baseline.'
+
+    def fraction(count, total):
+        return f'{count:,}/{total:,}'
+
+    def sla(stats):
+        return (f"{stats['sla']:.1%} ({fraction(stats['on_time'], stats['due'])})"
+                if stats['sla'] is not None else 'Unavailable')
+
+    def wait(stats):
+        return f"{display(stats['wait_ratio'], '.2f')} ({display(stats['wait'], '.2f')} min)" if stats['wait'] is not None else 'Unavailable'
+
+    def funnel(stats):
+        return (f"{stats['funnel']:.1%} ({fraction(stats['compliant'], stats['checked'])})"
+                if stats['funnel'] is not None else 'Unavailable')
+
+    story.append(Paragraph('Lift preference performance comparison', styles['Section']))
+    for side, label in (('baseline', 'Baseline'), ('scenario', 'Scenario')):
+        story.append(Paragraph(f"<b>{label}</b> {escape(comparison[f'{side}_name'])} ({escape(comparison[f'{side}_mode'])})",
+                               styles['BodyText']))
+    story.append(Paragraph(f"Both runs are assessed through {comparison['checkpoint'] / 3600:,.2f} simulated hours. "
+                           'Each delivery or collection earns one unit on completion.', styles['BodyText']))
+    if not comparison['matched']:
+        story.append(Paragraph('Recorded requests, release times, deadlines or simulation start times differ. '
+            'Scenario SPI is unavailable. Read the remaining comparisons with the workload counts.', styles['BodyText']))
+    if comparison['differences']:
+        changes = escape(', '.join(comparison['differences']))
+        story.append(Paragraph(f'Other differences include {changes}. These can affect the results.', styles['BodyText']))
+    if comparison['scope']:
+        origin, hub, selected = comparison['scope']
+        story.append(Paragraph(f'Both runs are checked against the same funnel rule. Journeys from level {origin} '
+                               f'visit level {hub} using {escape(", ".join(sorted(selected)))} for rides touching that level.',
+                               styles['BodyText']))
+
+    spi_meaning = (f"The scenario earned {trial['spi']:.1%} of the workload due at the checkpoint. "
+                   'Early completions can offset overdue work.' if trial['spi'] is not None else
+                   'A matching workload and at least one deadline due at the checkpoint are needed.')
+    cpi_meaning = (percentage_change(trial['cpi'], 'The completion rate per occupied AMR minute')
+                   if trial['cpi'] is not None else 'The calculation needs occupied AMR time and completed baseline work.')
+    sla_meaning = 'Both runs need requests with deadlines due at the checkpoint.'
+    if trial['sla'] is not None and base['sla'] is not None:
+        change = (trial['sla'] - base['sla']) * 100
+        sla_meaning = 'On-time delivery matched the baseline.' if abs(change) < .05 else (
+            f'On-time delivery was {abs(change):.1f} percentage points {"higher" if change > 0 else "lower"}.')
+    wait_meaning = (percentage_change(trial['wait_ratio'], '95th-percentile lift wait')
+                    if trial['wait_ratio'] is not None else 'A wait ratio needs a positive baseline wait and completed requests in both runs.')
+    funnel_meaning = ('Share of checked journeys that visited the required floor and used selected lifts on rides touching it.'
+                      if comparison['scope'] else 'A saved departure floor, required floor and lift selection are needed.')
+    indices = pd.DataFrame([
+        ('Delivery schedule index (SPI-style)', display(base['spi'], '.2f'), display(trial['spi'], '.2f'), spi_meaning),
+        ('AMR time efficiency (CPI-style)', display(base['cpi'], '.2f'), display(trial['cpi'], '.2f'), cpi_meaning),
+        ('On-time delivery', sla(base), sla(trial), sla_meaning),
+        ('Lift wait ratio (P95)', wait(base), wait(trial), wait_meaning),
+        ('Funnel compliance', funnel(base), funnel(trial), funnel_meaning),
+    ], columns=['Index', 'Baseline', 'Scenario', 'What the scenario result means'])
+    story += [Spacer(1, 8), table_from_df(indices, [57*mm, 32*mm, 32*mm, 120*mm], styles, format_values=False)]
+    story.append(Paragraph('SPI uses requests with recorded deadlines. CPI credits each completion with the baseline’s '
+        'average occupied AMR minutes per completion. Occupied time includes active assignments, empty travel, '
+        'waiting and charging, with shared minutes counted once per AMR. Lift waiting includes waiting while the car '
+        'repositions and includes zero-wait completions in the percentile. Funnel compliance uses confirmed, '
+        'reconstructable journeys. Journeys carrying work with a recorded route profile are exempt.', styles['BodyText']))
+    metrics = [('requests', 'Recorded requests'), ('completed', 'Completed requests'), ('due', 'Requests due with a deadline'),
+               ('no_deadline', 'Requests without a deadline'), ('failed', 'Failed requests'),
+               ('overdue_unfinished', 'Overdue unfinished requests'), ('route_failures', 'Logged route failures'),
+               ('busy', 'Occupied AMR minutes')]
+    if comparison['scope']:
+        metrics += [('checked', 'Funnel journeys checked'), ('exempt', 'Route-profile exemptions'),
+                    ('unverified', 'Funnel journeys with insufficient evidence')]
+    counts = pd.DataFrame([(label, display(base[key], ',.1f' if key == 'busy' else ','),
+                           display(trial[key], ',.1f' if key == 'busy' else ',')) for key, label in metrics],
+                          columns=['Observation', 'Baseline', 'Scenario'])
+    story += [Spacer(1, 8), table_from_df(counts, [100*mm, 48*mm, 48*mm], styles, format_values=False)]
+
+    base_streams, trial_streams = comparison['baseline_streams'], comparison['scenario_streams']
+    if base_streams or trial_streams:
+        rows = []
+        for stream in sorted(base_streams.keys() | trial_streams.keys()):
+            values = []
+            for side in (base_streams, trial_streams):
+                counts = side.get(stream, {})
+                due = counts.get('due', 0)
+                on_time = counts.get('on_time', 0)
+                values.append(f'{on_time / due:.1%} ({fraction(on_time, due)})' if due else 'Unavailable')
+            rows.append((stream, *values))
+        streams = pd.DataFrame(rows, columns=['On-time delivery by stream', 'Baseline', 'Scenario'])
+        story += [Spacer(1, 8), table_from_df(streams, [100*mm, 48*mm, 48*mm], styles, format_values=False)]
+
+
 def build_report(
     results: Dict[str, pd.DataFrame],
     csv_path: Path,
@@ -1617,6 +1775,11 @@ def build_report(
     include_drawings: bool = True,
     report_sections: Optional[Sequence[str]] = None,
     report_title: str = "AMR Simulation Performance Report",
+    lift_chart_day=None,
+    lift_chart_bin_minutes=30,
+    lift_chart_include_reposition=True,
+    lift_chart_config=None,
+    lift_chart_lift_ids=None,
 ) -> None:
     styles = make_styles()
     selected_section_order = normalise_report_sections(report_sections)
@@ -1644,6 +1807,22 @@ def build_report(
     report_progress(0, 10, "Preparing report")
 
     story = SectionedStory(selected_section_order)
+    if 'lift_performance_comparison' in selected_section_ids:
+        if not results.get('lift_performance_comparison'):
+            raise ValueError('Choose a completed baseline run in the project Report panel.')
+        story.section('lift_performance_comparison')
+        append_performance_comparison(story, results['lift_performance_comparison'], styles)
+    if 'human_contingency' in selected_section_ids:
+        if not results.get('human_contingency'):
+            raise ValueError('Choose a saved human contingency study in the project report panel.')
+        from amr_contingency_report import append_contingency_story
+        story.section('human_contingency')
+        append_contingency_story(story, results['human_contingency'], styles)
+    if 'stress_tests' in selected_section_ids:
+        if not results.get('stress_tests', {}).get('studies'):
+            raise ValueError('Choose saved stress-test trials in the project report panel.')
+        from amr_report_stress import append_stress_story
+        append_stress_story(story, results['stress_tests'], styles)
     schedule_story = []
 
     # --- START front page ---
@@ -2458,6 +2637,30 @@ def build_report(
 
     # --- END Lift usage Summary ---
 
+    story.section('lift_movements_by_level')
+    if 'lift_movements_by_level' in selected_section_ids:
+        story.append(Paragraph('Lift movements by level', styles['Section']))
+        levels = results.get('lift_movements_by_level', pd.DataFrame())
+        trips = int(levels['Arrivals'].sum()) if not levels.empty else 0
+        if trips:
+            trip_label = 'trip' if trips == 1 else 'trips'
+            story.append(Paragraph(
+                f'The run recorded {trips:,} lift {trip_label}. Counts include AMR transfers and empty lift repositioning. '
+                'A trip counts once at each level it departs, reaches or passes through. '
+                'The same trip can contribute to several level totals.', styles['BodyText']))
+            display = levels.copy()
+            for column in display.columns[1:]:
+                display[column] = display[column].map(lambda count: f'{count:,}')
+            story += [Spacer(1, 8), table_from_df(display, [28*mm, 31*mm, 34*mm, 39*mm, 42*mm], styles,
+                                                  right_align=[1, 2, 3, 4])]
+        else:
+            story.append(Paragraph('No vertical lift trips with known floor endpoints were recorded.', styles['BodyText']))
+        excluded = results.get('lift_movements_without_levels', 0)
+        if excluded:
+            story += [Spacer(1, 8), Paragraph(
+                f'Movement records excluded for lacking two distinct numeric floor endpoints ({excluded:,}).',
+                styles['BodyText'])]
+
     # --- START Lift usage profile graph ---
 
     story.section("lift_usage_profile")
@@ -2484,6 +2687,20 @@ def build_report(
         story.append(LiftUsageProfileChart(lift_profile_df, chart_width, chart_height))
 
     # --- END Lift usage profile graph ---
+
+    story.section('lift_movement_stacks')
+    if 'lift_movement_stacks' in selected_section_ids:
+        from amr_lift_movement_plot import append_stacked_charts
+        append_stacked_charts(story, results, styles, doc, config=lift_chart_config,
+            day=lift_chart_day, interval_minutes=lift_chart_bin_minutes,
+            include_reposition=lift_chart_include_reposition,lift_ids=lift_chart_lift_ids)
+
+    story.section('lift_movement_daily')
+    if 'lift_movement_daily' in selected_section_ids:
+        from amr_lift_movement_plot import append_stacked_charts
+        append_stacked_charts(story, results, styles, doc, config=lift_chart_config,
+            day=lift_chart_day, interval_minutes=lift_chart_bin_minutes,
+            include_reposition=lift_chart_include_reposition,lift_ids=lift_chart_lift_ids,daily=True)
 
     story.section("journey_flows")
     observation = results.get("journey_observation", {})
@@ -3578,6 +3795,7 @@ def build_report(
             f"Preparing heatmaps using {workers} worker(s)",
         )
 
+        drawing_cache = DrawingPreparationCache()
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
                 executor.submit(
@@ -3586,6 +3804,7 @@ def build_report(
                     floor_df,
                     floor_dxf_map,
                     include_drawings,
+                    drawing_cache,
                 ): floor
                 for floor, floor_df in grouped_floor_dfs.items()
             }

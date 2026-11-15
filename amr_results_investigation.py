@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from contextlib import closing
 import json
 import math
 import re
@@ -57,6 +58,10 @@ def resolve_log(path):
     path = Path(path)
     if not path.is_dir():
         return path
+    manifest = path / 'run_manifest.json'
+    if manifest.is_file() and json.loads(manifest.read_text(encoding='utf-8-sig')).get('canonical_events'):
+        from amr_run_review import verified_events
+        return verified_events(path, allow_partial=True)[2]
     # Prefer the full log in this run folder, including after a folder move.
     for name in ('simulation_steps.csv', 'verbose.csv', 'visualiser_steps.csv'):
         if (path / name).is_file():
@@ -71,9 +76,27 @@ def resolve_log(path):
     raise ValueError('No simulation event CSV was found in this run folder.')
 
 
-def load_investigation(path):
+def _investigation_rows(source):
+    if source.suffix == '.sqlite':
+        from amr_event_store import EventStore, iter_event_text
+        store = EventStore(source, readonly=True)
+        try:
+            if len(store) > MAX_EVENTS:
+                raise ValueError(f'Log exceeds {MAX_EVENTS:,} events; nothing has been silently truncated.')
+        finally:
+            store.close()
+        yield from iter_event_text(source)
+    else:
+        with source.open(newline='', encoding='utf-8-sig') as stream:
+            reader = csv.DictReader(stream)
+            if not ({'event_type', 'segment_type'} & set(reader.fieldnames or [])):
+                raise ValueError('Select an event/segment CSV, not an aggregate report table.')
+            yield from reader
+
+
+def load_investigation(path, *, cancel=None, progress=None):
     source = resolve_log(path)
-    if source.stat().st_size > MAX_LOG_BYTES:
+    if source.suffix != '.sqlite' and source.stat().st_size > MAX_LOG_BYTES:
         raise ValueError('This investigation viewer supports logs up to 300 MiB. The file has not been truncated.')
     digest = file_hash(source)
     findings, metadata, frozen, simulation_mode = [], {}, None, None
@@ -84,9 +107,18 @@ def load_investigation(path):
             findings.append('Log checksum differs from its run evidence. Frozen inputs and final summary are not trusted.')
         elif data.get('config_sha256') != config_hash(data.get('frozen_inputs')):
             findings.append('Frozen input checksum does not match. Input evidence and final summary are not trusted.')
-        elif data.get('schema_version') != 1:
+        elif data.get('schema_version') != (2 if source.suffix == '.sqlite' else 1):
             findings.append('Unsupported run-evidence version. Treating this as an unverified log.')
         else:
+            if source.suffix == '.sqlite':
+                from amr_event_store import EventStore
+                store = EventStore(source, readonly=True)
+                try:
+                    if data.get('storage') != dict(format='sqlite_sparse_events', version=store.format_version,
+                                                   event_count=len(store)):
+                        raise ValueError('Compact event counts or format do not match the evidence')
+                finally:
+                    store.close()
             try:
                 simulation_mode = verified_simulation_mode(data, data['frozen_inputs'])
             except ValueError:
@@ -95,7 +127,7 @@ def load_investigation(path):
                 findings.append('Legacy simulation mode cannot be resolved. Input evidence and final summary are not trusted.')
             else:
                 metadata, frozen = data, data['frozen_inputs']
-            if (data.get('software') or {}).get('scope_version') != 2:
+            if (data.get('software') or {}).get('scope_version') not in (2, 3):
                 findings.append('Legacy or unknown software fingerprint scope: application source coverage is incomplete or unverified. Recorded results remain available.')
     else:
         findings.append('No bound run-evidence sidecar. Legacy log: completeness and software version are unknown.')
@@ -113,6 +145,25 @@ def load_investigation(path):
                         raise
                     findings.append('Legacy simulation mode cannot be resolved from the saved snapshot.')
                 findings.append('Legacy launcher input snapshot verified against its manifest; the log itself is not bound to that snapshot.')
+    return _load_investigation_rows(_investigation_rows(source), source=source, digest=digest,
+        metadata=metadata, frozen=frozen, findings=findings, simulation_mode=simulation_mode,
+        verify_source=lambda: file_hash(source) == digest, cancel=cancel, progress=progress)
+
+
+def load_memory_investigation(run, *, cancel=None, progress=None):
+    from amr_event_store import iter_store_event_text
+    metadata = run.require_reviewable()
+    frozen = metadata['frozen_inputs']
+    with run.using_store(cancel) as store:
+        if len(store) > MAX_EVENTS:
+            raise ValueError(f'Log exceeds {MAX_EVENTS:,} events; nothing has been silently truncated.')
+        return _load_investigation_rows(iter_store_event_text(store), source=run.name, digest='',
+            metadata=metadata, frozen=frozen, findings=[],
+            simulation_mode=verified_simulation_mode(metadata, frozen), cancel=cancel, progress=progress)
+
+
+def _load_investigation_rows(rows, *, source, digest, metadata, frozen, findings,
+                             simulation_mode, verify_source=None, cancel=None, progress=None):
     start = None
     if frozen:
         try:
@@ -121,17 +172,20 @@ def load_investigation(path):
             pass
 
     events, seen = [], {}
-    with source.open(newline='', encoding='utf-8-sig') as stream:
-        reader = csv.DictReader(stream)
-        if not ({'event_type', 'segment_type'} & set(reader.fieldnames or [])):
-            raise ValueError('Select an event/segment CSV, not an aggregate report table.')
+    with closing(rows) as reader:
         for line, raw in enumerate(reader, 2):
+            if cancel and cancel():
+                raise InterruptedError('Investigation loading cancelled')
+            if progress and line % 1000 == 0:
+                progress(dict(phase='Loading investigation events', events=line - 1))
             if len(events) >= MAX_EVENTS:
                 raise ValueError(f'Log exceeds {MAX_EVENTS:,} events; nothing has been silently truncated.')
             if None in raw:
                 raise ValueError(f'Malformed CSV row {line}: more values than columns.')
             row = {k: v or '' for k, v in raw.items()}
             native = row.get('event_id', '')
+            if not native and verify_source is None:
+                raise ValueError(f'Row {line} has no event identity.')
             eid = native or f'legacy:{digest[:20]}:{line}'
             if eid in seen:
                 if row != seen[eid]:
@@ -168,7 +222,7 @@ def load_investigation(path):
                            'duration_seconds': number(row.get('duration_sec')),
                            'wait_seconds': number(row.get('wait_time_sec')),
                            'row': row})
-    if file_hash(source) != digest:
+    if verify_source is not None and not verify_source():
         raise ValueError('The log changed while it was being read. Wait for the run to finish and reopen it.')
     events.sort(key=lambda e: (e['time_seconds'] is None, e['time_seconds'] or 0, e['source_line']))
     complete_evidence = bool(metadata and metadata.get('run_status') == 'finished'

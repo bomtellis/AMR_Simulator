@@ -201,6 +201,10 @@ class CadWorkbench(QObject):
         self.edit_menu.addAction(self.action('Clear selection', editor.clear_topology_selection, 'select',
                                             'Clear graph selections without editing objects.'))
         self.view_menu = editor.menuBar().addMenu('&View')
+        self.study_menu = editor.menuBar().addMenu('&Studies')
+        self.human_contingency_action = self.action('Human contingency study…', editor.show_human_contingency_study,
+            'simulate', 'Calculate human delivery shifts for dedicated and shared service teams.')
+        self.study_menu.addAction(self.human_contingency_action)
         self.view_menu.addAction(editor.cad_toolbar.fit_action)
         self.fit_selection_action = self.action('Zoom to selection', editor.fit_selection, 'fit',
             'Fit selected points, corridor endpoints and location boundaries on the current floor. Drawing underlays are excluded.')

@@ -77,6 +77,16 @@ def parse_args():
         "--lift-csv-only", action="store_true",
         help="Export only lift travel/destinations CSV, without generating a PDF or other tables.",
     )
+    parser.add_argument('--third-party-lift-csv', help='Export one lift in the third-party format and skip PDF generation')
+    parser.add_argument('--third-party-lifts-dir', help='Export every lift to separate CSVs in a new folder and skip PDF generation')
+    parser.add_argument('--third-party-lift-xlsx', help='Export all lifts and all trips to an Excel table with a concatenation formula')
+    parser.add_argument('--lift-charts-xlsx', help='Export per-lift stacked purpose charts with Excel day selectors')
+    parser.add_argument('--lift-chart-day', help='Initial Excel/PDF day: YYYY-MM-DD or Day N; default All days')
+    parser.add_argument('--lift-chart-lift-id', action='append', help='Include this lift in PDF charts; repeat for multiple lifts. Default all lifts. Does not affect Excel.')
+    parser.add_argument('--lift-chart-bin-minutes', type=int, choices=[5,15,30,60], default=30)
+    parser.add_argument('--lift-chart-exclude-reposition', action='store_true', help='Initially exclude empty lift repositioning from charts')
+    parser.add_argument('--lift-id', help='Lift identifier for the third-party export')
+    parser.add_argument('--include-lift-reposition', action='store_true', help='Include empty reposition movements in the third-party export')
     parser.add_argument('--department-review-dir', help='Export separate department review files per category into this folder.')
     parser.add_argument('--department-review-formats', choices=['both', 'pdf', 'xlsx'], default='both',
                         help='Department review formats: PDF and Excel by default.')

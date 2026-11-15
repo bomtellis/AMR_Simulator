@@ -1,0 +1,64 @@
+Failed to find real location of C:\Users\tombe\AppData\Local\Programs\Python\Python313\python.exe
+test_baseline_failure_opens_results_with_actionable_evidence (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_baseline_failure_opens_results_with_actionable_evidence) ... ok
+test_baseline_progress_is_visible_when_overall_rounds_to_zero (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_baseline_progress_is_visible_when_overall_rounds_to_zero) ... ok
+test_bulk_asset_actions_remain_locked_while_study_runs (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_bulk_asset_actions_remain_locked_while_study_runs) ... ok
+test_bulk_buttons_apply_to_collapsed_category_and_individual_row (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_bulk_buttons_apply_to_collapsed_category_and_individual_row) ... ok
+test_categories_remain_visible_after_application_theme_polishing (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_categories_remain_visible_after_application_theme_polishing) ... ok
+test_category_checkbox_changes_only_its_category_when_not_selected (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_category_checkbox_changes_only_its_category_when_not_selected) ... ok
+test_ctrl_shift_selection_and_space_toggle_rows_together (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_ctrl_shift_selection_and_space_toggle_rows_together) ... ok
+test_dated_events_remain_editable_and_can_switch_to_daily (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_dated_events_remain_editable_and_can_switch_to_daily) ... ok
+test_first_open_displays_categories_and_saved_choices_without_reopening (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_first_open_displays_categories_and_saved_choices_without_reopening) ... ok
+test_fresh_setup_only_runs_ticked_assets_and_preserves_them_on_reopen (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_fresh_setup_only_runs_ticked_assets_and_preserves_them_on_reopen) ... ok
+test_grouped_assets_round_trip_in_canonical_study_order (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_grouped_assets_round_trip_in_canonical_study_order) ... ok
+test_investigation_and_playback_use_selected_evidence (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_investigation_and_playback_use_selected_evidence) ... ok
+test_loaded_timing_precision_survives_display_and_user_edits (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_loaded_timing_precision_survives_display_and_user_edits) ... ok
+test_manual_dialog_preserves_stress_settings_and_launches_entry (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_manual_dialog_preserves_stress_settings_and_launches_entry) ... ok
+test_refresh_added_assets_preserves_exclusions_and_edited_settings (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_refresh_added_assets_preserves_exclusions_and_edited_settings) ... ok
+test_refresh_recovers_empty_tree_from_current_assets_and_loaded_choices (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_refresh_recovers_empty_tree_from_current_assets_and_loaded_choices) ... ok
+test_reopening_empty_dialog_populates_current_project_assets (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_reopening_empty_dialog_populates_current_project_assets) ... ok
+test_results_corridor_highlight_and_save_unique_editable_scenario (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_results_corridor_highlight_and_save_unique_editable_scenario) ... ok
+test_reused_normal_run_supports_review_and_shows_original_evidence (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_reused_normal_run_supports_review_and_shows_original_evidence) ... ok
+test_saved_physical_blockage_can_edit_reverse_authored_edge (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_saved_physical_blockage_can_edit_reverse_authored_edge) ... ok
+test_selected_checkbox_toggles_multiple_rows_and_preserves_selection (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_selected_checkbox_toggles_multiple_rows_and_preserves_selection) ... ok
+test_settings_persist_through_manual_editor_and_normalization (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_settings_persist_through_manual_editor_and_normalization) ... ok
+test_stop_retains_evidence_and_resume_rejects_changed_setup (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_stop_retains_evidence_and_resume_rejects_changed_setup) ... Timeout (0:00:45)!
+Thread 0x000095c8 (most recent call first):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scenario_stress_ui.py", line 515 in test_stop_retains_evidence_and_resume_rejects_changed_setup
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\case.py", line 606 in _callTestMethod
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\case.py", line 651 in run
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\case.py", line 707 in __call__
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\suite.py", line 122 in run
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\suite.py", line 84 in __call__
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\suite.py", line 122 in run
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\suite.py", line 84 in __call__
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\suite.py", line 122 in run
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\suite.py", line 84 in __call__
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\runner.py", line 240 in run
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\main.py", line 270 in runTests
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\unittest\main.py", line 104 in __init__
+  File "<string>", line 1 in <module>
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_scenario_stress_ui.py", line 510, in tick
+    elif len(read_json(self.dialog.path)['results']) >= 2:
+             ~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tombe\Documents\AMR_Simulator\amr_project_runs.py", line 25, in read_json
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+                      ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 546, in read_text
+    return PathBase.read_text(self, encoding, errors, newline)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\pathlib\_abc.py", line 632, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\pathlib\_local.py", line 537, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+PermissionError: [Errno 13] Permission denied: 'C:\\Users\\tombe\\Documents\\AMR_Simulator\\tmp\\output-size-tests\\tmph8iblxue\\cancel.stress.json'
+ok
+test_trial_plan_updates_when_corridors_are_unticked (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_trial_plan_updates_when_corridors_are_unticked) ... ok
+test_worker_runs_off_ui_thread_and_locks_project (tests.test_scenario_stress_ui.ScenarioStressUiTests.test_worker_runs_off_ui_thread_and_locks_project) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 55.374s
+
+OK

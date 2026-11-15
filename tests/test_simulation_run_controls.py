@@ -35,6 +35,8 @@ class SimulationRunControlTests(unittest.TestCase):
         self.assertEqual(direct.clock.start_datetime, imported.clock.start_datetime)
         self.assertEqual(direct.clock.tick_rate, imported.clock.tick_rate)
         self.assertEqual(direct.max_assignments_per_tick, imported.max_assignments_per_tick)
+        self.assertEqual(3600, direct.max_task_deferral_sec)
+        self.assertEqual(direct.max_task_deferral_sec, imported.max_task_deferral_sec)
 
     def test_import_preserves_release_spacing_alias(self):
         config = reference_config()
@@ -152,6 +154,18 @@ class SimulationRunControlTests(unittest.TestCase):
             config['simulation'].update(precompute_static_routes=enabled, route_precompute_max_pairs=limit)
             sim = Simulation(config)
             self.assertEqual(10, sim._shortest_path_same_floor(0, 'A', 'B')['distance_m'])
+
+    def test_static_demand_after_end_is_excluded_and_in_period_work_drains(self):
+        config = reference_config()
+        config['simulation']['end_datetime'] = '2026-01-05T00:00:01'
+        config['tasks'] = [dict(id=identity, pickup='A', dropoff='B', payload='Box', release_time=release)
+                           for identity, release in [('IN', 1), ('OUT', 2)]]
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim = Simulation(config)
+            sim.run()
+        self.assertEqual(['IN'], [task['task_id'] for task in sim.completed_task_records])
+        self.assertFalse(sim.failed_tasks)
+        self.assertAlmostEqual(10, sim.current_time)
 
 
 if __name__ == '__main__':

@@ -1,0 +1,12 @@
+{
+  "mode": "fixed",
+  "initialisation_sec": 1.5279008999932557,
+  "execution_sec": 2.3559357000049204,
+  "outcome": {
+    "completed": 185,
+    "failed": [],
+    "pending": [],
+    "end": 18103.59905641422,
+    "records_sha256": "27b5f06e674f4df93ad19112083b34ee1e135f52d5fe6619550b8b81d8de418b"
+  }
+}

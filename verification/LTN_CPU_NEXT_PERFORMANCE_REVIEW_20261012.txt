@@ -1,0 +1,200 @@
+LTN IMPROVED CPU SIMULATION — PROFILE AND NEXT OPPORTUNITIES
+12 October 2026
+
+The current improved engine completes the unchanged seven-day LTN model in
+157.688 seconds in a fresh unprofiled run. The preceding same-source measurement
+was 160.105 seconds; the preserved original engine took 357.453 seconds.
+The new measurement is about 55.9% below that original runtime.
+
+A separately executed, isolated stronger lift-bound prototype completed in
+132.649 seconds: 25.039 seconds / 15.88% below this turn's control. Full normalised
+task records, operational event stream and final resource/robot/payload state
+match the verified improved engine exactly. This is the first recommendation.
+Production application modules and project inputs were not changed this turn.
+
+MEASUREMENT AND INTEGRITY
+
+Period: 1 January 2026 05:00 through 8 January 2026 05:00.
+Backend/mode: CPU Simple, 22 robots, eight lifts, six floors.
+Original demand, inventory, charging, lift wear/repair, returns and 20-minute
+deferral settings were used. OMP_NUM_THREADS, OPENBLAS_NUM_THREADS,
+MKL_NUM_THREADS and NUMEXPR_NUM_THREADS were 1; Python's GIL is enabled.
+
+                                Profile capture      Unprofiled control
+Total, including evidence seal     600.149 s              157.688 s
+Initialisation                       5.733 s                1.555 s
+Simulation execution               591.306 s              154.716 s
+Evidence finalisation                3.110 s                1.417 s
+CSV expansion, separately timed      5.667 s                5.728 s
+
+The profiler captured 2,280,636,675 calls, against 5,381,421,664 in the earlier
+profile. Profiler instrumentation substantially increases runtime: use the
+unprofiled control for user-facing timings. Cumulative percentages below include
+callees and overlap; they must not be added or interpreted as predicted savings.
+The percentages describe the improved production engine before the prototype.
+
+The profile, control, prototype, prior improved run and frozen original all
+match on 2,935 completed tasks, 4,946 failed IDs, no pending tasks, full task
+records, event stream, final operational state and end time 607262.283551107.
+Existing operational failures were preserved rather than removed for speed.
+
+Input SHA-256:
+e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b
+Current/unchanged application source SHA-256:
+f966786d8b81209b58f719074786e5e73184704342c26920b9091e0034cb4d48
+Task-record SHA-256:
+aae86a5da221b659e40a25649fe03172665ee70e0f5f58ad16f9c49b45d4cae4
+Normalised event-stream SHA-256:
+d630380e3e6d49e004d26a6ae3187c7110e27f75e95c46f875ea7a7bfe414ebb
+Operational final-state SHA-256:
+03a0b49ecc73a9fad54a620cea25cfcc32287cf82b28ae3bb3fa998cf7ac51f5
+
+REMAINING HOTSPOTS
+
+Function                              Calls      Own seconds   Inclusive share
+_nearest_compatible_lift_plan          190,749          7.428          70.90%
+_same_floor_segments                 2,346,353        112.421          64.64%
+_find_next_edge_start               28,774,315         41.300          18.53%
+_corridor_lane_capacity             28,774,315         21.957           7.62%
+_directed_no_overtake_start         28,903,507         27.159           7.60%
+_edge_recent_demand                 28,774,315         18.311           5.87%
+_find_next_node_arrival             28,774,315         17.560           5.60%
+_annotate_delivery_motor_energy        113,963          4.981           4.30%
+_make_aggregate_payload             2,320,680          5.153           2.85%
+_shortest_path_same_floor           2,408,439          4.866           2.43%
+_find_lift_journey_slot             1,287,566          2.603           2.10%
+_create_idle_return_task               298,024          0.071           0.92%
+
+98% of corridor-leg calls originate in lift alternatives. Each leg averages
+about 12.3 edge visits. Static path search is already cached; repeatedly timing
+those paths and constructing candidate segments now dominates. Lift slot lookup
+and idle returns have fallen from 7.27% and 34.06% of the earlier profile to
+2.10% and 0.92%, respectively, so further work there has lower priority.
+
+RECOMMENDATIONS, IN IMPLEMENTATION ORDER
+
+1. Strengthen the exact Simple-mode lift bound — measured opportunity.
+   simulator.py:9565, _nearest_compatible_lift_plan.
+
+   The production guard rejects an alternative when lift_finish alone cannot
+   beat the best complete finish. Add the outgoing route's free-flow duration
+   to that lower bound before doing detailed corridor timing. The isolated
+   prototype skipped 568,272 additional outgoing evaluations from 816,303 bound
+   tests. It cached 1,239 route/speed bounds and reduced wall time by 15.88%.
+
+   The prototype computes the bound using the original edge order and division/
+   accumulation operations, avoiding a slightly different rounded total from
+   dividing the shortest-path aggregate distance. It retains route objects so
+   cached identities cannot be recycled. It applies only in Simple mode with
+   scenario routing inactive and congestion settings that cannot accelerate a
+   robot above free-flow speed. Existing lift iteration and strict winner/tie
+   ordering remain intact. Detailed and scenario evaluations are unchanged.
+
+   This is one fresh-process control/prototype pair, not a confidence interval
+   or universal regression certification. Before production implementation,
+   verify tied finishes, rounding boundaries, restricted/width-limited paths,
+   traffic waits, repairs, charging, rollback and all 47 saved scenario fixtures.
+
+2. Prepare corridor descriptors once instead of rebuilding per-edge keys.
+   simulator.py:7753 and :9134.
+
+   Lane capacity is already cached, but 28.8 million calls still recreate edge/
+   robot/payload keys, obtain object identities and normalise orientation. A
+   prepared route descriptor can carry directed/physical edge keys, node names,
+   distance, lane capacity and reporting fields for a robot/payload/orientation.
+   Resolve invariant speed and orientation once per leg or descriptor.
+
+   Cache only static data, with explicit dependency/invalidation rules for
+   graph, dimensions, speed and profile changes. Congestion, reservations,
+   people, scenarios and departure time remain dynamic. This is an opportunity
+   inside the 7.62% lane-capacity cost and corridor own time, not a measured
+   whole-run speedup. The new pruning reduces its workload too.
+
+3. Use compact exact candidate routes; defer full reporting dictionaries.
+   simulator.py:10633, :9134 and :9516.
+
+   There are 137,210 non-reserving task estimates, and task movement requests
+   full segments even for lift alternatives that lose. Separate exact timing/
+   feasibility from rich segment formatting. Preserve compact per-edge durations,
+   waits, load transitions and approach-node candidates, then build the full
+   evidence representation for selected/committed routes.
+
+   Corridor own time is 18.77% of the profile, but includes necessary arithmetic
+   and control flow; it is not all removable formatting. Existing energy checks,
+   waiting-node selection, inventory decisions, charging, wash legs and action
+   times consume segment data. Simply switching collect_segments off, or enabling
+   fast_assignment_estimates, would not preserve the current behaviour.
+
+4. Reuse aggregate payload/power until onboard load changes.
+   simulator.py:2127 and :1906.
+
+   Energy annotation constructs the same aggregate payload for every loaded
+   corridor segment: 2.32 million times. Recalculate the aggregate and traction
+   power when a pickup/dropoff changes the onboard set; reuse it between those
+   transitions. Keep each segment's original energy formula and sum order to
+   preserve exact battery and reserve decisions. Cover multi-stop load changes,
+   empty legs, wash transfers and returns. Aggregate construction alone occupies
+   2.85% inclusive; this is a relatively contained improvement.
+
+5. Share reservation views within an exact corridor-timing evaluator.
+   simulator.py:8757, :8773, :8811, :8911 and :7989.
+
+   Each edge dispatches separately to recent-demand, occupancy, FIFO and node
+   queries. The profile records 115.7 million reservation-scan calls. Share
+   resolved reservation lists/bounds and reduce repeated conversions and
+   function dispatch, with explicit empty-history paths where appropriate.
+
+   The queries have different windows and conflict rules. Preserve congestion
+   windows, lane limits, protected intervals, FIFO no-overtaking, nonmonotonic
+   interval ends and rollback. A combined evaluator must reproduce those rules;
+   replacing them with a distance-only estimate would change the simulation.
+
+6. Redesign estimate reuse before increasing cache size.
+   simulator.py:11139, :11181 and :11232.
+
+   All 137,210 cached-estimator lookups called the underlying estimator: zero
+   cache hits in this workload. There were 16,562 global invalidations, and the
+   cache key was constructed twice for every miss. A larger capacity alone is
+   unsupported by this evidence. Instrument why misses occur, then reuse static
+   prefixes/descriptors and consider dependency-scoped exact dynamic epochs.
+
+   Do not widen time buckets, coarsen battery values or remove reservation,
+   inventory, repair/health or scenario dependencies to create apparent hits.
+   The current lift estimate cache is used only without full segments, whereas
+   most assignment lift planning requests full segments.
+
+LOWER PRIORITY AND PRACTICAL LIMITS
+
+Initialisation/finalisation total about three unprofiled seconds. Replacing the
+shortest-path algorithm or tuning precomputation is unlikely to give the largest
+benefit now. Logging occupies 3.10% inclusive of profiled time; preserve complete
+evidence and journal rollback. Event-store rollback map rebuilding (end_stage)
+is another smaller opportunity after route work.
+
+This interpreter has the GIL enabled and the hot path consists mostly of Python
+loops, dictionaries and calls. More routing threads are not a measured speedup
+for this run; concurrent estimation also needs a careful state-mutation audit.
+A CPU native timing kernel could be investigated after the data layout and
+exact interfaces are stable, with Python as the differential reference. Parallel
+independent scenario/seed runs address study throughput, not this single-run
+dependency chain. No such changes were made or benchmarked this turn.
+
+ARTIFACTS / REPRODUCTION
+
+Structured findings: ltn-cpu-improved-review-20261012.json.
+Unprofiled control: ltn-cpu-improved-control-20261012.json.
+Raw profile/run: ltn-cpu-improved-profile-20261012.prof and .json.
+Function/caller breakdowns: ltn-cpu-improved-profile-20261012.summary.json
+and ltn-cpu-improved-profile-20261012.stats.txt.
+Isolated prototype: benchmark_next_lift_bound.py and
+ltn-cpu-next-lift-bound-20261012.json.
+
+The experimental JSON records the base application fingerprint plus separate
+method/harness hashes. Its software_sha256 alone does not identify the in-memory
+override. Production code was verified unchanged after all three runs.
+
+In repository PowerShell, with the thread environment above and fresh filenames:
+.\.venv\Scripts\python.exe verification/benchmark_computation.py --sample cpu --profile --output verification/new-profile.json
+.\.venv\Scripts\python.exe verification/analyse_cpu_profile.py verification/new-profile.prof
+.\.venv\Scripts\python.exe verification/benchmark_computation.py --sample cpu --output verification/new-control.json
+.\.venv\Scripts\python.exe verification/benchmark_next_lift_bound.py --output verification/new-bound-experiment.json

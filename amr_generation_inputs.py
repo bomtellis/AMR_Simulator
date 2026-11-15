@@ -232,6 +232,12 @@ def generation_input_findings(config):
         generation = obj(config['task_generation'], path)
         if generation is not None:
             flags(generation, path, {'enabled'})
+            if 'fm_logistics' in generation:
+                from amr_fm_logistics import validate_fm_settings
+                try:
+                    validate_fm_settings(generation['fm_logistics'])
+                except ValueError as exc:
+                    error(pointer(path, 'fm_logistics'), str(exc))
             # Zero is a retained legacy value; the simulator applies its 60 s minimum.
             number(generation, path, 'update_interval_sec')
             for name in ('staff_config', 'staff'):

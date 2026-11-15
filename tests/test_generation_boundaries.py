@@ -3,6 +3,7 @@
 These tests prove coverage, not exact-time dispatch between polling updates.
 """
 import contextlib
+from copy import deepcopy
 import datetime
 import io
 import unittest
@@ -50,6 +51,20 @@ class GenerationBoundaryTests(unittest.TestCase):
 
     def test_zero_duration_only_includes_start_time(self):
         self.assert_releases(self.run_case(0, ['00:00', '00:01']), [0])
+
+    def test_release_spacing_does_not_push_new_demand_past_end(self):
+        config = grouped_config()
+        config['simulation'].update(end_datetime='2026-01-05T00:01:00',
+                                    generated_task_release_stagger_sec=10)
+        groups = config['task_generation']['categories']['stores']['department_groups']
+        groups.append({**deepcopy(groups[0]), 'id': 'G2'})
+        with contextlib.redirect_stdout(io.StringIO()):
+            sim = Simulation(config, verbose=True)
+            sim.run()
+        releases = [r['sim_time_sec'] for r in sim.verbose_rows if r['event_type'] == 'task_released']
+        self.assertEqual([60, 60], releases)
+        self.assertEqual(2, len(sim.completed_task_records))
+        self.assertGreater(sim.current_time, 60)
 
 
 if __name__ == '__main__':

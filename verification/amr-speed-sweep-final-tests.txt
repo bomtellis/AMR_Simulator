@@ -1,0 +1,19 @@
+.C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\ezdxf\queryparser.py:50: PyparsingDeprecationWarning: 'addParseAction' deprecated - use 'add_parse_action'
+  number.addParseAction(lambda t: float(t[0]))  # convert to float
+C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\ezdxf\queryparser.py:51: PyparsingDeprecationWarning: 'addParseAction' deprecated - use 'add_parse_action'
+  string_ = quotedString.addParseAction(lambda t: t[0][1:-1])  # remove quotes
+C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\ezdxf\queryparser.py:57: PyparsingDeprecationWarning: 'oneOf' deprecated - use 'one_of'
+  Relation = oneOf(["==", "!=", "<", "<=", ">", ">=", "?", "!?"])
+C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\ezdxf\queryparser.py:63: PyparsingDeprecationWarning: 'setResultsName' deprecated - use 'set_results_name'
+  ).setResultsName("EntityQuery")
+C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\ezdxf\queryparser.py:65: PyparsingDeprecationWarning: 'infixNotation' deprecated - use 'infix_notation'
+  InfixBoolQuery = infixNotation(
+C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\ezdxf\queryparser.py:72: PyparsingDeprecationWarning: 'setResultsName' deprecated - use 'set_results_name'
+  ).setResultsName("AttribQuery")
+C:\Users\tombe\Documents\AMR_Simulator\.venv\Lib\site-packages\ezdxf\queryparser.py:74: PyparsingDeprecationWarning: 'setResultsName' deprecated - use 'set_results_name'
+  AttribQueryOptions = Literal("i").setResultsName("AttribQueryOptions")
+........
+----------------------------------------------------------------------
+Ran 9 tests in 27.643s
+
+OK

@@ -2,6 +2,15 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 
+class TransactionalEntity:
+    """Journal attribute replacements during a serial route commit."""
+    def __setattr__(self, name, value):
+        journal = self.__dict__.get('_reservation_journal')
+        if journal is not None and name != '_reservation_journal':
+            journal.remember_attributes(self, (name,))
+        object.__setattr__(self, name, value)
+
+
 @dataclass(order=True)
 class Event:
     time: float
@@ -151,7 +160,7 @@ class Task:
 
 
 @dataclass
-class Lift:
+class Lift(TransactionalEntity):
     id: str
     served_floors: List[int]
     speed_floors_per_sec: float
@@ -182,6 +191,9 @@ class Lift:
     failures_count: int = 0
     minimum_operational_health_percent: float = 20.0
     health_speed_penalty_at_zero: float = 0.5
+    transfer_timing_mode: str = 'fixed'
+    usage_mode: str = 'fm'
+    amr_access_windows: list = field(default_factory=list)
 
     def can_serve(self, floor_a: int, floor_b: int) -> bool:
         return floor_a in self.served_floors and floor_b in self.served_floors
@@ -230,7 +242,7 @@ class Lift:
 
 
 @dataclass
-class AMR:
+class AMR(TransactionalEntity):
     id: str
     payload_capacity_kg: float
     payload_length_capacity_m: float = 1.0
@@ -257,6 +269,9 @@ class AMR:
     is_charging: bool = False
     payload: str = ""
     payload_instance_id: str = ""
+
+    lift_entry_speed_m_per_sec: Optional[float] = None
+    lift_exit_speed_m_per_sec: Optional[float] = None
 
     def can_carry(self, payload: PayloadType, orientation: Optional[str] = None) -> bool:
         orientations = [orientation] if orientation else list(

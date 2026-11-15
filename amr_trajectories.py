@@ -9,6 +9,18 @@ import math
 EPS = 1e-10
 
 
+def normalise_angle_deg(value: float) -> float:
+    """Wrap a heading or angle difference to the interval [-180, 180)."""
+    return (float(value) + 180.0) % 360.0 - 180.0
+
+
+def angle_lerp_deg(start_deg: float, end_deg: float, frac: float) -> float:
+    """Interpolate along the shortest rotation, clamping the fraction to [0, 1]."""
+    frac = max(0.0, min(1.0, float(frac)))
+    delta = normalise_angle_deg(float(end_deg) - float(start_deg))
+    return float(start_deg) + (delta * frac)
+
+
 class TrajectoryError(ValueError):
     def __init__(self, reason, detail):
         self.reason = reason

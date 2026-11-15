@@ -45,7 +45,7 @@ class TaskDeferralTests(unittest.TestCase):
 
     def test_unlimited_preserves_long_wait(self):
         config = self.config()
-        del config["simulation"]["max_task_deferral_minutes"]
+        config["simulation"]["max_task_deferral_minutes"] = 0
         sim = Simulation(config, verbose=True)
         sim.amrs[0].available_time = 600
         sim.amrs[0].exchange_hold_until = 600

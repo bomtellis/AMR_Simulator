@@ -86,6 +86,7 @@ class ScenarioRecoveryTests(unittest.TestCase):
 
     def test_outage_beyond_horizon_remains_pending_not_failed(self):
         cfg = scenario(lift_config(),'lift',end='01:00')
+        cfg['simulation']['max_task_deferral_minutes'] = 0
         sim = self.run_case(cfg)
         self.assertFalse(sim.completed_task_records)
         self.assertFalse(sim.failed_tasks)

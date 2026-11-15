@@ -170,7 +170,7 @@ class Project:
         project._validate_external_results()
         return project
 
-    def _validate_external_results(self):
+    def _validate_external_results(self, *, project_path=None):
         settings = self.external_results
         if not isinstance(settings, dict) or settings.get("version") != 1 or not isinstance(settings.get("runs"), list):
             raise ValueError("Unsupported external-results settings")
@@ -202,7 +202,7 @@ class Project:
             if not isinstance(ref.get("name"), str):
                 raise ValueError("Invalid saved run name")
             locator(ref.get("location"))
-            location = self.resolve_results_location(ref['location'])
+            location = self.resolve_results_location(ref['location'], project_path=project_path)
             if location in locations:
                 raise ValueError("One results folder cannot represent two saved run identities")
             locations.add(location)
@@ -215,11 +215,12 @@ class Project:
         except ValueError:  # Different Windows drives cannot share a relative path.
             return {"relative": False, "path": str(directory)}
 
-    def resolve_results_location(self, location):
-        if self.path is None:
+    def resolve_results_location(self, location, *, project_path=None):
+        base = project_path or self.path
+        if base is None:
             raise ValueError("Save the project before linking results")
         path = Path(location['path'])
-        return (self.path.parent / path if location['relative'] else path).resolve()
+        return (Path(base).parent / path if location['relative'] else path).resolve()
 
     def results_root(self):
         if self.path is None:
@@ -249,12 +250,15 @@ class Project:
         """Persist an already inspected run, preserving its immutable identity."""
         if self.path is None:
             raise ValueError("Save the project before linking results")
+        self._save_external_results(self._run_settings(directory, manifest))
+
+    def _run_settings(self, directory, manifest, *, project_path=None):
         binding = manifest['project_binding']
         if binding['project_id'] != self.project_id or binding['run_key'] != manifest['run_key']:
             raise ValueError("Run belongs to a different project or identity")
         reference = {key: binding[key] for key in ('run_key', 'revision_id', 'revision_config_sha256')}
         reference.update(software_sha256=manifest['software']['sha256'], name=manifest['name'],
-                         location=self._location(directory))
+                         location=self._location(directory, project_path=project_path))
         settings = deepcopy(self.external_results)
         previous = next((r for r in settings['runs'] if r['run_key'] == reference['run_key']), None)
         if previous:
@@ -263,7 +267,7 @@ class Project:
                     raise ValueError("Relinked run does not match its saved revision/software identity")
             settings['runs'].remove(previous)
         settings['runs'].append(reference)
-        self._save_external_results(settings)
+        return settings
 
     def _pack_config(self, config, base_dir):
         if not isinstance(config, dict):
@@ -317,9 +321,9 @@ class Project:
             entry["filepath"] = str(path.resolve())
         return config
 
-    def _write(self, path):
-        self._validate_external_results()
+    def _write(self, path, *, exclusive=False):
         path = Path(path).resolve()
+        self._validate_external_results(project_path=self.path or path)
         if path.suffix.lower() != ".amrproj":
             raise ValueError("Project filenames must end in .amrproj")
         if path == self.path and (not path.exists() or digest(path.read_bytes()) != self._disk_hash):
@@ -352,7 +356,14 @@ class Project:
             if path == self.path and (not path.exists() or digest(path.read_bytes()) != self._disk_hash):
                 raise ValueError("Project changed during save; original was preserved")
             saved_hash = digest(Path(temporary).read_bytes())
-            os.replace(temporary, path)
+            if exclusive:
+                # Publish a new archive without racing an unrelated project at this path.
+                if os.name == 'nt':
+                    os.rename(temporary, path)
+                else:
+                    os.link(temporary, path)
+            else:
+                os.replace(temporary, path)
         finally:
             Path(temporary).unlink(missing_ok=True)
         self.path, self._disk_hash = path, saved_hash

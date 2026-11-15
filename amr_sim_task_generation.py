@@ -6,13 +6,15 @@ Automatic task generation for the AMR simulator.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import math
 from datetime import datetime, time as dt_time, timedelta
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from amr_sim_models import Location, PayloadType, Task
-from amr_sim_time_utils import SimulationClock
+from amr_sim_time_utils import SimulationClock, parse_hhmm_to_minutes
 from amr_generation_provenance import RuleTrace
+from amr_fm_logistics import category_policy, mark_task, planned_release
 from amr_staff_policy import resolve_staff_requirement
 
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -164,8 +166,8 @@ def _scheduled_times_from_cfg(cfg: dict) -> List[str]:
 
 
 def _timeframe_minutes_from_cfg(cfg: dict) -> Tuple[Optional[int], Optional[int]]:
-    start = _parse_hhmm_to_minutes(cfg.get("timeframe_start"), None)
-    end = _parse_hhmm_to_minutes(cfg.get("timeframe_end"), None)
+    start = parse_hhmm_to_minutes(cfg.get("timeframe_start"), None)
+    end = parse_hhmm_to_minutes(cfg.get("timeframe_end"), None)
     return start, end
 
 
@@ -211,9 +213,9 @@ def _normalise_global_staff_config(value: Optional[dict]) -> dict:
         incoming = incoming if isinstance(incoming, dict) else {}
         start_time = _clean_text(incoming.get("start_time", fallback["start_time"]))
         end_time = _clean_text(incoming.get("end_time", fallback["end_time"]))
-        if _parse_hhmm_to_minutes(start_time, None) is None:
+        if parse_hhmm_to_minutes(start_time, None) is None:
             start_time = fallback["start_time"]
-        if _parse_hhmm_to_minutes(end_time, None) is None:
+        if parse_hhmm_to_minutes(end_time, None) is None:
             end_time = fallback["end_time"]
         days = incoming.get("days_active", fallback["days_active"])
         if isinstance(days, str):
@@ -284,9 +286,9 @@ def _normalise_staff_weekly_hours(value) -> Dict[str, dict]:
         enabled = _as_bool(raw.get("enabled", False), False)
         start_time = _clean_text(raw.get("start_time", "09:00")) or "09:00"
         end_time = _clean_text(raw.get("end_time", "17:00")) or "17:00"
-        if _parse_hhmm_to_minutes(start_time, None) is None:
+        if parse_hhmm_to_minutes(start_time, None) is None:
             start_time = "09:00"
-        if _parse_hhmm_to_minutes(end_time, None) is None:
+        if parse_hhmm_to_minutes(end_time, None) is None:
             end_time = "17:00"
         clean[day_key] = {
             "enabled": enabled,
@@ -303,23 +305,6 @@ def _day_key_for_datetime(value: datetime) -> str:
 def _datetime_for_day_and_hhmm(day_start: datetime, hhmm: str) -> datetime:
     hour, minute = [int(x) for x in hhmm.split(":")[:2]]
     return datetime.combine(day_start.date(), dt_time(hour=hour, minute=minute))
-
-
-def _parse_hhmm_to_minutes(value, default: Optional[int] = None) -> Optional[int]:
-    text = _clean_text(value)
-    if not text:
-        return default
-    try:
-        parts = text.split(":")
-        hour = int(parts[0])
-        minute = int(parts[1]) if len(parts) > 1 else 0
-        if hour == 24 and minute == 0:
-            return 24 * 60
-        if 0 <= hour <= 23 and 0 <= minute <= 59:
-            return (hour * 60) + minute
-    except Exception:
-        return default
-    return default
 
 
 def _minutes_to_time(value: int) -> dt_time:
@@ -350,31 +335,66 @@ def _department_operating_periods_for_date(
 ) -> List[Tuple[datetime, datetime]]:
     if not bool(dept.get("enabled", True)):
         return []
-
     active_days = dept.get("days_active", []) or []
-    if active_days:
-        allowed = {_clean_text(x).lower() for x in active_days if _clean_text(x)}
-        if _day_key_for_datetime(day) not in allowed:
-            return []
+    # Content keys remain correct if a caller edits a department. Cached
+    # periods are immutable, and callers receive their own result list.
+    days_key = (tuple(_clean_text(x).lower() for x in active_days if _clean_text(x))
+                if active_days else None)
+    return list(_department_periods_cached(
+        days_key, dept.get('operating_start_time'), dept.get('operating_end_time'),
+        dept.get('hours_operated_per_day', 24), day, id(day.tzinfo), day.fold))
 
-    start_min = _department_operating_start_minutes(dept)
-    end_min = _department_operating_end_minutes(dept)
+
+@lru_cache(maxsize=8192, typed=True)
+def _department_periods_cached(active_days, start_time, end_time, hours, day,
+                               _timezone_identity, _fold):
+    # Equal instants can have different local dates/calendars. The retained day
+    # keeps its timezone alive, preventing identity reuse while cached.
+    if active_days:
+        if _day_key_for_datetime(day) not in active_days:
+            return ()
+    elif active_days is not None:
+        return ()  # An explicit nonempty allow-list containing no valid names.
+
+    from amr_generation_inputs import department_schedule_minutes
+    start_min, end_min = department_schedule_minutes(dict(
+        operating_start_time=start_time, operating_end_time=end_time,
+        hours_operated_per_day=hours))
     if end_min <= start_min:
         end_min += 24 * 60
 
     duration_min = max(0, end_min - start_min)
     if duration_min <= 0:
-        return []
+        return ()
 
     day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
     start_dt = day_start + timedelta(minutes=start_min)
     end_dt = day_start + timedelta(minutes=end_min)
-    return [(start_dt, end_dt)]
+    return ((start_dt, end_dt),)
+
+
+def _department_calendar_key(dept):
+    # Content-based keys preserve edits between calls and avoid caching any
+    # stock, task, completion or other state that can change during a trial.
+    return (bool(dept.get('enabled', True)), tuple(dept.get('days_active', []) or []),
+            *((type(value),value) for value in (dept.get('operating_start_time'),dept.get('operating_end_time'),
+                                                dept.get('hours_operated_per_day',24))))
+
+
+def _department_from_calendar_key(key):
+    return dict(zip(('enabled', 'days_active', 'operating_start_time',
+                     'operating_end_time', 'hours_operated_per_day'), (*key[:2],*(value for _,value in key[2:]))))
 
 
 def _department_is_open_at_datetime(dept: Optional[dict], value: datetime) -> bool:
     if not dept:
         return True
+    return _department_open_cached(_department_calendar_key(dept), value, id(value.tzinfo), value.fold)
+
+
+@lru_cache(maxsize=32768)
+def _department_open_cached(key, value, _timezone_identity, _fold):
+    dept = _department_from_calendar_key(key)
     for offset in (-1, 0):
         base_day = (value + timedelta(days=offset)).replace(
             hour=0, minute=0, second=0, microsecond=0
@@ -392,6 +412,13 @@ def _department_active_seconds_between(
         return max(0.0, (end_dt - start_dt).total_seconds())
     if end_dt <= start_dt:
         return 0.0
+    return _department_active_cached(_department_calendar_key(dept), start_dt, end_dt,
+                                    id(start_dt.tzinfo), start_dt.fold, id(end_dt.tzinfo), end_dt.fold)
+
+
+@lru_cache(maxsize=32768)
+def _department_active_cached(key, start_dt, end_dt, _start_timezone, _start_fold, _end_timezone, _end_fold):
+    dept = _department_from_calendar_key(key)
 
     total = 0.0
     cursor_day = (start_dt - timedelta(days=1)).replace(
@@ -417,6 +444,12 @@ def _next_department_open_datetime(
 ) -> Optional[datetime]:
     if not dept:
         return value
+    return _department_next_open_cached(_department_calendar_key(dept), value, id(value.tzinfo), value.fold)
+
+
+@lru_cache(maxsize=32768)
+def _department_next_open_cached(key, value, _timezone_identity, _fold):
+    dept = _department_from_calendar_key(key)
     if _department_is_open_at_datetime(dept, value):
         return value
 
@@ -549,6 +582,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         self._timeframe_group_members = self._build_timeframe_group_members() if prepare_runtime else {}
         self._timeframe_allocation_cache: Dict[tuple, Tuple[int, int]] = {}
         self._schedule_calendars: Dict[str, dict] = {}
+        self._fm_horizon = None
 
     def _next_task_id(self, category_key: str, department_id: str = "") -> str:
         self.task_counter += 1
@@ -1289,7 +1323,11 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             self._timeframe_allocation_cache[item_cache_key] = (offset, total)
             offset += count
 
-        return self._timeframe_allocation_cache.get(cache_key, (0, total))
+        result = self._timeframe_allocation_cache.get(cache_key, (0, total))
+        # Excluded members also have a stable allocation for this group/date.
+        # Retain their zero offset without rescanning the group on every poll.
+        self._timeframe_allocation_cache[cache_key] = result
+        return result
 
     def _staff_shift_definition(self, cfg: dict) -> Tuple[str, dict]:
         if not _as_bool(self.staff_config.get("enabled", True), True):
@@ -1323,10 +1361,10 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             day_cfg = weekly_hours.get(_day_key_for_datetime(base_day), {})
             if not _as_bool(day_cfg.get("enabled", False), False):
                 return None
-            start_minutes = _parse_hhmm_to_minutes(
+            start_minutes = parse_hhmm_to_minutes(
                 day_cfg.get("start_time"), None
             )
-            end_minutes = _parse_hhmm_to_minutes(day_cfg.get("end_time"), None)
+            end_minutes = parse_hhmm_to_minutes(day_cfg.get("end_time"), None)
         else:
             pattern_key, pattern = self._staff_shift_definition(cfg)
             active_days = {
@@ -1336,8 +1374,8 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             }
             if pattern_key != 'four_on_four_off_12h' and active_days and _day_key_for_datetime(base_day) not in active_days:
                 return None
-            start_minutes = _parse_hhmm_to_minutes(pattern.get("start_time"), None)
-            end_minutes = _parse_hhmm_to_minutes(pattern.get("end_time"), None)
+            start_minutes = parse_hhmm_to_minutes(pattern.get("start_time"), None)
+            end_minutes = parse_hhmm_to_minutes(pattern.get("end_time"), None)
         if start_minutes is None or end_minutes is None or start_minutes == end_minutes:
             return None
         if end_minutes <= start_minutes:
@@ -1877,6 +1915,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             return []
         if end_minutes <= start_minutes:
             end_minutes += 24 * 60
+        fm_slot = f"timeframe/{cfg.get('timeframe_start', '')}/{cfg.get('timeframe_end', '')}"
 
         multiple = max(
             1,
@@ -1971,7 +2010,17 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                         if diagnostics is not None:
                             diagnostics.add('No department opening was found for a planned release.')
                         continue
-                    if release_time < 0 or original_release_time > now:
+                    native_release = release_time
+                    timing = None
+                    if release_time < deadline_time and self._instance_is_active(instance, release_time):
+                        timing = self._fm_release(
+                            instance, fm_slot, timeframe_start_dt.date().isoformat(), release_time,
+                            work_periods=work_periods, native_deadline=deadline_time)
+                    if timing:
+                        release_time = timing[0]
+                        audit['release_seconds'] = release_time
+                        audit['deadline_seconds'] = timing[1]
+                    if release_time < 0 or (original_release_time > now and not timing):
                         audit['disposition'] = 'outside_preview'
                         if diagnostics is not None:
                             diagnostics.add('Planned release slots fall outside the preview period.')
@@ -2021,6 +2070,10 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
                     self.scheduled_emitted.add(schedule_key)
                     task.target_time = max(0.0, deadline_time - release_time)
+                    task.fm_slot = fm_slot
+                    task.fm_nominal_day = timeframe_start_dt.date().isoformat()
+                    if timing:
+                        mark_task(task, native_release, timing)
                     task.quantity = 1
                     task.timeframe_start = _clean_text(cfg.get("timeframe_start", ""))
                     task.timeframe_end = _clean_text(cfg.get("timeframe_end", ""))
@@ -2064,6 +2117,24 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
 
         return records
 
+    def _fm_release(self, instance, slot, day, original, *, work_periods=None, native_deadline=None):
+        policy = category_policy(self.task_generation, instance['category_key'])
+        timing = planned_release(policy, instance.get('department_id', ''), slot,
+                                 day, self.clock.start_datetime)
+        if timing is None:
+            return None
+        release, deadline, _cohort = timing
+        if (original < 0 or (self._fm_horizon is not None and
+                            min(original, release) > self._fm_horizon)):
+            return None
+        if (release < 0 or deadline <= 0 or self._adjust_release_to_department_open(instance, release) != release
+                or (native_deadline is not None and deadline > native_deadline)
+                or (work_periods is not None and not any(
+                    a <= self.clock.sim_seconds_to_datetime(release) < b for a, b in work_periods))):
+            raise ValueError(f"FM logistics {instance['category_key']} {day} {slot}: "
+                             f"wave for {instance.get('department_id', '')} is outside its operating window.")
+        return timing
+
     def _schedule_calendar(self, instance: dict, through: float) -> dict:
         """Resolve nominal days to effective opening times without creating tasks.
 
@@ -2078,6 +2149,10 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
             hour=0, minute=0, second=0, microsecond=0)
         cfg = instance['cfg']
         times = _scheduled_times_from_cfg(cfg)
+        # Look one nominal day ahead to find dispatches before midnight.
+        policy = category_policy(self.task_generation, instance['category_key'])
+        if policy.get('slots'):
+            final_day += timedelta(days=1)
         extended = False
         while calendar['next_day'] <= final_day:
             day = calendar['next_day']
@@ -2088,13 +2163,18 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     instance, (nominal - self.clock.start_datetime).total_seconds())
                 if release is None or release < 0 or not self._instance_is_active(instance, release):
                     continue
-                calendar['entries'].append((release, nominal.date().isoformat(), hhmm))
+                nominal_day = nominal.date().isoformat()
+                timing = None
+                if not (self._is_waste_instance(instance) and cfg.get('generation_mode') == 'scheduled_threshold'):
+                    timing = self._fm_release(instance, hhmm, nominal_day, release)
+                calendar['entries'].append((timing[0] if timing else release, nominal_day, hhmm))
                 extended = True
         if extended:
             calendar['entries'].sort()
         return calendar
 
     def scheduled_wake_times(self, horizon: float) -> List[float]:
+        self._fm_horizon = horizon
         times = set()
         first_day = self.clock.start_datetime.replace(hour=0, minute=0, second=0, microsecond=0)
         final_day = self.clock.sim_seconds_to_datetime(horizon).replace(
@@ -2174,6 +2254,16 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
                     release_time=release_time,
                     label_suffix="scheduled",
                 )
+                if task is not None:
+                    original = self._adjust_release_to_department_open(instance, (
+                        _datetime_for_day_and_hhmm(datetime.fromisoformat(nominal_day).replace(
+                            tzinfo=self.clock.start_datetime.tzinfo), hhmm) - self.clock.start_datetime
+                    ).total_seconds())
+                    task.fm_slot = hhmm
+                    task.fm_nominal_day = nominal_day
+                    timing = self._fm_release(instance, hhmm, nominal_day, original)
+                    if timing:
+                        mark_task(task, original, timing)
                 if task is not None and _clean_text(cfg.get("waste_stream", "")):
                     task.generated_volume_m3 = _as_float(
                         cfg.get("volume_per_event_m3", 0.0), 0.0

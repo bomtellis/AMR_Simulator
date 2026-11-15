@@ -7,8 +7,9 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
     QLineEdit, QComboBox, QTabWidget, QPlainTextEdit, QFileDialog, QMessageBox, QSplitter, QSpinBox)
 from PySide6.QtCore import Qt
 
-from amr_results_investigation import MAX_EVENTS, MAX_LOG_BYTES, load_investigation
-from amr_run_review import verified_inputs
+from amr_results_investigation import MAX_EVENTS, MAX_LOG_BYTES, load_investigation, load_memory_investigation
+from amr_memory_runs import MemoryRun
+from amr_run_review import verified_events
 from amr_project_runs import read_json, OUTPUTS
 from amr_run_evidence import file_hash
 from visualiser.demand_preview_panel import DemandPreviewPanel
@@ -22,47 +23,75 @@ def display(value):
     return str(value) if value != '' else '—'
 
 
-def load_review(source):
+def load_review(source, *, cancel=None, progress=None, study_context=None):
     """Managed partial runs require the same bound evidence as project playback."""
+    if isinstance(source, MemoryRun):
+        result = load_memory_investigation(source, cancel=cancel, progress=progress)
+        result['route_checks_report'] = source.checks
+        result['in_memory'] = True
+        if source.status == 'partial':
+            _bound_partial(result, source.evidence['termination'])
+        return result
     path = Path(source)
     directory = path if path.is_dir() else path.parent
     manifest_path = directory / 'run_manifest.json'
     manifest = None
-    managed = path.is_dir() or path.name == OUTPUTS['steps_csv']
-    if managed and manifest_path.is_file() and 'project_binding' in read_json(manifest_path):
+    if study_context:
+        from amr_scenario_study import verify_trial_inputs, run_metrics
+        state, record = study_context
+        verify_trial_inputs(state, record)
+        baseline = None if record['kind'] == 'baseline' else state['results']['baseline']['metrics']
+        if run_metrics(directory, baseline) != record['metrics']:
+            raise ValueError('Selected study metrics do not match their evidence')
+    saved_manifest = read_json(manifest_path) if manifest_path.is_file() else {}
+    managed = path.is_dir() or path.name in (OUTPUTS['steps_csv'], saved_manifest.get('canonical_events'))
+    if managed and 'project_binding' in saved_manifest:
         manifest_hash = file_hash(manifest_path)
-        manifest, _config, _csv, _checksum = verified_inputs(directory, allow_partial=True)
-    result = load_investigation(source)
+        manifest, _config, _csv, _checksum = verified_events(directory, allow_partial=True)
+    if manifest and path.is_file() and path.resolve() != _csv.resolve():
+        exported = read_json(str(path) + '.run.json')
+        if exported.get('log_sha256') != file_hash(path) or exported.get('canonical_sha256') != _checksum:
+            raise ValueError('Selected export does not match this run evidence')
+    result = load_investigation(_csv if manifest and path.is_dir() else source, cancel=cancel, progress=progress)
     frozen=result.get('frozen_inputs')
     if isinstance(frozen,dict):
         from visualiser.project_checks import check_project
         result['route_checks_report']=check_project(frozen,base_path=directory,include_legacy=False).to_dict()
     if manifest and manifest['status'] == 'partial':
-        _current, _config, _csv, checksum = verified_inputs(directory, allow_partial=True)
+        _current, _config, _csv, checksum = verified_events(directory, allow_partial=True)
         if checksum != _checksum or file_hash(manifest_path) != manifest_hash:
             raise ValueError('Run evidence changed during investigation loading.')
-        result['termination'] = manifest['termination']
-        result['findings'].append('Stopped run: segment records are plans, including activity beyond the stop. '
-                                  'Full-run aggregate metrics are withheld; use bounded playback to inspect the stop.')
-        for metric in result['metrics']:
-            metric.update(value=None, observed_count=None, coverage='Withheld for partial run')
-        result['lift_checks']['records'] = []
+        _bound_partial(result, manifest['termination'])
     return result
+
+
+def _bound_partial(result, termination):
+    result['termination'] = termination
+    result['findings'].append('Stopped run: segment records are plans, including activity beyond the stop. '
+                              'Full-run aggregate metrics are withheld; use bounded playback to inspect the stop.')
+    for metric in result['metrics']:
+        metric.update(value=None, observed_count=None, coverage='Withheld for partial run')
+    result['lift_checks']['records'] = []
 
 
 class ResultSignals(QObject):
     finished = Signal(object, str)
+    progress = Signal(object)
 
 
 class ResultJob(QRunnable):
-    def __init__(self, source):
+    def __init__(self, source, study_context=None):
         super().__init__()
         self.source = source
+        self.study_context = study_context
         self.signals = ResultSignals()
+        import threading
+        self.cancelled = threading.Event()
 
     def run(self):
         try:
-            self.signals.finished.emit(load_review(self.source), '')
+            self.signals.finished.emit(load_review(self.source, study_context=self.study_context, cancel=self.cancelled.is_set,
+                progress=self.signals.progress.emit), '')
         except Exception as exc:
             self.signals.finished.emit(None, str(exc))
 
@@ -75,13 +104,15 @@ class ResultsInvestigationPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.result = None
+        self.memory_source = None
+        self.load_generation = 0
         self.job = None
         self.task_rows, self.event_rows = [], []
         self.selected_evidence = None
         self.related_choices = []
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
-        self.open_button = QPushButton('Open event CSV…')
+        self.open_button = QPushButton('Open event log…')
         self.open_button.clicked.connect(self.open_csv)
         folder = QPushButton('Open run folder…')
         folder.clicked.connect(self.open_folder)
@@ -94,6 +125,9 @@ class ResultsInvestigationPanel(QWidget):
         self.export_selected_button.clicked.connect(self.export_selected)
         self.export_selected_button.setEnabled(False)
         controls.addWidget(self.open_button)
+        self.cancel_button = QPushButton('Cancel loading')
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_loading)
         controls.addWidget(folder)
         if hasattr(parent, 'show_lift_planner'):
             lift_study = QPushButton('Lift studies…')
@@ -105,9 +139,12 @@ class ResultsInvestigationPanel(QWidget):
         layout.addLayout(controls)
         self.summary = QLabel('Open a saved run to investigate recorded events. Planned segments and confirmed task outcomes are separate evidence.')
         self.summary.setWordWrap(True)
-        layout.addWidget(self.summary)
+        status_controls = QHBoxLayout()
+        status_controls.addWidget(self.summary, 1)
+        status_controls.addWidget(self.cancel_button)
+        layout.addLayout(status_controls)
         self.limits_label = QLabel(
-            f'Log limit: {MAX_EVENTS:,} events and {MAX_LOG_BYTES // (1024 * 1024)} MiB. '
+            f'Log limit: {MAX_EVENTS:,} events; CSV limit: {MAX_LOG_BYTES // (1024 * 1024)} MiB. '
             f'Timelines show {self.EVENT_PAGE_SIZE:,} events per page; selected-evidence export includes every page. '
             'Files above either limit are rejected without truncation.')
         self.limits_label.setWordWrap(True)
@@ -188,7 +225,7 @@ class ResultsInvestigationPanel(QWidget):
         self.clear_events()
 
     def open_csv(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Open full simulation event log', '', 'CSV (*.csv)')
+        path, _ = QFileDialog.getOpenFileName(self, 'Open full simulation event log', '', 'Event logs (*.csv *.sqlite);;CSV (*.csv);;SQLite (*.sqlite)')
         if path:
             self.load(path)
 
@@ -200,23 +237,44 @@ class ResultsInvestigationPanel(QWidget):
     def load(self, source):
         if self.job:
             return
-        self.summary.setText('Reading saved run evidence…')
+        self.memory_source = source if isinstance(source, MemoryRun) else None
+        self.summary.setText('Reading run from memory…' if self.memory_source else 'Reading saved run evidence…')
         self.summary.setToolTip('')
         self.export_button.setEnabled(False)
         self.export_selected_button.setEnabled(False)
-        self.job = ResultJob(source)
-        self.job.signals.finished.connect(self.accept_result)
+        self.job = ResultJob(source, getattr(self, '_study_context', None))
+        self._study_context = None
+        self.load_generation += 1
+        generation = self.load_generation
+        self.job.signals.finished.connect(lambda result, error: self.accept_result(result, error)
+                                          if generation == self.load_generation else None)
+        self.job.signals.progress.connect(lambda message: self.summary.setText(message.get('phase', 'Reading evidence…'))
+                                          if generation == self.load_generation and self.job else None)
+        self.cancel_button.setEnabled(True)
         QThreadPool.globalInstance().start(self.job)
 
+    def cancel_loading(self):
+        if self.job:
+            self.job.cancelled.set()
+            self.summary.setText('Cancelling evidence loading…')
+
+    def clear_memory_run(self, run):
+        if self.memory_source is run:
+            self.cancel_loading()
+            self.load_generation += 1
+            self.memory_source = None
+            self.accept_result(None, 'Memory run is no longer open. Select a run on the Simulate page.')
+
     def accept_result(self, result, error=''):
+        self.cancel_button.setEnabled(False)
         self.route_checks_view.set_report((result or {}).get('route_checks_report'),
-            'Saved run input snapshot — independent of current project edits.' if (result or {}).get('route_checks_report') else
+            'Frozen run inputs — independent of current project edits.' if (result or {}).get('route_checks_report') else
             'Route coverage unavailable: no checked saved-run input snapshot. Current project inputs are not substituted.')
         self.job = None
         self.result = result
         self.clear_events()
         self.details.clear()
-        self.export_button.setEnabled(bool(result))
+        self.export_button.setEnabled(bool(result) and self.memory_source is None)
         if error:
             self.task_rows, self.lift_rows = [], []
             self.summary.setText('Investigation could not open: ' + error)
@@ -226,9 +284,13 @@ class ResultsInvestigationPanel(QWidget):
             self.evidence.clear()
             return
         coverage = 'Full saved log verified against its run evidence' if result['complete_evidence'] else 'Partial or legacy evidence — missing activity is not zero'
+        if self.memory_source:
+            coverage = 'Full event evidence · In memory. Save the run to export.'
         if result.get('termination'):
             stop = result['termination']
             coverage = f"Verified partial run — {stop['reason']} at {stop['stop_time_sec']:.9g} s: {stop['message']}"
+            if self.memory_source:
+                coverage += ' · In memory. Save the run to export.'
         self.summary.setText(f"{coverage}\n{len(result['tasks'])} tasks · {len(result['events'])} events · "
                              f"{len(result['findings'])} evidence findings · {Path(result['source']).name}")
         self.summary.setToolTip(result['source'])
@@ -334,7 +396,7 @@ class ResultsInvestigationPanel(QWidget):
 
     def _show_task(self, task):
         self.selected_evidence = ('task', task)
-        self.export_selected_button.setEnabled(True)
+        self.export_selected_button.setEnabled(self.memory_source is None)
         self.timeline_label.setText(f"{task['task_id']} · {task['outcome']} · release to completion: {display(task['release_to_completion_seconds'])} s\n"
                                     + task['delay_explanation'])
         self.show_events(task['event_ids'])
@@ -393,7 +455,7 @@ class ResultsInvestigationPanel(QWidget):
         origin = self.related_choices[0][1]
         record = {field: identity, 'origin_task_id': origin, 'event_ids': [e['id'] for e in records]}
         self.selected_evidence = (kind, record)
-        self.export_selected_button.setEnabled(True)
+        self.export_selected_button.setEnabled(self.memory_source is None)
         self.timeline_label.setText(
             f'{kind.capitalize()} {identity} · {len(records):,} matching records across this run.\n'
             f'Followed from task {origin}; other tasks may share this identity. '
@@ -408,7 +470,7 @@ class ResultsInvestigationPanel(QWidget):
         if self.result and 0 <= index < len(self.result['metrics']):
             metric = self.result['metrics'][index]
             self.selected_evidence = ('metric', metric)
-            self.export_selected_button.setEnabled(True)
+            self.export_selected_button.setEnabled(self.memory_source is None)
             self.timeline_label.setText(metric['title'] + ': ' + display(metric['value']) + '\n' + metric['definition'])
             self.show_events(metric['event_ids'])
             self.details.setPlainText(metric['coverage'] + '\nEach event below contributes to this metric. Shared task lists do not multiply segment counts.')
@@ -419,7 +481,7 @@ class ResultsInvestigationPanel(QWidget):
             return
         record = self.lift_rows[index]
         self.selected_evidence = ('lift', record)
-        self.export_selected_button.setEnabled(True)
+        self.export_selected_button.setEnabled(self.memory_source is None)
         self.timeline_label.setText(f"{record['lift_id'] or 'Unidentified lift'} · {record['status']}\n"
                                    'Recorded plans checked against frozen initial floors and final bookings; not confirmation of physical execution.')
         related = [eid for p in record['issues'] for eid in p['event_ids']]
@@ -450,7 +512,7 @@ class ResultsInvestigationPanel(QWidget):
                 '', 'Original recorded detail:', row.get('details') or 'No detail recorded.']))
 
     def export(self):
-        if not self.result or self.job:
+        if not self.result or self.job or self.memory_source:
             return
         path, _ = QFileDialog.getSaveFileName(self, 'Export investigation', 'results-investigation.json', 'JSON (*.json)')
         if path:
@@ -460,7 +522,7 @@ class ResultsInvestigationPanel(QWidget):
                 QMessageBox.critical(self, 'Export failed', str(exc))
 
     def export_selected(self):
-        if not self.result or self.job or self.selected_evidence is None:
+        if not self.result or self.job or self.memory_source or self.selected_evidence is None:
             return
         kind, record = self.selected_evidence
         identity = {'task': 'task_id', 'metric': 'key', 'lift': 'lift_id',

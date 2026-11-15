@@ -274,8 +274,8 @@ class ProjectWorkspaceUiTests(unittest.TestCase):
         self.assertEqual(850, self.editor.height())
         self.assertIsNone(self.editor.findChild(QLabel, 'dialogIntro'))
         self.assertEqual(1, self.editor.workspace.tree.columnCount())
-        self.assertEqual(['Project', 'Layout', 'Configuration', 'Check', 'Simulate', 'Review', 'Report'],
-                         [self.editor.workspace.tree.topLevelItem(i).text(0) for i in range(7)])
+        self.assertEqual(['Project', 'Layout', 'Configuration', 'Check', 'Simulate', 'Review', 'Lift & Route Analysis', 'Report'],
+                         [self.editor.workspace.tree.topLevelItem(i).text(0) for i in range(8)])
 
     def test_reading_missing_drawing_lists_does_not_dirty_project(self):
         self.editor.store.data.pop('floor_dxf_files', None)

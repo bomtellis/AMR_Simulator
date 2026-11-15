@@ -2626,6 +2626,11 @@ class TaskGenerationSettingsDialog(QDialog):
             f"Role: {role}    Pickup: {pickup}    Drop-off: {dropoff}",
         ]
 
+        times = payload.get('scheduled_times', [])
+        if times:
+            lines.append('Schedule: ' + (', '.join(map(str, times)) if isinstance(times, list) else str(times)))
+        if mode == 'timeframe':
+            lines.append(f"Timeframe: {payload.get('timeframe_start', '')} to {payload.get('timeframe_end', '')}")
         if delay not in {"", "0", "0.0"}:
             lines.append(f"Return delay: {delay} min")
         if requires_staff:
@@ -3297,84 +3302,69 @@ class TaskGenerationSettingsDialog(QDialog):
 
         return group_id
 
-    def edit_configured_department_group(self):
-        if not self.current_key:
-            QMessageBox.information(
-                self,
-                "Edit configured group",
-                "Select a category first.",
-            )
-            return
-
-        try:
-            self._store_current_category()
-        except Exception as exc:
-            QMessageBox.critical(self, "Invalid current category", str(exc))
-            return
-
-        category = self.config.setdefault("categories", {}).setdefault(
-            self.current_key, {}
-        )
-        overrides = category.setdefault("departments", {})
-        groups = self._stored_department_group_map(self.current_key)
-
-        if not groups:
-            QMessageBox.information(
-                self,
-                "Edit configured group",
-                "No multi-department configured groups were found for this category.",
-            )
-            return
-
-        dialog = ConfiguredGroupSelectDialog(
-            self,
-            "Edit configured group",
-            groups,
-            self._configured_group_label,
-        )
-
-        if dialog.exec() != QDialog.Accepted or not dialog.result_key:
-            return
-
-        group = groups[dialog.result_key]
-        group_payload = dict(group["payload"])
-        selected_department_ids = sorted(group["departments"])
-
-        dialog = BulkDepartmentTaskGenerationDialog(
+    def _edit_configured_group_draft(self, group):
+        editor = BulkDepartmentTaskGenerationDialog(
             self,
             category_key=self.current_key,
-            category_label=(
-                self.category_list.currentItem().text()
-                if self.category_list.currentItem()
-                else self.current_key
-            ),
+            category_label=(self.category_list.currentItem().text()
+                            if self.category_list.currentItem() else self.current_key),
             departments=self.departments,
-            base_category=group_payload,
+            base_category=deepcopy(group['payload']),
             location_names=self.location_names,
             payload_names=self.payload_names,
             profile_names=self.profile_names,
-            selected_department_ids=selected_department_ids,
-            result_key=dialog.result_key,
+            selected_department_ids=list(group['departments']),
+            result_key=group['id'],
         )
+        if editor.exec() != QDialog.Accepted or not editor.result:
+            return None
+        result = deepcopy(group)
+        result['departments'] = sorted(editor.result)
+        result['payload'].update(deepcopy(next(iter(editor.result.values()))))
+        return result
 
-        if dialog.exec() == QDialog.Accepted and dialog.result:
-            result_dept_ids = sorted(dialog.result.keys())
-            result_payload = next(iter(dialog.result.values()))
+    def _configured_group_payload_for_department(self, group, department):
+        payload = deepcopy(group['payload'])
+        row = next((row for row in self.departments
+                    if (str(row.get('id', '')).strip() or str(row.get('name', '')).strip()) == department), None)
+        if row is not None:
+            entry = row.get('task_generation_locations', {}).get(self.current_key, {})
+            location = next((name for name in department_location_names(entry)
+                             if name in self.location_names), None)
+            if location:
+                endpoint = 'pickup' if payload.get('department_location_role', 'dropoff') == 'pickup' else 'dropoff'
+                payload[endpoint + '_location'] = location
+                payload[endpoint + '_locations'] = [location]
+        return payload
 
-            for dept_id in selected_department_ids:
-                overrides.pop(dept_id, None)
-
-            for dept_id, payload in dialog.result.items():
-                overrides[dept_id] = payload
-
-            self._upsert_department_group(
-                self.current_key,
-                getattr(dialog, "result_key", ""),
-                result_dept_ids,
-                result_payload,
-            )
-
+    def edit_configured_department_group(self):
+        if not self.current_key:
+            QMessageBox.information(self, 'Edit configured group', 'Select a category first.')
+            return
+        try:
+            self._store_current_category()
+        except Exception as exc:
+            QMessageBox.critical(self, 'Invalid current category', str(exc))
+            return
+        from visualiser.configured_group_editor import ConfiguredGroupEditorDialog, apply_group_edits
+        category = self.config.setdefault('categories', {}).setdefault(self.current_key, {})
+        category_before_manager = deepcopy(category)
+        groups = self._stored_department_group_map(self.current_key)
+        before = deepcopy(list(groups.values()))
+        dialog = ConfiguredGroupEditorDialog(self, groups, self._configured_group_label,
+            self._edit_configured_group_draft, self.current_key)
+        if dialog.exec() != QDialog.Accepted or dialog.result_groups is None:
+            self.config['categories'][self.current_key] = category_before_manager
+            return
+        self.config['categories'][self.current_key] = apply_group_edits(
+            category, before, dialog.result_groups, self._configured_group_payload_for_department)
+        previous_loading = self._loading
+        self._loading = True
+        try:
+            self._refresh_department_list(select_dept_id=self.current_department_id or '')
             self._load_category(self.current_key)
+        finally:
+            self._loading = previous_loading
 
     def _department_label(self, dept):
         name = str(dept.get("name", "")).strip()
@@ -3777,7 +3767,7 @@ class TaskGenerationSettingsDialog(QDialog):
         )
 
     def _normalise_config(self, task_generation):
-        source = dict(task_generation or {})
+        source = deepcopy(task_generation or {})
         result = {
             "enabled": bool(source.get("enabled", True)),
             "staff_config": self._normalise_global_staff_config(
@@ -3785,6 +3775,8 @@ class TaskGenerationSettingsDialog(QDialog):
             ),
             "categories": {},
         }
+        if "fm_logistics" in source:
+            result["fm_logistics"] = deepcopy(source["fm_logistics"])
         if "update_interval_sec" in source:
             result["update_interval_sec"] = source["update_interval_sec"]
         incoming_categories = (
@@ -4162,6 +4154,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.notes_edit.setPlainText(str(item.get("notes", "")))
         self._loading = was_loading
         self._update_mode_field_state()
+        self._loaded_department_form = ((key, self.current_department_id), self._department_form_state())
 
     def _set_widget_enabled(self, widget, enabled):
         widget.setEnabled(bool(enabled))
@@ -4333,11 +4326,38 @@ class TaskGenerationSettingsDialog(QDialog):
             pass
         raise ValueError(f"{field_name} must be HH:MM, for example 09:00")
 
+    def _department_form_state(self):
+        """Compare editable values, rather than rewriting untouched group copies."""
+        state = {}
+        for name, field in vars(self).items():
+            if name == 'global_enabled':
+                continue
+            if isinstance(field, QLineEdit):
+                state[name] = field.text()
+            elif isinstance(field, QComboBox):
+                state[name] = (field.currentText(), field.currentData())
+            elif isinstance(field, QCheckBox):
+                state[name] = field.isChecked()
+            elif isinstance(field, QPlainTextEdit):
+                state[name] = field.toPlainText()
+        state['days'] = {key: field.isChecked() for key, field in self.day_checks.items()}
+        state['staff_movement_policy'] = self._selected_staff_movement_policy()
+        for name in ('scheduled_times', 'selected_dropoffs', 'staff_use_custom_working_hours', 'staff_working_hours'):
+            state[name] = deepcopy(getattr(self, name))
+        return state
+
     def _store_current_category(self):
         if not self.current_key:
             return
 
         if not self.current_department_id:
+            return
+
+        loaded = getattr(self, '_loaded_department_form', None)
+        current = ((self.current_key, self.current_department_id), self._department_form_state())
+        if loaded == current:
+            # Merely saving or switching scope must not replace a department's
+            # independent schedules with its displayed compatibility override.
             return
 
         # Always pass through to _store_category.  A blank form means the user
@@ -4348,6 +4368,7 @@ class TaskGenerationSettingsDialog(QDialog):
             list_item=None,
             department_id=self.current_department_id,
         )
+        self._loaded_department_form = current
 
     def _store_category(self, category_key, list_item=None, department_id=""):
         if not category_key:
@@ -4356,6 +4377,10 @@ class TaskGenerationSettingsDialog(QDialog):
         department_id = str(department_id or "").strip()
 
         if not department_id:
+            return
+
+        if getattr(self, '_loaded_department_form', None) == (
+                (category_key, department_id), self._department_form_state()):
             return
 
         category = self.config.setdefault("categories", {}).setdefault(category_key, {})
@@ -4932,6 +4957,10 @@ class LiftEditorDialog(QDialog):
         identity_form.addRow("Starting floor", self.start_floor_edit)
         general_layout.addWidget(identity_box)
 
+        from bed_lift_settings import BedLiftSettings
+        self.bed_lift_settings = BedLiftSettings(self.lift)
+        general_layout.addWidget(self.bed_lift_settings)
+
         timing_box = QGroupBox("Journey timing")
         timing_form = QFormLayout(timing_box)
         self.speed_edit = _double_input(
@@ -4952,6 +4981,19 @@ class LiftEditorDialog(QDialog):
         timing_form.addRow("Vertical travel speed", self.speed_edit)
         timing_form.addRow("Door operation time", self.door_edit)
         timing_form.addRow("AMR boarding / exit time", self.board_edit)
+        self.transfer_mode = QComboBox()
+        self.transfer_mode.addItem('Fixed transfer time', 'fixed')
+        self.transfer_mode.addItem('AMR speeds and graph edges', 'speed_based')
+        self.transfer_mode.setCurrentIndex(max(0, self.transfer_mode.findData(self.lift.get('transfer_timing_mode', 'fixed'))))
+        timing_form.addRow('Transfer timing', self.transfer_mode)
+        graph_note = QLabel('Entry and exit distances use the graph edges connecting each lift stop to its corridor. Set speeds in the AMR type editor.')
+        graph_note.setWordWrap(True)
+        timing_form.addRow(graph_note)
+        def update_transfer_mode():
+            enabled = self.transfer_mode.currentData() == 'speed_based'
+            self.board_edit.setEnabled(not enabled)
+        self.transfer_mode.currentIndexChanged.connect(update_transfer_mode)
+        update_transfer_mode()
         general_layout.addWidget(timing_box)
 
         positions_box = QGroupBox("Stop positions")
@@ -5235,6 +5277,8 @@ class LiftEditorDialog(QDialog):
                 "start_floor": start_floor,
                 "floor_locations": positions,
             }
+            result['transfer_timing_mode'] = self.transfer_mode.currentData()
+            result.update(self.bed_lift_settings.values())
             # Validate before callbacks can delete a renamed lift or its links.
             from amr_lift_inputs import validate_lift_inputs
             data = getattr(getattr(self.parent(), 'store', None), 'data', {})
@@ -5368,6 +5412,9 @@ class LiftListDialog(QDialog):
             result["minimum_operational_health_percent"],
             result["health_speed_penalty_at_zero"],
             result["start_floor"],
+            transfer_timing_mode=result.get('transfer_timing_mode', 'fixed'),
+            usage_mode=result.get('usage_mode'),
+            amr_access_windows=result.get('amr_access_windows'),
         )
         self.on_changed()
         self.refresh()
@@ -5638,6 +5685,15 @@ class AMREditorDialog(QDialog):
         self.amr_weight_edit.setSpecialValueText("Unspecified")
         physical_form.addRow("Unloaded weight", self.amr_weight_edit)
         physical_form.addRow("Normal travel speed", self.speed_edit)
+        self.lift_entry_speed = _double_input(self.seed.get('lift_entry_speed_m_per_sec') or 0,
+            minimum=0, maximum=20, decimals=6, suffix=' m/s', step=0.05)
+        self.lift_exit_speed = _double_input(self.seed.get('lift_exit_speed_m_per_sec') or 0,
+            minimum=0, maximum=20, decimals=6, suffix=' m/s', step=0.05)
+        for field in (self.lift_entry_speed, self.lift_exit_speed):
+            field.setSpecialValueText('Unspecified')
+            field.setToolTip('Required when a lift uses AMR speeds and distances. Fixed lift timing is unchanged.')
+        physical_form.addRow('Lift entry speed', self.lift_entry_speed)
+        physical_form.addRow('Lift exit speed', self.lift_exit_speed)
         physical_form.addRow("Travel motor power", self.motor_power_edit)
         general_layout.addWidget(physical_box)
         general_layout.addStretch(1)
@@ -5896,6 +5952,15 @@ class AMREditorDialog(QDialog):
                 "recharge_threshold_percent": float(self.recharge_threshold_edit.value()),
                 "battery_soc_percent": float(self.battery_soc_edit.value()),
             }
+            for direction, field in (('entry', self.lift_entry_speed), ('exit', self.lift_exit_speed)):
+                key = 'lift_' + direction + '_speed_m_per_sec'
+                original = self.seed.get(key)
+                if isinstance(original, (int, float)) and original > 0 and field.value() == round(original, field.decimals()):
+                    continue
+                if field.value() > 0:
+                    self.result[key] = float(field.value())
+                else:
+                    self.result.pop(key, None)
             if movement is not None:
                 self.result['movement'] = movement
             super().accept()
@@ -6634,8 +6699,16 @@ class AMRListDialog(QDialog):
         self._refresh_table()
 
     def save_items(self):
-        self.on_save(self.items)
-        self.accept()
+        try:
+            data = getattr(getattr(self.parent(), 'store', None), 'data', {})
+            from amr_lift_inputs import validate_lift_inputs
+            from amr_robot_inputs import validate_robot_inputs
+            validate_robot_inputs({'amrs': self.items})
+            validate_lift_inputs({**data, 'amrs': self.items})
+            self.on_save(self.items)
+            self.accept()
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Check AMR details', str(exc))
 
 
 class TableListEditor(QMainWindow):
@@ -7608,6 +7681,17 @@ class ScenarioEventDialog(QDialog):
         schedule_form.addRow("Starts", self.start_time_edit)
         schedule_form.addRow("Ends", self.end_time_edit)
         schedule_form.addRow("Active days", self.day_selector)
+        self.dated_check = QCheckBox("Use one dated event window")
+        self.dated_check.setChecked(bool(seed.get('start_datetime') or seed.get('end_datetime')))
+        self.dated_start = QLineEdit(str(seed.get('start_datetime', '')))
+        self.dated_end = QLineEdit(str(seed.get('end_datetime', '')))
+        self.dated_start.setPlaceholderText('YYYY-MM-DDTHH:MM:SS (retain any timezone offset)')
+        self.dated_end.setPlaceholderText('YYYY-MM-DDTHH:MM:SS (retain any timezone offset)')
+        schedule_form.addRow(self.dated_check)
+        schedule_form.addRow('Dated start', self.dated_start)
+        schedule_form.addRow('Dated end', self.dated_end)
+        self.dated_check.toggled.connect(self._update_schedule_mode)
+        self._update_schedule_mode()
         schedule_layout.addWidget(schedule_box)
 
         notes_box = QGroupBox("Notes")
@@ -7640,6 +7724,13 @@ class ScenarioEventDialog(QDialog):
             resource_ids = [legacy] + list(resource_ids)
         options = set(self._resource_options.get(str(self.type_combo.currentData()), []))
         self.selected_resources = [x for x in resource_ids if x in options]
+        if self.type_combo.currentData() == 'corridor':
+            def physical(value):
+                return tuple(sorted(part.strip() for part in value.replace('<->', '->').split('->')))
+            for identity in resource_ids:
+                match = next((option for option in sorted(options) if physical(option) == physical(identity)), None)
+                if match and match not in self.selected_resources:
+                    self.selected_resources.append(match)
 
         self.type_combo.currentIndexChanged.connect(self._resource_type_changed)
         self.preset_combo.currentIndexChanged.connect(self._apply_preset)
@@ -7659,6 +7750,13 @@ class ScenarioEventDialog(QDialog):
             text = "00:00"
         parsed = QTime.fromString(text, "HH:mm")
         return parsed if parsed.isValid() else QTime.fromString(fallback, "HH:mm")
+
+    def _update_schedule_mode(self):
+        dated = self.dated_check.isChecked()
+        for widget in (self.start_time_edit, self.end_time_edit, self.day_selector):
+            widget.setEnabled(not dated)
+        self.dated_start.setEnabled(dated)
+        self.dated_end.setEnabled(dated)
 
     def _match_initial_preset(self):
         availability = round(self.availability_spin.value(), 3)
@@ -7758,7 +7856,7 @@ class ScenarioEventDialog(QDialog):
             QMessageBox.warning(self, "Check scenario event", "Select one or more affected assets.")
             return
         days = self.day_selector.selected_days()
-        if not days:
+        if not days and not self.dated_check.isChecked():
             QMessageBox.warning(self, "Check scenario event", "Select at least one active day.")
             return
         self.result = {
@@ -7772,6 +7870,18 @@ class ScenarioEventDialog(QDialog):
             "days_active": days,
             "notes": self.notes_edit.toPlainText().strip(),
         }
+        if self.dated_check.isChecked():
+            from datetime import datetime
+            try:
+                start = datetime.fromisoformat(self.dated_start.text().strip())
+                end = datetime.fromisoformat(self.dated_end.text().strip())
+                if end <= start:
+                    raise ValueError()
+            except ValueError:
+                QMessageBox.warning(self, 'Check scenario event', 'Enter valid datetimes with compatible timezone offsets and end after start.')
+                self.result = None
+                return
+            self.result.update(start_datetime=start.isoformat(), end_datetime=end.isoformat())
         super().accept()
 
 
@@ -7790,6 +7900,7 @@ class ScenarioTestingDialog(QDialog):
         self.setMinimumSize(780, 520)
         self.result = None
         self.config = dict(config or {})
+        self.launch_stress_test = False
         self.scenarios = [dict(x) for x in self.config.get("scenarios", []) or []]
         corridors = store_data.get("corridors", {})
         self.resource_options = {
@@ -7839,6 +7950,10 @@ class ScenarioTestingDialog(QDialog):
         options_layout.addWidget(self.enabled_check)
         options_layout.addWidget(self.enhanced_check)
         options_layout.addStretch(1)
+        self.stress_button = QPushButton('Automated stress test…')
+        self.stress_button.setToolTip('Save these scenario edits and open a bounded Simple-mode stress study.')
+        self.stress_button.clicked.connect(self.open_stress_test)
+        options_layout.addWidget(self.stress_button)
         layout.addWidget(options_box)
 
         scenario_box = QGroupBox("Scenario")
@@ -7995,7 +8110,8 @@ class ScenarioTestingDialog(QDialog):
             values = [
                 self.RESOURCE_LABELS.get(str(event.get("resource_type", "")), str(event.get("resource_type", ""))),
                 resource_text,
-                "All day" if start == end else f"{start}–{end}",
+                (f"{event['start_datetime']} – {event.get('end_datetime', '')}" if event.get('start_datetime')
+                 else "All day" if start == end else f"{start}–{end}"),
                 f"{float(event.get('availability_percent', 0) or 0):g}%",
                 f"{float(event.get('speed_factor', 1) or 0) * 100:g}%",
                 ", ".join(str(day).title() for day in (event.get("days_active", []) or [])),
@@ -8206,10 +8322,15 @@ class ScenarioTestingDialog(QDialog):
             del scenario.setdefault("events", [])[index]
             self.load_scenario()
 
+    def open_stress_test(self):
+        self.launch_stress_test = True
+        self.accept()
+
     def accept(self):
         self._save_current_description()
         active = self.scenario_combo.currentText().strip() or "Normal operation"
         self.result = {
+            **deepcopy(self.config),
             "enabled": self.enabled_check.isChecked() and active != "Normal operation",
             "active_scenario": active,
             "enhanced_logging": self.enhanced_check.isChecked(),
@@ -8838,8 +8959,9 @@ class SimulationSettingsDialog(QDialog):
         self.max_task_deferral_minutes_spin.setDecimals(2)
         self.max_task_deferral_minutes_spin.setSuffix(" min")
         self.max_task_deferral_minutes_spin.setSpecialValueText("Unlimited")
-        self.max_task_deferral_minutes_spin.setValue(float(simulation.get("max_task_deferral_minutes", 0.0) or 0.0))
+        self.max_task_deferral_minutes_spin.setValue(float(simulation.get("max_task_deferral_minutes", 60.0) or 0.0))
         self.max_task_deferral_minutes_spin.setToolTip(
+            "Project-wide setting shared by normal runs and every automated stress trial. "
             "Fail a service task if it has not been assigned to an AMR within this time "
             "of its scheduled release. Includes waiting for a preceding return pickup "
             "and waiting for assignment; release from deferral does not restart the timer. "
@@ -9117,6 +9239,7 @@ class SimulationSettingsDialog(QDialog):
             QMessageBox.warning(self, "Check simulation settings", str(exc))
             return
         self.result = result
+        result.pop('computation_backend', None)
         if result != self.simulation or 'simulation' in project_result:
             project_result['simulation'] = deepcopy(result)
         self.project_result = project_result

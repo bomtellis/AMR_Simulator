@@ -1,0 +1,58 @@
+test_known_future_event_is_processed_before_blocked_decision (tests.test_geometric_stop.GeometricStopTests.test_known_future_event_is_processed_before_blocked_decision) ... ok
+test_mid_motion_stop_counts_elapsed_profile_not_committed_endpoint (tests.test_geometric_stop.GeometricStopTests.test_mid_motion_stop_counts_elapsed_profile_not_committed_endpoint) ... ok
+test_real_candidate_budget_exhaustion_is_search_limit (tests.test_geometric_stop.GeometricStopTests.test_real_candidate_budget_exhaustion_is_search_limit) ... ok
+test_rejected_joint_admission_keeps_blockage_evidence (tests.test_geometric_stop.GeometricStopTests.test_rejected_joint_admission_keeps_blockage_evidence) ... FAIL
+test_unfitting_retreat_stops_with_bound_reason_not_task_failure (tests.test_geometric_stop.GeometricStopTests.test_unfitting_retreat_stops_with_bound_reason_not_task_failure) ... FAIL
+test_above_reserve_robot_charges_and_finishes_both_tasks (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_above_reserve_robot_charges_and_finishes_both_tasks) ... ok
+test_available_delivery_is_selected_before_a_charge_detour (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_available_delivery_is_selected_before_a_charge_detour) ... ok
+test_blocked_charger_travel_is_reused_only_within_one_selection (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_blocked_charger_travel_is_reused_only_within_one_selection) ... ok
+test_busy_robot_is_not_sent_to_charge_before_its_work_finishes (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_busy_robot_is_not_sent_to_charge_before_its_work_finishes) ... ok
+test_cached_empty_travel_does_not_reuse_task_specific_onward_work (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_cached_empty_travel_does_not_reuse_task_specific_onward_work) ... ok
+test_charger_must_allow_onward_task_and_selected_destination_is_retained (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_charger_must_allow_onward_task_and_selected_destination_is_retained) ... ok
+test_commit_only_bay_movement_shortfall_defers_without_leaking_claims (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_commit_only_bay_movement_shortfall_defers_without_leaking_claims) ... ok
+test_full_battery_cannot_fit_trip_does_not_dispatch_charging (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_full_battery_cannot_fit_trip_does_not_dispatch_charging) ... ok
+test_future_or_other_robot_locked_task_does_not_trigger_charge (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_future_or_other_robot_locked_task_does_not_trigger_charge) ... ok
+test_intermediate_charger_can_split_an_approach_longer_than_full_range (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_intermediate_charger_can_split_an_approach_longer_than_full_range) ... ok
+test_occupied_charger_bay_is_not_taken_by_a_charge_request (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_occupied_charger_bay_is_not_taken_by_a_charge_request) ... ok
+test_saved_reference_raw_and_editor_normalised (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_saved_reference_raw_and_editor_normalised) ... ok
+test_selecting_a_charge_request_does_not_spend_or_reserve (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_selecting_a_charge_request_does_not_spend_or_reserve) ... FAIL
+test_stale_bay_inspection_is_pure_until_actual_charge_reservation (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_stale_bay_inspection_is_pure_until_actual_charge_reservation) ... ok
+test_unreachable_charger_leaves_task_pending_without_failure_spam (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_unreachable_charger_leaves_task_pending_without_failure_spam) ... ok
+
+======================================================================
+FAIL: test_rejected_joint_admission_keeps_blockage_evidence (tests.test_geometric_stop.GeometricStopTests.test_rejected_joint_admission_keeps_blockage_evidence)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_geometric_stop.py", line 71, in test_rejected_joint_admission_keeps_blockage_evidence
+    self.assertEqual('blocked', evidence['run_status'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'blocked' != 'finished'
+- blocked
++ finished
+
+
+======================================================================
+FAIL: test_unfitting_retreat_stops_with_bound_reason_not_task_failure (tests.test_geometric_stop.GeometricStopTests.test_unfitting_retreat_stops_with_bound_reason_not_task_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_geometric_stop.py", line 40, in test_unfitting_retreat_stops_with_bound_reason_not_task_failure
+    self.assertEqual('blocked', evidence['run_status'])
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'blocked' != 'finished'
+- blocked
++ finished
+
+
+======================================================================
+FAIL: test_selecting_a_charge_request_does_not_spend_or_reserve (tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_selecting_a_charge_request_does_not_spend_or_reserve)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_required_charge_dispatch.py", line 115, in test_selecting_a_charge_request_does_not_spend_or_reserve
+    self.assertFalse(sim.events)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: [Event(time=3600.0, priority=1, event_type='task_deferral_timeout', payload={'task': Task(id='LONG', pickup='A', dropoff='B', payload='Box', release_time=0.0, target_time=0.0, quantity=1, priority=100, created_during_runtime=False, labels=[], route_profile=None, allowed_lifts=[], allowed_nodes=[], allowed_edges=[], task_source='', department_id='', waste_stream='', waste_volume_m3=0.0, container_type='', pending_reason='AMR R-1 has insufficient battery energy for this route and reserve', assigned_inventory_space='', payload_instance_id='', is_return_task=False, recover_staged_payload=False, manual_task=False, manual_single_payload_only=False, dropoff_zone='', final_destination='', final_destination_candidates=[], tracked_item_exchange=False, exchange_mode='', tracked_item_source_payload='', tracked_items={}, generated_volume_m3=0.0, return_enabled=False, return_payload='', return_delay_minutes=0.0, return_route_profile='', return_priority=0, release_next_after_return_pickup=False, generator_release_spacing_key='', generator_collection_task_id='', generator_scheduled_release_time=0.0, generator_deferred_by_task_id='', generator_deferred_by_return_task_id='', requires_staff=None, staff_initial_count=1, staff_resource_name='', staff_category_key='', staff_movement_policy='batch_same_location', staff_shift_pattern='none', staff_handling_minutes=0.0, staff_handoff_only=False, staff_collection_delay_minutes=0.0, dropoff_zone_capacity_policy='wait_for_space', staff_use_custom_working_hours=False, staff_working_hours={}, staff_department_fallback_enabled=False, staff_department_fallback_resource_name='Department team', staff_shift_start_time='', staff_shift_end_time='', staff_shift_days_active=[], staff_shift_work_days=0, staff_shift_rest_days=0, payload_orientation='lengthways', wash_cycle_required=False)})] is not false
+
+----------------------------------------------------------------------
+Ran 20 tests in 1.684s
+
+FAILED (failures=3)

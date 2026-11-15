@@ -1,0 +1,16 @@
+Failed to find real location of C:\Users\tombe\AppData\Local\Programs\Python\Python313\python.exe
+test_review_actions_lock_immediately_when_resume_starts (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_review_actions_lock_immediately_when_resume_starts) ... FAIL
+
+======================================================================
+FAIL: test_review_actions_lock_immediately_when_resume_starts (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_review_actions_lock_immediately_when_resume_starts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 307, in test_review_actions_lock_immediately_when_resume_starts
+    self.assertFalse(button.isEnabled(), button.text())
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: True is not false : Investigate trial
+
+----------------------------------------------------------------------
+Ran 1 test in 4.295s
+
+FAILED (failures=1)

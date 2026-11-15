@@ -70,6 +70,7 @@ class InvestigationTests(unittest.TestCase):
 
     def test_energy_blocked_task_has_explicit_pending_snapshot_and_reconciliation(self):
         config = reference_config()
+        config['simulation']['max_task_deferral_minutes'] = 0
         config['amrs'][0]['battery_capacity_kwh'] = .000001
         sim, path = self.run_reference(config)
         report = load_investigation(path)
@@ -93,6 +94,7 @@ class InvestigationTests(unittest.TestCase):
 
     def test_pending_snapshot_mismatch_is_reported(self):
         config = reference_config()
+        config['simulation']['max_task_deferral_minutes'] = 0
         config['amrs'][0]['battery_capacity_kwh'] = .000001
         _, path = self.run_reference(config)
         sidecar = Path(str(path) + '.run.json')
@@ -456,7 +458,8 @@ class InvestigationUiTests(unittest.TestCase):
             try:
                 panel.accept_result(load_investigation(path))
                 panel.tasks.selectRow(0)
-                self.assertIn('250,000 events and 300 MiB', panel.limits_label.text())
+                self.assertIn('250,000 events', panel.limits_label.text())
+                self.assertIn('CSV limit: 300 MiB', panel.limits_label.text())
                 self.assertTrue(panel.export_selected_button.isEnabled())
                 self.assertEqual(500, panel.events.rowCount())
                 self.assertEqual(1201, len(panel.event_rows))

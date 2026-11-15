@@ -1,0 +1,749 @@
+{
+  "input": "ltn.json",
+  "CPU_only": true,
+  "source_config_sha256": "e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b",
+  "software_sha256": "282b2f45f1fd25219d4987b99870635ebc86b72e11d7419de20bd5bb767bf6c5",
+  "period": {
+    "start_datetime": "2026-01-01T05:00:00",
+    "end_datetime": "2026-01-08T05:00:00"
+  },
+  "baseline": {
+    "backend": "cpu",
+    "profiled": false,
+    "wall_sec": 360.2216071000439,
+    "initialisation_sec": 1.645162699976936,
+    "execution_sec": 357.00678140000673,
+    "finalisation_sec": 1.5696522000362165,
+    "peak_parent_bytes": 434630656,
+    "period": {
+      "start_datetime": "2026-01-01T05:00:00",
+      "end_datetime": "2026-01-08T05:00:00"
+    },
+    "computation_statistics": {},
+    "evidence_bytes": 263647201,
+    "first_expansion_sec": 5.770986300020013
+  },
+  "profile": {
+    "backend": "cpu",
+    "profiled": true,
+    "wall_sec": 1352.9861472000484,
+    "initialisation_sec": 5.937931700027548,
+    "execution_sec": 1343.6748014999903,
+    "finalisation_sec": 3.3734033000073396,
+    "peak_parent_bytes": 434421760,
+    "period": {
+      "start_datetime": "2026-01-01T05:00:00",
+      "end_datetime": "2026-01-08T05:00:00"
+    },
+    "computation_statistics": {},
+    "evidence_bytes": 263647201,
+    "first_expansion_sec": 5.9354503999929875
+  },
+  "profile_total_calls": 5381421664,
+  "profile_total_sec": 1351.3598267,
+  "profile_baseline_outcome_parity": true,
+  "outcome_counts": {
+    "completed": 2935,
+    "failed": 4946,
+    "pending": 0
+  },
+  "hotspots": [
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+      "line": 12157,
+      "function": "_try_assign_tasks",
+      "primitive_calls": 26882,
+      "calls": 26882,
+      "self_sec": 1.2981015,
+      "cumulative_sec": 1224.6825929000001,
+      "self_percent": 0.09605890854177188,
+      "cumulative_percent": 90.62594349061392,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 13287,
+          "function": "_handle_event",
+          "primitive_calls": 26882,
+          "calls": 26882,
+          "self_sec": 1.2981015,
+          "cumulative_sec": 1224.6825929000001
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+      "line": 9566,
+      "function": "_nearest_compatible_lift_plan",
+      "primitive_calls": 326723,
+      "calls": 326723,
+      "self_sec": 13.8338443,
+      "cumulative_sec": 1057.701667,
+      "self_percent": 1.0236980578135164,
+      "cumulative_percent": 78.26943247106075,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 10629,
+          "function": "move_between",
+          "primitive_calls": 186498,
+          "calls": 186498,
+          "self_sec": 7.9315967,
+          "cumulative_sec": 629.3346019
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 9803,
+          "function": "_select_charge_location_for_amr",
+          "primitive_calls": 140225,
+          "calls": 140225,
+          "self_sec": 5.9022476,
+          "cumulative_sec": 428.36706510000005
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+      "line": 9137,
+      "function": "_same_floor_segments",
+      "primitive_calls": 4953759,
+      "calls": 4953759,
+      "self_sec": 235.69269680000002,
+      "cumulative_sec": 915.0038974,
+      "self_percent": 17.441150176526854,
+      "cumulative_percent": 67.70986374772036,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 9566,
+          "function": "_nearest_compatible_lift_plan",
+          "primitive_calls": 4602188,
+          "calls": 4602188,
+          "self_sec": 232.6123684,
+          "cumulative_sec": 902.8189677
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 10629,
+          "function": "move_between",
+          "primitive_calls": 51146,
+          "calls": 51146,
+          "self_sec": 2.6178403,
+          "cumulative_sec": 9.4839687
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 9803,
+          "function": "_select_charge_location_for_amr",
+          "primitive_calls": 299743,
+          "calls": 299743,
+          "self_sec": 0.46164010000000005,
+          "cumulative_sec": 2.6958609
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 9961,
+          "function": "_plan_return_to_charge_impl",
+          "primitive_calls": 682,
+          "calls": 682,
+          "self_sec": 0.000848,
+          "cumulative_sec": 0.005100100000000001
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+      "line": 15708,
+      "function": "_create_idle_return_task",
+      "primitive_calls": 298024,
+      "calls": 298024,
+      "self_sec": 0.18573150000000002,
+      "cumulative_sec": 460.32514410000005,
+      "self_percent": 0.01374404480067707,
+      "cumulative_percent": 34.063847023194924,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 15753,
+          "function": "_queue_idle_return_tasks",
+          "primitive_calls": 298024,
+          "calls": 298024,
+          "self_sec": 0.18573150000000002,
+          "cumulative_sec": 460.32514410000005
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+      "line": 9426,
+      "function": "_find_lift_journey_slot",
+      "primitive_calls": 2301094,
+      "calls": 2301094,
+      "self_sec": 4.5996349,
+      "cumulative_sec": 98.2606786,
+      "self_percent": 0.34037084787641186,
+      "cumulative_percent": 7.27124461291343,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 9566,
+          "function": "_nearest_compatible_lift_plan",
+          "primitive_calls": 2301094,
+          "calls": 2301094,
+          "self_sec": 4.5996349,
+          "cumulative_sec": 98.2606786
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+      "line": 7725,
+      "function": "_people_on_edge",
+      "primitive_calls": 60483353,
+      "calls": 60483353,
+      "self_sec": 50.1244409,
+      "cumulative_sec": 88.46848580000001,
+      "self_percent": 3.709185363487023,
+      "cumulative_percent": 6.546626890340429,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 9137,
+          "function": "_same_floor_segments",
+          "primitive_calls": 60483353,
+          "calls": 60483353,
+          "self_sec": 50.1244409,
+          "cumulative_sec": 88.46848580000001
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_sim_task_generation.py",
+      "line": 1267,
+      "function": "_timeframe_group_allocation",
+      "primitive_calls": 150174,
+      "calls": 150174,
+      "self_sec": 0.7021852000000001,
+      "cumulative_sec": 66.35884920000001,
+      "self_percent": 0.051961378910806134,
+      "cumulative_percent": 4.910524043181549,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_sim_task_generation.py",
+          "line": 1853,
+          "function": "_timeframe_records",
+          "primitive_calls": 150174,
+          "calls": 150174,
+          "self_sec": 0.7021852000000001,
+          "cumulative_sec": 66.35884920000001
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_sim_task_generation.py",
+      "line": 348,
+      "function": "_department_operating_periods_for_date",
+      "primitive_calls": 4698746,
+      "calls": 4698746,
+      "self_sec": 18.977001400000002,
+      "cumulative_sec": 65.92611360000001,
+      "self_percent": 1.404289296237372,
+      "cumulative_percent": 4.878501809617248,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_sim_task_generation.py",
+          "line": 1352,
+          "function": "_department_work_periods",
+          "primitive_calls": 3272472,
+          "calls": 3272472,
+          "self_sec": 13.1780752,
+          "cumulative_sec": 45.8077972
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_sim_task_generation.py",
+          "line": 375,
+          "function": "_department_is_open_at_datetime",
+          "primitive_calls": 1020364,
+          "calls": 1020364,
+          "self_sec": 4.1872547,
+          "cumulative_sec": 14.559609900000002
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_sim_task_generation.py",
+          "line": 388,
+          "function": "_department_active_seconds_between",
+          "primitive_calls": 337402,
+          "calls": 337402,
+          "self_sec": 1.4022589,
+          "cumulative_sec": 4.8924213000000005
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_sim_task_generation.py",
+          "line": 415,
+          "function": "_next_department_open_datetime",
+          "primitive_calls": 68508,
+          "calls": 68508,
+          "self_sec": 0.2094126,
+          "cumulative_sec": 0.6662852
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+      "line": 7845,
+      "function": "_shortest_path_same_floor",
+      "primitive_calls": 5015845,
+      "calls": 5015845,
+      "self_sec": 8.0694321,
+      "cumulative_sec": 25.2615592,
+      "self_percent": 0.5971342303186139,
+      "cumulative_percent": 1.8693436567289663,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 9137,
+          "function": "_same_floor_segments",
+          "primitive_calls": 4953759,
+          "calls": 4953759,
+          "self_sec": 6.110518900000001,
+          "cumulative_sec": 20.350733700000003
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 7825,
+          "function": "run_job",
+          "primitive_calls": 10184,
+          "calls": 10184,
+          "self_sec": 1.8372728,
+          "cumulative_sec": 4.5737205
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 10473,
+          "function": "_estimate_task_for_amr_impl",
+          "primitive_calls": 51146,
+          "calls": 51146,
+          "self_sec": 0.117942,
+          "cumulative_sec": 0.3282851
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 11599,
+          "function": "_route_possible_between_locations",
+          "primitive_calls": 176,
+          "calls": 176,
+          "self_sec": 0.0020172000000000002,
+          "cumulative_sec": 0.0042695
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 5540,
+          "function": "_staff_same_floor_distance",
+          "primitive_calls": 574,
+          "calls": 574,
+          "self_sec": 0.0006919000000000001,
+          "cumulative_sec": 0.0025699
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 11631,
+          "function": "<genexpr>",
+          "primitive_calls": 6,
+          "calls": 6,
+          "self_sec": 0.0009893,
+          "cumulative_sec": 0.0019805
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+      "line": 14365,
+      "function": "log_step",
+      "primitive_calls": 160782,
+      "calls": 163717,
+      "self_sec": 2.291367,
+      "cumulative_sec": 22.2062062,
+      "self_percent": 0.16956009456012047,
+      "cumulative_percent": 1.6432489527402347,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 12157,
+          "function": "_try_assign_tasks",
+          "primitive_calls": 108773,
+          "calls": 108773,
+          "self_sec": 1.5104818,
+          "cumulative_sec": 11.780624000000001
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 8144,
+          "function": "_log_task_released",
+          "primitive_calls": 14430,
+          "calls": 14430,
+          "self_sec": 0.2057601,
+          "cumulative_sec": 3.3111741
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 12958,
+          "function": "_log_generated_task_record",
+          "primitive_calls": 6212,
+          "calls": 6212,
+          "self_sec": 0.0756223,
+          "cumulative_sec": 1.9948260000000002
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 13287,
+          "function": "_handle_event",
+          "primitive_calls": 6683,
+          "calls": 6683,
+          "self_sec": 0.10974020000000001,
+          "cumulative_sec": 1.4721027
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 2968,
+          "function": "_log_payload_location_event",
+          "primitive_calls": 4724,
+          "calls": 4724,
+          "self_sec": 0.06510110000000001,
+          "cumulative_sec": 1.1452467000000002
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 13016,
+          "function": "_schedule_generated_task_record",
+          "primitive_calls": 6282,
+          "calls": 6282,
+          "self_sec": 0.10223520000000001,
+          "cumulative_sec": 0.7731392
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 14365,
+          "function": "log_step",
+          "primitive_calls": 2935,
+          "calls": 2935,
+          "self_sec": 0.041945500000000004,
+          "cumulative_sec": 0.5996408000000001
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 6878,
+          "function": "_fail_task",
+          "primitive_calls": 4946,
+          "calls": 4946,
+          "self_sec": 0.0737165,
+          "cumulative_sec": 0.5738883
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 15061,
+          "function": "write_verbose_csv",
+          "primitive_calls": 5093,
+          "calls": 5093,
+          "self_sec": 0.0495844,
+          "cumulative_sec": 0.4546908
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 15038,
+          "function": "_log_battery_charge_applied",
+          "primitive_calls": 682,
+          "calls": 682,
+          "self_sec": 0.014120400000000002,
+          "cumulative_sec": 0.2838697
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 6180,
+          "function": "_schedule_configured_return_task",
+          "primitive_calls": 863,
+          "calls": 863,
+          "self_sec": 0.0108623,
+          "cumulative_sec": 0.1412726
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 10372,
+          "function": "_schedule_opportunity_charge",
+          "primitive_calls": 682,
+          "calls": 682,
+          "self_sec": 0.014412300000000001,
+          "cumulative_sec": 0.0938273
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 5969,
+          "function": "_log_staff_handling_assignment",
+          "primitive_calls": 794,
+          "calls": 794,
+          "self_sec": 0.0092227,
+          "cumulative_sec": 0.079199
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 2907,
+          "function": "_log_payload_service_arrival",
+          "primitive_calls": 429,
+          "calls": 429,
+          "self_sec": 0.0059017,
+          "cumulative_sec": 0.0708796
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 6842,
+          "function": "_notify_task_generation_state",
+          "primitive_calls": 138,
+          "calls": 138,
+          "self_sec": 0.0018531,
+          "cumulative_sec": 0.014752800000000002
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 15044,
+          "function": "_append_battery_balance_rows",
+          "primitive_calls": 22,
+          "calls": 22,
+          "self_sec": 0.000341,
+          "cumulative_sec": 0.0084654
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 4452,
+          "function": "_assign_initial_amrs_to_charge_inventory_spaces",
+          "primitive_calls": 22,
+          "calls": 22,
+          "self_sec": 0.000378,
+          "cumulative_sec": 0.0075504000000000005
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+          "line": 1505,
+          "function": "_execute_mass_collection_visit",
+          "primitive_calls": 7,
+          "calls": 7,
+          "self_sec": 8.840000000000001e-05,
+          "cumulative_sec": 0.0006976
+        }
+      ]
+    },
+    {
+      "file": "C:\\Users\\tombe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\copy.py",
+      "line": 119,
+      "function": "deepcopy",
+      "primitive_calls": 84152,
+      "calls": 691740,
+      "self_sec": 0.40041200000000005,
+      "cumulative_sec": 0.860461,
+      "self_percent": 0.02963030216591535,
+      "cumulative_percent": 0.06367371465387074,
+      "callers": [
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_route_reservations.py",
+          "line": 12,
+          "function": "snapshot",
+          "primitive_calls": 27150,
+          "calls": 27150,
+          "self_sec": 0.040958800000000004,
+          "cumulative_sec": 0.5592524
+        },
+        {
+          "file": "C:\\Users\\tombe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\copy.py",
+          "line": 218,
+          "function": "_deepcopy_dict",
+          "primitive_calls": 415100,
+          "calls": 361242,
+          "self_sec": 0.21204550000000003,
+          "cumulative_sec": 0.46679550000000003
+        },
+        {
+          "file": "C:\\Users\\tombe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\copy.py",
+          "line": 192,
+          "function": "_deepcopy_list",
+          "primitive_calls": 104906,
+          "calls": 101219,
+          "self_sec": 0.0734859,
+          "cumulative_sec": 0.42430480000000004
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_generation_provenance.py",
+          "line": 24,
+          "function": "resolve",
+          "primitive_calls": 28772,
+          "calls": 28772,
+          "self_sec": 0.014562,
+          "cumulative_sec": 0.2521967
+        },
+        {
+          "file": "C:\\Users\\tombe\\AppData\\Local\\Programs\\Python\\Python313\\Lib\\copy.py",
+          "line": 201,
+          "function": "_deepcopy_tuple",
+          "primitive_calls": 87582,
+          "calls": 87582,
+          "self_sec": 0.0472167,
+          "cumulative_sec": 0.07320360000000001
+        },
+        {
+          "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_generation_provenance.py",
+          "line": 18,
+          "function": "record",
+          "primitive_calls": 28230,
+          "calls": 28230,
+          "self_sec": 0.0121431,
+          "cumulative_sec": 0.049011900000000004
+        }
+      ]
+    }
+  ],
+  "idle_return_guard": {
+    "attempts": 298024,
+    "already_stowed_returns": 297131,
+    "already_stowed_percent": 99.70035970257429
+  },
+  "lift_replay": {
+    "cpu_only": true,
+    "simulation_time_sec": 607262.283551107,
+    "reservation_counts": {
+      "Lift-2": 453,
+      "Lift-7": 271,
+      "Lift-5": 461,
+      "Lift-6": 346,
+      "Lift-1": 323,
+      "Lift-3": 465,
+      "Lift-4": 475,
+      "Lift-8": 253
+    },
+    "last_booking_matches_max_finish": true,
+    "append_only_tail": {
+      "queries": 576,
+      "exact_plan_parity": true,
+      "samples_sec": {
+        "original": [
+          0.007167799980379641,
+          0.0071084999945014715,
+          0.007097899971995503,
+          0.0070476000546477735,
+          0.006969300040509552
+        ],
+        "prototype": [
+          0.0012116000289097428,
+          0.0012125000357627869,
+          0.0012092000106349587,
+          0.0012036999687552452,
+          0.0012135999859310687
+        ]
+      },
+      "medians_sec": {
+        "original": 0.007097899971995503,
+        "prototype": 0.0012116000289097428
+      },
+      "speedup": 5.858286400325148,
+      "successful_queries": 576
+    },
+    "prune_nonwinning_lift": {
+      "queries": 264,
+      "exact_plan_parity": true,
+      "samples_sec": {
+        "original": [
+          0.32142920000478625,
+          0.31634189997566864,
+          0.3180323999840766,
+          0.3192873999942094,
+          0.3191217999556102
+        ],
+        "prototype": [
+          0.2920358999981545,
+          0.2905839000013657,
+          0.29065360000822693,
+          0.29089060000842437,
+          0.29321139998501167
+        ]
+      },
+      "medians_sec": {
+        "original": 0.3191217999556102,
+        "prototype": 0.29089060000842437
+      },
+      "speedup": 1.0970509186146553,
+      "successful_queries": 264
+    },
+    "caveat": "Isolated read-only queries on final LTN state, with warm static caches. Ratios are not whole-simulation speedups. Prototypes were never used during the baseline run."
+  },
+  "idle_guard_replay": {
+    "cpu_only": true,
+    "state": "Initial LTN placement",
+    "robots": 22,
+    "queries": 66,
+    "exact_return_parity": true,
+    "operational_resource_parity": true,
+    "samples_sec": {
+      "original": [
+        0.0012408000184223056,
+        0.0012092000106349587,
+        0.0011744999792426825,
+        0.0011799000203609467,
+        0.0011709000100381672
+      ],
+      "prototype": [
+        7.899996126070619e-05,
+        7.810001261532307e-05,
+        7.870001718401909e-05,
+        7.76999513618648e-05,
+        7.800001185387373e-05
+      ]
+    },
+    "medians_sec": {
+      "original": 0.0011799000203609467,
+      "prototype": 7.810001261532307e-05
+    },
+    "speedup": 15.107552237827074,
+    "caveat": "Isolated stowed-robot calls, with warm static caches; not a whole-run speedup. The production simulator was not changed."
+  },
+  "tests": {
+    "lift_prototypes": 41,
+    "idle_guard_prototype": 39,
+    "failures": 0,
+    "errors": 0
+  },
+  "notes": [
+    "Cumulative profile times overlap and must not be added.",
+    "Profiled seconds contain cProfile overhead; ordinary run time is measured separately.",
+    "One full unprofiled baseline; microbenchmark ratios are not full-run speedups.",
+    "One full unprofiled early-idle-guard prototype run; no repeated-run confidence interval."
+  ],
+  "full_week_idle_guard_experiment": {
+    "backend": "cpu",
+    "profiled": false,
+    "wall_sec": 245.1944788999972,
+    "initialisation_sec": 1.6163951000198722,
+    "execution_sec": 242.14120900002308,
+    "finalisation_sec": 1.4368663000059314,
+    "peak_parent_bytes": 436031488,
+    "source_config_sha256": "e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b",
+    "software_sha256": "282b2f45f1fd25219d4987b99870635ebc86b72e11d7419de20bd5bb767bf6c5",
+    "period": {
+      "start_datetime": "2026-01-01T05:00:00",
+      "end_datetime": "2026-01-08T05:00:00"
+    },
+    "computation_statistics": {},
+    "evidence_bytes": 263647201,
+    "first_expansion_sec": 5.806696199986618,
+    "experiment": "Only move the existing stowed check before charging-destination planning.",
+    "prototype_source_sha256": "ab50df4e757920aaeac47a8298f4d8bcb916fe97f5fd6c4f7542bb3946dde840",
+    "prototype_source": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\verification\\replay_cpu_lift_plans.py",
+    "exact_outcome_parity": true,
+    "time_saved_sec": 115.02712820004672,
+    "time_reduction_percent": 31.93232330677498,
+    "speedup": 1.469126094176699
+  },
+  "validation": {
+    "profile_and_baseline_exact_outcomes": true,
+    "prototype_and_baseline_exact_outcomes": true,
+    "original_inputs_preserved": true,
+    "original_application_source_preserved": true,
+    "task_records_sha256": "aae86a5da221b659e40a25649fe03172665ee70e0f5f58ad16f9c49b45d4cae4",
+    "event_rows_sha256": "d630380e3e6d49e004d26a6ae3187c7110e27f75e95c46f875ea7a7bfe414ebb",
+    "final_state_sha256": "03a0b49ecc73a9fad54a620cea25cfcc32287cf82b28ae3bb3fa998cf7ac51f5"
+  }
+}

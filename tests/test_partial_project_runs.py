@@ -214,7 +214,7 @@ class PartialProjectRunTests(unittest.TestCase):
                 raise AttributeError(name)
         output = io.StringIO()
         with patch('simulator.Simulation', StoppedSimulation), contextlib.redirect_stdout(output):
-            result = execute(directory)
+                result = execute(directory, runtime_backend='reference')
         self.assertIsInstance(result, StoppedSimulation)
         self.assertIn('Run stopped (partial): blocked', output.getvalue())
         self.assertNotIn('Run complete:', output.getvalue())

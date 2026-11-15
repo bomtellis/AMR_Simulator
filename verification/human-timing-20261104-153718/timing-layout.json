@@ -1,0 +1,113 @@
+{
+  "project_unchanged": true,
+  "labels": [
+    {
+      "text": "Category task timing",
+      "width": 120,
+      "hint": 120,
+      "wrap": false
+    },
+    {
+      "text": "Maximum delay (minutes)",
+      "width": 149,
+      "hint": 149,
+      "wrap": false
+    },
+    {
+      "text": "Payload capacity (count)",
+      "width": 141,
+      "hint": 141,
+      "wrap": false
+    },
+    {
+      "text": "Total payload capacity (kg)",
+      "width": 156,
+      "hint": 156,
+      "wrap": false
+    },
+    {
+      "text": "Corridor carrying length (m)",
+      "width": 164,
+      "hint": 164,
+      "wrap": false
+    },
+    {
+      "text": "Corridor carrying width (m)",
+      "width": 159,
+      "hint": 159,
+      "wrap": false
+    },
+    {
+      "text": "Person + load height (m)",
+      "width": 146,
+      "hint": 146,
+      "wrap": false
+    },
+    {
+      "text": "Person space in lift: length (m)",
+      "width": 176,
+      "hint": 176,
+      "wrap": false
+    },
+    {
+      "text": "Person space in lift: width (m)",
+      "width": 171,
+      "hint": 171,
+      "wrap": false
+    },
+    {
+      "text": "Person space in lift: height (m)",
+      "width": 176,
+      "hint": 176,
+      "wrap": false
+    },
+    {
+      "text": "Empty walking speed (m/s)",
+      "width": 157,
+      "hint": 157,
+      "wrap": false
+    },
+    {
+      "text": "Loaded walking speed (m/s)",
+      "width": 165,
+      "hint": 165,
+      "wrap": false
+    },
+    {
+      "text": "Pickup per payload (seconds)",
+      "width": 172,
+      "hint": 172,
+      "wrap": false
+    },
+    {
+      "text": "Unload per payload (seconds)",
+      "width": 177,
+      "hint": 177,
+      "wrap": false
+    },
+    {
+      "text": "Default department handling (minutes)",
+      "width": 224,
+      "hint": 224,
+      "wrap": false
+    },
+    {
+      "text": "Service base",
+      "width": 73,
+      "hint": 73,
+      "wrap": false
+    },
+    {
+      "text": "Permitted payloads",
+      "width": 113,
+      "hint": 113,
+      "wrap": false
+    },
+    {
+      "text": "Human route override",
+      "width": 129,
+      "hint": 129,
+      "wrap": false
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "cpu_only": true,
+  "simulation_time_sec": 607262.283551107,
+  "reservation_counts": {
+    "Lift-2": 453,
+    "Lift-7": 271,
+    "Lift-5": 461,
+    "Lift-6": 346,
+    "Lift-1": 323,
+    "Lift-3": 465,
+    "Lift-4": 475,
+    "Lift-8": 253
+  },
+  "last_booking_matches_max_finish": true,
+  "append_only_tail": {
+    "queries": 576,
+    "exact_plan_parity": true,
+    "samples_sec": {
+      "original": [
+        0.007167799980379641,
+        0.0071084999945014715,
+        0.007097899971995503,
+        0.0070476000546477735,
+        0.006969300040509552
+      ],
+      "prototype": [
+        0.0012116000289097428,
+        0.0012125000357627869,
+        0.0012092000106349587,
+        0.0012036999687552452,
+        0.0012135999859310687
+      ]
+    },
+    "medians_sec": {
+      "original": 0.007097899971995503,
+      "prototype": 0.0012116000289097428
+    },
+    "speedup": 5.858286400325148,
+    "successful_queries": 576
+  },
+  "prune_nonwinning_lift": {
+    "queries": 264,
+    "exact_plan_parity": true,
+    "samples_sec": {
+      "original": [
+        0.32142920000478625,
+        0.31634189997566864,
+        0.3180323999840766,
+        0.3192873999942094,
+        0.3191217999556102
+      ],
+      "prototype": [
+        0.2920358999981545,
+        0.2905839000013657,
+        0.29065360000822693,
+        0.29089060000842437,
+        0.29321139998501167
+      ]
+    },
+    "medians_sec": {
+      "original": 0.3191217999556102,
+      "prototype": 0.29089060000842437
+    },
+    "speedup": 1.0970509186146553,
+    "successful_queries": 264
+  },
+  "caveat": "Isolated read-only queries on final LTN state, with warm static caches. Ratios are not whole-simulation speedups. Prototypes were never used during the baseline run."
+}

@@ -1,0 +1,58 @@
+Stress dialog audit - 12 October 2026
+
+Main finding
+The Windows save dialog confirmed replacement, but create_study then rejected
+every existing filename. The UI could also leave its progress bars spinning
+after this failure. Confirmed replacement now creates a new study and retains
+the previous JSON beside it as a dated *.previous-*.stress.json backup. Existing
+trial directories remain intact. Opening a saved study remains the resume path.
+
+Additional fixes
+- Prevent duplicate startup while Qt processes events or the file picker is open.
+- Lock the study across coordinators and replacement operations, with automatic
+  OS lock release when the owning process exits.
+- Keep a running dialog visible when Escape or Close is pressed.
+- Reset progress and unlock the editor after failed startup or worker exit.
+- Report external cancellation as stopped, and completed resume as complete.
+- Validate opened files before replacing the currently loaded study.
+- Preserve saved numeric precision and support seeds beyond the widget range.
+- Restore study settings button allows recovery after editing a frozen setup.
+- Keep the current retry error visible instead of replacing it with an old error.
+- Reject resume/finalization if another window replaced the study file.
+- Keep worker termination scheduled even if the stop-request file cannot be saved.
+- Preserve the old study if a stale stop-request file cannot be removed.
+- Disable review actions and corridor highlighting immediately during startup/run.
+
+Coverage
+Setup: individual/category checkboxes, Ctrl/Shift selection, Space, bulk controls,
+collapsed categories, fresh/saved selections, added assets, scope and trial counts,
+time/duration/effect validation, bounds, seed, budget, worker/RAM controls, saved
+settings, restoring settings, numeric round trips, unsupported Detailed mode.
+Files/startup: new/open/overwrite/cancel picker, malformed files, read-only writes,
+backup preservation, locked files, concurrent processes, failed launch and retry,
+duplicate starts, replaced files, completion without launching another worker.
+Execution: background process and editing lock, progress and resource reporting,
+baseline reuse and validation, failed baseline evidence, stop, retained completed
+trials, resume, reproducibility, worker cleanup and memory-pressure handling.
+Review: pass/fail metrics, critical corridor selection/highlight, investigation,
+playback, reused baseline evidence and saving an editable scenario.
+
+Native Windows smoke check
+Used a separate disposable editor and fixture project. Chose New study and run,
+selected the existing native-overwrite.stress.json, clicked Save and confirmed
+the Windows replacement prompt. Observed startup, dated backup notice, and
+Study complete with baseline and disruption results visible. Closed only the
+disposable process afterwards. The user's unsaved LTN project was not replaced.
+
+Verification logs
+stress-dialog-audit-before-20261012.txt: original workflow failures reproduced.
+stress-dialog-error-paths-before-20261012.txt: four additional recovery failures reproduced.
+stress-dialog-audit-final-20261012.txt: 108 broader tests passed.
+stress-dialog-audit-recovery-20261012.txt: 55 dialog/file recovery tests passed.
+stress-dialog-review-lock-final-20261012.txt: 4 targeted review/startup tests passed.
+Together these suites cover 114 distinct passing tests. git diff --check passed.
+
+The running application must be restarted to load the dialog changes. Save any
+unsaved project edits before restarting. These stress-only source changes remain
+eligible for reuse of a matching normal-operation baseline; changed simulation
+inputs, incompatible software, or missing/corrupt evidence still require a rerun.

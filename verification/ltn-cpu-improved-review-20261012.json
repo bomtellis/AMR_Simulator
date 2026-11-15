@@ -1,0 +1,528 @@
+{
+  "scope": "Full seven-day LTN, CPU Simple, unchanged project; fresh profile, unprofiled control and isolated lower-bound experiment.",
+  "runtime": {
+    "python": "3.13.14 (tags/v3.13.14:fd17997, Jun 10 2026, 13:03:48) [MSC v.1944 64 bit (AMD64)]",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "gil_enabled": true
+  },
+  "inputs_sha256": "e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b",
+  "current_application_source_sha256": "f966786d8b81209b58f719074786e5e73184704342c26920b9091e0034cb4d48",
+  "runs": {
+    "profiled": {
+      "backend": "cpu",
+      "profiled": true,
+      "wall_sec": 600.1492262000102,
+      "initialisation_sec": 5.733474800013937,
+      "execution_sec": 591.3055699999677,
+      "finalisation_sec": 3.110172300017439,
+      "peak_parent_bytes": 409829376,
+      "source_config_sha256": "e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b",
+      "software_sha256": "f966786d8b81209b58f719074786e5e73184704342c26920b9091e0034cb4d48",
+      "period": {
+        "start_datetime": "2026-01-01T05:00:00",
+        "end_datetime": "2026-01-08T05:00:00"
+      },
+      "evidence_bytes": 263646137,
+      "first_expansion_sec": 5.666839199955575
+    },
+    "unprofiled_control": {
+      "backend": "cpu",
+      "profiled": false,
+      "wall_sec": 157.68811390001792,
+      "initialisation_sec": 1.5547970000188798,
+      "execution_sec": 154.71582889999263,
+      "finalisation_sec": 1.417480500007514,
+      "peak_parent_bytes": 410652672,
+      "source_config_sha256": "e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b",
+      "software_sha256": "f966786d8b81209b58f719074786e5e73184704342c26920b9091e0034cb4d48",
+      "period": {
+        "start_datetime": "2026-01-01T05:00:00",
+        "end_datetime": "2026-01-08T05:00:00"
+      },
+      "evidence_bytes": 263646137,
+      "first_expansion_sec": 5.7279277999768965
+    },
+    "isolated_prototype": {
+      "backend": "cpu",
+      "profiled": false,
+      "wall_sec": 132.6487526000128,
+      "initialisation_sec": 1.5698072999948636,
+      "execution_sec": 129.53902790002758,
+      "finalisation_sec": 1.5399119000067003,
+      "peak_parent_bytes": 392654848,
+      "source_config_sha256": "e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b",
+      "software_sha256": "f966786d8b81209b58f719074786e5e73184704342c26920b9091e0034cb4d48",
+      "period": {
+        "start_datetime": "2026-01-01T05:00:00",
+        "end_datetime": "2026-01-08T05:00:00"
+      },
+      "evidence_bytes": 263646137,
+      "first_expansion_sec": 5.661017600039486,
+      "experimental_override": {
+        "description": "Simple non-scenario outgoing-route free-flow lower bound; production unchanged",
+        "original_method_sha256": "68283cf196175edddb7401e6a019a211fcc8b5ff61e845a424bb83aff016327a",
+        "experimental_method_sha256": "ad0d7d21fcc82fc60276337934935ab5e8aafe2926145af088e5c6f1c66143ab",
+        "harness_sha256": "022a97286923f695ba8bb60a0d71bbeef903ae35a3a989066a2d4484a4c1a0ae",
+        "source_binding_note": "software_sha256 binds the base engine, not this separately recorded override",
+        "counts": {
+          "tested": 816303,
+          "additional_pruned": 568272,
+          "no_route": 0
+        },
+        "cached_bounds": 1239
+      },
+      "matches_verified_improved_outcomes": true,
+      "matches_verified_inputs": true
+    }
+  },
+  "all_runs_match_verified_task_events_and_final_state": true,
+  "normalised_outcome": {
+    "completed": 2935,
+    "failed": 4946,
+    "pending": 0,
+    "end": 607262.283551107,
+    "records_sha256": "aae86a5da221b659e40a25649fe03172665ee70e0f5f58ad16f9c49b45d4cae4",
+    "event_rows_sha256": "d630380e3e6d49e004d26a6ae3187c7110e27f75e95c46f875ea7a7bfe414ebb",
+    "final_state_sha256": "03a0b49ecc73a9fad54a620cea25cfcc32287cf82b28ae3bb3fa998cf7ac51f5"
+  },
+  "profile": {
+    "total_profile_sec": 599.0142545000001,
+    "total_calls": 2280636675,
+    "prior_total_calls": 5381421664,
+    "functions": [
+      {
+        "function": "_try_assign_tasks",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 12161,
+        "improved": {
+          "calls": 26882,
+          "self_sec": 1.2013798,
+          "cumulative_sec": 552.1257315,
+          "self_percent": 0.20055946765453805,
+          "cumulative_percent": 92.17238610805045
+        },
+        "previous_profile": {
+          "calls": 26882,
+          "self_sec": 1.2981015,
+          "cumulative_sec": 1224.6825929000001,
+          "self_percent": 0.09605890854177188,
+          "cumulative_percent": 90.62594349061392
+        }
+      },
+      {
+        "function": "_select_best_assignment",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 11298,
+        "improved": {
+          "calls": 13812,
+          "self_sec": 0.2540924,
+          "cumulative_sec": 473.15988880000003,
+          "self_percent": 0.04241842294923216,
+          "cumulative_percent": 78.98975445833902
+        },
+        "previous_profile": {
+          "calls": 13812,
+          "self_sec": 0.28296760000000004,
+          "cumulative_sec": 676.2032826000001,
+          "self_percent": 0.020939471072704788,
+          "cumulative_percent": 50.03872908160058
+        }
+      },
+      {
+        "function": "_estimate_task_for_amr_cached",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 11232,
+        "improved": {
+          "calls": 137210,
+          "self_sec": 0.1730007,
+          "cumulative_sec": 468.59806610000004,
+          "self_percent": 0.028880898693204635,
+          "cumulative_percent": 78.22819950939915
+        },
+        "previous_profile": {
+          "calls": 137210,
+          "self_sec": 0.1879877,
+          "cumulative_sec": 671.231252,
+          "self_percent": 0.013911002553558448,
+          "cumulative_percent": 49.670801124755684
+        }
+      },
+      {
+        "function": "_estimate_task_for_amr",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 10450,
+        "improved": {
+          "calls": 145004,
+          "self_sec": 0.2922867,
+          "cumulative_sec": 503.3884269,
+          "self_percent": 0.04879461512046538,
+          "cumulative_percent": 84.03613488633599
+        },
+        "previous_profile": {
+          "calls": 145004,
+          "self_sec": 0.33096770000000003,
+          "cumulative_sec": 718.7101981000001,
+          "self_percent": 0.02449145619551368,
+          "cumulative_percent": 53.18422110083585
+        }
+      },
+      {
+        "function": "_nearest_compatible_lift_plan",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 9565,
+        "improved": {
+          "calls": 190749,
+          "self_sec": 7.427990200000001,
+          "cumulative_sec": 424.7129985,
+          "self_percent": 1.2400356325744164,
+          "cumulative_percent": 70.90198527153747
+        },
+        "previous_profile": {
+          "calls": 326723,
+          "self_sec": 13.8338443,
+          "cumulative_sec": 1057.701667,
+          "self_percent": 1.0236980578135164,
+          "cumulative_percent": 78.26943247106075
+        }
+      },
+      {
+        "function": "_same_floor_segments",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 9134,
+        "improved": {
+          "calls": 2346353,
+          "self_sec": 112.420811,
+          "cumulative_sec": 387.17464190000004,
+          "self_percent": 18.76763535349224,
+          "cumulative_percent": 64.63529690510896
+        },
+        "previous_profile": {
+          "calls": 4953759,
+          "self_sec": 235.69269680000002,
+          "cumulative_sec": 915.0038974,
+          "self_percent": 17.441150176526854,
+          "cumulative_percent": 67.70986374772036
+        }
+      },
+      {
+        "function": "_find_next_edge_start",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 8811,
+        "improved": {
+          "calls": 28774315,
+          "self_sec": 41.299756800000004,
+          "cumulative_sec": 110.9894653,
+          "self_percent": 6.89462003445529,
+          "cumulative_percent": 18.528685163367843
+        },
+        "previous_profile": {
+          "calls": 60483353,
+          "self_sec": 87.4064907,
+          "cumulative_sec": 233.89107550000003,
+          "self_percent": 6.468039745819981,
+          "cumulative_percent": 17.307831036472237
+        }
+      },
+      {
+        "function": "_directed_no_overtake_start",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 8773,
+        "improved": {
+          "calls": 28903507,
+          "self_sec": 27.158568000000002,
+          "cumulative_sec": 45.5211911,
+          "self_percent": 4.533876747669282,
+          "cumulative_percent": 7.599350225479483
+        },
+        "previous_profile": {
+          "calls": 60661952,
+          "self_sec": 57.242296100000004,
+          "cumulative_sec": 95.5171856,
+          "self_percent": 4.23590334483931,
+          "cumulative_percent": 7.0682274041882325
+        }
+      },
+      {
+        "function": "_edge_recent_demand",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 8757,
+        "improved": {
+          "calls": 28774315,
+          "self_sec": 18.3109079,
+          "cumulative_sec": 35.133211700000004,
+          "self_percent": 3.0568400939447087,
+          "cumulative_percent": 5.865171226906086
+        },
+        "previous_profile": {
+          "calls": 60483353,
+          "self_sec": 38.7122443,
+          "cumulative_sec": 73.6288684,
+          "self_percent": 2.864688111569419,
+          "cumulative_percent": 5.44850208991343
+        }
+      },
+      {
+        "function": "_find_next_node_arrival",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 8911,
+        "improved": {
+          "calls": 28774315,
+          "self_sec": 17.5598278,
+          "cumulative_sec": 33.5384661,
+          "self_percent": 2.9314540794454493,
+          "cumulative_percent": 5.598942904621645
+        },
+        "previous_profile": {
+          "calls": 60483353,
+          "self_sec": 37.333294300000006,
+          "cumulative_sec": 70.4620055,
+          "self_percent": 2.7626464515500166,
+          "cumulative_percent": 5.214155705077244
+        }
+      },
+      {
+        "function": "_corridor_lane_capacity",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 7753,
+        "improved": {
+          "calls": 28774315,
+          "self_sec": 21.9566769,
+          "cumulative_sec": 45.666999600000004,
+          "self_percent": 3.6654681812751417,
+          "cumulative_percent": 7.623691632867478
+        },
+        "previous_profile": {
+          "calls": 60483353,
+          "self_sec": 45.8057023,
+          "cumulative_sec": 98.4743528,
+          "self_percent": 3.3896007114446216,
+          "cumulative_percent": 7.287056404545698
+        }
+      },
+      {
+        "function": "_annotate_delivery_motor_energy",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 2127,
+        "improved": {
+          "calls": 113963,
+          "self_sec": 4.981497,
+          "cumulative_sec": 25.767306700000002,
+          "self_percent": 0.8316157691703143,
+          "cumulative_percent": 4.30161828477823
+        },
+        "previous_profile": {
+          "calls": 113963,
+          "self_sec": 5.0480467,
+          "cumulative_sec": 26.117556200000003,
+          "self_percent": 0.3735531129652754,
+          "cumulative_percent": 1.9326870374546117
+        }
+      },
+      {
+        "function": "_make_aggregate_payload",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 1906,
+        "improved": {
+          "calls": 2320680,
+          "self_sec": 5.1533162,
+          "cumulative_sec": 17.0562982,
+          "self_percent": 0.8602994271482732,
+          "cumulative_percent": 2.847394376989738
+        },
+        "previous_profile": {
+          "calls": 2320680,
+          "self_sec": 5.1367233,
+          "cumulative_sec": 17.2223237,
+          "self_percent": 0.38011514020982845,
+          "cumulative_percent": 1.2744439607958933
+        }
+      },
+      {
+        "function": "_find_lift_journey_slot",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 9429,
+        "improved": {
+          "calls": 1287566,
+          "self_sec": 2.6030947,
+          "cumulative_sec": 12.5588294,
+          "self_percent": 0.4345630643085139,
+          "cumulative_percent": 2.096582728316359
+        },
+        "previous_profile": {
+          "calls": 2301094,
+          "self_sec": 4.5996349,
+          "cumulative_sec": 98.2606786,
+          "self_percent": 0.34037084787641186,
+          "cumulative_percent": 7.27124461291343
+        }
+      },
+      {
+        "function": "_create_idle_return_task",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 15712,
+        "improved": {
+          "calls": 298024,
+          "self_sec": 0.0711292,
+          "cumulative_sec": 5.4883592000000005,
+          "self_percent": 0.011874375186509021,
+          "cumulative_percent": 0.9162318189875397
+        },
+        "previous_profile": {
+          "calls": 298024,
+          "self_sec": 0.18573150000000002,
+          "cumulative_sec": 460.32514410000005,
+          "self_percent": 0.01374404480067707,
+          "cumulative_percent": 34.063847023194924
+        }
+      },
+      {
+        "function": "_shortest_path_same_floor",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 7845,
+        "improved": {
+          "calls": 2408439,
+          "self_sec": 4.8661909,
+          "cumulative_sec": 14.560566300000001,
+          "self_percent": 0.8123664609720902,
+          "cumulative_percent": 2.43075455894681
+        },
+        "previous_profile": {
+          "calls": 5015845,
+          "self_sec": 8.0694321,
+          "cumulative_sec": 25.2615592,
+          "self_percent": 0.5971342303186139,
+          "cumulative_percent": 1.8693436567289663
+        }
+      },
+      {
+        "function": "_department_operating_periods_for_date",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\amr_sim_task_generation.py",
+        "line": 349,
+        "improved": {
+          "calls": 1525058,
+          "self_sec": 3.0413465000000004,
+          "cumulative_sec": 12.6682079,
+          "self_percent": 0.5077252297674661,
+          "cumulative_percent": 2.1148424774255514
+        },
+        "previous_profile": {
+          "calls": 4698746,
+          "self_sec": 18.977001400000002,
+          "cumulative_sec": 65.92611360000001,
+          "self_percent": 1.404289296237372,
+          "cumulative_percent": 4.878501809617248
+        }
+      },
+      {
+        "function": "_route_estimate_cache_key",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 11139,
+        "improved": {
+          "calls": 274420,
+          "self_sec": 1.1704231,
+          "cumulative_sec": 4.1452689000000005,
+          "self_percent": 0.19539152719778888,
+          "cumulative_percent": 0.6920150678985219
+        },
+        "previous_profile": {
+          "calls": 274420,
+          "self_sec": 1.2204274000000002,
+          "cumulative_sec": 4.2605322,
+          "self_percent": 0.09031106119087949,
+          "cumulative_percent": 0.31527740545641014
+        }
+      },
+      {
+        "function": "_invalidate_route_estimate_cache",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 11181,
+        "improved": {
+          "calls": 16562,
+          "self_sec": 0.010212800000000001,
+          "cumulative_sec": 0.7203436000000001,
+          "self_percent": 0.001704934385664106,
+          "cumulative_percent": 0.12025483443649836
+        },
+        "previous_profile": {
+          "calls": 16562,
+          "self_sec": 0.0113735,
+          "cumulative_sec": 1.3099519000000002,
+          "self_percent": 0.0008416337214769744,
+          "cumulative_percent": 0.09693583264191614
+        }
+      },
+      {
+        "function": "log_step",
+        "file": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\simulator.py",
+        "line": 14370,
+        "improved": {
+          "calls": 163717,
+          "self_sec": 2.2137905,
+          "cumulative_sec": 18.5985032,
+          "self_percent": 0.3695722569820748,
+          "cumulative_percent": 3.104851522360558
+        },
+        "previous_profile": {
+          "calls": 163717,
+          "self_sec": 2.291367,
+          "cumulative_sec": 22.2062062,
+          "self_percent": 0.16956009456012047,
+          "cumulative_percent": 1.6432489527402347
+        }
+      }
+    ],
+    "note": "Cumulative times include callees and overlap. Profiling changes call costs; shares are diagnostic, not unprofiled wall-time savings forecasts."
+  },
+  "observed_task_estimate_cache": {
+    "lookups": 137210,
+    "misses": 137210,
+    "hits": 0,
+    "invalidations": 16562,
+    "evidence": "Every cached-estimator invocation called the underlying estimator once."
+  },
+  "prototype": {
+    "wall_time_reduction_percent": 15.879041660604365,
+    "seconds_saved": 25.039361300005112,
+    "production_code_changed": false,
+    "parity_scope": "Full-week LTN complete normalised task records, event rows and operational final resource/robot/payload state; not a broad regression certification.",
+    "sample_limit": "One fresh-process sample per control/prototype, sequential with equal thread environment; no confidence interval."
+  },
+  "recommendations": [
+    {
+      "priority": 1,
+      "change": "Strengthen Simple non-scenario lift pruning using an outgoing free-flow lower bound.",
+      "evidence": "Isolated full-week prototype, complete outcome parity, 568272 additional outgoing evaluations skipped.",
+      "validation_needed": "Bounds for edge arithmetic, ties, negative/malformed settings, width/profile restrictions, node waits, lift repair, journal rollback and all 47 saved scenarios. Detailed/scenario mode retain existing evaluation."
+    },
+    {
+      "priority": 2,
+      "change": "Prepare route-edge descriptors per route, robot, payload and orientation.",
+      "evidence": "28.8 million lane-capacity calls, 7.62% inclusive; recurring edge identifiers, tuple keys and orientation normalisation.",
+      "validation_needed": "Separate static descriptors from time-dependent reservations, people, congestion and scenarios; handle dimensions/speed/graph/profile edits and identity lifetime."
+    },
+    {
+      "priority": 3,
+      "change": "Use compact exact candidate routes and build full reporting segments for selected/committed routes.",
+      "evidence": "2.35 million corridor-leg calls; 98% originate in lift alternatives; 137210 non-reserving task estimates; same-floor own cost 18.77%.",
+      "validation_needed": "Retain per-edge waits and durations, reversed approach-node candidates, energy/battery decisions, action timing and deterministic ties. Do not use the approximate fast_assignment_estimates switch."
+    },
+    {
+      "priority": 4,
+      "change": "Reuse onboard aggregate payload and traction power until pickup/dropoff changes the load.",
+      "evidence": "2.32 million repeated aggregate payload constructions, 2.85% inclusive; energy annotation 4.30%.",
+      "validation_needed": "Keep each segment energy computation and accumulation order; preserve load-state transitions for multi-stop and wash/return routes."
+    },
+    {
+      "priority": 5,
+      "change": "Share reservation views and reduce dispatch/conversion overhead in corridor timing.",
+      "evidence": "Edge start incl. FIFO 18.53%, recent demand 5.87%, node arrival 5.60%, 115.7 million reservation-scan calls.",
+      "validation_needed": "Keep congestion windows, protected intervals, lane occupancy, FIFO conditions, nonmonotonic interval ends and transaction rollback exact. Dynamic queries cannot be replaced by static distances."
+    },
+    {
+      "priority": 6,
+      "change": "Redesign estimate reuse around dependency-scoped static data and exact dynamic state.",
+      "evidence": "Zero hits in 137210 lookups; 16562 invalidations. Increasing cache capacity is unsupported by this workload.",
+      "validation_needed": "Do not widen the existing time bucket or omit battery, reservations, payload inventory, lift health/repair or scenario dependencies. Instrument misses by reason before redesign."
+    }
+  ]
+}

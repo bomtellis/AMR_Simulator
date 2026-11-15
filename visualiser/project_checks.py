@@ -99,19 +99,23 @@ class CheckReport:
     check_groups: dict = field(default_factory=dict)
     external_files: dict = field(default_factory=dict)
     route_checks: list = field(default_factory=list)
+    asset_refs: frozenset | None = None
+
+    def _current_drawings(self):
+        return dependency_checks.current_drawings(self.external_files, asset_refs=self.asset_refs)
 
     def is_stale(self, config):
         return (self.config_hash != config_fingerprint(config) or
-                dependency_checks.current_drawings(self.external_files) != self.external_files)
+                self._current_drawings() != self.external_files)
 
     def changed_inputs(self, finding, config):
         recorded = self.finding_inputs.get(finding.id)
         if not recorded:
             return ['*'] if self.is_stale(config) else []
-        return dependency_checks.changed_inputs(recorded, config, dependency_checks.current_drawings(self.external_files))
+        return dependency_checks.changed_inputs(recorded, config, self._current_drawings())
 
     def group_states(self, config):
-        external = dependency_checks.current_drawings(self.external_files)
+        external = self._current_drawings()
         keys = {key for value in self.check_groups.values() for key in value['inputs']}
         hashes = {key: dependency_checks.input_hash(config, key, external) for key in keys}
         return {key: {'label': value['label'], 'execution': value['execution'],
@@ -119,7 +123,7 @@ class CheckReport:
                 for key, value in self.check_groups.items()}
 
     def finding_states(self, config):
-        external = dependency_checks.current_drawings(self.external_files)
+        external = self._current_drawings()
         keys = {key for inputs in self.finding_inputs.values() for key in inputs}
         hashes = {key: dependency_checks.input_hash(config, key, external) for key in keys}
         stale = self.is_stale(config)
@@ -146,7 +150,7 @@ class CheckReport:
                 "scope": "Structural, reference, schedule, graph and payload-capacity preflight; not full simulator validation."}
 
 
-def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport:
+def check_project(config, *, base_path=None, include_legacy=True, asset_refs=None) -> CheckReport:
     """Read raw input before normalisation; never repair or save it implicitly."""
     findings = []
     completed_groups = set()
@@ -162,10 +166,23 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             "The simulator may reject or misinterpret this input.", "Correct the highlighted setting.", section, target)
 
     def finish():
+        building = config.get('building', {}) if isinstance(config, dict) else {}
+        if (isinstance(building, dict) and building.get('lift_transfer_floor') is not None
+                and building.get('mandatory_floor_waypoints')
+                and building.get('force_via_floor_enabled', False) is not True):
+            add('LIFT_WAYPOINT_OVERRIDE', 'warning', '/building/mandatory_floor_waypoints',
+                'Lift routing', 'Explicit mandatory floor waypoints take priority over direct-lift-first routing.',
+                'A suitable direct lift may still have to visit a mandatory floor.',
+                'Remove unwanted mandatory waypoint rules to allow direct lifts to bypass the transfer floor.')
+        if isinstance(building, dict) and building.get('force_via_floor_enabled', False) is True:
+            add('FORCED_AMR_FLOOR', 'info', '/building/force_via_floor_enabled', 'Lift routing',
+                f"Every AMR journey must visit floor {building.get('force_via_floor')}, including same-floor travel.",
+                'Journeys may use multiple lifts and revisit floors; final lifts are selected by destination corridor distance.',
+                'Disable forced journeys to restore the existing routing settings.')
         rank = {"error": 0, "warning": 1, "info": 2}
         unique = {f.id: f for f in findings}
         ordered = sorted(unique.values(), key=lambda f: (rank[f.severity], f.path, f.code))
-        external = dependency_checks.drawing_state(config, base_path)
+        external = dependency_checks.drawing_state(config, base_path, asset_refs=asset_refs)
         hashes = {}
         def capture(deps):
             for key in deps:
@@ -177,7 +194,7 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             check_groups={key: {'label': label, 'execution': 'completed' if key in completed_groups else 'not_run',
                                 'inputs': capture(deps)}
                           for key, (label, deps) in dependency_checks.GROUPS.items()}, external_files=external,
-            route_checks=route_checks)
+            route_checks=route_checks, asset_refs=asset_refs)
 
     completed_groups.add('structure')
     if not isinstance(config, dict):
@@ -213,6 +230,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         return finish()
 
     from amr_routing_inputs import routing_input_findings
+    from amr_scenario_inputs import scenario_input_findings
+    for path, message in scenario_input_findings(config):
+        error(path, message, 'scenario_testing', code='SCENARIO_INPUT')
     for path, message in routing_input_findings(config):
         error(path, message, path.split('/')[1], code="ROUTING_INPUT")
     if findings:
@@ -251,6 +271,14 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
         return finish()
 
     completed_groups.add('generation')
+    for index, lift in enumerate(config.get('lifts', [])):
+        if lift.get('usage_mode') == 'bed_fallback':
+            windows = lift.get('amr_access_windows', [])
+            add('BED_LIFT_ACCESS', 'info' if windows else 'warning',
+                f'/lifts/{index}/amr_access_windows', lift['id'],
+                'Bed-lift fallback is limited to daily AMR access windows.' if windows else 'This bed lift has no AMR access windows and cannot carry AMRs.',
+                'Route reachability checks are structural; they do not establish availability at the requested time. Individual bed movements are not simulated.',
+                'Review access windows in the lift editor and the FM waiting limit in Building settings.', 'lifts', kind='assumption')
     for severity, path, message in generation_input_findings(config):
         section = path.split('/')[1]
         if severity == 'error':
@@ -451,6 +479,19 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
             if candidates:
                 near = min(candidates, key=lambda n: (float(point["x"]) - float(names[n]["x"])) ** 2 + (float(point["y"]) - float(names[n]["y"])) ** 2)
                 directed.extend([(name, near, ""), (near, name, "")])
+
+    for index, lift in enumerate(config.get('lifts', [])):
+        if lift.get('transfer_timing_mode', 'fixed') != 'speed_based':
+            continue
+        lift_stops = {name for a, b, _ in lift_pairs for name in (a, b)}
+        for floor in lift.get('served_floors', []):
+            stop = f"{lift['id']}-F{floor}"
+            incoming = any(b == stop and not kind and a not in lift_stops for a, b, kind in directed)
+            outgoing = any(a == stop and not kind and b not in lift_stops for a, b, kind in directed)
+            if not incoming or not outgoing:
+                error(f'/lifts/{index}/transfer_timing_mode',
+                    f'{stop} needs incoming and outgoing graph edges connecting the lift to its corridor for speed-based timing.',
+                    'lifts', lift['id'], 'LIFT_CONNECTOR')
 
     # Repeated IDs may describe successive moves of one object, but its payload
     # type must agree. Do not reject legitimate sequential reuse as a duplicate.
@@ -713,7 +754,9 @@ def check_project(config, *, base_path=None, include_legacy=True) -> CheckReport
                 path = Path(value)
                 if not path.is_absolute() and base_path:
                     path = Path(base_path) / path
-                if not path.is_file():
+                available = (value in asset_refs if asset_refs is not None and value.startswith('amr-asset:')
+                             else path.is_file())
+                if not available:
                     add("DRAWING_MISSING", "warning", f"/{section}/{i}/filepath", f"Floor {entry.get('floor', '?')}",
                         f"Drawing is unavailable: {value}", "The background cannot be displayed; explicit graph routes can still be simulated.",
                         "Relink the drawing or acknowledge a run without it.", section)

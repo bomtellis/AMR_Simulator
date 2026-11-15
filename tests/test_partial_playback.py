@@ -69,6 +69,8 @@ class PartialPlaybackTests(unittest.TestCase):
 
         with patch.object(Simulation, '_handle_event', handle), contextlib.redirect_stdout(io.StringIO()):
             execute(directory)
+        from amr_run_exports import ensure_exports
+        ensure_exports(directory, ('steps_csv',))
         self.assertEqual('partial', read_json(directory/'run_manifest.json')['status'])
         return directory
 

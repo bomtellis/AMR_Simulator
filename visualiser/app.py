@@ -613,7 +613,10 @@ class AMRGraphEditor(QMainWindow):
     def project_editing_locked(self):
         panel = getattr(self, 'project_runs_panel', None)
         planner = getattr(self, 'lift_planner', None)
-        return (panel is not None and panel.running()) or (planner is not None and planner.running())
+        stress = getattr(self, 'scenario_stress_dialog', None)
+        contingency = getattr(self, 'human_contingency_dialog', None)
+        return ((panel is not None and panel.running()) or (planner is not None and planner.running())
+                or (stress is not None and stress.running()) or (contingency is not None and contingency.running()))
 
     def _project_editing_allowed(self):
         if self.project_editing_locked():
@@ -821,6 +824,12 @@ class AMRGraphEditor(QMainWindow):
         return not hasattr(self, 'properties_panel') or self.properties_panel.apply()
 
     def _confirm_unsaved_changes(self):
+        if hasattr(self, 'human_contingency_dialog') and self.human_contingency_dialog.running():
+            self.set_status('Stop the human contingency study or wait for completion before closing or changing projects.')
+            return False
+        if hasattr(self, 'scenario_stress_dialog') and self.scenario_stress_dialog.running():
+            self.set_status('Stop stress-study evaluation or wait for completion before changing projects or closing.')
+            return False
         if hasattr(self, 'lift_planner') and self.lift_planner.running():
             self.set_status('Stop lift-study evaluation or wait for completion before changing projects or closing.')
             return False
@@ -840,6 +849,8 @@ class AMRGraphEditor(QMainWindow):
         if any(window.isVisible() and not window.property('amrEmbeddedPlayback') for window in self.findChildren(QMainWindow)):
             QMessageBox.information(self, "Finish editing first",
                 "Close the task editor or planner before opening another project or closing the main editor. This keeps its pending edits with the correct project.")
+            return False
+        if hasattr(self, 'project_runs_panel') and not self.project_runs_panel.confirm_memory_loss():
             return False
         if not self.has_unsaved_changes():
             return True
@@ -1094,7 +1105,9 @@ class AMRGraphEditor(QMainWindow):
                 ),
                 button("Project checks", self.validate_json),
                 button("Demand preview", self.show_demand_preview),
+                button("FM logistics planning", self.show_fm_logistics),
                 button("Results investigation", self.show_results_investigation),
+                button("Lift & Route Analysis", self.show_route_analysis),
                 button("Project runs", self.show_project_runs),
             ],
             columns=3,
@@ -1190,6 +1203,7 @@ class AMRGraphEditor(QMainWindow):
                 button("Simulation settings", self.manage_simulation_settings),
                 button("Building settings", self.manage_building_settings),
                 button("Scenario testing", self.manage_scenario_testing),
+                button("Human contingency study", self.show_human_contingency_study),
                 button("People movement", self.manage_people_movement),
                 button("Corridor widths and doors", self.manage_corridor_settings),
             ],
@@ -4706,6 +4720,8 @@ class AMRGraphEditor(QMainWindow):
 
     def _replace_document(self, store, path, *, project=None, cache=None,
                           load_drawings=True, validation_errors=()):
+        if hasattr(self, 'project_runs_panel'):
+            self.project_runs_panel.clear_memory_runs()
         if hasattr(self, 'playback_panel'):
             self.playback_panel.reset()
         if hasattr(self, 'properties_panel'):
@@ -4874,6 +4890,30 @@ class AMRGraphEditor(QMainWindow):
             QMessageBox.critical(self, "Project save failed", f"The project was not saved.\n\n{exc}")
             return False
 
+    def adopt_memory_run_project(self, project, same_inputs, original_base):
+        """Adopt saved run metadata without replacing the editor's current inputs."""
+        if self.project is None:
+            from amr_project import ASSET_PREFIX, drawing_entries
+            remapped = {}
+            for entry, _ in drawing_entries(self.store.data):
+                source = entry['filepath']
+                if not source.startswith(ASSET_PREFIX) and not Path(source).is_absolute():
+                    remapped[source] = str((original_base / source).resolve())
+                    entry['filepath'] = remapped[source]
+            if remapped:
+                self.edit_history.remap_drawings(remapped)
+            self.project = project
+            self.current_json_path = str(project.path)
+            self._saved_state = self._configuration_state() if same_inputs else None
+            self._recovered_work = False
+        else:
+            self.project.__dict__.update(project.__dict__)
+        self._source_disk_hash = self.project._disk_hash
+        self._recovery_last_state = None
+        if hasattr(self, 'project_history_panel'):
+            self.project_history_panel.refresh()
+        self._update_unsaved_indicator()
+
     def export_project_json(self):
         if not self._finish_property_draft():
             return
@@ -4907,6 +4947,19 @@ class AMRGraphEditor(QMainWindow):
             self.project_runs_panel = ProjectRunsPanel(self)
         self.project_runs_panel.refresh_runs()
         self.workspace.show_page('simulate', self.project_runs_panel)
+
+    def show_route_analysis(self, path=None):
+        root = str(Path(__file__).resolve().parents[1])
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from route_analysis_panel import RouteAnalysisPanel
+        if not hasattr(self, 'route_analysis_panel'):
+            self.route_analysis_panel = RouteAnalysisPanel(self)
+        self.route_analysis_panel.refresh_sources()
+        self.workspace.show_page('route_analysis', self.route_analysis_panel)
+        if path is not None:
+            self.route_analysis_panel.load('A', str(path))
+        self.set_status('Lift & Route Analysis opened. Select one or two saved runs.')
 
     def show_project_report(self, path=None):
         root = str(Path(__file__).resolve().parents[1])
@@ -5100,6 +5153,66 @@ class AMRGraphEditor(QMainWindow):
             self.set_status(
                 f"Scenario testing set to {dialog.result.get('active_scenario', 'Normal operation')}"
             )
+            if dialog.launch_stress_test:
+                QTimer.singleShot(0, self.show_scenario_stress_test)
+
+    def show_human_contingency_study(self):
+        from contingency_panel import HumanContingencyDialog
+        existing = getattr(self, 'human_contingency_dialog', None)
+        key = (getattr(self.project, 'project_id', None), self.current_json_path)
+        if existing is not None and not existing.running() and existing.project_key != key:
+            existing.close()
+            existing.deleteLater()
+            existing = None
+        if existing is None:
+            self.human_contingency_dialog = HumanContingencyDialog(self)
+        self.human_contingency_dialog.show()
+        self.human_contingency_dialog.raise_()
+        self.human_contingency_dialog.activateWindow()
+
+    @undoable('Edit human contingency settings')
+    def save_contingency_settings(self, settings, study_path=None):
+        self.store.data['human_contingency'] = dict(settings=deepcopy(settings), study_path=study_path)
+        self.set_status('Human contingency settings updated.')
+
+    def show_scenario_stress_test(self):
+        from scenario_stress_panel import ScenarioStressDialog
+        existing = getattr(self, 'scenario_stress_dialog', None)
+        project_key = (getattr(self.project, 'project_id', None), self.current_json_path)
+        if existing is not None and not existing.running() and existing.project_key != project_key:
+            existing.close()
+            existing.deleteLater()
+            del self.scenario_stress_dialog
+        if not hasattr(self, 'scenario_stress_dialog'):
+            self.scenario_stress_dialog = ScenarioStressDialog(self)
+        elif not self.scenario_stress_dialog.running():
+            self.scenario_stress_dialog.refresh()
+        self.scenario_stress_dialog.show()
+        self.scenario_stress_dialog.raise_()
+        self.scenario_stress_dialog.activateWindow()
+
+    @undoable('Edit stress-test settings')
+    def save_stress_settings(self, settings, study_path=None):
+        value = deepcopy(settings)
+        if study_path:
+            value['study_path'] = study_path
+        self.store.data.setdefault('scenario_testing', {})['stress_test'] = value
+
+    @undoable('Save stress-test scenario')
+    def save_stress_scenario(self, events, requested_name):
+        from copy import deepcopy
+        cfg = self.store.scenario_testing()
+        names = {s['name'].lower() for s in cfg['scenarios']}
+        base = 'Stress test: ' + requested_name
+        name = base
+        number = 2
+        while name.lower() in names:
+            name = f'{base} {number}'
+            number += 1
+        cfg['scenarios'].append(dict(name=name, description='Saved automated stress-study trial; review dated events before running.',
+                                     events=deepcopy(events)))
+        self.store.set_scenario_testing(cfg)
+        return name
 
     @undoable("Edit people profiles")
     def manage_people_movement(self):
@@ -5385,6 +5498,24 @@ class AMRGraphEditor(QMainWindow):
             self.checks_panel.check_staleness()
         return True
 
+    def show_fm_logistics(self):
+        from visualiser.fm_logistics_panel import FMLogisticsPanel
+
+        if not hasattr(self, 'fm_logistics_panel'):
+            self.fm_logistics_panel = FMLogisticsPanel(
+                lambda: self.store.data, self.apply_fm_logistics, self)
+        self.fm_logistics_panel.refresh()
+        self.workspace.show_page('fm_logistics', self.fm_logistics_panel)
+
+    @undoable('Apply FM logistics plan')
+    def apply_fm_logistics(self, plan):
+        if not self._project_editing_allowed():
+            return False
+        generation = deepcopy(self.store.data.get('task_generation', {}))
+        generation['fm_logistics'] = deepcopy(plan)
+        self.store.set_task_generation(generation)
+        return True
+
     def show_demand_preview(self):
         # The editor also runs directly from visualiser/amr_editor_main.py.
         root = str(Path(__file__).resolve().parents[1])
@@ -5393,6 +5524,9 @@ class AMRGraphEditor(QMainWindow):
         from demand_preview_panel import DemandPreviewPanel
         if not hasattr(self, 'demand_panel'):
             self.demand_panel = DemandPreviewPanel(lambda: self.store.data, self)
+            fm_button = QPushButton('FM logistics planning')
+            fm_button.clicked.connect(self.show_fm_logistics)
+            self.demand_panel.layout().insertWidget(1, fm_button)
             self.demand_scroll = QScrollArea(self)
             self.demand_scroll.setWidgetResizable(True)
             self.demand_scroll.setWidget(self.demand_panel)
@@ -5533,6 +5667,9 @@ class AMRGraphEditor(QMainWindow):
             result["minimum_operational_health_percent"],
             result["health_speed_penalty_at_zero"],
             result["start_floor"],
+            transfer_timing_mode=result.get('transfer_timing_mode', 'fixed'),
+            usage_mode=result.get('usage_mode'),
+            amr_access_windows=result.get('amr_access_windows'),
         )
 
     @undoable("Edit AMRs")
@@ -5677,6 +5814,10 @@ class AMRGraphEditor(QMainWindow):
             return
         self._dirty_timer.stop()
         self._recovery_timer.stop()
+        if hasattr(self, 'project_runs_panel'):
+            self.project_runs_panel.clear_memory_runs()
+        if hasattr(self, 'route_analysis_panel'):
+            self.route_analysis_panel.shutdown()
         if hasattr(self, 'playback_panel'):
             self.playback_panel.reset()
         self._discard_own_recovery()

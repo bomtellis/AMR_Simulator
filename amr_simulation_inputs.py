@@ -11,7 +11,7 @@ from amr_sim_time_utils import parse_release_time
 
 DEFAULTS = {
     'start_datetime': '2026-01-01T08:00:00', 'tick_rate': 120.0,
-    'generated_task_release_stagger_sec': 0.25, 'max_task_deferral_minutes': 0.0,
+    'generated_task_release_stagger_sec': 0.25, 'max_task_deferral_minutes': 60.0,
     'precompute_static_routes': True, 'route_precompute_max_pairs': 100000,
     'max_single_candidate_tasks': 8, 'max_multi_stop_candidate_tasks': 8,
     'max_assignments_per_tick': 50, 'assignment_continue_delay_sec': 0.001,
@@ -118,6 +118,8 @@ def validate_simulation_inputs(config):
 def resolved_simulation_settings(simulation):
     """Resolve validated settings for runtime/display without supplying an end."""
     result = dict(simulation)
+    # The retired computation selector has no effect on CPU-only execution.
+    result.pop('computation_backend', None)
     for key, default in DEFAULTS.items():
         result.setdefault(key, simulation.get(ALIASES.get(key), default))
     for key in FLAGS & result.keys():

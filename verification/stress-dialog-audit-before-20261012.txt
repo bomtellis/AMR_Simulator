@@ -1,0 +1,82 @@
+Failed to find real location of C:\Users\tombe\AppData\Local\Programs\Python\Python313\python.exe
+C:\Users\tombe\Documents\AMR_Simulator\visualiser\scenario_stress_panel.py:292: RuntimeWarning: libshiboken: Overflow: Value 1099511627776 exceeds limits of type  [signed] "int" (4bytes).
+  widget.setValue(settings[key])
+======================================================================
+ERROR: test_large_saved_seed_and_ram_precision_round_trip (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_large_saved_seed_and_ram_precision_round_trip)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 153, in test_large_saved_seed_and_ram_precision_round_trip
+    self.dialog.set_settings(settings)
+    ~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\tombe\Documents\AMR_Simulator\visualiser\scenario_stress_panel.py", line 292, in set_settings
+    widget.setValue(settings[key])
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+OverflowError
+
+======================================================================
+FAIL: test_complete_study_resume_opens_results_without_starting_worker (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_complete_study_resume_opens_results_without_starting_worker)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 120, in test_complete_study_resume_opens_results_without_starting_worker
+    self.assertGreater(self.dialog.trial_progress.maximum(), 0)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 not greater than 0
+
+======================================================================
+FAIL: test_confirmed_overwrite_runs_new_settings_and_retains_old_study (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_confirmed_overwrite_runs_new_settings_and_retains_old_study)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 53, in test_confirmed_overwrite_runs_new_settings_and_retains_old_study
+    self.assertTrue(self.dialog.running(), self.dialog.status.text())
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true : Choose a new study file; existing studies must be opened for resume.
+
+======================================================================
+FAIL: test_creation_failure_restores_idle_progress_and_retains_previous_study (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_creation_failure_restores_idle_progress_and_retains_previous_study)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 81, in test_creation_failure_restores_idle_progress_and_retains_previous_study
+    self.assertGreater(self.dialog.progress.maximum(), 0)
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 not greater than 0
+
+======================================================================
+FAIL: test_creation_process_events_cannot_start_another_study (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_creation_process_events_cannot_start_another_study)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 135, in test_creation_process_events_cannot_start_another_study
+    self.assertEqual(1, picker.call_count)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_escape_cannot_hide_running_dialog (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_escape_cannot_hide_running_dialog)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 101, in test_escape_cannot_hide_running_dialog
+    self.assertTrue(self.dialog.isVisible())
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: False is not true
+
+======================================================================
+FAIL: test_external_cancel_is_not_displayed_as_complete (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_external_cancel_is_not_displayed_as_complete)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 111, in test_external_cancel_is_not_displayed_as_complete
+    self.assertIn('stopped', self.dialog.status.text().lower())
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 'stopped' not found in 'study complete. review the worst passing scenario found and critical corridors.'
+
+======================================================================
+FAIL: test_malformed_open_does_not_replace_current_study (tests.test_stress_dialog_workflow.StressDialogWorkflowTests.test_malformed_open_does_not_replace_current_study)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\tombe\Documents\AMR_Simulator\tests\test_stress_dialog_workflow.py", line 91, in test_malformed_open_does_not_replace_current_study
+    self.assertEqual(path, self.dialog.path)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: Windo[22 chars]/Documents/AMR_Simulator/tmp/tmpm9_93pom/existing.stress.json') != Windo[22 chars]/Documents/AMR_Simulator/tmp/tmpm9_93pom/broken.json')
+
+----------------------------------------------------------------------
+Ran 11 tests in 16.317s
+
+FAILED (failures=7, errors=1)

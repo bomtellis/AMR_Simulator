@@ -8,9 +8,10 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
     QDialog, QMainWindow, QScrollArea, QComboBox, QCheckBox, QSplitter, QToolButton,
     QMenu, QSizePolicy)
 
-from amr_run_review import verified_inputs
+from amr_run_review import verified_events
 from amr_run_evidence import file_hash
 from amr_project_runs import OUTPUTS, read_json
+from amr_memory_runs import MemoryRun, check_cancelled
 from amr_sim_visualiser_pyside6 import (LayoutModel, SimulationLog, SimulationVisualizer,
     AuxiliaryTimelineWindow, LiftMonitorDialog)
 from playback_timeline import PlaybackTimelineWidget
@@ -60,30 +61,58 @@ def partial_notice(termination):
             f"{termination['message']} Playback ends at this stop; later planned activity is not executed evidence.")
 
 
-def load_playback(directory):
+def load_playback(directory, *, cancel=None, progress=None):
     """Build data off the GUI thread, rejecting inputs changed during loading."""
+    if isinstance(directory, MemoryRun):
+        from amr_event_store import iter_store_event_text
+        run = directory
+        evidence = run.require_reviewable()
+        manifest = {'name': run.name, 'status': run.status}
+        if run.status == 'partial':
+            manifest['termination'] = evidence['termination']
+        layout = LayoutModel()
+        layout.load_data(evidence['frozen_inputs'])
+        log = PartialSimulationLog() if run.status == 'partial' else SimulationLog()
+        with run.using_store(cancel) as store:
+            log.load_event_rows(iter_store_event_text(store), cancel=cancel, progress=progress)
+        check_cancelled(cancel)
+        if run.status == 'partial':
+            if layout.simulation_start_time is None:
+                raise ValueError('Partial playback requires a recorded simulation start time.')
+            log.bound(layout.simulation_start_time, manifest['termination'])
+        return run, manifest, layout, log
     directory = Path(directory).resolve()
+    if cancel and cancel():
+        raise InterruptedError('Playback loading cancelled')
+    if progress:
+        progress(dict(phase='Verifying playback evidence'))
+    manifest, config, csv, checksum = verified_events(directory, allow_partial=True)
     names = ('run_manifest.json', 'config.json', 'project_configuration.json',
-             'project_checks.json', OUTPUTS['steps_csv'], OUTPUTS['steps_csv'] + '.run.json')
+             'project_checks.json', csv.name + '.run.json')
     hashes = {name: file_hash(directory / name) for name in names}
-    manifest, config, csv, _checksum = verified_inputs(directory, allow_partial=True)
     partial = manifest['status'] == 'partial'
     layout, log = LayoutModel(), PartialSimulationLog() if partial else SimulationLog()
     layout.load_data(config)
-    log.load(str(csv), parallel=False)
+    if progress:
+        progress(dict(phase='Loading playback events'))
+    log.load(str(csv), parallel=False, **(dict(cancel=cancel, progress=progress) if csv.suffix == '.sqlite' else {}))
+    if cancel and cancel():
+        raise InterruptedError('Playback loading cancelled')
     if partial:
         origin = layout.simulation_start_time
         if origin is None:
             raise ValueError('Partial playback requires a recorded simulation start time.')
         log.bound(origin, manifest['termination'])
-    verified_inputs(directory, allow_partial=True)
-    if any(file_hash(directory / name) != value for name, value in hashes.items()):
+    _, _, current_log, current_hash = verified_events(directory, allow_partial=True)
+    if (current_log != csv or current_hash != checksum
+            or any(file_hash(directory / name) != value for name, value in hashes.items())):
         raise ValueError('Run inputs changed during playback loading. Select the run again.')
     return directory, manifest, layout, log
 
 
 class LoadSignals(QObject):
     finished = Signal(int, object, str)
+    progress = Signal(int, object)
 
 
 class LoadPlayback(QRunnable):
@@ -91,10 +120,14 @@ class LoadPlayback(QRunnable):
         super().__init__()
         self.token, self.directory = token, directory
         self.signals = LoadSignals()
+        import threading
+        self.cancelled = threading.Event()
 
     def run(self):
         try:
-            self.signals.finished.emit(self.token, load_playback(self.directory), '')
+            self.signals.finished.emit(self.token, load_playback(self.directory,
+                cancel=self.cancelled.is_set,
+                progress=lambda message: self.signals.progress.emit(self.token, message)), '')
         except Exception as exc:
             self.signals.finished.emit(self.token, None, str(exc))
 
@@ -518,8 +551,9 @@ class BoundVisualizer(SimulationVisualizer):
             self.route_error = 'Profile preview unavailable: ' + str(exc)
         self.route_note.setText(self.route_error or 'Profile access from frozen inputs. ' + SCOPE)
         self.route_choice.setToolTip(self.route_note.text())
-        self.current_json_path = str(directory / 'config.json')
-        self.current_csv_path = str(directory / OUTPUTS['steps_csv'])
+        if not isinstance(directory, MemoryRun):
+            self.current_json_path = str(directory / 'config.json')
+            self.current_csv_path = str(directory / OUTPUTS['steps_csv'])
         self.current_time = None
         self._invalidate_runtime_caches()
         floors = self.layout_model.floors()
@@ -545,6 +579,7 @@ class ProjectPlaybackPanel(QWidget):
         self.jobs = {}
         self.viewer = None
         self.directory = None
+        self.requested_memory = None
         self.requested_project = None
         self.requested_binding = None
         self.layout = QVBoxLayout(self)
@@ -559,34 +594,52 @@ class ProjectPlaybackPanel(QWidget):
             button.clicked.connect(callback)
             buttons.addWidget(button)
         self.layout.addLayout(buttons)
+        self.cancel_button = QPushButton('Cancel loading')
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_loading)
+        self.layout.addWidget(self.cancel_button, 0, Qt.AlignLeft)
 
     def load(self, directory):
         self.reset()
         self.requested_project = self.editor.project
         self.requested_evidence_project = getattr(self,'_study_context',None) or self.editor.project
         self._study_context=None
-        self.requested_binding = read_json(Path(directory) / 'run_manifest.json')['project_binding']
-        self.summary.setText('Loading and checking saved run inputs and events…')
+        if isinstance(directory, MemoryRun):
+            self.requested_memory = directory
+            self.summary.setText('Loading run from memory…')
+        else:
+            self.requested_binding = read_json(Path(directory) / 'run_manifest.json')['project_binding']
+            self.summary.setText('Loading and checking saved run inputs and events…')
         job = LoadPlayback(self.token, directory)
         self.jobs[self.token] = job
         job.signals.finished.connect(self.loaded)
+        job.signals.progress.connect(self.loading_progress)
+        self.cancel_button.setEnabled(True)
         QThreadPool.globalInstance().start(job)
 
     @Slot(int, object, str)
     def loaded(self, token, data, error):
         self.jobs.pop(token, None)
-        if token != self.token or self.editor.project is not self.requested_project:
+        if token != self.token or (self.requested_memory is None and self.editor.project is not self.requested_project):
             return
+        self.cancel_button.setEnabled(False)
         if error:
             self.summary.setText('Playback unavailable: ' + error)
             return
         directory, manifest, _layout, log = data
-        binding = manifest['project_binding']
-        project = getattr(self,'requested_evidence_project',None) or self.editor.project
-        if project is None or binding != self.requested_binding or binding['project_id'] != project.project_id or not any(
-                r['id'] == binding['revision_id'] and r['config'] == binding['revision_config_sha256'] for r in project.revisions):
-            self.summary.setText('Playback unavailable: this run does not belong to this project’s saved revisions.')
-            return
+        in_memory = isinstance(directory, MemoryRun)
+        if in_memory:
+            if directory is not self.requested_memory:
+                return
+            source_note = 'In memory · Frozen inputs from this run'
+        else:
+            binding = manifest['project_binding']
+            project = getattr(self,'requested_evidence_project',None) or self.editor.project
+            if project is None or binding != self.requested_binding or binding['project_id'] != project.project_id or not any(
+                    r['id'] == binding['revision_id'] and r['config'] == binding['revision_config_sha256'] for r in project.revisions):
+                self.summary.setText('Playback unavailable: this run does not belong to this project’s saved revisions.')
+                return
+            source_note = f"Saved revision {binding['revision_id']}"
         viewer = None
         try:
             viewer = BoundVisualizer(self)
@@ -600,18 +653,31 @@ class ProjectPlaybackPanel(QWidget):
         self.directory = directory
         self.viewer = viewer
         self.layout.addWidget(viewer, 1)
-        self.summary.setText(f"{manifest['name']} · {len(log.events):,} events"
+        self.summary.setText(f"{manifest['name']} · {len(log.events):,} events" + (' · In memory' if in_memory else '')
             + ('\n' + partial_notice(manifest['termination']) if manifest['status']=='partial' else ''))
-        self.summary.setToolTip(f"Saved revision {binding['revision_id']}\n"
+        self.summary.setToolTip(source_note + '\n'
             'Read-only geometry and recorded motion from this run. Drawing underlays are available in Layout.')
 
     def pause(self):
         if self.viewer is not None:
             self.viewer.pause()
 
+    @Slot(int, object)
+    def loading_progress(self, token, message):
+        if token == self.token:
+            self.summary.setText(message.get('phase', 'Loading saved playback…'))
+
+    def cancel_loading(self):
+        self.reset()
+        self.summary.setText('Loading cancelled. Completed simulation evidence is retained.')
+
     def reset(self):
+        for job in self.jobs.values():
+            job.cancelled.set()
+        self.cancel_button.setEnabled(False)
         self.token += 1
         self.requested_evidence_project=None
+        self.requested_memory = None
         self.pause()
         if self.viewer is not None:
             self.layout.removeWidget(self.viewer)
@@ -624,4 +690,4 @@ class ProjectPlaybackPanel(QWidget):
     def investigate(self):
         if self.directory is not None:
             self.editor.show_results_investigation()
-            self.editor.results_panel.load(str(self.directory))
+            self.editor.results_panel.load(self.directory if isinstance(self.directory, MemoryRun) else str(self.directory))

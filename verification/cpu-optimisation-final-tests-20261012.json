@@ -1,0 +1,11 @@
+{
+  "modules": 74,
+  "tests": 837,
+  "failures": [
+    "tests.test_geometric_stop.GeometricStopTests.test_rejected_joint_admission_keeps_blockage_evidence",
+    "tests.test_geometric_stop.GeometricStopTests.test_unfitting_retreat_stops_with_bound_reason_not_task_failure",
+    "tests.test_required_charge_dispatch.RequiredChargeDispatchTests.test_selecting_a_charge_request_does_not_spend_or_reserve"
+  ],
+  "errors": [],
+  "only_preexisting_failures": true
+}

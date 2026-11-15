@@ -1,0 +1,6 @@
+Failed to find real location of C:\Users\tombe\AppData\Local\Programs\Python\Python313\python.exe
+...........................................................................
+----------------------------------------------------------------------
+Ran 75 tests in 19.374s
+
+OK

@@ -1,0 +1,44 @@
+SIM TIME 6600.0 WALL 108.35126240000682
+         398869924 function calls (398551912 primitive calls) in 106.615 seconds
+
+   Ordered by: cumulative time
+   List reduced from 621 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  106.923  106.923 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13189(run)
+        1    0.000    0.000  106.923  106.923 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13197(_run_impl)
+      127    0.000    0.000  106.920    0.842 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13297(_handle_event)
+      116    0.001    0.000  106.692    0.920 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12166(_try_assign_tasks)
+     1009    0.094    0.000  106.483    0.106 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9135(_same_floor_segments)
+       66    0.009    0.000  106.382    1.612 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9570(_nearest_compatible_lift_plan)
+       48    0.000    0.000  104.243    2.172 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10455(_estimate_task_for_amr)
+       48    0.002    0.000  104.242    2.172 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10482(_estimate_task_for_amr_impl)
+       80    0.001    0.000  104.116    1.301 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10638(move_between)
+     1009    1.471    0.001  101.942    0.101 C:\Users\tombe\Documents\AMR_Simulator\amr_scenario_routing.py:63(earliest_route)
+   317422    4.222    0.000  100.904    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_scenario_routing.py:30(departure_state)
+        3    0.000    0.000   98.594   32.865 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11303(_select_best_assignment)
+        3    0.000    0.000   98.593   32.864 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11441(_select_single_candidate_window)
+        6    0.000    0.000   98.593   16.432 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11249(_estimate_candidate_jobs)
+       45    0.000    0.000   98.593    2.191 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11237(_estimate_task_for_amr_cached)
+  2856798    5.490    0.000   82.197    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_scenario_routing.py:7(segment_state)
+ 11428184   10.170    0.000   71.967    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7419(_resource_speed_factor)
+ 11428737   17.684    0.000   58.573    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7349(_scenario_event_state)
+  8570492   12.117    0.000   31.009    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7313(_scenario_window)
+ 17140984    9.876    0.000   14.129    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8479(_parse_hhmm_to_minutes)
+3497681/3180210    1.154    0.000   11.018    0.000 {built-in method builtins.any}
+  9177506    1.676    0.000    8.757    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7362(<genexpr>)
+  7022943    5.163    0.000    7.923    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7293(_scenario_resource_matches)
+ 88550657    7.639    0.000    7.639    0.000 {method 'get' of 'dict' objects}
+ 14929476    5.983    0.000    5.983    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_time_utils.py:9(sim_seconds_to_datetime)
+ 37790097    4.371    0.000    5.956    0.000 {built-in method builtins.min}
+ 50267405    3.784    0.000    3.784    0.000 {method 'strip' of 'str' objects}
+      110    0.000    0.000    2.442    0.022 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12189(queue_idle_returns_when_needed)
+      108    0.002    0.000    2.442    0.023 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15762(_queue_idle_return_tasks)
+     2330    0.000    0.000    2.434    0.001 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15717(_create_idle_return_task)
+        5    0.000    0.000    2.414    0.483 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9812(_select_charge_location_for_amr)
+        1    0.000    0.000    2.414    2.414 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15687(_charge_location_for_idle_return)
+ 17146335    1.869    0.000    1.869    0.000 {method 'split' of 'str' objects}
+ 18880051    1.718    0.000    1.718    0.000 {method 'lower' of 'str' objects}
+23896776/23896401    1.703    0.000    1.703    0.000 {built-in method builtins.max}
+
+

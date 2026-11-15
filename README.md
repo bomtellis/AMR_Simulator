@@ -1,5 +1,13 @@
 # Autonomous Mobile Robot Simulator
 
+## Human contingency staffing
+
+Use **Studies → Human contingency study…** to compare dedicated service teams and
+a shared team replacing AMRs. Configure carrying profiles and shift rules, then
+compare current and buffered timings. Results include shift coverage, chained
+delivery rounds, unmet obligations, CSV exports and an optional PDF report section.
+See [human contingency guidance](docs/ui/human-contingency.md).
+
 ## Project website (local draft)
 
 The website source starts at [docs/index.md](docs/index.md). It contains an editable
@@ -33,7 +41,70 @@ converts an imported configuration to a portable project. Simulation outputs sta
 external. New projects require layout, robot and demand configuration before
 **Check → Simulate → Review → Report**. Offline installation remains release work.
 
+On **Simulate**, choose **Run storage → Memory only** to check and simulate the
+current edits without saving the project or writing run files. Keep several
+runs in the open document and use **Playback** or **Investigate** to compare
+them. **Save run** keeps the selected run and its original inputs without
+rerunning it. Save first to generate reports or export evidence. **Discard
+run** frees space; closing the document discards any runs left in RAM.
+Memory runs share a 1 GiB evidence and input budget. Normal editor draft
+recovery is separate and remains enabled.
+
 ## Engineering verification
+
+### Compact simulator execution
+
+Simple and Detailed runs use an owned compact runtime dataset, immutable asset
+definitions and journals of committed attribute/reservation changes. Rollback
+preserves existing reservations, inventory claims and geometric occupancy;
+unconverted mutable values retain the safe deep-copy fallback.
+
+Managed runs finish with complete, hash-bound `simulation_steps.csv.sqlite`
+evidence and its `.run.json` metadata. New event stores compress bounded batches
+of events together, with defaults shared by event type and interned identifiers;
+report state is also compressed. Investigation and Playback read this store
+directly, show loading progress and offer cancellation. PDF, lift and department
+report readers stream its CSV representation without writing a full event CSV
+to disk. Old CSV runs and earlier SQLite formats remain readable. Detailed CSVs
+are materialised only when explicitly requested through an export or compatibility
+API. Exporting never reruns the model or changes its completion status. The
+explicit export process has a 2 GiB RAM ceiling (capped at half of physical RAM).
+
+An existing 238,466-event LTN store measured 388 MiB originally, 147 MiB with
+per-event compression, and 53 MiB with the current batch compression: another
+64% reduction, or 86% below the original, with identical decoded events,
+full-precision times and playback flags. Sizes vary with the workload. Explicit
+full CSV exports can still be large; existing saved evidence is not rewritten automatically.
+See [output size verification](verification/OUTPUT_SIZE_REVIEW.md).
+
+```powershell
+.\.venv\Scripts\python.exe amr_app.py --export-run "path\to\run-folder" --outputs steps_csv,visualiser_csv
+```
+
+The simulator CLI now records a unique compact event store by default. `--verbose`
+requests the legacy detailed event CSV; individual `--*-csv` flags or
+`--exports steps_csv,transport_matrix_csv` request additional outputs. A standalone
+`.sqlite` event-store file can also be passed to `amr_app.py --export-run`.
+
+Stress workers retain immutable definitions between trials while each trial gets
+fresh state, random generators and evidence. Eight-worker admission, RAM caps,
+reproducible search batches and process-tree cancellation remain in effect.
+See [compact execution verification](verification/COMPACT_EXECUTION.md) for
+correctness checks and measured performance.
+
+CPU execution also avoids charging-destination searches for already-stowed
+robots, indexes the latest lift booking through commits and rollback, caches
+department calendars and excluded timeframe allocations, and skips provably
+losing Simple-mode lift alternatives. Detailed geometric checks retain their
+existing evaluation. A full-week LTN comparison on 12 October 2026 took
+357.5 seconds before and 160.1 seconds after, with identical normalised event,
+task-record and final-state hashes. These are local single-run measurements.
+See [CPU optimisation verification](verification/LTN_CPU_OPTIMISATION_20261012.txt)
+for source bindings, scenario comparisons and regression results.
+
+All simulations and automated stress tests use the CPU simulator. Older projects
+with a GPU computation setting run on CPU; saving them removes the retired
+setting. Historical run evidence remains readable.
 
 In **Layout**, choose **Edge** on the drawing toolbar and click two existing graph
 points to connect them. **Escape** cancels the current chain; **Undo/Redo** applies
@@ -109,7 +180,7 @@ The graph nodes and edges are ***explictly*** defined in the json file.
     python simulator.py --write-example your_file_name.json
     python simulator.py --config your_file_name.json --verbose --interactive
 
-    ^C to quit and save .csv default name = "simulation_steps.csv"
+    ^C to quit and save evidence; --verbose also writes "simulation_steps.csv"
     Use --verbose-csv path_to_file.csv to name file
 ```
 
@@ -127,7 +198,9 @@ does not bypass corridor, door, traffic or malformed-coordinate checks.
 In **Simulation settings → Run period**, set **Maximum task deferral** in minutes
 and save the configuration. The JSON field is `simulation.max_task_deferral_minutes`;
 for example, `30` allows up to 30 minutes from a task's scheduled release to AMR
-assignment. `0` (the default, displayed as **Unlimited**) disables the limit.
+assignment. The shared default for normal runs and stress trials is `60` minutes.
+`0` (displayed as **Unlimited**) explicitly disables the limit. Stress trials use
+the project's saved setting, including any explicit override.
 
 The timer includes both waiting for a preceding return pickup and waiting for an
 available AMR. Releasing a deferred task or retrying assignment does not restart
@@ -602,6 +675,171 @@ workflow QA with `.venv\Scripts\python.exe -m verification.simple_delivery qa
 --output verification/latest/simple-delivery/qa`. See
 [the delivery review](verification/SIMPLE_DELIVERY_REVIEW.md) for the source,
 installer, checks and known limits.
+
+### Automated scenario stress testing
+
+Open **Scenario testing → Automated stress test** in the workbench. Manual
+scenarios remain available. Choose eligible assets, timing and duration choices,
+availability/speed percentages, simultaneous event count and a trial budget.
+Assets are grouped into lifts, corridors, AMRs and doors. Select multiple rows
+with Ctrl/Shift, then use **Include selected**, **Exclude selected**, a selected
+checkbox or Space to toggle them together. Category checkboxes toggle a whole group.
+Fresh setups start with no assets checked; newly added assets remain unchecked.
+The tree header shows the included asset count, including collapsed categories.
+Use **Clear all** to reset saved choices before ticking a smaller subset, or
+**Include all** to explicitly include every asset.
+Choose **New study and run…** and a study filename to run a normal baseline,
+full-period blockages of the checked physical corridors, and a reproducible
+search of disruption combinations. **Individual corridor blockage tests** can
+be changed to **All project corridors** for an explicit full sweep. Older saved
+studies retain their original full-sweep scope.
+Replacing an existing filename uses the file picker's overwrite confirmation.
+The previous study is retained beside it as a dated `*.previous-*.stress.json`
+backup, with its original trial evidence intact. A running study cannot be
+replaced or run by a second coordinator. **Open study…** and **Run / resume study**
+continue an interrupted study; **Restore study settings** resets edited controls
+to its saved setup. Worker and RAM limits can change when resuming. **Save settings**
+updates the project in memory; save the project to retain those choices after closing.
+The live plan separates the baseline, corridor tests and combined trials.
+Baseline and corridor runs are additional to the default cap of 100 combined
+trials. Unticking AMRs or lifts changes the combinations but can leave their
+count at that cap; unticked corridors are excluded from the default sweep.
+If the source project already has a completed normal-operation simulation with
+matching design inputs, drawing contents, simulation software and full service evidence,
+the study reuses it as its baseline. Linked runs and runs in the project's
+results location are checked, including when resuming. Progress and baseline
+details identify the reused run; investigation and playback use its original
+evidence. Changed, incomplete or incompatible runs trigger a fresh baseline.
+Changes confined to the stress search, coordinator or stress dialog do not
+invalidate a normal-operation baseline. Changes to any other application
+source still require a fresh baseline.
+Lift-only trials retain the normal cached floor routes and apply disruptions
+in lift planning. Corridor, door and AMR disruptions use time-dependent floor
+route searches. Each trial still runs the full configured demand period.
+Normal runs now record the precise service evidence needed for reuse; older
+runs without that evidence require a fresh baseline.
+
+A passing trial must finish every required service obligation, including
+configured returns, with no failed or pending tasks. The configured end bounds
+new demand; released work and its required returns may finish afterwards.
+Both normal runs and stress trials apply the same saved assignment deferral
+limit (60 minutes by default) from each task's scheduled release. This limits
+waiting for assignment, not the duration of an assigned journey. Tasks finishing
+after demand ends are shown for information and do not fail a trial.
+Missing baseline requests count as unmet work even when a disruption suppresses
+later inventory-dependent generation. Passing trials are ranked by total additional task
+completion delay relative to normal operation. Results show the **worst passing
+scenario found**, the number of tested grid candidates, and whether coverage was
+exhaustive. A bounded search does not prove the global worst case.
+
+Select a critical corridor to highlight and zoom to it on the design. Select a
+trial to investigate its complete saved evidence or play it back. **Save as
+scenario** copies dated events into a uniquely named manual scenario without
+enabling it automatically. Dated event windows can be edited or changed to daily
+recurring events in the normal event editor.
+
+Evaluation uses up to **eight concurrent CPU workers** by default after the
+baseline, with a configurable **16 GiB study RAM limit** and **8 GiB free-RAM
+reserve**. Automatic admission also preserves at least 20% of physical RAM,
+subject to a half-RAM cap on smaller machines, and uses measured trial peak memory
+with a 50% allowance. Fixed refinement batches preserve the search across worker
+counts and interrupted runs. Startup phases, active trials, elapsed/estimated
+time, task counts and live RAM usage appear in Progress. A separate active-run
+bar shows baseline simulation progress even when the overall study remains below
+1%. A fresh baseline runs with one worker to check feasibility and measure memory;
+parallel disruption trials start only after it passes. A failed baseline opens
+Results with the unmet, late, failed and pending counts and its investigation link.
+Windows process groups
+enforce the memory ceiling and stop all children on cancellation or coordinator
+termination. A memory-pressure stop retains completed evidence for resume.
+See [the concurrency and C++ assessment](verification/STRESS_PARALLEL_REVIEW.md).
+
+Stop retains completed trial evidence;
+open the study and choose **Run / resume study** to continue. Resume requires
+unchanged design inputs, frozen drawing contents, search settings and software.
+New trials are separate project-bound runs under the study's results directory;
+the source design and its demand/inventory settings are preserved.
+
+In stress-test **Setup → Saved data**, select **Reduced data (differences from
+normal operation)** to share one full baseline across the study. Unchanged event
+fields and report data are read from that baseline; changed and additional data
+are saved with each trial. Playback, investigation, service metrics and explicit
+CSV exports reconstruct the full evidence. Full data remains the default for
+independent trial files. The storage choice is frozen when the study is created.
+Keep the baseline with the study: its checksum is checked when reduced data is
+opened, and missing or modified baseline files are rejected. References are
+relative when possible, so the study and its baseline can be moved together.
+This mode applies to new studies; existing evidence is retained as saved.
+
+**Previous studies** lists saved studies, statuses, recorded trial counts, data
+modes, dates and locations. It discovers adjacent study files and previous-version
+backups, and remembers studies created or opened elsewhere in a project-local
+`.stress-history.json` index. Select a row and **Open selected study** to review
+results or resume compatible work. Missing files are shown explicitly. Older
+studies remain visible after model or software changes; running again requires
+a new study when the saved inputs or software no longer match.
+
+To include multiple stress tests in the final PDF, choose **Report stress tests…**
+on the stress-test **Results** tab, or open a simulation run's report panel and
+choose **Select stress tests for PDF…**. Tick individual trials or tick a study
+to include all its saved trials. Use **Add study files…** for studies saved
+elsewhere; selections can span multiple studies. The selector displays affected
+assets, outcomes and added delay, with disruption windows in the asset tooltip.
+Confirming the selection enables the **Stress-test comparison** report section.
+Keep any other desired report sections checked, then choose **Generate report**.
+
+Each selected study includes its own normal-operation baseline, a comparison
+table, configured disruption windows and availability/speed, service failures,
+unmet obligations and added completion delay. Studies with different design
+inputs are labelled separately. Old saved evidence can be reported without
+resuming its simulations. Results are verified against event evidence before
+generation and checked for changes afterwards; missing or changed baseline data
+is rejected. Both full and reduced data are supported without expanding event
+CSVs. The report manifest records the selected trials and evidence checksums,
+and `stress_test_comparison.json` retains the compact comparison snapshot.
+
+The PDF now starts each study with a **Worst-case impact summary**, separating
+service failures from the largest delays among passing trials. For simultaneous
+full lift shutdowns with the same start/end time, it includes single-lift
+rankings, failing-pair counts, mean delay across passing pairs, and a combination
+matrix (up to 10 lifts). Select all trials in the lift study to compare every
+saved combination. Missing selections are labelled, not treated as zero impact;
+different shutdown windows are compared separately. Delay hours are cumulative
+across service obligations, not additional elapsed simulation time. Failed
+tasks and unmet obligations can describe the same incident. Single/pair results
+do not establish the worst case for three or more simultaneous shutdowns.
+
+To find how slowly the whole AMR fleet can operate, choose **All-AMR speed sweep
+(5% steps)** in the stress-test **Test type** selector. Choose **New study and
+run…** to save and start it. The sweep uses a 100% normal-operation baseline,
+then runs 95%, 90%, 85%, and every further five-percentage-point level down to
+5%, one at a time. All AMR configurations and their quantity instances slow
+together. The limit remains active through completion of work after demand
+ends; lift speeds and handling times are unchanged. Reduced data is selected
+by default, and normal baseline reuse, cancellation, resume and history work
+as for other studies. This is 20 runs including the baseline, not a search
+over individual AMR combinations.
+
+Results list speed levels in descending order and identify the lowest tested
+passing percentage and the first failing level. The sweep continues after a
+failure because model outcomes need not be monotonic. Passing means all service
+obligations are met and no tasks are failed or pending under the project's
+assignment-deferral limit; completion after demand ends remains allowed. An
+incomplete sweep is labelled provisional. Select its trials for the PDF to
+include the speed-sweep summary and results table; partial report selections
+are assessed only against the levels selected.
+
+To add the comparison to an existing final document, select **Existing PDF** and
+an insertion page (or **Append to end**). The combined PDF is saved as a new
+report, preserving the original. Untick the other report sections to produce
+only the stress-test supplement, with its own title and linked contents.
+
+This feature currently requires **Simple mode**. Scenario routing compares
+permitted detours with waiting through closures or slowdowns, including
+overlapping events. Already committed journeys keep their existing behavior;
+mid-journey interruption and Detailed-mode scenario support are not included.
+
+### Building-flow tutorial
 
 The subsequent building-flow increment adds a live-control instruction bubble
 under Help > Building flow tutorial. It supplies three aligned 800 m² floors,

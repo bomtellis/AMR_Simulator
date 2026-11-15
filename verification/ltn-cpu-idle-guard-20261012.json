@@ -1,0 +1,30 @@
+{
+  "cpu_only": true,
+  "state": "Initial LTN placement",
+  "robots": 22,
+  "queries": 66,
+  "exact_return_parity": true,
+  "operational_resource_parity": true,
+  "samples_sec": {
+    "original": [
+      0.0012408000184223056,
+      0.0012092000106349587,
+      0.0011744999792426825,
+      0.0011799000203609467,
+      0.0011709000100381672
+    ],
+    "prototype": [
+      7.899996126070619e-05,
+      7.810001261532307e-05,
+      7.870001718401909e-05,
+      7.76999513618648e-05,
+      7.800001185387373e-05
+    ]
+  },
+  "medians_sec": {
+    "original": 0.0011799000203609467,
+    "prototype": 7.810001261532307e-05
+  },
+  "speedup": 15.107552237827074,
+  "caveat": "Isolated stowed-robot calls, with warm static caches; not a whole-run speedup. The production simulator was not changed."
+}

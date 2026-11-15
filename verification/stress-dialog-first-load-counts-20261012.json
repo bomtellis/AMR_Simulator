@@ -1,0 +1,23 @@
+{
+  "first_show_visible": true,
+  "first_show_groups": [
+    "Lifts (8)",
+    "Corridors (805)",
+    "AMRs (3)"
+  ],
+  "all_checked": {
+    "baseline": 1,
+    "corridors": 805,
+    "combined": 100,
+    "total": 906,
+    "candidates": 2395428387264
+  },
+  "corridors_unchecked": {
+    "baseline": 1,
+    "corridors": 0,
+    "combined": 100,
+    "total": 101,
+    "candidates": 396241604
+  },
+  "displayed_plan": "Planned trials: 1 baseline + 0 individual corridor tests + up to 100 combined trials = up to 101 total. 11 assets checked for combinations."
+}

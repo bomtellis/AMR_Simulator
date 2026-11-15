@@ -1,0 +1,1 @@
+{"pdf": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\output\\pdf\\ltn-amr-speed-sweep-2026-10-14\\ltn-amr-speed-sweep.pdf", "lowest": 40, "continuous_floor": 80, "highest_failure": 75, "pages": 11}

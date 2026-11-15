@@ -18,6 +18,12 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from amr_sim_time_utils import parse_hhmm_to_minutes
+from amr_trajectories import angle_lerp_deg
+
 try:
     from .dxf_scene import DXFScene
     from .graph_navigation import zoom_at_cursor
@@ -1024,7 +1030,25 @@ class SimulationLog:
         checkpoint_idx, payload = self._state_checkpoints[pos]
         return checkpoint_idx, self._copy_state_accumulators(payload)
 
-    def load(self, path: str, *, parallel=True):
+    def load_event_rows(self, rows, *, cancel=None, progress=None):
+        from contextlib import closing
+        self.events = []
+        with closing(rows) as reader:
+            for count, row in enumerate(reader, 1):
+                if cancel and cancel():
+                    raise InterruptedError('Playback loading cancelled')
+                if progress and count % 1000 == 0:
+                    progress(dict(phase='Loading playback events', events=count))
+                event = self._row_to_visual_event(row)
+                if event is not None:
+                    self.events.append(event)
+        self._rebuild_event_index()
+
+    def load(self, path: str, *, parallel=True, cancel=None, progress=None):
+        if Path(path).suffix == '.sqlite':
+            from amr_event_store import iter_event_text
+            self.load_event_rows(iter_event_text(path), cancel=cancel, progress=progress)
+            return
         if not parallel:
             # Read-only loading for a background thread inside the project UI.
             self.events = _parse_visual_event_chunk_file_process(path)
@@ -4772,22 +4796,6 @@ class SimulationVisualizer(QMainWindow):
                 pass
         return float(default)
 
-    def _parse_hhmm_to_minutes(self, value, default=None):
-        text = str(value or "").strip()
-        if not text:
-            return default
-        try:
-            parts = text.split(":")
-            hour = int(parts[0])
-            minute = int(parts[1]) if len(parts) > 1 else 0
-            if hour == 24 and minute == 0:
-                return 24 * 60
-            if 0 <= hour <= 23 and 0 <= minute <= 59:
-                return (hour * 60) + minute
-        except Exception:
-            return default
-        return default
-
     def _day_key_for_datetime(self, value: datetime) -> str:
         return ["mon", "tue", "wed", "thu", "fri", "sat", "sun"][value.weekday()]
 
@@ -4811,13 +4819,13 @@ class SimulationVisualizer(QMainWindow):
         return None
 
     def _department_operating_start_minutes(self, department: dict) -> int:
-        explicit = self._parse_hhmm_to_minutes(
+        explicit = parse_hhmm_to_minutes(
             department.get("operating_start_time"), None
         )
         return int(explicit if explicit is not None else 0)
 
     def _department_operating_end_minutes(self, department: dict) -> int:
-        explicit = self._parse_hhmm_to_minutes(
+        explicit = parse_hhmm_to_minutes(
             department.get("operating_end_time"), None
         )
         if explicit is not None:
@@ -6127,14 +6135,6 @@ class SimulationVisualizer(QMainWindow):
         length, width = self._amr_dimensions_for_name(amr_id)
         return max(0.05, float(length)), max(0.05, float(width))
 
-    def _normalise_angle_deg(self, value: float) -> float:
-        return (float(value) + 180.0) % 360.0 - 180.0
-
-    def _angle_lerp_deg(self, start_deg: float, end_deg: float, frac: float) -> float:
-        frac = max(0.0, min(1.0, float(frac)))
-        delta = self._normalise_angle_deg(float(end_deg) - float(start_deg))
-        return float(start_deg) + (delta * frac)
-
     def _amr_heading_radians_for_state(self, state: dict) -> float:
         if state.get('geometry_heading') is not None:
             return state['geometry_heading']
@@ -6146,7 +6146,7 @@ class SimulationVisualizer(QMainWindow):
         if end_rot is None:
             end_rot = self._float_or_none(raw.get("amr_rotation_end_deg"))
         if start_rot is not None and end_rot is not None:
-            return math.radians(self._angle_lerp_deg(float(start_rot), float(end_rot), float(state.get("segment_fraction", 1.0) or 0.0)))
+            return math.radians(angle_lerp_deg(float(start_rot), float(end_rot), float(state.get("segment_fraction", 1.0) or 0.0)))
 
         rotation = state.get("amr_rotation_deg")
         if rotation is None:

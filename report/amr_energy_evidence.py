@@ -22,11 +22,29 @@ def _number(value):
         return None
 
 
+def _with_transfer_traction(rows):
+    """Expose the battery part of a combined lift service without counting supply twice."""
+    for row in rows:
+        yield row
+        if row.get('segment_type') != 'lift_transfer':
+            continue
+        try:
+            details = json.loads(row.get('details') or '{}')
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(details, dict) or not details.get('entry_edge'):
+            continue
+        energy = _number(details.get('amr_transfer_energy_kwh'))
+        yield {**row, 'event_id': str(row.get('event_id') or '') + ':amr-transfer',
+               'event_type': 'segment_corridor', 'segment_type': 'corridor', 'energy_kwh': energy,
+               'details': json.dumps(dict(energy_kwh=energy, energy_source='amr_battery'))}
+
+
 def summarize_energy(rows, *, complete=False, capabilities=(), expected_amrs=None):
     totals = {source: dict(observed_kwh=0.0, event_ids=[], missing_event_ids=[]) for source in SOURCES}
     lifts, journeys, seen = {}, {}, {}
     battery_rows = []
-    for index, row in enumerate(rows, 2):
+    for index, row in enumerate(_with_transfer_traction(rows), 2):
         kind = str(row.get('event_type', '')).removeprefix('multi_stop_')
         if kind in ('battery_charge_applied', 'battery_balance_summary',
                     'segment_corridor', 'segment_local_manoeuvre'):
@@ -150,6 +168,8 @@ def summarize_batteries(rows, *, complete=False, capabilities=(), expected_amrs=
 def read_energy_evidence(path):
     """Verify bound coverage while streaming only the energy ledger into memory."""
     from amr_run_evidence import verified_simulation_mode
+    from amr_event_store import EventStore, iter_event_text
+    from contextlib import closing
     path = Path(path)
     def digest():
         with path.open('rb') as stream:
@@ -161,8 +181,16 @@ def read_energy_evidence(path):
         candidate = json.loads(sidecar.read_text(encoding='utf-8-sig'))
         frozen_hash = hashlib.sha256(json.dumps(candidate.get('frozen_inputs'), sort_keys=True,
             ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest()
-        if (candidate.get('schema_version') == 1 and candidate.get('log_sha256') == original
+        if (candidate.get('schema_version') == (2 if path.suffix == '.sqlite' else 1) and candidate.get('log_sha256') == original
                 and candidate.get('config_sha256') == frozen_hash):
+            if path.suffix == '.sqlite':
+                store = EventStore(path, readonly=True)
+                try:
+                    if candidate.get('storage') != dict(format='sqlite_sparse_events', version=store.format_version,
+                                                         event_count=len(store)):
+                        raise ValueError('Compact energy evidence has inconsistent storage metadata')
+                finally:
+                    store.close()
             try:
                 verified_simulation_mode(candidate, candidate.get('frozen_inputs'))
             except ValueError:
@@ -174,9 +202,9 @@ def read_energy_evidence(path):
                 metadata = candidate
     complete = bool(metadata.get('run_status') == 'finished' and metadata.get('logging_enabled')
                     and not metadata.get('reduced_logging') and metadata.get('log_kind') == 'full')
-    with path.open(newline='', encoding='utf-8-sig') as stream:
+    with closing(iter_event_text(path)) as stream:
         def rows():
-            for row in csv.DictReader(stream):
+            for row in stream:
                 if None in row:
                     raise ValueError('Malformed energy CSV row.')
                 if metadata and row.get('run_id') != metadata.get('run_id'):

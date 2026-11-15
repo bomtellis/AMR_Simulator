@@ -1,0 +1,529 @@
+--- before/simulator.py
++++ after/simulator.py
+@@ -17,7 +17,9 @@
+ from typing import Dict, List, Optional, Tuple
+ 
+ from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
+-from amr_route_reservations import RouteReservationTransaction
++from amr_route_reservations import (RouteReservationTransaction, LiftReservations,
++                                    latest_lift_reservation)
++from amr_scenario_routing import departure_state
+ from amr_routing_inputs import validate_routing_inputs
+ from amr_lift_inputs import validate_lift_inputs
+ from amr_robot_inputs import validate_robot_inputs, normalise_amr_payload_slots, normalise_orientations
+@@ -393,7 +395,7 @@
+         self.node_reservation_max_duration: Dict[str, float] = defaultdict(float)
+         self.lift_reservations: Dict[
+             str, List[Tuple[float, float, int, int, str]]
+-        ] = defaultdict(list)
++        ] = defaultdict(LiftReservations)
+         self.node_clearance_time_sec = float(
+             building_cfg.get("node_clearance_time_sec", 0.5)
+         )
+@@ -8747,7 +8749,7 @@
+ 
+     def _physical_edge_key(self, a_name: str, b_name: str) -> Tuple[str, str]:
+         # Same physical corridor edge in either direction.
+-        return tuple(sorted((a_name, b_name)))
++        return (a_name, b_name) if a_name <= b_name else (b_name, a_name)
+ 
+     def _spacing_time_sec(self, amr: AMR) -> float:
+         return self.amr_spacing_m / max(amr.speed_m_per_sec, 1e-9)
+@@ -9223,8 +9225,10 @@
+         total_duration = 0.0
+         current = start_time_value
+         spacing_time = self._spacing_time_sec(amr)
++        speed = max(float(amr.speed_m_per_sec), 1e-9)
++        has_people = bool(self.people_edge_reservations)
+         for edge in route["edges"]:
+-            base_duration = float(edge["distance_m"]) / max(float(amr.speed_m_per_sec), 1e-9)
++            base_duration = float(edge["distance_m"]) / speed
+             lane_count, lane_width, carrying_length = self._corridor_lane_capacity(edge, amr, payload, orientation)
+             congestion_count = 0
+             people_count = 0
+@@ -9239,8 +9243,10 @@
+                 duration = base_duration
+                 speed_factor = 1.0
+             else:
+-                from amr_scenario_routing import departure_state
+-                blocked_until, scenario_factor, scenario_notes = departure_state(self, amr, edge, current, base_duration)
++                if self.scenario_mode:
++                    blocked_until, scenario_factor, scenario_notes = departure_state(self, amr, edge, current, base_duration)
++                else:
++                    blocked_until = float(current)
+                 if not math.isfinite(blocked_until):
+                     return None
+                 if blocked_until > current + 1e-9:
+@@ -9262,7 +9268,8 @@
+                 edge_key = self._physical_edge_key(edge["from"], edge["to"])
+                 congestion_count = self._edge_recent_demand(edge_key, current)
+                 congestion_factor = max(self.min_congestion_speed_factor, 1.0 - congestion_count * self.edge_slowdown_per_amr)
+-                people_count, people_factor, people_groups = self._people_on_edge(edge_key, current, base_duration)
++                if has_people:
++                    people_count, people_factor, people_groups = self._people_on_edge(edge_key, current, base_duration)
+                 speed_factor = max(0.01, min(congestion_factor, people_factor, scenario_factor))
+                 travel_duration = base_duration / speed_factor
+                 edge_start, _ = self._find_next_edge_start(
+@@ -9277,7 +9284,8 @@
+                             return None
+                         scenario_factor = next_factor
+                         scenario_notes = next_notes or scenario_notes
+-                        people_count, people_factor, people_groups = self._people_on_edge(edge_key, ready, base_duration)
++                        if has_people:
++                            people_count, people_factor, people_groups = self._people_on_edge(edge_key, ready, base_duration)
+                         speed_factor = max(.01, min(congestion_factor, people_factor, scenario_factor))
+                         travel_duration = base_duration / speed_factor
+                         next_start, _ = self._find_next_edge_start(edge_key=edge_key, requested_start=ready,
+@@ -9340,9 +9348,9 @@
+                         speed_factor = minimum_active_factor
+                 else:
+                     duration = travel_duration
+-            people_delay = max(0.0, base_duration / max(people_factor, 1e-9) - base_duration) if people_count else 0.0
+-            scenario_delay = max(0.0, base_duration / max(scenario_factor, 1e-9) - base_duration) + scenario_wait if self.scenario_mode else 0.0
+             if collect_segments:
++                people_delay = max(0.0, base_duration / max(people_factor, 1e-9) - base_duration) if people_count else 0.0
++                scenario_delay = max(0.0, base_duration / max(scenario_factor, 1e-9) - base_duration) + scenario_wait if self.scenario_mode else 0.0
+                 segments.append({
+                     "type": "corridor", "from": edge["from"], "to": edge["to"],
+                     "duration": duration, "distance_m": edge["distance_m"],
+@@ -9470,7 +9478,7 @@
+             or float(lift.mean_time_between_failures_hours or 0.0) > 0.0
+         )
+         if reservations and reliability_ordered:
+-            tail = max(reservations, key=lambda reservation: reservation[1])
++            tail = latest_lift_reservation(reservations)
+             previous_finish, previous_floor = float(tail[1]), int(tail[3])
+         else:
+             for next_start, next_finish, _next_origin, next_destination, _owner in reservations:
+@@ -9496,11 +9504,7 @@
+             str(amr_id or ""),
+         )
+         self._insert_route_reservation(self.lift_reservations, lift.id, item)
+-        tail = max(
+-            self.lift_reservations[lift.id],
+-            key=lambda reservation: reservation[1],
+-            default=None,
+-        )
++        tail = latest_lift_reservation(self.lift_reservations[lift.id])
+         if tail is not None:
+             lift.available_time = max(
+                 float(getattr(lift, "failed_until", 0.0) or 0.0),
+@@ -9640,6 +9644,11 @@
+             lift_start = lift_slot["lift_start"]
+             lift_finish = lift_slot["lift_finish"]
+             if not math.isfinite(lift_finish):
++                continue
++            # Simple outgoing travel is nonnegative. Preserve strict winner
++            # comparison and lift iteration order, including equal finishes.
++            # Detailed alternatives still need their geometric certification.
++            if not self.geometric_motion and lift_finish >= best_finish:
+                 continue
+             lift_wait_node = self._lift_wait_node_for_plan(
+                 to_lift_segments,
+@@ -15701,6 +15710,8 @@
+         }
+ 
+     def _create_idle_return_task(self, amr: AMR, now: float) -> Optional[Task]:
++        if self._amr_is_stowed_at_configured_charge_space(amr):
++            return None
+         charge_location = self._charge_location_for_idle_return(amr, now)
+         if not charge_location or charge_location not in self.locations:
+             return None
+@@ -15709,8 +15720,6 @@
+         # without creating a zero-length movement.  When that bay has become
+         # unavailable, continue into the atomic all-charger reservation below
+         # so another configured charging location is tried immediately.
+-        if self._amr_is_stowed_at_configured_charge_space(amr):
+-            return None
+         if self._amr_is_at_configured_charge_location(amr):
+             if self._occupy_amr_inventory_space(amr, amr.location_name) is not None:
+                 return None
+--- before/amr_route_reservations.py
++++ after/amr_route_reservations.py
+@@ -11,6 +11,90 @@
+ 
+ def snapshot(value, memo=None):
+     return value if immutable(value) else deepcopy(value, memo)
++
++
++class LiftReservations(list):
++    """Complete booking history with an exact, mutation-aware maximum finish.
++
++    Keep list ordering and max's first-on-ties behaviour, including when a
++    transaction inserts then rolls back a booking or a test replaces a slice.
++    Queries are O(1); mutations that can remove/reorder the maximum recompute it.
++    """
++    def __init__(self, values=()):
++        super().__init__(values)
++        self._refresh_latest()
++
++    def _refresh_latest(self):
++        self.latest = max(self, key=lambda row: row[1], default=None)
++
++    def append(self, value):
++        super().append(value)
++        latest = getattr(self, 'latest', None)
++        if latest is None or value[1] > latest[1]:
++            self.latest = value
++
++    def extend(self, values):
++        # Materialise self-extension before append changes the iterable.
++        if values is self:
++            values = list(values)
++        for value in values:
++            self.append(value)
++
++    def insert(self, index, value):
++        super().insert(index, value)
++        latest = getattr(self, 'latest', None)
++        if latest is None or value[1] > latest[1]:
++            self.latest = value
++        elif value[1] == latest[1]:
++            self._refresh_latest()
++
++    def pop(self, index=-1):
++        value = super().pop(index)
++        if value is self.latest:
++            self._refresh_latest()
++        return value
++
++    def clear(self):
++        super().clear()
++        self.latest = None
++
++    def __delitem__(self, key):
++        super().__delitem__(key)
++        self._refresh_latest()
++
++    def __setitem__(self, key, value):
++        super().__setitem__(key, value)
++        self._refresh_latest()
++
++    def remove(self, value):
++        super().remove(value)
++        self._refresh_latest()
++
++    def reverse(self):
++        super().reverse()
++        self._refresh_latest()
++
++    def sort(self, *args, **kwargs):
++        try:
++            super().sort(*args, **kwargs)
++        finally:
++            self._refresh_latest()
++
++    def __iadd__(self, values):
++        self.extend(values)
++        return self
++
++    def __imul__(self, count):
++        super().__imul__(count)
++        self._refresh_latest()
++        return self
++
++
++def latest_lift_reservation(values):
++    """Allow legacy/plain lists supplied by callers without trusting their order."""
++    if isinstance(values, LiftReservations):
++        return values.latest
++    return max(values, key=lambda row: row[1], default=None)
+ 
+ 
+ class RouteReservationTransaction:
+--- before/amr_sim_task_generation.py
++++ after/amr_sim_task_generation.py
+@@ -6,6 +6,7 @@
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass
++from functools import lru_cache
+ import math
+ from datetime import datetime, time as dt_time, timedelta
+ from typing import Dict, Iterable, List, Optional, Tuple
+@@ -350,26 +351,42 @@
+ ) -> List[Tuple[datetime, datetime]]:
+     if not bool(dept.get("enabled", True)):
+         return []
+-
+     active_days = dept.get("days_active", []) or []
++    # Content keys remain correct if a caller edits a department. Cached
++    # periods are immutable, and callers receive their own result list.
++    days_key = (tuple(_clean_text(x).lower() for x in active_days if _clean_text(x))
++                if active_days else None)
++    return list(_department_periods_cached(
++        days_key, dept.get('operating_start_time'), dept.get('operating_end_time'),
++        dept.get('hours_operated_per_day', 24), day, id(day.tzinfo), day.fold))
++
++
++@lru_cache(maxsize=8192, typed=True)
++def _department_periods_cached(active_days, start_time, end_time, hours, day,
++                               _timezone_identity, _fold):
++    # Equal instants can have different local dates/calendars. The retained day
++    # keeps its timezone alive, preventing identity reuse while cached.
+     if active_days:
+-        allowed = {_clean_text(x).lower() for x in active_days if _clean_text(x)}
+-        if _day_key_for_datetime(day) not in allowed:
+-            return []
+-
+-    start_min = _department_operating_start_minutes(dept)
+-    end_min = _department_operating_end_minutes(dept)
++        if _day_key_for_datetime(day) not in active_days:
++            return ()
++    elif active_days is not None:
++        return ()  # An explicit nonempty allow-list containing no valid names.
++
++    from amr_generation_inputs import department_schedule_minutes
++    start_min, end_min = department_schedule_minutes(dict(
++        operating_start_time=start_time, operating_end_time=end_time,
++        hours_operated_per_day=hours))
+     if end_min <= start_min:
+         end_min += 24 * 60
+ 
+     duration_min = max(0, end_min - start_min)
+     if duration_min <= 0:
+-        return []
++        return ()
+ 
+     day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+     start_dt = day_start + timedelta(minutes=start_min)
+     end_dt = day_start + timedelta(minutes=end_min)
+-    return [(start_dt, end_dt)]
++    return ((start_dt, end_dt),)
+ 
+ 
+ def _department_is_open_at_datetime(dept: Optional[dict], value: datetime) -> bool:
+@@ -1289,7 +1306,11 @@
+             self._timeframe_allocation_cache[item_cache_key] = (offset, total)
+             offset += count
+ 
+-        return self._timeframe_allocation_cache.get(cache_key, (0, total))
++        result = self._timeframe_allocation_cache.get(cache_key, (0, total))
++        # Excluded members also have a stable allocation for this group/date.
++        # Retain their zero offset without rescanning the group on every poll.
++        self._timeframe_allocation_cache[cache_key] = result
++        return result
+ 
+     def _staff_shift_definition(self, cfg: dict) -> Tuple[str, dict]:
+         if not _as_bool(self.staff_config.get("enabled", True), True):
+--- /dev/null
++++ after/tests/test_cpu_optimisation.py
+@@ -0,0 +1,218 @@
++"""Exact booking, calendar and route semantics under CPU optimisations."""
++import copy
++from datetime import datetime, timedelta, timezone
++import random
++import unittest
++from unittest.mock import Mock, patch
++
++from amr_route_reservations import (LiftReservations, latest_lift_reservation,
++                                    RouteReservationTransaction)
++from amr_sim_task_generation import (DynamicCategoryTaskGenerator,
++    _department_operating_periods_for_date, _department_periods_cached)
++from amr_sim_models import Task
++from simulator import Simulation
++from tests.test_lift_reservation_order import simulation, book
++from tests.test_charge_travel_reference import config as corridor_config
++from tests.test_route_reservation_atomicity import resource_state
++
++
++class LiftBookingIndexTests(unittest.TestCase):
++    def assert_index(self, rows):
++        expected = max(rows, key=lambda row: row[1], default=None)
++        self.assertIs(expected, latest_lift_reservation(rows))
++
++    def test_mutations_match_linear_max_including_ties_and_out_of_order_ends(self):
++        rng = random.Random(77)
++        rows = LiftReservations()
++        for step in range(500):
++            value = (step, rng.randrange(5), 0, 1, str(step))
++            operation = rng.randrange(8)
++            if operation == 0:
++                rows.append(value)
++            elif operation == 1:
++                rows.insert(rng.randrange(len(rows) + 1), value)
++            elif operation == 2:
++                rows.extend([value, (step, 9, 1, 0, str(step))])
++            elif operation == 3 and rows:
++                rows.pop(rng.randrange(len(rows)))
++            elif operation == 4 and rows:
++                rows[rng.randrange(len(rows))] = value
++            elif operation == 5:
++                rows.reverse()
++            elif operation == 6:
++                rows.sort()
++            elif rows:
++                del rows[:rng.randrange(len(rows) + 1)]
++            self.assert_index(rows)
++        rows += rows
++        self.assert_index(rows)
++        rows *= 2
++        self.assert_index(rows)
++        self.assert_index(copy.deepcopy(rows))
++        rows.clear()
++        self.assert_index(rows)
++
++    def test_plain_lists_keep_max_finish_and_first_on_ties(self):
++        first = (0, 100, 0, 1, 'first')
++        rows = [first, (5, 100, 1, 0, 'tie'), (10, 20, 0, 1, 'last')]
++        self.assertIs(first, latest_lift_reservation(rows))
++        indexed = LiftReservations(rows)
++        self.assertIs(first, indexed.latest)
++        indexed.insert(0, (0, 100, 0, 0, 'earlier tie'))
++        self.assert_index(indexed)
++        indexed.remove(indexed.latest)
++        self.assertIs(first, indexed.latest)
++
++    def test_rollback_restores_tail_and_complete_booking_history(self):
++        sim = simulation(wear=10)
++        book(sim, 100, 0, 1, 'committed')
++        before = copy.deepcopy(resource_state(sim))
++        with RouteReservationTransaction(sim, sim.amrs[0], [Task('T', 'A', 'B', 'Box')]):
++            book(sim, 200, 1, 0, 'rolled back')
++            self.assertEqual('rolled back', sim.lift_reservations['L1'].latest[4])
++        self.assertEqual(before, resource_state(sim))
++        self.assertEqual('committed', sim.lift_reservations['L1'].latest[4])
++        self.assert_index(sim.lift_reservations['L1'])
++
++
++class CalendarCacheTests(unittest.TestCase):
++    def test_raw_clock_types_do_not_share_a_cache_entry(self):
++        day = datetime(2026, 1, 5)
++        self.assertTrue(_department_operating_periods_for_date(
++            dict(operating_start_time=0), day))
++        with self.assertRaises(ValueError):
++            _department_operating_periods_for_date(dict(operating_start_time=False), day)
++
++    def test_equal_instants_in_different_zones_keep_their_local_active_day(self):
++        monday = datetime(2026, 1, 5, tzinfo=timezone(timedelta(hours=14)))
++        sunday = datetime(2026, 1, 4, tzinfo=timezone(timedelta(hours=-10)))
++        self.assertEqual(monday, sunday)
++        dept = dict(days_active=['mon'])
++        self.assertTrue(_department_operating_periods_for_date(dept, monday))
++        self.assertEqual([], _department_operating_periods_for_date(dept, sunday))
++
++    def test_overnight_mutation_disabled_days_and_result_isolation(self):
++        day = datetime(2026, 1, 5)
++        dept = dict(days_active=['mon'], operating_start_time='22:00',
++                    operating_end_time='06:00')
++        expected = [(day + timedelta(hours=22), day + timedelta(days=1, hours=6))]
++        self.assertEqual(expected, _department_operating_periods_for_date(dept, day))
++        returned = _department_operating_periods_for_date(dept, day)
++        returned.clear()
++        self.assertEqual(expected, _department_operating_periods_for_date(dept, day))
++        dept['operating_end_time'] = '07:00'
++        self.assertEqual(day + timedelta(days=1, hours=7),
++                         _department_operating_periods_for_date(dept, day)[0][1])
++        dept['days_active'] = ['tue']
++        self.assertEqual([], _department_operating_periods_for_date(dept, day))
++        dept['days_active'] = ['']
++        self.assertEqual([], _department_operating_periods_for_date(dept, day))
++        dept['days_active'] = []
++        self.assertTrue(_department_operating_periods_for_date(dept, day))
++        dept['enabled'] = False
++        self.assertEqual([], _department_operating_periods_for_date(dept, day))
++
++    def test_legacy_hours_equal_clocks_and_bounded_cache_hits(self):
++        day = datetime(2026, 1, 5)
++        dept = dict(operating_start_time='08', hours_operated_per_day=0)
++        _department_periods_cached.cache_clear()
++        expected = [(day + timedelta(hours=8), day + timedelta(days=1, hours=8))]
++        self.assertEqual(expected, _department_operating_periods_for_date(dept, day))
++        self.assertEqual(expected, _department_operating_periods_for_date(dept, day))
++        self.assertEqual(1, _department_periods_cached.cache_info().hits)
++        dept['hours_operated_per_day'] = 2
++        self.assertEqual(day + timedelta(hours=10),
++                         _department_operating_periods_for_date(dept, day)[0][1])
++
++    def test_excluded_member_fallback_is_cached_without_redistribution(self):
++        gen = DynamicCategoryTaskGenerator.__new__(DynamicCategoryTaskGenerator)
++        included, excluded = {'key': 'active'}, {'key': 'excluded'}
++        gen._timeframe_allocation_cache = {}
++        gen._timeframe_group_members = {'group': [included, excluded]}
++        gen._timeframe_group_key = Mock(return_value='group')
++        gen._instance_has_active_timeframe = Mock(side_effect=lambda item, day: item is included)
++        gen._timeframe_instance_task_count = Mock(return_value=4)
++        day = datetime(2026, 1, 5)
++        self.assertEqual((0, 4), gen._timeframe_group_allocation(excluded, day))
++        calls = gen._instance_has_active_timeframe.call_count
++        self.assertEqual((0, 4), gen._timeframe_group_allocation(excluded, day))
++        self.assertEqual(calls, gen._instance_has_active_timeframe.call_count)
++        self.assertEqual((0, 4), gen._timeframe_group_allocation(included, day))
++
++
++class CorridorFastPathTests(unittest.TestCase):
++    def check_lift_pruning(self, detailed):
++        sim = simulation()
++        for identity in ('L2', 'L3'):
++            lift = copy.deepcopy(sim.lifts[0])
++            lift.id = identity
++            sim.lifts.append(lift)
++        sim.geometric_motion = detailed
++        finishes = {'L1': 50, 'L2': 70, 'L3': 40}
++        outgoing = []
++
++        def slot(lift, arrival, origin, destination):
++            finish = finishes[lift.id]
++            return dict(lift_start=finish - 5, lift_finish=finish,
++                reposition_from_floor=0, reposition_to_floor=0, reposition_sec=0,
++                reposition_finish=finish - 5, loaded_start=finish - 4,
++                loaded_finish=finish - 1, loaded_travel_sec=3)
++
++        def route(robot, start, end, **kwargs):
++            if start.floor == 0:
++                return [], 0, 0
++            identity = start.name.split('-F')[0]
++            outgoing.append(identity)
++            return [], (0 if identity == 'L2' else 20), 1
++
++        with patch.object(sim, '_find_lift_journey_slot', side_effect=slot), \
++             patch.object(sim, '_same_floor_segments', side_effect=route):
++            plan = sim._nearest_compatible_lift_plan(0, sim.amrs[0],
++                sim.locations['A'], sim.locations['B'], sim.payloads['Box'])
++        self.assertEqual('L3', plan['lift'].id)
++        self.assertEqual(60, plan['final_finish'])
++        self.assertEqual(['L1', 'L2', 'L3'] if detailed else ['L1', 'L3'], outgoing)
++
++    def test_simple_lift_bound_skips_only_a_proven_nonwinning_alternative(self):
++        self.check_lift_pruning(False)
++
++    def test_detailed_lift_alternatives_still_require_outgoing_geometry(self):
++        self.check_lift_pruning(True)
++
++    def test_no_people_skips_queries_without_changing_reserved_traffic_timing(self):
++        sim = Simulation(corridor_config())
++        robot = sim.amrs[0]
++        sim._reserve_edge('A', 'B', 0, 4, 'blocker')
++        with patch.object(sim, '_people_on_edge', side_effect=AssertionError('empty people query')):
++            full = sim._same_floor_segments(robot, sim.locations['A'], sim.locations['B'],
++                                            start_time_value=0)
++            numeric = sim._same_floor_segments(robot, sim.locations['A'], sim.locations['B'],
++                                               start_time_value=0, collect_segments=False)
++        self.assertEqual(full[1:], numeric[1:])
++        self.assertGreater(full[1], 4)
++        self.assertEqual([], numeric[0])
++
++    def test_people_overlap_still_changes_duration_and_report_fields(self):
++        sim = Simulation(corridor_config())
++        robot = sim.amrs[0]
++        key = sim._physical_edge_key('A', 'B')
++        sim.people_edge_reservations[key] = [dict(start=0, end=100, count=2,
++                                                speed_factor=.5, group_type='staff')]
++        with patch.object(sim, '_people_on_edge', wraps=sim._people_on_edge) as query:
++            route = sim._same_floor_segments(robot, sim.locations['A'], sim.locations['B'],
++                                             start_time_value=0)
++        self.assertTrue(query.called)
++        corridor = next(row for row in route[0] if row['type'] == 'corridor')
++        self.assertEqual(2, corridor['people_count'])
++        self.assertEqual('staff', corridor['people_groups'])
++        self.assertGreater(corridor['people_delay_sec'], 0)
++
++    def test_stowed_idle_return_exits_before_destination_search(self):
++        sim = Simulation(corridor_config())
++        with patch.object(sim, '_amr_is_stowed_at_configured_charge_space', return_value=True), \
++             patch.object(sim, '_charge_location_for_idle_return', side_effect=AssertionError('route search')):
++            self.assertIsNone(sim._create_idle_return_task(sim.amrs[0], 0))
++
++
++if __name__ == '__main__':
++    unittest.main()

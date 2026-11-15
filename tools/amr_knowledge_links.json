@@ -1,0 +1,85 @@
+{
+  "capabilities": {
+    "route planning": [
+      "amr_route_navigation.audit_task_routes",
+      "amr_floor_routing.destination_direct_plan",
+      "amr_floor_routing.connecting_lift_plan",
+      "simulator.Simulation._direct_lift_plan"
+    ],
+    "event recording": [
+      "simulator.Simulation._append_verbose_row",
+      "simulator.Simulation._append_event_values",
+      "amr_event_store.EventStore.append",
+      "amr_event_store.EventStore.flush",
+      "amr_run_evidence.write_compact_evidence"
+    ],
+    "lift exports": [
+      "amr_third_party_lift.export_lift_csv",
+      "amr_third_party_lift.export_all_lifts_csv",
+      "amr_third_party_lift.export_lift_trips_xlsx",
+      "amr_lift_movement_charts.export_lift_charts_xlsx"
+    ],
+    "workbench project open check save simulate": [
+      "amr_app.main",
+      "amr_project.Project.open",
+      "amr_project.Project.save",
+      "visualiser.project_runs_panel.ProjectRunsPanel.start_run",
+      "amr_project_runs.execute"
+    ],
+    "saved run review playback investigation": [
+      "amr_run_review.verified_events",
+      "amr_results_investigation.load_investigation",
+      "visualiser.project_playback_panel.load_playback"
+    ],
+    "memory only runs and save": [
+      "visualiser.project_runs_panel.ProjectRunsPanel.start_memory_run",
+      "amr_memory_runs.MemoryRuns.prepare",
+      "amr_memory_runs.MemoryRun.execute",
+      "amr_memory_runs.MemoryRun.publish",
+      "amr_results_investigation.load_memory_investigation"
+    ],
+    "stress scenario workers and studies": [
+      "amr_stress_execution.evaluate_parallel",
+      "amr_stress_execution.worker_main",
+      "amr_stress_execution.persistent_worker_main",
+      "amr_lift_study.evaluate",
+      "amr_contingency_study.evaluate_study"
+    ],
+    "PDF reports and compact CSV exports": [
+      "amr_project_report.generate",
+      "amr_export_execution.materialise_exports",
+      "amr_event_csv.read_event_csv"
+    ]
+  },
+  "artifacts": {
+    "compact SQLite events": "Canonical event rows for managed simulation runs",
+    "memory SQLite events": "Volatile compact events and report state retained by the editor until saved or discarded",
+    "legacy or materialised event CSV": "Historical logs and explicit CSV representations",
+    "run evidence sidecar": "Versioned .run.json evidence bound to the recorded log",
+    "portable AMR project": "Saved .amrproj package containing configuration and packaged assets",
+    "run manifest": "Managed run lifecycle, input binding and canonical event filename",
+    "lift workbook": "XLSX trip table or lift movement charts produced from verified events",
+    "report PDF": "Engineering report generated from a saved run"
+  },
+  "links": [
+    ["visualiser.project_runs_panel.ProjectRunsPanel.start_process", "amr_app.main", "starts worker", "['--run-project', str(directory)]"],
+    ["amr_stress_execution.TrialPool._start", "amr_app.main", "starts worker", "worker_flag = '--scenario-worker'"],
+    ["amr_third_party_lift.export_lift_trips_xlsx", "amr_lift_trip_workbook.mjs", "starts workbook writer", "with_name('amr_lift_trip_workbook.mjs')"],
+    ["amr_lift_movement_charts.export_lift_charts_xlsx", "amr_lift_movement_workbook.mjs", "starts workbook writer", "with_name('amr_lift_movement_workbook.mjs')"],
+    ["simulator.Simulation._append_verbose_row", "amr_event_store.EventStore.append", "records compact event", "self.event_store.append("],
+    ["amr_event_store.EventStore.__init__", "compact SQLite events", "opens event store", "CREATE TABLE IF NOT EXISTS events("],
+    ["amr_event_store.EventStore.__init__", "memory SQLite events", "keeps temporary storage in memory", "PRAGMA temp_store=MEMORY"],
+    ["amr_memory_runs.MemoryRun.publish", "compact SQLite events", "saves memory evidence", "store.connection.backup(target_db"],
+    ["amr_memory_runs.MemoryRun.publish", "portable AMR project", "links saved run", "candidate._write(path, exclusive=new_project)"],
+    ["amr_event_store.iter_events", "compact SQLite events", "reads artifact", "yield from store.iter_rows("],
+    ["amr_event_csv.EventCSVReader._csv_chunks", "compact SQLite events", "streams artifact as CSV", "for row in store.iter_rows()"],
+    ["amr_event_store.export_rows", "legacy or materialised event CSV", "writes artifact", "os.replace(temporary, output_path)"],
+    ["amr_run_evidence.write_evidence_data", "run evidence sidecar", "writes artifact", "target = Path(str(path) + '.run.json')"],
+    ["amr_project.Project._write", "portable AMR project", "writes artifact", "archive.writestr(name, data)"],
+    ["amr_project_runs.validate_run_inputs", "run manifest", "reads artifact", "manifest = read_json(directory / MANIFEST)"],
+    ["amr_project_runs.finish_run", "run manifest", "writes artifact", "write_json(directory / MANIFEST, manifest)"],
+    ["amr_lift_trip_workbook.mjs", "lift workbook", "writes artifact", "SpreadsheetFile.exportXlsx(wb)"],
+    ["amr_lift_movement_workbook.mjs", "lift workbook", "writes artifact", "SpreadsheetFile.exportXlsx(wb)"],
+    ["amr_project_report.generate", "report PDF", "writes artifact", "generate_report_from_paths(csv, output / 'report.pdf'"]
+  ]
+}

@@ -1,0 +1,355 @@
+{
+  "summary": {
+    "completed_levels": 19,
+    "total_levels": 19,
+    "complete": true,
+    "lowest_passing_percent": 40,
+    "first_failing_percent": 75,
+    "non_monotonic": true
+  },
+  "study": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\LTN AMR speed sweep 2026-10-14.stress.json",
+  "root": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65",
+  "results": [
+    {
+      "id": "baseline",
+      "name": "Normal operation",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_193834_cw5udzu2",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 0.0,
+        "latest_completion_sec": 610624.2185458761,
+        "completed": 5212,
+        "failed": 0,
+        "pending": 0,
+        "late": 73,
+        "status": "complete",
+        "run_key": "ee0ba788c5b949399fe803cd9c3f48e9"
+      }
+    },
+    {
+      "id": "ded0200ff50b352eac04bba48234b23cfe567fb226d66457454123be3f63c8db",
+      "name": "All AMRs at 95% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_194004_d9epvcn9",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 318328.7845289267,
+        "latest_completion_sec": 610694.4002673798,
+        "completed": 5204,
+        "failed": 0,
+        "pending": 0,
+        "late": 72,
+        "status": "complete",
+        "run_key": "bb9ddea2f6fa45c0a72d095edd7b38df"
+      }
+    },
+    {
+      "id": "7cbf797444cc052926f6dd17990f417a61ee2340377d7e3f89ff1e66c895abb3",
+      "name": "All AMRs at 90% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_194004_gs0bgdua",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 732855.9224290842,
+        "latest_completion_sec": 610719.7218070083,
+        "completed": 5191,
+        "failed": 0,
+        "pending": 0,
+        "late": 73,
+        "status": "complete",
+        "run_key": "f6e63ff9fbc548adb94f3a2b203ed0e2"
+      }
+    },
+    {
+      "id": "7b19d1f697cbe5099b659777724cd579a70bdc5985a39bd2e2df1b4509105640",
+      "name": "All AMRs at 85% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_194005_iiqt7pdn",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 488033.6941801882,
+        "latest_completion_sec": 611168.7675329519,
+        "completed": 5201,
+        "failed": 0,
+        "pending": 0,
+        "late": 74,
+        "status": "complete",
+        "run_key": "0bf219517b234eb48200ec26c689ec8a"
+      }
+    },
+    {
+      "id": "652a303f92438e6197b7b4db7c52a0c8671a85bacba3aacb1903471866a1a3fe",
+      "name": "All AMRs at 80% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_194005_4gzq7q14",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 738855.3303582154,
+        "latest_completion_sec": 611259.8111385849,
+        "completed": 5143,
+        "failed": 0,
+        "pending": 0,
+        "late": 72,
+        "status": "complete",
+        "run_key": "e04dfe38789e427697edaf4f119e815e"
+      }
+    },
+    {
+      "id": "4eed28e6cba29fde60fb1ec244f3cc5bb8dba8bff8db5e5b6714c352af9a1535",
+      "name": "All AMRs at 75% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_194005_1w4u1_y9",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 2,
+        "added_delay_sec": 940746.2881144898,
+        "latest_completion_sec": 610925.3228510612,
+        "completed": 5158,
+        "failed": 2,
+        "pending": 0,
+        "late": 74,
+        "status": "complete",
+        "run_key": "305f0d40876f46379ae6c5eff9c85842"
+      }
+    },
+    {
+      "id": "ee60e90b19e6d756a9a8b8cba63e29a1b9708dee1e949c3a76939b8cd716da17",
+      "name": "All AMRs at 70% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_194005_0pqi3di9",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 1,
+        "added_delay_sec": 1180865.4772517271,
+        "latest_completion_sec": 611480.9170379781,
+        "completed": 5136,
+        "failed": 1,
+        "pending": 0,
+        "late": 73,
+        "status": "complete",
+        "run_key": "1a815f9c384a48cdaa116ef284979460"
+      }
+    },
+    {
+      "id": "103fd72fff2bfb38f6cb6b2892526a290c834ee3aadfe9ac7c5488c70f3e7d02",
+      "name": "All AMRs at 65% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_194005_34n_o3ou",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 1745183.4640482329,
+        "latest_completion_sec": 611616.9822068353,
+        "completed": 5078,
+        "failed": 0,
+        "pending": 0,
+        "late": 73,
+        "status": "complete",
+        "run_key": "cac48b4b3b70466c81bfa130665f7043"
+      }
+    },
+    {
+      "id": "5518c88d715fac5943d4de325f46052c63ed19be05e17740255eb25de45eeefa",
+      "name": "All AMRs at 60% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_194005__dzc5j07",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 1,
+        "added_delay_sec": 2295407.914765157,
+        "latest_completion_sec": 610723.1742953818,
+        "completed": 5060,
+        "failed": 1,
+        "pending": 0,
+        "late": 74,
+        "status": "complete",
+        "run_key": "242f0c8ade1e4f3fb09d4ce16c8c75ea"
+      }
+    },
+    {
+      "id": "c274d46fb1ff6e4abe7bd083de6091e0749fbf9d013119826377c52a71883c93",
+      "name": "All AMRs at 55% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_195745_ennglj0s",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 2550771.765001162,
+        "latest_completion_sec": 611373.911148587,
+        "completed": 5079,
+        "failed": 0,
+        "pending": 0,
+        "late": 72,
+        "status": "complete",
+        "run_key": "22d3fe2b34e747319040c334f675d651"
+      }
+    },
+    {
+      "id": "50e9cab28bdbba8109f919e4e0742781d25d07967813d7cebe64d59c115bbf46",
+      "name": "All AMRs at 50% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_200030__kfkbeb4",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 3238312.615012126,
+        "latest_completion_sec": 610934.8177113468,
+        "completed": 5053,
+        "failed": 0,
+        "pending": 0,
+        "late": 75,
+        "status": "complete",
+        "run_key": "2c8b08bd01ac405c9128d5307e98ccd7"
+      }
+    },
+    {
+      "id": "2ef9cc4d7a41fa79a4ef529124eb7a3dbf8abdb5914dc5b536006010ed2cacf4",
+      "name": "All AMRs at 45% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_200134_tl93__ns",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 4186239.072220387,
+        "latest_completion_sec": 611750.6233358495,
+        "completed": 4992,
+        "failed": 0,
+        "pending": 0,
+        "late": 74,
+        "status": "complete",
+        "run_key": "4031d855547b4d03b8589f38c4aeefc4"
+      }
+    },
+    {
+      "id": "db4a64669aa598a5ddb8c4c5e5bb0f991a00e83fd2aa26a08e48d217ddfbcff8",
+      "name": "All AMRs at 40% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_200209_m27jsxbt",
+      "metrics": {
+        "passed": true,
+        "unmet_count": 0,
+        "added_delay_sec": 5557075.416450536,
+        "latest_completion_sec": 611277.2122321886,
+        "completed": 4918,
+        "failed": 0,
+        "pending": 0,
+        "late": 75,
+        "status": "complete",
+        "run_key": "5063c290cea2439cb60ae8f0c882487f"
+      }
+    },
+    {
+      "id": "0b46e98c744bb4fdd785ce74551854b486ac7910b432662daeb51afe0e3d5a84",
+      "name": "All AMRs at 35% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_200302_bquzxq80",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 6,
+        "added_delay_sec": 8474307.169956617,
+        "latest_completion_sec": 625388.473022532,
+        "completed": 4768,
+        "failed": 6,
+        "pending": 0,
+        "late": 92,
+        "status": "complete",
+        "run_key": "106cd961375f43559b59d296f16297a6"
+      }
+    },
+    {
+      "id": "b3b450b686fbff0e1eafbef76b02683e7252975e22d501c524df34fea65efd49",
+      "name": "All AMRs at 30% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_200345_ixew6am6",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 11,
+        "added_delay_sec": 13247044.440238355,
+        "latest_completion_sec": 618060.235401399,
+        "completed": 4620,
+        "failed": 11,
+        "pending": 0,
+        "late": 93,
+        "status": "complete",
+        "run_key": "840445f5c66e4e5d94915be0a92504a8"
+      }
+    },
+    {
+      "id": "bd1a6c816f7d20f32be9478e7fa3499492422f621152cc5f503308dc9a563173",
+      "name": "All AMRs at 25% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_200551_07ubsj2l",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 2610,
+        "added_delay_sec": 7300851.852938217,
+        "latest_completion_sec": 619717.6621622468,
+        "completed": 4359,
+        "failed": 8,
+        "pending": 0,
+        "late": 132,
+        "status": "complete",
+        "run_key": "5f57b3b896f74752be491a543950eb20"
+      }
+    },
+    {
+      "id": "37eca4651465af9f6cc656049f43538df5c31e7e29bf8cb0345d0786b3fb612c",
+      "name": "All AMRs at 20% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_200557_0w94_vuz",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 9498,
+        "added_delay_sec": 9794648.595413832,
+        "latest_completion_sec": 632193.7891475726,
+        "completed": 3280,
+        "failed": 3557,
+        "pending": 10,
+        "late": 70,
+        "status": "complete",
+        "run_key": "0c96241008134bc683c3a7e8627db1c6"
+      }
+    },
+    {
+      "id": "b808d275a44e518acf9bc4f1fbdacc0e88bc8fe355289b33c8b2bb5c0f2bbac1",
+      "name": "All AMRs at 15% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_202350_danue5kv",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 26087,
+        "added_delay_sec": 6606376.898023173,
+        "latest_completion_sec": 629958.5711921912,
+        "completed": 2571,
+        "failed": 11722,
+        "pending": 5,
+        "late": 76,
+        "status": "complete",
+        "run_key": "70a1c76d17034ba8954d22d1fcc0a15a"
+      }
+    },
+    {
+      "id": "23393c21031f05752756edfdf1be0340f3f457a5788fed3b0438fe508420b815",
+      "name": "All AMRs at 10% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_202734_0k_tfguy",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 37383,
+        "added_delay_sec": 4611229.2494928455,
+        "latest_completion_sec": 639009.458373853,
+        "completed": 1930,
+        "failed": 17428,
+        "pending": 9,
+        "late": 104,
+        "status": "complete",
+        "run_key": "7a0489d8fc8e419db349f48cbd1d70fd"
+      }
+    },
+    {
+      "id": "fc775325e0ed31d90ab1e6a077f1d7ed0b1f850221fec4988de33b5a94105819",
+      "name": "All AMRs at 5% speed",
+      "directory": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-610986574e65\\runs\\run_20261014_202837_q929yjwi",
+      "metrics": {
+        "passed": false,
+        "unmet_count": 42195,
+        "added_delay_sec": 6797407.490671385,
+        "latest_completion_sec": 633884.5144073628,
+        "completed": 1239,
+        "failed": 19850,
+        "pending": 4,
+        "late": 43,
+        "status": "complete",
+        "run_key": "735f2b74186d4884bbbd89b4fec25cc8"
+      }
+    }
+  ],
+  "source_archive_unchanged": true
+}

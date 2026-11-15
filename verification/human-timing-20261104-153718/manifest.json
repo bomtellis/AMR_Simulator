@@ -1,0 +1,44 @@
+{
+  "files": {
+    "amr_contingency_inputs.py": {
+      "before": "70314d8495741a06f536cf0c75f7dadc3f097c6d87e7ed1234498c91dc311930",
+      "after": "2a3b441a1e6342e2946a640f0df194415207e251de9da00565174b3a2f3895a6"
+    },
+    "amr_contingency_runtime.py": {
+      "before": "cea8bf833cdbd599a07cf2c2e591f059a494c8bf3a5e7cde9dd7af057dce60b2",
+      "after": "b164ad477ccf0b053996cfa4e6452a3b9c667401d76afcb6a1520b82eea05af6"
+    },
+    "amr_contingency_timing.py": {
+      "before": null,
+      "after": "906041b5dcf4c9c45cc927d9bf89c4c6067305cdf43870101c5170acc9631788"
+    },
+    "amr_contingency_study.py": {
+      "before": "654c4231b1fc9ac182123c6a71817738a634733278521e255b5a5a7c9f62a9f1",
+      "after": "f6089b20c833bd5dda5cfa20da1206e6becf03c93fa38a510118c3a278e3c392"
+    },
+    "amr_contingency_report.py": {
+      "before": "d6086b474697bd672918af24555309efff3e5c1ab2c84fe69752a7758c89a167",
+      "after": "be0bbdafae62e7c8999d83e83d470edb87b4227368b3ebc181c0bfaecdd6d6ca"
+    },
+    "visualiser/contingency_panel.py": {
+      "before": "358b9bac0790ac6c7f6c5321ce2266a43a4f213c5a8265e1fbbe632228acb4d5",
+      "after": "53164cfa62f50ad68d4e9f399f44ac311f600e3b77a2c18401822448d100a537"
+    },
+    "docs/ui/human-contingency.md": {
+      "before": "26638e21e9dc234e0d6f56924aa79e7c6c53cbf07f729a2a56a20a19e100612e",
+      "after": "147599cdb3b3ce8bcced49089d3b7816c4a8342f6e603d2db0f37b0210144ab2"
+    },
+    "docs/ui/contingency-timing.md": {
+      "before": null,
+      "after": "26194cb0fd7a14637725879836d2127665b877f40fbcd6f4cbb40b2df6fe7766"
+    },
+    "tests/test_contingency_timing.py": {
+      "before": null,
+      "after": "b8cd2dc36e0ae95d61a839770aa13c2a5c4683024ec25ed36a5889c76c18c344"
+    },
+    "tests/test_human_contingency_ui.py": {
+      "before": "c029072d795fbccb735bab569c085ad6069b58ee4badea5c51bd3bf38e290ff8",
+      "after": "bf73712d8c695b2c36c963bbf620ca8826089f295512d32956e3ba3a82412e7b"
+    }
+  }
+}

@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
 
 
 STAGES = [('project', 'Project'), ('layout', 'Layout'), ('configuration', 'Configuration'),
-          ('checks', 'Check'), ('simulate', 'Simulate'), ('review', 'Review'), ('report', 'Report')]
+          ('checks', 'Check'), ('simulate', 'Simulate'), ('review', 'Review'),
+          ('route_analysis', 'Lift & Route Analysis'), ('report', 'Report')]
 CONFIGURATION = [('Building settings', 'manage_building_settings'),
     ('Simulation settings', 'manage_simulation_settings'), ('Robots', 'manage_amrs'),
     ('Payloads', 'manage_payloads'), ('Lifts', 'manage_lifts'), ('Plan lift locations', 'show_lift_planner'), ('Tasks', 'manage_tasks'),
@@ -98,6 +99,10 @@ class ProjectWorkspace(QWidget):
         child.setData(0, Qt.UserRole, 'demand')
         self.items['checks'].addChild(child)
         self.items['demand'] = child
+        child = QTreeWidgetItem(['FM logistics planning'])
+        child.setData(0, Qt.UserRole, 'fm_logistics')
+        self.items['checks'].addChild(child)
+        self.items['fm_logistics'] = child
         child = QTreeWidgetItem(['Playback'])
         child.setData(0, Qt.UserRole, 'playback')
         self.items['review'].addChild(child)
@@ -206,8 +211,10 @@ class ProjectWorkspace(QWidget):
     def activate(self, key):
         handlers = {'project': self.editor.show_project_revisions, 'layout': lambda: self.show_page('layout', self.editor.canvas),
             'configuration': self.configuration, 'checks': self.editor.show_project_checks, 'demand': self.editor.show_demand_preview,
+            'fm_logistics': self.editor.show_fm_logistics,
             'simulate': self.editor.show_project_runs, 'review': self.editor.show_results_investigation,
             'report': self.editor.show_project_report, 'playback': self.editor.show_project_playback,
+            'route_analysis': self.editor.show_route_analysis,
             'appearance': self.editor.show_appearance, 'route_display': self.editor.show_route_identification}
         handlers[key]()
 
@@ -284,7 +291,7 @@ class ProjectWorkspace(QWidget):
             self.tree.setCurrentItem(self.items[key])
         finally:
             self._navigating = False
-        index = [s[0] for s in STAGES].index({'demand': 'checks', 'playback': 'review', 'appearance': 'project', 'route_display': 'layout'}.get(key, key))
+        index = [s[0] for s in STAGES].index({'demand': 'checks', 'fm_logistics': 'checks', 'playback': 'review', 'appearance': 'project', 'route_display': 'layout'}.get(key, key))
         self.previous.setEnabled(index > 0)
         self.next.setEnabled(index < len(STAGES) - 1)
         self.refresh()
@@ -382,9 +389,16 @@ class ProjectWorkspace(QWidget):
 
     def step(self, delta):
         if delta == 1 and self.stage == 'playback':
-            self.editor.show_project_report(self.pages['playback'].directory)
+            playback = self.pages['playback']
+            if playback.requested_memory is not None:
+                playback.investigate()
+            else:
+                self.editor.show_project_report(playback.directory)
             return
         runs = getattr(self.editor, 'project_runs_panel', None)
+        if delta == 1 and runs is not None and runs.selected_memory_run() is not None and self.stage == 'simulate':
+            runs.investigate()
+            return
         if delta == 1 and runs is not None and runs.selected_path() is not None:
             if self.stage == 'simulate':
                 runs.investigate()
@@ -393,7 +407,7 @@ class ProjectWorkspace(QWidget):
                 runs.report()
                 return
         keys = [s[0] for s in STAGES]
-        index = keys.index({'demand': 'checks', 'playback': 'review', 'appearance': 'project', 'route_display': 'layout'}.get(self.stage, self.stage)) + delta
+        index = keys.index({'demand': 'checks', 'fm_logistics': 'checks', 'playback': 'review', 'appearance': 'project', 'route_display': 'layout'}.get(self.stage, self.stage)) + delta
         if 0 <= index < len(keys):
             self.activate(keys[index])
 

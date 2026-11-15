@@ -1,0 +1,61 @@
+{
+  "source": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\ltn_results\\run_20261109_192517_qocx7w0b",
+  "source_sha256": "c3ddfce4a3ee9ba5b78abab8449d60073dd417cb93019c2951a928c071f33c1e",
+  "raw_counts": {
+    "lift_reposition": 7628,
+    "lift_transfer": 11235
+  },
+  "per_lift": {
+    "Lift-1": 1903,
+    "Lift-2": 5550,
+    "Lift-3": 2064,
+    "Lift-4": 1454,
+    "Lift-5": 2688,
+    "Lift-6": 1623,
+    "Lift-7": 3111,
+    "Lift-8": 470
+  },
+  "days": [
+    "2026-01-01",
+    "2026-01-02",
+    "2026-01-03",
+    "2026-01-04",
+    "2026-01-05",
+    "2026-01-06",
+    "2026-01-07",
+    "2026-01-08"
+  ],
+  "excel": "C:\\Users\\tombe\\.codex\\.chatgpt-projects\\g-p-69cbe19d87108191b52233a93600c4e5\\lift-movement-chart-work\\output\\current-project\\LTN-lift-movements.xlsx",
+  "excel_sha256": "fde61a09bcb3f503d75c60a1c93943e4019c370c89319531530fa94ebf255a0b",
+  "pdf": "C:\\Users\\tombe\\.codex\\.chatgpt-projects\\g-p-69cbe19d87108191b52233a93600c4e5\\lift-movement-chart-work\\output\\current-project\\pdf-report\\report.pdf",
+  "pdf_sha256": "e66a7a8306a2f0c95baa6a0398d4d70841047124d86c780e60d99097cd7d726d",
+  "pdf_pages": 10,
+  "elapsed_seconds": 385.58889610000006,
+  "saved_evidence_unchanged": true,
+  "feature_tests": 15,
+  "regression_tests": 166,
+  "regression_result": "PASS",
+  "regression_elapsed_seconds": 105.061,
+  "regression_log_sha256": "fea5235e2a3915dc3067a6fdad9aeec50f7a16bd4bbe056be57fc6d435c83c76",
+  "native_excel": {
+    "result": "PASS",
+    "lifts": 8,
+    "all_days_checks": 8,
+    "daily_filter_combinations": 128,
+    "tests": "Every date on every lift, including/excluding repositioning; native chart series values equal independent physical-event counts",
+    "log_sha256": "0b6aa0649da9ff8c2cae21dc4bba21e4484afe46b69501f1e57d512d98defe73",
+    "read_only": true
+  },
+  "visual_review": {
+    "result": "PASS",
+    "excel_sheets": 8,
+    "pdf_pages": 10,
+    "report_panel": true,
+    "legacy_dialog": true,
+    "native_excel_preview": true
+  },
+  "duration_required_for_counting": false,
+  "simulation_routing_code_unchanged": true,
+  "compatibility": "Default PDF selection unchanged; existing lift CSV/Excel exports, energy, staffing, storage, project run and PDF regressions passed.",
+  "timestamp_fix": "Shared report parser accepts mixed whole-second/fractional ISO timestamps; no simulator code changed."
+}

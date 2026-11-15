@@ -1,0 +1,44 @@
+SIM TIME 14560.0 WALL 60.16474989999551
+         246275226 function calls (246258350 primitive calls) in 58.681 seconds
+
+   Ordered by: cumulative time
+   List reduced from 646 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000   58.691   58.691 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13189(run)
+        1    0.002    0.002   58.691   58.691 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13197(_run_impl)
+      550    0.004    0.000   58.673    0.107 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13297(_handle_event)
+      495    0.028    0.000   56.937    0.115 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12166(_try_assign_tasks)
+    16578    0.947    0.000   56.686    0.003 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9135(_same_floor_segments)
+     1348    0.073    0.000   54.533    0.040 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9570(_nearest_compatible_lift_plan)
+     1009    0.003    0.000   53.929    0.053 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10455(_estimate_task_for_amr)
+     1009    0.023    0.000   53.921    0.053 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10482(_estimate_task_for_amr_impl)
+    16578   12.066    0.001   53.451    0.003 C:\Users\tombe\Documents\AMR_Simulator\amr_scenario_routing.py:97(earliest_route)
+     1698    0.011    0.000   53.266    0.031 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10638(move_between)
+       95    0.002    0.000   49.332    0.519 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11303(_select_best_assignment)
+       95    0.003    0.000   49.314    0.519 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11441(_select_single_candidate_window)
+      190    0.001    0.000   49.305    0.260 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11249(_estimate_candidate_jobs)
+      914    0.002    0.000   49.304    0.054 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11237(_estimate_task_for_amr_cached)
+  3605525    5.113    0.000   13.503    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8812(_find_next_edge_start)
+  3614515    3.408    0.000    5.544    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8774(_directed_no_overtake_start)
+  3598075    3.013    0.000    5.493    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7754(_corridor_lane_capacity)
+ 56173088    5.337    0.000    5.337    0.000 {method 'get' of 'dict' objects}
+  3412050    2.790    0.000    4.952    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7737(_people_on_edge)
+  3598075    2.278    0.000    4.164    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8758(_edge_recent_demand)
+  3598075    2.189    0.000    4.128    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8912(_find_next_node_arrival)
+      154    0.002    0.000    3.996    0.026 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9812(_select_charge_location_for_amr)
+ 14435531    2.604    0.000    3.599    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7990(_reservation_scan_start)
+53254888/53242177    3.572    0.000    3.581    0.000 {built-in method builtins.max}
+      474    0.000    0.000    2.846    0.006 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12189(queue_idle_returns_when_needed)
+      413    0.007    0.000    2.846    0.007 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15762(_queue_idle_return_tasks)
+     6731    0.002    0.000    2.817    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15717(_create_idle_return_task)
+       34    0.000    0.000    2.703    0.079 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15687(_charge_location_for_idle_return)
+  3605525    1.115    0.000    2.177    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_scenario_routing.py:61(departure_state)
+4343598/4343466    1.621    0.000    2.157    0.000 {built-in method builtins.sorted}
+  3540098    1.338    0.000    1.875    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7068(_node_allowed)
+  3488294    1.188    0.000    1.702    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7078(_edge_allowed)
+  6841575    1.171    0.000    1.604    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8755(_spacing_time_sec)
+      233    0.003    0.000    1.168    0.005 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10381(_schedule_opportunity_charge)
+       18    0.000    0.000    1.159    0.064 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10280(_schedule_charge_cycle)
+
+

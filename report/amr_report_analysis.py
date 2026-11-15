@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -14,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from amr_location_inputs import location_outline_metrics
+from amr_event_csv import read_event_csv
 from amr_payload_inputs import inventory_space_dimensions, payload_dimensions as resolved_payload_dimensions
 from amr_inventory_inputs import inventory_space_is_amr
 from amr_department_inputs import department_location_names
@@ -156,7 +158,10 @@ def parse_time_column(df: pd.DataFrame) -> Tuple[pd.DataFrame, Context]:
     df = normalise_columns(df)
     cols = {k: pick_col(df, k) for k in COLUMN_ALIASES}
     if cols["timestamp"]:
-        df["_event_time"] = pd.to_datetime(df[cols["timestamp"]], errors="coerce")
+        # Whole-second and fractional timestamps can coexist in saved CSVs.
+        # Infer each row rather than discarding fractional rows after the first
+        # whole-second timestamp (pandas otherwise fixes one inferred format).
+        df["_event_time"] = pd.to_datetime(df[cols["timestamp"]], errors="coerce", format="mixed")
         if df["_event_time"].notna().any():
             # Older simulator CSVs formatted datetimes to whole seconds even
             # though sim_time_sec retained millisecond precision. Reconstruct
@@ -1278,12 +1283,55 @@ def lift_payload_weight(event, ctx, payload_weights):
     return None
 
 
+def lift_activity_tags(event, ctx, details, reposition):
+    from amr_fm_logistics import legacy_category
+
+    evidence = details.get("fm_lift")
+    if isinstance(evidence, dict):
+        tasks = [row for row in evidence.get("tasks", []) if isinstance(row, dict)]
+        loaded = evidence.get("loaded")
+    else:
+        try:
+            onboard = json.loads(_clean_text(event.get("onboard_payloads")) or "null")
+        except (ValueError, TypeError):
+            onboard = None
+        reduced = _clean_text(event.get("scenario_mode")).lower() in {"true", "1"}
+        loaded = bool(onboard) if isinstance(onboard, list) and (onboard or not reduced) else None
+        ids = [str(row.get("task_id", "")) for row in onboard if isinstance(row, dict)] if loaded else []
+        if not ids:
+            ids = _clean_text(event.get(ctx.cols.get("task"))).split(",")
+        source = _clean_text(event.get("task_source"))
+        tasks = [{"category": legacy_category(task_id, source),
+                  "return": task_id.upper().startswith(("RETURN-", "RETURN_"))
+                            or source == "task_generation_return"} for task_id in ids]
+
+    categories = sorted({str(row.get("category") or "unknown") for row in tasks}) or ["unknown"]
+    cohorts = sorted({str(row["cohort"]) for row in tasks if row.get("cohort")})
+    roles = {bool(row.get("return")) for row in tasks}
+    if reposition:
+        activity = "empty_lift_reposition"
+    elif loaded is False:
+        activity = "empty_amr_travel"
+    elif loaded is True and roles:
+        activity = "mixed_load" if len(roles) > 1 or len(categories) > 1 else (
+            "loaded_return" if True in roles else "loaded_outbound")
+    else:
+        activity = "unknown"
+    return {
+        "service_category": categories[0] if len(categories) == 1 else "mixed",
+        "service_categories": "|".join(categories),
+        "activity_type": activity,
+        "fm_cohort_ids": "|".join(cohorts),
+    }
+
+
 def build_lift_movement_detail(lift_rows, ctx, payload_weights=None, amr_weights=None):
     """One row per logged lift movement, including empty lift repositioning."""
     columns = ["movement_id", "lift_id", "movement_type", "amr", "task_ids",
                "start_time", "finish_time", "origin_level", "destination_level", "duration_s",
                "origin_location", "destination_location", "travel_distance_m",
-               "amr_onboard", "direction", "endpoint_source", "payload_weight_kg", "amr_weight_kg"]
+               "amr_onboard", "direction", "endpoint_source", "payload_weight_kg", "amr_weight_kg",
+               "service_category", "service_categories", "activity_type", "fm_cohort_ids"]
     payload_weights = payload_weights or {}
     amr_weights = amr_weights or {}
     rows = []
@@ -1352,13 +1400,52 @@ def build_lift_movement_detail(lift_rows, ctx, payload_weights=None, amr_weights
             "endpoint_source": "; ".join(sources),
             "payload_weight_kg": payload_weight,
             "amr_weight_kg": amr_weight,
+            **lift_activity_tags(event, ctx, details, reposition),
         })
     return pd.DataFrame(rows, columns=columns)
 
 
+def build_lift_movements_by_level(movements, config=None):
+    """Count lift departures, arrivals and intermediate floor crossings."""
+    config = config or {}
+    count = config.get('building', {}).get('floor_count')
+    levels = set(range(count)) if type(count) is int and 0 < count <= 10000 else set()
+    levels.update(floor for lift in config.get('lifts', []) for floor in lift.get('served_floors', [])
+                  if type(floor) is int)
+    levels.update(location['floor'] for location in config.get('locations', [])
+                  if type(location.get('floor')) is int)
+    arrivals, departures = Counter(), Counter()
+    lower_endpoints, upper_endpoints = Counter(), Counter()
+    excluded = 0
+    for origin, destination in movements[['origin_level', 'destination_level']].itertuples(index=False, name=None):
+        first = re.fullmatch(r'L(-?\d+)', str(origin))
+        last = re.fullmatch(r'L(-?\d+)', str(destination))
+        if first is None or last is None or int(first[1]) == int(last[1]):
+            excluded += 1
+            continue
+        start, finish = int(first[1]), int(last[1])
+        departures[start] += 1
+        arrivals[finish] += 1
+        lower_endpoints[min(start, finish)] += 1
+        upper_endpoints[max(start, finish)] += 1
+        levels.update((start, finish))
+    if levels and max(levels) - min(levels) < 10000:
+        levels.update(range(min(levels), max(levels) + 1))
+
+    rows = []
+    passing = 0
+    for level in sorted(levels):
+        passing -= upper_endpoints[level]
+        rows.append((level_label(level), arrivals[level], departures[level], passing,
+                     arrivals[level] + departures[level] + passing))
+        passing += lower_endpoints[level]
+    columns = ['Level', 'Arrivals', 'Departures', 'Pass-throughs', 'Total movements']
+    return pd.DataFrame(rows[::-1], columns=columns), excluded
+
+
 def load_lift_trip_rows(csv_path: Path):
     """Read the lift segments shared by movement and cohort CSV exports."""
-    frame, ctx = parse_time_column(pd.read_csv(csv_path, low_memory=False))
+    frame, ctx = parse_time_column(read_event_csv(csv_path, low_memory=False))
     segment_col = ctx.cols.get("segment_type")
     event_col = ctx.cols.get("event")
     segments = frame[segment_col].fillna("").astype(str).str.lower() if segment_col else pd.Series("", index=frame.index)
@@ -5072,7 +5159,7 @@ def analyse(
          'coverage': 'Full bound attribution' if record['known'] else 'Not established'}
         for record in energy_evidence['sources'].values()
     ])
-    raw = pd.read_csv(csv_path, low_memory=False)
+    raw = read_event_csv(csv_path, low_memory=False)
     df, ctx = parse_time_column(raw)
     df = df.sort_values(ctx.time_col, kind='stable').reset_index(drop=True)
     cols = ctx.cols
@@ -5718,6 +5805,8 @@ def analyse(
     ].copy()
     lift_usage_profile = build_lift_usage_profile(lift_rows, ctx, interval_minutes=30)
     lift_movement_detail = build_lift_movement_detail(lift_rows, ctx, payload_weights, amr_weights)
+    lift_movements_by_level, lift_movements_without_levels = build_lift_movements_by_level(
+        lift_movement_detail, kpi_config)
     lift_trip_cohorts_5min = build_lift_trip_cohorts(
         lift_rows, ctx, interval_minutes=5
     )
@@ -6387,6 +6476,8 @@ def analyse(
         "journey_detail": journey_detail,
         "journey_flow_summary": journey_flow_summary,
         "lift_movement_detail": lift_movement_detail,
+        "lift_movements_by_level": lift_movements_by_level,
+        "lift_movements_without_levels": lift_movements_without_levels,
         "lift_trip_cohorts_5min": lift_trip_cohorts_5min,
         "lift_trip_cohorts_hourly": lift_trip_cohorts_hourly,
         "lift_wait_summary": lift_wait_summary,

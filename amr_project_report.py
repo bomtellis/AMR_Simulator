@@ -6,12 +6,17 @@ import sys
 
 from amr_project_runs import OUTPUTS, read_json, write_json, validate_run_inputs, timestamp
 from amr_run_evidence import file_hash, config_hash
-from amr_run_review import verified_inputs
+from amr_run_review import verified_events, verified_inputs
 
 
 def report_software():
     root = Path(__file__).resolve().parent
-    paths = [Path(__file__), root / 'amr_project_runs.py', root / 'amr_run_evidence.py', root / 'amr_run_review.py', *sorted((root / 'report').glob('*.py'))]
+    paths = [Path(__file__), root / 'amr_project_runs.py', root / 'amr_run_evidence.py', root / 'amr_run_review.py',
+             root / 'amr_event_csv.py', root / 'amr_event_store.py', root / 'amr_event_delta.py',
+             root / 'amr_route_analysis.py',
+             root / 'amr_run_exports.py', root / 'amr_stress_report.py', root / 'amr_scenario_study.py',
+             root / 'amr_lift_movement_charts.py', root / 'amr_lift_movement_workbook.mjs',
+             *sorted((root / 'report').glob('*.py'))]
     files = {p.relative_to(root).as_posix(): file_hash(p) for p in paths}
     return dict(files=files, sha256=config_hash(files))
 
@@ -25,17 +30,39 @@ def report_sections():
 
 
 def generate(directory, output, sections, *, drawings=False, existing_pdf=None, insert_after_page=None, report_title=None,
-             lift_cohorts_only=False):
+             lift_cohorts_only=False, stress_selection=None, contingency_study=None,
+             lift_chart_day=None, lift_chart_bin_minutes=30, lift_chart_include_reposition=True,
+             lift_chart_lift_ids=None, comparison_baseline=None):
     directory, output = Path(directory).resolve(), Path(output).resolve()
     drawings = drawings and not lift_cohorts_only
-    manifest, config, csv, log_hash = verified_inputs(directory, drawings=drawings)
+    manifest, config, csv, log_hash = verified_events(directory, drawings=drawings)
     source_hashes = {name: file_hash(directory / name) for name in
-                     ('run_manifest.json', 'config.json', 'project_configuration.json', 'project_checks.json', OUTPUTS['steps_csv'] + '.run.json')}
+                     ('run_manifest.json', 'config.json', 'project_configuration.json', 'project_checks.json', csv.name + '.run.json')}
     allowed = dict(report_sections())
     if not lift_cohorts_only and (not sections or any(s not in allowed for s in sections) or len(set(sections)) != len(sections)):
         raise ValueError('Select at least one distinct supported report section.')
     if lift_cohorts_only and (existing_pdf or insert_after_page is not None):
         raise ValueError('Lift CSV export cannot insert into a PDF.')
+    baseline = None
+    if not lift_cohorts_only and 'lift_performance_comparison' in sections:
+        if comparison_baseline is None:
+            raise ValueError('Choose a completed baseline run for the lift performance comparison.')
+        comparison_baseline = Path(comparison_baseline).resolve()
+        baseline = verified_events(comparison_baseline)
+        baseline_binding = baseline[0]['project_binding']
+        binding = manifest['project_binding']
+        if baseline_binding['run_key'] == binding['run_key']:
+            raise ValueError('Choose a different completed run as the baseline.')
+        baseline_files = {name: file_hash(comparison_baseline / name) for name in
+                          ('run_manifest.json', baseline[2].name + '.run.json')}
+    stress_report = stress_evidence = None
+    contingency_report = None
+    if not lift_cohorts_only and 'human_contingency' in sections:
+        from amr_contingency_report import collect_contingency_report
+        contingency_report = collect_contingency_report(contingency_study, config)
+    if not lift_cohorts_only and 'stress_tests' in sections:
+        from amr_stress_report import collect_stress_report
+        stress_report, stress_evidence = collect_stress_report(stress_selection, config)
     insertion = None
     if existing_pdf:
         from amr_report_pdf_insert import validate_insertion
@@ -54,13 +81,39 @@ def generate(directory, output, sections, *, drawings=False, existing_pdf=None, 
                     kind='lift_cohorts_csv' if lift_cohorts_only else 'pdf')
     if insertion:
         metadata['insertion'] = insertion
+    if not lift_cohorts_only and {'lift_movement_stacks','lift_movement_daily'} & set(sections):
+        metadata['lift_movement_charts'] = dict(day=lift_chart_day or 'All days',
+            interval_minutes=lift_chart_bin_minutes,include_reposition=lift_chart_include_reposition,
+            lift_ids=lift_chart_lift_ids or [],daily_section='lift_movement_daily' in sections)
+    if stress_evidence:
+        metadata['stress_tests'] = stress_evidence
+    if contingency_report:
+        metadata['human_contingency'] = dict(path=str(contingency_study), sha256=file_hash(contingency_study))
+    if baseline:
+        metadata['comparison_baseline'] = dict(path=str(comparison_baseline), project_binding=baseline_binding,
+            source_log_sha256=baseline[3], source_config_sha256=baseline[0]['config_object_sha256'],
+            source_files=baseline_files)
     write_json(output / 'report_manifest.json', metadata)
     try:
+        performance_comparison = None
+        if baseline:
+            from amr_report_performance import compare
+            print('Comparing saved baseline and scenario performance…', flush=True)
+            performance_comparison = compare(baseline[2], baseline[1], csv, config,
+                baseline_name=comparison_baseline.name, scenario_name=directory.name)
+            if baseline[0]['software']['sha256'] != manifest['software']['sha256']:
+                performance_comparison['differences'].append('simulator software')
+            if baseline_binding['project_id'] != manifest['project_binding']['project_id']:
+                performance_comparison['differences'].append('saved project identity')
+            metadata['comparison_checkpoint_sec'] = performance_comparison['checkpoint']
         # Relocate drawings into this run without rewriting its immutable inputs.
         from amr_project import drawing_entries
         for entry, _suffix in drawing_entries(config):
             entry['filepath'] = str(directory / 'drawings' / Path(entry['filepath']).name)
         write_json(output / 'report_configuration.json', config)
+        if stress_report:
+            write_json(output / 'stress_test_comparison.json', stress_report)
+            metadata['stress_comparison_sha256'] = file_hash(output / 'stress_test_comparison.json')
         from amr_report_main import generate_report_from_paths, export_lift_cohorts_csv
         lift_csv = output / 'report_lift_cohorts.csv'
         if lift_cohorts_only:
@@ -71,13 +124,27 @@ def generate(directory, output, sections, *, drawings=False, existing_pdf=None, 
             generate_report_from_paths(csv, output / 'report.pdf', config_json=output / 'report_configuration.json',
                                    include_drawings=drawings, heatmap_workers=1, report_sections=sections,
                                    existing_pdf=existing_pdf, insert_after_page=insert_after_page, report_title=report_title,
-                                   lift_cohorts_csv=lift_csv)
-        verified_inputs(directory, drawings=drawings)
-        if (file_hash(csv) != log_hash or report_software() != metadata['report_software'] or
+                                   lift_cohorts_csv=lift_csv, stress_report=stress_report, contingency_report=contingency_report,
+                                   performance_comparison=performance_comparison,
+                                   lift_chart_day=lift_chart_day,lift_chart_bin_minutes=lift_chart_bin_minutes,
+                                   lift_chart_include_reposition=lift_chart_include_reposition,
+                                   lift_chart_lift_ids=lift_chart_lift_ids)
+        _, _, current_log, current_hash = verified_events(directory, drawings=drawings)
+        if baseline and (verified_events(comparison_baseline)[3] != baseline[3]
+                         or any(file_hash(comparison_baseline / name) != checksum for name, checksum in baseline_files.items())):
+            raise ValueError('Baseline evidence changed during report generation.')
+        if contingency_report and file_hash(contingency_study) != metadata['human_contingency']['sha256']:
+            raise ValueError('Contingency evidence changed during report generation.')
+        if (current_log != csv or current_hash != log_hash or report_software() != metadata['report_software'] or
                 any(file_hash(directory / name) != checksum for name, checksum in source_hashes.items())):
             raise ValueError('Inputs or report software changed during generation. This report is incomplete.')
         if existing_pdf and file_hash(existing_pdf) != metadata['insertion']['sha256']:
             raise ValueError('The existing PDF changed during insertion. This report is incomplete.')
+        if stress_evidence:
+            from amr_stress_report import verify_stress_sources
+            verify_stress_sources(stress_evidence)
+            if file_hash(output / 'stress_test_comparison.json') != metadata['stress_comparison_sha256']:
+                raise ValueError('The stress-test comparison changed during generation.')
         metadata.update(status='complete', completed_at=timestamp(), lift_cohorts_sha256=file_hash(lift_csv))
         if not lift_cohorts_only:
             metadata['pdf_sha256'] = file_hash(output / 'report.pdf')
@@ -94,15 +161,27 @@ def main(argv=None):
     parser.add_argument('run', type=Path)
     parser.add_argument('output', type=Path)
     parser.add_argument('--sections', default='')
+    parser.add_argument('--comparison-baseline', type=Path)
     parser.add_argument('--lift-cohorts-only', action='store_true')
+    parser.add_argument('--lift-chart-day')
+    parser.add_argument('--lift-chart-lift-id',action='append')
+    parser.add_argument('--lift-chart-bin-minutes',type=int,choices=[5,15,30,60],default=30)
+    parser.add_argument('--lift-chart-exclude-reposition',action='store_true')
     parser.add_argument('--drawings', action='store_true')
     parser.add_argument('--existing-pdf', type=Path)
     parser.add_argument('--insert-after-page', type=int)
     parser.add_argument('--report-title')
+    parser.add_argument('--stress-selection', type=Path)
+    parser.add_argument('--contingency-study', type=Path)
     args = parser.parse_args(argv)
     print(generate(args.run, args.output, args.sections.split(','), drawings=args.drawings,
                    existing_pdf=args.existing_pdf, insert_after_page=args.insert_after_page, report_title=args.report_title,
-                   lift_cohorts_only=args.lift_cohorts_only), flush=True)
+                   lift_cohorts_only=args.lift_cohorts_only,
+                   lift_chart_day=args.lift_chart_day,lift_chart_bin_minutes=args.lift_chart_bin_minutes,
+                   lift_chart_include_reposition=not args.lift_chart_exclude_reposition,
+                   lift_chart_lift_ids=args.lift_chart_lift_id,
+                   stress_selection=read_json(args.stress_selection) if args.stress_selection else None,
+                   contingency_study=args.contingency_study, comparison_baseline=args.comparison_baseline), flush=True)
 
 
 if __name__ == '__main__':

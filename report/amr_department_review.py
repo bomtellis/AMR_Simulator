@@ -25,6 +25,7 @@ from amr_sim_task_generation import (
     DynamicCategoryTaskGenerator, SCHEDULED_MODES, _scheduled_times_from_cfg,
 )
 from amr_sim_time_utils import SimulationClock
+from amr_event_csv import read_event_csv
 
 DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 EVENTS = {'task_generated', 'waste_task_generated', 'return_task_generated',
@@ -261,7 +262,7 @@ def load_department_reviews(csv_path, config_path):
     frames = []
     columns = {'task_id', 'event_type', 'sim_datetime', 'department_id', 'details', 'task_source',
                'from_location', 'to_location', 'payload', 'waste_stream', 'duration_sec'}
-    for chunk in pd.read_csv(csv_path, usecols=lambda c: c in columns, chunksize=100000, low_memory=False):
+    for chunk in read_event_csv(csv_path, usecols=lambda c: c in columns, chunksize=100000, low_memory=False):
         if 'event_type' not in chunk:
             raise ValueError('Export a verbose simulation event CSV for department reviews.')
         frames.append(chunk[chunk.event_type.isin(EVENTS)])

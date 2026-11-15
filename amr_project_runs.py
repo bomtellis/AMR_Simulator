@@ -33,7 +33,7 @@ def timestamp():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def verified_termination(evidence, csv_path):
+def verified_termination(evidence, csv_path=None, *, rows=None):
     """Verify a structured geometric stop against its full, hash-bound event log.
 
     A valid stop preserves partial evidence; it never establishes completion or
@@ -54,9 +54,10 @@ def verified_termination(evidence, csv_path):
         if not isinstance(termination.get(key), str) or not termination[key].strip():
             raise ValueError(f'Termination {key} must be a nonempty string.')
     for key in ('amr_ids', 'task_ids'):
-        rows = termination.get(key)
-        if (not isinstance(rows, list) or any(not isinstance(item, str) or not item.strip() for item in rows)
-                or len(rows) != len(set(rows))):
+        identifiers = termination.get(key)
+        if (not isinstance(identifiers, list)
+                or any(not isinstance(item, str) or not item.strip() for item in identifiers)
+                or len(identifiers) != len(set(identifiers))):
             raise ValueError(f'Termination {key} must be a list of unique nonempty ids.')
     def finite_json(value):
         if value is None or isinstance(value, (str, bool)):
@@ -71,10 +72,12 @@ def verified_termination(evidence, csv_path):
     if (evidence.get('log_kind') != 'full' or evidence.get('logging_enabled') is not True
             or evidence.get('reduced_logging') is not False):
         raise ValueError('Partial investigation requires full event logging.')
-    with Path(csv_path).open(encoding='utf-8-sig', newline='') as stream:
-        stop_rows = [row for row in csv.DictReader(stream)
-                     if row.get('event_type') == 'geometric_simulation_stopped'
-                     or row.get('event_id') == termination['event_id']]
+    if rows is None:
+        from amr_event_store import iter_events
+        rows = iter_events(csv_path)
+    stop_rows = [row for row in rows
+                 if row.get('event_type') == 'geometric_simulation_stopped'
+                 or row.get('event_id') == termination['event_id']]
     if len(stop_rows) != 1:
         raise ValueError('Termination needs one unambiguous matching stop event.')
     event = stop_rows[0]
@@ -159,6 +162,8 @@ def validate_run_inputs(directory, *, require_current_software=False, verify_dra
     if file_hash(directory / "config.json") != manifest["config_sha256"] or config_hash(config) != manifest["config_object_sha256"]:
         raise ValueError("Frozen run inputs have changed")
     manifest['simulation_mode'] = verified_simulation_mode(manifest, config)
+    from amr_run_evidence import verify_legacy_computation
+    verify_legacy_computation(manifest, config)
     portable = read_json(directory / "project_configuration.json")
     binding = manifest["project_binding"]
     if manifest.get("run_key") != binding.get("run_key"):
@@ -206,18 +211,19 @@ def finish_run(directory, exit_code, *, cancelled=False, error=""):
     if exit_code in (0, PARTIAL_EXIT_CODE) and not cancelled:
         try:
             validated, _ = validate_run_inputs(directory)
-            evidence = read_json(directory / (OUTPUTS["steps_csv"] + ".run.json"))
-            if (type(evidence.get("schema_version")) is not int or evidence.get("schema_version") != 1 or evidence.get("project_binding") != manifest["project_binding"] or
+            event_path = directory / manifest.get('canonical_events', OUTPUTS['steps_csv'])
+            evidence = read_json(str(event_path) + '.run.json')
+            if (type(evidence.get("schema_version")) is not int or evidence.get("schema_version") != (2 if event_path.suffix == '.sqlite' else 1) or evidence.get("project_binding") != manifest["project_binding"] or
                     evidence.get("config_sha256") != manifest["config_object_sha256"] or
                     config_hash(evidence.get("frozen_inputs")) != manifest["config_object_sha256"] or
                     configuration_bytes(evidence.get("frozen_inputs")) != configuration_bytes(read_json(directory / "config.json")) or
                     evidence.get("software", {}).get("sha256") != manifest["software"]["sha256"] or
-                    evidence.get("log_sha256") != file_hash(directory / OUTPUTS["steps_csv"])):
+                    evidence.get("log_sha256") != file_hash(event_path)):
                 raise ValueError("Simulation evidence does not match this prepared run")
             verified_simulation_mode(evidence, evidence['frozen_inputs'])
             status = evidence.get('run_status')
             if status in PARTIAL_REASONS:
-                termination = verified_termination(evidence, directory / OUTPUTS['steps_csv'])
+                termination = verified_termination(evidence, event_path)
                 manifest.update(status='partial', termination=termination,
                     termination_sha256=config_hash(termination), termination_reason=termination['reason'],
                     stop_time_sec=termination['stop_time_sec'])
@@ -259,7 +265,9 @@ def link_run(project, directory, *, expected_run_key=None):
     return manifest
 
 
-def execute(directory):
+def execute(directory, *, progress=None, runtime_inputs=None, runtime_backend='compact', event_baseline=None):
+    if event_baseline is not None and runtime_backend != 'compact':
+        raise ValueError('Reduced data requires compact execution')
     directory = Path(directory).resolve()
     manifest, config = validate_run_inputs(directory, require_current_software=True)
     if manifest["status"] != "prepared":
@@ -267,16 +275,29 @@ def execute(directory):
     manifest.update(status="running", started_at=timestamp())
     write_json(directory / MANIFEST, manifest)
     from simulator import Simulation
-    simulation = Simulation(config, verbose=True, verbose_csv_path=str(directory / OUTPUTS["steps_csv"]))
+    if progress:
+        progress(dict(phase='Initializing simulation and preparing routes'))
+    simulation = Simulation(config, verbose=True, verbose_csv_path=str(directory / OUTPUTS["steps_csv"]),
+                            progress_callback=progress, runtime_inputs=runtime_inputs,
+                            runtime_backend=runtime_backend, defer_exports=runtime_backend == 'compact',
+                            event_baseline=event_baseline)
+    if progress:
+        simulation.progress_update_interval = 1.0
     simulation._evidence_project_binding = manifest["project_binding"]
     simulation.run()
+    if progress:
+        progress(dict(phase='Saving and verifying run evidence'))
     if software_snapshot()["sha256"] != manifest["software"]["sha256"]:
         raise ValueError("Simulator software changed during execution; results are incomplete")
+    if runtime_backend == 'compact':
+        manifest['canonical_events'] = simulation.event_store.path.name
+        write_json(directory / MANIFEST, manifest)
     simulation.write_verbose_csv()
-    simulation.write_visualiser_csv(str(directory / OUTPUTS["visualiser_csv"]))
-    for method, key in (("write_failed_tasks_csv", "failed_tasks_csv"), ("write_transport_matrix_csv", "transport_matrix_csv"),
+    if runtime_backend == 'reference':
+        simulation.write_visualiser_csv(str(directory / OUTPUTS["visualiser_csv"]))
+    for method, key in (() if runtime_backend == 'compact' else (("write_failed_tasks_csv", "failed_tasks_csv"), ("write_transport_matrix_csv", "transport_matrix_csv"),
                         ("write_route_lengths_csv", "route_lengths_csv"), ("write_charger_estimate_csv", "charger_estimate_csv"),
-                        ("write_scenario_impact_csv", "scenario_impact_csv")):
+                        ("write_scenario_impact_csv", "scenario_impact_csv"))):
         getattr(simulation, method)(str(directory / OUTPUTS[key]))
     result = finish_run(directory, 0)
     if result['status'] == 'partial':

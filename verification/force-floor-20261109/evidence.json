@@ -1,0 +1,143 @@
+{
+  "date": "2026-11-09",
+  "project": "C:/Users/tombe/Documents/AMR_Simulator/ltn.amrproj",
+  "project_sha256": "35c09a5d6cd19e72d60538a6aacc2ecb14812e82a7d645e4eb2806e5546fa7a5",
+  "input_sha256": "e1dd44fc5b843ceb01c134b83e1f941bcc4cc892892f1fc3841540e061be904f",
+  "disabled_full_week": {
+    "sim_time": 610693.7886885167,
+    "completed": 4944,
+    "failed": 0,
+    "events": 231099,
+    "event_sha256": "855306ea979035c065291c426705465397207f429f6f7ce7466a0434ffbe4cb8",
+    "component_hashes": {
+      "records": "ca328b8b78d126388dc35e44db9923ed85273fee40d771a418b91b1861aff5f3",
+      "failed": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c",
+      "amrs": "34071dc1f2243a5266d68825fda7c7dc7a68cc6c0bf9014a154e892dea80ad35",
+      "lifts": "6c605dd5ff842973d736edcf1ac35d5e9029925d33089cc9dd9446f52be6871e",
+      "lift_reservations": "dbd27664aaca1d61dc5e46089bf758829f21361daf9b6ce3906e35d2b1baf608",
+      "edge_reservations": "6bb49d1e6c6565ce23582cfafd1737fe7e95cc133700479731dfca9cd6adf93b",
+      "node_reservations": "60ae1715f83b25fa8db2ca6bb1758139f2078a1fe13b2db8cc27a1ba0735ed3e",
+      "location_reservations": "b5f296e5056d412ee9c42ccc873b75ff6bb52c7f683426559c2a9fb3510a01ab",
+      "inventory_spaces_by_location": "b6c2210dc68a5de7b57ff895e6c13b58bb3052cd81c2b133460548c5d28a4f44",
+      "pending": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c"
+    },
+    "root": "force-floor-work",
+    "initialization_sec": 1.545619099997566,
+    "run_sec": 213.52874390000215,
+    "busy_sample_sec": 1.4723899000018719,
+    "full_finished": true,
+    "configured_horizon": "2026-01-08T05:00:00"
+  },
+  "enabled_full_week": {
+    "sim_time": 617669.0586177211,
+    "completed": 4424,
+    "failed": 3,
+    "events": 241862,
+    "event_sha256": "8a6a0cb26f7d4d2aa82aa1f4d2ae7ba8a4fa5091df5c5c91c109c14b8b7a10d7",
+    "component_hashes": {
+      "records": "934e9863a3e062cf1df8aee222fbed9bd02a7c9270033eb5ec3d2e1a7922bcae",
+      "failed": "6c39e38d910b863bc42d4f9ceecf4ee2b67014c2417d6c52cf0f7e7abd3c6f12",
+      "amrs": "014c0b763b1dd5c82ca111411a370f69a1abcd9b48d628eaea4502bafba586c8",
+      "lifts": "5e2bdee110674ed53ee9ae2f3837d9fa849234016d950bed84a034a7ae709442",
+      "lift_reservations": "53f390d075474992e9a73908ae25912eb169d2d5fb84634543e202a399775902",
+      "edge_reservations": "72f4f7f8e31dde98be90cdf573513527349679f80b77419a545a13754121a34e",
+      "node_reservations": "7ee704ac978db318c5759484c6dddcf7cdf3608d4a411386dfe79d7ca558492f",
+      "location_reservations": "0bec032da03aaf5ec484a7bb4d2198371441140234cc5c9bb849d91a695593ec",
+      "inventory_spaces_by_location": "b1ec7da49c27f958a3b86dee6ac8eb9e49b8b606eb7af54a3e81a6f7ed4c47ef",
+      "pending": "6d355a642ffed28c2afbda550638c33deb10c7f463ea5f2ce79a5ee5a8e15a4c"
+    },
+    "root": "force-floor-work",
+    "initialization_sec": 1.5430865000016638,
+    "run_sec": 170.09715629999846,
+    "busy_sample_sec": 1.3958792000012181,
+    "full_finished": true,
+    "configured_horizon": "2026-01-08T05:00:00"
+  },
+  "disabled_matches_pre_feature_week": true,
+  "disabled_metrics": {
+    "horizontal_distance_m": 1122792.9072586168,
+    "horizontal_seconds": 987206.6144057808,
+    "lift_transfer_count": 6977,
+    "lift_occupied_seconds": 242579.20639100837,
+    "lift_reposition_count": 4022,
+    "wait_for_lift_seconds": 238923.68349099864,
+    "seven_day_lift_busy_percent": 4.942838246138349,
+    "by_lift_busy_seconds": {
+      "Lift-2": 25547.111111122744,
+      "Lift-7": 48134.66666668322,
+      "Lift-5": 34717.77777779015,
+      "Lift-4": 35380.44444445298,
+      "Lift-6": 41356.00000001092,
+      "Lift-1": 9345.396812201325,
+      "Lift-8": 14544.000000002005,
+      "Lift-3": 30128.888888894537
+    }
+  },
+  "enabled_metrics": {
+    "horizontal_distance_m": 1198439.2591038784,
+    "horizontal_seconds": 1021916.2102589943,
+    "lift_reposition_count": 7628,
+    "lift_occupied_seconds": 390837.8148427713,
+    "lift_transfer_count": 11235,
+    "wait_for_lift_seconds": 2190104.850552163,
+    "seven_day_lift_busy_percent": 7.866650969533711,
+    "by_lift_busy_seconds": {
+      "Lift-2": 121956.88888892358,
+      "Lift-7": 64268.88888890741,
+      "Lift-5": 49312.4444444633,
+      "Lift-4": 28605.77777778705,
+      "Lift-6": 33012.88888889817,
+      "Lift-1": 34348.92939870446,
+      "Lift-3": 39620.88888889976,
+      "Lift-8": 9493.333333335333
+    }
+  },
+  "policy_audit": {
+    "completed_tasks": 4424,
+    "movement_legs_checked": 7384,
+    "same_floor_detours": 1105,
+    "violations": []
+  },
+  "movement_audit": {
+    "movements_checked": 18863,
+    "errors": []
+  },
+  "enabled_failed_tasks": [
+    {
+      "task_id": "GEN_WASTE_D13_00486",
+      "sim_time_sec": 125110.0,
+      "from_location": "D14-WASTE",
+      "to_location": "D47-WASTE",
+      "pending_reason": "Task deferral limit exceeded (60 min); waited 3600 s from scheduled release 121510 s without an AMR assignment; last_pending_reason=Existing payload Clinical Waste Bin is not available at pickup location D14-WASTE"
+    },
+    {
+      "task_id": "GEN_WASTE_D14_01878",
+      "sim_time_sec": 565210.0,
+      "from_location": "D14-WASTE",
+      "to_location": "D47-WASTE",
+      "pending_reason": "Task deferral limit exceeded (60 min); waited 3600 s from scheduled release 561610 s without an AMR assignment; last_pending_reason=Existing payload Clinical Waste Bin is not available at pickup location D14-WASTE"
+    },
+    {
+      "task_id": "GEN_WASTE_D10_01897",
+      "sim_time_sec": 569700.0,
+      "from_location": "D14-WASTE",
+      "to_location": "D47-WASTE",
+      "pending_reason": "Task deferral limit exceeded (60 min); waited 3600 s from scheduled release 566100 s without an AMR assignment; last_pending_reason=Existing payload Clinical Waste Bin is not available at pickup location D14-WASTE"
+    }
+  ],
+  "tests": {
+    "main_regression_checks_passed": 378,
+    "additional_new_checks_passed": 2,
+    "new_feature_checks": 28,
+    "latest_policy_suite_checks_passed": 68
+  },
+  "production_sha256": {
+    "amr_forced_floor.py": "c48bda0c7b8339c5471f9416647dbf61dfab940c9b70e015a912fe48492bffd3",
+    "amr_floor_routing.py": "66242da4346c397e82cdb4fd2cfe585b2da2fda1708978f3180d6eb432127f21",
+    "simulator.py": "56dd459c767d4bfe16d46619f7b4f2bbcc6a38971ee15c6b1efc8c792af05c55",
+    "amr_route_navigation.py": "d9b35836fa6124a7371318d939699a13257e3a61c8496fde6ff7b509e5491ac0",
+    "amr_routing_inputs.py": "7e3cf92454e4fd6d800aeb1021d0cdd8c74a3ee8dfd9a6ca094b329f755aa5c5",
+    "visualiser/building_settings.py": "9cc417cfab770984c63c763bb4eb1a1cd5c5d1d6be6fc53bbc4875c244433d2f",
+    "visualiser/project_checks.py": "747f39d1fde084942ad43ad4e326fcfa95b99705518af68f5f55a45f33ec87e3"
+  }
+}

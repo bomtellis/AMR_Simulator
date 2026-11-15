@@ -99,6 +99,8 @@ def run_metrics(directory):
     from amr_project_runs import validate_run_inputs,read_json
     directory=Path(directory); manifest,c=validate_run_inputs(directory)
     if manifest['status']!='complete':raise ValueError('Only complete runs can be ranked.')
+    from amr_run_exports import ensure_exports
+    ensure_exports(directory, ('steps_csv',))
     log=directory/'simulation_steps.csv'; evidence=read_json(directory/'simulation_steps.csv.run.json')
     if evidence.get('log_sha256')!=file_hash(log) or evidence.get('project_binding')!=manifest['project_binding']:
         raise ValueError('Run log is incomplete or does not match its bound evidence.')

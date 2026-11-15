@@ -1,0 +1,30 @@
+Failed to find real location of C:\Users\tombe\AppData\Local\Programs\Python\Python313\python.exe
+Encoded 25,000 events
+Encoded 50,000 events
+Encoded 75,000 events
+Encoded 100,000 events
+Encoded 125,000 events
+Encoded 150,000 events
+Encoded 175,000 events
+Encoded 200,000 events
+Encoded 225,000 events
+{
+  "source": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-b85fca194165\\runs\\run_20261013_054452_7i3pdi3s\\simulation_steps.csv.sqlite",
+  "baseline": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\stress-b85fca194165\\runs\\run_20261013_054327_qc5m951r\\simulation_steps.csv.sqlite",
+  "events": 240601,
+  "baseline_referenced_events": 142690,
+  "full_bytes": 55480320,
+  "reduced_bytes": 37785600,
+  "reduction_percent": 31.89,
+  "report_payload_bytes": {
+    "full": 7992860,
+    "reduced": 3428602
+  },
+  "exact_events_sha256": "0af8edad3f6946e25f46ef872aa1967f9f0899f276c0bdb858adbd0b5ffdff6d",
+  "exact_match": true,
+  "elapsed_sec": 178.882,
+  "csv_stream_bytes": 332389630,
+  "csv_sha256": "134584297b5216743e8572132630fd0d7ea778bd45eb4689f2404d1e02b509e4",
+  "csv_exact_match": true,
+  "csv_verification_sec": 40.056
+}

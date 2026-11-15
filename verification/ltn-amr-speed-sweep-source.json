@@ -1,0 +1,36 @@
+{
+  "source": "C:\\Users\\tombe\\Documents\\AMR_Simulator\\ltn.amrproj",
+  "sha256": "aaaec3e8f7815aefd686b1ed6bf0ec24b9be89c2376f666c37d1a940e892e382",
+  "project_id": "96662fc9ff5b4338ae9e2cfb8301aa0f",
+  "revision": {
+    "config": "6ec371aab33f7fdce388606116809ff642b38987f5c90e4936aa1f210dfa172b",
+    "created_utc": "2026-10-13T06:04:38.165188+00:00",
+    "id": "6b6fc50c85c64f69a54d6deb9f1aeb45",
+    "label": "Saved changes",
+    "parent": "31603a79fefa48ac81b726a873bf21c0"
+  },
+  "simulation": {
+    "start_datetime": "2026-01-01T05:00:00",
+    "tick_rate": 1000.0,
+    "end_datetime": "2026-01-08T05:00:00",
+    "generated_task_release_stagger_sec": 10.0,
+    "precompute_static_routes": true,
+    "route_precompute_max_pairs": 100000,
+    "max_multi_stop_candidate_tasks": 4,
+    "max_single_candidate_tasks": 4,
+    "max_assignments_per_tick": 80,
+    "assignment_continue_delay_sec": 0.5,
+    "reservation_prune_interval_sec": 300.0,
+    "reservation_history_retention_sec": 600.0,
+    "idle_return_check_interval_sec": 60.0,
+    "seed_waste_stream_containers_at_start": true,
+    "disable_inventory_spaces": false,
+    "enable_opportunity_charging": true,
+    "opportunity_charging_idle_period_sec": 600.0,
+    "max_task_deferral_minutes": 60.0,
+    "ignore_invalid_local_manoeuvres": true,
+    "spawn_payloads_when_empty": false,
+    "scenario_mode": false,
+    "scenario_enhanced_logging": false
+  }
+}

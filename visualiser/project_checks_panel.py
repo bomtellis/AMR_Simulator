@@ -23,10 +23,11 @@ class ProjectChecksPanel(QWidget):
     readiness_changed = Signal()
     demand_preview_requested = Signal()
 
-    def __init__(self, config_provider, parent=None, base_path_provider=None):
+    def __init__(self, config_provider, parent=None, base_path_provider=None, *, asset_refs=None):
         super().__init__(parent)
         self.config_provider = config_provider
         self.base_path_provider = base_path_provider or (lambda: None)
+        self.asset_refs = asset_refs
         self.report = None
         self._checked_base_path = None
         self.visible_findings = []
@@ -150,7 +151,7 @@ class ProjectChecksPanel(QWidget):
         try:
             config = self.config_provider()
             self._checked_base_path = self.base_path_provider()
-            self.report = check_project(config, base_path=self._checked_base_path)
+            self.report = check_project(config, base_path=self._checked_base_path, asset_refs=self.asset_refs)
         except (OSError, ValueError, TypeError) as exc:
             self.report = None
             self.summary.setText(f"Checks could not complete: {exc}")
@@ -293,12 +294,12 @@ class ProjectChecksPanel(QWidget):
 
 
 class RunChecksDialog(QDialog):
-    def __init__(self, config_provider, parent=None, base_path_provider=None):
+    def __init__(self, config_provider, parent=None, base_path_provider=None, *, asset_refs=None):
         super().__init__(parent)
         self.setWindowTitle("Project checks before simulation")
         self.resize(1000, 720)
         layout = QVBoxLayout(self)
-        self.panel = ProjectChecksPanel(config_provider, self, base_path_provider)
+        self.panel = ProjectChecksPanel(config_provider, self, base_path_provider, asset_refs=asset_refs)
         # Navigation is provided by the editor workspace, not a detached launcher.
         self.panel.navigate_button.hide()
         self.panel.demand_preview_button.hide()

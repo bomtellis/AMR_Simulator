@@ -1,0 +1,216 @@
+LTN CPU PERFORMANCE REVIEW — 12 October 2026
+
+The first change to make is to check whether a robot is already stowed before
+searching for its idle-return charging destination. In a full seven-day CPU
+comparison, this isolated reorder reduced runtime from 360.222 seconds
+to 245.194 seconds: 31.93% less time,
+with identical normalised task-record, event-stream and final-state hashes.
+The experiment is contained in verification/replay_cpu_lift_plans.py. Production
+simulation code was not edited.
+
+MEASUREMENT AND SCOPE
+
+Input: the current ltn.json, 1 January 2026 05:00 to 8 January 2026 05:00.
+Mode: existing graph-based Simple mode, compact runtime, Python CPU backend.
+22 robots, 8 lifts. GPU/native acceleration and routing threads were disabled.
+Existing task generation, stock, charging, returns, lift wear and repairs,
+20-minute assignment-deferral limit and all other model settings were retained.
+Python 3.13.14, ordinary GIL enabled.
+
+Full cProfile capture: 1,352.986 seconds wall time; 5,381,421,664 function calls.
+Normal baseline: 360.222 seconds, including 1.645 seconds
+initialisation, 357.007 seconds execution and 1.570 seconds
+canonical evidence finalisation. Peak parent-process memory: 414.5 MiB.
+Streaming CSV expansion took 5.771 seconds separately and was outside
+both the profile and the measured simulation-completion time.
+The prototype run included the same phases and evidence finalisation.
+
+Outcomes: 2,935 completed, 4,946 failed and no pending tasks in all three full runs.
+This confirms unchanged behaviour, including the existing failures; it does not
+mean that all requested work succeeded.
+
+The percentages below are cumulative shares of the instrumented profile. They
+include callees, overlap and must not be added. Profiling amplifies function-call
+costs; full-run speed claims use unprofiled timings only. Baseline and prototype
+have one fresh-process sample each; variation across machines or repeated runs
+has not been measured. The microbenchmarks alternate ordering for five repeats,
+use warm caches and do not establish whole-run speedups.
+
+MEASURED HOTSPOTS
+
+Function/path                                 Calls          Profile seconds / share
+_try_assign_tasks                              26,882        1,224.68 / 90.6%
+_nearest_compatible_lift_plan                  326,723        1,057.70 / 78.3%
+_same_floor_segments                        4,953,759          915.00 / 67.7%
+_create_idle_return_task                      298,024          460.33 / 34.1%
+_find_next_edge_start                     60,483,353          233.89 / 17.3%
+_find_lift_journey_slot                     2,301,094           98.26 /  7.3%
+_task_generator.update_until                     673           92.17 /  6.8%
+_people_on_edge                           60,483,353           88.47 /  6.5%
+_department_operating_periods_for_date      4,698,746           65.93 /  4.9%
+
+PRIORITY 1 — EARLY IDLE-RETURN EXIT: MEASURED FULL-RUN IMPROVEMENT
+
+Location: simulator.py:15708 (_create_idle_return_task), especially lines 15709
+and 15717. Charging-destination selection happens before the existing check for
+an AMR already stowed at a configured charge space.
+
+The profiler records 298,024 creation attempts. All reached the stowed check;
+only 893 continued to the next guard. Therefore 297,131 attempts (99.700%)
+searched charging destinations and then immediately returned because the robot
+was already stowed. Almost all charging selection calls originate here:
+298,024 of 301,596 calls to _select_charge_location_for_amr. Cross-floor charging
+selection alone accumulated 428.37 profile seconds in lift planning.
+
+Alternative: move the existing _amr_is_stowed_at_configured_charge_space guard
+before _charge_location_for_idle_return. Preserve the remaining stowing,
+reservation and charger-selection logic for robots that need it. No change to
+idle-return policy or its time window is required.
+
+Validation: 39 existing charging-related tests passed. An initial-state replay
+covered all 22 stowed robots at three requested times, with identical None
+results and unchanged operational resources. The isolated full-week prototype
+completed in 245.194 seconds, saving 115.027 seconds versus the
+normal baseline. Every recorded task outcome, completion record, normalised
+event-stream row and hashed operational final state matched.
+
+PRIORITY 2 — REDUCE LOSING LIFT AND CANDIDATE ROUTE EVALUATIONS
+
+Locations: simulator.py:9566 (_nearest_compatible_lift_plan), 9647 (slot result),
+9137 (_same_floor_segments), and 10629 (move_between).
+
+Lift planning calls _same_floor_segments 4,602,188 times. For each compatible
+lift, it computes the full approach, a lift slot, a waiting node and outgoing
+corridor travel, then compares the finish time. Ordinary task estimates also
+request full segment dictionaries for every alternative; the existing lift-plan
+cache is only used when collect_segments is false.
+
+Small exact alternative: after obtaining lift_finish, skip outgoing travel and
+waiting-node selection when lift_finish is already at least best_finish. In
+Simple mode, outgoing travel cannot have a negative duration. The existing
+strict-less-than winner selection preserves the first lift on equal finishes;
+keeping lift iteration order preserves those ties.
+
+Measured replay: 264 successful cross-floor queries from actual final LTN robot
+state gave exactly equal plan dictionaries. Median time fell from 0.319122 to
+0.290891 seconds (9.7% faster by ratio, 8.8% less elapsed time). This is a query
+benchmark, not a measured full-week saving. The two lift prototypes together
+passed 41 existing booking-order, repair and reservation-rollback tests.
+
+Larger alternative: separate numeric candidate timing/energy evaluation from
+reporting-segment construction, and materialise full metadata for a winner.
+Retain traffic waits, energy feasibility, orientation/profile restrictions and
+correct waiting-node anchors. Merely enabling fast_assignment_estimates is not
+an equivalent optimisation: that branch can bypass dynamic corridor timing.
+Use exact lower bounds to reject provably losing robot/lift alternatives, rather
+than reducing the candidate shortlist or excluding robots with future availability.
+
+PRIORITY 3 — CACHE CALENDARS AND EXCLUDED TIMEFRAME MEMBERS
+
+Locations: amr_sim_task_generation.py:1267 (_timeframe_group_allocation), 1292
+(fallback return), 1352 (_department_work_periods), and 348
+(_department_operating_periods_for_date).
+
+Timeframe allocation is queried 150,174 times. It causes 1,595,736 active-timeframe
+membership checks and 3,272,472 calls to rebuild individual department/date
+operating periods through _department_work_periods. Across all callers the
+operating-period helper runs 4,698,746 times, reparsing active days and opening
+hours repeatedly.
+
+The allocation cache populates entries for included members. When the requested
+member is excluded, the fallback (0, total) is returned without caching that
+member's key, so a later request scans the group again. This is a concrete
+negative-result caching gap, not a request to change allocation rules.
+
+Alternative: cache the excluded-member fallback or maintain one complete
+allocation result per group/date, including a default for nonmembers. Cache
+immutable department/day calendars and instance/day eligibility within the
+frozen run. Preserve overnight windows, half-open boundaries, active-day and
+fortnight gates and the current rule that excluded slots are not redistributed.
+This proposal was inspected and profiled; it was not implemented or timed.
+
+PRIORITY 4 — CONSTANT-TIME RELIABILITY-ORDERED LIFT TAIL LOOKUP
+
+Locations: simulator.py:9426 and 9478 (_find_lift_journey_slot), and 9504
+(_reserve_lift_journey).
+
+Slot queries call max(reservations, key=lambda ...) to rediscover the latest
+booking. That key lambda ran 543,965,494 times. Lift booking histories are not
+pruned by _prune_historical_reservations; final LTN histories contain 253–475
+bookings per lift. All LTN lifts enable wear/failure reliability ordering, which
+requires new bookings to follow the existing schedule tail.
+
+Alternative: maintain the latest-finish booking as derived state during commits,
+with transaction-aware rollback. A direct last-item lookup is also valid where
+monotonic end-time ordering is established. Keep the gap search for lifts that
+permit insertion, and preserve max's tie semantics for any generalised summary.
+Retain complete history for operational evidence; deleting it is unnecessary.
+
+Measured replay: 576 actual-state slot queries gave identical results. Median
+time fell from 0.007098 to 0.001212 seconds, a 5.86x query speedup. Every
+reliability-ordered final LTN history was checked to ensure its last booking was
+also the maximum-finish booking. This is not a 5.86x whole-simulation claim.
+
+PRIORITY 5 — LESS PYTHON WORK PER CORRIDOR EDGE
+
+Locations: simulator.py:9137, 7725 (_people_on_edge), 7742
+(_corridor_lane_capacity), 8753 (_physical_edge_key), and 8814.
+
+The hot loop evaluated 60,483,353 edges. It repeatedly dispatches empty
+people-movement checks even though LTN has zero people-edge histories. It also
+reconstructs physical-edge keys, looks up cached lane capacities and computes
+reporting-only fields during estimate-only traversals.
+
+Alternatives: add an exact no-people-history fast path; compile physical/directed
+edge keys and invariant lane properties into reusable route descriptors; hoist
+robot speed and other route-invariant values out of the per-edge loop; and omit
+reporting-only work when segments are not being collected. After avoiding
+redundant searches, a native CPU kernel for edge timing/reservation traversal
+would target the measured hot loop. Accelerating Dijkstra alone targets a much
+smaller part of this workload. These changes remain proposals and need event,
+energy and final-state parity checks after implementation.
+
+LOWER-PRIORITY AREAS / MODEL-CHANGING SHORTCUTS
+
+Shortest-path lookup: 25.26 profile seconds (1.9%), mostly cached calls.
+Logging: 22.21 seconds (1.6%). Deepcopy: 0.86 seconds (less than 0.1%).
+Terminal-failure diagnosis: 9.19 seconds (0.7%). Initialisation and canonical
+finalisation together were only 3.21 seconds in the unprofiled baseline.
+
+Additional CSV/export or copy optimisation is therefore a smaller target.
+Tick rate does not drive this event loop. Threading more dictionary-heavy Python
+estimates is not supported by the observed GIL-enabled runtime as a major speed
+strategy; independent study processes are a separate scaling mechanism.
+Changing release staggering, deferral, robot/lift capacity, lift wear or candidate
+window limits would change the experiment, rather than optimise this unchanged
+model. Preserve these settings when validating performance changes.
+
+EVIDENCE AND REPRODUCTION
+
+Raw profile: verification/ltn-cpu-profile-20261012.prof
+Normalised summary and callers: verification/ltn-cpu-profile-20261012.summary.json
+Readable pstats/callers/callees: verification/ltn-cpu-profile-20261012.stats.txt
+Full measurements: verification/ltn-cpu-profile-20261012.json,
+verification/ltn-cpu-baseline-20261012.json,
+verification/ltn-cpu-idle-guard-full-20261012.json.
+Replays: verification/ltn-cpu-baseline-20261012.replay.json and
+verification/ltn-cpu-idle-guard-20261012.json.
+Tests: verification/ltn-cpu-prototype-tests-20261012.txt (41 passed),
+verification/ltn-cpu-idle-guard-tests-20261012.txt (39 passed).
+Structured review: verification/ltn-cpu-performance-review-20261012.json.
+
+From the repository PowerShell, choose new output filenames when reproducing:
+.\.venv\Scripts\python.exe verification/benchmark_computation.py --sample cpu --profile --output verification/new-cpu-profile.json
+.\.venv\Scripts\python.exe verification/analyse_cpu_profile.py verification/new-cpu-profile.prof
+.\.venv\Scripts\python.exe verification/replay_cpu_lift_plans.py --output verification/new-cpu-baseline.json
+.\.venv\Scripts\python.exe verification/replay_cpu_lift_plans.py --early-idle-guard-run --output verification/new-cpu-idle-guard.json
+
+For the measurements, OMP_NUM_THREADS, OPENBLAS_NUM_THREADS, MKL_NUM_THREADS and
+NUMEXPR_NUM_THREADS were set to 1; PYTHONIOENCODING was utf-8. Tests used the
+repository tmp directory because the sandbox's default temporary directory
+rejected some CSV writes. That issue was resolved before the recorded passing
+runs.
+
+Source configuration SHA-256: e99d0b2b9307aba6dd01c8cb40d51f78e194f3638e398081e634e71e716bc96b
+Application-source/native-binary snapshot SHA-256: 282b2f45f1fd25219d4987b99870635ebc86b72e11d7419de20bd5bb767bf6c5
+Prototype helper SHA-256: ab50df4e757920aaeac47a8298f4d8bcb916fe97f5fd6c4f7542bb3946dde840

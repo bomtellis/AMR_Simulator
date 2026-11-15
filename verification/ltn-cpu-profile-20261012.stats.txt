@@ -1,0 +1,516 @@
+Mon Oct 12 19:32:26 2026    verification\ltn-cpu-profile-20261012.prof
+
+         5381421664 function calls (5376342312 primitive calls) in 1351.360 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 100 due to restriction <100>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000 1343.675 1343.675 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13180(run)
+        1    0.152    0.152 1343.675 1343.675 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13187(_run_impl)
+    29019    0.258    0.000 1342.172    0.046 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13287(_handle_event)
+    26882    1.298    0.000 1224.683    0.046 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12157(_try_assign_tasks)
+   326723   13.834    0.000 1057.702    0.003 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9566(_nearest_compatible_lift_plan)
+  4953759  235.693    0.000  915.004    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9137(_same_floor_segments)
+   145004    0.331    0.000  718.710    0.005 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10446(_estimate_task_for_amr)
+   145004    2.798    0.000  702.641    0.005 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10473(_estimate_task_for_amr_impl)
+    13812    0.283    0.000  676.203    0.049 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11294(_select_best_assignment)
+    13812    0.360    0.000  672.394    0.049 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11432(_select_single_candidate_window)
+    27624    0.150    0.000  671.419    0.024 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11240(_estimate_candidate_jobs)
+   137210    0.188    0.000  671.231    0.005 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11228(_estimate_task_for_amr_cached)
+   237644    1.259    0.000  646.586    0.003 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10629(move_between)
+    36816    0.037    0.000  465.480    0.013 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12180(queue_idle_returns_when_needed)
+    26150    0.647    0.000  465.435    0.018 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15753(_queue_idle_return_tasks)
+   298024    0.186    0.000  460.325    0.002 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15708(_create_idle_return_task)
+   301596    3.153    0.000  459.435    0.002 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9803(_select_charge_location_for_amr)
+   298024    0.249    0.000  456.582    0.002 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15678(_charge_location_for_idle_return)
+ 60483353   87.406    0.000  233.891    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8814(_find_next_edge_start)
+967530914/966105094  114.899    0.000  145.680    0.000 {built-in method builtins.max}
+1044973922  119.940    0.000  119.940    0.000 {method 'get' of 'dict' objects}
+ 60483353   45.806    0.000   98.474    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7742(_corridor_lane_capacity)
+  2301094    4.600    0.000   98.261    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9426(_find_lift_journey_slot)
+ 60661952   57.242    0.000   95.517    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8776(_directed_no_overtake_start)
+      673    0.005    0.000   94.581    0.141 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13128(_update_task_generators_until)
+      673    0.001    0.000   92.169    0.137 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:3144(update_until)
+      673    0.266    0.000   92.167    0.137 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:2620(update_until)
+   203151    1.632    0.000   89.378    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:1853(_timeframe_records)
+ 60483353   50.124    0.000   88.468    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7725(_people_on_edge)
+ 60483353   38.712    0.000   73.629    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8760(_edge_recent_demand)
+ 60483353   37.333    0.000   70.462    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8914(_find_next_node_arrival)
+242732230   48.208    0.000   67.708    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7992(_reservation_scan_start)
+   150174    0.702    0.000   66.359    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:1267(_timeframe_group_allocation)
+  4698746   18.977    0.000   65.926    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:348(_department_operating_periods_for_date)
+  1595736    3.605    0.000   65.169    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:1243(_instance_has_active_timeframe)
+  1636236    4.820    0.000   52.827    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:1352(_department_work_periods)
+143253430/143253346   28.858    0.000   33.363    0.000 {built-in method builtins.sorted}
+543965494   29.359    0.000   29.359    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9478(<lambda>)
+   113963    5.048    0.000   26.118    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2116(_annotate_delivery_motor_energy)
+  5015845    8.069    0.000   25.262    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7845(_shortest_path_same_floor)
+  8823964    5.130    0.000   23.897    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_generation_inputs.py:25(department_schedule_minutes)
+163717/160782    2.291    0.000   22.206    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14365(log_step)
+ 60698652   13.760    0.000   21.906    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8753(_physical_edge_key)
+267564458/267563267   20.387    0.000   20.400    0.000 {built-in method builtins.len}
+260444224   20.001    0.000   20.001    0.000 {method 'strip' of 'str' objects}
+  2301094   12.318    0.000   18.119    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9517(_lift_wait_node_for_plan)
+ 76974028   13.038    0.000   18.096    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:88(_clean_text)
+  2320680    5.137    0.000   17.222    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1895(_make_aggregate_payload)
+ 17647928   11.709    0.000   17.083    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_generation_inputs.py:31(minutes)
+   163717    0.774    0.000   16.459    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14288(_append_event_values)
+  2301094    2.902    0.000   16.265    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9455(service_at)
+     8476    0.280    0.000   15.928    0.002 C:\Users\tombe\Documents\AMR_Simulator\amr_route_reservations.py:114(__exit__)
+210570550   15.629    0.000   15.629    0.000 {built-in method builtins.id}
+   510182    0.874    0.000   15.584    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:375(_department_is_open_at_datetime)
+     8476    9.437    0.001   15.452    0.002 C:\Users\tombe\Documents\AMR_Simulator\amr_event_store.py:128(end_stage)
+  4411982    1.491    0.000   13.585    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:332(_department_operating_start_minutes)
+  4411982    1.452    0.000   13.255    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:337(_department_operating_end_minutes)
+   169725    4.532    0.000   12.946    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_event_store.py:91(append)
+  4602188    6.822    0.000   12.413    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9375(_lift_vertical_seconds)
+  5430731    7.853    0.000   12.106    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:6994(_rules_cache_key)
+  5106012    1.805    0.000   11.418    0.000 {built-in method builtins.sum}
+  1270367    1.647    0.000   11.194    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4574(_inventory_space_can_fit_payload)
+       93    0.000    0.000   10.806    0.116 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:3154(update_schedules_until)
+       93    0.019    0.000   10.806    0.116 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:2116(update_schedules_until)
+   177672    0.567    0.000   10.751    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:2193(_volume_records)
+108467918   10.660    0.000   10.660    0.000 {method 'lower' of 'str' objects}
+   301108    0.225    0.000   10.547    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:628(_adjust_release_to_department_open)
+   301108    0.129    0.000    9.977    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:415(_next_department_open_datetime)
+ 13613582    5.563    0.000    9.962    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3988(_inventory_space_accepts_amr)
+   472349    3.739    0.000    9.697    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4201(_reserved_amr_inventory_space)
+ 93661972    9.223    0.000    9.530    0.000 {method 'join' of 'str' objects}
+ 87294443    9.248    0.000    9.248    0.000 {built-in method _bisect.bisect_left}
+     6018    0.009    0.000    9.198    0.002 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11889(_fail_released_terminal_pending_task)
+     8355    0.092    0.000    9.186    0.001 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11746(_released_task_terminal_failure_reason)
+  2341015    4.653    0.000    8.980    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7369(_lift_health_speed_factor)
+ 60483353    8.882    0.000    8.882    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_scenario_routing.py:30(departure_state)
+     1155    0.006    0.000    8.852    0.008 C:\Users\tombe\Documents\AMR_Simulator\amr_event_store.py:141(flush)
+    98592    1.226    0.000    8.518    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3934(_local_manoeuvre_segments_from_inventory_space)
+ 91080353    8.321    0.000    8.321    0.000 {built-in method builtins.getattr}
+  1954433    2.780    0.000    8.129    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:568(_category_is_active)
+     1155    8.091    0.007    8.091    0.007 {method 'commit' of 'sqlite3.Connection' objects}
+  5004999    2.886    0.000    8.065    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9025(_required_corridor_width)
+   324023    0.167    0.000    7.929    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11808(<genexpr>)
+ 12462572    4.016    0.000    7.829    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_payload_instances.py:14(is_empty_payload_name)
+   120004    0.828    0.000    7.598    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4735(_find_free_inventory_space)
+ 79932564    7.112    0.000    7.152    0.000 {built-in method builtins.min}
+   144260    1.131    0.000    7.073    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4159(_find_free_amr_inventory_space)
+   104604    2.570    0.000    7.016    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3813(_local_manoeuvre_segments_to_inventory_space)
+   112477    0.236    0.000    6.963    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:616(_generation_active_elapsed_seconds)
+ 68444280    6.935    0.000    6.935    0.000 {method 'append' of 'list' objects}
+ 25626102    6.611    0.000    6.611    0.000 {built-in method builtins.round}
+ 65124013    6.188    0.000    6.188    0.000 {built-in method math.isfinite}
+        1    0.001    0.001    5.938    5.938 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:146(__init__)
+  2372570    2.326    0.000    5.909    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_inventory_inputs.py:16(inventory_space_is_amr)
+  1448071    0.280    0.000    5.639    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4553(_space_is_amr_only)
+   112093    0.474    0.000    5.482    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:388(_department_active_seconds_between)
+   252576    0.167    0.000    5.248    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:595(_instance_is_active)
+ 17642259    3.723    0.000    5.140    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_payload_instances.py:10(clean_text)
+2665774/2530610    0.898    0.000    4.980    0.000 {built-in method builtins.any}
+  4602364    1.096    0.000    4.852    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9372(_lift_location_on_floor)
+
+
+Mon Oct 12 19:32:26 2026    verification\ltn-cpu-profile-20261012.prof
+
+         5381421664 function calls (5376342312 primitive calls) in 1351.360 seconds
+
+   Ordered by: internal time
+   List reduced from 1273 to 100 due to restriction <100>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+  4953759  235.693    0.000  915.004    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9137(_same_floor_segments)
+1044973922  119.940    0.000  119.940    0.000 {method 'get' of 'dict' objects}
+967530914/966105094  114.899    0.000  145.680    0.000 {built-in method builtins.max}
+ 60483353   87.406    0.000  233.891    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8814(_find_next_edge_start)
+ 60661952   57.242    0.000   95.517    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8776(_directed_no_overtake_start)
+ 60483353   50.124    0.000   88.468    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7725(_people_on_edge)
+242732230   48.208    0.000   67.708    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7992(_reservation_scan_start)
+ 60483353   45.806    0.000   98.474    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7742(_corridor_lane_capacity)
+ 60483353   38.712    0.000   73.629    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8760(_edge_recent_demand)
+ 60483353   37.333    0.000   70.462    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8914(_find_next_node_arrival)
+543965494   29.359    0.000   29.359    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9478(<lambda>)
+143253430/143253346   28.858    0.000   33.363    0.000 {built-in method builtins.sorted}
+267564458/267563267   20.387    0.000   20.400    0.000 {built-in method builtins.len}
+260444224   20.001    0.000   20.001    0.000 {method 'strip' of 'str' objects}
+  4698746   18.977    0.000   65.926    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:348(_department_operating_periods_for_date)
+210570550   15.629    0.000   15.629    0.000 {built-in method builtins.id}
+   326723   13.834    0.000 1057.702    0.003 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9566(_nearest_compatible_lift_plan)
+ 60698652   13.760    0.000   21.906    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8753(_physical_edge_key)
+ 76974028   13.038    0.000   18.096    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:88(_clean_text)
+  2301094   12.318    0.000   18.119    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9517(_lift_wait_node_for_plan)
+ 17647928   11.709    0.000   17.083    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_generation_inputs.py:31(minutes)
+108467918   10.660    0.000   10.660    0.000 {method 'lower' of 'str' objects}
+     8476    9.437    0.001   15.452    0.002 C:\Users\tombe\Documents\AMR_Simulator\amr_event_store.py:128(end_stage)
+ 87294443    9.248    0.000    9.248    0.000 {built-in method _bisect.bisect_left}
+ 93661972    9.223    0.000    9.530    0.000 {method 'join' of 'str' objects}
+ 60483353    8.882    0.000    8.882    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_scenario_routing.py:30(departure_state)
+ 91080353    8.321    0.000    8.321    0.000 {built-in method builtins.getattr}
+     1155    8.091    0.007    8.091    0.007 {method 'commit' of 'sqlite3.Connection' objects}
+  5015845    8.069    0.000   25.262    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7845(_shortest_path_same_floor)
+  5430731    7.853    0.000   12.106    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:6994(_rules_cache_key)
+ 79932564    7.112    0.000    7.152    0.000 {built-in method builtins.min}
+ 68444280    6.935    0.000    6.935    0.000 {method 'append' of 'list' objects}
+  4602188    6.822    0.000   12.413    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9375(_lift_vertical_seconds)
+ 25626102    6.611    0.000    6.611    0.000 {built-in method builtins.round}
+ 65124013    6.188    0.000    6.188    0.000 {built-in method math.isfinite}
+ 13613582    5.563    0.000    9.962    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3988(_inventory_space_accepts_amr)
+  2320680    5.137    0.000   17.222    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1895(_make_aggregate_payload)
+  8823964    5.130    0.000   23.897    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_generation_inputs.py:25(department_schedule_minutes)
+   113963    5.048    0.000   26.118    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2116(_annotate_delivery_motor_energy)
+  1636236    4.820    0.000   52.827    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:1352(_department_work_periods)
+  2341015    4.653    0.000    8.980    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7369(_lift_health_speed_factor)
+  2301094    4.600    0.000   98.261    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9426(_find_lift_journey_slot)
+   169725    4.532    0.000   12.946    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_event_store.py:91(append)
+ 60483353    4.424    0.000    4.424    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7740(<genexpr>)
+ 12462572    4.016    0.000    7.829    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_payload_instances.py:14(is_empty_payload_name)
+   472349    3.739    0.000    9.697    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4201(_reserved_amr_inventory_space)
+ 17642259    3.723    0.000    5.140    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_payload_instances.py:10(clean_text)
+  1595736    3.605    0.000   65.169    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:1243(_instance_has_active_timeframe)
+   301596    3.153    0.000  459.435    0.002 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9803(_select_charge_location_for_amr)
+   378841    3.019    0.000    3.019    0.000 C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\json\encoder.py:207(iterencode)
+  2301094    2.902    0.000   16.265    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9455(service_at)
+  5004999    2.886    0.000    8.065    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9025(_required_corridor_width)
+  7463468    2.863    0.000    4.021    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7056(_node_allowed)
+  4602448    2.855    0.000    3.756    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_models.py:232(location_on_floor)
+   145004    2.798    0.000  702.641    0.005 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10473(_estimate_task_for_amr_impl)
+  1954433    2.780    0.000    8.129    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:568(_category_is_active)
+  2301182    2.620    0.000    3.634    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_models.py:207(can_fit)
+   104604    2.570    0.000    7.016    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3813(_local_manoeuvre_segments_to_inventory_space)
+ 38606667    2.474    0.000    2.474    0.000 {built-in method builtins.isinstance}
+ 21523787    2.414    0.000    2.414    0.000 {method 'split' of 'str' objects}
+   430758    2.351    0.000    3.649    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3336(_inventory_space_centre_location)
+  2372570    2.326    0.000    5.909    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_inventory_inputs.py:16(inventory_space_is_amr)
+163717/160782    2.291    0.000   22.206    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14365(log_step)
+  3946239    2.199    0.000    3.057    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1777(_payload_orientation_dimensions)
+  3600118    2.098    0.000    3.678    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:308(_parse_hhmm_to_minutes)
+  3233407    1.936    0.000    4.741    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1657(_payload_for_task)
+    24182    1.919    0.000    1.919    0.000 {method 'execute' of 'sqlite3.Connection' objects}
+  5106012    1.805    0.000   11.418    0.000 {built-in method builtins.sum}
+  1270367    1.647    0.000   11.194    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4574(_inventory_space_can_fit_payload)
+   203151    1.632    0.000   89.378    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:1853(_timeframe_records)
+  5449339    1.584    0.000    2.417    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4018(_space_name)
+ 10592078    1.564    0.000    1.564    0.000 {method 'replace' of 'datetime.datetime' objects}
+  4411982    1.491    0.000   13.585    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:332(_department_operating_start_minutes)
+  2970604    1.465    0.000    1.465    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_time_utils.py:9(sim_seconds_to_datetime)
+  1270367    1.464    0.000    2.313    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4643(_inventory_space_allowed_payloads)
+  4411982    1.452    0.000   13.255    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:337(_department_operating_end_minutes)
+  6257381    1.383    0.000    1.928    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8757(_spacing_time_sec)
+   907648    1.352    0.000    2.754    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1757(_payload_cache_key)
+  6306640    1.328    0.000    1.834    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4135(_inventory_space_has_charger)
+    37989    1.305    0.000    1.305    0.000 {method 'clear' of 'dict' objects}
+    26882    1.298    0.000 1224.683    0.046 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12157(_try_assign_tasks)
+   237644    1.259    0.000  646.586    0.003 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10629(move_between)
+  2522076    1.235    0.000    1.679    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7078(_lift_allowed)
+    98592    1.226    0.000    8.518    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3934(_local_manoeuvre_segments_from_inventory_space)
+   274420    1.220    0.000    4.261    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11135(_route_estimate_cache_key)
+   298024    1.163    0.000    3.196    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15653(_amr_is_stowed_at_configured_charge_space)
+  6764131    1.138    0.000    1.731    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:299(_day_key_for_datetime)
+   144260    1.131    0.000    7.073    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4159(_find_free_amr_inventory_space)
+  4602364    1.096    0.000    4.852    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9372(_lift_location_on_floor)
+     8417    1.053    0.000    2.806    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8374(_assign_available_existing_payload_instance)
+2699651/31    1.048    0.000    1.859    0.060 C:\Users\tombe\Documents\AMR_Simulator\amr_run_exports.py:23(encode)
+   638159    1.004    0.000    1.961    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4033(_space_is_available_for_amr)
+  1675561    0.975    0.000    4.743    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:166(_timeframe_minutes_from_cfg)
+2665774/2530610    0.898    0.000    4.980    0.000 {built-in method builtins.any}
+  2439502    0.882    0.000    1.255    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_energy.py:7(loaded_power_w)
+   510182    0.874    0.000   15.584    0.000 C:\Users\tombe\Documents\AMR_Simulator\amr_sim_task_generation.py:375(_department_is_open_at_datetime)
+   646696    0.858    0.000    2.382    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2651(_task_requires_existing_payload_instance)
+  2837028    0.847    0.000    1.219    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7066(_edge_allowed)
+   120004    0.828    0.000    7.598    0.000 C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4735(_find_free_inventory_space)
+  4796995    0.804    0.000    0.804    0.000 {method 'update' of 'dict' objects}
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_nearest_compatible_lift_plan'>
+
+Function                                                                                 was called by...
+                                                                                             ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9566(_nearest_compatible_lift_plan)  <-  140225    5.902  428.367  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9803(_select_charge_location_for_amr)
+                                                                                             186498    7.932  629.335  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10629(move_between)
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_nearest_compatible_lift_plan'>
+
+Function                                                                                 called...
+                                                                                             ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9566(_nearest_compatible_lift_plan)  -> 2517880    0.443    0.443  C:\Users\tombe\Documents\AMR_Simulator\amr_sim_models.py:195(can_serve)
+                                                                                            2301094    2.620    3.634  C:\Users\tombe\Documents\AMR_Simulator\amr_sim_models.py:207(can_fit)
+                                                                                             139846    0.264    0.525  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1757(_payload_cache_key)
+                                                                                             139846    0.207    0.324  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:6994(_rules_cache_key)
+                                                                                             215932    0.077    0.077  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7005(_empty_route_rules)
+                                                                                            4602188    1.939    2.708  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7056(_node_allowed)
+                                                                                            2517880    1.233    1.676  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7078(_lift_allowed)
+                                                                                            2301094    0.628    0.628  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7337(_scenario_event_state)
+                                                                                            2301094    4.573    8.822  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7369(_lift_health_speed_factor)
+                                                                                            4602188  232.612  902.819  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9137(_same_floor_segments)
+                                                                                            4602188    1.096    4.852  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9372(_lift_location_on_floor)
+                                                                                            2301094    4.600   98.261  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9426(_find_lift_journey_slot)
+                                                                                            2301094   12.318   18.119  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9517(_lift_wait_node_for_plan)
+                                                                                             695296    0.088    0.088  {built-in method builtins.abs}
+                                                                                            1526318    0.152    0.152  {built-in method builtins.getattr}
+                                                                                             127858    0.014    0.014  {built-in method builtins.len}
+                                                                                             823154    0.063    0.063  {built-in method builtins.max}
+                                                                                             699230    0.204    0.204  {built-in method builtins.round}
+                                                                                            2301094    0.231    0.231  {built-in method math.isfinite}
+                                                                                            2301094    0.225    0.225  {method 'get' of 'dict' objects}
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_find_lift_journey_slot'>
+
+Function                                                                           was called by...
+                                                                                       ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9426(_find_lift_journey_slot)  <- 2301094    4.600   98.261  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9566(_nearest_compatible_lift_plan)
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_find_lift_journey_slot'>
+
+Function                                                                           called...
+                                                                                       ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9426(_find_lift_journey_slot)  -> 2301094    2.902   16.265  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9455(service_at)
+                                                                                      4612698    0.490    0.490  {built-in method builtins.getattr}
+                                                                                      6892772   47.073   76.431  {built-in method builtins.max}
+                                                                                      4602188    0.474    0.474  {method 'get' of 'dict' objects}
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_same_floor_segments'>
+
+Function                                                                        was called by...
+                                                                                    ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9137(_same_floor_segments)  <- 4602188  232.612  902.819  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9566(_nearest_compatible_lift_plan)
+                                                                                    299743    0.462    2.696  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9803(_select_charge_location_for_amr)
+                                                                                       682    0.001    0.005  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9961(_plan_return_to_charge_impl)
+                                                                                     51146    2.618    9.484  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10629(move_between)
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_same_floor_segments'>
+
+Function                                                                        called...
+                                                                                    ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9137(_same_floor_segments)  ->       1    0.000    0.001  <frozen importlib._bootstrap>:1349(_find_and_load)
+                                                                                  60483353    8.882    8.882  C:\Users\tombe\Documents\AMR_Simulator\amr_scenario_routing.py:30(departure_state)
+                                                                                  60483353   50.124   88.468  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7725(_people_on_edge)
+                                                                                  60483353   45.806   98.474  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7742(_corridor_lane_capacity)
+                                                                                   4953759    6.111   20.351  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7845(_shortest_path_same_floor)
+                                                                                  60483353   13.699   21.816  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8753(_physical_edge_key)
+                                                                                   4953759    1.080    1.511  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8757(_spacing_time_sec)
+                                                                                  60483353   38.712   73.629  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8760(_edge_recent_demand)
+                                                                                  60483353   87.406  233.891  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8814(_find_next_edge_start)
+                                                                                  60483353   37.333   70.462  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8914(_find_next_node_arrival)
+                                                                                   4953759    2.865    8.025  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9025(_required_corridor_width)
+                                                                                 302637890   22.278   22.278  {built-in method builtins.max}
+                                                                                  60642548    5.369    5.369  {built-in method builtins.min}
+                                                                                  60483353    5.717    5.717  {built-in method math.isfinite}
+                                                                                  32735551    3.635    3.635  {method 'append' of 'list' objects}
+                                                                                 163107850   13.702   13.702  {method 'get' of 'dict' objects}
+                                                                                  32621570    3.100    3.100  {method 'join' of 'str' objects}
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_select_best_assignment'>
+
+Function                                                                            was called by...
+                                                                                        ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11294(_select_best_assignment)  <-   13812    0.283  676.203  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12157(_try_assign_tasks)
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_select_best_assignment'>
+
+Function                                                                            called...
+                                                                                        ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11294(_select_best_assignment)  ->     799    0.000    0.005  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1307(_task_can_exchange_with_store_empty)
+                                                                                          9101    0.006    0.014  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1657(_payload_for_task)
+                                                                                         18850    0.062    1.816  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1922(_multi_stop_task_is_eligible)
+                                                                                        299594    0.124    0.862  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1965(_multi_stop_batch_for_amr)
+                                                                                         18850    0.027    0.076  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2651(_task_requires_existing_payload_instance)
+                                                                                         11468    0.017    0.117  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2682(_pickup_instance_available)
+                                                                                          9749    0.007    0.021  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2722(_pickup_instance_pending_reason)
+                                                                                          9101    0.010    0.059  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4564(_location_has_payload_inventory_spaces)
+                                                                                          6010    0.041    0.314  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4735(_find_free_inventory_space)
+                                                                                           799    0.000    0.001  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4817(_task_allows_dropoff_zone_overflow)
+                                                                                          9749    0.003    0.004  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:5089(_set_task_pending_reason)
+                                                                                         37764    0.009    0.012  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8709(_pending_task_removed)
+                                                                                        299594    0.091    0.149  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10196(_needs_post_task_recharge)
+                                                                                         13812    0.002    0.002  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11240(_estimate_candidate_jobs)
+                                                                                         13812    0.360  672.394  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11432(_select_single_candidate_window)
+                                                                                        303864    0.025    0.025  {built-in method builtins.getattr}
+                                                                                         13812    0.001    0.001  {built-in method builtins.len}
+                                                                                         13812    0.002    0.002  {built-in method builtins.max}
+                                                                                         27624    0.006    0.006  {built-in method builtins.sorted}
+                                                                                          9101    0.001    0.001  {method 'append' of 'list' objects}
+                                                                                         13812    0.007    0.040  {method 'sort' of 'list' objects}
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_estimate_task_for_amr_impl'>
+
+Function                                                                                was called by...
+                                                                                            ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10473(_estimate_task_for_amr_impl)  <-  145004    2.798  702.641  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10446(_estimate_task_for_amr)
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_estimate_task_for_amr_impl'>
+
+Function                                                                                called...
+                                                                                            ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10473(_estimate_task_for_amr_impl)  ->  594110    0.238    0.424  C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\typing.py:426(inner)
+                                                                                            113963    0.021    0.021  C:\Users\tombe\Documents\AMR_Simulator\amr_sim_models.py:290(battery_energy_kwh)
+                                                                                            227926    0.028    0.028  C:\Users\tombe\Documents\AMR_Simulator\amr_sim_models.py:293(min_reserve_energy_kwh)
+                                                                                              2935    0.005    0.021  C:\Users\tombe\Documents\AMR_Simulator\amr_sim_models.py:296(consume_energy)
+                                                                                            118822    0.035    0.068  C:\Users\tombe\Documents\AMR_Simulator\amr_sim_payload_instances.py:14(is_empty_payload_name)
+                                                                                              8336    0.004    0.064  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1307(_task_can_exchange_with_store_empty)
+                                                                                            145004    0.496    4.084  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1328(_plan_payload_claims)
+                                                                                            145004    0.087    0.213  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1657(_payload_for_task)
+                                                                                            118822    0.071    0.470  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1831(_choose_payload_orientation)
+                                                                                            145004    0.098    0.880  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1858(_amr_can_carry_payload)
+                                                                                            113963    5.048   26.118  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2116(_annotate_delivery_motor_energy)
+                                                                                            145004    0.147    0.887  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2682(_pickup_instance_available)
+                                                                                              6012    0.068    0.333  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3813(_local_manoeuvre_segments_to_inventory_space)
+                                                                                             98592    1.226    8.518  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:3934(_local_manoeuvre_segments_from_inventory_space)
+                                                                                               893    0.007    0.019  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4201(_reserved_amr_inventory_space)
+                                                                                               893    0.007    0.242  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4385(_reserve_best_idle_return_destination)
+                                                                                            125723    0.166    0.888  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4564(_location_has_payload_inventory_spaces)
+                                                                                            102379    0.700    5.509  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4735(_find_free_inventory_space)
+                                                                                              8336    0.006    0.009  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4817(_task_allows_dropoff_zone_overflow)
+                                                                                              6901    0.062    0.739  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4887(_reserve_inventory_space_for_task)
+                                                                                             31041    0.012    0.014  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:5089(_set_task_pending_reason)
+                                                                                            118822    0.199    0.373  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7033(_resolve_task_route_rules)
+                                                                                            145004    0.043    0.043  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7337(_scenario_event_state)
+                                                                                             51146    0.118    0.328  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7845(_shortest_path_same_floor)
+                                                                                            237644    0.290    0.498  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8014(_find_next_available_time)
+                                                                                             15588    0.020    0.075  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8078(_reserve_location)
+                                                                                             51146    0.021    0.039  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9025(_required_corridor_width)
+                                                                                            113963    0.015    0.015  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9037(_annotate_geometric_headings)
+                                                                                            113963    0.012    0.012  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9048(_check_geometric_occupancy)
+                                                                                            118822    0.045    0.069  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9116(_robot_location)
+                                                                                              1104    0.000    0.000  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9123(_geometric_graph_location)
+                                                                                            263826    0.094    0.151  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9132(_task_pickup_location)
+                                                                                              1104    0.012    1.060  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9803(_select_charge_location_for_amr)
+                                                                                            118822    0.076    0.373  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10156(_plan_charge_cycle_if_needed)
+                                                                                            237644    1.259  646.586  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10629(move_between)
+                                                                                              2935    0.123    0.197  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14715(_record_committed_segment_impacts)
+                                                                                           1170673    0.143    0.143  {built-in method builtins.getattr}
+                                                                                            544895    0.058    0.058  {built-in method builtins.max}
+                                                                                            118822    0.037    0.049  {built-in method builtins.sum}
+                                                                                            237644    0.030    0.030  {built-in method math.isinf}
+                                                                                            232785    0.032    0.032  {method 'append' of 'list' objects}
+                                                                                            337389    0.071    0.071  {method 'extend' of 'list' objects}
+                                                                                            269838    0.030    0.030  {method 'get' of 'dict' objects}
+                                                                                            145004    0.047    0.047  {method 'pop' of 'dict' objects}
+                                                                                             21460    0.003    0.003  {method 'setdefault' of 'dict' objects}
+                                                                                            121030    0.014    0.014  {method 'strip' of 'str' objects}
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_rules_cache_key'>
+
+Function                                                                    was called by...
+                                                                                ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:6994(_rules_cache_key)  <- 5015845    7.216   11.123  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7845(_shortest_path_same_floor)
+                                                                                139846    0.207    0.324  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9566(_nearest_compatible_lift_plan)
+                                                                                274420    0.429    0.658  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11135(_route_estimate_cache_key)
+                                                                                   620    0.001    0.001  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11678(_route_feasibility_cache_key)
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_rules_cache_key'>
+
+Function                                                                    called...
+                                                                                ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:6994(_rules_cache_key)  -> 21722924    2.462    2.462  {built-in method builtins.sorted}
+                                                                              21722924    1.791    1.791  {method 'get' of 'dict' objects}
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_released_task_terminal_failure_reason'>
+
+Function                                                                                           was called by...
+                                                                                                       ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11746(_released_task_terminal_failure_reason)  <-    8355    0.092    9.186  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11889(_fail_released_terminal_pending_task)
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'_released_task_terminal_failure_reason'>
+
+Function                                                                                           called...
+                                                                                                       ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11746(_released_task_terminal_failure_reason)  ->    5143    0.001    0.001  <string>:31(__eq__)
+                                                                                                         8355    0.005    0.011  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1657(_payload_for_task)
+                                                                                                       183810    0.079    0.814  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1858(_amr_can_carry_payload)
+                                                                                                         8213    0.013    0.086  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2682(_pickup_instance_available)
+                                                                                                         8213    0.011    0.067  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4564(_location_has_payload_inventory_spaces)
+                                                                                                          310    0.001    0.001  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7033(_resolve_task_route_rules)
+                                                                                                         8355    0.003    0.005  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:9132(_task_pickup_location)
+                                                                                                       149758    0.066    0.099  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11279(_task_allowed_for_amr)
+                                                                                                          310    0.000    0.000  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11834(<genexpr>)
+                                                                                                          310    0.000    0.000  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11869(<genexpr>)
+                                                                                                          310    0.000    0.000  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:11873(<genexpr>)
+                                                                                                          930    0.000    0.038  {built-in method builtins.any}
+                                                                                                        41323    0.004    0.004  {built-in method builtins.getattr}
+                                                                                                         7903    0.035    7.964  {built-in method builtins.sum}
+                                                                                                         8355    0.001    0.001  {method 'get' of 'dict' objects}
+                                                                                                        33420    0.003    0.003  {method 'strip' of 'str' objects}
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'log_step'>
+
+Function                                                             was called by...
+                                                                         ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14365(log_step)  <-       7    0.000    0.001  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1505(_execute_mass_collection_visit)
+                                                                            429    0.006    0.071  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2907(_log_payload_service_arrival)
+                                                                           4724    0.065    1.145  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:2968(_log_payload_location_event)
+                                                                             22    0.000    0.008  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:4452(_assign_initial_amrs_to_charge_inventory_spaces)
+                                                                            794    0.009    0.079  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:5969(_log_staff_handling_assignment)
+                                                                            863    0.011    0.141  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:6180(_schedule_configured_return_task)
+                                                                            138    0.002    0.015  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:6842(_notify_task_generation_state)
+                                                                           4946    0.074    0.574  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:6878(_fail_task)
+                                                                          14430    0.206    3.311  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:8144(_log_task_released)
+                                                                            682    0.014    0.094  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:10372(_schedule_opportunity_charge)
+                                                                         108773    1.510   11.781  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12157(_try_assign_tasks)
+                                                                           6212    0.076    1.995  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:12958(_log_generated_task_record)
+                                                                           6282    0.102    0.773  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13016(_schedule_generated_task_record)
+                                                                           6683    0.110    1.472  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:13287(_handle_event)
+                                                                           2935    0.042    0.600  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14365(log_step)
+                                                                            682    0.014    0.284  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15038(_log_battery_charge_applied)
+                                                                             22    0.000    0.008  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15044(_append_battery_balance_rows)
+                                                                           5093    0.050    0.455  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:15061(write_verbose_csv)
+
+
+   Ordered by: cumulative time
+   List reduced from 1273 to 1 due to restriction <'log_step'>
+
+Function                                                             called...
+                                                                         ncalls  tottime  cumtime
+C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14365(log_step)  ->   88039    0.075    0.361  C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\json\__init__.py:185(dumps)
+                                                                         123953    0.083    0.842  C:\Users\tombe\AppData\Local\Programs\Python\Python313\Lib\json\__init__.py:304(loads)
+                                                                         163717    0.054    0.177  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:1650(_payload_log_name)
+                                                                           4559    0.012    0.022  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:7369(_lift_health_speed_factor)
+                                                                         163717    0.774   16.459  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14288(_append_event_values)
+                                                                         491151    0.248    0.722  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14351(_format_sim_time_cached)
+                                                                           2935    0.042    0.600  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14365(log_step)
+                                                                           4559    0.001    0.001  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14701(<genexpr>)
+                                                                           4559    0.001    0.001  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14703(<genexpr>)
+                                                                           4559    0.001    0.001  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14704(<genexpr>)
+                                                                           3665    0.001    0.001  C:\Users\tombe\Documents\AMR_Simulator\simulator.py:14706(<genexpr>)
+                                                                         115785    0.012    0.012  {built-in method builtins.abs}
+                                                                           8224    0.022    0.154  {built-in method builtins.any}
+                                                                         272530    0.029    0.029  {built-in method builtins.getattr}
+                                                                         287670    0.024    0.024  {built-in method builtins.isinstance}
+                                                                         491151    0.048    0.048  {built-in method builtins.max}
+                                                                           9118    0.003    0.006  {built-in method builtins.next}
+                                                                        2892592    0.634    0.634  {built-in method builtins.round}
+                                                                          93805    0.015    0.015  {built-in method math.atan2}
+                                                                          93805    0.010    0.010  {built-in method math.degrees}
+                                                                        2791883    0.275    0.275  {method 'get' of 'dict' objects}
+                                                                         327434    0.044    0.044  {method 'lower' of 'str' objects}
+                                                                         163717    0.021    0.021  {method 'lstrip' of 'str' objects}
+                                                                         163717    0.019    0.019  {method 'startswith' of 'str' objects}
+                                                                         327434    0.037    0.037  {method 'strip' of 'str' objects}
+                                                                           3665    0.001    0.001  {method 'values' of 'dict' objects}
+
+

@@ -46,7 +46,7 @@ class ProjectRunTests(unittest.TestCase):
     def run_reference(self):
         directory = self.prepare()
         with contextlib.redirect_stdout(io.StringIO()):
-            execute(directory)
+            execute(directory, runtime_backend='reference')
         return directory
 
     def test_run_is_bound_to_revision_with_independent_nine_second_result(self):

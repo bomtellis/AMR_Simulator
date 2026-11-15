@@ -1,6 +1,7 @@
 from amr_inventory_inputs import (inventory_space_is_amr, inventory_space_amr_types,
                                   inventory_slot_is_amr, inventory_slot_amr_type)
 from amr_fleet_allocation import (configured_charge_locations, configured_fleet_bay_plan, validate_charge_inputs)
+from amr_sim_time_utils import parse_hhmm_to_minutes
 import json
 import os
 import tempfile
@@ -32,23 +33,6 @@ def polygon_dimensions_from_points(points) -> Tuple[float, float]:
     if not xs or not ys:
         return 0.0, 0.0
     return abs(max(xs) - min(xs)), abs(max(ys) - min(ys))
-
-
-def _parse_hhmm_to_minutes(value, default=None):
-    text = str(value or "").strip()
-    if not text:
-        return default
-    try:
-        parts = text.split(":")
-        hour = int(parts[0])
-        minute = int(parts[1]) if len(parts) > 1 else 0
-        if hour == 24 and minute == 0:
-            return 24 * 60
-        if 0 <= hour <= 23 and 0 <= minute <= 59:
-            return (hour * 60) + minute
-    except Exception:
-        return default
-    return default
 
 
 def _minutes_to_hhmm(value):
@@ -218,7 +202,7 @@ def normalise_staff_task_generation_config(value: Optional[dict]) -> dict:
         ).strip()
         for field in ("start_time", "end_time"):
             candidate = str(pattern.get(field, fallback.get(field, "")) or "").strip()
-            if _parse_hhmm_to_minutes(candidate, None) is None:
+            if parse_hhmm_to_minutes(candidate, None) is None:
                 candidate = str(fallback.get(field, "09:00" if field == "start_time" else "17:00"))
             pattern[field] = candidate
         days = pattern.get("days_active", fallback.get("days_active", []))
@@ -328,6 +312,8 @@ def merge_task_generation_defaults(value: Optional[dict]) -> dict:
 
     # This simulator setting has no category control. Opening/saving the editor
     # must not replace an explicit polling interval with the engine fallback.
+    if "fm_logistics" in value:
+        merged["fm_logistics"] = deepcopy(value["fm_logistics"])
     if "update_interval_sec" in value:
         merged["update_interval_sec"] = deepcopy(value["update_interval_sec"])
     merged["enabled"] = bool(value.get("enabled", merged["enabled"]))
@@ -471,7 +457,7 @@ DEFAULT_JSON = {
         "end_datetime": "2026-01-06T06:00:00",
         "tick_rate": 1000,
         "generated_task_release_stagger_sec": 0.25,
-        "max_task_deferral_minutes": 0.0,
+        "max_task_deferral_minutes": 60.0,
         "precompute_static_routes": True,
         "route_precompute_max_pairs": 100000,
         "max_multi_stop_candidate_tasks": 8,
@@ -570,6 +556,7 @@ class JsonStore:
     def ensure_simulation_defaults(self) -> None:
         from amr_simulation_inputs import resolved_simulation_settings
         simulation = self.data.setdefault("simulation", {})
+        simulation.pop('computation_backend', None)
         for key, value in resolved_simulation_settings(simulation).items():
             simulation.setdefault(key, value)
         # Imported omission retains the runtime's duration/static-release fallback.
@@ -869,6 +856,7 @@ class JsonStore:
                     "speed_factor": max(0.0, min(1.0, float(event.get("speed_factor", 1.0) or 1.0))),
                     "days_active": list(event.get("days_active", ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]) or []),
                     "notes": str(event.get("notes", "") or ""),
+                    **{key: event[key] for key in ('start_datetime', 'end_datetime') if key in event},
                 })
             clean.append({
                 "name": str(scenario.get("name", f"Scenario {index}") or f"Scenario {index}"),
@@ -1777,6 +1765,9 @@ class JsonStore:
         minimum_operational_health_percent: float = 20.0,
         health_speed_penalty_at_zero: float = 0.5,
         start_floor: int = 0,
+        transfer_timing_mode: str = 'fixed',
+        usage_mode=None,
+        amr_access_windows=None,
     ) -> None:
         lift = None
         for existing in self.data["lifts"]:
@@ -1817,6 +1808,13 @@ class JsonStore:
                 for f, pos in floor_locations.items()
             },
         }
+        if transfer_timing_mode != 'fixed' or (lift and 'transfer_timing_mode' in lift):
+            payload['transfer_timing_mode'] = transfer_timing_mode
+        for key, value in (('usage_mode', usage_mode), ('amr_access_windows', amr_access_windows)):
+            if value is not None:
+                payload[key] = deepcopy(value)
+            elif lift and key in lift:
+                payload[key] = deepcopy(lift[key])
         from amr_lift_inputs import validate_lift_inputs
         candidates = [payload if row is lift else row for row in self.data['lifts']]
         if lift is None:

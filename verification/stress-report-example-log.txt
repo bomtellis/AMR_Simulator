@@ -1,0 +1,23 @@
+Failed to find real location of C:\Users\tombe\AppData\Local\Programs\Python\Python313\python.exe
+Verifying stress study: Lift stress.stress.json
+Verifying selected trial 1/2: Combination 430c7810
+Verifying selected trial 2/2: Combination e6d2e912
+Verifying stress study: ltn.stress.json
+Verifying selected trial 1/1: Combination 60c7fe8a
+
+[----------------------------------------]   0% Loading configuration                   
+[######----------------------------------]  15% Analysing simulation data               
+[############----------------------------]  32% Lift cohort CSV written to C:\Users\tombe\Documents\AMR_Simulator\output\pdf\stress-test-selection-example\report_lift_cohorts.csv
+[#############---------------------------]  34% Journey export written to C:\Users\tombe\Documents\AMR_Simulator\output\pdf\stress-test-selection-example\report_journeys.csv
+[#############---------------------------]  34% Journey export written to C:\Users\tombe\Documents\AMR_Simulator\output\pdf\stress-test-selection-example\report_journey_flows.csv
+[#############---------------------------]  34% Lift travel CSV written to C:\Users\tombe\Documents\AMR_Simulator\output\pdf\stress-test-selection-example\report_lift_movements.csv
+[##############--------------------------]  35% Building PDF report                     
+[##############--------------------------]  35% Preparing report                        
+[#####################-------------------]  54% Added summary and method                
+[###################################-----]  88% Adding AMR sections                     
+[#####################################---]  93% Skipped congestion heatmaps             
+[#####################################---]  94% Building PDF                            
+[########################################] 100% PDF complete                            
+
+[########################################] 100% Report written to C:\Users\tombe\Documents\AMR_Simulator\output\pdf\stress-test-selection-example\report.pdf
+C:\Users\tombe\Documents\AMR_Simulator\output\pdf\stress-test-selection-example\report.pdf

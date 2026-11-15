@@ -74,6 +74,7 @@ class DynamicsSimulationTests(unittest.TestCase):
 
     def test_loaded_pivot_dynamics_and_permission_override_empty_settings(self):
         config=dynamics_config()
+        config['simulation']['max_task_deferral_minutes'] = 0
         config['amrs'][0]['manoeuvring']['initial_heading_deg']=90
         sim=Simulation(config)
         with contextlib.redirect_stdout(io.StringIO()): sim.run()

@@ -53,21 +53,34 @@ def software_snapshot():
     for directory in ('visualiser', 'report'):
         paths.update((root / directory).rglob('*.py'))
     files = {p.relative_to(root).as_posix(): file_hash(p) for p in sorted(paths)}
-    return {'version_scheme': 'source file SHA-256', 'scope_version': 2,
-            'scope': 'Root Python modules and all visualiser/report Python modules; excludes third-party runtime.',
+    return {'version_scheme': 'source SHA-256', 'scope_version': 2,
+            'scope': 'Root Python modules and visualiser/report modules; excludes third-party runtime.',
             'sha256': config_hash(files), 'files': files}
 
 
-def write_run_evidence(simulation, csv_path, *, kind='full'):
-    path = Path(csv_path)
+def verify_legacy_computation(record, config):
+    """Verify historical backend provenance without loading an execution backend.
+
+    New runs are CPU-only and omit this retired selector. Frozen older evidence
+    retains its original setting and identity for investigation and playback.
+    """
+    if 'computation' not in record:
+        return
+    computation = record['computation']
+    expected = config.get('simulation', {}).get('computation_backend', 'cpu')
+    if not isinstance(computation, dict) or computation.get('requested') != expected:
+        raise ValueError('Recorded computation backend contradicts the frozen inputs')
+
+
+def run_evidence_data(simulation, *, compact, kind='full'):
     data = {
-        'schema_version': 1, 'run_id': simulation.run_id,
+        'schema_version': 2 if compact else 1, 'run_id': simulation.run_id,
         'config_sha256': simulation._evidence_config_hash,
         'frozen_inputs': simulation._evidence_inputs,
         'simulation_mode': resolve_simulation_mode(simulation._evidence_inputs),
         'software': simulation._evidence_software,
         'project_binding': getattr(simulation, '_evidence_project_binding', None),
-        'log_sha256': file_hash(path), 'log_kind': kind,
+        'log_kind': kind,
         'logging_enabled': simulation.verbose,
         'event_capabilities': list(getattr(simulation, '_evidence_event_capabilities', [])) + [LIFT_CAPABILITY],
         'reduced_logging': bool(simulation.scenario_mode and not simulation.scenario_enhanced_logging),
@@ -78,18 +91,39 @@ def write_run_evidence(simulation, csv_path, *, kind='full'):
                     'lift_movement_counts': booked_movement_counts(simulation)},
         'scope': 'Recorded inputs and source fingerprint; no claim of tamper-proof audit or certification.',
     }
+    if compact:
+        data['storage'] = {'format': 'sqlite_sparse_events', 'version': simulation.event_store.format_version,
+                           'event_count': len(simulation.event_store)}
     if hasattr(simulation, '_evidence_pending_task_ids'):
         data['summary']['pending_task_ids'] = list(simulation._evidence_pending_task_ids)
     termination = getattr(simulation, 'geometric_termination', None)
     if termination is not None:
         data['termination'] = dict(termination)
-        if kind == 'full':
-            from amr_partial_run import derive_partial_run
-            with path.open(newline='', encoding='utf-8-sig') as stream:
-                data['partial_run'] = derive_partial_run(
-                    list(csv.DictReader(stream)), simulation._evidence_inputs,
-                    stop_time=termination['stop_time_sec'])
+    return data
+
+
+def write_evidence_data(path, data):
+    path = Path(path)
+    data = dict(data, log_sha256=file_hash(path))
+    if data.get('termination') is not None and data['log_kind'] == 'full':
+        from amr_partial_run import derive_partial_run
+        from amr_event_store import iter_events
+        data['partial_run'] = derive_partial_run(
+            list(iter_events(path)), data['frozen_inputs'],
+            stop_time=data['termination']['stop_time_sec'])
     target = Path(str(path) + '.run.json')
     from amr_project import atomic_write
     atomic_write(target,(json.dumps(data, indent=2, allow_nan=False)+'\n').encode('utf-8'))
     return target
+
+
+def write_run_evidence(simulation, csv_path, *, kind='full'):
+    return write_evidence_data(csv_path, run_evidence_data(
+        simulation, compact=Path(csv_path).suffix == '.sqlite', kind=kind))
+
+
+def write_compact_evidence(simulation):
+    simulation.event_store.close()
+    result = write_run_evidence(simulation, simulation.event_store.path)
+    simulation._compact_finalized = True
+    return result

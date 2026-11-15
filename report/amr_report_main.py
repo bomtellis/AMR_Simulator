@@ -22,10 +22,11 @@ from amr_report_pdf_report import (
     normalise_report_sections,
 )
 from amr_report_cli import parse_args
+from amr_event_csv import read_event_csv
 
 
 def export_failed_tasks_csv(source_csv: Path, output_csv: Path) -> None:
-    df = pd.read_csv(source_csv, low_memory=False)
+    df = read_event_csv(source_csv, low_memory=False)
     event_col = "event_type" if "event_type" in df.columns else ""
     if not event_col:
         failed = pd.DataFrame()
@@ -314,6 +315,13 @@ def generate_report_from_paths(
     existing_pdf: Path = None,
     insert_after_page: int = None,
     report_title: str = None,
+    stress_report=None,
+    contingency_report=None,
+    lift_chart_day=None,
+    lift_chart_bin_minutes=30,
+    lift_chart_include_reposition=True,
+    lift_chart_lift_ids=None,
+    performance_comparison=None,
 ) -> None:
     csv_path = Path(csv_path)
     if not csv_path.exists():
@@ -405,6 +413,18 @@ def generate_report_from_paths(
         export_failed_tasks_csv(csv_path, Path(failed_tasks_csv))
         emit_progress(30, 100, f"Failed-task CSV written to {failed_tasks_csv}")
 
+    if stress_report is not None:
+        results['stress_tests'] = stress_report
+    if contingency_report is not None:
+        results['human_contingency'] = contingency_report
+    if performance_comparison is not None:
+        results['lift_performance_comparison'] = performance_comparison
+    if {'lift_movement_stacks','lift_movement_daily'} & set(normalise_report_sections(report_sections)):
+        from amr_lift_movement_charts import extract_chart_data
+        results['lift_movement_chart_data'] = extract_chart_data(csv_path,
+            json.loads(config_json.read_text(encoding='utf-8-sig')) if config_json else None,
+            lift_chart_bin_minutes)
+
     if lift_cohorts_csv:
         export_lift_cohorts_csv(results, Path(lift_cohorts_csv))
         emit_progress(32, 100, f"Lift cohort CSV written to {lift_cohorts_csv}")
@@ -436,6 +456,11 @@ def generate_report_from_paths(
             include_drawings=include_drawings,
             report_sections=report_sections,
             report_title=report_title or ('AMR Simulation Report Supplement' if existing_pdf else 'AMR Simulation Performance Report'),
+            lift_chart_day=lift_chart_day,
+            lift_chart_bin_minutes=lift_chart_bin_minutes,
+            lift_chart_include_reposition=lift_chart_include_reposition,
+            lift_chart_config=json.loads(config_json.read_text(encoding='utf-8-sig')) if config_json else None,
+            lift_chart_lift_ids=lift_chart_lift_ids,
         )
     if existing_pdf:
         from amr_report_pdf_insert import insert_pdf_sections
@@ -578,6 +603,24 @@ def launch_report_generator_dialog(args=None) -> None:
                 "Lift travel and destinations CSV", "CSV files (*.csv);;All files (*)", save=True,
             )
             form.addRow("", self.lift_csv_only_check)
+            chart_controls = QHBoxLayout()
+            self.lift_chart_day_edit = QLineEdit(str(getattr(seed_args,'lift_chart_day','') or ''))
+            self.lift_chart_day_edit.setPlaceholderText('All days, or YYYY-MM-DD')
+            self.lift_chart_day_edit.setAccessibleName('Stacked lift chart day')
+            self.lift_chart_interval = QComboBox()
+            for minutes in (5,15,30,60):
+                self.lift_chart_interval.addItem(f'{minutes} minutes',minutes)
+            self.lift_chart_interval.setCurrentIndex(self.lift_chart_interval.findData(getattr(seed_args,'lift_chart_bin_minutes',30)))
+            self.lift_chart_include = QCheckBox('Empty repositioning')
+            self.lift_chart_include.setChecked(not bool(getattr(seed_args,'lift_chart_exclude_reposition',False)))
+            for control in (self.lift_chart_day_edit,self.lift_chart_interval,self.lift_chart_include):
+                chart_controls.addWidget(control)
+            form.addRow('Stacked lift charts',chart_controls)
+            self.lift_chart_lift_edit = QLineEdit()
+            self.lift_chart_lift_edit.setPlaceholderText('All lifts (or enter one exact lift ID)')
+            self.lift_chart_lift_edit.setText(next(iter(getattr(seed_args,'lift_chart_lift_id',None) or []),''))
+            self.lift_chart_lift_edit.setAccessibleName('PDF chart lift')
+            form.addRow('PDF chart lift',self.lift_chart_lift_edit)
             review_controls = QHBoxLayout()
             self.department_review_check = QCheckBox('Export category reviews')
             self.department_review_check.setChecked(bool(getattr(seed_args, 'department_review_dir', None) or getattr(seed_args, 'department_review_only', False)))
@@ -850,6 +893,10 @@ def launch_report_generator_dialog(args=None) -> None:
                     progress_callback=on_progress,
                     lift_movements_csv=Path(lift_movements_text) if lift_movements_text else None,
                     lift_csv_only=self.lift_csv_only_check.isChecked(),
+                    lift_chart_day=self.lift_chart_day_edit.text().strip() or None,
+                    lift_chart_bin_minutes=self.lift_chart_interval.currentData(),
+                    lift_chart_include_reposition=self.lift_chart_include.isChecked(),
+                    lift_chart_lift_ids=[self.lift_chart_lift_edit.text().strip()] if self.lift_chart_lift_edit.text().strip() else None,
                     department_review_dir=(Path(self.department_review_dir_edit.text().strip()) if self.department_review_dir_edit.text().strip()
                         else output_path.with_name(output_path.stem + '_department_reviews')) if self.department_review_check.isChecked() else None,
                     department_review_formats=self.department_review_format.currentData(),
@@ -884,6 +931,36 @@ def launch_report_generator_dialog(args=None) -> None:
 
 def main() -> None:
     args = parse_args()
+    if args.lift_charts_xlsx:
+        if not args.csv or args.third_party_lift_xlsx or args.third_party_lift_csv or args.third_party_lifts_dir or args.lift_id or args.include_lift_reposition:
+            raise SystemExit('--lift-charts-xlsx requires a saved run and cannot be combined with other lift exports.')
+        from amr_lift_movement_charts import export_lift_charts_xlsx
+        print(export_lift_charts_xlsx(args.csv,args.lift_charts_xlsx,day=args.lift_chart_day,
+            interval_minutes=args.lift_chart_bin_minutes,include_reposition=not args.lift_chart_exclude_reposition))
+        return
+    if args.third_party_lift_xlsx:
+        if not args.csv or args.lift_id or args.third_party_lift_csv or args.third_party_lifts_dir:
+            raise SystemExit('--third-party-lift-xlsx requires a saved run input and cannot be combined with CSV output flags or --lift-id.')
+        from amr_third_party_lift import export_lift_trips_xlsx
+        counts = export_lift_trips_xlsx(args.csv, args.third_party_lift_xlsx)
+        print(f'Exported {len(counts)} lifts ({sum(counts.values())} trips) to {args.third_party_lift_xlsx}')
+        return
+    if args.third_party_lifts_dir:
+        if not args.csv or args.lift_id or args.third_party_lift_csv:
+            raise SystemExit('--third-party-lifts-dir requires a saved run input and cannot be combined with --lift-id or --third-party-lift-csv.')
+        from amr_third_party_lift import export_all_lifts_csv
+        counts = export_all_lifts_csv(args.csv, args.third_party_lifts_dir, args.include_lift_reposition)
+        print(f'Exported {len(counts)} lifts ({sum(counts.values())} movements) to {args.third_party_lifts_dir}')
+        return
+    if args.third_party_lift_csv:
+        if not args.csv or not args.lift_id:
+            raise SystemExit('--third-party-lift-csv requires a saved run input and --lift-id.')
+        from amr_third_party_lift import export_lift_csv
+        count = export_lift_csv(args.csv, args.third_party_lift_csv, args.lift_id, args.include_lift_reposition)
+        print(f'Exported {count} lift movements to {args.third_party_lift_csv}')
+        return
+    if args.lift_id or args.include_lift_reposition:
+        raise SystemExit('--lift-id requires --third-party-lift-csv; --include-lift-reposition requires a third-party export.')
     if args.list_report_sections:
         for section_id, title in REPORT_SECTIONS:
             print(f"{section_id}: {title}")
@@ -940,6 +1017,10 @@ def main() -> None:
         report_sections=report_sections,
         lift_movements_csv=Path(args.lift_movements_csv) if args.lift_movements_csv else None,
         lift_csv_only=args.lift_csv_only,
+        lift_chart_day=args.lift_chart_day,
+        lift_chart_bin_minutes=args.lift_chart_bin_minutes,
+        lift_chart_include_reposition=not args.lift_chart_exclude_reposition,
+        lift_chart_lift_ids=args.lift_chart_lift_id,
         department_review_dir=Path(args.department_review_dir) if args.department_review_dir else None,
         department_review_formats=args.department_review_formats,
         department_review_only=args.department_review_only,

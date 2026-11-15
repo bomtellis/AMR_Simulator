@@ -1,0 +1,17 @@
+Recent stores: [('ltn_results\\run_20261012_202248_2f6_trf6\\simulation_steps.csv.sqlite', 406777856)]
+Event payload bytes: (238466, 307959019)
+Metadata: Counter({'report_records:': 10773185, 'report_state': 130792, 'report_headers': 3829})
+Sample events: 20006
+Individual rows 1 10377550 seconds 0.24547669995808974
+Individual rows 3 10258511 seconds 0.2524601999903098
+Individual rows 6 9889103 seconds 0.29873869998846203
+Layout dictionaries: 6320677 seconds 0.2456254999851808
+Blocks 100 level 1 bytes 3265638 seconds 0.07983790000434965
+Blocks 100 level 3 bytes 3038632 seconds 0.09404109994648024
+Blocks 100 level 6 bytes 2494495 seconds 0.19800209999084473
+Blocks 500 level 1 bytes 3174413 seconds 0.08757089998107404
+Blocks 500 level 3 bytes 2939167 seconds 0.10235899995313957
+Blocks 500 level 6 bytes 2360002 seconds 0.20770970004377887
+Blocks 1000 level 1 bytes 3161837 seconds 0.09597470000153407
+Blocks 1000 level 3 bytes 2926130 seconds 0.11255660001188517
+Blocks 1000 level 6 bytes 2342417 seconds 0.21735779999289662
