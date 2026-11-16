@@ -5,6 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
+/_amr_corridor_native*.pyd
 
 # Distribution / packaging
 .Python

@@ -2,7 +2,8 @@ param(
     [ValidatePattern('^\d+\.\d+\.\d+(-[A-Za-z0-9.-]+)?$')]
     [string]$Version = '0.1.0-dev',
     [string]$LtnProject = '',
-    [string]$Iscc = 'tmp\inno-tool\ISCC.exe'
+    [string]$Iscc = 'tmp\inno-tool\ISCC.exe',
+    [string]$CorridorCompiler = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +27,12 @@ Push-Location $root
 $previousVersion = $env:AMR_BUILD_VERSION
 try {
     $env:AMR_BUILD_VERSION = $Version
+    if ($CorridorCompiler) {
+        & (Join-Path $root 'tools/build_corridor_native.ps1') -Compiler $CorridorCompiler -Python $python
+        if ($LASTEXITCODE -ne 0) { throw 'The native corridor build failed.' }
+    }
+    $nativeName = & $python -B -c 'import sysconfig; print("_amr_corridor_native" + sysconfig.get_config_var("EXT_SUFFIX"))'
+    if ($LASTEXITCODE -ne 0) { throw 'Could not determine the corridor extension name.' }
     $buildLog = Join-Path $outputRoot 'pyinstaller.log'
     & $python -m PyInstaller --clean --noconfirm `
         --distpath $distRoot --workpath (Join-Path $outputRoot 'work') `
@@ -49,16 +56,21 @@ try {
             Remove-Item -LiteralPath $conflict
         }
     }
-    Get-ChildItem -LiteralPath $root -Filter '*.py' -File | ForEach-Object {
-        Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $internal $_.Name) -Force
-    }
-    foreach ($folder in @('visualiser', 'report')) {
-        Get-ChildItem -LiteralPath (Join-Path $root $folder) -Filter '*.py' -File -Recurse | ForEach-Object {
-            $relative = [IO.Path]::GetRelativePath($root, $_.FullName)
-            $destination = Join-Path $internal $relative
-            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-            Copy-Item -LiteralPath $_.FullName -Destination $destination -Force
+    $nativeSource = Join-Path $root $nativeName
+    if (Test-Path -LiteralPath $nativeSource -PathType Leaf) {
+        $nativeBundled = Join-Path $internal $nativeName
+        if (-not (Test-Path -LiteralPath $nativeBundled -PathType Leaf) -or
+            (Get-FileHash -LiteralPath $nativeBundled).Hash -ne (Get-FileHash -LiteralPath $nativeSource).Hash) {
+            throw 'The packaged corridor extension differs from the build input.'
         }
+    }
+
+    $sourceFiles = & $python -B -c 'from amr_run_evidence import software_snapshot; print(*software_snapshot()["files"], sep="\n")'
+    if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate application sources for run evidence.' }
+    foreach ($relative in $sourceFiles) {
+        $destination = Join-Path $internal $relative
+        New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $root $relative) -Destination $destination -Force
     }
 
     $assetArgs = @('installer\prepare_assets.py', '--output', $dist, '--version', $Version)

@@ -52,9 +52,11 @@ def software_snapshot():
     paths = set(root.glob('*.py'))
     for directory in ('visualiser', 'report'):
         paths.update((root / directory).rglob('*.py'))
+    for pattern in ('*.cpp', '*.h'):
+        paths.update((root / 'native').glob(pattern))
     files = {p.relative_to(root).as_posix(): file_hash(p) for p in sorted(paths)}
-    return {'version_scheme': 'source SHA-256', 'scope_version': 2,
-            'scope': 'Root Python modules and visualiser/report modules; excludes third-party runtime.',
+    return {'version_scheme': 'source SHA-256', 'scope_version': 3,
+            'scope': 'Application Python and native source; excludes generated binaries and third-party runtime.',
             'sha256': config_hash(files), 'files': files}
 
 
@@ -91,6 +93,9 @@ def run_evidence_data(simulation, *, compact, kind='full'):
                     'lift_movement_counts': booked_movement_counts(simulation)},
         'scope': 'Recorded inputs and source fingerprint; no claim of tamper-proof audit or certification.',
     }
+    timing = getattr(simulation, '_corridor_timing', None)
+    if timing is not None and timing.native_used:
+        data['corridor_native_sha256'] = file_hash(timing.native_path)
     if compact:
         data['storage'] = {'format': 'sqlite_sparse_events', 'version': simulation.event_store.format_version,
                            'event_count': len(simulation.event_store)}

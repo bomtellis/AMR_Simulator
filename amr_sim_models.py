@@ -213,7 +213,8 @@ class Lift(TransactionalEntity):
         amr: Optional["AMR"] = None,
         orientation: str = "lengthways",
     ) -> bool:
-        orientation = str(orientation or "lengthways").strip().lower()
+        if orientation not in ("lengthways", "sideways"):
+            orientation = str(orientation or "lengthways").strip().lower()
         payload_length = float(payload.length_m)
         payload_width = float(payload.width_m)
         if orientation == "sideways":

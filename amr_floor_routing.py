@@ -335,6 +335,8 @@ def advance_lift_wear(lift, operating_seconds, finish_time):
 
 
 def projected_lift(lift, journeys):
+    if not journeys:
+        return lift
     previous = [leg for leg in journeys if leg['lift'].id == lift.id]
     if not previous:
         return lift

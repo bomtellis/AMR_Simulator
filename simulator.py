@@ -16,6 +16,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from amr_corridor_timing import CorridorTiming
 from amr_event_store import EventValues
 from amr_run_evidence import config_hash, software_snapshot, write_run_evidence
 from amr_route_reservations import (RouteReservationTransaction, LiftReservations,
@@ -425,9 +426,11 @@ class Simulation:
         self.payload_orientation_choice_cache: Dict[Tuple, Tuple[str, str]] = {}
         self.payload_orientation_compat_cache: Dict[Tuple, Tuple[str, ...]] = {}
         self.lift_health_speed_factor_cache: Dict[Tuple, float] = {}
+        self._lift_health_inputs_cache: Dict[Tuple, float] = {}
         self.lift_vertical_seconds_cache: Dict[Tuple, float] = {}
         self.lift_plan_estimate_cache: Dict[Tuple, Optional[dict]] = {}
         self._forced_lift_estimate_batch = None
+        self._forced_reachability_cache: Dict[tuple, bool] = {}
         self.corridor_lane_capacity_cache: Dict[Tuple, Tuple[int, float, float]] = {}
         self.route_feasibility_cache: Dict[Tuple, bool] = {}
         self.route_feasibility_cache_max_entries = max(
@@ -820,7 +823,9 @@ class Simulation:
         self.floor_reverse_graphs: Dict[int, Dict[str, List[dict]]] = defaultdict(
             lambda: defaultdict(list)
         )
+        self._lifts_by_id = {lift.id: lift for lift in self.lifts}
         self._build_floor_graphs(config.get("corridors", {}))
+        self._corridor_timing = CorridorTiming(self)
         self._precompute_static_routes()
         self._check_run_cancelled()
         self._init_people_movements(config.get("people_movements", []))
@@ -1814,7 +1819,8 @@ class Simulation:
     def _payload_orientation_dimensions(
         self, payload: PayloadType, orientation: str
     ) -> Tuple[float, float, float]:
-        orientation = str(orientation or "lengthways").strip().lower()
+        if orientation not in ("lengthways", "sideways"):
+            orientation = str(orientation or "lengthways").strip().lower()
         length = float(payload.length_m)
         width = float(payload.width_m)
         if orientation == "sideways":
@@ -6963,11 +6969,12 @@ class Simulation:
     ) -> tuple:
         if not rules:
             return ((), (), (), ())
-        allowed_lifts = tuple(sorted(rules.get("allowed_lifts", set())))
-        allowed_nodes = tuple(sorted(rules.get("allowed_nodes", set())))
-        allowed_edges = tuple(sorted(rules.get("allowed_edges", set())))
-        blocked = tuple(sorted(rules.get("blocked_route_dimensions", set())))
-        key = (allowed_lifts, allowed_nodes, allowed_edges, blocked)
+        lifts = rules.get("allowed_lifts")
+        nodes = rules.get("allowed_nodes")
+        edges = rules.get("allowed_edges")
+        blocked = rules.get("blocked_route_dimensions")
+        key = (tuple(sorted(lifts)) if lifts else (), tuple(sorted(nodes)) if nodes else (),
+               tuple(sorted(edges)) if edges else (), tuple(sorted(blocked)) if blocked else ())
         if rules.get('bed_fallback_search'):
             key += ('bed_fallback_search',)
         if rules.get("profile_applied") and forced_floor_enabled(self.config):
@@ -7031,9 +7038,9 @@ class Simulation:
     def _node_allowed(self, node_name: str, rules: Optional[dict]) -> bool:
         if not rules:
             return True
-        if "allowed_nodes" in rules.get("blocked_route_dimensions", set()):
+        if "allowed_nodes" in rules.get("blocked_route_dimensions", ()):
             return False
-        allowed_nodes = rules.get("allowed_nodes", set())
+        allowed_nodes = rules.get("allowed_nodes")
         if not allowed_nodes:
             return True
         return node_name in allowed_nodes
@@ -7043,9 +7050,9 @@ class Simulation:
     ) -> bool:
         if not rules:
             return True
-        if "allowed_edges" in rules.get("blocked_route_dimensions", set()):
+        if "allowed_edges" in rules.get("blocked_route_dimensions", ()):
             return False
-        allowed_edges = rules.get("allowed_edges", set())
+        allowed_edges = rules.get("allowed_edges")
         if not allowed_edges:
             return True
         return (from_name, to_name) in allowed_edges
@@ -7053,9 +7060,9 @@ class Simulation:
     def _lift_allowed(self, lift: Lift, rules: Optional[dict]) -> bool:
         if not rules:
             return True
-        if "allowed_lifts" in rules.get("blocked_route_dimensions", set()):
+        if "allowed_lifts" in rules.get("blocked_route_dimensions", ()):
             return False
-        allowed_lifts = rules.get("allowed_lifts", set())
+        allowed_lifts = rules.get("allowed_lifts")
         if not allowed_lifts:
             return True
         return lift.id in allowed_lifts
@@ -7085,18 +7092,24 @@ class Simulation:
 
     def _build_floor_graphs(self, corridor_cfg: dict):
         # Lift stops are boarding/alighting endpoints, never corridor junctions.
-        self.lift_stop_names = {
-            lift.location_on_floor(floor).name
-            for lift in self.lifts for floor in lift.served_floors
+        self._lift_connections = {
+            lift.id: tuple((floor, lift.location_on_floor(floor)) for floor in lift.served_floors)
+            for lift in self.lifts
         }
+        self._lift_landings = {
+            (lift_id, floor): landing
+            for lift_id, connections in self._lift_connections.items()
+            for floor, landing in connections
+        }
+        self.lift_stop_names = {landing.name for landing in self._lift_landings.values()}
+        self._free_flow_lift_distances = {}
         for location in self.locations.values():
             self.graph_nodes[location.name] = location
             self.floor_graphs[location.floor][location.name]
             self.floor_reverse_graphs[location.floor][location.name]
 
-        for lift in self.lifts:
-            for floor in lift.served_floors:
-                node = lift.location_on_floor(floor)
+        for connections in self._lift_connections.values():
+            for floor, node in connections:
                 self.graph_nodes[node.name] = node
                 self.floor_graphs[floor][node.name]
                 self.floor_reverse_graphs[floor][node.name]
@@ -7344,41 +7357,33 @@ class Simulation:
         return state
 
     def _lift_health_speed_factor(self, lift: Lift) -> float:
-        health = max(
-            0.0,
-            min(100.0, float(getattr(lift, "health_percent", 100.0) or 0.0)),
-        )
-        minimum = max(
-            0.0,
-            min(
-                100.0,
-                float(
-                    getattr(lift, "minimum_operational_health_percent", 20.0)
-                    or 0.0
-                ),
-            ),
-        )
+        identity = str(getattr(lift, "id", "") or "")
+        raw_health = float(getattr(lift, "health_percent", 100.0) or 0.0)
+        raw_minimum = float(getattr(lift, "minimum_operational_health_percent", 20.0) or 0.0)
+        raw_penalty = float(getattr(lift, "health_speed_penalty_at_zero", 0.5) or 0.5)
+        raw_key = identity, raw_health, raw_minimum, raw_penalty
+        raw_cache = self._lift_health_inputs_cache if not self.parallel_routing_enabled else None
+        if raw_cache is not None:
+            factor = raw_cache.get(raw_key)
+            if factor is not None:
+                return factor
 
-        at_zero = max(
-            0.05,
-            min(1.0, float(getattr(lift, "health_speed_penalty_at_zero", 0.5) or 0.5)),
-        )
-        cache_key = (
-            str(getattr(lift, "id", "") or ""),
-            round(health, 6),
-            round(minimum, 6),
-            round(at_zero, 6),
-        )
-        cached = self.lift_health_speed_factor_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        if health < minimum:
-            result = 0.0
-        else:
-            result = at_zero + (1.0 - at_zero) * (health / 100.0)
-        if len(self.lift_health_speed_factor_cache) > 2048:
-            self.lift_health_speed_factor_cache.clear()
-        self.lift_health_speed_factor_cache[cache_key] = result
+        health = max(0.0, min(100.0, raw_health))
+        minimum = max(0.0, min(100.0, raw_minimum))
+        at_zero = max(0.05, min(1.0, raw_penalty))
+        # Retain the original rounded cache's result for close input values.
+        cache_key = identity, round(health, 6), round(minimum, 6), round(at_zero, 6)
+        result = self.lift_health_speed_factor_cache.get(cache_key)
+        if result is None:
+            result = 0.0 if health < minimum else at_zero + (1.0 - at_zero) * (health / 100.0)
+            if len(self.lift_health_speed_factor_cache) > 2048:
+                self.lift_health_speed_factor_cache.clear()
+                self._lift_health_inputs_cache.clear()
+            self.lift_health_speed_factor_cache[cache_key] = result
+        if raw_cache is not None:
+            if len(raw_cache) >= 4096:
+                raw_cache.clear()
+            raw_cache[raw_key] = result
         return result
 
     def _resource_speed_factor(self, resource_type: str, resource_id: str, sim_time_sec: float) -> Tuple[float, float, str]:
@@ -7788,10 +7793,16 @@ class Simulation:
         ):
             return
 
+        warm_lift_bounds = (forced_floor_enabled(self.config)
+                            and not (self.scenario_mode or self.geometric_motion or self.parallel_routing_enabled))
+
         def run_job(job):
             self._check_run_cancelled()
             floor, start_name, end_name = job
-            self._shortest_path_same_floor(floor, start_name, end_name)
+            route = self._shortest_path_same_floor(floor, start_name, end_name)
+            if (warm_lift_bounds and route is not None
+                    and (start_name in self.lift_stop_names or end_name in self.lift_stop_names)):
+                self._free_flow_lift_distances[job] = route["distance_m"]
 
         if self.routing_executor is None or len(jobs) < 128:
             last_update = 0.0
@@ -7819,18 +7830,17 @@ class Simulation:
         *,
         minimum_width_m: float = 0.0,
     ) -> Optional[dict]:
-        graph = self.floor_graphs.get(floor, {})
-        reverse_graph = self.floor_reverse_graphs.get(floor, {})
-        rules = rules or self._empty_route_rules()
         # Width is part of the query, not a post-filter: a longer passable
         # route must remain available when the shortest route contains a door.
         cache_key = (floor, start_name, end_name, *self._rules_cache_key(rules), minimum_width_m)
-        cache_miss = object()
-
         with self.route_cache_lock:
-            cached = self.route_cache.get(cache_key, cache_miss)
-        if cached is not cache_miss:
-            return cached
+            try:
+                return self.route_cache[cache_key]
+            except KeyError:
+                pass
+
+        graph = self.floor_graphs.get(floor, {})
+        reverse_graph = self.floor_reverse_graphs.get(floor, {})
 
         def cache_and_return(value: Optional[dict]) -> Optional[dict]:
             with self.route_cache_lock:
@@ -8719,7 +8729,9 @@ class Simulation:
         return self.amr_spacing_m / max(amr.speed_m_per_sec, 1e-9)
 
     def _edge_recent_demand(self, edge_key: Tuple[str, str], t: float) -> int:
-        reservations = self.edge_reservations.get(edge_key, [])
+        reservations = self.edge_reservations.get(edge_key)
+        if not reservations:
+            return 0
         window = self.edge_congestion_window_sec
         max_duration = self.edge_reservation_max_duration.get(edge_key, 0.0)
         scan_start = self._reservation_scan_start(
@@ -8742,7 +8754,9 @@ class Simulation:
         spacing_time: float,
     ) -> float:
         """Return the earliest same-direction edge start that preserves FIFO order."""
-        reservations = self.directed_edge_reservations.get(directed_edge_key, [])
+        reservations = self.directed_edge_reservations.get(directed_edge_key)
+        if not reservations:
+            return float(requested_start)
         max_reserved_duration = self.directed_edge_reservation_max_duration.get(
             directed_edge_key, 0.0
         )
@@ -8781,7 +8795,10 @@ class Simulation:
         directed_edge_key: Optional[Tuple[str, str]] = None,
         max_concurrency: Optional[int] = None,
     ) -> Tuple[float, int]:
-        reservations = self.edge_reservations.get(edge_key, [])
+        reservations = self.edge_reservations.get(edge_key, ())
+        if not reservations and (directed_edge_key is None
+                                 or not self.directed_edge_reservations.get(directed_edge_key)):
+            return float(requested_start), 0
         max_reserved_duration = self.edge_reservation_max_duration.get(edge_key, 0.0)
         t = float(requested_start)
         duration = max(0.0, float(duration or 0.0))
@@ -8878,7 +8895,9 @@ class Simulation:
         requested_arrival: float,
         spacing_time: float,
     ) -> float:
-        reservations = self.node_reservations.get(node_name, [])
+        reservations = self.node_reservations.get(node_name)
+        if not reservations:
+            return requested_arrival
         max_reserved_duration = self.node_reservation_max_duration.get(node_name, 0.0)
         t = requested_arrival
 
@@ -9189,6 +9208,10 @@ class Simulation:
                     'amr_rotation_start_deg': math.degrees(trajectory.motions[0].start.heading),
                     'amr_rotation_end_deg': math.degrees(trajectory.motions[-1].end.heading)})
             return segments, wait + trajectory.duration_sec, trajectory.length_m
+        if (self.runtime_backend == "compact" and start_time_value is not None
+                and not (self.scenario_mode or self.people_edge_reservations or self.parallel_routing_enabled)):
+            return self._corridor_timing.evaluate(
+                route, amr, payload, orientation, start_time_value, collect_segments)
         segments: List[dict] = []
         total_duration = 0.0
         current = start_time_value
@@ -9341,6 +9364,10 @@ class Simulation:
         return segments, total_duration, route["distance_m"]
 
     def _lift_location_on_floor(self, lift: Lift, floor: int) -> Location:
+        if not (self.scenario_mode or self.geometric_motion):
+            landing = self._lift_landings.get((lift.id, floor))
+            if landing is not None:
+                return landing
         return lift.location_on_floor(floor)
 
     def _lift_vertical_seconds(
@@ -9512,23 +9539,25 @@ class Simulation:
         amr: AMR,
     ) -> str:
         """Return the nearest free corridor node on the approach to a lift."""
-        candidates: List[str] = []
-        for segment in reversed(to_lift_segments):
-            if str(segment.get("type", "") or "") != "corridor":
-                continue
-            candidate = str(segment.get("from", "") or "").strip()
-            if candidate and candidate != origin_lift_name and candidate not in candidates:
-                candidates.append(candidate)
-
-        if not candidates:
+        if not to_lift_segments:
             return origin_lift_name
-
         spacing_time = self._spacing_time_sec(amr)
         interval_start = float(wait_start)
         interval_finish = max(interval_start, float(wait_finish))
-        for candidate in candidates:
+        seen = {origin_lift_name}
+        last = origin_lift_name
+        for segment in reversed(to_lift_segments):
+            if segment.get("type") != "corridor":
+                continue
+            candidate = str(segment.get("from", "") or "").strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            last = candidate
+            reservations = self.node_reservations.get(candidate)
+            if not reservations:
+                return candidate
             available = True
-            reservations = self.node_reservations.get(candidate, ())
             first = self._reservation_scan_start(
                 reservations, interval_start, spacing_time,
                 self.node_reservation_max_duration.get(candidate, math.inf))
@@ -9541,10 +9570,8 @@ class Simulation:
                     break
             if available:
                 return candidate
-
-        # If the whole approach is occupied, retain the furthest corridor node
-        # instead of placing the AMR inside the lift landing node.
-        return candidates[-1]
+        # Retain the furthest approach node when the whole approach is occupied.
+        return last
 
     def _reserve_lift_wait_node(self, plan: dict, amr: AMR) -> None:
         wait_node = str(plan.get("lift_wait_node", "") or "").strip()
@@ -9617,7 +9644,12 @@ class Simulation:
                 return self.lift_plan_estimate_cache[cache_key]
 
         self._check_run_cancelled()
-        for actual_lift in self.lifts:
+        lifts = self.lifts
+        if only_lift is not None and not (self.scenario_mode or self.geometric_motion):
+            selected = self._lifts_by_id.get(only_lift)
+            if selected is not None:
+                lifts = (selected,)
+        for actual_lift in lifts:
             if (only_lift is not None and actual_lift.id != only_lift
                     and not self.scenario_mode and not self.geometric_motion):
                 continue
@@ -9630,9 +9662,10 @@ class Simulation:
                 continue
             if self._lift_health_speed_factor(lift) <= 0.0:
                 continue
-            lift_scenario = self._scenario_event_state("lift", lift.id, ready_time)
-            if float(lift_scenario.get("availability_percent", 100.0)) <= 0.0:
-                continue
+            if self.scenario_mode:
+                lift_scenario = self._scenario_event_state("lift", lift.id, ready_time)
+                if float(lift_scenario.get("availability_percent", 100.0)) <= 0.0:
+                    continue
             if not lift.can_fit(payload, amr, orientation=orientation):
                 continue
 
@@ -9709,16 +9742,6 @@ class Simulation:
             # Detailed alternatives still need their geometric certification.
             if not self.geometric_motion and lift_finish >= best_finish:
                 continue
-            lift_wait_node = self._lift_wait_node_for_plan(
-                to_lift_segments,
-                origin_lift.name,
-                arrival_at_lift,
-                lift_slot["reposition_finish"],
-                amr,
-            )
-            if graph_timing:
-                lift_wait_node = approach_target.name
-
             if _route_cache is None:
                 from_lift_route = self._same_floor_segments(
                     amr,
@@ -9751,6 +9774,12 @@ class Simulation:
             ##
 
             if final_finish < best_finish:
+                if graph_timing:
+                    lift_wait_node = approach_target.name
+                else:
+                    lift_wait_node = self._lift_wait_node_for_plan(
+                        to_lift_segments, origin_lift.name, arrival_at_lift,
+                        lift_slot["reposition_finish"], amr)
                 best_finish = final_finish
                 best_plan = {
                     "lift": actual_lift,

@@ -12,6 +12,7 @@ from collections import deque
 FALLBACK_SEARCH_STATES = 32
 LIFT_LEG_CACHE_LIMIT = 4096
 SHARED_LIFT_LEG_CACHE_LIMIT = 16384
+REACHABILITY_CACHE_LIMIT = 8192
 
 
 def enabled(config):
@@ -61,6 +62,33 @@ def _reachable(sim, amr, start, finish, payload, rules, orientation, final_lift=
     via = sim.config['building']['force_via_floor']
     width = sim._required_corridor_width(amr, payload, orientation)
     lifts = [lift for lift in sim.lifts if _usable(sim, lift, amr, payload, rules, orientation)]
+    cache = getattr(sim, '_forced_reachability_cache', None)
+    if (cache is None or sim.scenario_mode or sim.geometric_motion or sim.parallel_routing_enabled
+            or any(getattr(lift, 'transfer_timing_mode', 'fixed') != 'fixed' for lift in lifts)):
+        return _search_reachability(sim, amr, start, finish, payload, rules, orientation,
+                                    final_lift, selected, via, width, lifts)
+
+    # The graph is owned by this run. Refresh lift eligibility for the current
+    # payload, robot, permissions and operational health on every query.
+    key = (start.floor, start.name, finish.floor, finish.name, via, width,
+           sim._rules_cache_key(rules), tuple(lift.id for lift in lifts),
+           final_lift.id if final_lift is not None else None,
+           frozenset(selected) if selected is not None else None)
+    cached = cache.get(key)
+    if cached is not None:
+        sim._check_run_cancelled()
+        return cached
+
+    result = _search_reachability(sim, amr, start, finish, payload, rules, orientation,
+                                  final_lift, selected, via, width, lifts)
+    if len(cache) >= REACHABILITY_CACHE_LIMIT:
+        cache.clear()
+    cache[key] = result
+    return result
+
+
+def _search_reachability(sim, amr, start, finish, payload, rules, orientation,
+                         final_lift, selected, via, width, lifts):
     pending = deque([(start, start.floor == via)])
     seen = set()
 
@@ -197,10 +225,18 @@ def _search_forced_lift_plan(sim, ready_time, amr, start, finish, payload, rules
         candidates.sort(key=lambda item: (available_from[item[2].id], *item[:2]))
     else:
         candidates.sort(key=lambda item: (item[0], available_from[item[2].id], item[1]))
-    stops = {(lift.id, floor): sim._lift_location_on_floor(lift, floor)
-             for lift in usable_lifts for floor in lift.served_floors}
-    connections = {lift.id: [(floor, stops[lift.id, floor]) for floor in lift.served_floors]
-                   for lift in usable_lifts}
+    stops = getattr(sim, '_lift_landings', None)
+    connections = getattr(sim, '_lift_connections', {})
+    if (stops is None or sim.scenario_mode or sim.geometric_motion
+            or any(lift.id not in connections for lift in usable_lifts)):
+        stops = {(lift.id, floor): sim._lift_location_on_floor(lift, floor)
+                 for lift in usable_lifts for floor in lift.served_floors}
+        connections = {lift.id: tuple((floor, stops[lift.id, floor]) for floor in lift.served_floors)
+                       for lift in usable_lifts}
+    free_flow = None
+    if not (sim.scenario_mode or sim.geometric_motion or sim.parallel_routing_enabled):
+        free_flow = getattr(sim, '_free_flow_lift_distances', None)
+    speed = max(float(amr.speed_m_per_sec), 1e-9)
     reachable = {}
     route_cache = {} if not sim.scenario_mode and not sim.geometric_motion else None
     leg_cache = {} if route_cache is not None else None
@@ -238,6 +274,22 @@ def _search_forced_lift_plan(sim, ready_time, amr, start, finish, payload, rules
                 for leg in prior))
             if key in leg_cache:
                 return leg_cache[key]
+        if free_flow and math.isfinite(cutoff) and lift.transfer_timing_mode == 'fixed':
+            origin_stop = stops.get((lift.id, current.floor))
+            target_stop = stops.get((lift.id, target.floor))
+            if origin_stop is None or target_stop is None:
+                return None
+            incoming = free_flow.get((current.floor, current.name, origin_stop.name), 0.0)
+            outgoing = free_flow.get((target.floor, target_stop.name, target.name), 0.0)
+            earliest = (max(time + incoming / speed, opening)
+                        + minimum_lift_journey_seconds(lift, current.floor, target.floor)
+                        + outgoing / speed)
+            # Ignore congestion and repositioning, and allow for the different
+            # floating-point addition order in the exact route. A cutoff miss
+            # must not enter the shared leg cache as an unavailable route.
+            slack = 1e-8 * max(1.0, abs(time), abs(cutoff))
+            if earliest > cutoff + slack:
+                return None
         plan = sim._direct_lift_plan(time, amr, current, target, payload, rules,
             orientation, collect_segments, only_lift=lift.id,
             prior_journeys=prior, _route_cache=route_cache)

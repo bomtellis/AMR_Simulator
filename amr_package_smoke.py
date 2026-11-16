@@ -28,7 +28,7 @@ def run(output):
             raise ValueError('Installed walkthrough could not resolve its two exercises.')
 
         from amr_project import Project
-        from amr_project_runs import PreparedRun, read_json
+        from amr_project_runs import PreparedRun
         from amr_project_report import report_sections
         from amr_run_evidence import software_snapshot
         from visualiser.project_checks import check_project
@@ -52,8 +52,7 @@ def run(output):
                                   cwd=output, text=True, capture_output=True, timeout=120)
         if finished.returncode:
             raise ValueError(f'Installed run worker failed: {finished.stdout}\n{finished.stderr}')
-        manifest = read_json(prepared.directory / 'run_manifest.json')
-        evidence = read_json(prepared.directory / 'simulation_steps.csv.run.json')
+        manifest, events, evidence = verified_smoke_run(prepared.directory)
         if (manifest['status'] != 'complete' or manifest['completed_tasks'] != 1
                 or manifest['failed_tasks'] != 0 or evidence['summary'].get('pending_task_ids')):
             raise ValueError('The installed small-map run did not complete as expected.')
@@ -66,10 +65,11 @@ def run(output):
             raise ValueError(f'Installed report worker failed: {finished.stdout}\n{finished.stderr}')
         if not pdf.is_file() or not pdf.read_bytes().startswith(b'%PDF-'):
             raise ValueError('The installed report export did not produce a PDF.')
-        gui = small_map_gui(project.path, prepared.directory, output)
+        gui = small_map_gui(project.path, prepared.directory, events, output)
         result = {'status': 'passed', 'project': str(project.path), 'run': str(prepared.directory),
                   'report': str(pdf), 'completed': 1, 'failed': 0,
                   'software_sha256': source['sha256'], 'gui': gui,
+                  'corridor_native_sha256': evidence.get('corridor_native_sha256'),
                   'excluded': 'LTN tests and workloads'}
         (output / 'smoke.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
         return 0
@@ -78,7 +78,21 @@ def run(output):
         return 1
 
 
-def small_map_gui(project, directory, output):
+def verified_smoke_run(directory):
+    from amr_corridor_timing import _native_corridor
+    from amr_project_runs import read_json
+    from amr_run_evidence import file_hash
+    from amr_run_review import verified_events
+
+    manifest, _, events, _ = verified_events(directory, drawings=True)
+    evidence = read_json(str(events) + '.run.json')
+    expected = file_hash(_native_corridor.__file__) if _native_corridor is not None else None
+    if evidence.get('corridor_native_sha256') != expected:
+        raise ValueError('The run worker did not use the expected corridor timing implementation.')
+    return manifest, events, evidence
+
+
+def small_map_gui(project, directory, events, output):
     """Open the real installed workbench, compact settings, Review and Report."""
     os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
     from PySide6.QtCore import QCoreApplication, QEvent
@@ -92,7 +106,7 @@ def small_map_gui(project, directory, output):
     if font_id >= 0:
         app.setFont(QFont(QFontDatabase.applicationFontFamilies(font_id)[0], 10))
     editor = AMRGraphEditor()
-    before = {name: (Path(directory) / name).read_bytes() for name in ('config.json', 'simulation_steps.csv')}
+    before = {path: path.read_bytes() for path in (Path(directory) / 'config.json', events)}
     project_before = Path(project).read_bytes()
     try:
         if not editor.load_json_file(str(project), load_drawings=False):
@@ -143,7 +157,7 @@ def small_map_gui(project, directory, output):
         QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
         app.processEvents()
     if project_before != Path(project).read_bytes() or any(
-            contents != (Path(directory) / name).read_bytes() for name, contents in before.items()):
+            contents != path.read_bytes() for path, contents in before.items()):
         raise ValueError('Read-only installed GUI review modified saved project or run inputs.')
     return dict(project_reopened=True, compact_simple_settings=True, walkthrough=True,
         reconciled_investigation=True, playback=True, report_workspace=True, inputs_unchanged=True)
@@ -174,7 +188,7 @@ def run_ltn(output):
         from app import AMRGraphEditor
         from quick_start import QuickStartDialog, EXERCISES
         from amr_project import Project
-        from amr_project_runs import PreparedRun, read_json
+        from amr_project_runs import PreparedRun
         from amr_project_report import report_sections
         from amr_results_investigation import load_investigation
         from visualiser.project_checks import check_project
@@ -238,8 +252,7 @@ def run_ltn(output):
                                   cwd=output, text=True, capture_output=True)
         if finished.returncode:
             raise ValueError(f'Installed LTN run worker failed: {finished.stdout}\n{finished.stderr}')
-        manifest = read_json(prepared.directory / 'run_manifest.json')
-        evidence = read_json(prepared.directory / 'simulation_steps.csv.run.json')
+        manifest, _, evidence = verified_smoke_run(prepared.directory)
         investigation = load_investigation(prepared.directory)
         if manifest['status'] != 'complete' or not investigation['tasks']:
             raise ValueError('The installed LTN run did not produce inspectable task outcomes.')
@@ -284,6 +297,7 @@ def run_ltn(output):
                   'run': str(prepared.directory), 'report': str(pdf),
                   'completed': manifest['completed_tasks'], 'failed': manifest['failed_tasks'],
                   'pending': len(evidence['summary'].get('pending_task_ids', [])),
+                  'corridor_native_sha256': evidence.get('corridor_native_sha256'),
                   'events': len(investigation['events']), 'tasks': len(investigation['tasks']),
                   'related_timeline_task': related_task,
                   'loaded_dxf_floors': sorted(expected_floors),

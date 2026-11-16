@@ -10,7 +10,8 @@ from amr_run_evidence import software_snapshot
 class SoftwareFingerprintTests(unittest.TestCase):
     def test_application_dependencies_are_covered(self):
         snapshot = software_snapshot()
-        self.assertEqual(2, snapshot['scope_version'])
+        self.assertEqual(3, snapshot['scope_version'])
+        self.assertIn('native/corridor_module.cpp', snapshot['files'])
         for name in ('simulator.py', 'amr_route_reservations.py', 'amr_generation_provenance.py',
                      'amr_project.py', 'visualiser/project_checks.py', 'visualiser/models.py',
                      'report/amr_report_analysis.py'):

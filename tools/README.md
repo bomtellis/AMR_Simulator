@@ -42,3 +42,18 @@ instrumented Python process. Child and background worker internals are
 outside the CPU profile. Normalized fingerprints cover decoded events,
 playback, investigation, and exported contents. Repeat runs on the same
 machine before drawing timing conclusions.
+
+## Optional C++ corridor timing on Windows x64
+
+Build the extension for the application's Python environment using Zig. The
+script checks that the extension loads before installing it in the checkout.
+
+```powershell
+.\tools\build_corridor_native.ps1 -Compiler 'C:\Tools\zig\zig.exe'
+```
+
+Compact Simple timed routes use the extension when it is available and the route
+has no scenario or people timing. Python provides the same timing when the
+extension is absent or fails to load. Set `AMR_DISABLE_NATIVE_CORRIDOR=1` before
+launching a fresh process to force the Python path for comparisons. Verified runs
+that use the extension record its SHA-256 in the run evidence sidecar.

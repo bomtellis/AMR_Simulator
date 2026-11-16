@@ -24,6 +24,11 @@ py -3.13 -m venv .venv
 & .\installer\build.ps1 -Version 0.1.1 -Iscc 'C:\path\to\ISCC.exe'
 ```
 
+To compile and include C++ corridor timing, add
+`-CorridorCompiler 'C:\Tools\zig\zig.exe'` to the build command. The build also
+includes an existing compatible corridor extension from the checkout. The
+application uses the Python timing path when the extension is unavailable.
+
 On this host the compiler is already at `tmp\inno-tool\ISCC.exe`, the script's
 default. Versioned outputs stay in the ignored `installer/build/releases/0.1.1`
 folder, preserving previous development deliveries. Both frozen executables
