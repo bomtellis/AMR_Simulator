@@ -114,7 +114,7 @@ class Task:
     return_payload: str = ""
     return_delay_minutes: float = 0.0
     return_route_profile: str = ""
-    return_priority: int = 0
+    return_priority: Optional[int] = None
     # When enabled, generated tasks using the same drop-off zone are released
     # one cycle at a time. The next task is released as soon as the preceding
     # return physically collects its payload from the zone inventory space.

@@ -100,6 +100,12 @@ def category_policy(generation, category):
     return plan.get("categories", {}).get(category, {}) if plan.get("enabled") else {}
 
 
+def release_can_join_wave(slot, nominal_day, original, start):
+    """Keep native scheduled releases deferred to another day on their adjusted calendar."""
+    return (slot.startswith("timeframe") or
+            (start + timedelta(seconds=original)).date().isoformat() == nominal_day)
+
+
 def planned_release(policy, department, slot, nominal_day, start):
     slots = policy.get("slots", {})
     timeframe = slot.startswith("timeframe")

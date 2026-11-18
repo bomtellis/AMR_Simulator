@@ -261,13 +261,16 @@ def run_in_process(output):
 def finish_report(output, fingerprint, inventory, started, result, cases, isolated=False):
     features = link_evidence(inventory["features"], cases)
     from verification.inventory import link_option_evidence, link_option_sources, summarize_option_audit
+    from verification.simulation_audit import build_simulation_audit
     options = link_option_sources(link_option_evidence(inventory["options"], cases))
+    simulation_audit = build_simulation_audit(cases)
     broken_links = [f'{feature["id"]}: {pattern}' for feature in features
                     for pattern in feature["unmatched_test_patterns"]]
     broken_links.extend(f'{option["path"]}: {pattern}' for option in options
                         for pattern in option["unmatched_test_patterns"])
     broken_links.extend(f'{option["path"]}: unresolved source {source["reference"]}' for option in options
                         for source in option['source_evidence'] if not source['resolved'])
+    broken_links.extend(simulation_audit['broken_links'])
     packages = {}
     for name in ("PySide6", "numpy", "pandas", "reportlab", "pypdf", "ezdxf"):
         try:
@@ -289,18 +292,27 @@ def finish_report(output, fingerprint, inventory, started, result, cases, isolat
                    "unreviewed_options": sum(o["disposition"] != "reviewed_contract" for o in options)},
         "test_cases": cases, "features": features, "options": options,
         "option_audit": summarize_option_audit(options),
+        "simulation_input_audit": {
+            'register': 'simulation-input-audit.json',
+            'counts': simulation_audit['counts'],
+            'unclassified': simulation_audit['unclassified'],
+        },
         "inventory_scope": inventory["scope"], "broken_evidence_links": broken_links, "ltn": ltn,
     }
     write_json(output / "evidence.json", report)
     write_json(output / 'ltn-project-checks.json', ltn.get('project_checks', {'error': 'Checks did not complete'}))
     write_json(output / "options.json", options)
     write_json(output / 'audit-backlog.json', report['option_audit'])
+    write_json(output / 'simulation-input-audit.json', simulation_audit)
     write_json(output / "source-key-candidates.json", inventory["source_key_candidates"])
     write_json(output / "editor_defaults.json", inventory["editor_defaults"])
     write_junit(output / "junit.xml", cases)
     write_report(output / "index.html", report)
-    passed = result.wasSuccessful() and not broken_links and report["source_unchanged_during_tests"]
+    passed = (result.wasSuccessful() and not broken_links and not simulation_audit['unclassified']
+              and report["source_unchanged_during_tests"])
     print(f'{report["counts"]["passed"]}/{len(cases)} tests passed; {len(broken_links)} broken evidence links.')
+    counts = simulation_audit['counts']
+    print(f'{counts["classified_historical_paths"]}/{counts["historical_paths"]} historical input paths classified.')
     print(f'Review pack: {output / "index.html"}')
     return 0 if passed else 1
 

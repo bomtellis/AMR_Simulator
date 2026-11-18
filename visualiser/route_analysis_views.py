@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QCombo
     QPushButton, QGraphicsScene, QGraphicsView, QGraphicsItem, QTableWidget,
     QTableWidgetItem, QHeaderView)
 
-from amr_route_analysis import MOVE_TYPES
+from amr_route_analysis import MOVE_TYPES, recorded_segment_points
 from visualiser.graph_navigation import zoom_at_cursor
 from visualiser.dxf_scene import DXFScene
 
@@ -210,22 +210,7 @@ class RouteMap(QWidget):
 
     @staticmethod
     def _recorded_points(segment):
-        if segment.trajectory:
-            try:
-                from amr_trajectories import trajectory_from_dict
-                trajectory = trajectory_from_dict(segment.trajectory)
-                points = []
-                for motion in trajectory.motions:
-                    steps = 24 if motion.kind == 'arc' else 1
-                    for n in range(steps + 1):
-                        pose = motion.pose_at(n / steps)
-                        points.append((pose.x, -pose.y))
-                return points
-            except (ValueError, TypeError, KeyError, AttributeError):
-                return []
-        if None in (*segment.start[:2], *segment.finish[:2]):
-            return []
-        return [(segment.start[0], -segment.start[1]), (segment.finish[0], -segment.finish[1])]
+        return [(x, -y) for x, y in recorded_segment_points(segment)]
 
     def _sequence(self, movements):
         scene = self.sequence.scene()

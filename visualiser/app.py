@@ -5508,12 +5508,13 @@ class AMRGraphEditor(QMainWindow):
         self.workspace.show_page('fm_logistics', self.fm_logistics_panel)
 
     @undoable('Apply FM logistics plan')
-    def apply_fm_logistics(self, plan):
-        if not self._project_editing_allowed():
-            return False
-        generation = deepcopy(self.store.data.get('task_generation', {}))
-        generation['fm_logistics'] = deepcopy(plan)
-        self.store.set_task_generation(generation)
+    def apply_fm_logistics(self, generation):
+        self.store.set_task_generation(deepcopy(generation))
+        self._update_unsaved_indicator()
+        for name in ('checks_panel', 'demand_panel'):
+            panel = getattr(self, name, None)
+            if panel is not None:
+                panel.check_staleness()
         return True
 
     def show_demand_preview(self):
@@ -5774,8 +5775,30 @@ class AMRGraphEditor(QMainWindow):
             profile_names,
             self.store.data.get("departments", []),
             self._save_task_generation,
+            project_configuration=lambda: self.store.data,
+            open_departments=self._edit_schedule_departments,
+            on_departments_save=self._save_departments,
         )
         dialog.exec()
+
+    def _edit_schedule_departments(self, departments):
+        """Reuse the department editor without committing outside the demand draft."""
+        result = []
+        def receive(rows, *, id_changes=None):
+            if id_changes:
+                raise ValueError('Rename departments in the main Departments editor before changing their demand schedules.')
+            result.append(deepcopy(rows))
+
+        dialog = DepartmentListDialog(
+            self, deepcopy(departments),
+            sorted(row['name'] for row in self.store.data.get('locations', [])),
+            sorted(row['name'] for row in self.store.data.get('waste_streams', [])),
+            current_floor=self.floor_spin.value(), on_save=receive,
+            suggest_department_id=self.store.suggest_next_department_id,
+            group_resolver=lambda item: f"Floor {self.build_floor_map(self.store.data).get(item, 'Other')}",
+            task_generation_categories=self.task_generation_category_pairs())
+        dialog.exec()
+        return result[-1] if result else None
 
     @undoable("Edit task generation")
     def _save_task_generation(self, config):

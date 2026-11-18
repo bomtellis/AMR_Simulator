@@ -123,6 +123,8 @@ class MemoryRun:
         now = datetime.now(timezone.utc)
         self.key = uuid.uuid4().hex
         self.name = f"run_{now:%Y%m%d_%H%M%S}_{self.key[:12]}"
+        self.user_name = ''
+        self.note = ''
         self.created = now.isoformat(timespec='seconds')
         self.started = self.completed = None
         self.status = 'prepared'
@@ -148,7 +150,14 @@ class MemoryRun:
 
     @property
     def byte_size(self):
-        return len(self._frozen) + len(self._checks) + len(self._evidence) + self._store_bytes
+        return (len(self._frozen) + len(self._checks) + len(self._evidence) + self._store_bytes
+                + len(self.user_name.encode('utf-8')) + len(self.note.encode('utf-8')))
+
+    def set_metadata(self, user_name, note):
+        from amr_run_metadata import normalise_metadata
+        if self.status not in ('complete', 'partial') or self._discarded.is_set():
+            raise ValueError('This memory run is no longer available for editing.')
+        self.user_name, self.note = normalise_metadata(user_name, note)
 
     @property
     def evidence(self):
@@ -180,6 +189,7 @@ class MemoryRun:
 
     def _execute(self, remaining, *, cancel, progress):
         from simulator import Simulation
+        from amr_simulation_progress import sample
         if not self._checks or self.status != 'prepared':
             raise ValueError('Review the inputs before starting a new run.')
         simulation = None
@@ -188,7 +198,7 @@ class MemoryRun:
             self.status = 'running'
             check_cancelled(cancel)
             if progress:
-                progress(dict(phase='Initializing simulation and preparing routes'))
+                progress(sample('initializing', 'Initializing simulation'))
             software = software_snapshot()
             simulation = Simulation(self.config, verbose=True, defer_exports=True,
                 progress_callback=progress, memory_event_limit=remaining, cancel_requested=cancel)
@@ -196,7 +206,7 @@ class MemoryRun:
             simulation.run()
             check_cancelled(cancel)
             if progress:
-                progress(dict(phase='Finalizing evidence in memory'))
+                progress(sample('finalizing', 'Finalizing evidence in memory'))
             size = simulation.finalize_memory_evidence()
             data = run_evidence_data(simulation, compact=True)
             if data['software']['sha256'] != software['sha256'] or software_snapshot()['sha256'] != software['sha256']:
@@ -267,6 +277,7 @@ class MemoryRun:
         self.assets = {}
         self._frozen = self._checks = self._evidence = b''
         self._store_bytes = 0
+        self.user_name = self.note = ''
         self.released = True
 
     def dispose(self):
@@ -303,6 +314,69 @@ class MemoryRun:
             return configuration_bytes(config) == self._frozen
         except (ValueError, OSError, TypeError):
             return False
+
+    def _write_run_snapshot(self, directory, drawing_root, binding, config_source, store, *, progress=None, cancel=None):
+        """Write the same frozen evidence for publication and temporary report input."""
+        portable = self.config
+        config = self.config
+        for entry, suffix in drawing_entries(config):
+            check_cancelled(cancel)
+            asset = asset_hash(entry['filepath'], suffix)
+            filename = asset + suffix
+            target = directory / 'drawings' / filename
+            if not target.exists():
+                target.parent.mkdir(exist_ok=True)
+                atomic_write(target, self.assets[asset])
+            entry['filepath'] = str(drawing_root / 'drawings' / filename)
+        write_json(directory / 'project_configuration.json', portable)
+        write_json(directory / 'config.json', config)
+        checks = self._published_checks(config)
+        write_json(directory / 'project_checks.json', checks)
+        if progress:
+            progress(dict(phase='Saving compact events'))
+        with closing(sqlite3.connect(directory / CANONICAL)) as target_db:
+            store.connection.backup(target_db, pages=256,
+                    progress=lambda *_: check_cancelled(cancel))
+        evidence = dict(self.evidence, project_binding=binding, frozen_inputs=config, config_sha256=config_hash(config))
+        write_evidence_data(directory / CANONICAL, evidence)
+        manifest = dict(schema_version=1, kind='amr_project_run', run_key=self.key, name=self.name,
+            status='running', created_at=self.created, started_at=self.started, config_source=str(config_source),
+            user_name=self.user_name, note=self.note,
+            project_binding=binding, config_copy='config.json', config_sha256=file_hash(directory / 'config.json'),
+            config_object_sha256=evidence['config_sha256'], software=evidence['software'],
+            simulation_mode=evidence['simulation_mode'], outputs=OUTPUTS.copy(), canonical_events=CANONICAL,
+            project_checks='project_checks.json', checks_sha256=file_hash(directory / 'project_checks.json'),
+            checked_config_sha256=checks['config_sha256'])
+        write_json(directory / MANIFEST, manifest)
+        if progress:
+            progress(dict(phase='Verifying recorded evidence'))
+        manifest = finish_run(directory, 0)
+        if manifest['status'] != self.status:
+            raise ValueError(manifest.get('error', 'Saved run status does not match memory evidence.'))
+        check_cancelled(cancel)
+        manifest['completed_at'] = self.completed
+        write_json(directory / MANIFEST, manifest)
+        return manifest
+
+    def report_snapshot(self, directory, *, cancel=None, progress=None):
+        """Materialise verified report input without saving or modifying a project."""
+        if self.status != 'complete':
+            raise ValueError('Choose a completed memory run for report generation.')
+        self.require_reviewable()
+        directory = Path(directory).resolve()
+        with self.using_store(cancel) as store:
+            check_cancelled(cancel)
+            directory.mkdir(parents=True, exist_ok=False)
+            binding = dict(run_key=self.key, project_id='memory:' + self.key,
+                revision_id='memory:' + digest(self._frozen), revision_config_sha256=digest(self._frozen))
+            manifest = self._write_run_snapshot(directory, directory, binding, 'memory:' + self.key,
+                store, cancel=cancel, progress=progress)
+            manifest['source_storage'] = 'memory'
+            write_json(directory / MANIFEST, manifest)
+            from amr_run_review import verified_events
+            verified_events(directory, drawings=True)
+            check_cancelled(cancel)
+        return directory
 
     def publish(self, project, project_path=None, *, progress=None):
         """Return the committed project and run folder. Leave the input project untouched."""
@@ -347,40 +421,8 @@ class MemoryRun:
 
         try:
             staging = Path(tempfile.mkdtemp(prefix='.memory-run-', dir=root))
-            config = self.config
-            for entry, suffix in drawing_entries(config):
-                asset = asset_hash(entry['filepath'], suffix)
-                filename = asset + suffix
-                target = staging / 'drawings' / filename
-                if not target.exists():
-                    target.parent.mkdir(exist_ok=True)
-                    atomic_write(target, self.assets[asset])
-                entry['filepath'] = str(final / 'drawings' / filename)
-            write_json(staging / 'project_configuration.json', portable)
-            write_json(staging / 'config.json', config)
-            checks = self._published_checks(config)
-            write_json(staging / 'project_checks.json', checks)
-            if progress:
-                progress(dict(phase='Saving compact events'))
-            with self.using_store() as store, closing(sqlite3.connect(staging / CANONICAL)) as target_db:
-                store.connection.backup(target_db, pages=256)
-            evidence = dict(self.evidence, project_binding=binding, frozen_inputs=config, config_sha256=config_hash(config))
-            write_evidence_data(staging / CANONICAL, evidence)
-            manifest = dict(schema_version=1, kind='amr_project_run', run_key=self.key, name=self.name,
-                status='running', created_at=self.created, started_at=self.started, config_source=str(path),
-                project_binding=binding, config_copy='config.json', config_sha256=file_hash(staging / 'config.json'),
-                config_object_sha256=evidence['config_sha256'], software=evidence['software'],
-                simulation_mode=evidence['simulation_mode'], outputs=OUTPUTS.copy(), canonical_events=CANONICAL,
-                project_checks='project_checks.json', checks_sha256=file_hash(staging / 'project_checks.json'),
-                checked_config_sha256=checks['config_sha256'])
-            write_json(staging / MANIFEST, manifest)
-            if progress:
-                progress(dict(phase='Verifying and linking the saved run'))
-            manifest = finish_run(staging, 0)
-            if manifest['status'] != self.status:
-                raise ValueError(manifest.get('error', 'Saved run status does not match memory evidence.'))
-            manifest['completed_at'] = self.completed
-            write_json(staging / MANIFEST, manifest)
+            with self.using_store() as store:
+                manifest = self._write_run_snapshot(staging, final, binding, path, store, progress=progress)
             inspect_run(staging, candidate)
             candidate.external_results = candidate._run_settings(final, manifest, project_path=path)
             staging.rename(final)

@@ -7,11 +7,107 @@ from itertools import count
 from math import inf, isfinite
 
 from amr_demand_preview import build_demand_preview
+from amr_department_inputs import department_identity, department_location_names
 from amr_floor_routing import lift_plan_journeys
-from amr_fm_logistics import STRATEGIES, compatible_robots, planned_release, validate_fm_settings, windows_for_day
+from amr_fm_logistics import (
+    STRATEGIES, compatible_robots, planned_release, release_can_join_wave,
+    validate_fm_settings, windows_for_day,
+)
 from amr_route_reservations import LiftReservations
 from amr_sim_models import Task
 from visualiser.project_checks import config_fingerprint
+
+
+def missing_demand_assignments(config):
+    """Group missing references by the category and department to be corrected."""
+    known = {department_identity(row) for row in config.get("departments", [])}
+    generation = config.get("task_generation", {})
+    missing = Counter()
+    for category, rule in generation.get("categories", {}).items():
+        members = list(rule.get("departments", {}))
+        for group in rule.get("department_groups", []):
+            members.extend(group.get("departments", []))
+        missing.update((category, member) for member in members if member not in known)
+    for category, policy in generation.get("fm_logistics", {}).get("categories", {}).items():
+        for cohort in policy.get("cohorts", []):
+            missing.update((category, member) for member in cohort.get("departments", []) if member not in known)
+    return missing
+
+
+def demand_replacement_options(config, category):
+    """Return current departments with configured service points for the selected category."""
+    known = {row["name"] for row in config.get("locations", [])}
+    options = {}
+    for row in config.get("departments", []):
+        identity = department_identity(row)
+        entry = row.get("task_generation_locations", {}).get(category, {})
+        points = department_location_names(entry)
+        zones = department_location_names(entry, zones=True)
+        if identity and points and known.issuperset(points + zones):
+            label = f"{identity} / {row.get('name') or identity} / {', '.join(points)}"
+            if zones:
+                label += f" (AMR drop-off: {', '.join(zones)})"
+            options[identity] = label
+    return options
+
+
+def remap_fm_cohorts(plan, assignments):
+    draft = deepcopy(plan)
+    for category, policy in draft.get("categories", {}).items():
+        for cohort in policy.get("cohorts", []):
+            if "departments" in cohort:
+                cohort["departments"] = [
+                    target for member in cohort["departments"]
+                    if (target := assignments.get((category, member), member)) is not None
+                ]
+    validate_fm_settings(draft)
+    return draft
+
+
+def resolve_demand_assignments(config, assignments):
+    """Prepare corrected demand without editing the live project or guessing destinations."""
+    missing = missing_demand_assignments(config)
+    if missing.keys() != assignments.keys():
+        raise ValueError("Choose a replacement or remove each missing department assignment.")
+    resolved = deepcopy(config)
+    generation = resolved.setdefault("task_generation", {})
+    by_category = defaultdict(dict)
+    for (category, member), target in assignments.items():
+        by_category[category][member] = target
+    for category, changes in by_category.items():
+        rule = generation.get("categories", {}).get(category, {})
+        overrides = rule.get("departments", {})
+        groups = rule.get("department_groups", [])
+        occupied = set(overrides)
+        for group in groups:
+            occupied.update(group.get("departments", []))
+        had_department_rules = bool(occupied)
+        options = demand_replacement_options(config, category)
+        for member, target in changes.items():
+            if target is not None and target not in options:
+                raise ValueError(f"{category}: {target} has no valid department service location.")
+            if member not in occupied:
+                continue
+            if target in occupied:
+                raise ValueError(f"{category}: {target} already has a demand assignment. "
+                                 f"Remove the obsolete {member} assignment or edit the rules in Task Generation.")
+            if member in overrides:
+                override = overrides.pop(member)
+                if target is not None:
+                    overrides[target] = override
+            for group in groups:
+                if member in group.get("departments", []):
+                    group["departments"] = [target if value == member else value
+                                            for value in group["departments"] if value != member or target is not None]
+            occupied.remove(member)
+            if target is not None:
+                occupied.add(target)
+        if rule.get("enabled") and had_department_rules and not occupied:
+            # Clearing the last department rule must not enable a site-wide fallback.
+            rule["enabled"] = False
+    if "fm_logistics" in generation:
+        generation["fm_logistics"] = remap_fm_cohorts(generation["fm_logistics"], assignments)
+    return resolved
 
 
 def native_demand(config):
@@ -22,9 +118,17 @@ def native_demand(config):
     return build_demand_preview(baseline)
 
 
+def wave_slot(row, start):
+    task = row["effective_task"]
+    slot, day = task.get("fm_slot"), task.get("fm_nominal_day")
+    if slot and day and release_can_join_wave(slot, day, row["release_seconds"], start):
+        return slot
+    return None
+
+
 def initial_policy(preview, category, workloads=None):
-    rows = [row for row in preview["tasks"] if row["category"] == category
-            and row["effective_task"].get("fm_slot")]
+    start = datetime.fromisoformat(preview["start_datetime"])
+    rows = [row for row in preview["tasks"] if row["category"] == category and wave_slot(row, start)]
     members = defaultdict(float)
     for row in rows:
         key = row["department"]
@@ -38,7 +142,6 @@ def initial_policy(preview, category, workloads=None):
         loads[index] += weight
     slots = {}
     by_slot = defaultdict(list)
-    start = datetime.fromisoformat(preview["start_datetime"])
     for row in rows:
         task = row["effective_task"]
         by_slot[task["fm_slot"]].append(task)
@@ -69,7 +172,7 @@ def suggest_policy(config, preview, category):
     engine = LiftForecast(config)
     work = {}
     for row in preview["tasks"]:
-        if row["category"] != category or not row["effective_task"].get("fm_slot"):
+        if row["category"] != category or not wave_slot(row, engine.start):
             continue
         key = row["pickup"], row["dropoff"]
         if key not in work:
@@ -183,7 +286,7 @@ class LiftForecast:
             task = service["effective_task"]
             category = service["category"]
             rule = plan["categories"].get(category, {})
-            slot, day = task.get("fm_slot"), task.get("fm_nominal_day")
+            slot, day = wave_slot(service, self.start), task.get("fm_nominal_day")
             release = service["release_seconds"]
             target = float(task.get("target_time", 0) or 0)
             deadline = task.get("timeframe_deadline_time", release + target if target > 0 else None)
@@ -265,14 +368,14 @@ def candidate_settings(plan, services, start, strategy):
         for row in services:
             task = row["effective_task"]
             policy = plan["categories"].get(row["category"], {})
-            slot = task.get("fm_slot")
+            slot = wave_slot(row, start)
             if not slot or not planned_release(policy, row["department"], slot, task["fm_nominal_day"], start):
                 if row["outbound"] and any(legs for _, legs in row["outbound"]):
                     wave_load[int(row["release_seconds"] // 300) % 288] += row["outbound_cost"]
     for category, policy in sorted(candidate["categories"].items()):
         for slot, window in sorted(policy.get("slots", {}).items()):
             rows = [row for row in services if row["category"] == category
-                    and row["effective_task"].get("fm_slot") == slot]
+                    and wave_slot(row, start) == slot]
             if not rows:
                 continue
             day = rows[0]["effective_task"]["fm_nominal_day"]
@@ -337,12 +440,13 @@ def validate_application(config, plan, baseline):
     def identity(row):
         task = row["effective_task"]
         return (row["rule_id"], task.get("fm_slot"), task.get("fm_nominal_day"),
-                row["pickup"], row["dropoff"], row["payload"], row["quantity"])
+                row["department"], row["pickup"], row["dropoff"], task.get("final_destination"),
+                row["payload"], row["quantity"])
 
-    departments = {row.get("id") or row.get("name") for row in config.get("departments", [])}
+    departments = {department_identity(row) for row in config.get("departments", [])}
     for category, policy in plan["categories"].items():
         for cohort in policy.get("cohorts", []):
-            unknown = set(cohort["departments"]) - departments
+            unknown = set(cohort.get("departments", [])) - departments
             if unknown:
                 raise ValueError(f"{category} {cohort['id']}: unknown departments {', '.join(sorted(unknown))}.")
     expected = Counter(identity(row) for row in baseline["tasks"])

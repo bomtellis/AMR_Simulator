@@ -3,6 +3,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import tempfile
 
 from amr_project_runs import OUTPUTS, read_json, write_json, validate_run_inputs, timestamp
 from amr_run_evidence import file_hash, config_hash
@@ -29,7 +30,17 @@ def report_sections():
     return REPORT_SECTIONS
 
 
-def generate(directory, output, sections, *, drawings=False, existing_pdf=None, insert_after_page=None, report_title=None,
+def generate(directory, output, sections, **options):
+    """Generate from a saved folder or a completed MemoryRun, without rerunning it."""
+    from amr_memory_runs import MemoryRun
+    if isinstance(directory, MemoryRun):
+        with tempfile.TemporaryDirectory(prefix='amr-memory-report-') as scratch:
+            snapshot = directory.report_snapshot(Path(scratch) / directory.name)
+            return _generate_saved(snapshot, output, sections, **options)
+    return _generate_saved(directory, output, sections, **options)
+
+
+def _generate_saved(directory, output, sections, *, drawings=False, existing_pdf=None, insert_after_page=None, report_title=None,
              lift_cohorts_only=False, stress_selection=None, contingency_study=None,
              lift_chart_day=None, lift_chart_bin_minutes=30, lift_chart_include_reposition=True,
              lift_chart_lift_ids=None, comparison_baseline=None):
@@ -79,6 +90,8 @@ def generate(directory, output, sections, *, drawings=False, existing_pdf=None, 
                     source_files=source_hashes, sections=[] if lift_cohorts_only else sections,
                     include_drawings=drawings, report_title=report_title,
                     kind='lift_cohorts_csv' if lift_cohorts_only else 'pdf')
+    if manifest.get('source_storage') == 'memory':
+        metadata['source_storage'] = 'memory'
     if insertion:
         metadata['insertion'] = insertion
     if not lift_cohorts_only and {'lift_movement_stacks','lift_movement_daily'} & set(sections):

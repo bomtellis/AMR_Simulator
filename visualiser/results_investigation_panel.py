@@ -13,6 +13,7 @@ from amr_run_review import verified_events
 from amr_project_runs import read_json, OUTPUTS
 from amr_run_evidence import file_hash
 from visualiser.demand_preview_panel import DemandPreviewPanel
+from visualiser.failure_investigation_view import FailureInvestigationView
 
 
 def display(value):
@@ -107,6 +108,8 @@ class ResultsInvestigationPanel(QWidget):
         self.memory_source = None
         self.load_generation = 0
         self.job = None
+        self.overview_source = None
+        self.overview_loaded = False
         self.task_rows, self.event_rows = [], []
         self.selected_evidence = None
         self.related_choices = []
@@ -160,6 +163,7 @@ class ResultsInvestigationPanel(QWidget):
         self.outcome.currentIndexChanged.connect(self.populate_tasks)
         search_row.addWidget(self.search, 1)
         search_row.addWidget(self.outcome)
+        self.search.setToolTip('Filters the Tasks tab')
         layout.addLayout(search_row)
         split = QSplitter(Qt.Vertical)
         self.tabs = QTabWidget()
@@ -176,6 +180,9 @@ class ResultsInvestigationPanel(QWidget):
         from route_checks_view import RouteChecksView
         self.route_checks_view=RouteChecksView(self)
         self.tabs.addTab(self.route_checks_view,'Route checks')
+        self.failure_view = FailureInvestigationView(self)
+        self.failure_view.review_ready.connect(self.failure_review_ready)
+        self.tabs.addTab(self.failure_view, 'Failures')
         split.addWidget(self.tabs)
         timeline = QWidget()
         self.timeline_widget=timeline
@@ -235,14 +242,46 @@ class ResultsInvestigationPanel(QWidget):
             self.load(path)
 
     def load(self, source):
-        if self.job:
-            return
+        self.cancel_loading()
+        self.load_generation += 1
+        self.job = None
+        self.result = None
+        self.clear_events()
+        self.tasks.setRowCount(0)
+        self.metrics.setRowCount(0)
+        self.lift_checks.setRowCount(0)
+        self.evidence.clear()
         self.memory_source = source if isinstance(source, MemoryRun) else None
+        self.overview_source = source
+        self.overview_loaded = False
+        if getattr(self, '_study_context', None) is not None:
+            self.failure_view.clear()
+            self.tabs.setCurrentWidget(self.tasks)
+            self.load_overview()
+        else:
+            self.failure_view.load(source)
+            self.tabs.setCurrentWidget(self.failure_view)
+            self.select_active_tab(self.tabs.currentIndex())
+
+    def set_comparison_sources(self, sources):
+        self.failure_view.set_sources(sources)
+
+    def failure_review_ready(self, review):
+        # Load the existing views in the background for ordinary runs. Large
+        # compact runs can be diagnosed without materializing the full log.
+        count = review.metadata.get('storage', {}).get('event_count')
+        if count is None or count <= MAX_EVENTS:
+            self.load_overview()
+
+    def load_overview(self):
+        if self.job or self.overview_loaded or self.overview_source is None:
+            return
+        self.overview_loaded = True
         self.summary.setText('Reading run from memory…' if self.memory_source else 'Reading saved run evidence…')
         self.summary.setToolTip('')
         self.export_button.setEnabled(False)
         self.export_selected_button.setEnabled(False)
-        self.job = ResultJob(source, getattr(self, '_study_context', None))
+        self.job = ResultJob(self.overview_source, getattr(self, '_study_context', None))
         self._study_context = None
         self.load_generation += 1
         generation = self.load_generation
@@ -259,25 +298,39 @@ class ResultsInvestigationPanel(QWidget):
             self.summary.setText('Cancelling evidence loading…')
 
     def clear_memory_run(self, run):
+        self.failure_view.forget_memory(run)
         if self.memory_source is run:
             self.cancel_loading()
             self.load_generation += 1
             self.memory_source = None
+            self.overview_source = None
             self.accept_result(None, 'Memory run is no longer open. Select a run on the Simulate page.')
+
+    def clear_document(self):
+        self.cancel_loading()
+        self.load_generation += 1
+        self.memory_source = None
+        self.overview_source = None
+        self.overview_loaded = False
+        self.failure_view.clear()
+        self.failure_view.set_sources([])
+        self.failure_view.status.setText('Select a run to investigate failures.')
+        self.accept_result(None)
 
     def accept_result(self, result, error=''):
         self.cancel_button.setEnabled(False)
+        snapshot = 'In-memory run input snapshot' if self.memory_source else 'Saved run input snapshot'
         self.route_checks_view.set_report((result or {}).get('route_checks_report'),
-            'Frozen run inputs — independent of current project edits.' if (result or {}).get('route_checks_report') else
+            f'{snapshot} — independent of current project edits.' if (result or {}).get('route_checks_report') else
             'Route coverage unavailable: no checked saved-run input snapshot. Current project inputs are not substituted.')
         self.job = None
         self.result = result
         self.clear_events()
         self.details.clear()
         self.export_button.setEnabled(bool(result) and self.memory_source is None)
-        if error:
+        if error or result is None:
             self.task_rows, self.lift_rows = [], []
-            self.summary.setText('Investigation could not open: ' + error)
+            self.summary.setText('Investigation could not open: ' + error if error else 'Select a run to investigate.')
             self.tasks.setRowCount(0)
             self.metrics.setRowCount(0)
             self.lift_checks.setRowCount(0)
@@ -415,10 +468,19 @@ class ResultsInvestigationPanel(QWidget):
             self.details.appendPlainText('\n'.join(lines))
 
     def select_active_tab(self, index):
-        route_tab=self.tabs.widget(index) is self.route_checks_view
-        self.timeline_widget.setVisible(not route_tab)
-        self.details.setVisible(not route_tab)
-        if route_tab:
+        page = self.tabs.widget(index)
+        failures_tab = page is self.failure_view
+        for widget in (self.search, self.outcome, self.summary, self.limits_label, self.cancel_button,
+                       self.export_button, self.export_selected_button):
+            widget.setVisible(not failures_tab)
+        show_timeline = not failures_tab and page is not self.route_checks_view
+        self.timeline_widget.setVisible(show_timeline)
+        self.details.setVisible(show_timeline)
+        if failures_tab:
+            self.clear_events()
+            return
+        self.load_overview()
+        if page is self.route_checks_view:
             self.clear_events()
             return
         self.follow.setVisible(index == 0)

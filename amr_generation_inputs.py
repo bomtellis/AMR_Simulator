@@ -122,6 +122,8 @@ def generation_input_findings(config):
         if row is None:
             return
         flags(row, path, FLAGS)
+        for name in ('priority', 'return_priority'):
+            number(row, path, name, minimum=0, integer=True, maximum=999999)
         if 'exchange_mode' in row and (not isinstance(row['exchange_mode'], str)
                 or row['exchange_mode'] not in {'top_up_only', 'full_exchange', 'replace_empty', ''}):
             error(pointer(path, 'exchange_mode'), 'exchange_mode must be top_up_only, full_exchange or replace_empty.')

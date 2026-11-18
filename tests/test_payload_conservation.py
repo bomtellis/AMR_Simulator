@@ -179,7 +179,7 @@ class PayloadConservationTests(unittest.TestCase):
         self.assertEqual([9, 9], [r['duration_sec'] for r in sim.completed_task_records])
         self.assertEqual([69, 78], [r['sim_time_sec'] for r in sim.verbose_rows if r['event_type'] == 'task_complete'])
 
-    def test_multi_stop_service_arrivals_are_recorded_for_each_physical_bin(self):
+    def test_same_amr_service_arrivals_are_recorded_for_each_physical_bin(self):
         config = service_config()
         slot = dict(payload_capacity_kg=100, payload_length_capacity_m=2,
                     payload_width_capacity_m=2, payload_height_capacity_m=2)
@@ -202,7 +202,10 @@ class PayloadConservationTests(unittest.TestCase):
         self.assertEqual(set(), sim.failed_task_ids)
         with self.log.open(encoding='utf-8') as stream:
             rows = list(csv.DictReader(stream))
-        self.assertEqual(2, sum(r['event_type'] == 'multi_stop_task_assigned' for r in rows))
+        # A bin's same-AMR return is a cycle continuation, even on a robot with
+        # multiple slots. Each collection and return remains a single route.
+        self.assertEqual(0, sum(r['event_type'] == 'multi_stop_task_assigned' for r in rows))
+        self.assertEqual(4, sum(r['event_type'] == 'task_assigned' for r in rows))
         self.assertEqual(4, len(sim.completed_task_records))
         self.assertEqual({'BIN-1', 'BIN-2'}, {r.instance_id for r in sim.payload_instance_store.records_at('A')})
         self.assertEqual({'BIN-1', 'BIN-2'}, {r['payload_instance_id'] for r in rows if r['event_type'] == 'payload_service_arrival'})

@@ -1,15 +1,18 @@
 """Report generation remains external and bound to the selected run."""
 from pathlib import Path
 import sys
+import tempfile
 import uuid
 
-from PySide6.QtCore import Qt, QProcess, QUrl, Slot
+from PySide6.QtCore import Qt, QProcess, QUrl, Slot, QThreadPool
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QListWidget, QListWidgetItem, QCheckBox, QPlainTextEdit, QMessageBox, QLineEdit, QFileDialog, QSpinBox, QFormLayout,
     QDialog, QDialogButtonBox, QComboBox)
 from amr_project_runs import inspect_run, read_json, validate_run_inputs
 from amr_project_report import report_sections
+from amr_memory_runs import MemoryRun
+from amr_project import digest, configuration_bytes
 
 
 class ProjectReportPanel(QWidget):
@@ -17,6 +20,9 @@ class ProjectReportPanel(QWidget):
         super().__init__(editor)
         self.editor = editor
         self.run_dir = None
+        self.memory_run = None
+        self.memory_job = None
+        self._memory_snapshot = None
         self.output = None
         self.process = None
         self.pdf = None
@@ -176,7 +182,7 @@ class ProjectReportPanel(QWidget):
                 self.log.setPlainText(str(exc))
 
     def running(self):
-        return self.process is not None
+        return self.process is not None or self.memory_job is not None
 
     def lift_chart_arguments(self):
         arguments = ['--lift-chart-bin-minutes',str(self.lift_chart_interval.currentData())]
@@ -333,9 +339,10 @@ class ProjectReportPanel(QWidget):
         dialog.deleteLater()
 
     def browse_baseline(self):
-        if self.running() or self.run_dir is None:
+        if self.running() or (self.run_dir is None and self.memory_run is None):
             return
-        folder = QFileDialog.getExistingDirectory(self, 'Select completed baseline run folder', str(self.run_dir.parent))
+        folder = QFileDialog.getExistingDirectory(self, 'Select completed baseline run folder',
+            str(self.run_dir.parent if self.run_dir else Path.home()))
         if folder:
             try:
                 self.set_baseline(folder)
@@ -345,7 +352,7 @@ class ProjectReportPanel(QWidget):
     def set_baseline(self, path):
         if path is not None:
             path = Path(path).resolve()
-            if self.run_dir is None or path == self.run_dir:
+            if (self.run_dir is None and self.memory_run is None) or path == self.run_dir:
                 raise ValueError('Choose a different completed run as the baseline.')
             manifest, _ = validate_run_inputs(path, verify_drawings=False)
             if manifest['status'] != 'complete' or manifest['project_binding']['run_key'] == self.binding['run_key']:
@@ -364,14 +371,26 @@ class ProjectReportPanel(QWidget):
             raise ValueError('Wait for this report to finish or stop it before selecting another run.')
         project=getattr(self,'_study_context',None) or self.editor.project
         self._study_context=None
-        manifest = inspect_run(path, project)
-        if manifest['status'] != 'complete':
-            raise ValueError('Choose a completed run for report generation.')
-        if getattr(self, '_run_project', None) is not project or self.baseline_run == Path(path).resolve():
+        memory = path if isinstance(path, MemoryRun) else None
+        if memory is not None:
+            memory.require_reviewable()
+            if memory.status != 'complete':
+                raise ValueError('Choose a completed memory run for report generation.')
+            key = digest(configuration_bytes(memory.config))
+            manifest = dict(project_binding=dict(run_key=memory.key, project_id='memory:' + memory.key,
+                revision_id='memory:' + key, revision_config_sha256=key))
+        else:
+            manifest = inspect_run(path, project)
+            if manifest['status'] != 'complete':
+                raise ValueError('Choose a completed run for report generation.')
+        if (getattr(self, '_run_project', None) is not project or memory is not None
+                or self.baseline_run == Path(path).resolve()):
             self.set_baseline(None)
         if getattr(self, '_requested_editor_project', self.editor.project) is not self.editor.project:
             self.set_stress_selection([])
-        self.run_dir = Path(path).resolve()
+        self._cleanup_memory_snapshot()
+        self.memory_run = memory
+        self.run_dir = None if memory is not None else Path(path).resolve()
         self.binding = manifest['project_binding']
         self._run_project=project;self._requested_editor_project=self.editor.project
         self.pdf = None
@@ -379,11 +398,11 @@ class ProjectReportPanel(QWidget):
         self.open_pdf.setEnabled(False)
         self.open_lift_csv.setEnabled(False)
         self.start.setEnabled(True)
-        self.export_lifts.setEnabled(True)
-        self.export_third_party.setEnabled(True)
-        self.export_lift_charts.setEnabled(True)
+        self.export_lifts.setEnabled(self.run_dir is not None or self.memory_run is not None)
+        self.export_third_party.setEnabled(self.run_dir is not None and self.memory_run is None)
+        self.export_lift_charts.setEnabled(self.run_dir is not None and self.memory_run is None)
         self.choose_baseline.setEnabled(True)
-        config = read_json(self.run_dir/'config.json')
+        config = memory.config if memory is not None else read_json(self.run_dir/'config.json')
         self.lift_chart_pdf_lift.clear()
         self.lift_chart_pdf_lift.addItem('All lifts',None)
         for identity in sorted({str(lift['id']) for lift in config.get('lifts',[]) if lift.get('id')}):
@@ -398,11 +417,68 @@ class ProjectReportPanel(QWidget):
                 self.lift_chart_day.addItem((start+timedelta(days=i)).isoformat())
         except (KeyError,TypeError,ValueError):
             pass
-        self.summary.setText(f"Run: {self.run_dir.name}\nRevision: {manifest['project_binding']['revision_id']}\n"
-                             'Uses frozen inputs and recorded events. Outputs are saved under this run’s external reports folder.')
+        if memory is not None:
+            self.summary.setText(f'Run: {memory.name} (in memory)\n'
+                'Uses frozen inputs and recorded events. Choose where to save the report; the run stays in memory.')
+        else:
+            self.summary.setText(f"Run: {self.run_dir.name}\nRevision: {manifest['project_binding']['revision_id']}\n"
+                'Uses frozen inputs and recorded events. Outputs are saved in the selected run reports folder.')
+
+    def _cleanup_memory_snapshot(self):
+        if self._memory_snapshot is not None:
+            self._memory_snapshot.cleanup()
+            self._memory_snapshot = None
+            self.run_dir = None
+
+    def clear_memory_run(self, run):
+        if self.memory_run is run:
+            if self.memory_job is not None:
+                self.memory_job.cancelled.set()
+            self.memory_run = None
+            if not self.running():
+                self._cleanup_memory_snapshot()
+                self.start.setEnabled(False)
+                self.export_lifts.setEnabled(False)
+                self.choose_baseline.setEnabled(False)
+                self.summary.setText('Select a completed run in Simulate to generate a report.')
+
+    def _prepare_memory_report(self, sections, lift_cohorts_only):
+        from project_runs_panel import MemoryJob
+        self._memory_snapshot = tempfile.TemporaryDirectory(prefix='amr-memory-report-')
+        run = self.memory_run
+        directory = Path(self._memory_snapshot.name) / run.name
+        job = MemoryJob('report', run, lambda cancel, progress:
+            run.report_snapshot(directory, cancel=cancel, progress=progress))
+        self.memory_job = job
+        self.cancelled = False
+        self.log.setPlainText('Preparing frozen inputs and recorded events for the report...')
+        self.start.setEnabled(False)
+        self.export_lifts.setEnabled(False)
+        self.choose_stress.setEnabled(False)
+        self.choose_baseline.setEnabled(False)
+        self.stop.setEnabled(True)
+        job.signals.finished.connect(lambda result, error:
+            self._memory_report_ready(result, error, sections, lift_cohorts_only))
+        QThreadPool.globalInstance().start(job)
+
+    def _memory_report_ready(self, result, error, sections, lift_cohorts_only):
+        self.memory_job = None
+        if error or self.cancelled or self.memory_run is None:
+            self._cleanup_memory_snapshot()
+            self.log.appendPlainText('Report preparation stopped: ' + (error or 'Operation cancelled'))
+            available = self.memory_run is not None
+            self.start.setEnabled(available)
+            self.export_lifts.setEnabled(available)
+            self.choose_stress.setEnabled(True)
+            self.choose_baseline.setEnabled(available)
+            self.stop.setEnabled(False)
+            return
+        self.run_dir = Path(result)
+        self.binding = read_json(self.run_dir / 'run_manifest.json')['project_binding']
+        self._generate_verified(sections, lift_cohorts_only)
 
     def generate(self, lift_cohorts_only=False):
-        if self.running() or self.run_dir is None:
+        if self.running() or (self.run_dir is None and self.memory_run is None):
             return
         sections = [self.sections.item(i).data(Qt.UserRole) for i in range(self.sections.count())
                     if self.sections.item(i).checkState() == Qt.Checked]
@@ -420,11 +496,26 @@ class ProjectReportPanel(QWidget):
             return
         try:
             if self.editor.project is not self._requested_editor_project:raise ValueError('Select a run again after changing projects.')
-            inspect_run(self.run_dir, self._run_project)
+            if self.memory_run is not None:
+                self.memory_run.require_reviewable()
+                if self.memory_run.status != 'complete':
+                    raise ValueError('Choose a completed memory run for report generation.')
+            else:
+                inspect_run(self.run_dir, self._run_project)
         except Exception as exc:
             QMessageBox.warning(self, 'Run unavailable', str(exc))
             return
+        if self.memory_run is not None:
+            folder = QFileDialog.getExistingDirectory(self, 'Choose where to save the report', str(Path.home()))
+            if not folder:
+                return
+            self.output = Path(folder).resolve() / ('report_' + uuid.uuid4().hex[:12])
+            self._prepare_memory_report(sections, lift_cohorts_only)
+            return
         self.output = self.run_dir / 'reports' / ('report_' + uuid.uuid4().hex[:12])
+        self._generate_verified(sections, lift_cohorts_only)
+
+    def _generate_verified(self, sections, lift_cohorts_only):
         self._stress_request = None
         if 'stress_tests' in sections and not lift_cohorts_only:
             from amr_project_runs import write_json
@@ -434,6 +525,12 @@ class ProjectReportPanel(QWidget):
                 write_json(self._stress_request, self.stress_selection)
             except (OSError, ValueError) as exc:
                 self.log.setPlainText('Could not save the stress-test selection: ' + str(exc))
+                self._cleanup_memory_snapshot()
+                self.start.setEnabled(True)
+                self.export_lifts.setEnabled(True)
+                self.choose_stress.setEnabled(True)
+                self.choose_baseline.setEnabled(True)
+                self.stop.setEnabled(False)
                 return
         self.export_only = lift_cohorts_only
         self.cancelled = False
@@ -497,12 +594,14 @@ class ProjectReportPanel(QWidget):
         self.read_output()
         process, self.process = self.process, None
         process.deleteLater()
-        self.start.setEnabled(True)
+        self._cleanup_memory_snapshot()
+        available = self.run_dir is not None or self.memory_run is not None
+        self.start.setEnabled(available)
         self.choose_stress.setEnabled(True)
-        self.choose_baseline.setEnabled(self.run_dir is not None)
-        self.export_lifts.setEnabled(True)
-        self.export_third_party.setEnabled(True)
-        self.export_lift_charts.setEnabled(True)
+        self.choose_baseline.setEnabled(available)
+        self.export_lifts.setEnabled(self.run_dir is not None or self.memory_run is not None)
+        self.export_third_party.setEnabled(self.run_dir is not None and self.memory_run is None)
+        self.export_lift_charts.setEnabled(self.run_dir is not None and self.memory_run is None)
         self.stop.setEnabled(False)
         if self.lift_charts_target is not None:
             target,self.lift_charts_target = self.lift_charts_target,None
@@ -567,6 +666,9 @@ class ProjectReportPanel(QWidget):
                 self._stress_request = None
 
     def cancel(self):
+        if self.memory_job is not None:
+            self.cancelled = True
+            self.memory_job.cancelled.set()
         if self.process is not None:
             self.cancelled = True
             self.process.kill()

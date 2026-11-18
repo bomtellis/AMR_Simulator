@@ -1114,6 +1114,10 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         self.return_delay_edit = QLineEdit(
             str(self.base_category.get("return_delay_minutes", 0))
         )
+        self.return_priority_edit = QLineEdit(str(self.base_category.get('return_priority', '')))
+        self.return_priority_edit.setPlaceholderText('Inherit delivery priority')
+        self.return_priority_edit.setAccessibleName('Return priority')
+        self.return_priority_edit.setToolTip('Lower numbers run first. Leave blank to inherit delivery priority.')
         self.release_next_after_return_pickup_check = QCheckBox(
             "Release the next task after the preceding return clears the shared space"
         )
@@ -1319,6 +1323,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         positive_int_validator = QIntValidator(1, 999999, self)
         self.priority_edit.setValidator(QIntValidator(0, 999999, self))
         self.return_delay_edit.setValidator(QDoubleValidator(0.0, 999999.0, 2, self))
+        self.return_priority_edit.setValidator(QIntValidator(0, 999999, self))
         self.staff_handling_minutes_edit.setValidator(
             QDoubleValidator(0.0, 1440.0, 2, self)
         )
@@ -1354,6 +1359,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return route profile", self.return_profile_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow("Return priority", self.return_priority_edit)
         form.addRow(
             "Shared-zone release spacing",
             self.release_next_after_return_pickup_check,
@@ -1520,6 +1526,7 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
 
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
+        self._set_form_row_visible(self.return_priority_edit, return_enabled)
         self._set_form_row_visible(
             self.release_next_after_return_pickup_check,
             return_enabled or show_generation,
@@ -1916,6 +1923,8 @@ class BulkDepartmentTaskGenerationDialog(QDialog):
                 "return_payload": self.return_payload_combo.currentText().strip(),
                 "return_route_profile": self.return_profile_combo.currentText().strip(),
                 "return_delay_minutes": float(self.return_delay_edit.text() or 0),
+                **({'return_priority': int(self.return_priority_edit.text())}
+                   if self.return_priority_edit.text().strip() else {}),
                 "release_next_after_return_pickup": (
                     self.release_next_after_return_pickup_check.isChecked()
                 ),
@@ -2095,6 +2104,9 @@ class TaskGenerationSettingsDialog(QDialog):
         profile_names,
         departments,
         on_save,
+        project_configuration=None,
+        open_departments=None,
+        on_departments_save=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Task generation parameters")
@@ -2105,6 +2117,10 @@ class TaskGenerationSettingsDialog(QDialog):
         self.departments = [dict(x) for x in (departments or [])]
         self.current_department_id = None
         self.on_save = on_save
+        self.project_configuration = project_configuration
+        self.open_departments = open_departments
+        self.on_departments_save = on_departments_save
+        self._initial_schedule_departments = deepcopy(self.departments)
         self.current_key = None
         self.selected_dropoffs = []
         self._loading = False
@@ -2128,8 +2144,12 @@ class TaskGenerationSettingsDialog(QDialog):
         global_staff_row.addWidget(edit_global_staff_btn)
         self._refresh_global_staff_summary()
 
-        body = QHBoxLayout()
-        layout.addLayout(body, 1)
+        self.schedule_tabs = QTabWidget()
+        layout.addWidget(self.schedule_tabs, 1)
+        self.parameter_page = QWidget()
+        body = QHBoxLayout(self.parameter_page)
+        body.setContentsMargins(0, 6, 0, 0)
+        self.schedule_tabs.addTab(self.parameter_page, 'Parameters')
 
         left = QVBoxLayout()
         body.addLayout(left, 0)
@@ -2190,7 +2210,7 @@ class TaskGenerationSettingsDialog(QDialog):
             'Locations & routing': ['Department location role', 'Pickup / source location',
                 'Drop-off destinations', 'Payload', 'Route profile'],
             'Returns & stock': ['Tracked item exchange', 'Exchange mode', 'Return task',
-                'Return payload', 'Return route profile', 'Return delay (minutes)', 'Shared-zone release spacing',
+                'Return payload', 'Return route profile', 'Return delay (minutes)', 'Return priority', 'Shared-zone release spacing',
                 'Reusable return pool', 'Pool multiplier', 'Pool hard cap (0 = auto)'],
             'Schedule & staff': ['Staff handling', 'Collection response delay (minutes)',
                 'Handling time (minutes)', 'Handoff timing', 'Category-wide drop-off-zone capacity',
@@ -2199,7 +2219,7 @@ class TaskGenerationSettingsDialog(QDialog):
                 'Days active', 'Fortnightly recurrence', 'Scheduled times', 'Frequency per day',
                 'Volume per event m³', 'Threshold volume m³', 'Base daily volume m³',
                 'Timeframe start HH:MM', 'Timeframe end HH:MM', 'Payload multiple'],
-            'Notes & help': ['Notes'],
+            'Notes & help': ['Category notes', 'Notes'],
         }
         form = FocusedForms(list(sections), {label: title for title, labels in sections.items() for label in labels})
         self.delivery_tabs = form
@@ -2274,6 +2294,10 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_profile_combo = QComboBox()
         self.return_profile_combo.addItems([''] + self.profile_names)
         self.return_delay_edit = QLineEdit()
+        self.return_priority_edit = QLineEdit()
+        self.return_priority_edit.setPlaceholderText('Inherit delivery priority')
+        self.return_priority_edit.setAccessibleName('Return priority')
+        self.return_priority_edit.setToolTip('Lower numbers run first. Leave blank to inherit delivery priority.')
         self.release_next_after_return_pickup_check = QCheckBox(
             "Release the next task after the preceding return clears the shared space"
         )
@@ -2407,11 +2431,17 @@ class TaskGenerationSettingsDialog(QDialog):
         self.timeframe_payload_multiple_edit.setPlaceholderText("1")
         self.notes_edit = QPlainTextEdit()
         self.notes_edit.setFixedHeight(90)
+        self.category_notes_edit = QPlainTextEdit()
+        self.category_notes_edit.setMaximumHeight(110)
+        self.category_notes_edit.setAccessibleName('Category configuration notes')
+        self.category_notes_edit.setPlaceholderText('Notes for the whole category, included in the demand preview')
+        self.category_notes_edit.textChanged.connect(self._category_notes_changed)
 
         positive_double_validator = QDoubleValidator(0.0, 999999.0, 3, self)
         positive_int_validator = QIntValidator(1, 999999, self)
         self.priority_edit.setValidator(QIntValidator(0, 999999, self))
         self.return_delay_edit.setValidator(QDoubleValidator(0.0, 999999.0, 2, self))
+        self.return_priority_edit.setValidator(QIntValidator(0, 999999, self))
         self.staff_handling_minutes_edit.setValidator(
             QDoubleValidator(0.0, 1440.0, 2, self)
         )
@@ -2449,6 +2479,7 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Return payload", self.return_payload_combo)
         form.addRow("Return route profile", self.return_profile_combo)
         form.addRow("Return delay (minutes)", self.return_delay_edit)
+        form.addRow("Return priority", self.return_priority_edit)
         form.addRow(
             "Shared-zone release spacing",
             self.release_next_after_return_pickup_check,
@@ -2486,6 +2517,7 @@ class TaskGenerationSettingsDialog(QDialog):
         form.addRow("Timeframe start HH:MM", self.timeframe_start_edit)
         form.addRow("Timeframe end HH:MM", self.timeframe_end_edit)
         form.addRow("Payload multiple", self.timeframe_payload_multiple_edit)
+        form.addRow('Category notes', self.category_notes_edit)
         form.addRow("Notes", self.notes_edit)
 
         self.waste_stream_notice_label = QLabel(
@@ -2550,7 +2582,72 @@ class TaskGenerationSettingsDialog(QDialog):
 
         self._refresh_schedule_summary()
         self._refresh_staff_working_hours_summary()
+        from visualiser.day_schedule import DaySchedulePanel
+        self.day_schedule = DaySchedulePanel(
+            self._collect_configuration, self._apply_schedule_generation, self.departments,
+            project_configuration, self._open_schedule_rule, self)
+        self.schedule_tabs.addTab(self.day_schedule, 'Day schedule')
+        self.schedule_tabs.currentChanged.connect(self._schedule_tab_changed)
         _polish_dialog(self)
+
+    def _schedule_tab_changed(self, index):
+        if self.schedule_tabs.widget(index) is self.day_schedule:
+            if not self.day_schedule.refresh():
+                self.schedule_tabs.setCurrentWidget(self.parameter_page)
+
+    def _category_notes_changed(self):
+        if not self._loading and self.current_key:
+            self.config['categories'][self.current_key]['notes'] = self.category_notes_edit.toPlainText().strip()
+            if hasattr(self,'day_schedule'):
+                self.day_schedule.preview_changed.emit()
+
+    def _apply_schedule_generation(self, generation):
+        self.config = deepcopy(generation)
+        self._loading = True
+        try:
+            self._refresh_department_list(select_dept_id=self.current_department_id)
+            self._load_category(self.current_key)
+        finally:
+            self._loading = False
+
+    def _open_schedule_rule(self, identity):
+        kind, category, key = identity
+        self._store_current_category()
+        for index in range(self.category_list.count()):
+            item = self.category_list.item(index)
+            if item.data(Qt.UserRole) == category:
+                self.category_list.setCurrentItem(item)
+                break
+        if category == 'waste' and self.open_departments:
+            updated = self.open_departments(deepcopy(self.departments))
+            if updated is not None:
+                self.departments = deepcopy(updated)
+                self.day_schedule.departments = self.departments
+                self._apply_schedule_generation(self.config)
+                self.day_schedule.refresh()
+            return
+        if kind == 'group':
+            from visualiser.configured_group_editor import apply_group_edits
+            value = self.config['categories'][category]
+            before = deepcopy(value.get('department_groups', []))
+            group = next(group for group in before if group['id'] == key)
+            edited = self._edit_configured_group_draft(group)
+            if edited is not None:
+                after = [edited if row['id'] == key else row for row in before]
+                updated = deepcopy(self.config)
+                updated['categories'][category] = apply_group_edits(
+                    value, before, after, self._configured_group_payload_for_department)
+                self._apply_schedule_generation(updated)
+            self.day_schedule.refresh()
+        else:
+            if kind == 'department':
+                for index in range(self.department_list.count()):
+                    item = self.department_list.item(index)
+                    if item.data(Qt.UserRole) == key:
+                        self.department_list.setCurrentItem(item)
+                        break
+            self.schedule_tabs.setCurrentWidget(self.parameter_page)
+            self.delivery_tabs.setCurrentIndex(3)
 
     def edit_staff_working_hours(self):
         dialog = StaffWeeklyHoursDialog(
@@ -2620,7 +2717,9 @@ class TaskGenerationSettingsDialog(QDialog):
         staff_count = str(payload.get("staff_initial_count", 1) or 1).strip()
         staff_name = str(payload.get("staff_resource_name", "") or "").strip()
 
-        lines = [
+        notes = str(payload.get("notes") or "").strip()
+        lines = [f"Notes: {notes}"] if notes else []
+        lines += [
             f"{category_label}    Payload: {payload_name}    Mode: {mode}",
             f"Departments: {self._department_group_names_text(dept_ids, limit=4)}",
             f"Role: {role}    Pickup: {pickup}    Drop-off: {dropoff}",
@@ -3984,6 +4083,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(False)
         self.return_payload_combo.setCurrentText("")
         self.return_delay_edit.setText("0")
+        self.return_priority_edit.clear()
         self.target_time_edit.clear()
         self.return_profile_combo.setCurrentText('')
         self.release_next_after_return_pickup_check.setChecked(False)
@@ -4022,6 +4122,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.timeframe_end_edit.setText("")
         self.timeframe_payload_multiple_edit.setText("1")
         self.notes_edit.setPlainText("")
+        self.category_notes_edit.setPlainText(str(self.config.get('categories', {}).get(self.current_key, {}).get('notes', '') or ''))
         self._set_department_location_role("dropoff", True)
         self._update_mode_field_state()
 
@@ -4055,6 +4156,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.enabled_check.setChecked(bool(item.get("enabled", False)))
 
         category = self.config.get("categories", {}).get(key, {})
+        self.category_notes_edit.setPlainText(str(category.get('notes', '') or ''))
         self.display_name_edit.setText(str(category.get("display_name", key.title())))
         self.display_name_edit.setEnabled(False)
 
@@ -4079,6 +4181,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self.return_enabled_check.setChecked(bool(item.get("return_enabled", False)))
         self.return_payload_combo.setCurrentText(str(item.get("return_payload", "")))
         self.return_delay_edit.setText(str(item.get("return_delay_minutes", 0)))
+        self.return_priority_edit.setText(str(item.get('return_priority', '')))
         self.release_next_after_return_pickup_check.setChecked(
             bool(item.get("release_next_after_return_pickup", False))
         )
@@ -4250,6 +4353,7 @@ class TaskGenerationSettingsDialog(QDialog):
         self._set_form_row_visible(self.return_payload_combo, return_enabled)
         self._set_form_row_visible(self.return_profile_combo, return_enabled)
         self._set_form_row_visible(self.return_delay_edit, return_enabled)
+        self._set_form_row_visible(self.return_priority_edit, return_enabled)
         self._set_form_row_visible(
             self.release_next_after_return_pickup_check,
             return_enabled or show_generation,
@@ -4330,7 +4434,7 @@ class TaskGenerationSettingsDialog(QDialog):
         """Compare editable values, rather than rewriting untouched group copies."""
         state = {}
         for name, field in vars(self).items():
-            if name == 'global_enabled':
+            if name in {'global_enabled', 'category_notes_edit'}:
                 continue
             if isinstance(field, QLineEdit):
                 state[name] = field.text()
@@ -4437,6 +4541,8 @@ class TaskGenerationSettingsDialog(QDialog):
             "return_payload": self.return_payload_combo.currentText().strip(),
             "return_route_profile": self.return_profile_combo.currentText().strip(),
             "return_delay_minutes": self._float_from_edit(self.return_delay_edit, 0.0),
+            **({'return_priority': int(self.return_priority_edit.text())}
+               if self.return_priority_edit.text().strip() else {}),
             "release_next_after_return_pickup": (
                 self.release_next_after_return_pickup_check.isChecked()
             ),
@@ -4615,6 +4721,13 @@ class TaskGenerationSettingsDialog(QDialog):
     def accept(self):
         try:
             self._collect_configuration()
+            from amr_demand_schedule import invalid_slots
+            if self.config.get('fm_logistics', {}).get('enabled') and invalid_slots(self.config):
+                raise ValueError('Demand timings changed. Open Day schedule and regenerate or disable the FM plan before saving.')
+            if self.day_schedule.dirty:
+                raise ValueError('The FM draft has not been accepted. Choose Use arrangement or Discard FM draft before saving.')
+            if self.on_departments_save and self.departments != self._initial_schedule_departments:
+                self.on_departments_save(deepcopy(self.departments))
             self.on_save(self.config)
             super().accept()
         except Exception as exc:

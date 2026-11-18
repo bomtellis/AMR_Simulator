@@ -115,6 +115,76 @@ class MemoryRunTests(unittest.TestCase):
                                  normalise((other / name).read_text(encoding='utf-8'), disk_id))
         self.assertTrue(generate(saved, self.root / 'report', ('front_summary',)).read_bytes().startswith(b'%PDF-'))
 
+    def test_report_from_memory_keeps_run_available_and_uses_frozen_events(self):
+        run = self.retain(config())
+        before = run.evidence
+        with run.using_store() as store:
+            rows = list(store.iter_rows())
+        with patch.object(Simulation, 'run', side_effect=AssertionError('Must not rerun')):
+            pdf = generate(run, self.root / 'memory-report', ('front_summary',))
+        self.assertTrue(pdf.read_bytes().startswith(b'%PDF-'))
+        metadata = json.loads((pdf.parent / 'report_manifest.json').read_text())
+        self.assertEqual('complete', metadata['status'])
+        self.assertEqual('memory', metadata['source_storage'])
+        self.assertEqual(run.key, metadata['project_binding']['run_key'])
+        self.assertEqual(before, run.evidence)
+        self.assertFalse(run.released)
+        self.assertEqual([run], self.pool.runs)
+        self.assertEqual(['memory-report'], [p.name for p in self.root.iterdir()])
+        with run.using_store() as store:
+            self.assertEqual(rows, list(store.iter_rows()))
+        _, saved = run.publish(None, self.root / 'after-report.amrproj')
+        self.assertEqual(run.key, verified_events(saved)[0]['run_key'])
+
+    def test_report_snapshot_freezes_drawings_and_can_be_cancelled(self):
+        drawing = self.root / 'floor.dxf'
+        drawing.write_bytes(b'original drawing bytes')
+        inputs = config()
+        inputs['floor_dxf_files'] = [dict(floor=0, filepath=drawing.name)]
+        run = self.retain(inputs)
+        drawing.write_bytes(b'edited after simulation')
+        snapshot = run.report_snapshot(self.root / 'snapshot')
+        manifest, frozen, events, _ = verified_events(snapshot, drawings=True)
+        self.assertEqual(run.key, manifest['run_key'])
+        self.assertEqual(b'original drawing bytes', Path(frozen['floor_dxf_files'][0]['filepath']).read_bytes())
+        with run.using_store() as store:
+            self.assertEqual(list(store.iter_rows()), list(iter_events(events)))
+        with self.assertRaises(InterruptedError):
+            run.report_snapshot(self.root / 'cancelled', cancel=lambda: True)
+        self.assertFalse((self.root / 'cancelled').exists())
+        self.assertFalse(run.released)
+
+    def test_reports_reject_partial_reduced_and_discarded_memory_runs(self):
+        run = self.retain(config())
+        run.status = 'partial'
+        with self.assertRaisesRegex(ValueError, 'completed memory run'):
+            generate(run, self.root / 'partial-report', ('front_summary',))
+        run.status = 'complete'
+        from tests.test_scenario_study import scenario
+        reduced = scenario(config(), [])
+        reduced['scenario_testing']['enhanced_logging'] = False
+        other = self.retain(reduced)
+        with self.assertRaisesRegex(ValueError, 'full event evidence'):
+            generate(other, self.root / 'reduced-report', ('front_summary',))
+        self.pool.discard(run)
+        with self.assertRaises(ValueError):
+            generate(run, self.root / 'discarded-report', ('front_summary',))
+        self.assertEqual([], list(self.root.iterdir()))
+
+    def test_report_failure_cleans_temporary_input_and_keeps_memory(self):
+        run = self.retain(config())
+        snapshots = []
+        original = run.report_snapshot
+        def capture(path, **kwargs):
+            snapshots.append(Path(path))
+            return original(path, **kwargs)
+        with patch.object(run, 'report_snapshot', side_effect=capture):
+            with self.assertRaises(ValueError):
+                generate(run, self.root / 'invalid-report', ('unknown-section',))
+        self.assertFalse(snapshots[0].parent.exists())
+        self.assertFalse(run.released)
+        run.require_reviewable()
+
     def test_drawing_is_frozen_and_matching_revision_is_reused(self):
         drawing = self.root / 'floor.dxf'
         drawing.write_bytes(b'original drawing bytes')
@@ -303,6 +373,68 @@ class MemoryRunEditorTests(unittest.TestCase):
             self.assertTrue(self.editor.load_json_file(str(original), load_drawings=False))
         self.assertEqual([], self.panel.memory.runs)
         self.assertTrue(newer.released)
+
+    def test_generate_memory_report_through_panel_without_saving_project(self):
+        run = self.panel.memory.prepare(config(), self.root)
+        checks = check_project(run.config, asset_refs=run.asset_refs)
+        checks.acknowledge_warnings()
+        run.accept_checks(checks)
+        run.execute(self.panel.memory.reserve(run))
+        self.panel.memory.add(run)
+        self.panel.refresh_runs(select=run)
+        self.assertTrue(self.panel.report_button.isEnabled())
+        self.panel.report()
+        report = self.editor.report_panel
+        self.assertIs(run, report.memory_run)
+        self.assertTrue(report.start.isEnabled())
+        for i in range(report.sections.count()):
+            item = report.sections.item(i)
+            from PySide6.QtCore import Qt
+            item.setCheckState(Qt.Checked if item.data(Qt.UserRole) == 'front_summary' else Qt.Unchecked)
+        with patch.object(QFileDialog, 'getExistingDirectory', return_value=str(self.root)):
+            report.generate()
+        self.wait_for(lambda: not report.running())
+        self.assertIsNotNone(report.pdf, report.log.toPlainText())
+        self.assertTrue(report.pdf.read_bytes().startswith(b'%PDF-'))
+        self.assertIsNone(report._memory_snapshot)
+        self.assertIsNone(report.run_dir)
+        self.assertIsNone(self.editor.project)
+        self.assertIs(run, report.memory_run)
+        self.assertFalse(run.released)
+        self.assertTrue(report.start.isEnabled())
+        self.panel.discard_memory_run()
+        self.assertIsNone(report.memory_run)
+        self.assertFalse(report.start.isEnabled())
+
+    def test_cancelling_memory_report_preparation_releases_snapshot(self):
+        from threading import Event
+        run = self.panel.memory.prepare(config(), self.root)
+        checks = check_project(run.config, asset_refs=run.asset_refs)
+        checks.acknowledge_warnings()
+        run.accept_checks(checks)
+        run.execute(self.panel.memory.reserve(run))
+        self.panel.memory.add(run)
+        self.panel.refresh_runs(select=run)
+        self.panel.report()
+        report = self.editor.report_panel
+        entered = Event()
+        def delayed_snapshot(path, *, cancel, progress):
+            entered.set()
+            while not cancel():
+                Event().wait(0.01)
+            raise InterruptedError('Operation cancelled')
+        with patch.object(run, 'report_snapshot', side_effect=delayed_snapshot):
+            with patch.object(QFileDialog, 'getExistingDirectory', return_value=str(self.root)):
+                report.generate(lift_cohorts_only=True)
+            self.wait_for(entered.is_set)
+            temporary = Path(report._memory_snapshot.name)
+            report.cancel()
+            self.wait_for(lambda: not report.running())
+        self.assertFalse(temporary.exists())
+        self.assertTrue(report.start.isEnabled())
+        self.assertFalse(run.released)
+        self.assertIsNone(report.process)
+        self.assertFalse(report.output.exists())
 
     def test_stop_interrupts_an_active_lift_search(self):
         from tests.test_forced_floor import configured

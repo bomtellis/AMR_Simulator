@@ -169,6 +169,13 @@ def _config_contains_enabled_bool_key(config, key_names) -> bool:
     return walk(config)
 
 
+class TaskFailureStop(InterruptedError):
+    """A sizing trial stopped at its first recorded task failure."""
+    def __init__(self, record):
+        self.record = dict(record)
+        super().__init__(f"Task {record['task_id']} failed: {record['reason']}")
+
+
 class Simulation:
     @_close_failed_initialisation
     def __init__(
@@ -184,10 +191,14 @@ class Simulation:
         event_baseline=None,
         memory_event_limit=None,
         cancel_requested=None,
+        console_progress=True,
+        stop_on_task_failure=False,
     ):
         self.progress_callback = progress_callback
+        self.console_progress = console_progress
         self.cancel_requested = cancel_requested
         self.memory_event_limit = memory_event_limit
+        self.stop_on_task_failure = stop_on_task_failure
         if memory_event_limit is not None and (
                 not verbose or runtime_backend != 'compact' or verbose_csv_path or event_store_path or event_baseline):
             raise ValueError('Memory runs require full compact storage without output paths.')
@@ -237,6 +248,13 @@ class Simulation:
         self._evidence_event_capabilities = ['payload_service_arrivals', 'staged_payload_recovery',
                                              'segment_energy_sources_v1', 'charge_cycle_arrivals_v1',
                                              'tracked_stock_delivery_v1']
+        from amr_failure_evidence import CAPABILITY as failure_capability
+        self._record_failure_diagnostics = bool(verbose and event_baseline is None)
+        self._investigation_blockers = {}
+        self._investigation_amr_work = {}
+        self._investigation_estimates = {}
+        if self._record_failure_diagnostics:
+            self._evidence_event_capabilities.append(failure_capability)
         if self.geometric_motion:
             self._evidence_event_capabilities.append('geometric_trajectories_v1')
             if any(isinstance(robot, dict) and 'movement' in robot for robot in config.get('amrs', [])):
@@ -256,6 +274,20 @@ class Simulation:
                                     'route_profile': task.get('route_profile', '') or ('dirty' if 'dirty' in task.get('labels', []) else '')}
             for i, task in enumerate(config.get('tasks', []))}
         sim_cfg = resolved_simulation_settings(config.get("simulation", {}))
+        self.waste_bin_return_policy = sim_cfg['waste_bin_return_policy']
+        self.service_return_amr_policy = sim_cfg['service_return_amr_policy']
+        self.dispatch_available_amrs_only = sim_cfg['dispatch_available_amrs_only']
+        self.waste_swap_advance_staging = (
+            self.waste_bin_return_policy == 'second_amr_swap' and sim_cfg['waste_swap_advance_staging']
+        )
+        self.waste_swap_stage_initial_spares = (
+            self.waste_swap_advance_staging and sim_cfg['waste_swap_stage_initial_spares']
+        )
+        self.waste_swap_spare_targets = sim_cfg.get('waste_swap_spare_targets', {})
+        self.waste_swap_collection_dispatch = sim_cfg.get('waste_swap_collection_dispatch', {})
+        self.waste_swap_opening_working_bins = sim_cfg.get('waste_swap_opening_working_bins', {})
+        self._waste_swap_opening_working_bin_keys: set[tuple] = set()
+        self._waste_bin_replacements: dict[tuple, list[Task]] = {}
         self.spawn_payloads_when_empty = sim_cfg['spawn_payloads_when_empty']
         self.source_payload_additions = defaultdict(int)
         self.ignore_invalid_local_manoeuvres = sim_cfg['ignore_invalid_local_manoeuvres']
@@ -296,6 +328,7 @@ class Simulation:
         tick_rate = float(sim_cfg.get("tick_rate", 120.0))
         self.wall_start_time = None
         self.last_progress_update = 0.0
+        self.last_progress_stage = None
         self.progress_update_interval = 0.2  # seconds
         self.estimated_total_sim_time = 1.0
 
@@ -753,6 +786,11 @@ class Simulation:
             payloads=self.payloads,
         )
         self._seed_initial_waste_stream_containers()
+        self._shared_waste_swap_pickups = {
+            (group, payload): pickup
+            for group, pickup, payload in self.initial_waste_container_instances
+            if group.startswith('shared:')
+        }
         self.task_generation_interval_sec = float(
             (config.get("task_generation", {}) or {}).get("update_interval_sec", 900.0)
         )
@@ -1004,6 +1042,8 @@ class Simulation:
                     {},
                 )
         self._schedule_scenario_boundaries()
+        if self.waste_swap_stage_initial_spares:
+            self._queue_initial_waste_bin_replacements()
 
     def _normalise_mass_collection_configs(self, raw_configs) -> List[dict]:
         """Normalise third-party mass collection/empty-bin rotation settings.
@@ -1020,7 +1060,8 @@ class Simulation:
                 "capacity_trigger_fraction": 0.8,
                 "capacity_trigger_count": 0,
                 "capacity_check_interval_minutes": 15,
-                "replace_with_empty_equivalents": true
+                "replace_with_empty_equivalents": true,
+                "initial_empty_overflow": {"Clinical Waste Bin": 0}
               }
             ]
         """
@@ -1121,6 +1162,7 @@ class Simulation:
                     "capacity_trigger_fraction": capacity_fraction,
                     "capacity_trigger_count": max(0, capacity_count),
                     "capacity_check_interval_minutes": interval_min,
+                    "initial_empty_overflow": dict(raw.get("initial_empty_overflow", {})),
                     "replace_with_empty_equivalents": bool(
                         raw.get("replace_with_empty_equivalents", True)
                     ),
@@ -1271,7 +1313,7 @@ class Simulation:
         bins for real empty equivalents.  Locations without inventory spaces keep
         unlimited empty-bin issue behaviour and are not stocked here.
         """
-        for cfg in self.mass_collection_configs:
+        for config_index, cfg in enumerate(self.mass_collection_configs, start=1):
             if not cfg.get("enabled", True):
                 continue
             location = str(cfg.get("location", "") or "").strip()
@@ -1328,6 +1370,21 @@ class Simulation:
                 self._log_payload_location_event(
                     "location_payload_enter", location, payload_name, instance_id
                 )
+                self._record_payload_population_snapshot()
+
+            overflow = cfg.get("initial_empty_overflow", {})
+            for payload_index, (payload_name, count) in enumerate(overflow.items(), start=1):
+                if count and not self._mass_collection_payload_allowed(cfg, payload_name):
+                    raise ValueError(f"{cfg['id']}: overflow stock {payload_name!r} is outside its payload list.")
+                for index in range(count):
+                    instance_id = f"mass-collection-initial_empty-overflow-{config_index}-{payload_index}-{index + 1}"
+                    self.payload_instance_store.store(
+                        location, payload_name, instance_id, source_task_id=cfg["id"],
+                        metadata={"task_source": "mass_collection_initial_empty_overflow",
+                                  "mass_collection_id": cfg["id"], "container_type": payload_name,
+                                  "container_state": "empty"})
+                    self._log_payload_location_event("location_payload_enter", location, payload_name, instance_id)
+            if any(overflow.values()):
                 self._record_payload_population_snapshot()
 
     def _task_is_full_bin_dropoff_to_inventory_rotation(
@@ -1962,6 +2019,14 @@ class Simulation:
             allowed_carry_orientations=["lengthways"],
         )
 
+    @staticmethod
+    def _is_waste_collection(task: Task) -> bool:
+        return not getattr(task, "is_return_task", False) and bool(
+            getattr(task, "return_same_payload_instance", False)
+            or getattr(task, "waste_stream", "")
+            or getattr(task, "task_source", "") == "department_waste"
+        )
+
     def _multi_stop_task_is_eligible(self, task: Task) -> bool:
         if getattr(task, "is_idle_return", False) or getattr(
             task, "is_return_task", False
@@ -1980,6 +2045,9 @@ class Simulation:
         # AMR-locked continuation tasks, such as waste-bin returns, must remain
         # single-task routes so they can be assigned back to the same AMR.
         if str(getattr(task, "locked_amr_id", "") or "").strip():
+            return False
+        if self._is_waste_collection(task) and (getattr(task, "return_enabled", False)
+                                               or getattr(task, "waste_bin_swap", False)):
             return False
         if task.release_time > self.current_time:
             return False
@@ -2018,15 +2086,11 @@ class Simulation:
                 if not self._pending_task_removed(item[3])
                 and self._multi_stop_task_is_eligible(item[3])
             ]
-            # Payloads marked as preferring multi-stop AMRs should get first access
-            # to multi-stop slots, while the existing priority/release order is
-            # retained inside each preference group.
+            # Urgency and release order also govern access to multi-stop slots.
             released.sort(
                 key=lambda task: (
-                    0 if self._task_prefers_multi_stop_amr(task) else 1,
-                    int(getattr(task, "priority", 100) or 100),
+                    int(task.priority),
                     float(getattr(task, "release_time", 0.0) or 0.0),
-                    str(getattr(task, "id", "")),
                 )
             )
         if len(released) < 2:
@@ -2037,9 +2101,12 @@ class Simulation:
             slot_count, min(len(released), self.max_multi_stop_candidate_tasks)
         )
         for task in released[:candidate_limit]:
+            if not self._task_allowed_for_amr(task, amr):
+                continue
             # Preserve profile/dirty-label grouping; each loaded leg separately
             # enforces all onboard tasks' effective node, edge and lift rules.
             signature = (
+                task.priority,
                 str(getattr(task, "route_profile", "") or ""),
                 bool("dirty" in list(getattr(task, "labels", []) or [])),
             )
@@ -2635,6 +2702,8 @@ class Simulation:
                 and task.pickup in self.locations
                 and not str(getattr(task, 'payload_instance_id', '') or '').strip()
                 and not getattr(task, 'recover_staged_payload', False)
+                and not self._uses_seeded_waste_bin(task)
+                and not getattr(task, 'waste_replacement_key', None)
                 and not getattr(task, 'returns_same_payload_instance', False))
 
     def _pickup_instance_available(self, task: Task) -> bool:
@@ -2652,7 +2721,8 @@ class Simulation:
 
     @staticmethod
     def _pickup_requires_empty_container(task: Task) -> bool:
-        return (bool(getattr(task, 'is_return_task', False))
+        return bool(getattr(task, 'waste_replacement_key', None)) or (
+                bool(getattr(task, 'is_return_task', False))
                 and str(getattr(task, 'task_source', '') or '') == 'task_generation_return'
                 and not bool(getattr(task, 'returns_same_payload_instance', False)))
 
@@ -2670,12 +2740,20 @@ class Simulation:
             records = [record] if record is not None and record.location == task.pickup else []
         else:
             records = self.payload_instance_store.records_at(task.pickup)
+        seeded_bin = self._uses_seeded_waste_bin(task)
+        container_group = str(getattr(task, 'container_group', '') or '').strip()
+        requires_empty = seeded_bin or self._pickup_requires_empty_container(task)
+        overflow = []
         for record in records:
             if (record.payload == payload_name
                     and not self.payload_instance_store.is_reserved(record.instance_id, excluding_owner=task.id)
-                    and (not self._pickup_requires_empty_container(task)
-                         or self._record_is_available_empty_container(record))):
-                yield record
+                    and (not seeded_bin or self._bin_matches_group(container_group, record))
+                    and (not requires_empty or self._record_is_available_empty_container(record))):
+                if (record.metadata or {}).get("task_source") == "mass_collection_initial_empty_overflow":
+                    overflow.append(record)
+                else:
+                    yield record
+        yield from overflow
 
     def _pickup_instance_pending_reason(self, task: Task) -> str:
         instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
@@ -4770,6 +4848,8 @@ class Simulation:
         """Whether a staff-assisted generated delivery may use logical overflow."""
         if task is None:
             return False
+        if getattr(task, 'waste_replacement_key', None):
+            return True  # A spare is staged at the handoff until the occupied bay is vacated.
         zone = str(getattr(task, "dropoff_zone", "") or "").strip()
         final_destination = str(
             getattr(task, "final_destination", "") or ""
@@ -4840,6 +4920,8 @@ class Simulation:
         if payload is None or is_empty_payload_name(getattr(payload, "name", "")):
             return None
         if not self._location_has_payload_inventory_spaces(task.dropoff):
+            return None
+        if getattr(task, 'waste_replacement_key', None):
             return None
 
         task_id = str(getattr(task, "id", "") or "").strip()
@@ -4988,6 +5070,16 @@ class Simulation:
             return
         if not self._plan_exchange_empty_claims([task], reserve=True):
             raise RuntimeError(task.pending_reason)
+        replacement = None
+        vacated_bay = ""
+        if getattr(task, 'waste_bin_swap', False):
+            key = self._waste_bin_replacement_key(task)
+            replacement = self._ready_waste_bin_replacement(task)
+            if replacement is None or replacement.waste_collection_id != task.id:
+                raise RuntimeError(f"No staged replacement bin for {task.id} at {task.pickup}")
+            prior_bin = task.payload_instance_id
+            vacated_bay = next((space['name'] for space in self.inventory_spaces_by_location.get(task.pickup, [])
+                                if space.get('payload_instance_id') == prior_bin), "")
         self._pickup_payload_instance_for_task(task, event_time=event_time)
         if not getattr(task, 'recover_staged_payload', False):
             self._free_inventory_space_for_pickup(task, payload)
@@ -4997,6 +5089,12 @@ class Simulation:
                 from_location=task.pickup, to_location=task.dropoff, status='in_transit',
                 details='Explicit recovery collected the staged container using a committed route.')
         task.payload_pickup_processed = True
+        if replacement is not None:
+            self._remove_waste_bin_replacement(key, replacement)
+            replacement.assigned_inventory_space = vacated_bay
+            self._store_payload_instance_for_task(replacement, event_time=event_time)
+            if vacated_bay:
+                self._occupy_inventory_space_for_completed_task(replacement, payload)
 
     def _process_payload_dropoff(self, task: Task, payload: Optional[PayloadType], event_time: float) -> None:
         """Apply physical arrival once, independently of the remaining journey."""
@@ -5004,6 +5102,29 @@ class Simulation:
             return
         if payload is None or is_empty_payload_name(task.payload):
             task.payload_dropoff_processed = True
+            return
+        replacement_key = getattr(task, 'waste_replacement_key', None)
+        if replacement_key:
+            self.payload_instance_store.transition(
+                task.payload, task.payload_instance_id, 'staged', task.dropoff)
+            self.log_step(
+                event_time=event_time, event_type='waste_replacement_staged',
+                task_id=task.id, payload_name=task.payload, payload_instance_id=task.payload_instance_id,
+                from_location=task.pickup, to_location=task.dropoff,
+                amr_id=task.waste_replacement_amr_id, status='staged')
+            task.payload_dropoff_processed = True
+            if replacement_key in self._waste_swap_opening_working_bin_keys:
+                space = self._claim_initial_inventory_space(task.dropoff, payload, task.id)
+                if space is not None or not self._location_has_payload_inventory_spaces(task.dropoff):
+                    self._waste_swap_opening_working_bin_keys.remove(replacement_key)
+                    self._remove_waste_bin_replacement(replacement_key, task)
+                    if space is not None:
+                        space['payload_instance_id'] = task.payload_instance_id
+                        task.assigned_inventory_space = str(space.get('name', ''))
+                    self._store_payload_instance_for_task(task, event_time=event_time)
+                    self._record_location_storage_peak(task.dropoff)
+                    return
+            self._record_payload_population_snapshot()
             return
         service = bool(getattr(task, 'return_same_payload_instance', False)
                        and self._location_has_inventory_mass_collection_rotation(task.dropoff, payload.name))
@@ -6254,9 +6375,7 @@ class Simulation:
             release_time=return_release_time,
             target_time=0.0,
             quantity=1,
-            priority=int(
-                getattr(task, "return_priority", 0) or getattr(task, "priority", 100)
-            ),
+            priority=int(task.return_priority if task.return_priority is not None else task.priority),
             created_during_runtime=True,
             labels=list(getattr(task, "labels", []) or []) + ["return"],
             route_profile=(
@@ -6400,10 +6519,6 @@ class Simulation:
         # Keep it on the same AMR so the simulator does not model one AMR
         # collecting the full bin while another AMR independently delivers the
         # empty/returned bin.
-        return_task.locked_amr_id = str(amr_id or "").strip()
-        if return_task.locked_amr_id:
-            self._remove_pending_idle_return_tasks_for_amr(return_task.locked_amr_id)
-
         exchange_hold_duration = max(0.0, return_release_time - finish_time)
         hold_limit_sec = max(
             0.0, float(self.amr_hold_for_exchange_max_minutes or 0.0) * 60.0
@@ -6411,10 +6526,18 @@ class Simulation:
         hold_for_exchange = bool(
             uses_dropoff_zone
             and self._task_is_staff_payload_exchange(task)
-            and return_task.locked_amr_id
+            and amr_id
             and hold_limit_sec > 0.0
             and exchange_hold_duration <= hold_limit_sec + 1e-9
         )
+        return_task.locked_amr_id = (
+            str(amr_id or '').strip() if self.service_return_amr_policy == 'same_amr'
+            or self._is_waste_collection(task) or hold_for_exchange else ''
+        )
+        if return_task.locked_amr_id:
+            if self._is_waste_collection(task):
+                self._hold_waste_bin_work(self.amrs_by_id[return_task.locked_amr_id], return_task)
+            self._remove_pending_idle_return_tasks_for_amr(return_task.locked_amr_id)
         if hold_for_exchange:
             held_amr = self.amrs_by_id.get(return_task.locked_amr_id)
             if held_amr is not None:
@@ -6422,8 +6545,7 @@ class Simulation:
                     float(getattr(held_amr, "available_time", 0.0) or 0.0),
                     return_release_time,
                 )
-                held_amr.exchange_hold_until = return_release_time
-                held_amr.exchange_hold_return_task_id = return_task.id
+                self._hold_exchange_work(held_amr, return_task, return_release_time)
                 zone_location = self.locations.get(dropoff_zone)
                 self.log_step(
                     event_time=finish_time,
@@ -6849,6 +6971,8 @@ class Simulation:
             self.payload_instance_store.release_creation_claim(instance_id, task.id)
 
     def _fail_task(self, task: Task, reason: str, now: Optional[float] = None) -> None:
+        from amr_failure_evidence import terminal_snapshot
+        terminal_snapshot(self, task, reason, now)
         if self._stress_evidence:
             self._log_task_released(task, self.current_time if now is None else now,
                 obligation_only=not self.config.get('scenario_testing', {}).get('study_evidence'))
@@ -6863,6 +6987,15 @@ class Simulation:
             return
 
         self.failed_task_ids.add(task_id)
+        self._finish_waste_bin_work(task)
+        replacement_key = getattr(task, 'waste_replacement_key', None)
+        if replacement_key and not getattr(task, 'payload_dropoff_processed', False):
+            self._remove_waste_bin_replacement(replacement_key, task)
+        elif getattr(task, 'waste_bin_swap', False):
+            for replacement in self._waste_bin_replacements.get(self._waste_bin_replacement_key(task), ()):
+                if getattr(replacement, 'waste_collection_id', '') == task.id:
+                    replacement.waste_collection_id = ''
+                    break
         self._release_payload_instance_reservation_for_task(task)
         self._notify_task_generation_state(task, "failed", event_time=now)
         event_time = self.current_time if now is None else now
@@ -6962,6 +7095,8 @@ class Simulation:
         }
         record.update(details)
         self.failed_tasks.append(record)
+        if self.stop_on_task_failure:
+            raise TaskFailureStop(record)
         return record
 
     def _rules_cache_key(
@@ -7804,22 +7939,29 @@ class Simulation:
                     and (start_name in self.lift_stop_names or end_name in self.lift_stop_names)):
                 self._free_flow_lift_distances[job] = route["distance_m"]
 
+        last_update = 0.0
+
+        def route_progress(index):
+            nonlocal last_update
+            if self.progress_callback and (index == len(jobs) or time.monotonic() - last_update >= 1):
+                from amr_simulation_progress import sample
+                last_update = time.monotonic()
+                self.progress_callback(sample('routes', 'Preparing static floor routes', index, len(jobs)))
+
         if self.routing_executor is None or len(jobs) < 128:
-            last_update = 0.0
             for index, job in enumerate(jobs, 1):
                 run_job(job)
-                if self.progress_callback and time.monotonic() - last_update >= 1:
-                    last_update = time.monotonic()
-                    self.progress_callback(dict(phase=f'Preparing static floor routes: {index} / {len(jobs)}'))
+                route_progress(index)
             return
 
         futures = [self.routing_executor.submit(run_job, job) for job in jobs]
-        for future in as_completed(futures):
+        for index, future in enumerate(as_completed(futures), 1):
             self._check_run_cancelled()
             try:
                 future.result()
             except Exception:
                 pass
+            route_progress(index)
 
     def _shortest_path_same_floor(
         self,
@@ -8092,7 +8234,8 @@ class Simulation:
     def _start_task_deferral_limit(self, task: Task) -> None:
         """One deadline from the original due release through AMR assignment."""
         if (self.max_task_deferral_sec <= 0 or task.id in self._task_deferrals
-                or task.id in self.failed_task_ids or getattr(task, "is_idle_return", False)):
+                or task.id in self.failed_task_ids or getattr(task, "is_idle_return", False)
+                or getattr(task, "advance_waste_replacement", False)):
             return
         # The dataclass defaults the generator timestamp to zero even for
         # ordinary tasks and returns, whose release may be much later.
@@ -8339,91 +8482,204 @@ class Simulation:
             return
 
         task.requires_existing_payload_instance = True
-        self._assign_available_existing_payload_instance(task)
 
-        # A seeded waste container is a physical bin, so after it has been emptied
-        # at the waste destination it must be returned to the department pickup
-        # location.  The task-generation category may have an empty return_payload
-        # because the payload is resolved from the waste stream, so force the
-        # return to use the same payload and instance. Establish the policy even
-        # while the bin is away: a task bound later must also return that bin.
-        task.return_enabled = True
+        # Maintain seeded stock either by returning the same physical bin or by
+        # staging an empty from a finite, rotating waste store before collection.
+        task.waste_bin_swap = (
+            self.waste_bin_return_policy == 'second_amr_swap'
+            and self._location_has_inventory_mass_collection_rotation(task.dropoff, task.payload)
+        )
+        task.return_enabled = not task.waste_bin_swap
         task.return_payload = normalise_payload_name(getattr(task, "payload", ""))
-        task.return_same_payload_instance = True
-        task.generator_waits_for_return = True
-        if not getattr(task, "return_priority", 0):
-            task.return_priority = int(getattr(task, "priority", 100) or 100)
+        task.return_same_payload_instance = task.return_enabled
+        task.generator_waits_for_return = task.return_enabled
+        self._resolve_existing_payload_pickup(task)
+        if task.return_priority is None:
+            task.return_priority = task.priority
         if not str(getattr(task, "return_route_profile", "") or "").strip():
             task.return_route_profile = str(
                 getattr(task, "route_profile", "") or ""
             ).strip()
 
-    def _assign_available_existing_payload_instance(self, task: Task) -> None:
-        payload_name = normalise_payload_name(getattr(task, "payload", ""))
-        if not payload_name:
+    @staticmethod
+    def _uses_seeded_waste_bin(task: Task) -> bool:
+        return bool(getattr(task, 'return_same_payload_instance', False) or getattr(task, 'waste_bin_swap', False))
+
+    @staticmethod
+    def _waste_bin_replacement_key(task: Task) -> tuple:
+        return task.pickup, task.dropoff, task.payload, getattr(task, 'container_group', '')
+
+    def _ready_waste_bin_replacement(self, task: Task, *, amr_id='') -> Optional[Task]:
+        available = None
+        for replacement in self._waste_bin_replacements.get(self._waste_bin_replacement_key(task), ()):
+            if not getattr(replacement, 'payload_dropoff_processed', False):
+                continue
+            if amr_id and replacement.waste_replacement_amr_id == amr_id:
+                continue
+            owner = getattr(replacement, 'waste_collection_id', '')
+            if owner == task.id:
+                return replacement
+            if not owner and available is None:
+                available = replacement
+        return available
+
+    def _remove_waste_bin_replacement(self, key: tuple, replacement: Task) -> None:
+        pool = self._waste_bin_replacements.get(key)
+        if pool and replacement in pool:
+            pool.remove(replacement)
+            if not pool:
+                del self._waste_bin_replacements[key]
+
+    def _replenish_waste_bin_replacements(self, collection: Task, key: tuple) -> None:
+        target = self.waste_swap_spare_targets.get(collection.pickup, {}).get(collection.payload, 1)
+        if key in self._waste_swap_opening_working_bin_keys:
+            target += 1
+        remaining = target - len(self._waste_bin_replacements.get(key, ()))
+        for _ in range(remaining):
+            self._queue_waste_bin_replacement(collection, key, advance=True)
+
+    def _queue_initial_waste_bin_replacements(self) -> None:
+        """Queue opening spares for each seeded bin with a resolved store and route."""
+        planned = {}
+        ambiguous = set()
+        definitions = self.task_generation_manager.initial_waste_container_definitions() or []
+        for definition in definitions:
+            payload = definition['payload']
+            group = definition['container_group']
+            destinations = definition.get('dropoff_locations', [])
+            for pickup in definition['pickup_locations']:
+                identity = (group, pickup, payload)
+                seeded = identity in self.initial_waste_container_instances
+                if group.startswith('department:'):
+                    seeded = seeded or (f'{group}:{pickup}', pickup, payload) in self.initial_waste_container_instances
+                if not seeded:
+                    continue
+                if (len(destinations) != 1
+                        or not self._location_has_inventory_mass_collection_rotation(destinations[0], payload)):
+                    ambiguous.add(identity)
+                    continue
+                dropoff = destinations[0]
+                profile = definition['return_route_profile']
+                previous = planned.get(identity)
+                if previous:
+                    if (previous.dropoff, previous.return_route_profile) != (dropoff, profile):
+                        ambiguous.add(identity)
+                    continue
+                collection = Task(
+                    id='', pickup=pickup, dropoff=dropoff, payload=payload,
+                    priority=definition['priority'], return_priority=definition['return_priority'],
+                    return_route_profile=profile,
+                    department_id=definition['department_id'], waste_stream=definition['waste_stream'],
+                    container_type=payload, task_source='department_waste',
+                )
+                collection.container_group = group
+                planned[identity] = collection
+        for identity, collection in planned.items():
+            if identity not in ambiguous:
+                key = self._waste_bin_replacement_key(collection)
+                if (self.waste_swap_opening_working_bins.get(collection.pickup) == collection.payload
+                        and (not self._location_has_payload_inventory_spaces(collection.pickup)
+                             or self._find_free_inventory_space(collection.pickup, self.payloads[collection.payload]))):
+                    self._waste_swap_opening_working_bin_keys.add(key)
+                self._replenish_waste_bin_replacements(collection, key)
+
+    def _queue_waste_bin_replacements(self) -> None:
+        if self.waste_bin_return_policy != 'second_amr_swap':
             return
-        current_instance_id = str(
-            getattr(task, "payload_instance_id", "") or ""
-        ).strip()
-        if current_instance_id:
+        if self.waste_swap_advance_staging:
+            for _, _, _, collection in self._live_pending_task_items():
+                if (not getattr(collection, 'waste_bin_swap', False)
+                        or collection.release_time > self.current_time):
+                    continue
+                pool = self._waste_bin_replacements.get(self._waste_bin_replacement_key(collection), ())
+                if len(pool) > 1 and (self._ready_waste_bin_replacement(collection) is not None or any(
+                        not getattr(spare, 'advance_waste_replacement', False)
+                        and not getattr(spare, 'payload_dropoff_processed', False) for spare in pool)):
+                    continue
+                replacement = next((spare for spare in pool
+                                    if getattr(spare, 'advance_waste_replacement', False)), None)
+                if replacement:
+                    replacement.advance_waste_replacement = False
+                    if self._record_failure_diagnostics:
+                        from amr_failure_evidence import record
+                        record(self, replacement, 'waste_spare_prioritised', dict(collection_task_id=collection.id,
+                               swap_key=list(replacement.waste_replacement_key)))
+                    if not getattr(replacement, 'waste_replacement_amr_id', ''):
+                        replacement.release_time = self.current_time
+                        self._start_task_deferral_limit(replacement)
+        for _, _, _, collection in sorted(self._live_pending_task_items()):
+            if (not getattr(collection, 'waste_bin_swap', False)
+                    or collection.release_time > self.current_time):
+                continue
+            key = self._waste_bin_replacement_key(collection)
+            if key in self._waste_bin_replacements or not self._pickup_instance_available(collection):
+                continue
+            self._queue_waste_bin_replacement(collection, key)
+
+    def _queue_waste_bin_replacement(self, collection: Task, key: tuple, *, advance=False) -> None:
+        self.synthetic_task_counter += 1
+        replacement = Task(
+            id=f"WASTE-REPLACEMENT-{self.synthetic_task_counter}", pickup=collection.dropoff,
+            dropoff=collection.pickup, payload=collection.payload, release_time=self.current_time,
+            priority=collection.return_priority if collection.return_priority is not None else collection.priority,
+            route_profile=collection.return_route_profile, task_source='waste_bin_replacement',
+            department_id=collection.department_id, waste_stream=collection.waste_stream,
+            container_type=collection.container_type, is_return_task=True, created_during_runtime=True,
+        )
+        replacement.requires_existing_payload_instance = True
+        replacement.waste_replacement_key = key
+        replacement.container_group = getattr(collection, 'container_group', '')
+        replacement.advance_waste_replacement = advance
+        self._waste_bin_replacements.setdefault(key, []).append(replacement)
+        if self._record_failure_diagnostics:
+            from amr_failure_evidence import record
+            record(self, replacement, 'waste_spare_queued', dict(swap_key=list(key), advance=advance,
+                   follows_task_id=collection.id))
+        self._queue_pending_task(replacement)
+
+    @staticmethod
+    def _bin_matches_group(container_group, record) -> bool:
+        actual_group = str((record.metadata or {}).get("container_group", "") or "").strip()
+        return (not container_group or actual_group == container_group
+                or (container_group.startswith("department:")
+                    and actual_group == f"{container_group}:{record.location}"))
+
+    def _resolve_existing_payload_pickup(self, task: Task) -> None:
+        """Locate existing stock. Waste collections claim it when dispatch commits."""
+        payload_name = normalise_payload_name(getattr(task, "payload", ""))
+        if not payload_name or str(getattr(task, "payload_instance_id", "") or "").strip():
             return
 
         container_group = str(getattr(task, "container_group", "") or "").strip()
+        if getattr(task, 'waste_bin_swap', False):
+            # Replacement bins take over at the seeded pickup. An empty at the
+            # waste store can still carry the group of its previous collection.
+            task.pickup = self._shared_waste_swap_pickups.get((container_group, payload_name), task.pickup)
+            return
+        store = self.payload_instance_store
+
+        def available(record):
+            return (record.payload == payload_name
+                    and self._record_is_available_empty_container(record)
+                    and not store.is_reserved(record.instance_id, excluding_owner=task.id))
+
         # A pickup can hold several independent bins of the same payload type.
         # Preserve the legacy location suffix on department seeds while matching
         # generated tasks, whose department group does not include that suffix.
-        for record in self.payload_instance_store.records_at(task.pickup):
-            if record.payload != payload_name:
-                continue
-            if container_group:
-                actual_group = str((record.metadata or {}).get("container_group", "") or "").strip()
-                matches_group = actual_group == container_group
-                if container_group.startswith("department:"):
-                    matches_group = matches_group or actual_group == f"{container_group}:{record.location}"
-                if not matches_group:
-                    continue
-            if not self._record_is_available_empty_container(record):
-                continue
-            if not self.payload_instance_store.reserve_instance(
-                record.instance_id, str(getattr(task, "id", "") or "")
-            ):
-                continue
+        record = next((record for record in store.records_at(task.pickup)
+                       if self._bin_matches_group(container_group, record) and available(record)), None)
+        # A contributing department may generate work for a shared bin in a different room.
+        if record is None and container_group:
+            record = next((record for record in store._records.values()
+                           if str((record.metadata or {}).get("container_group", "") or "").strip()
+                           == container_group and available(record)), None)
+        if record is None:
+            return
+        if not self._is_waste_collection(task):
+            if not store.reserve_instance(record.instance_id, task.id):
+                return
             task.payload_instance_id = record.instance_id
-            return
-
-        # Shared-bin waste tasks may be generated by whichever department pushes
-        # the shared volume over the threshold.  The physical seeded bin may
-        # actually be stored at another department/shared waste room.  In that
-        # case, move the task pickup to the current physical bin location rather
-        # than leaving a generated task pending forever at the contributing
-        # department's own pickup point.
-        if not container_group:
-            return
-
-        records = getattr(self.payload_instance_store, "_records", {}) or {}
-        for record in list(records.values()):
-            if getattr(record, "payload", "") != payload_name:
-                continue
-            if self.payload_instance_store.is_reserved(
-                getattr(record, "instance_id", ""),
-                excluding_owner=str(getattr(task, "id", "") or ""),
-            ):
-                continue
-            if not self._record_is_available_empty_container(record):
-                continue
-            metadata = getattr(record, "metadata", {}) or {}
-            if (
-                str(metadata.get("container_group", "") or "").strip()
-                != container_group
-            ):
-                continue
-            if not self.payload_instance_store.reserve_instance(
-                record.instance_id, str(getattr(task, "id", "") or "")
-            ):
-                continue
-            task.payload_instance_id = record.instance_id
-            task.pickup = record.location
-            return
+        task.pickup = record.location
 
     def _init_department_runtime(self):
         self.department_runtime = {}
@@ -10394,7 +10650,7 @@ class Simulation:
 
         eligible = []
         for amr in self.amrs:
-            if getattr(amr, "is_charging", False):
+            if getattr(amr, "is_charging", False) or getattr(amr, "waste_bin_task_id", ""):
                 continue
             available_time = float(getattr(amr, "available_time", 0.0) or 0.0)
             if available_time > now + 1e-9:
@@ -10540,7 +10796,7 @@ class Simulation:
                 return None
             if not self._amr_can_carry_payload(amr, payload):
                 self._set_task_pending_reason(
-                    task, "No AMR has sufficient payload weight/dimensions/orientation"
+                    task, f"AMR {amr.id} cannot carry {payload.name}: payload weight/dimensions/orientation"
                 )
                 return None
             payload_slot_name, payload_orientation = self._choose_payload_orientation(amr, payload)
@@ -10777,6 +11033,7 @@ class Simulation:
                 )
 
             t += self.load_unload_time_sec
+            pickup_complete_time = t
             total += self.load_unload_time_sec
             segments.append(
                 {
@@ -11006,6 +11263,7 @@ class Simulation:
             return {
                 "task_start_time": task_start_time,
                 "finish_time": t,
+                "pickup_complete_time": pickup_complete_time,
                 "duration": total,
                 "segments": segments,
                 "end_location": end_location_name,
@@ -11201,10 +11459,63 @@ class Simulation:
             results.append((job, estimate))
         return results
 
+    @staticmethod
+    def _hold_waste_bin_work(amr: AMR, task: Task) -> None:
+        amr.waste_bin_task_ids = frozenset(getattr(amr, 'waste_bin_task_ids', ())) | {task.id}
+        amr.waste_bin_task_id = task.id
+        task.waste_bin_amr_id = amr.id
+
+    @staticmethod
+    def _hold_exchange_work(amr: AMR, task: Task, ready_at=None) -> None:
+        # Copy on replacement so route reservation transactions can roll back.
+        amr.exchange_tasks = dict(getattr(amr, 'exchange_tasks', {}), **{task.id: ready_at})
+        task.exchange_amr_id = amr.id
+        if ready_at is not None:
+            amr.exchange_hold_until = max(value for value in amr.exchange_tasks.values() if value is not None)
+            amr.exchange_hold_return_task_id = task.id
+
+    def _finish_waste_bin_work(self, task: Task) -> None:
+        """Release only this task's cycle ownership, including service exchanges."""
+        amr_id = getattr(task, "waste_bin_amr_id", "")
+        if amr_id:
+            amr = self.amrs_by_id[amr_id]
+            remaining = frozenset(getattr(amr, 'waste_bin_task_ids', ())) - {task.id}
+            amr.waste_bin_task_ids = remaining
+            amr.waste_bin_task_id = min(remaining, default='')
+        exchange_amr = self.amrs_by_id.get(getattr(task, 'exchange_amr_id', ''))
+        if exchange_amr is not None:
+            exchange_amr.exchange_tasks = {key: value for key, value in exchange_amr.exchange_tasks.items()
+                                           if key != task.id}
+            ready = [(value, key) for key, value in exchange_amr.exchange_tasks.items() if value is not None]
+            until, owner = max(ready, default=(0.0, ''))
+            exchange_amr.exchange_hold_until = until
+            exchange_amr.exchange_hold_return_task_id = owner
+
     def _task_allowed_for_amr(self, task: Task, amr: AMR) -> bool:
+        return not self._amr_dispatch_blocker(task, amr)
+
+    def _amr_dispatch_blocker(self, task: Task, amr: AMR) -> str:
+        if self.dispatch_available_amrs_only and amr.available_time > self.current_time + 1e-9:
+            return f'AMR available at {amr.available_time:g} s'
+        # An advance delivery can use an available robot. Once a collection
+        # requests the spare, the delivery can also use a future assignment slot.
+        if getattr(task, 'advance_waste_replacement', False) and amr.available_time > self.current_time + 1e-9:
+            return 'Waiting for an idle AMR for advance staging'
         locked_amr_id = str(getattr(task, "locked_amr_id", "") or "").strip()
         if locked_amr_id and str(getattr(amr, "id", "") or "").strip() != locked_amr_id:
-            return False
+            return f'Return locked to AMR {locked_amr_id}'
+        waste_bin_task_id = getattr(amr, "waste_bin_task_id", "")
+        waste_owners = getattr(amr, 'waste_bin_task_ids', frozenset({waste_bin_task_id}) if waste_bin_task_id else frozenset())
+        if waste_owners and task.id not in waste_owners:
+            return 'Reserved for waste cycle ' + ', '.join(sorted(waste_owners))
+        if getattr(task, 'waste_bin_swap', False):
+            if self._ready_waste_bin_replacement(task, amr_id=amr.id) is None:
+                return f'Waiting for a spare empty bin at {task.pickup}'
+        exchange_tasks = getattr(amr, 'exchange_tasks', None)
+        if exchange_tasks is not None:
+            if exchange_tasks and task.id not in exchange_tasks:
+                return 'Reserved for payload exchange ' + ', '.join(sorted(exchange_tasks))
+            return ''
         exchange_hold_until = float(
             getattr(amr, "exchange_hold_until", 0.0) or 0.0
         )
@@ -11213,12 +11524,31 @@ class Simulation:
                 getattr(amr, "exchange_hold_return_task_id", "") or ""
             ).strip()
             if str(getattr(task, "id", "") or "").strip() != held_return_task_id:
-                return False
-        return True
+                return f'Reserved for payload exchange {held_return_task_id}'
+        return ''
 
     def _select_best_assignment(self) -> Optional[Tuple[AMR, Task, dict]]:
         if not self.pending_tasks:
             return None
+        queue_order = {item[3].id: item[:3] for item in self._live_pending_task_items()}
+        def choice_order(choice):
+            tasks = choice[1] if isinstance(choice[1], list) else [choice[1]]
+            return min(queue_order[t.id] for t in tasks)
+
+        if self.waste_swap_advance_staging:
+            ready = sorted(
+                item for item in self._live_pending_task_items()
+                if item[3].task_source == 'waste_bin_replacement'
+                and item[3].release_time <= self.current_time
+                and self._pickup_instance_available(item[3])
+            )
+            width = self.max_single_candidate_tasks
+            charge_cache, floor_cache = {}, {}
+            for offset in range(0, len(ready), width):
+                choice = self._select_single_candidate_window(
+                    ready[offset:offset + width], [], charge_cache, floor_cache)
+                if choice is not None:
+                    return choice
 
         multi_stop_jobs = []
         multi_stop_released = [
@@ -11229,10 +11559,8 @@ class Simulation:
         ]
         multi_stop_released.sort(
             key=lambda task: (
-                0 if self._task_prefers_multi_stop_amr(task) else 1,
-                int(getattr(task, "priority", 100) or 100),
+                int(task.priority),
                 float(getattr(task, "release_time", 0.0) or 0.0),
-                str(getattr(task, "id", "")),
             )
         )
         for order, amr in enumerate(self.amrs):
@@ -11254,9 +11582,8 @@ class Simulation:
             )
 
         multi_stop_best = None
+        multi_stop_best_key = None
         batch_charge_requests = []
-        multi_stop_best_finish = math.inf
-        multi_stop_best_order = math.inf
         for job, estimate in self._estimate_candidate_jobs(multi_stop_jobs):
             if estimate is None:
                 continue
@@ -11265,17 +11592,13 @@ class Simulation:
                 continue
             finish_time = estimate["finish_time"]
             order = int(job.get("order", 0))
-            if (finish_time, order) < (multi_stop_best_finish, multi_stop_best_order):
-                multi_stop_best_finish = finish_time
-                multi_stop_best_order = order
+            key = (min(queue_order[t.id] for t in job['task_or_tasks']), finish_time, order)
+            if multi_stop_best_key is None or key < multi_stop_best_key:
+                multi_stop_best_key = key
                 multi_stop_best = (job["amr"], job["task_or_tasks"], estimate)
 
-        # Multi-stop remains a route-shape preference.  If a feasible batch exists,
-        # commit it before comparing against single-task assignments.
-        if multi_stop_best is not None:
-            return multi_stop_best
-
         candidate_tasks = []
+        from amr_failure_evidence import blocker_changed
         # Filter work that cannot be considered now before forming bounded
         # estimation windows. Generated waste tasks may wait for a physical
         # bin whose return task is later in the queue.
@@ -11288,6 +11611,11 @@ class Simulation:
                 self._set_task_pending_reason(task, "Waiting for release time")
                 continue
 
+            if getattr(task, 'waste_bin_swap', False) and self._ready_waste_bin_replacement(task) is None:
+                self._set_task_pending_reason(task, f"Waiting for a spare empty bin at {task.pickup}")
+                blocker_changed(self, task, 'Spare bin', task.pending_reason)
+                continue
+
             if (
                 self._task_requires_existing_payload_instance(task)
                 and not self._pickup_instance_available(task)
@@ -11295,6 +11623,7 @@ class Simulation:
                 self._set_task_pending_reason(
                     task, self._pickup_instance_pending_reason(task)
                 )
+                blocker_changed(self, task, 'Pickup stock', task.pending_reason)
                 continue
 
             payload_for_inventory = self._payload_for_task(task)
@@ -11314,8 +11643,10 @@ class Simulation:
                         task,
                         self._inventory_pending_reason(task.dropoff, payload),
                     )
+                    blocker_changed(self, task, 'Inventory bays', task.pending_reason)
                     continue
 
+            blocker_changed(self, task, 'Dispatch')
             candidate_tasks.append(item)
 
         # Bound each estimation batch, not the set of work that can ever run.
@@ -11332,8 +11663,11 @@ class Simulation:
                 floor_access_cache,
             )
             if choice is not None:
+                # Route shape is a preference only within the same queue head.
+                if multi_stop_best is not None and choice_order(multi_stop_best) <= choice_order(choice):
+                    return multi_stop_best
                 return choice
-        return None
+        return multi_stop_best
 
     def _candidate_can_reach_pickup_floor(self, amr, task, cache):
         """Reject only a missing health-operational lift connection before pickup.
@@ -11367,7 +11701,11 @@ class Simulation:
         single_jobs = []
         for task_order, (_, _, _, task) in enumerate(candidate_tasks):
             task_prefers_multi_stop = self._task_prefers_multi_stop_amr(task)
+            payload = self._payload_for_task(task)
+            eligible_amrs = []
             for amr_order, amr in enumerate(self.amrs):
+                if payload is None or not self._amr_can_carry_payload(amr, payload):
+                    continue
                 if not self._task_allowed_for_amr(task, amr):
                     continue
                 if not self._candidate_can_reach_pickup_floor(amr, task, floor_access_cache):
@@ -11376,6 +11714,7 @@ class Simulation:
                     continue
                 if self._needs_post_task_recharge(amr):
                     continue
+                eligible_amrs.append(amr)
                 single_jobs.append(
                     {
                         "order": (task_order, amr_order),
@@ -11388,12 +11727,27 @@ class Simulation:
                         "args": (amr, task, False),
                     }
                 )
+            if not eligible_amrs and payload is not None:
+                capable = [amr for amr in self.amrs if self._amr_can_carry_payload(amr, payload)]
+                if capable:
+                    self._set_task_pending_reason(task, 'Waiting for AMR availability: ' + '; '.join(
+                        f'{amr.id}: {self._amr_dispatch_blocker(task, amr) or ("charging" if amr.is_charging else "awaiting recharge or pickup access")}'
+                        for amr in capable))
 
         best_by_task = {}
         preferred_by_task = {}
         charge_requests = batch_charge_requests
 
         for job, estimate in self._estimate_candidate_jobs(single_jobs):
+            if self._record_failure_diagnostics:
+                status = ('rejected' if estimate is None else
+                          'recharge_required' if estimate.get('_requires_route_charge') else 'feasible')
+                task_id, amr_id = job['task_or_tasks'].id, job['amr'].id
+                route = self.geometric_candidate_outcomes.get((amr_id, task_id), {}) if estimate is None else {}
+                self._investigation_estimates.setdefault(task_id, {})[amr_id] = dict(
+                    estimated_at=self.current_time, status=status,
+                    detail=route.get('detail', 'No feasible route/lift/inventory/energy plan'
+                                     if estimate is None else ''))
             if estimate is None:
                 continue
             if estimate.get('_requires_route_charge'):
@@ -11403,9 +11757,14 @@ class Simulation:
             task = job["task_or_tasks"]
             task_key = str(getattr(task, "id", ""))
             finish_time = estimate["finish_time"]
+            if (getattr(task, 'waste_bin_swap', False)
+                    and self.waste_swap_collection_dispatch.get(task.pickup) == 'earliest_pickup'):
+                amr_selection_time = estimate["pickup_complete_time"]
+            else:
+                amr_selection_time = finish_time
             order_tuple = job.get("order", (0, 0))
             flat_order = (order_tuple[0] * max(len(self.amrs), 1)) + order_tuple[1]
-            candidate = (finish_time, flat_order, job["amr"], task, estimate)
+            candidate = (amr_selection_time, flat_order, job["amr"], task, estimate)
 
             current = best_by_task.get(task_key)
             if current is None or candidate[:2] < current[:2]:
@@ -11416,27 +11775,16 @@ class Simulation:
                 if current is None or candidate[:2] < current[:2]:
                     preferred_by_task[task_key] = candidate
 
-        best = None
-        best_finish = math.inf
-        best_order = math.inf
-
         for _priority, _release, _counter, task in candidate_tasks:
             task_key = str(getattr(task, "id", ""))
             chosen = preferred_by_task.get(task_key) or best_by_task.get(task_key)
             if chosen is None:
                 continue
-            chosen_finish, chosen_order, amr, task, estimate = chosen
-            if self.geometric_traffic:
-                # Queue order is urgency, release, then insertion. A shorter
-                # journey must not displace higher-urgency feasible work.
-                return amr, task, estimate
-            if (chosen_finish, chosen_order) < (best_finish, best_order):
-                best_finish = chosen_finish
-                best_order = chosen_order
-                best = (amr, task, estimate)
+            _, _, amr, task, estimate = chosen
+            # Queue order is urgency, release, then insertion in every mode.
+            # Robot selection above still uses earliest completion for this task.
+            return amr, task, estimate
 
-        if best is not None:
-            return best
         # Charging cannot displace a delivery that is already feasible. Examine
         # detours only when no delivery can be assigned, in deterministic order.
         charge_choices = []
@@ -11718,7 +12066,7 @@ class Simulation:
             # not make an earlier locked return look physically incompatible.
             return ""
 
-        if self._location_has_payload_inventory_spaces(dropoff_name):
+        if self._location_has_payload_inventory_spaces(dropoff_name) and not getattr(task, 'waste_replacement_key', None):
             spaces = self.inventory_spaces_by_location.get(dropoff_name, [])
             compatible_space_count = sum(
                 1
@@ -11824,16 +12172,7 @@ class Simulation:
         self._compact_pending_tasks_if_needed()
 
     def _refresh_pending_existing_payload_instances(self) -> None:
-        """Attach newly available physical payloads to pending existing-container tasks.
-
-        Shared waste-bin tasks can be generated while the single physical bin is
-        away at the waste destination or already reserved for its return journey.
-        At generation time there may be no record in the payload store, so the
-        task cannot be given a payload_instance_id or corrected pickup location.
-        Re-checking pending tasks immediately before assignment lets those tasks
-        bind to the returned shared bin once it is stored again, instead of
-        remaining pending forever at the contributing department's nominal pickup.
-        """
+        """Resolve the pickup again when a shared bin reappears in storage."""
         if not self.pending_tasks:
             return
 
@@ -11842,8 +12181,8 @@ class Simulation:
                 continue
             if not self._task_requires_existing_payload_instance(task):
                 continue
-            if getattr(task, 'recover_staged_payload', False):
-                continue  # Recovery binds the exact staged ID only at route commitment.
+            if getattr(task, 'recover_staged_payload', False) or getattr(task, 'waste_replacement_key', None):
+                continue  # Bind these physical payloads only at route commitment.
 
             instance_id = str(getattr(task, "payload_instance_id", "") or "").strip()
             if instance_id and self._pickup_instance_available(task):
@@ -11858,7 +12197,7 @@ class Simulation:
                 task.payload_instance_id = ""
 
             if not str(getattr(task, "payload_instance_id", "") or "").strip():
-                self._assign_available_existing_payload_instance(task)
+                self._resolve_existing_payload_pickup(task)
 
     # Task Runner - steps thru sequentially until task end
 
@@ -12092,6 +12431,7 @@ class Simulation:
             )
 
         self._refresh_pending_existing_payload_instances()
+        self._queue_waste_bin_replacements()
         self._purge_idle_returns_blocked_by_locked_work()
         idle_return_queue_version = None
 
@@ -12214,12 +12554,12 @@ class Simulation:
                     continue
 
                 for multi_task in tasks:
-                    self._task_deferrals.pop(multi_task.id, None)
                     self._remove_pending_task(multi_task)
                     self._set_task_pending_reason(multi_task, "")
 
                 start_time = committed["task_start_time"]
                 finish_time = committed["finish_time"]
+                prior_available = amr.available_time
                 previous_location = amr.location_name
                 self._free_amr_inventory_space(amr)
                 amr.total_busy_time += committed["duration"]
@@ -12227,8 +12567,11 @@ class Simulation:
                 amr.location_name = committed["end_location"]
                 amr.completed_tasks += len(tasks)
                 self._register_evidence_journey(tasks)
+                from amr_failure_evidence import dispatch_committed
+                dispatch_committed(self, tasks, amr, committed, prior_available=prior_available)
 
                 for multi_task in tasks:
+                    self._task_deferrals.pop(multi_task.id, None)
                     self.log_step(
                         event_time=start_time,
                         event_type="multi_stop_task_assigned",
@@ -12330,11 +12673,26 @@ class Simulation:
                     return
                 continue
 
-            self._task_deferrals.pop(task.id, None)
             self._remove_pending_task(task)
             self._set_task_pending_reason(task, "")
+            if self._is_waste_collection(task) and getattr(task, "return_enabled", False):
+                self._hold_waste_bin_work(amr, task)
+            elif (task.return_enabled and getattr(task, 'dropoff_zone', '')
+                  and self._task_is_staff_payload_exchange(task)
+                  and self.amr_hold_for_exchange_max_minutes > 0):
+                # Reserve the exchange at delivery admission, before later work
+                # can claim this robot while its staff handoff is still in flight.
+                self._hold_exchange_work(amr, task)
+            if getattr(task, 'waste_replacement_key', None):
+                task.waste_replacement_amr_id = amr.id
+            replacement = None
+            if getattr(task, 'waste_bin_swap', False):
+                replacement = self._ready_waste_bin_replacement(task, amr_id=amr.id)
+                assert replacement is not None
+                replacement.waste_collection_id = task.id
             start_time = committed["task_start_time"]
             finish_time = committed["finish_time"]
+            prior_available = amr.available_time
             previous_location = amr.location_name
             keep_target_reservation = bool(getattr(task, "is_idle_return", False))
             self._free_amr_inventory_space(
@@ -12351,6 +12709,9 @@ class Simulation:
             amr.location_name = committed["end_location"]
             amr.completed_tasks += 1
             self._register_evidence_journey([task])
+            from amr_failure_evidence import dispatch_committed
+            dispatch_committed(self, [task], amr, committed, prior_available=prior_available, spare=replacement)
+            self._task_deferrals.pop(task.id, None)
 
             self.log_step(
                 event_time=start_time,
@@ -13194,7 +13555,8 @@ class Simulation:
                     break
         finally:
             if self.routing_executor is not None:
-                cancelled = bool(self.cancel_requested and self.cancel_requested())
+                cancelled = bool((self.cancel_requested and self.cancel_requested())
+                                 or (self.stop_on_task_failure and self.failed_tasks))
                 self.routing_executor.shutdown(wait=True, cancel_futures=cancelled)
                 self.routing_executor = None
 
@@ -13226,8 +13588,12 @@ class Simulation:
                         details=reason, pending_reason=reason, from_location=task.pickup,
                         to_location=task.dropoff)
         from amr_pending_evidence import record_pending_at_stop
+        if self._record_failure_diagnostics:
+            from amr_failure_evidence import terminal_snapshot
+            for _, _, _, pending in self._live_pending_task_items():
+                terminal_snapshot(self, pending, pending.pending_reason, self.current_time, pending=True)
         record_pending_at_stop(self)
-        if self.memory_event_limit is None:
+        if self.memory_event_limit is None and self.console_progress:
             self._print_progress_complete()
             self.print_short_summary()
             print()
@@ -13575,9 +13941,14 @@ class Simulation:
                 }
             )
 
+            self._finish_waste_bin_work(task)
             self._schedule_configured_return_task(
                 task, event.payload["finish_time"], event.payload.get("amr_id", "")
             )
+            if (self.waste_swap_advance_staging and getattr(task, 'waste_bin_swap', False)
+                    and event.payload["finish_time"] < self.task_generation_horizon_sec):
+                key = self._waste_bin_replacement_key(task)
+                self._replenish_waste_bin_replacements(task, key)
             self._notify_task_generation_state(task, "completed")
 
             target_time = event.payload.get("target_time", 0.0)
@@ -15353,22 +15724,30 @@ class Simulation:
         return max(times)
 
     def _print_progress(self, phase='Running simulation'):
-        now_wall = time.time()
+        now_wall = time.monotonic()
+        horizon = (self.task_generation_horizon_sec
+                   if self.task_generation_manager.generators else self.estimated_total_sim_time)
+        draining = horizon > 0 and self.current_time >= horizon
+        stage = 'drain' if draining else 'simulation'
 
-        if now_wall - self.last_progress_update < self.progress_update_interval:
+        if (now_wall - self.last_progress_update < self.progress_update_interval
+                and (not self.progress_callback or stage == self.last_progress_stage)):
             return
 
         self.last_progress_update = now_wall
+        self.last_progress_stage = stage
 
         if self.progress_callback:
-            self.progress_callback(dict(phase=phase, sim_time_sec=self.current_time,
-                horizon_sec=self.task_generation_horizon_sec, completed=len(self.completed_task_records),
-                failed=len(self.failed_task_ids), pending=sum(not self._pending_task_removed(task)
-                    for _, _, _, task in self.pending_tasks)))
-        if self.memory_event_limit is not None:
+            from amr_simulation_progress import sample
+            self.progress_callback(sample(stage, 'Finishing released work' if draining else phase,
+                self.current_time if not draining else None, horizon if not draining else None,
+                sim_time_sec=self.current_time, horizon_sec=horizon,
+                completed=len(self.completed_task_records), failed=len(self.failed_task_ids),
+                pending=sum(not self._pending_task_removed(task) for _, _, _, task in self.pending_tasks)))
+        if self.memory_event_limit is not None or not self.console_progress:
             return
 
-        elapsed = now_wall - self.wall_start_time
+        elapsed = time.time() - self.wall_start_time
 
         total_sim = max(self.estimated_total_sim_time, self.current_time, 1e-9)
         progress = min(1.0, self.current_time / max(total_sim, 1e-9))
@@ -15574,6 +15953,8 @@ class Simulation:
         that locked physical-bin return, otherwise the visualiser shows the AMR
         going home first and only then collecting the bin.
         """
+        if getattr(amr, "waste_bin_task_id", "") or getattr(amr, 'exchange_tasks', {}):
+            return True
         amr_id = str(getattr(amr, "id", "") or "").strip()
         if not amr_id:
             return False

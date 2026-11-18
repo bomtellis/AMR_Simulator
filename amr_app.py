@@ -12,6 +12,7 @@ def main(argv=None):
     parser.add_argument('--package-smoke', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--package-smoke-ltn', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--run-project', type=Path, help=argparse.SUPPRESS)
+    parser.add_argument('--progress-json', action='store_true', help=argparse.SUPPRESS)
     parser.add_argument('--lift-study', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--scenario-study', type=Path, help=argparse.SUPPRESS)
     parser.add_argument('--human-contingency-study', type=Path, help='Run or resume a saved human contingency study')
@@ -111,7 +112,7 @@ def main(argv=None):
         return run_ltn(args.package_smoke_ltn)
     if args.run_project is not None:
         from amr_project_runs import main as run_project
-        return run_project([str(args.run_project)])
+        return run_project([str(args.run_project)] + (['--progress-json'] if args.progress_json else []))
     if args.generate_report is not None:
         from amr_project_report import main as generate_report
         report_args = [str(path) for path in args.generate_report]

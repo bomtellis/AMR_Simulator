@@ -9,7 +9,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from amr_fm_forecast import actual_activity, compare, native_demand, suggest_policy, validate_application
+from amr_fm_forecast import (
+    actual_activity, compare, demand_replacement_options, missing_demand_assignments,
+    native_demand, remap_fm_cohorts, resolve_demand_assignments, suggest_policy,
+    validate_application,
+)
 from visualiser.project_checks import config_fingerprint
 
 
@@ -53,8 +57,12 @@ class FMLogisticsPanel(QWidget):
         super().__init__(parent)
         self.configuration = configuration
         self.apply = apply
+        self._editor = parent
         self.job = None
         self.baseline = None
+        self.demand_config = None
+        self.assignment_selectors = {}
+        self.assignment_choices = None
         self.comparison = None
         self.plan = {"enabled": True, "categories": {}}
         self.category_key = ""
@@ -85,6 +93,18 @@ class FMLogisticsPanel(QWidget):
         for button in (self.load_button, self.suggest_button, self.compare_button, self.apply_button):
             actions.addWidget(button)
         controls.addLayout(actions)
+        self.assignment_review = QWidget()
+        review = QVBoxLayout(self.assignment_review)
+        review.setContentsMargins(0, 0, 0, 0)
+        self.assignment_summary = QLabel()
+        self.assignment_summary.setWordWrap(True)
+        review.addWidget(self.assignment_summary)
+        self.assignments = table(["Category", "Missing department", "References", "Service location"])
+        review.addWidget(self.assignments)
+        self.remove_missing = QPushButton("Remove all missing assignments")
+        self.remove_missing.clicked.connect(self.remove_missing_assignments)
+        review.addWidget(self.remove_missing)
+        controls.addWidget(self.assignment_review)
         form = QFormLayout()
         self.enabled = QCheckBox("Use FM release planning in normal simulations")
         self.enabled.setChecked(True)
@@ -167,10 +187,48 @@ class FMLogisticsPanel(QWidget):
         actual_layout.addWidget(self.actual_summary)
         actual_layout.addWidget(self.actual_rows, 2)
         self.tabs.addTab(actual, "Actual activity")
+        from visualiser.day_schedule import DaySchedulePanel
+        self.day_schedule = DaySchedulePanel(
+            self._timeline_generation, self._apply_timeline_generation,
+            self.configuration().get('departments', []), self.configuration,
+            self._open_timeline_rule, self, native_editable=False,
+            applied_text='FM arrangement applied to the project. Save the project to keep it.')
+        self.tabs.addTab(self.day_schedule, 'Day schedule')
+        self.tabs.currentChanged.connect(self._timeline_tab_changed)
         self.refresh()
 
+    def _timeline_generation(self):
+        self.save_category()
+        generation = deepcopy(self.configuration().get('task_generation', {}))
+        generation['fm_logistics'] = deepcopy(self.plan)
+        return generation
+
+    def _apply_timeline_generation(self, generation):
+        if self.apply(deepcopy(generation)):
+            self.plan = deepcopy(generation.get('fm_logistics', {}))
+            self.saved_plan = deepcopy(self.plan)
+            self.comparison = None
+            self.show_category()
+            self.refresh()
+        else:
+            raise ValueError('The project could not accept the FM arrangement. No timeline changes were saved.')
+
+    def _open_timeline_rule(self, _identity):
+        editor = self._editor
+        if hasattr(editor, 'manage_task_generation'):
+            editor.manage_task_generation()
+            self.refresh()
+            self.day_schedule.refresh()
+
+    def _timeline_tab_changed(self, index):
+        if self.tabs.widget(index) is self.day_schedule:
+            self.day_schedule.departments = self.configuration().get('departments', [])
+            self.day_schedule.refresh()
+
     def refresh(self):
-        configured = self.configuration().get("task_generation", {}).get("fm_logistics")
+        config = self.configuration()
+        self.refresh_assignments(config)
+        configured = config.get("task_generation", {}).get("fm_logistics")
         if self.saved_plan != configured:
             self.saved_plan = deepcopy(configured)
             self.plan = deepcopy(configured) if configured is not None else {"enabled": True, "categories": {}}
@@ -179,10 +237,51 @@ class FMLogisticsPanel(QWidget):
             self.refreshing = False
             self.show_category()
             self.invalidate()
-        if self.baseline and self.baseline_hash != config_fingerprint(self.configuration()):
-            self.baseline = None
-            self.invalidate()
+        if self.baseline and self.baseline_hash != config_fingerprint(config):
+            self.assignment_changed()
         self.buttons()
+
+    def refresh_assignments(self, config):
+        missing = missing_demand_assignments(config)
+        options = {category: demand_replacement_options(config, category)
+                   for category in {key for key, _ in missing}}
+        choices = missing, options
+        if choices == self.assignment_choices:
+            return
+        previous = {key: widget.currentData() for key, widget in self.assignment_selectors.items()
+                    if widget.currentIndex() > 0}
+        self.assignment_choices = choices
+        self.assignment_review.setVisible(bool(missing))
+        self.assignment_summary.setText(
+            f"{missing.total()} demand or FM cohort references point to missing departments. "
+            "Choose a current service location or remove each obsolete assignment. "
+            "Load demand to preview the changes, then apply the selected sequence to save them.")
+        self.assignments.setRowCount(0)
+        fill(self.assignments, [(category, member, missing[category, member]) for category, member in sorted(missing)])
+        self.assignment_selectors.clear()
+        for row, key in enumerate(sorted(missing)):
+            selector = QComboBox()
+            selector.addItem("Choose a service location or remove")
+            selector.addItem("Remove obsolete assignment")
+            for identity, label in options[key[0]].items():
+                selector.addItem(label, identity)
+            if key in previous:
+                index = selector.findData(previous[key]) if previous[key] is not None else 1
+                selector.setCurrentIndex(max(0, index))
+            self.assignments.setCellWidget(row, 3, selector)
+            selector.currentIndexChanged.connect(self.assignment_changed)
+            self.assignment_selectors[key] = selector
+
+    def assignment_changed(self, *_):
+        self.baseline = None
+        self.demand_config = None
+        self.comparison = None
+        self.status.setText("Load demand to preview the project's current assignments and any corrections.")
+        self.buttons()
+
+    def remove_missing_assignments(self):
+        for selector in self.assignment_selectors.values():
+            selector.setCurrentIndex(1)
 
     def buttons(self):
         ready = self.job is None
@@ -191,13 +290,15 @@ class FMLogisticsPanel(QWidget):
         self.hold.setEnabled(ready)
         self.cohorts.setEnabled(ready)
         self.windows.setEnabled(ready)
+        self.assignment_review.setEnabled(ready)
         self.load_button.setEnabled(ready)
         self.suggest_button.setEnabled(ready and bool(self.baseline and self.category_key))
         self.compare_button.setEnabled(ready and bool(self.baseline))
         self.open_run.setEnabled(ready)
         selected = self.options.currentData()
         self.apply_button.setEnabled(ready and (bool(self.comparison and selected != "current")
-                                                 or self.saved_plan is not None and not self.enabled.isChecked()))
+                                                 or self.saved_plan is not None and not self.enabled.isChecked()
+                                                 and not self.assignment_selectors))
 
     def invalidate(self, *_):
         if not self.refreshing:
@@ -294,21 +395,31 @@ class FMLogisticsPanel(QWidget):
         self.buttons()
 
     def load(self):
-        config = deepcopy(self.configuration())
+        source = self.configuration()
+        self.refresh_assignments(source)
+        assignments = {key: selector.currentData() for key, selector in self.assignment_selectors.items()
+                       if selector.currentIndex() > 0}
+        try:
+            config = resolve_demand_assignments(source, assignments)
+            draft = remap_fm_cohorts(self.plan, assignments) if assignments else deepcopy(self.plan)
+        except ValueError as error:
+            self.status.setText(str(error))
+            return
+        baseline_hash = config_fingerprint(source)
 
         def load_baseline():
             preview = native_demand(config)
             catering = None
-            if 'catering' not in configured and any(row['category'] == 'catering' for row in preview['tasks']):
+            if 'catering' not in draft['categories'] and any(row['category'] == 'catering' for row in preview['tasks']):
                 catering = suggest_policy(config, preview, 'catering')
             return preview, catering
 
-        configured = deepcopy(self.plan['categories'])
-
         def accept(result):
             preview, catering = result
+            self.plan = draft
             self.baseline = preview
-            self.baseline_hash = config_fingerprint(config)
+            self.demand_config = config
+            self.baseline_hash = baseline_hash
             self.comparison = None
             keys = sorted({row["category"] for row in preview["rules"]
                            if row["category"] not in {"Explicit tasks", "Legacy waste"}})
@@ -328,7 +439,7 @@ class FMLogisticsPanel(QWidget):
     def suggest(self):
         if self.baseline:
             category, baseline = self.category_key, self.baseline
-            config = deepcopy(self.configuration())
+            config = self.demand_config
 
             def accept(policy):
                 policy["hold_seconds"] = self.hold.value() * 60
@@ -341,10 +452,10 @@ class FMLogisticsPanel(QWidget):
     def run_comparison(self):
         if not self.baseline:
             return
-        config = deepcopy(self.configuration())
-        if config_fingerprint(config) != self.baseline_hash:
+        if config_fingerprint(self.configuration()) != self.baseline_hash:
             self.status.setText("Project settings changed. Load demand again.")
             return
+        config = self.demand_config
         try:
             self.save_category()
         except ValueError as error:
@@ -404,29 +515,28 @@ class FMLogisticsPanel(QWidget):
         self.buttons()
 
     def apply_selected(self):
-        if not self.enabled.isChecked() and self.saved_plan is not None:
+        if not self.enabled.isChecked() and self.saved_plan is not None and not self.assignment_selectors:
             plan = dict(self.saved_plan, enabled=False)
-            if self.apply(plan):
-                self.saved_plan = deepcopy(plan)
+            generation = dict(self.configuration().get("task_generation", {}), fm_logistics=plan)
+            if self.apply(generation):
+                self.refresh()
                 self.status.setText("FM planning disabled in the project.")
             return
         if not self.comparison or not self.baseline:
             return
-        config = deepcopy(self.configuration())
-        if config_fingerprint(config) != self.comparison["config_hash"]:
+        if config_fingerprint(self.configuration()) != self.baseline_hash:
             self.status.setText("Project settings changed. Load demand and compare again.")
             return
+        config = self.demand_config
         selected = next(row for row in self.comparison["results"] if row["strategy"] == self.options.currentData())
         plan = deepcopy(selected["settings"])
         baseline = self.baseline
 
         def accept(_):
-            if self.apply(plan):
-                self.saved_plan = deepcopy(plan)
-                self.plan = deepcopy(plan)
-                self.baseline_hash = config_fingerprint(self.configuration())
-                self.show_category()
-                self.status.setText("FM sequence applied. Save the project and run the simulation to measure it.")
+            generation = dict(config.get("task_generation", {}), fm_logistics=plan)
+            if self.apply(generation):
+                self.refresh()
+                self.status.setText("FM sequence and demand settings applied. Save the project to keep them.")
 
         self.work("Checking release windows against native calendars…",
                   lambda: validate_application(config, plan, baseline), accept)

@@ -108,11 +108,12 @@ class RequiredChargeDispatchTests(unittest.TestCase):
     def test_selecting_a_charge_request_does_not_spend_or_reserve(self):
         sim, task = prepared()
         before = state(sim)
+        before_events = list(sim.events)
         choice = sim._select_best_assignment()
         self.assertIsNotNone(choice)
         self.assertTrue(choice[2].get('_requires_route_charge'))
         self.assertEqual(before, state(sim))
-        self.assertFalse(sim.events)
+        self.assertEqual(before_events, sim.events)
 
     def test_unreachable_charger_leaves_task_pending_without_failure_spam(self):
         sim, task = prepared()

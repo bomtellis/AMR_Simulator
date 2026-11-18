@@ -3,6 +3,7 @@ from contextlib import redirect_stdout
 from copy import deepcopy
 from io import StringIO
 import json
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
@@ -10,12 +11,16 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from amr_fm_forecast import actual_activity, compare, initial_policy, native_demand, validate_application
+from amr_fm_forecast import (
+    actual_activity, compare, initial_policy, missing_demand_assignments, native_demand,
+    resolve_demand_assignments, validate_application,
+)
 from amr_fm_logistics import reactive_hold
 from amr_project import Project
 from report.amr_report_analysis import extract_lift_movements
 from simulator import Simulation
 from tests.test_floor_waypoints import floor_config
+from visualiser.project_checks import check_project
 
 
 def settings(config):
@@ -49,6 +54,33 @@ def fixture():
 
 
 class FMLogisticsTests(TestCase):
+    def test_removing_last_department_rule_does_not_create_site_wide_demand(self):
+        config = fixture()
+        rule = config["task_generation"]["categories"]["catering"]
+        rule.update(rule["departments"]["D1"])
+        rule["departments"]["D5"] = rule["departments"].pop("D1")
+        original = deepcopy(config)
+
+        fixed = resolve_demand_assignments(config, {("catering", "D5"): None})
+
+        self.assertEqual(original, config)
+        self.assertFalse(missing_demand_assignments(fixed))
+        self.assertFalse(any(row["category"] == "catering" for row in native_demand(fixed)["tasks"]))
+
+    def test_replacement_requires_a_current_location_and_preserves_existing_assignments(self):
+        config = fixture()
+        rule = config["task_generation"]["categories"]["catering"]
+        rule["departments"]["D5"] = deepcopy(rule["departments"]["D1"])
+        target = config["departments"][0]
+
+        with self.assertRaisesRegex(ValueError, "no valid department service location"):
+            resolve_demand_assignments(config, {("catering", "D5"): "D1"})
+        target["task_generation_locations"] = {"catering": {"locations": ["B4"]}}
+        with self.assertRaisesRegex(ValueError, "already has a demand assignment"):
+            resolve_demand_assignments(config, {("catering", "D5"): "D1"})
+        self.assertEqual({"D1", "D5"}, set(rule["departments"]))
+
+
     def test_coordinated_waves_share_lifts_without_changing_demand(self):
         config = fixture()
         before = deepcopy(config)
@@ -84,6 +116,28 @@ class FMLogisticsTests(TestCase):
             self.assertEqual(2, len(emitted))
             self.assertEqual([], manager.update_schedules_until(900))
             self.assertTrue(all(task.fm_deadline == 2700 and task.fm_original_release == 2700 for task in emitted))
+
+    def test_weekend_deferrals_follow_native_calendar_in_forecast_and_simulation(self):
+        config = fixture()
+        config["simulation"].update(start_datetime="2026-01-02T00:00:00",
+                                    end_datetime="2026-01-05T01:00:00")
+        config["departments"][0]["days_active"] = ["mon", "tue", "wed", "thu", "fri"]
+        baseline, plan = settings(config)
+        validate_application(config, plan, baseline)
+        results = compare(config, plan, baseline)["results"]
+        manual = next(row for row in results if row["strategy"] == "manual")
+        deferred = [row for row in manual["rows"] if row["category"] == "catering"
+                    and row["effective_task"]["fm_nominal_day"] in {"2026-01-03", "2026-01-04"}]
+        monday = 3 * 86400
+        self.assertEqual([(monday, ""), (monday, "")],
+                         [(row["planned"], row["cohort"]) for row in deferred])
+
+        config["task_generation"]["fm_logistics"] = plan
+        sim = Simulation(config, verbose=False)
+        records = sim.task_generation_manager.update_schedules_until(monday)
+        catering = [row.task for row in records if row.task.department_id == "D1"]
+        self.assertEqual([900, monday, monday], [task.release_time for task in catering])
+        self.assertEqual([2700, None, None], [getattr(task, "fm_deadline", None) for task in catering])
 
     def test_midnight_window_and_out_of_range_rejected(self):
         config = fixture()
@@ -184,3 +238,87 @@ class FMLogisticsTests(TestCase):
             self.assertEqual("C1", movements.iloc[0]["fm_cohort_ids"])
             activity = actual_activity(path)
             self.assertEqual(3, sum(activity["totals"].values()))
+
+class FMLogisticsEditorTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_fm_apply_updates_demand_and_uses_selected_department_location(self):
+        from PySide6.QtCore import QCoreApplication, QEvent, QThreadPool
+        from tests import test_corridor_editing as editing
+
+        def close_editor(editor):
+            with patch.object(editor, "_confirm_unsaved_changes", return_value=True):
+                editor.close()
+            editor.deleteLater()
+            QCoreApplication.sendPostedEvents(editor, QEvent.Type.DeferredDelete)
+
+        def finish():
+            self.assertTrue(QThreadPool.globalInstance().waitForDone(10000))
+            self.app.processEvents()
+
+        config = fixture()
+        catering = config["task_generation"]["categories"]["catering"]
+        catering["departments"]["D5"] = catering["departments"].pop("D1")
+        catering["department_groups"] = [{"id": "Meals", "departments": ["D5"],
+                                          "payload": deepcopy(catering["departments"]["D5"])}]
+        config["departments"][0].update(
+            id="OPD-WEST", name="Outpatients West",
+            task_generation_locations={"catering": {"pickup_dropoff_locations": ["B4"]}},
+        )
+        config["task_generation"]["fm_logistics"] = {"enabled": True, "categories": {
+            "catering": {"cohorts": [{"id": "Wave one", "departments": ["D5"]}], "slots": {
+                "00:45": {"earliest": "00:15", "deadline": "00:45", "offsets": {"Wave one": 0}},
+            }}
+        }}
+        editor = editing.AMRGraphEditor()
+        self.addCleanup(close_editor, editor)
+        editor._drawings_enabled = False
+        editor.store.data = editing.JsonStore(config).data
+        editor._reset_edit_history()
+        editor.show_fm_logistics()
+        panel = editor.fm_logistics_panel
+        original = deepcopy(editor.store.data)
+        self.assertEqual(2, sum(f.code == "DEPARTMENT_REFERENCE" for f in check_project(original).findings))
+
+        panel.load_button.click()
+        self.assertIsNone(panel.baseline)
+        self.assertEqual(original, editor.store.data)
+        replacement = panel.assignment_selectors["catering", "D5"]
+        replacement.setCurrentIndex(replacement.findData("OPD-WEST"))
+        panel.load_button.click()
+        finish()
+        self.assertIsNotNone(panel.baseline, panel.status.text())
+        self.assertEqual([("OPD-WEST", "B4")],
+                         [(r["department"], r["dropoff"]) for r in panel.baseline["tasks"]
+                          if r["category"] == "catering"])
+        panel.compare_button.click()
+        finish()
+        self.assertIsNotNone(panel.comparison, panel.status.text())
+        panel.options.setCurrentIndex(panel.options.findData("manual"))
+        self.assertEqual(original, editor.store.data)
+
+        panel.apply_button.click()
+        finish()
+
+        updated = editor.store.data
+        generation = updated["task_generation"]
+        meals = generation["categories"]["catering"]
+        self.assertEqual({"OPD-WEST"}, set(meals["departments"]))
+        self.assertEqual(["OPD-WEST"], meals["department_groups"][0]["departments"])
+        self.assertEqual(["OPD-WEST"], generation["fm_logistics"]["categories"]["catering"]["cohorts"][0]["departments"])
+        self.assertFalse(any(f.code == "DEPARTMENT_REFERENCE" for f in check_project(updated).findings))
+        self.assertEqual("Apply FM logistics plan", editor.edit_history.undo_label)
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "fm.amrproj"
+            Project().save(path, updated)
+            restored = Project.open(path).configuration()
+            sim = Simulation(restored, verbose=False)
+            tasks = [r.task for r in sim.task_generation_manager.update_schedules_until(900)]
+            self.assertEqual(
+                [("A", "B4", 2700)],
+                [(t.pickup, t.dropoff, t.fm_deadline) for t in tasks if t.department_id == "OPD-WEST"],
+            )

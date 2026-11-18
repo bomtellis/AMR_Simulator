@@ -391,14 +391,18 @@ class ProjectWorkspace(QWidget):
         if delta == 1 and self.stage == 'playback':
             playback = self.pages['playback']
             if playback.requested_memory is not None:
-                playback.investigate()
+                self.editor.show_project_report(playback.requested_memory)
             else:
                 self.editor.show_project_report(playback.directory)
             return
         runs = getattr(self.editor, 'project_runs_panel', None)
-        if delta == 1 and runs is not None and runs.selected_memory_run() is not None and self.stage == 'simulate':
-            runs.investigate()
-            return
+        if delta == 1 and runs is not None and runs.selected_memory_run() is not None:
+            if self.stage == 'simulate':
+                runs.investigate()
+                return
+            if self.stage == 'review':
+                runs.report()
+                return
         if delta == 1 and runs is not None and runs.selected_path() is not None:
             if self.stage == 'simulate':
                 runs.investigate()

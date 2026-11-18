@@ -59,6 +59,7 @@ class EventStore:
             raise FileExistsError('Existing compact run evidence cannot be overwritten; choose a new run path')
         if readonly:
             self.connection = sqlite3.connect(self.path.resolve().as_uri() + '?mode=ro', uri=True)
+            self.connection.execute('PRAGMA temp_store=MEMORY')
         else:
             self.connection = sqlite3.connect(str(path) if path else ':memory:', check_same_thread=False)
             self.closed = False
@@ -242,9 +243,10 @@ class EventStore:
             ((seq, exact, layout, identity, kind, playback)
              for seq, exact, layout, _data, kind, playback in rows))
 
-    def iter_rows(self, fields=None, *, event_types=None, playback_only=False):
+    def iter_rows(self, fields=None, *, event_types=None, playback_only=False, time_range=None):
         if self.closed:
-            yield from iter_events(self.path, fields, event_types=event_types, playback_only=playback_only)
+            yield from iter_events(self.path, fields, event_types=event_types, playback_only=playback_only,
+                                   time_range=time_range)
             return
         wanted = set(fields) if fields is not None else None
         kinds = {self.by_symbol[value] for value in event_types if value in self.by_symbol} if event_types is not None else None
@@ -254,13 +256,17 @@ class EventStore:
             parameters.extend(kinds)
         if playback_only:
             clauses.append('playback=1')
+        if time_range is not None:
+            clauses.append('sim_time BETWEEN ? AND ?')
+            parameters.extend(time_range)
         query = 'SELECT seq,sim_time,layout,data,kind,playback FROM events'
         if clauses:
             query += ' WHERE ' + ' AND '.join(clauses)
         for sequence, exact, identity, data, _, _ in self.connection.execute(query + ' ORDER BY seq', parameters):
             yield self._decode(identity, data, wanted, sequence, exact)
         for sequence, exact, identity, data, kind, playback in self.buffer:
-            if (kinds is None or kind in kinds) and (not playback_only or playback):
+            if ((kinds is None or kind in kinds) and (not playback_only or playback)
+                    and (time_range is None or exact is not None and time_range[0] <= exact <= time_range[1])):
                 yield self._decode(identity, data, wanted, sequence, exact)
 
     def _decode(self, identity, data, wanted, sequence, exact):
@@ -378,18 +384,26 @@ class EventRows(Sequence):
         return list(self)
 
 
-def iter_events(path, fields=None, *, event_types=None, playback_only=False):
+def iter_events(path, fields=None, *, event_types=None, playback_only=False, time_range=None):
     path = Path(path)
     if path.suffix == '.sqlite':
         store = EventStore(path, readonly=True)
         try:
-            yield from store.iter_rows(fields, event_types=event_types, playback_only=playback_only)
+            yield from store.iter_rows(fields, event_types=event_types, playback_only=playback_only,
+                                       time_range=time_range)
         finally:
             store.close()
     else:
         with path.open(encoding='utf-8-sig', newline='') as stream:
             for row in csv.DictReader(stream):
                 if event_types is None or row.get('event_type') in event_types:
+                    if time_range is not None:
+                        try:
+                            elapsed = float(row.get('sim_time_sec', ''))
+                        except (TypeError, ValueError):
+                            continue
+                        if not time_range[0] <= elapsed <= time_range[1]:
+                            continue
                     yield row
 
 

@@ -265,7 +265,8 @@ def link_run(project, directory, *, expected_run_key=None):
     return manifest
 
 
-def execute(directory, *, progress=None, runtime_inputs=None, runtime_backend='compact', event_baseline=None):
+def execute(directory, *, progress=None, runtime_inputs=None, runtime_backend='compact', event_baseline=None,
+            console_progress=True):
     if event_baseline is not None and runtime_backend != 'compact':
         raise ValueError('Reduced data requires compact execution')
     directory = Path(directory).resolve()
@@ -275,19 +276,22 @@ def execute(directory, *, progress=None, runtime_inputs=None, runtime_backend='c
     manifest.update(status="running", started_at=timestamp())
     write_json(directory / MANIFEST, manifest)
     from simulator import Simulation
+    from amr_simulation_progress import sample
     if progress:
-        progress(dict(phase='Initializing simulation and preparing routes'))
+        progress(sample('initializing', 'Initializing simulation'))
     simulation = Simulation(config, verbose=True, verbose_csv_path=str(directory / OUTPUTS["steps_csv"]),
                             progress_callback=progress, runtime_inputs=runtime_inputs,
                             runtime_backend=runtime_backend, defer_exports=runtime_backend == 'compact',
-                            event_baseline=event_baseline)
+                            event_baseline=event_baseline, console_progress=console_progress)
     if progress:
         simulation.progress_update_interval = 1.0
     simulation._evidence_project_binding = manifest["project_binding"]
     simulation.run()
     if progress:
-        progress(dict(phase='Saving and verifying run evidence'))
+        progress(sample('finalizing', 'Saving and verifying run evidence'))
     if software_snapshot()["sha256"] != manifest["software"]["sha256"]:
+        if simulation.event_store is not None:
+            simulation.event_store.close(flush=False)
         raise ValueError("Simulator software changed during execution; results are incomplete")
     if runtime_backend == 'compact':
         manifest['canonical_events'] = simulation.event_store.path.name
@@ -314,9 +318,12 @@ def execute(directory, *, progress=None, runtime_inputs=None, runtime_backend='c
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("directory", type=Path)
+    parser.add_argument('--progress-json', action='store_true')
     args = parser.parse_args(argv)
     try:
-        execute(args.directory)
+        from amr_simulation_progress import publish_progress
+        execute(args.directory, progress=publish_progress if args.progress_json else None,
+                console_progress=not args.progress_json)
         return PARTIAL_EXIT_CODE if read_json(args.directory / MANIFEST)['status'] == 'partial' else 0
     except Exception as exc:
         # An attempted replay must not relabel an already completed run.

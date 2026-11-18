@@ -10,6 +10,14 @@ The editable run selectors accept saved run folders, event CSV files and SQLite 
 
 Expand a route group to see its recorded path variants. Select a journey independently for each run; double-click or press Enter to open Route inspector. The two floor plans use their respective saved layouts. Fit route focuses on recorded movement, while Fit shows the whole floor. The floor/lift diagram shows actual transfer endpoints, not every floor a lift passes. Show source events exposes source identifiers, times and lift-selection details. All tables are keyboard-readable and paged at 250 records.
 
+## Floor route drawings
+
+From **Overview**, select **Export floor route drawings…**, choose a saved run, then select PDF, DXF or both. The export uses the applied time window and route filters. A selected floor limits the set to that floor. A leg that starts within the window contributes its full recorded route.
+
+Each floor sheet counts a movement leg once when it uses that floor, including lift boarding and exit. Lift pass-through and lift-car repositioning are excluded. The legend shows trips by recorded payload type, including Empty AMR and Mixed payload. Confirmed simulation outcomes are selected by default. **Include recorded plans** adds separate planned counts and dashed lines on routes supported only by plans.
+
+The PDF has one landscape A1 sheet per floor. The exporter chooses a common round print scale that fits the selected floors. Print at 100% on A1 and use the metre scale bar to check the printed size. The DXFs have editable layers by payload type and preserve the units of the saved CAD drawings. Keep any linked underlay PDFs beside their DXFs. Small offsets make shared corridors legible and are diagrammatic. Open circles mark transfer points, and red crosses identify known ends of geometry gaps. Exports use a new folder outside the saved run.
+
 ## Application boundary and design
 
 This is an additive native PySide6 workspace in the existing project browser and central stack. It uses the application's palette, fonts, frozen run verification, sparse event reader, DXF scene renderer, PDF underlay placement and recorded trajectory decoder. The simulator, routing calculations, report commands, project editing and saved formats are unchanged. The established selected-run Review-to-Report shortcut remains available.

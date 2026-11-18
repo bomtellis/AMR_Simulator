@@ -8,7 +8,8 @@ from PySide6.QtCore import (Qt, QObject, QRunnable, QThreadPool, Signal, QAbstra
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
     QPushButton, QComboBox, QDoubleSpinBox, QTabWidget, QSplitter, QTreeWidget,
     QTreeWidgetItem, QTableView, QHeaderView, QAbstractItemView, QPlainTextEdit,
-    QFileDialog, QMessageBox, QGroupBox, QScrollArea)
+    QFileDialog, QMessageBox, QGroupBox, QScrollArea, QCheckBox, QDialog, QDialogButtonBox,
+    QFormLayout)
 
 from amr_route_analysis import (load_analysis, compare_runs, export_comparison, Filters,
     CONFIRMED, PLANNED, SATISFIED, VIOLATION, UNKNOWN, DISABLED, route_group_values)
@@ -120,7 +121,7 @@ class AnalysisJob(QRunnable):
         try:
             result = self.operation(self.cancelled.is_set,
                 lambda message: self.signals.progress.emit(self.slot, self.token, message))
-            if self.cancelled.is_set():
+            if self.cancelled.is_set() and self.slot != 'floor drawings':
                 raise InterruptedError('Analysis cancelled; previous results retained.')
             self.signals.finished.emit(self.slot, self.token, result, '')
         except Exception as exc:
@@ -133,7 +134,7 @@ class RouteAnalysisPanel(QWidget):
         self.editor = editor
         self.runs = {'A': None, 'B': None}
         self.result = None
-        self.tokens = {'A': 0, 'B': 0, 'compare': 0, 'export': 0}
+        self.tokens = {'A': 0, 'B': 0, 'compare': 0, 'export': 0, 'floor drawings': 0}
         self.jobs = {}
         self.active_jobs = set()
         self.selected_legs = {'A': None, 'B': None}
@@ -217,6 +218,9 @@ class RouteAnalysisPanel(QWidget):
         self.export_button.setToolTip('Export all filtered tables, journeys, source events and saved input evidence.')
         self.export_button.clicked.connect(self.export)
         self.export_button.setEnabled(False)
+        self.floor_export_button = QPushButton('Export floor route drawings…')
+        self.floor_export_button.clicked.connect(self.export_floor_drawings)
+        self.floor_export_button.setEnabled(False)
         self.chart_label = QLabel('')
         clear_chart = QPushButton('Clear chart selection')
         clear_chart.clicked.connect(self.clear_chart)
@@ -250,6 +254,10 @@ class RouteAnalysisPanel(QWidget):
                       'Journey-time averages require confirmed complete legs. Workload counts use the full run within this window.')
         hint.setWordWrap(True)
         layout.addWidget(hint)
+        export_row = QHBoxLayout()
+        export_row.addStretch()
+        export_row.addWidget(self.floor_export_button)
+        layout.addLayout(export_row)
         self.metrics = PagedTable('A B metric comparison', ['Metric', 'Run A', 'Run B', 'B − A', 'Change (%)'])
         self.metrics.view.horizontalHeader().setStretchLastSection(False)
         self.metrics.view.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -411,6 +419,7 @@ class RouteAnalysisPanel(QWidget):
             job.cancelled.set()
         self.tokens['compare'] += 1
         self.export_button.setEnabled(False)
+        self.floor_export_button.setEnabled(False)
 
     def _progress(self, slot, token, message):
         if token == self.tokens[slot]:
@@ -424,6 +433,11 @@ class RouteAnalysisPanel(QWidget):
                     self.jobs.pop(slot)
         self.cancel_button.setEnabled(bool(self.jobs))
         if token != self.tokens[slot]:
+            return
+        if slot == 'floor drawings':
+            self.floor_export_button.setEnabled(self.result is not None
+                                                and not self.jobs.keys() & {'A', 'B', 'compare'})
+            self.status.setText(error or f'Exported floor route drawings to {result}')
             return
         if error:
             self.status.setText(error + ' Previous valid views are retained.')
@@ -501,6 +515,7 @@ class RouteAnalysisPanel(QWidget):
             return
         a, b, filters = self.runs['A'], self.runs['B'], self.filter_value()
         self.export_button.setEnabled(False)
+        self.floor_export_button.setEnabled(False)
         self.status.setText('Updating comparison… Previous views remain visible until complete.')
         self._start('compare', lambda cancel, progress: compare_runs(a, b, filters, cancel=cancel))
 
@@ -574,6 +589,7 @@ class RouteAnalysisPanel(QWidget):
         self.status.setText(f'Comparison ready · {fmt(result["sides"][0]["start"])}–{fmt(result["sides"][0]["end"])} elapsed seconds · '
                             f'{len(result["groups"]):,} route groups. Unknown values are not zero.')
         self.export_button.setEnabled(True)
+        self.floor_export_button.setEnabled('floor drawings' not in self.jobs)
 
     def show_trips(self, label, legs):
         self.trips[label].set_records(legs, [[l.time,l.amr,l.origin,l.destination,l.distance,l.wait,l.evidence,l.compliance] for l in legs])
@@ -660,3 +676,52 @@ class RouteAnalysisPanel(QWidget):
             result = self.result
             self.export_button.setEnabled(False)
             self._start('export', lambda cancel, progress: export_comparison(result, target, cancel=cancel))
+
+    def export_floor_drawings(self):
+        if self.result is None or 'floor drawings' in self.jobs:
+            return
+        from amr_floor_route_drawings import drawing_run_name
+
+        result = self.result
+        dialog = QDialog(self)
+        dialog.setWindowTitle('Export floor route drawings')
+        dialog.setMinimumWidth(460)
+        form = QFormLayout(dialog)
+        runs = QComboBox()
+        for label, side in zip(('A', 'B'), result['sides']):
+            if side:
+                runs.addItem(f'Run {label} · {drawing_run_name(side["run"])}', side['run'])
+        form.addRow('Saved run', runs)
+        pdf = QCheckBox('PDF · one scaled A1 sheet per floor')
+        dxf = QCheckBox('DXF · editable layers by payload type')
+        pdf.setChecked(True)
+        dxf.setChecked(True)
+        form.addRow('Formats', pdf)
+        form.addRow(dxf)
+        include_plans = QCheckBox('Include recorded plans')
+        form.addRow('Evidence', include_plans)
+        note = QLabel('Uses the applied time window and route filters. The evidence choice here '
+                      'sets which legs appear in the drawings.')
+        note.setWordWrap(True)
+        form.addRow(note)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        export = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        export.setText('Choose destination…')
+        pdf.toggled.connect(lambda _: export.setEnabled(pdf.isChecked() or dxf.isChecked()))
+        dxf.toggled.connect(lambda _: export.setEnabled(pdf.isChecked() or dxf.isChecked()))
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        parent = QFileDialog.getExistingDirectory(self, 'Choose export destination outside the source run')
+        if not parent:
+            return
+        from visualiser.floor_route_export import export_floor_route_drawings
+
+        target = Path(parent) / datetime.now().strftime('amr-floor-routes-%Y%m%d-%H%M%S-%f')
+        run, filters = runs.currentData(), result['filters']
+        options = dict(pdf=pdf.isChecked(), dxf=dxf.isChecked(), include_plans=include_plans.isChecked())
+        self.floor_export_button.setEnabled(False)
+        self._start('floor drawings', lambda cancel, progress: export_floor_route_drawings(
+            run, filters, target, cancel=cancel, progress=progress, **options))

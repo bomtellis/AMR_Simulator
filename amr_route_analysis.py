@@ -98,6 +98,27 @@ def points_from_config(config):
     return points
 
 
+def recorded_segment_points(segment):
+    """Decode movement in world metres using the same evidence as the route inspector."""
+    if segment.trajectory:
+        from amr_trajectories import trajectory_from_dict
+
+        try:
+            trajectory = trajectory_from_dict(segment.trajectory)
+            points = []
+            for motion in trajectory.motions:
+                steps = 24 if motion.kind == 'arc' else 1
+                for index in range(steps + 1):
+                    pose = motion.pose_at(index / steps)
+                    points.append((pose.x, pose.y))
+            return points
+        except (ValueError, TypeError, KeyError, AttributeError, ArithmeticError):
+            return []
+    if None in (*segment.start[:2], *segment.finish[:2]):
+        return []
+    return [segment.start[:2], segment.finish[:2]]
+
+
 @dataclass(slots=True)
 class Segment:
     id: str
@@ -422,7 +443,7 @@ def _load_drawings(run, managed, cancel, progress):
                 _DRAWING_CACHE.move_to_end(before)
                 while len(_DRAWING_CACHE) > 12:
                     _DRAWING_CACHE.popitem(last=False)
-            run.drawings[int(floor)] = dict(content, path=str(path))
+            run.drawings[int(floor)] = dict(content, path=str(path), sha256=before)
             if not managed:
                 run.warnings.append(f'Floor {floor}: external drawing is context only; historical drawing bytes are not bound to this log.')
         except InterruptedError:
@@ -449,7 +470,11 @@ def _load_drawings(run, managed, cancel, progress):
             document.close()
             if image.isNull() or _hash(path, cancel) != before:
                 raise ValueError('PDF unavailable or changed while loading')
-            run.pdf_drawings[int(entry['floor'])] = (image, entry)
+            run.pdf_drawings[int(entry['floor'])] = (
+                image, dict(entry, filepath=str(path), sha256=before, page_width_pt=size.width(),
+                            page_height_pt=size.height()))
+            if not managed:
+                run.warnings.append(f"Floor {entry['floor']}: external PDF is context only; historical drawing bytes are not bound to this log.")
         except InterruptedError:
             raise
         except Exception as exc:

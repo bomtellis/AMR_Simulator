@@ -14,7 +14,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from amr_sim_models import Location, PayloadType, Task
 from amr_sim_time_utils import SimulationClock, parse_hhmm_to_minutes
 from amr_generation_provenance import RuleTrace
-from amr_fm_logistics import category_policy, mark_task, planned_release
+from amr_fm_logistics import category_policy, mark_task, planned_release, release_can_join_wave
 from amr_staff_policy import resolve_staff_requirement
 
 DAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -2121,7 +2121,7 @@ class DynamicCategoryTaskGenerator(BaseTaskGenerator):
         policy = category_policy(self.task_generation, instance['category_key'])
         timing = planned_release(policy, instance.get('department_id', ''), slot,
                                  day, self.clock.start_datetime)
-        if timing is None:
+        if timing is None or not release_can_join_wave(slot, day, original, self.clock.start_datetime):
             return None
         release, deadline, _cohort = timing
         if (original < 0 or (self._fm_horizon is not None and
@@ -3137,6 +3137,10 @@ class TaskGenerationManager:
                     'payload': cfg['payload'],
                     'container_group': instance['container_group'],
                     'pickup_locations': list(instance['pickup_locations']),
+                    'dropoff_locations': list(instance['dropoff_locations']),
+                    'priority': int(cfg.get('priority', 100) or 100),
+                    'return_priority': int(cfg.get('return_priority', cfg.get('priority', 100))),
+                    'return_route_profile': cfg.get('return_route_profile') or cfg.get('route_profile') or '',
                 })
         return definitions
 

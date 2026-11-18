@@ -201,6 +201,10 @@ class Project:
                 raise ValueError("Invalid saved run software fingerprint")
             if not isinstance(ref.get("name"), str):
                 raise ValueError("Invalid saved run name")
+            from amr_run_metadata import normalise_metadata
+            normalise_metadata(ref.get('user_name', ''), ref.get('note', ''))
+            if 'created_at' in ref and not isinstance(ref['created_at'], str):
+                raise ValueError('Invalid saved run creation time')
             locator(ref.get("location"))
             location = self.resolve_results_location(ref['location'], project_path=project_path)
             if location in locations:
@@ -252,6 +256,24 @@ class Project:
             raise ValueError("Save the project before linking results")
         self._save_external_results(self._run_settings(directory, manifest))
 
+    def set_run_metadata(self, run_key, user_name, note, *, directory=None):
+        """Save annotations by stable run ID, without changing its recorded evidence."""
+        from amr_run_metadata import normalise_metadata
+        user_name, note = normalise_metadata(user_name, note)
+        settings = deepcopy(self.external_results)
+        reference = next((ref for ref in settings['runs'] if ref['run_key'] == run_key), None)
+        if reference is None:
+            if directory is None:
+                raise ValueError('Select an available run before editing its name and note.')
+            from amr_project_runs import inspect_run
+            manifest = inspect_run(directory, self)
+            if manifest['run_key'] != run_key:
+                raise ValueError('The selected folder belongs to a different run.')
+            settings = self._run_settings(directory, manifest)
+            reference = next(ref for ref in settings['runs'] if ref['run_key'] == run_key)
+        reference.update(user_name=user_name, note=note)
+        self._save_external_results(settings)
+
     def _run_settings(self, directory, manifest, *, project_path=None):
         binding = manifest['project_binding']
         if binding['project_id'] != self.project_id or binding['run_key'] != manifest['run_key']:
@@ -259,12 +281,17 @@ class Project:
         reference = {key: binding[key] for key in ('run_key', 'revision_id', 'revision_config_sha256')}
         reference.update(software_sha256=manifest['software']['sha256'], name=manifest['name'],
                          location=self._location(directory, project_path=project_path))
+        reference.update(user_name=manifest.get('user_name', ''), note=manifest.get('note', ''),
+                         created_at=manifest.get('created_at', ''))
         settings = deepcopy(self.external_results)
         previous = next((r for r in settings['runs'] if r['run_key'] == reference['run_key']), None)
         if previous:
             for key in ('revision_id', 'revision_config_sha256', 'software_sha256'):
                 if previous[key] != reference[key]:
                     raise ValueError("Relinked run does not match its saved revision/software identity")
+            for key in ('user_name', 'note', 'created_at'):
+                if key in previous:
+                    reference[key] = previous[key]
             settings['runs'].remove(previous)
         settings['runs'].append(reference)
         return settings
